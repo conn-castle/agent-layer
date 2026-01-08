@@ -311,6 +311,8 @@ Each section below answers two questions:
   One-shot setup (install MCP deps, enable hooks, validate).
 - `.agentlayer/sync/sync.mjs`  
   Generator (“build”) for all shims/configs/skills.
+- `.agentlayer/clean.sh`  
+  Remove generated shims/configs/skills so they can be regenerated.
 - `./al`  
   Repo-local launcher (sync + env load + exec).
 

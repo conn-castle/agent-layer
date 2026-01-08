@@ -1,0 +1,2 @@
+# Codex state (repo-local CODEX_HOME), to avoid committing user state or secrets
+.codex
