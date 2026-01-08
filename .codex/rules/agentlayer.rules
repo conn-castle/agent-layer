@@ -1,0 +1,7 @@
+prefix_rule(pattern=["git","status"], decision="allow", justification="agentlayer allowlist")
+prefix_rule(pattern=["git","diff"], decision="allow", justification="agentlayer allowlist")
+prefix_rule(pattern=["git","log"], decision="allow", justification="agentlayer allowlist")
+prefix_rule(pattern=["git","show"], decision="allow", justification="agentlayer allowlist")
+prefix_rule(pattern=["ls"], decision="allow", justification="agentlayer allowlist")
+prefix_rule(pattern=["pwd"], decision="allow", justification="agentlayer allowlist")
+prefix_rule(pattern=["echo"], decision="allow", justification="agentlayer allowlist")

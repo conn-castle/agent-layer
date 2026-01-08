@@ -105,7 +105,7 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
             `---\n` +
             `Notes:\n` +
             `- Follow the workflow exactly.\n` +
-            `- If you modify .agentlayer/**, run: node .agentlayer/sync.mjs\n`,
+            `- If you modify .agentlayer/**, run: node .agentlayer/sync/sync.mjs\n`,
         },
       },
     ],

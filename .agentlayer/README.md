@@ -4,14 +4,15 @@ This repository includes a repo-local standardization layer under `.agentlayer/`
 
 ## What this is for
 
-**Goal:** make agentic tooling consistent across Claude Code, Gemini CLI, VS Code/Copilot, and Codex by keeping a **single source of truth** in the repo, then generating the small set of per-client shim/config files those tools require.
+**Goal:** make agentic tooling consistent across Claude Code, Gemini CLI, VS Code/Copilot, and Codex by keeping a **single source of truth** in the repo, then generating the per-client shim/config files those tools require.
 
 **Primary uses**
 - A unified instruction set (system/developer-style guidance) usable across tools.
 - Repeatable “workflows” exposed as:
-  - MCP prompts (commands) in clients that support MCP prompts.
+  - MCP prompts (slash commands) in clients that support MCP prompts.
   - Codex Skills (repo-local) for Codex.
 - A repo-committed MCP server catalog, projected into each client’s config format.
+- A repo-owned allowlist of safe shell command prefixes, projected into each client's auto-approval settings.
 - A lightweight setup flow that works in any project repo.
 
 ## Prerequisites
@@ -53,8 +54,7 @@ If you also use a project/dev `.env` for your application, keep it in `./.env` a
 chmod +x ./al
 ```
 
-Default behavior: sync every run via `node .agentlayer/sync.mjs`, then load `.agentlayer/.env` and exec the command (via `.agentlayer/with-env.sh`).
-If you want a different default, open `al` and uncomment exactly one option block.
+Default behavior: sync every run via `node .agentlayer/sync/sync.mjs`, then load `.agentlayer/.env` and exec the command (via `.agentlayer/with-env.sh`).
 
 Examples:
 
@@ -68,11 +68,12 @@ Examples:
 - Unified instructions: `.agentlayer/instructions/*.md`
 - Workflows: `.agentlayer/workflows/*.md`
 - MCP server catalog: `.agentlayer/mcp/servers.json`
+- Command allowlist: `.agentlayer/policy/commands.json`
 
 5) **Regenerate after changes**
 
 ```bash
-node .agentlayer/sync.mjs
+node .agentlayer/sync/sync.mjs
 ```
 
 ## How to use (day-to-day)
@@ -81,9 +82,9 @@ node .agentlayer/sync.mjs
 
 `./al` is intentionally minimal. By default it:
 
-1) Runs `node .agentlayer/sync.mjs`
+1) Runs `node .agentlayer/sync/sync.mjs` (or `--check` then regenerates if out of date, depending on your `al`)
 2) Loads `.agentlayer/.env` via `.agentlayer/with-env.sh`
-3) Execs the command
+3) Executes the command
 
 Examples:
 
@@ -93,8 +94,7 @@ Examples:
 ./al codex
 ```
 
-To change defaults, edit `al` and uncomment exactly one option block (env-only, sync-only, sync-check + regen, or include project env).
-For a one-off project env run, use:
+For a one-off run that also includes project env (`./.env`), use:
 
 ```bash
 ./.agentlayer/with-env.sh --project-env gemini
@@ -114,6 +114,7 @@ For a one-off project env run, use:
 - `.agentlayer/instructions/*.md`
 - `.agentlayer/workflows/*.md`
 - `.agentlayer/mcp/servers.json`
+- `.agentlayer/policy/commands.json`
 
 **Do not edit these directly (generated):**
 - `AGENTS.md`
@@ -122,7 +123,10 @@ For a one-off project env run, use:
 - `.github/copilot-instructions.md`
 - `.mcp.json`
 - `.gemini/settings.json`
+- `.claude/settings.json`
 - `.vscode/mcp.json`
+- `.vscode/settings.json`
+- `.codex/rules/agentlayer.rules`
 - `.codex/skills/*/SKILL.md`
 
 If you accidentally edited a generated file, revert it (example):
@@ -133,42 +137,152 @@ git checkout -- .mcp.json
 
 ### Instruction file ordering (why the numbers)
 
-`sync.mjs` concatenates `.agentlayer/instructions/*.md` in **lexicographic order**.
+`.agentlayer/sync/sync.mjs` concatenates `.agentlayer/instructions/*.md` in **lexicographic order**.
 
 Numeric prefixes (e.g. `00_`, `10_`, `20_`) ensure a **stable, predictable ordering** without requiring a separate manifest/config file. If you add new instruction fragments, follow the same pattern.
 
 ## Refresh / restart guidance (failure modes)
 
 General rule:
-- After changing `.agentlayer/**` → run `node .agentlayer/sync.mjs` (or run your CLI via `./al ...`) → then refresh/restart the client as needed.
+- After changing `.agentlayer/**` → run `node .agentlayer/sync/sync.mjs` (or run your CLI via `./al ...`) → then refresh/restart the client as needed.
 
-### MCP prompt server (workflows as “commands”)
+### MCP prompt server (workflows as “slash commands”)
 
 Workflows are exposed as MCP prompts by:
 - `.agentlayer/mcp/agentlayer-prompts/server.mjs`
 
+**Required one-time install (per machine / per clone):**
+```bash
+cd .agentlayer/mcp/agentlayer-prompts
+npm install
+```
+
 If you changed `.agentlayer/workflows/*.md`:
-- run `node .agentlayer/sync.mjs` (or `./al <cmd>`)
+- run `node .agentlayer/sync/sync.mjs` (or `./al <cmd>`)
 - then refresh MCP discovery in your client (or restart the client/session)
 
-### Client-specific notes
+---
 
-**Gemini CLI**
-- If instructions don’t update: refresh memory (often `/memory refresh`).
-- If prompts/tools don’t update: refresh MCP (often `/mcp refresh`).
+## Client-specific notes (MCP config + slash commands)
 
-**VS Code / Copilot Chat**
-- MCP prompts can be invoked as `/mcp.<server>.<prompt>`.
-- If prompts/tools look stale: restart the MCP server and/or use “Chat: Reset Cached Tools”.
+Each section below answers two questions:
 
-**Claude Code**
-- If MCP config changed: restart Claude Code.
-- If prompts/tools look stale: reconnect or restart the session.
+1) **How do I know MCP config is being read?**
+2) **How do I know workflow slash commands are available?**
 
-**Codex**
-- Codex does not reliably expose MCP prompts as slash commands in the client UI.
-- Workflows are available via generated **repo-local Skills** under `.codex/skills/`.
-- After updating workflows and running sync, restart Codex if it doesn’t pick up skills immediately.
+### Gemini CLI
+
+**MCP config file**
+- Project MCP config is in: `.gemini/settings.json` (generated).
+- Quick check:
+  ```bash
+  cat .gemini/settings.json
+  ```
+  Confirm you see `"mcpServers"` with the servers you expect (e.g., `agentlayer`, `context7`).
+
+**Confirm the MCP server can start**
+- Ensure Node deps are installed:
+  ```bash
+  cd .agentlayer/mcp/agentlayer-prompts && npm install && cd -
+  ```
+- Then run Gemini via `./al gemini`.
+
+**Confirm slash commands (MCP prompts)**
+- In Gemini, try a workflow name directly:
+  - `/find-issues`
+- If it’s present, it will expand and run the workflow prompt.
+- If it’s missing:
+  1) run `node .agentlayer/sync/sync.mjs`
+  2) restart Gemini
+  3) confirm `.gemini/settings.json` still lists `agentlayer` under `mcpServers`
+
+**Common failure mode**
+- If Gemini prompts for approvals on shell commands like `git status`, that is a *shell tool approval*, not MCP. (Solving this uses the repo allowlist `.agentlayer/policy/commands.json` projected into Gemini’s `tools.allowed`.)
+
+---
+
+### VS Code / Copilot Chat
+
+**MCP config file**
+- Project MCP config is in: `.vscode/mcp.json` (generated).
+- Quick check:
+  ```bash
+  cat .vscode/mcp.json
+  ```
+
+**Confirm MCP server is running**
+- Open the repo in VS Code.
+- Ensure Copilot Chat is enabled and MCP is enabled in your environment.
+- If MCP tools/prompts look stale:
+  - restart MCP servers and/or run VS Code’s “Chat: Reset Cached Tools” action.
+
+**Confirm slash commands (MCP prompts)**
+- In Copilot Chat, invoke:
+  - `/mcp.agentlayer.find-issues`
+- If it autocompletes, the prompt is registered.
+
+**Common failure mode**
+- VS Code can cache tool lists. Reset cached tools and reload window if needed.
+
+---
+
+### Claude Code
+
+**MCP config file**
+- Project MCP config is in: `.mcp.json` (generated).
+- Quick check:
+  ```bash
+  cat .mcp.json
+  ```
+
+**Confirm MCP is connected**
+- Launch Claude Code from repo root:
+  ```bash
+  ./al claude
+  ```
+- If MCP servers are not available:
+  1) verify `.mcp.json` exists and includes `mcpServers.agentlayer`
+  2) ensure MCP prompt server deps installed:
+     ```bash
+     cd .agentlayer/mcp/agentlayer-prompts && npm install && cd -
+     ```
+  3) restart Claude Code after MCP config changes
+
+**Confirm slash commands (MCP prompts)**
+- In Claude Code, invoke the MCP prompt using its MCP prompt UI/namespace (varies by client build).
+- Quick sanity check: the prompt list should include your workflow prompt name (e.g., `find-issues`).
+- If missing:
+  1) run `node .agentlayer/sync/sync.mjs`
+  2) restart Claude Code
+  3) ensure the MCP server process can run (Node installed, deps installed)
+
+---
+
+### Codex (CLI / VS Code extension)
+
+**MCP config**
+- Codex MCP configuration is typically user-level unless you deliberately set a repo-local `CODEX_HOME`.
+- Agentlayer uses **Codex Skills** (and optional rules) as the primary “workflow command” mechanism.
+
+**Confirm workflow “commands” (Codex Skills)**
+- Skills are generated into: `.codex/skills/*/SKILL.md`
+- Quick check:
+  ```bash
+  ls -la .codex/skills
+  ```
+- In Codex, use:
+  - `/skills` to browse skills
+  - then select the appropriate skill (e.g., `find-issues`)
+
+**If a skill is missing**
+1) run `node .agentlayer/sync/sync.mjs`
+2) verify the workflow exists: `.agentlayer/workflows/<workflow>.md`
+3) verify `.codex/skills/<workflow>/SKILL.md` was generated
+
+**Common failure mode**
+- Codex may require a restart to pick up new/updated skills.
+
+---
 
 ## What’s inside this repository
 
@@ -179,22 +293,26 @@ If you changed `.agentlayer/workflows/*.md`:
   Workflow definitions (exposed as MCP prompts; also used to generate Codex skills).
 - `.agentlayer/mcp/servers.json`  
   Canonical MCP server list (no secrets inside).
+- `.agentlayer/policy/`  
+  Auto-approve command allowlist (safe shell command prefixes).
 
 ### Generated outputs
 - Instruction shims:
   - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
 - MCP configs projected per client:
   - `.mcp.json`, `.gemini/settings.json`, `.vscode/mcp.json`
+- Command allowlist configs projected per client:
+  - `.gemini/settings.json`, `.claude/settings.json`, `.vscode/settings.json`, `.codex/rules/agentlayer.rules`
 - Codex skills:
   - `.codex/skills/*/SKILL.md`
 
 ### Scripts
 - `.agentlayer/setup.sh`  
   One-shot setup (install MCP deps, enable hooks, validate).
-- `.agentlayer/sync.mjs`  
+- `.agentlayer/sync/sync.mjs`  
   Generator (“build”) for all shims/configs/skills.
 - `./al`  
-  Repo-local launcher; default is sync every run, then load `.agentlayer/.env`. Edit `al` to choose a different behavior.
+  Repo-local launcher (sync + env load + exec).
 
 ## FAQ / Troubleshooting
 
@@ -204,31 +322,34 @@ Generated JSON files (`.mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`) 
 Fix:
 1) revert the generated file(s)
 2) edit the source-of-truth (`.agentlayer/mcp/servers.json`)
-3) run `node .agentlayer/sync.mjs`
+3) run `node .agentlayer/sync/sync.mjs`
 
 ### “I edited instructions but the agent didn’t follow them.”
-- Did you run `node .agentlayer/sync.mjs` (or run via `./al ...`)?
+- Did you run `node .agentlayer/sync/sync.mjs` (or run via `./al ...`)?
 - Did you restart the session/client (many tools read system instructions at session start)?
-- For Gemini CLI, run memory refresh; for others, start a new session.
+- For Gemini CLI, refresh memory (often `/memory refresh`) or start a new session.
 
 ### “I edited workflows but the prompt/command list didn’t update.”
-- Run `node .agentlayer/sync.mjs`
-- Refresh MCP discovery (Gemini: `/mcp refresh`; VS Code: restart server/reset cached tools; Claude: reconnect/restart).
+- Run `node .agentlayer/sync/sync.mjs`
+- Restart/refresh MCP discovery:
+  - Gemini: restart Gemini and/or run MCP refresh if available in your build
+  - VS Code: restart servers / reset cached tools
+  - Claude Code: restart Claude Code after MCP config changes
 
 ### “Commits are failing after enabling hooks.”
 The hook runs:
 
 ```bash
-node .agentlayer/sync.mjs --check
+node .agentlayer/sync/sync.mjs --check
 ```
 
 If it fails, run:
 
 ```bash
-node .agentlayer/sync.mjs
+node .agentlayer/sync/sync.mjs
 ```
 
 Then commit again.
 
 ### “Can I rename the instruction files?”
-Yes. Keep numeric prefixes if you want stable ordering without changing `sync.mjs`.
+Yes. Keep numeric prefixes if you want stable ordering without changing `.agentlayer/sync/sync.mjs`.

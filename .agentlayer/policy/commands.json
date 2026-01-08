@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "allowed": [
+    { "argv": ["git", "status"], "description": "Inspect repo status" },
+    { "argv": ["git", "diff"], "description": "Inspect changes" },
+    { "argv": ["git", "log"], "description": "Inspect history" },
+    { "argv": ["git", "show"], "description": "Inspect commit/file contents" },
+
+    { "argv": ["ls"], "description": "List files" },
+    { "argv": ["pwd"], "description": "Print working directory" },
+    { "argv": ["echo"], "description": "Echo text" }
+  ]
+}

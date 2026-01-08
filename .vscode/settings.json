@@ -1,0 +1,11 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "/^git status(\\b.*)?$/": true,
+    "/^git diff(\\b.*)?$/": true,
+    "/^git log(\\b.*)?$/": true,
+    "/^git show(\\b.*)?$/": true,
+    "/^ls(\\b.*)?$/": true,
+    "/^pwd(\\b.*)?$/": true,
+    "/^echo(\\b.*)?$/": true
+  }
+}

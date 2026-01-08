@@ -19,7 +19,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "$REPO_ROOT"
 
 [[ -d ".agentlayer" ]] || die "Missing .agentlayer/ directory. Run the bootstrap script in the repo root first."
-[[ -f ".agentlayer/sync.mjs" ]] || die "Missing .agentlayer/sync.mjs. Re-run bootstrap or restore it."
+[[ -f ".agentlayer/sync/sync.mjs" ]] || die "Missing .agentlayer/sync/sync.mjs. Re-run bootstrap or restore it."
 
 command -v node >/dev/null 2>&1 || die "Node.js is required (node not found). Install Node, then re-run."
 command -v npm >/dev/null 2>&1 || die "npm is required (npm not found). Install npm/Node, then re-run."
@@ -34,7 +34,7 @@ else
 fi
 
 say "==> Running agentlayer sync"
-node .agentlayer/sync.mjs
+node .agentlayer/sync/sync.mjs
 
 say "==> Installing MCP prompt server dependencies"
 if [[ -f ".agentlayer/mcp/agentlayer-prompts/package.json" ]]; then
@@ -63,7 +63,7 @@ else
 fi
 
 say "==> Verifying sync is up-to-date (check mode)"
-node .agentlayer/sync.mjs --check
+node .agentlayer/sync/sync.mjs --check
 
 say ""
 say "Setup complete."
@@ -72,7 +72,7 @@ say "Next:"
 say "  - Edit instructions: .agentlayer/instructions/*.md"
 say "  - Edit workflows:    .agentlayer/workflows/*.md"
 say "  - Edit MCP servers:  .agentlayer/mcp/servers.json"
-say "  - Regenerate:        node .agentlayer/sync.mjs"
+say "  - Regenerate:        node .agentlayer/sync/sync.mjs"
 say ""
 say "Secrets:"
 say "  - Copy .env.example -> .env (do not commit)"

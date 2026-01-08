@@ -6,7 +6,7 @@ description: proactive code quality audit to find over-engineering, bad practice
 <!--
   GENERATED FILE - DO NOT EDIT DIRECTLY
   Source: .agentlayer/workflows/find-issues.md
-  Regenerate: node .agentlayer/sync.mjs
+  Regenerate: node .agentlayer/sync/sync.mjs
 -->
 
 # find-issues
