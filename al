@@ -7,7 +7,10 @@ set -euo pipefail
 # Uncomment exactly one option below (leave the rest commented).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+PATHS_SH="$SCRIPT_DIR/.agentlayer/lib/paths.sh"
+if [[ ! -f "$PATHS_SH" ]]; then
+  PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+fi
 if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
@@ -18,7 +21,7 @@ fi
 # shellcheck disable=SC1090
 source "$PATHS_SH"
 
-WORKING_ROOT="$(resolve_working_root "$PWD" "$SCRIPT_DIR" || true)"
+WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
 
 if [[ -z "$WORKING_ROOT" ]]; then
   echo "ERROR: Missing .agentlayer/ directory in this path or any parent." >&2

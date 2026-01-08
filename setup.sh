@@ -24,7 +24,7 @@ fi
 # shellcheck disable=SC1090
 source "$PATHS_SH"
 
-WORKING_ROOT="$(resolve_working_root "$PWD" "$SCRIPT_DIR" || true)"
+WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
 
 [[ -n "$WORKING_ROOT" ]] || die "Missing .agentlayer/ directory in this path or any parent."
 AGENTLAYER_ROOT="$WORKING_ROOT/.agentlayer"
