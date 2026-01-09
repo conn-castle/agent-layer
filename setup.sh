@@ -68,9 +68,13 @@ if [[ "$IN_GIT_REPO" == "1" ]]; then
     die "Missing .agentlayer/.githooks/pre-commit"
   fi
 
-  say "==> Testing pre-commit hook"
-  # Run hook directly from repo root.
-  "$AGENTLAYER_ROOT/.githooks/pre-commit"
+  if [[ "${AGENTLAYER_SKIP_HOOK_TEST:-}" == "1" ]]; then
+    say "==> Skipping pre-commit hook test (AGENTLAYER_SKIP_HOOK_TEST=1)"
+  else
+    say "==> Testing pre-commit hook"
+    # Run hook directly from repo root.
+    "$AGENTLAYER_ROOT/.githooks/pre-commit"
+  fi
 else
   say "Skipping hook enable/test (not a git repo)."
 fi
@@ -79,14 +83,14 @@ say "==> Verifying sync is up-to-date (check mode)"
 node "$AGENTLAYER_ROOT/sync/sync.mjs" --check
 
 say ""
-say "Setup complete."
+say "Setup complete (manual steps below are required)."
 say ""
-say "Next:"
-say "  - Edit instructions: .agentlayer/instructions/*.md"
-say "  - Edit workflows:    .agentlayer/workflows/*.md"
-say "  - Edit MCP servers:  .agentlayer/mcp/servers.json"
-say "  - Regenerate:        node .agentlayer/sync/sync.mjs"
+say "Required manual steps (do all of these):"
+say "  1) Create/fill .agentlayer/.env (copy from .env.example; do not commit)"
+say "  2) Edit instructions: .agentlayer/instructions/*.md"
+say "  3) Edit workflows:    .agentlayer/workflows/*.md"
+say "  4) Edit MCP servers:  .agentlayer/mcp/servers.json"
 say ""
-say "Secrets:"
-say "  - Copy .agentlayer/.env.example -> .agentlayer/.env (do not commit)"
-say "  - Use: ./.agentlayer/with-env.sh <cmd> to load .agentlayer/.env for CLIs"
+say "Note: ./al automatically runs sync before each command."
+say "If you do not use ./al, regenerate manually:"
+say "  node .agentlayer/sync/sync.mjs"

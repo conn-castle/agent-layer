@@ -1,6 +1,7 @@
 # Agentlayer (repo-local agent standardization)
 
-This repository includes a repo-local standardization layer under `.agentlayer/`.
+This repository is the agent-layer and is intended to live at `.agentlayer/` inside a working repo.
+Paths in this README are relative to the agent-layer repo root unless noted as working-repo outputs; prefix with `.agentlayer/` when running from the working repo root.
 
 ## What this is for
 
@@ -31,21 +32,21 @@ Note: This tooling is built for macOS. Other operating systems are untested, and
 
 ## Quickstart
 
-From repo root:
+From the agent-layer repo root (inside `.agentlayer/` in your working repo):
 
 1) **Run setup (installs deps, enables hooks, verifies everything)**
 
 ```bash
-chmod +x .agentlayer/setup.sh
-./.agentlayer/setup.sh
+chmod +x setup.sh
+./setup.sh
 ```
 
 2) **Create your Agentlayer env file (recommended: agent-only secrets)**
 
 ```bash
 # Recommended: keep agent-only secrets separate from project env vars
-cp .agentlayer/.env.example .agentlayer/.env
-# edit .agentlayer/.env; do not commit it
+cp .env.example .env
+# edit .env; do not commit it
 ```
 
 If you also use a project/dev `.env` for your application, keep it separate and do not mix agent-only tokens into it.
@@ -53,13 +54,14 @@ If you also use a project/dev `.env` for your application, keep it separate and 
 3) **Create the repo-local launcher `./al` (recommended)**
 
 ```bash
-chmod +x .agentlayer/al
+chmod +x al
+# from the working repo root:
 ln -s .agentlayer/al ./al
 ```
 
 This symlink is intended to live at the working repo root.
 
-Default behavior: sync every run via `node .agentlayer/sync/sync.mjs`, then load `.agentlayer/.env` and exec the command (via `.agentlayer/with-env.sh`).
+Default behavior: sync every run via `node sync/sync.mjs`, then load `.env` and exec the command (via `with-env.sh`).
 
 Examples:
 
@@ -70,15 +72,15 @@ Examples:
 ```
 
 4) **Edit sources of truth**
-- Unified instructions: `.agentlayer/instructions/*.md`
-- Workflows: `.agentlayer/workflows/*.md`
-- MCP server catalog: `.agentlayer/mcp/servers.json`
-- Command allowlist: `.agentlayer/policy/commands.json`
+- Unified instructions: `instructions/*.md`
+- Workflows: `workflows/*.md`
+- MCP server catalog: `mcp/servers.json`
+- Command allowlist: `policy/commands.json`
 
 5) **Regenerate after changes**
 
 ```bash
-node .agentlayer/sync/sync.mjs
+node sync/sync.mjs
 ```
 
 ## How to use (day-to-day)
@@ -87,8 +89,8 @@ node .agentlayer/sync/sync.mjs
 
 `./al` is intentionally minimal. By default it:
 
-1) Runs `node .agentlayer/sync/sync.mjs` (or `--check` then regenerates if out of date, depending on your `al`)
-2) Loads `.agentlayer/.env` via `.agentlayer/with-env.sh`
+1) Runs `node sync/sync.mjs` (or `--check` then regenerates if out of date, depending on your `al`)
+2) Loads `.env` via `with-env.sh`
 3) Executes the command
 
 Examples:
@@ -102,10 +104,10 @@ Examples:
 For a one-off run that also includes project env (if configured), use:
 
 ```bash
-./.agentlayer/with-env.sh --project-env gemini
+./with-env.sh --project-env gemini
 ```
 
-`.agentlayer/with-env.sh` resolves the repo root for env file paths and does not change your working directory.
+`with-env.sh` resolves the repo root for env file paths and does not change your working directory.
 
 ### Debugging trick (verify env vars are being loaded)
 
@@ -116,12 +118,12 @@ For a one-off run that also includes project env (if configured), use:
 ### What files you should and should not edit
 
 **Edit these (sources of truth):**
-- `.agentlayer/instructions/*.md`
-- `.agentlayer/workflows/*.md`
-- `.agentlayer/mcp/servers.json`
-- `.agentlayer/policy/commands.json`
+- `instructions/*.md`
+- `workflows/*.md`
+- `mcp/servers.json`
+- `policy/commands.json`
 
-**Do not edit these directly (generated):**
+**Do not edit these directly (generated in the working repo root):**
 - `AGENTS.md`
 - `CLAUDE.md`
 - `GEMINI.md`
@@ -142,28 +144,28 @@ git checkout -- .mcp.json
 
 ### Instruction file ordering (why the numbers)
 
-`.agentlayer/sync/sync.mjs` concatenates `.agentlayer/instructions/*.md` in **lexicographic order**.
+`sync/sync.mjs` concatenates `instructions/*.md` in **lexicographic order**.
 
 Numeric prefixes (e.g. `00_`, `10_`, `20_`) ensure a **stable, predictable ordering** without requiring a separate manifest/config file. If you add new instruction fragments, follow the same pattern.
 
 ## Refresh / restart guidance (failure modes)
 
 General rule:
-- After changing source-of-truth files (`.agentlayer/instructions/`, `.agentlayer/workflows/`, `.agentlayer/mcp/servers.json`, `.agentlayer/policy/commands.json`) → run `node .agentlayer/sync/sync.mjs` (or run your CLI via `./al ...`) → then refresh/restart the client as needed.
+- After changing source-of-truth files (`instructions/`, `workflows/`, `mcp/servers.json`, `policy/commands.json`) → run `node sync/sync.mjs` (or run your CLI via `./al ...`) → then refresh/restart the client as needed.
 
 ### MCP prompt server (workflows as “slash commands”)
 
 Workflows are exposed as MCP prompts by:
-- `.agentlayer/mcp/agentlayer-prompts/server.mjs`
+- `mcp/agentlayer-prompts/server.mjs`
 
 **Required one-time install (per machine / per clone):**
 ```bash
-cd .agentlayer/mcp/agentlayer-prompts
+cd mcp/agentlayer-prompts
 npm install
 ```
 
-If you changed `.agentlayer/workflows/*.md`:
-- run `node .agentlayer/sync/sync.mjs` (or `./al <cmd>`)
+If you changed `workflows/*.md`:
+- run `node sync/sync.mjs` (or `./al <cmd>`)
 - then refresh MCP discovery in your client (or restart the client/session)
 
 ---
@@ -178,7 +180,7 @@ Each section below answers two questions:
 ### Gemini CLI
 
 **MCP config file**
-- Project MCP config is in: `.gemini/settings.json` (generated).
+- Project MCP config is in the working repo root: `.gemini/settings.json` (generated).
 - Quick check:
   ```bash
   cat .gemini/settings.json
@@ -188,7 +190,7 @@ Each section below answers two questions:
 **Confirm the MCP server can start**
 - Ensure Node deps are installed:
   ```bash
-  cd .agentlayer/mcp/agentlayer-prompts && npm install && cd -
+  cd mcp/agentlayer-prompts && npm install && cd -
   ```
 - Then run Gemini via `./al gemini`.
 
@@ -197,19 +199,19 @@ Each section below answers two questions:
   - `/find-issues`
 - If it’s present, it will expand and run the workflow prompt.
 - If it’s missing:
-  1) run `node .agentlayer/sync/sync.mjs`
+  1) run `node sync/sync.mjs`
   2) restart Gemini
   3) confirm `.gemini/settings.json` still lists `agentlayer` under `mcpServers`
 
 **Common failure mode**
-- If Gemini prompts for approvals on shell commands like `git status`, that is a *shell tool approval*, not MCP. (Solving this uses the repo allowlist `.agentlayer/policy/commands.json` projected into Gemini’s `tools.allowed`.)
+- If Gemini prompts for approvals on shell commands like `git status`, that is a *shell tool approval*, not MCP. (Solving this uses the repo allowlist `policy/commands.json` projected into Gemini’s `tools.allowed`.)
 
 ---
 
 ### VS Code / Copilot Chat
 
 **MCP config file**
-- Project MCP config is in: `.vscode/mcp.json` (generated).
+- Project MCP config is in the working repo root: `.vscode/mcp.json` (generated).
 - Quick check:
   ```bash
   cat .vscode/mcp.json
@@ -234,7 +236,7 @@ Each section below answers two questions:
 ### Claude Code
 
 **MCP config file**
-- Project MCP config is in: `.mcp.json` (generated).
+- Project MCP config is in the working repo root: `.mcp.json` (generated).
 - Quick check:
   ```bash
   cat .mcp.json
@@ -249,7 +251,7 @@ Each section below answers two questions:
   1) verify `.mcp.json` exists and includes `mcpServers.agentlayer`
   2) ensure MCP prompt server deps installed:
      ```bash
-     cd .agentlayer/mcp/agentlayer-prompts && npm install && cd -
+     cd mcp/agentlayer-prompts && npm install && cd -
      ```
   3) restart Claude Code after MCP config changes
 
@@ -257,7 +259,7 @@ Each section below answers two questions:
 - In Claude Code, invoke the MCP prompt using its MCP prompt UI/namespace (varies by client build).
 - Quick sanity check: the prompt list should include your workflow prompt name (e.g., `find-issues`).
 - If missing:
-  1) run `node .agentlayer/sync/sync.mjs`
+  1) run `node sync/sync.mjs`
   2) restart Claude Code
   3) ensure the MCP server process can run (Node installed, deps installed)
 
@@ -270,7 +272,7 @@ Each section below answers two questions:
 - Agentlayer uses **Codex Skills** (and optional rules) as the primary “workflow command” mechanism.
 
 **Confirm workflow “commands” (Codex Skills)**
-- Skills are generated into: `.codex/skills/*/SKILL.md`
+- Skills are generated into the working repo root: `.codex/skills/*/SKILL.md`
 - Quick check:
   ```bash
   ls -la .codex/skills
@@ -280,8 +282,8 @@ Each section below answers two questions:
   - then select the appropriate skill (e.g., `find-issues`)
 
 **If a skill is missing**
-1) run `node .agentlayer/sync/sync.mjs`
-2) verify the workflow exists: `.agentlayer/workflows/<workflow>.md`
+1) run `node sync/sync.mjs`
+2) verify the workflow exists: `workflows/<workflow>.md`
 3) verify `.codex/skills/<workflow>/SKILL.md` was generated
 
 **Common failure mode**
@@ -292,13 +294,13 @@ Each section below answers two questions:
 ## What’s inside this repository
 
 ### Source-of-truth directories
-- `.agentlayer/instructions/`  
+- `instructions/`  
   Unified instruction fragments (concatenated into shims).
-- `.agentlayer/workflows/`  
+- `workflows/`  
   Workflow definitions (exposed as MCP prompts; also used to generate Codex skills).
-- `.agentlayer/mcp/servers.json`  
+- `mcp/servers.json`  
   Canonical MCP server list (no secrets inside).
-- `.agentlayer/policy/`  
+- `policy/`  
   Auto-approve command allowlist (safe shell command prefixes).
 
 ### Project memory files (in working repo)
@@ -311,7 +313,7 @@ Each section below answers two questions:
 - `docs/DECISIONS.md`  
   Rolling log of important decisions (brief).
 
-### Generated outputs
+### Generated outputs (in working repo root)
 - Instruction shims:
   - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
 - MCP configs projected per client:
@@ -322,18 +324,19 @@ Each section below answers two questions:
   - `.codex/skills/*/SKILL.md`
 
 ### Scripts
-- `.agentlayer/setup.sh`  
+- `setup.sh`  
   One-shot setup (install MCP deps, enable hooks, validate).
-- `.agentlayer/sync/sync.mjs`  
+- `sync/sync.mjs`  
   Generator (“build”) for all shims/configs/skills.
-- `.agentlayer/clean.sh`  
+- `clean.sh`  
   Remove generated shims/configs/skills so they can be regenerated.
 - `./al`  
-  Repo-local launcher (sync + env load + exec).
+  Repo-local launcher (sync + env load + exec; symlink recommended at working repo root).
 
 ### Testing
-- Requires `bats` (macOS: `brew install bats-core`; Ubuntu: `apt-get install bats`).
-- Run: `./.agentlayer/tests/run.sh`
+- Requires `bats` (macOS: `brew install bats-core`; Ubuntu: `apt-get install bats`) to contribute.
+- This is a development prerequisite and is not required to use the tool.
+- Run: `./tests/run.sh`
 
 ## FAQ / Troubleshooting
 
@@ -342,16 +345,16 @@ Generated JSON files (`.mcp.json`, `.vscode/mcp.json`, `.gemini/settings.json`) 
 
 Fix:
 1) revert the generated file(s)
-2) edit the source-of-truth (`.agentlayer/mcp/servers.json`)
-3) run `node .agentlayer/sync/sync.mjs`
+2) edit the source-of-truth (`mcp/servers.json`)
+3) run `node sync/sync.mjs`
 
 ### “I edited instructions but the agent didn’t follow them.”
-- Did you run `node .agentlayer/sync/sync.mjs` (or run via `./al ...`)?
+- Did you run `node sync/sync.mjs` (or run via `./al ...`)?
 - Did you restart the session/client (many tools read system instructions at session start)?
 - For Gemini CLI, refresh memory (often `/memory refresh`) or start a new session.
 
 ### “I edited workflows but the prompt/command list didn’t update.”
-- Run `node .agentlayer/sync/sync.mjs`
+- Run `node sync/sync.mjs`
 - Restart/refresh MCP discovery:
   - Gemini: restart Gemini and/or run MCP refresh if available in your build
   - VS Code: restart servers / reset cached tools
@@ -361,16 +364,16 @@ Fix:
 The hook runs:
 
 ```bash
-node .agentlayer/sync/sync.mjs --check
+node sync/sync.mjs --check
 ```
 
 If it fails, run:
 
 ```bash
-node .agentlayer/sync/sync.mjs
+node sync/sync.mjs
 ```
 
 Then commit again.
 
 ### “Can I rename the instruction files?”
-Yes. Keep numeric prefixes if you want stable ordering without changing `.agentlayer/sync/sync.mjs`.
+Yes. Keep numeric prefixes if you want stable ordering without changing `sync/sync.mjs`.
