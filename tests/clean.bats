@@ -18,17 +18,17 @@ load "helpers.bash"
   : >"$root/.claude/settings.json"
   : >"$root/.vscode/mcp.json"
   : >"$root/.vscode/settings.json"
-  : >"$root/.codex/rules/agentlayer.rules"
+  : >"$root/.codex/rules/agent-layer.rules"
   : >"$root/.codex/skills/foo/SKILL.md"
 
-  mkdir -p "$root/.agentlayer/instructions" "$root/.agentlayer/workflows"
-  mkdir -p "$root/.agentlayer/mcp" "$root/.agentlayer/policy"
-  : >"$root/.agentlayer/instructions/01_test.md"
-  : >"$root/.agentlayer/workflows/01_test.md"
-  : >"$root/.agentlayer/mcp/servers.json"
-  : >"$root/.agentlayer/policy/commands.json"
+  mkdir -p "$root/.agent-layer/instructions" "$root/.agent-layer/workflows"
+  mkdir -p "$root/.agent-layer/mcp" "$root/.agent-layer/policy"
+  : >"$root/.agent-layer/instructions/01_test.md"
+  : >"$root/.agent-layer/workflows/01_test.md"
+  : >"$root/.agent-layer/mcp/servers.json"
+  : >"$root/.agent-layer/policy/commands.json"
 
-  run "$root/.agentlayer/clean.sh"
+  run "$root/.agent-layer/clean.sh"
   [ "$status" -eq 0 ]
 
   [ ! -f "$root/AGENTS.md" ]
@@ -40,14 +40,14 @@ load "helpers.bash"
   [ ! -f "$root/.claude/settings.json" ]
   [ ! -f "$root/.vscode/mcp.json" ]
   [ ! -f "$root/.vscode/settings.json" ]
-  [ ! -f "$root/.codex/rules/agentlayer.rules" ]
+  [ ! -f "$root/.codex/rules/agent-layer.rules" ]
   [ ! -f "$root/.codex/skills/foo/SKILL.md" ]
   [ ! -d "$root/.codex/skills" ]
 
-  [ -f "$root/.agentlayer/instructions/01_test.md" ]
-  [ -f "$root/.agentlayer/workflows/01_test.md" ]
-  [ -f "$root/.agentlayer/mcp/servers.json" ]
-  [ -f "$root/.agentlayer/policy/commands.json" ]
+  [ -f "$root/.agent-layer/instructions/01_test.md" ]
+  [ -f "$root/.agent-layer/workflows/01_test.md" ]
+  [ -f "$root/.agent-layer/mcp/servers.json" ]
+  [ -f "$root/.agent-layer/policy/commands.json" ]
 
   rm -rf "$root"
 }

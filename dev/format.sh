@@ -10,15 +10,15 @@ if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../../lib/paths.sh"
 fi
 if [[ ! -f "$PATHS_SH" ]]; then
-  die "Missing lib/paths.sh (expected near .agentlayer/)."
+  die "Missing lib/paths.sh (expected near .agent-layer/)."
 fi
 # shellcheck disable=SC1090
 source "$PATHS_SH"
 
 WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
-[[ -n "$WORKING_ROOT" ]] || die "Missing .agentlayer/ directory in this path or any parent."
+[[ -n "$WORKING_ROOT" ]] || die "Missing .agent-layer/ directory in this path or any parent."
 
-AGENTLAYER_ROOT="$WORKING_ROOT/.agentlayer"
+AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
 require_cmd() {
   local cmd="$1" hint="$2"
@@ -35,7 +35,7 @@ if [[ -x "$PRETTIER_BIN" ]]; then
 elif command -v prettier >/dev/null 2>&1; then
   PRETTIER="$(command -v prettier)"
 else
-  die "prettier not found. Run: (cd .agentlayer && npm install) or install globally."
+  die "prettier not found. Run: (cd .agent-layer && npm install) or install globally."
 fi
 
 say "==> Shell format (shfmt)"

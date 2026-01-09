@@ -32,9 +32,9 @@
 1. **Code Verification:** Always read and understand relevant files before proposing or making edits. Do not speculate about code you have not inspected.
 2. **Context Economy:** When searching for files or context during implementation, limit exploration to the specific service or directory relevant to the request. Do not scan the entire repository unless necessary.
 3. **Git Safety:** Never commit changes. Ask the user to commit changes.
-4. **Temporary Files:** Generate all temporary or debugging files in `./.agentlayer/tmp`.
+4. **Temporary Files:** Generate all temporary or debugging files in `./.agent-layer/tmp`.
 5. **Schema Safety:** Never modify the database schema via raw structured query language or direct tool access. Always generate a proper migration file using the project’s migration system, and ask the user to apply it.
-6. **Debugging Strategy:** Debugging follows a strict red-then-green loop: reproduce the bug with a persistent automated test case, then fix it. Avoid one-off scripts unless a test case is impossible. If a one-off script is required, place it in `./.agentlayer/tmp` and delete it immediately after use.
+6. **Debugging Strategy:** Debugging follows a strict red-then-green loop: reproduce the bug with a persistent automated test case, then fix it. Avoid one-off scripts unless a test case is impossible. If a one-off script is required, place it in `./.agent-layer/tmp` and delete it immediately after use.
 7. **Definition of Done:** A task is not complete until:
    - tests are written or updated to cover the change,
    - code is documented with docstrings where appropriate,

@@ -29,7 +29,7 @@ function parseFrontMatter(markdown) {
 function findWorkflowsDir(startDir) {
   let dir = path.resolve(startDir);
   for (let i = 0; i < 50; i++) {
-    const wf = path.join(dir, ".agentlayer", "workflows");
+    const wf = path.join(dir, ".agent-layer", "workflows");
     if (fs.existsSync(wf)) return wf;
     const parent = path.dirname(dir);
     if (parent === dir) break;
@@ -63,7 +63,7 @@ function loadWorkflows() {
 }
 
 const server = new Server(
-  { name: "agentlayer-prompts", version: "0.1.0" },
+  { name: "agent-layer-prompts", version: "0.1.0" },
   { capabilities: { prompts: {} } }
 );
 
@@ -105,7 +105,7 @@ server.setRequestHandler(GetPromptRequestSchema, async (request) => {
             `---\n` +
             `Notes:\n` +
             `- Follow the workflow exactly.\n` +
-            `- If you modify .agentlayer/**, run: node .agentlayer/sync/sync.mjs\n`,
+            `- If you modify .agent-layer/**, run: node .agent-layer/sync/sync.mjs\n`,
         },
       },
     ],

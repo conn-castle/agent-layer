@@ -2,18 +2,18 @@
 
 load "helpers.bash"
 
-create_min_agentlayer() {
+create_min_agent_layer() {
   local root="$1"
-  mkdir -p "$root/.agentlayer/sync"
-  cat >"$root/.agentlayer/setup.sh" <<'EOF'
+  mkdir -p "$root/.agent-layer/sync"
+  cat >"$root/.agent-layer/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 exit 0
 EOF
-  chmod +x "$root/.agentlayer/setup.sh"
-  printf "EXAMPLE=1\n" >"$root/.agentlayer/.env.example"
-  : >"$root/.agentlayer/sync/sync.mjs"
-  git -C "$root/.agentlayer" init -q
+  chmod +x "$root/.agent-layer/setup.sh"
+  printf "EXAMPLE=1\n" >"$root/.agent-layer/.env.example"
+  : >"$root/.agent-layer/sync/sync.mjs"
+  git -C "$root/.agent-layer" init -q
 }
 
 create_source_repo() {
@@ -34,20 +34,20 @@ EOF
   git -C "$repo" commit -m "init" -q
 }
 
-@test "installer updates an existing agentlayer .gitignore block in place" {
+@test "installer updates an existing agent-layer .gitignore block in place" {
   local root work stub_bin installer gitignore
   root="$(make_tmp_dir)"
   work="$root/work"
   mkdir -p "$work"
   git -C "$work" init -q
-  create_min_agentlayer "$work"
+  create_min_agent_layer "$work"
 
   cat >"$work/.gitignore" <<'EOF'
 start
 
-# >>> agentlayer
+# >>> agent-layer
 old
-# <<< agentlayer
+# <<< agent-layer
 
 end
 EOF
@@ -59,8 +59,8 @@ EOF
 
   gitignore="$work/.gitignore"
   start_line="$(grep -n '^start$' "$gitignore" | cut -d: -f1)"
-  block_start="$(grep -n '^# >>> agentlayer$' "$gitignore" | cut -d: -f1)"
-  block_end="$(grep -n '^# <<< agentlayer$' "$gitignore" | cut -d: -f1)"
+  block_start="$(grep -n '^# >>> agent-layer$' "$gitignore" | cut -d: -f1)"
+  block_end="$(grep -n '^# <<< agent-layer$' "$gitignore" | cut -d: -f1)"
   end_line="$(grep -n '^end$' "$gitignore" | cut -d: -f1)"
 
   [ "$start_line" -lt "$block_start" ]
@@ -74,26 +74,26 @@ EOF
   rm -rf "$root"
 }
 
-@test "installer removes duplicate agentlayer blocks and keeps the first position" {
+@test "installer removes duplicate agent-layer blocks and keeps the first position" {
   local root work stub_bin installer gitignore
   root="$(make_tmp_dir)"
   work="$root/work"
   mkdir -p "$work"
   git -C "$work" init -q
-  create_min_agentlayer "$work"
+  create_min_agent_layer "$work"
 
   cat >"$work/.gitignore" <<'EOF'
 top
 
-# >>> agentlayer
+# >>> agent-layer
 old-one
-# <<< agentlayer
+# <<< agent-layer
 
 middle
 
-# >>> agentlayer
+# >>> agent-layer
 old-two
-# <<< agentlayer
+# <<< agent-layer
 
 bottom
 EOF
@@ -107,9 +107,9 @@ EOF
   top_line="$(grep -n '^top$' "$gitignore" | cut -d: -f1)"
   middle_line="$(grep -n '^middle$' "$gitignore" | cut -d: -f1)"
   bottom_line="$(grep -n '^bottom$' "$gitignore" | cut -d: -f1)"
-  block_start="$(grep -n '^# >>> agentlayer$' "$gitignore" | cut -d: -f1)"
-  block_end="$(grep -n '^# <<< agentlayer$' "$gitignore" | cut -d: -f1)"
-  block_count="$(grep -c '^# >>> agentlayer$' "$gitignore")"
+  block_start="$(grep -n '^# >>> agent-layer$' "$gitignore" | cut -d: -f1)"
+  block_end="$(grep -n '^# <<< agent-layer$' "$gitignore" | cut -d: -f1)"
+  block_count="$(grep -c '^# >>> agent-layer$' "$gitignore")"
 
   [ "$block_count" -eq 1 ]
   [ "$top_line" -lt "$block_start" ]
@@ -120,13 +120,13 @@ EOF
   rm -rf "$root"
 }
 
-@test "installer appends agentlayer block when missing" {
+@test "installer appends agent-layer block when missing" {
   local root work stub_bin installer gitignore
   root="$(make_tmp_dir)"
   work="$root/work"
   mkdir -p "$work"
   git -C "$work" init -q
-  create_min_agentlayer "$work"
+  create_min_agent_layer "$work"
 
   printf "top\n" >"$work/.gitignore"
   stub_bin="$(create_stub_tools "$root")"
@@ -135,8 +135,8 @@ EOF
   [ "$status" -eq 0 ]
 
   gitignore="$work/.gitignore"
-  grep -q '^# >>> agentlayer$' "$gitignore"
-  grep -q '^# <<< agentlayer$' "$gitignore"
+  grep -q '^# >>> agent-layer$' "$gitignore"
+  grep -q '^# <<< agent-layer$' "$gitignore"
   grep -q '^al$' "$gitignore"
   grep -q '^\.codex/$' "$gitignore"
   grep -q '^\.gemini/$' "$gitignore"
@@ -146,18 +146,18 @@ EOF
   rm -rf "$root"
 }
 
-@test "installer errors when .agentlayer exists but is not a git repo" {
+@test "installer errors when .agent-layer exists but is not a git repo" {
   local root work stub_bin installer
   root="$(make_tmp_dir)"
   work="$root/work"
-  mkdir -p "$work/.agentlayer"
+  mkdir -p "$work/.agent-layer"
   git -C "$work" init -q
 
   stub_bin="$(create_stub_tools "$root")"
   installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
   run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer'"
   [ "$status" -ne 0 ]
-  [[ "$output" == *".agentlayer exists but is not a git repo"* ]]
+  [[ "$output" == *".agent-layer exists but is not a git repo"* ]]
 
   rm -rf "$root"
 }
@@ -168,7 +168,7 @@ EOF
   work="$root/work"
   mkdir -p "$work"
   git -C "$work" init -q
-  create_min_agentlayer "$work"
+  create_min_agent_layer "$work"
 
   printf "original\n" >"$work/al"
   stub_bin="$(create_stub_tools "$root")"
@@ -186,14 +186,14 @@ EOF
   work="$root/work"
   mkdir -p "$work"
   git -C "$work" init -q
-  create_min_agentlayer "$work"
+  create_min_agent_layer "$work"
 
   printf "original\n" >"$work/al"
   stub_bin="$(create_stub_tools "$root")"
   installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
   run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer' --force"
   [ "$status" -eq 0 ]
-  grep -q '\.agentlayer/al' "$work/al"
+  grep -q '\.agent-layer/al' "$work/al"
 
   rm -rf "$root"
 }
@@ -210,7 +210,7 @@ EOF
   rm -rf "$root"
 }
 
-@test "installer clones from local repo when .agentlayer is missing" {
+@test "installer clones from local repo when .agent-layer is missing" {
   local root work src stub_bin installer
   root="$(make_tmp_dir)"
   work="$root/work"
@@ -224,9 +224,9 @@ EOF
   run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer' --repo-url '$src'"
   [ "$status" -eq 0 ]
 
-  [ -d "$work/.agentlayer/.git" ]
-  [ -f "$work/.agentlayer/.env" ]
-  grep -q '^# >>> agentlayer$' "$work/.gitignore"
+  [ -d "$work/.agent-layer/.git" ]
+  [ -f "$work/.agent-layer/.env" ]
+  grep -q '^# >>> agent-layer$' "$work/.gitignore"
 
   rm -rf "$root"
 }

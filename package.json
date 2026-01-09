@@ -1,5 +1,5 @@
 {
-  "name": "agentlayer-dev",
+  "name": "agent-layer-dev",
   "private": true,
   "engines": {
     "node": ">=20"

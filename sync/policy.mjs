@@ -51,7 +51,7 @@ export function validateCommandPolicy(policy, filePath) {
 }
 
 /**
- * Load command policy from agentlayer root.
+ * Load command policy from the .agent-layer root.
  * @param {string} agentlayerRoot
  * @returns {CommandPolicy}
  */
@@ -239,7 +239,7 @@ export function mergeVscodeSettings(existing, generated, filePath) {
 export function renderCodexRules(entries) {
   const lines = entries.map(
     (entry) =>
-      `prefix_rule(pattern=${JSON.stringify(entry.argv)}, decision="allow", justification="agentlayer allowlist")`
+      `prefix_rule(pattern=${JSON.stringify(entry.argv)}, decision="allow", justification="agent-layer allowlist")`
   );
   return lines.join("\n") + "\n";
 }

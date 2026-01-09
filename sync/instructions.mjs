@@ -41,7 +41,7 @@ export function parseFrontMatter(markdown, sourcePath = "<workflow>") {
     const idx = line.indexOf(":");
     if (idx === -1) {
       throw new Error(
-        `agentlayer sync: invalid workflow frontmatter in ${sourcePath}: expected "key: value" but got: ${line}`
+        `agent-layer sync: invalid workflow frontmatter in ${sourcePath}: expected "key: value" but got: ${line}`
       );
     }
 
@@ -50,26 +50,26 @@ export function parseFrontMatter(markdown, sourcePath = "<workflow>") {
 
     if (!k) {
       throw new Error(
-        `agentlayer sync: invalid workflow frontmatter in ${sourcePath}: empty key in line: ${line}`
+        `agent-layer sync: invalid workflow frontmatter in ${sourcePath}: empty key in line: ${line}`
       );
     }
 
     if (!["name", "description"].includes(k)) {
       throw new Error(
-        `agentlayer sync: unsupported workflow frontmatter key "${k}" in ${sourcePath}. Allowed keys: name, description`
+        `agent-layer sync: unsupported workflow frontmatter key "${k}" in ${sourcePath}. Allowed keys: name, description`
       );
     }
 
     if (Object.prototype.hasOwnProperty.call(meta, k)) {
       throw new Error(
-        `agentlayer sync: duplicate workflow frontmatter key "${k}" in ${sourcePath}`
+        `agent-layer sync: duplicate workflow frontmatter key "${k}" in ${sourcePath}`
       );
     }
 
     const vv = v.replace(/^["']|["']$/g, "");
     if (k === "name" && !vv.trim()) {
       throw new Error(
-        `agentlayer sync: workflow frontmatter "name" must be non-empty in ${sourcePath}`
+        `agent-layer sync: workflow frontmatter "name" must be non-empty in ${sourcePath}`
       );
     }
     meta[k] = vv;
@@ -77,7 +77,7 @@ export function parseFrontMatter(markdown, sourcePath = "<workflow>") {
 
   if (!closed) {
     throw new Error(
-      `agentlayer sync: invalid workflow frontmatter in ${sourcePath}: missing closing "---"`
+      `agent-layer sync: invalid workflow frontmatter in ${sourcePath}: missing closing "---"`
     );
   }
 

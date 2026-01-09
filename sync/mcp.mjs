@@ -87,7 +87,7 @@ export function validateServerCatalog(parsed, filePath) {
     }
     if (s.includeTools !== undefined && s.excludeTools !== undefined) {
       throw new Error(
-        `agentlayer sync: ${filePath}: ${s.name} cannot set both includeTools and excludeTools`
+        `agent-layer sync: ${filePath}: ${s.name} cannot set both includeTools and excludeTools`
       );
     }
   }
@@ -123,18 +123,18 @@ export function enabledServers(servers) {
     const transport = s.transport ?? "stdio";
     if (transport !== "stdio") {
       throw new Error(
-        `agentlayer sync: unsupported transport '${transport}' for server '${s.name}'. ` +
+        `agent-layer sync: unsupported transport '${transport}' for server '${s.name}'. ` +
           "This generator currently supports only stdio servers."
       );
     }
     if (!s.command || typeof s.command !== "string") {
-      throw new Error(`agentlayer sync: server '${s.name}' missing valid 'command'.`);
+      throw new Error(`agent-layer sync: server '${s.name}' missing valid 'command'.`);
     }
     if (s.args !== undefined && !Array.isArray(s.args)) {
-      throw new Error(`agentlayer sync: server '${s.name}' has non-array 'args'.`);
+      throw new Error(`agent-layer sync: server '${s.name}' has non-array 'args'.`);
     }
     if (s.envVars !== undefined && !Array.isArray(s.envVars)) {
-      throw new Error(`agentlayer sync: server '${s.name}' has non-array 'envVars'.`);
+      throw new Error(`agent-layer sync: server '${s.name}' has non-array 'envVars'.`);
     }
   }
 
@@ -151,7 +151,7 @@ export function buildMcpConfigs(catalog) {
   const servers = enabledServers(catalog.servers ?? []);
 
   // NOTE: VS Code can load env from an envFile. Default remains project root .env
-  // unless you set defaults.vscodeEnvFile to "${workspaceFolder}/.agentlayer/.env".
+  // unless you set defaults.vscodeEnvFile to "${workspaceFolder}/.agent-layer/.env".
   const vscodeEnvFile = defaults.vscodeEnvFile ?? "${workspaceFolder}/.env";
 
   // Single generic trust field (applied to Gemini today; ignored elsewhere).

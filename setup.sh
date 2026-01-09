@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# .agentlayer/setup.sh
-# One-shot setup for agentlayer in this repo:
+# .agent-layer/setup.sh
+# One-shot setup for agent-layer in this repo:
 # - installs MCP prompt server deps
 # - runs sync to generate shims/configs/skills
 # - enables & tests git hooks
 #
 # Usage:
-#   ./.agentlayer/setup.sh
+#   ./.agent-layer/setup.sh
 
 say() { printf "%s\n" "$*"; }
 die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
@@ -19,20 +19,20 @@ if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
 if [[ ! -f "$PATHS_SH" ]]; then
-  die "Missing lib/paths.sh (expected near .agentlayer/)."
+  die "Missing lib/paths.sh (expected near .agent-layer/)."
 fi
 # shellcheck disable=SC1090
 source "$PATHS_SH"
 
 WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
 
-[[ -n "$WORKING_ROOT" ]] || die "Missing .agentlayer/ directory in this path or any parent."
-AGENTLAYER_ROOT="$WORKING_ROOT/.agentlayer"
+[[ -n "$WORKING_ROOT" ]] || die "Missing .agent-layer/ directory in this path or any parent."
+AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
 cd "$WORKING_ROOT"
 
-[[ -d "$AGENTLAYER_ROOT" ]] || die "Missing .agentlayer/ directory. Run the bootstrap script in the repo root first."
-[[ -f "$AGENTLAYER_ROOT/sync/sync.mjs" ]] || die "Missing .agentlayer/sync/sync.mjs. Re-run bootstrap or restore it."
+[[ -d "$AGENTLAYER_ROOT" ]] || die "Missing .agent-layer/ directory. Run the bootstrap script in the repo root first."
+[[ -f "$AGENTLAYER_ROOT/sync/sync.mjs" ]] || die "Missing .agent-layer/sync/sync.mjs. Re-run bootstrap or restore it."
 
 command -v node >/dev/null 2>&1 || die "Node.js is required (node not found). Install Node, then re-run."
 command -v npm >/dev/null 2>&1 || die "npm is required (npm not found). Install npm/Node, then re-run."
@@ -46,20 +46,20 @@ else
   IN_GIT_REPO="1"
 fi
 
-say "==> Running agentlayer sync"
+say "==> Running agent-layer sync"
 node "$AGENTLAYER_ROOT/sync/sync.mjs"
 
 say "==> Installing MCP prompt server dependencies"
-if [[ -f "$AGENTLAYER_ROOT/mcp/agentlayer-prompts/package.json" ]]; then
-  pushd "$AGENTLAYER_ROOT/mcp/agentlayer-prompts" >/dev/null
+if [[ -f "$AGENTLAYER_ROOT/mcp/agent-layer-prompts/package.json" ]]; then
+  pushd "$AGENTLAYER_ROOT/mcp/agent-layer-prompts" >/dev/null
   npm install
   popd >/dev/null
 else
-  die "Missing .agentlayer/mcp/agentlayer-prompts/package.json"
+  die "Missing .agent-layer/mcp/agent-layer-prompts/package.json"
 fi
 
 if [[ "$IN_GIT_REPO" == "1" ]]; then
-  say "Skipping hook enable/test (dev-only; run .agentlayer/dev/bootstrap.sh)."
+  say "Skipping hook enable/test (dev-only; run .agent-layer/dev/bootstrap.sh)."
 else
   say "Skipping hook enable/test (not a git repo)."
 fi
@@ -71,11 +71,11 @@ say ""
 say "Setup complete (manual steps below are required)."
 say ""
 say "Required manual steps (do all of these):"
-say "  1) Create/fill .agentlayer/.env (copy from .env.example; do not commit)"
-say "  2) Edit instructions: .agentlayer/instructions/*.md"
-say "  3) Edit workflows:    .agentlayer/workflows/*.md"
-say "  4) Edit MCP servers:  .agentlayer/mcp/servers.json"
+say "  1) Create/fill .agent-layer/.env (copy from .env.example; do not commit)"
+say "  2) Edit instructions: .agent-layer/instructions/*.md"
+say "  3) Edit workflows:    .agent-layer/workflows/*.md"
+say "  4) Edit MCP servers:  .agent-layer/mcp/servers.json"
 say ""
 say "Note: ./al automatically runs sync before each command."
 say "If you do not use ./al, regenerate manually:"
-say "  node .agentlayer/sync/sync.mjs"
+say "  node .agent-layer/sync/sync.mjs"

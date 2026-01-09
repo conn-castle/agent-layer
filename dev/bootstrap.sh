@@ -10,15 +10,15 @@ if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../../lib/paths.sh"
 fi
 if [[ ! -f "$PATHS_SH" ]]; then
-  die "Missing lib/paths.sh (expected near .agentlayer/)."
+  die "Missing lib/paths.sh (expected near .agent-layer/)."
 fi
 # shellcheck disable=SC1090
 source "$PATHS_SH"
 
 WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
-[[ -n "$WORKING_ROOT" ]] || die "Missing .agentlayer/ directory in this path or any parent."
+[[ -n "$WORKING_ROOT" ]] || die "Missing .agent-layer/ directory in this path or any parent."
 
-AGENTLAYER_ROOT="$WORKING_ROOT/.agentlayer"
+AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
 
@@ -41,7 +41,7 @@ say "  - node + npm"
 say "  - bats"
 say "  - shfmt"
 say "  - shellcheck"
-say "  - npm install (Prettier in .agentlayer)"
+say "  - npm install (Prettier in .agent-layer)"
 say ""
 
 if [[ "${#missing[@]}" -eq 0 && "$prettier_installed" == "1" ]]; then
@@ -54,7 +54,7 @@ else
     done
   fi
   if [[ "$prettier_installed" == "0" ]]; then
-    say "  - npm install (Prettier in .agentlayer)"
+    say "  - npm install (Prettier in .agent-layer)"
   fi
   say ""
 fi
@@ -65,7 +65,7 @@ fi
 
 say "This will:"
 say "  - install missing system dependencies (if any)"
-say "  - run npm install in .agentlayer (if needed)"
+say "  - run npm install in .agent-layer (if needed)"
 say "  - enable git hooks for this repo (dev-only)"
 say "  - run setup (sync + checks)"
 read -r -p "Continue? [y/N] " reply
@@ -132,13 +132,13 @@ say "==> Running setup"
 bash "$AGENTLAYER_ROOT/setup.sh"
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  say "==> Enabling git hooks (core.hooksPath=.agentlayer/.githooks)"
-  git config core.hooksPath .agentlayer/.githooks
+  say "==> Enabling git hooks (core.hooksPath=.agent-layer/.githooks)"
+  git config core.hooksPath .agent-layer/.githooks
 
   if [[ -f "$AGENTLAYER_ROOT/.githooks/pre-commit" ]]; then
     chmod +x "$AGENTLAYER_ROOT/.githooks/pre-commit" 2>/dev/null || true
   else
-    die "Missing .agentlayer/.githooks/pre-commit"
+    die "Missing .agent-layer/.githooks/pre-commit"
   fi
 
   say "==> Running dev checks"

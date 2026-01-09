@@ -1,31 +1,31 @@
 #!/usr/bin/env node
 /**
- * Agentlayer sync (Node-based generator)
+ * Agent Layer sync (Node-based generator)
  *
- * Generates per-client shim files from `.agentlayer/instructions/` sources:
+ * Generates per-client shim files from `.agent-layer/instructions/` sources:
  * - AGENTS.md
  * - CLAUDE.md
  * - GEMINI.md
  * - .github/copilot-instructions.md
  *
- * Generates per-client MCP configuration from `.agentlayer/mcp/servers.json`:
+ * Generates per-client MCP configuration from `.agent-layer/mcp/servers.json`:
  * - .mcp.json              (Claude Code)
  * - .gemini/settings.json  (Gemini CLI)
  * - .vscode/mcp.json       (VS Code / Copilot Chat)
  *
- * Generates Codex Skills from `.agentlayer/workflows/*.md`:
+ * Generates Codex Skills from `.agent-layer/workflows/*.md`:
  * - .codex/skills/<workflow>/SKILL.md
  *
- * Generates per-client command allowlists from `.agentlayer/policy/commands.json`:
+ * Generates per-client command allowlists from `.agent-layer/policy/commands.json`:
  * - .gemini/settings.json
  * - .claude/settings.json
  * - .vscode/settings.json
- * - .codex/rules/agentlayer.rules
+ * - .codex/rules/agent-layer.rules
  *
  * Usage:
- *   node .agentlayer/sync/sync.mjs
- *   node .agentlayer/sync/sync.mjs --check
- *   node .agentlayer/sync/sync.mjs --verbose
+ *   node .agent-layer/sync/sync.mjs
+ *   node .agent-layer/sync/sync.mjs --check
+ *   node .agent-layer/sync/sync.mjs --verbose
  */
 
 import path from "node:path";
@@ -76,14 +76,14 @@ function parseArgs(argv) {
 }
 
 /**
- * Find the working repo root containing .agentlayer/.
+ * Find the working repo root containing .agent-layer/.
  * @param {string} startDir
  * @returns {string | null}
  */
 function findWorkingRoot(startDir) {
   let dir = path.resolve(startDir);
   for (let i = 0; i < 50; i++) {
-    if (fileExists(path.join(dir, ".agentlayer"))) return dir;
+    if (fileExists(path.join(dir, ".agent-layer"))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -92,7 +92,7 @@ function findWorkingRoot(startDir) {
 }
 
 /**
- * Resolve the working repo root by searching for .agentlayer/.
+ * Resolve the working repo root by searching for .agent-layer/.
  * @returns {string | null}
  */
 function resolveWorkingRoot() {
@@ -109,12 +109,12 @@ function resolveWorkingRoot() {
 function main() {
   const args = parseArgs(process.argv);
   const workingRoot = resolveWorkingRoot();
-  if (!workingRoot || !fileExists(path.join(workingRoot, ".agentlayer"))) {
-    console.error("agentlayer sync: could not find working repo root containing .agentlayer/");
+  if (!workingRoot || !fileExists(path.join(workingRoot, ".agent-layer"))) {
+    console.error("agent-layer sync: could not find working repo root containing .agent-layer/");
     process.exit(2);
   }
 
-  const agentlayerRoot = path.join(workingRoot, ".agentlayer");
+  const agentlayerRoot = path.join(workingRoot, ".agent-layer");
   const instructionsDir = path.join(agentlayerRoot, "instructions");
   const workflowsDir = path.join(agentlayerRoot, "workflows");
 
@@ -125,7 +125,7 @@ function main() {
   const vscodeAutoApprove = buildVscodeAutoApprove(prefixes);
 
   const unified =
-    banner(".agentlayer/instructions/*.md", REGEN_COMMAND) +
+    banner(".agent-layer/instructions/*.md", REGEN_COMMAND) +
     concatInstructions(instructionsDir);
 
   const outputs = [
@@ -169,14 +169,14 @@ function main() {
   );
   outputs.push([vscodeSettingsPath, JSON.stringify(vscodeMerged, null, 2) + "\n"]);
 
-  const codexRulesPath = path.join(workingRoot, ".codex", "rules", "agentlayer.rules");
+  const codexRulesPath = path.join(workingRoot, ".codex", "rules", "agent-layer.rules");
   outputs.push([codexRulesPath, renderCodexRules(policy.allowed)]);
 
   diffOrWrite(outputs, args, workingRoot);
   generateCodexSkills(workingRoot, workflowsDir, args);
 
   if (!args.check) {
-    console.log("agentlayer sync: updated shims + MCP configs + allowlists + Codex skills");
+    console.log("agent-layer sync: updated shims + MCP configs + allowlists + Codex skills");
   }
 }
 

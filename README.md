@@ -1,7 +1,7 @@
 # Agent Layer (repo-local agent standardization)
 
-This repository is the agent-layer and is intended to live at `.agentlayer/` inside a working repo.
-Paths in this README are relative to the agent-layer repo root unless noted as working-repo outputs; prefix with `.agentlayer/` when running from the working repo root.
+This repository is the agent-layer and is intended to live at `.agent-layer/` inside a working repo.
+Paths in this README are relative to the agent-layer repo root unless noted as working-repo outputs; prefix with `.agent-layer/` when running from the working repo root.
 
 ## What this is for
 
@@ -30,7 +30,7 @@ Optional (depending on which clients you use):
 
 Note: This tooling is built for macOS. Other operating systems are untested, and the `./al` symlink workflow does not work on Windows.
 
-Contributors using `nvm` can run `nvm use` inside `.agentlayer/` to match `.nvmrc`.
+Contributors using `nvm` can run `nvm use` inside `.agent-layer/` to match `.nvmrc`.
 
 ## Install in your repo (working repo root)
 
@@ -42,17 +42,17 @@ chmod +x agent-layer-install.sh
 ./agent-layer-install.sh
 ```
 
-This creates `.agentlayer/`, adds a managed `.gitignore` block, and creates `./al`.
+This creates `.agent-layer/`, adds a managed `.gitignore` block, and creates `./al`.
 
 If you already have this repo checked out locally:
 
 ```bash
-/path/to/agent-layer/agent-layer-install.sh
+/path/to/.agent-layer/agent-layer-install.sh
 ```
 
 ## Quickstart
 
-From the agent-layer repo root (inside `.agentlayer/` in your working repo):
+From the agent-layer repo root (inside `.agent-layer/` in your working repo):
 
 1) **Run setup (installs deps, verifies everything)**
 
@@ -61,7 +61,7 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-2) **Create your Agentlayer env file (recommended: agent-only secrets)**
+2) **Create your Agent Layer env file (recommended: agent-only secrets)**
 
 ```bash
 # Recommended: keep agent-only secrets separate from project env vars
@@ -76,7 +76,7 @@ If you also use a project/dev `.env` for your application, keep it separate and 
 ```bash
 chmod +x al
 # from the working repo root:
-ln -s .agentlayer/al ./al
+ln -s .agent-layer/al ./al
 ```
 
 This symlink is intended to live at the working repo root.
@@ -154,7 +154,7 @@ For a one-off run that also includes project env (if configured), use:
 - `.claude/settings.json`
 - `.vscode/mcp.json`
 - `.vscode/settings.json`
-- `.codex/rules/agentlayer.rules`
+- `.codex/rules/agent-layer.rules`
 - `.codex/skills/*/SKILL.md`
 
 If you accidentally edited a generated file, revert it (example):
@@ -177,11 +177,11 @@ General rule:
 ### MCP prompt server (workflows as “slash commands”)
 
 Workflows are exposed as MCP prompts by:
-- `mcp/agentlayer-prompts/server.mjs`
+- `mcp/agent-layer-prompts/server.mjs`
 
 **Required one-time install (per machine / per clone):**
 ```bash
-cd mcp/agentlayer-prompts
+cd mcp/agent-layer-prompts
 npm install
 ```
 
@@ -208,17 +208,17 @@ Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./
 
 Gemini CLI:
 - Slash command example: `/find-issues`
-- MCP check: `cat .gemini/settings.json` (look for `mcpServers.agentlayer`)
+- MCP check: `cat .gemini/settings.json` (look for `mcpServers["agent-layer"]`)
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
 VS Code / Copilot Chat:
-- Slash command example: `/mcp.agentlayer.find-issues`
-- MCP check: `cat .vscode/mcp.json` (look for `agentlayer`)
+- Slash command example: `/mcp.agent-layer.find-issues`
+- MCP check: `cat .vscode/mcp.json` (look for `agent-layer`)
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
 Claude Code CLI:
 - Slash command example: `find-issues` (via MCP prompt UI/namespace)
-- MCP check: `cat .mcp.json` (look for `mcpServers.agentlayer`)
+- MCP check: `cat .mcp.json` (look for `mcpServers["agent-layer"]`)
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
 Codex CLI:
@@ -251,12 +251,12 @@ Each section below answers two questions:
   ```bash
   cat .gemini/settings.json
   ```
-  Confirm you see `"mcpServers"` with the servers you expect (e.g., `agentlayer`, `context7`).
+  Confirm you see `"mcpServers"` with the servers you expect (e.g., `agent-layer`, `context7`).
 
 **Confirm the MCP server can start**
 - Ensure Node deps are installed:
   ```bash
-  cd mcp/agentlayer-prompts && npm install && cd -
+  cd mcp/agent-layer-prompts && npm install && cd -
   ```
 - Then run Gemini via `./al gemini`.
 
@@ -267,7 +267,7 @@ Each section below answers two questions:
 - If it’s missing:
   1) run `node sync/sync.mjs`
   2) restart Gemini
-  3) confirm `.gemini/settings.json` still lists `agentlayer` under `mcpServers`
+  3) confirm `.gemini/settings.json` still lists `agent-layer` under `mcpServers`
 
 **Common failure mode**
 - If Gemini prompts for approvals on shell commands like `git status`, that is a *shell tool approval*, not MCP. (Solving this uses the repo allowlist `policy/commands.json` projected into Gemini’s `tools.allowed`.)
@@ -291,7 +291,7 @@ Each section below answers two questions:
 
 **Confirm slash commands (MCP prompts)**
 - In Copilot Chat, invoke:
-  - `/mcp.agentlayer.find-issues`
+  - `/mcp.agent-layer.find-issues`
 - If it autocompletes, the prompt is registered.
 
 **Common failure mode**
@@ -314,10 +314,10 @@ Each section below answers two questions:
   ./al claude
   ```
 - If MCP servers are not available:
-  1) verify `.mcp.json` exists and includes `mcpServers.agentlayer`
+  1) verify `.mcp.json` exists and includes `mcpServers["agent-layer"]`
   2) ensure MCP prompt server deps installed:
      ```bash
-     cd mcp/agentlayer-prompts && npm install && cd -
+     cd mcp/agent-layer-prompts && npm install && cd -
      ```
   3) restart Claude Code CLI after MCP config changes
 
@@ -335,7 +335,7 @@ Each section below answers two questions:
 
 **MCP config**
 - Codex MCP configuration is typically user-level unless you deliberately set a repo-local `CODEX_HOME`.
-- Agentlayer uses **Codex Skills** (and optional rules) as the primary “workflow command” mechanism.
+- Agent Layer uses **Codex Skills** (and optional rules) as the primary “workflow command” mechanism.
 
 **Confirm workflow “commands” (Codex Skills)**
 - Skills are generated into the working repo root: `.codex/skills/*/SKILL.md`
@@ -385,7 +385,7 @@ Each section below answers two questions:
 - MCP configs projected per client:
   - `.mcp.json`, `.gemini/settings.json`, `.vscode/mcp.json`
 - Command allowlist configs projected per client:
-  - `.gemini/settings.json`, `.claude/settings.json`, `.vscode/settings.json`, `.codex/rules/agentlayer.rules`
+  - `.gemini/settings.json`, `.claude/settings.json`, `.vscode/settings.json`, `.codex/rules/agent-layer.rules`
 - Codex skills:
   - `.codex/skills/*/SKILL.md`
 
@@ -454,7 +454,7 @@ Yes. Keep numeric prefixes if you want stable ordering without changing `sync/sy
 
 ## Contributing
 
-1) Ensure prerequisites are installed (Node LTS, git). If you use `nvm`, run `nvm use` in `.agentlayer/`.
+1) Ensure prerequisites are installed (Node LTS, git). If you use `nvm`, run `nvm use` in `.agent-layer/`.
 2) Run the dev bootstrap (installs dev deps, enables hooks, runs checks):
    ```bash
    ./dev/bootstrap.sh

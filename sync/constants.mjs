@@ -2,7 +2,7 @@
  * Command used to regenerate generated files.
  * @type {string}
  */
-export const REGEN_COMMAND = "node .agentlayer/sync/sync.mjs";
+export const REGEN_COMMAND = "node .agent-layer/sync/sync.mjs";
 
 /**
  * Legacy regenerate command retained for recognizing older generated files.

@@ -1,17 +1,17 @@
 {
   "version": 1,
   "defaults": {
-    "vscodeEnvFile": "${workspaceFolder}/.agentlayer/.env",
+    "vscodeEnvFile": "${workspaceFolder}/.agent-layer/.env",
     "trust": false
   },
   "servers": [
     {
-      "name": "agentlayer",
+      "name": "agent-layer",
       "enabled": true,
       "transport": "stdio",
       "command": "node",
       "args": [
-        "./.agentlayer/mcp/agentlayer-prompts/server.mjs"
+        "./.agent-layer/mcp/agent-layer-prompts/server.mjs"
       ],
       "envVars": [],
       "trust": true

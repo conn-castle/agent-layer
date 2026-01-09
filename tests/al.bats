@@ -7,7 +7,7 @@ load "helpers.bash"
   root_a="$(create_working_root)"
   root_b="$(create_working_root)"
 
-  ln -s "$root_a/.agentlayer/al" "$root_a/al"
+  ln -s "$root_a/.agent-layer/al" "$root_a/al"
   stub_bin="$(create_stub_node "$root_a")"
 
   output="$(cd "$root_b/sub/dir" && PATH="$stub_bin:$PATH" "$root_a/al" pwd)"
@@ -16,6 +16,28 @@ load "helpers.bash"
   [ "$output" = "$root_a" ]
 
   rm -rf "$root_a" "$root_b"
+}
+
+@test "al prefers .agent-layer paths when a root lib/paths.sh exists" {
+  local root stub_bin output
+  root="$(create_working_root)"
+
+  ln -s "$root/.agent-layer/al" "$root/al"
+  mkdir -p "$root/lib"
+  cat >"$root/lib/paths.sh" <<'EOF'
+resolve_working_root() {
+  return 1
+}
+EOF
+
+  stub_bin="$(create_stub_node "$root")"
+
+  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" "$root/al" pwd)"
+  status=$?
+  [ "$status" -eq 0 ]
+  [ "$output" = "$root" ]
+
+  rm -rf "$root"
 }
 
 @test "al sets CODEX_HOME when unset" {
@@ -28,7 +50,7 @@ printf "%s" "${CODEX_HOME:-}"
 EOF
   chmod +x "$stub_bin/codex"
 
-  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" "$root/.agentlayer/al" codex)"
+  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" "$root/.agent-layer/al" codex)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "$root/.codex" ]
@@ -47,7 +69,7 @@ EOF
   chmod +x "$stub_bin/codex"
 
   output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" CODEX_HOME="/tmp/custom-codex" \
-    "$root/.agentlayer/al" codex 2>/dev/null)"
+    "$root/.agent-layer/al" codex 2>/dev/null)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "/tmp/custom-codex" ]

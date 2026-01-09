@@ -58,7 +58,7 @@ export function generateCodexSkills(repoRoot, workflowsDir, args) {
 
     if (slugToName.has(folder)) {
       throw new Error(
-        `agentlayer sync: workflow slug collision: "${name}" and "${slugToName.get(folder)}" both map to "${folder}". ` +
+        `agent-layer sync: workflow slug collision: "${name}" and "${slugToName.get(folder)}" both map to "${folder}". ` +
           "Rename one workflow name to avoid collisions."
       );
     }
@@ -70,10 +70,10 @@ export function generateCodexSkills(repoRoot, workflowsDir, args) {
     const skillFile = path.join(skillDir, "SKILL.md");
 
     if (!name.trim().length) {
-      throw new Error(`agentlayer sync: workflow name resolved to empty for ${wfPath}`);
+      throw new Error(`agent-layer sync: workflow name resolved to empty for ${wfPath}`);
     }
     if (!body.trim().length) {
-      throw new Error(`agentlayer sync: workflow body is empty for ${wfPath}`);
+      throw new Error(`agent-layer sync: workflow body is empty for ${wfPath}`);
     }
 
     // YAML frontmatter must be first line for compatibility.
@@ -82,7 +82,7 @@ export function generateCodexSkills(repoRoot, workflowsDir, args) {
       `name: ${name}\n` +
       `description: ${description}\n` +
       `---\n\n` +
-      banner(`.agentlayer/workflows/${path.basename(wfPath)}`, REGEN_COMMAND) +
+      banner(`.agent-layer/workflows/${path.basename(wfPath)}`, REGEN_COMMAND) +
       `# ${name}\n\n` +
       (description ? `${description}\n\n` : "") +
       `${body.trimEnd()}\n`;
@@ -95,7 +95,7 @@ export function generateCodexSkills(repoRoot, workflowsDir, args) {
         failOutOfDate(
           repoRoot,
           [skillFile],
-          "Codex skills are generated from .agentlayer/workflows/*.md."
+          "Codex skills are generated from .agent-layer/workflows/*.md."
         );
       }
     } else {

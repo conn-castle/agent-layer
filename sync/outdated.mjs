@@ -57,7 +57,7 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
       rp === ".gemini/settings.json" ||
       rp === ".claude/settings.json" ||
       rp === ".vscode/settings.json" ||
-      rp === ".codex/rules/agentlayer.rules"
+      rp === ".codex/rules/agent-layer.rules"
     ) {
       commandAllowlistConfigs.push(rp);
       matched = true;
@@ -71,32 +71,32 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
     }
   }
 
-  console.error("agentlayer sync: generated files are out of date.");
+  console.error("agent-layer sync: generated files are out of date.");
   if (extraMessage) console.error(extraMessage);
   console.error("");
   console.error("Do NOT edit generated files directly.");
   console.error("");
 
   if (instructionShims.length) {
-    console.error("Instruction shims (edit: .agentlayer/instructions/*.md):");
+    console.error("Instruction shims (edit: .agent-layer/instructions/*.md):");
     for (const p of instructionShims) console.error(`  - ${p}`);
     console.error("");
   }
 
   if (mcpConfigs.length) {
-    console.error("MCP config files (edit: .agentlayer/mcp/servers.json):");
+    console.error("MCP config files (edit: .agent-layer/mcp/servers.json):");
     for (const p of mcpConfigs) console.error(`  - ${p}`);
     console.error("");
   }
 
   if (commandAllowlistConfigs.length) {
-    console.error("Command allowlist configs (edit: .agentlayer/policy/commands.json):");
+    console.error("Command allowlist configs (edit: .agent-layer/policy/commands.json):");
     for (const p of commandAllowlistConfigs) console.error(`  - ${p}`);
     console.error("");
   }
 
   if (codexSkills.length) {
-    console.error("Codex skills (edit: .agentlayer/workflows/*.md):");
+    console.error("Codex skills (edit: .agent-layer/workflows/*.md):");
     for (const p of codexSkills) console.error(`  - ${p}`);
     console.error("");
   }

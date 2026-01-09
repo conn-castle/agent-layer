@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ensure generated agentlayer files are up to date before commit.
+# Ensure generated agent-layer files are up to date before commit.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
 fi
 if [[ ! -f "$PATHS_SH" ]]; then
-  echo "ERROR: Missing lib/paths.sh (expected near .agentlayer/)." >&2
+  echo "ERROR: Missing lib/paths.sh (expected near .agent-layer/)." >&2
   exit 2
 fi
 # shellcheck disable=SC1090
@@ -17,14 +17,14 @@ source "$PATHS_SH"
 WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
 
 if [[ -z "$WORKING_ROOT" ]]; then
-  echo "ERROR: Missing .agentlayer/ directory in this path or any parent." >&2
+  echo "ERROR: Missing .agent-layer/ directory in this path or any parent." >&2
   exit 2
 fi
 
-AGENTLAYER_ROOT="$WORKING_ROOT/.agentlayer"
+AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
 if [[ ! -x "$AGENTLAYER_ROOT/dev/check.sh" ]]; then
-  echo "ERROR: Missing .agentlayer/dev/check.sh." >&2
+  echo "ERROR: Missing .agent-layer/dev/check.sh." >&2
   exit 2
 fi
 

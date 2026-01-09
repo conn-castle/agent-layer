@@ -8,11 +8,11 @@ usage() {
   cat <<'EOF'
 Usage: agent-layer-install.sh [--force] [--repo-url <url>]
 
-Installs/updates .agentlayer in the current working repo and sets up a local launcher.
+Installs/updates agent-layer in the current working repo and sets up a local launcher.
 
 Options:
   --force, -f       Overwrite ./al if it already exists
-  --repo-url <url>  Override the agentlayer repo URL
+  --repo-url <url>  Override the agent-layer repo URL
   --help, -h        Show this help
 EOF
 }
@@ -48,8 +48,8 @@ done
 command -v git >/dev/null 2>&1 || die "git is required (not found)."
 
 WORKING_ROOT="$(pwd -P)"
-if [[ "$(basename "$WORKING_ROOT")" == ".agentlayer" ]]; then
-  die "Run this from the working repo root (parent of .agentlayer/), not inside .agentlayer/."
+if [[ "$(basename "$WORKING_ROOT")" == ".agent-layer" ]]; then
+  die "Run this from the working repo root (parent of .agent-layer/), not inside .agent-layer/."
 fi
 
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
@@ -75,32 +75,32 @@ else
   fi
 fi
 
-AGENTLAYER_DIR="$WORKING_ROOT/.agentlayer"
+AGENTLAYER_DIR="$WORKING_ROOT/.agent-layer"
 if [[ ! -e "$AGENTLAYER_DIR" ]]; then
   [[ -n "$REPO_URL" ]] || die "Missing repo URL (set AGENTLAYER_REPO_URL or use --repo-url)."
-  say "==> Cloning agentlayer into .agentlayer/"
+  say "==> Cloning agent-layer into .agent-layer/"
   git clone "$REPO_URL" "$AGENTLAYER_DIR"
 else
   if [[ -d "$AGENTLAYER_DIR" ]]; then
     if git -C "$AGENTLAYER_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-      say "==> .agentlayer exists and is a git repo; leaving as-is"
+      say "==> .agent-layer exists and is a git repo; leaving as-is"
     else
-      die ".agentlayer exists but is not a git repo. Move it aside or remove it, then re-run."
+      die ".agent-layer exists but is not a git repo. Move it aside or remove it, then re-run."
     fi
   else
-    die ".agentlayer exists but is not a directory. Move it aside or remove it, then re-run."
+    die ".agent-layer exists but is not a directory. Move it aside or remove it, then re-run."
   fi
 fi
 
 if [[ ! -f "$AGENTLAYER_DIR/.env" ]]; then
   if [[ -f "$AGENTLAYER_DIR/.env.example" ]]; then
     cp "$AGENTLAYER_DIR/.env.example" "$AGENTLAYER_DIR/.env"
-    say "==> Created .agentlayer/.env from .env.example"
+    say "==> Created .agent-layer/.env from .env.example"
   else
-    die "Missing .agentlayer/.env.example; cannot create .agentlayer/.env"
+    die "Missing .agent-layer/.env.example; cannot create .agent-layer/.env"
   fi
 else
-  say "==> .agentlayer/.env already exists; leaving as-is"
+  say "==> .agent-layer/.env already exists; leaving as-is"
 fi
 
 AL_PATH="$WORKING_ROOT/al"
@@ -110,7 +110,7 @@ write_launcher() {
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/.agentlayer/al" "$@"
+exec "$SCRIPT_DIR/.agent-layer/al" "$@"
 EOF
   chmod +x "$AL_PATH"
 }
@@ -129,25 +129,25 @@ fi
 
 GITIGNORE_PATH="$WORKING_ROOT/.gitignore"
 GITIGNORE_BLOCK="$(cat <<'EOF'
-# >>> agentlayer
-.agentlayer/
+# >>> agent-layer
+.agent-layer/
 
-# Agentlayer launcher
+# Agent Layer launcher
 al
 
-# Agentlayer-generated instruction shims
+# Agent Layer-generated instruction shims
 AGENTS.md
 CLAUDE.md
 GEMINI.md
 .github/copilot-instructions.md
 
-# Agentlayer-generated client configs + artifacts
+# Agent Layer-generated client configs + artifacts
 .mcp.json
 .codex/
 .gemini/
 .claude/
 .vscode/
-# <<< agentlayer
+# <<< agent-layer
 EOF
 )"
 
@@ -158,7 +158,7 @@ update_gitignore() {
   inblock="0"
   if [[ -f "$GITIGNORE_PATH" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
-      if [[ "$line" == "# >>> agentlayer" ]]; then
+      if [[ "$line" == "# >>> agent-layer" ]]; then
         if [[ "$found" == "0" ]]; then
           printf "%s\n" "$GITIGNORE_BLOCK" >> "$tmp"
           found="1"
@@ -167,7 +167,7 @@ update_gitignore() {
         continue
       fi
       if [[ "$inblock" == "1" ]]; then
-        if [[ "$line" == "# <<< agentlayer" ]]; then
+        if [[ "$line" == "# <<< agent-layer" ]]; then
           inblock="0"
         fi
         continue
@@ -195,14 +195,14 @@ update_gitignore() {
   mv "$tmp" "$GITIGNORE_PATH"
 }
 
-say "==> Updating .gitignore (agentlayer block)"
+say "==> Updating .gitignore (agent-layer block)"
 update_gitignore
 
 if [[ -f "$AGENTLAYER_DIR/setup.sh" ]]; then
   say "==> Running setup"
   bash "$AGENTLAYER_DIR/setup.sh"
 else
-  die "Missing .agentlayer/setup.sh"
+  die "Missing .agent-layer/setup.sh"
 fi
 
 say "==> Running sync"
@@ -211,7 +211,7 @@ if [[ -f "$AGENTLAYER_DIR/sync.mjs" ]]; then
 elif [[ -f "$AGENTLAYER_DIR/sync/sync.mjs" ]]; then
   node "$AGENTLAYER_DIR/sync/sync.mjs"
 else
-  die "Missing sync script (.agentlayer/sync.mjs or .agentlayer/sync/sync.mjs)."
+  die "Missing sync script (.agent-layer/sync.mjs or .agent-layer/sync/sync.mjs)."
 fi
 
 say ""

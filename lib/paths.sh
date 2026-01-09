@@ -4,7 +4,7 @@ find_working_root() {
   local dir
   dir="$(cd "$1" && pwd)"
   for _ in {1..50}; do
-    if [[ -d "$dir/.agentlayer" ]]; then
+    if [[ -d "$dir/.agent-layer" ]]; then
       printf "%s" "$dir"
       return 0
     fi

@@ -8,7 +8,7 @@ import path from "node:path";
  * @returns {void}
  */
 export function assert(cond, msg) {
-  if (!cond) throw new Error(`agentlayer sync: ${msg}`);
+  if (!cond) throw new Error(`agent-layer sync: ${msg}`);
 }
 
 /**
@@ -228,7 +228,7 @@ export function readJsonRelaxed(filePath, defaultObj) {
       return JSON.parse(cleaned);
     } catch {
       throw new Error(
-        `agentlayer sync: cannot parse ${filePath}. Please make it valid JSON/JSONC.`
+        `agent-layer sync: cannot parse ${filePath}. Please make it valid JSON/JSONC.`
       );
     }
   }

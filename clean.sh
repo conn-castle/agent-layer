@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# .agentlayer/clean.sh
-# Remove generated files produced by agentlayer sync.
+# .agent-layer/clean.sh
+# Remove generated files produced by agent-layer sync.
 # Usage:
-#   ./.agentlayer/clean.sh
+#   ./.agent-layer/clean.sh
 
 say() { printf "%s\n" "$*"; }
 die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
@@ -15,19 +15,19 @@ if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
 if [[ ! -f "$PATHS_SH" ]]; then
-  die "Missing lib/paths.sh (expected near .agentlayer/)."
+  die "Missing lib/paths.sh (expected near .agent-layer/)."
 fi
 # shellcheck disable=SC1090
 source "$PATHS_SH"
 
 WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
 
-[[ -n "$WORKING_ROOT" ]] || die "Missing .agentlayer/ directory in this path or any parent."
-AGENTLAYER_ROOT="$WORKING_ROOT/.agentlayer"
+[[ -n "$WORKING_ROOT" ]] || die "Missing .agent-layer/ directory in this path or any parent."
+AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
 cd "$WORKING_ROOT"
 
-[[ -f "$AGENTLAYER_ROOT/sync/sync.mjs" ]] || die "Missing .agentlayer/sync/sync.mjs."
+[[ -f "$AGENTLAYER_ROOT/sync/sync.mjs" ]] || die "Missing .agent-layer/sync/sync.mjs."
 
 generated_files=(
   "AGENTS.md"
@@ -39,7 +39,7 @@ generated_files=(
   ".claude/settings.json"
   ".vscode/mcp.json"
   ".vscode/settings.json"
-  ".codex/rules/agentlayer.rules"
+  ".codex/rules/agent-layer.rules"
 )
 
 shopt -s nullglob

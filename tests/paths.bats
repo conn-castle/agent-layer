@@ -2,7 +2,7 @@
 
 load "helpers.bash"
 
-@test "resolve_working_root finds .agentlayer from working root" {
+@test "resolve_working_root finds .agent-layer from working root" {
   local root
   root="$(create_working_root)"
 
@@ -14,7 +14,7 @@ load "helpers.bash"
   rm -rf "$root"
 }
 
-@test "resolve_working_root fails when .agentlayer is missing from ancestors" {
+@test "resolve_working_root fails when .agent-layer is missing from ancestors" {
   local root
   root="/"
 

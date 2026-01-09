@@ -1,4 +1,4 @@
-name: agentlayer-tests
+name: agent-layer-tests
 
 on:
   push:
@@ -25,6 +25,6 @@ jobs:
       - name: Run tests
         run: |
           mkdir -p work
-          ln -s "$PWD" work/.agentlayer
+          ln -s "$PWD" work/.agent-layer
           cd work
-          ./.agentlayer/dev/check.sh
+          ./.agent-layer/dev/check.sh

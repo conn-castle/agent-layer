@@ -8,13 +8,13 @@ load "helpers.bash"
 
   printf "TEST_PROJECT_ENV=from-project\n" >"$root/.env"
 
-  output="$(cd "$root/sub/dir" && "$root/.agentlayer/with-env.sh" --project-env \
+  output="$(cd "$root/sub/dir" && "$root/.agent-layer/with-env.sh" --project-env \
     bash -c 'echo "${TEST_PROJECT_ENV:-}"')"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "from-project" ]
 
-  output="$(cd "$root/sub/dir" && "$root/.agentlayer/with-env.sh" \
+  output="$(cd "$root/sub/dir" && "$root/.agent-layer/with-env.sh" \
     bash -c 'echo "${TEST_PROJECT_ENV:-}"')"
   status=$?
   [ "$status" -eq 0 ]
@@ -23,13 +23,13 @@ load "helpers.bash"
   rm -rf "$root"
 }
 
-@test "with-env.sh loads agentlayer .env by default" {
+@test "with-env.sh loads .agent-layer .env by default" {
   local root output
   root="$(create_isolated_working_root)"
 
-  printf "TEST_AGENT_ENV=from-agent\n" >"$root/.agentlayer/.env"
+  printf "TEST_AGENT_ENV=from-agent\n" >"$root/.agent-layer/.env"
 
-  output="$(cd "$root/sub/dir" && "$root/.agentlayer/with-env.sh" \
+  output="$(cd "$root/sub/dir" && "$root/.agent-layer/with-env.sh" \
     bash -c 'echo "${TEST_AGENT_ENV:-}"')"
   status=$?
   [ "$status" -eq 0 ]
@@ -38,11 +38,11 @@ load "helpers.bash"
   rm -rf "$root"
 }
 
-@test "with-env.sh is a no-op when agentlayer .env is missing" {
+@test "with-env.sh is a no-op when .agent-layer .env is missing" {
   local root output
   root="$(create_isolated_working_root)"
 
-  output="$(cd "$root/sub/dir" && "$root/.agentlayer/with-env.sh" \
+  output="$(cd "$root/sub/dir" && "$root/.agent-layer/with-env.sh" \
     bash -c 'echo "${TEST_AGENT_ENV_MISSING:-}"')"
   status=$?
   [ "$status" -eq 0 ]
@@ -55,7 +55,7 @@ load "helpers.bash"
   local root
   root="$(create_isolated_working_root)"
 
-  run "$root/.agentlayer/with-env.sh" --help
+  run "$root/.agent-layer/with-env.sh" --help
   [ "$status" -eq 0 ]
   [[ "$output" == *"Usage:"* ]]
 
