@@ -39,6 +39,8 @@ generated_files=(
   ".claude/settings.json"
   ".vscode/mcp.json"
   ".vscode/settings.json"
+  ".codex/AGENTS.md"
+  ".codex/config.toml"
   ".codex/rules/agent-layer.rules"
 )
 

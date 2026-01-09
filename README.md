@@ -154,6 +154,8 @@ For a one-off run that also includes project env (if configured), use:
 - `.claude/settings.json`
 - `.vscode/mcp.json`
 - `.vscode/settings.json`
+- `.codex/AGENTS.md`
+- `.codex/config.toml`
 - `.codex/rules/agent-layer.rules`
 - `.codex/skills/*/SKILL.md`
 
@@ -198,11 +200,11 @@ If you changed `workflows/*.md`:
 | Gemini CLI | ✅ | ✅ | ✅ | ✅ |
 | Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
 | VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
-| Codex CLI | ❌ | ✅ | ❌ | ✅ |
-| Codex VS Code extension | ❌ | ✅ | ❌ | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ | ✅ |
+| Codex VS Code extension | ✅ | ✅ | ✅ | ✅ |
 | Antigravity | ❌ | ❌ | ❌ | ❌ |
 
-Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex` (repo-local `CODEX_HOME`). The VS Code extension only uses them if you set `CODEX_HOME` to the repo.
+Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex` (repo-local `CODEX_HOME`). The VS Code extension only uses them if the extension host sees the same `CODEX_HOME` (set it in the environment that launches VS Code).
 
 ## Quick examples (per client)
 
@@ -223,12 +225,12 @@ Claude Code CLI:
 
 Codex CLI:
 - Slash command example: `$find-issues` (Codex Skills)
-- MCP check: not supported (no MCP config generated)
+- MCP check: `cat .codex/config.toml` (look for `mcp_servers.agent-layer`)
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
 Codex VS Code extension:
 - Slash command example: `$find-issues` (Codex Skills; requires `CODEX_HOME` pointing at the repo)
-- MCP check: not supported (no MCP config generated)
+- MCP check: `cat .codex/config.toml` (requires `CODEX_HOME` in VS Code env)
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
 Antigravity:
@@ -333,8 +335,12 @@ Each section below answers two questions:
 
 ### Codex (CLI / VS Code extension)
 
-**MCP config**
-- Codex MCP configuration is typically user-level unless you deliberately set a repo-local `CODEX_HOME`.
+**MCP config + system instructions**
+- When launched via `./al codex`, `CODEX_HOME` is set to the repo-local `.codex/`.
+- MCP servers are generated into `.codex/config.toml` from `.agent-layer/mcp/servers.json`.
+- System instructions are generated into `.codex/AGENTS.md` from `.agent-layer/instructions/*.md`.
+- Codex also reads the project `AGENTS.md`; both files are generated from the same sources to keep them consistent.
+- The VS Code extension has no workspace setting for `CODEX_HOME`; set it in the environment that launches VS Code (or use a wrapper via `chatgpt.cliExecutable`, which is marked development-only).
 - Agent Layer uses **Codex Skills** (and optional rules) as the primary “workflow command” mechanism.
 
 **Confirm workflow “commands” (Codex Skills)**
@@ -383,9 +389,11 @@ Each section below answers two questions:
 - Instruction shims:
   - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
 - MCP configs projected per client:
-  - `.mcp.json`, `.gemini/settings.json`, `.vscode/mcp.json`
+  - `.mcp.json`, `.gemini/settings.json`, `.vscode/mcp.json`, `.codex/config.toml`
 - Command allowlist configs projected per client:
   - `.gemini/settings.json`, `.claude/settings.json`, `.vscode/settings.json`, `.codex/rules/agent-layer.rules`
+- Codex system instructions:
+  - `.codex/AGENTS.md`
 - Codex skills:
   - `.codex/skills/*/SKILL.md`
 

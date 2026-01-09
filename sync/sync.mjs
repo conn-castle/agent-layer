@@ -4,6 +4,7 @@
  *
  * Generates per-client shim files from `.agent-layer/instructions/` sources:
  * - AGENTS.md
+ * - .codex/AGENTS.md
  * - CLAUDE.md
  * - GEMINI.md
  * - .github/copilot-instructions.md
@@ -12,6 +13,7 @@
  * - .mcp.json              (Claude Code)
  * - .gemini/settings.json  (Gemini CLI)
  * - .vscode/mcp.json       (VS Code / Copilot Chat)
+ * - .codex/config.toml     (Codex CLI / VS Code extension)
  *
  * Generates Codex Skills from `.agent-layer/workflows/*.md`:
  * - .codex/skills/<workflow>/SKILL.md
@@ -33,7 +35,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { REGEN_COMMAND } from "./constants.mjs";
 import { banner, concatInstructions } from "./instructions.mjs";
-import { buildMcpConfigs, loadServerCatalog } from "./mcp.mjs";
+import { buildMcpConfigs, loadServerCatalog, renderCodexConfig } from "./mcp.mjs";
 import { diffOrWrite } from "./outdated.mjs";
 import {
   buildClaudeAllow,
@@ -130,6 +132,7 @@ function main() {
 
   const outputs = [
     [path.join(workingRoot, "AGENTS.md"), unified],
+    [path.join(workingRoot, ".codex", "AGENTS.md"), unified],
     [path.join(workingRoot, "CLAUDE.md"), unified],
     [path.join(workingRoot, "GEMINI.md"), unified],
     [path.join(workingRoot, ".github", "copilot-instructions.md"), unified],
@@ -137,12 +140,14 @@ function main() {
 
   const catalog = loadServerCatalog(agentlayerRoot);
   const mcpConfigs = buildMcpConfigs(catalog);
+  const codexConfig = renderCodexConfig(catalog, REGEN_COMMAND);
   outputs.push(
     [
       path.join(workingRoot, ".vscode", "mcp.json"),
       JSON.stringify(mcpConfigs.vscode, null, 2) + "\n",
     ],
-    [path.join(workingRoot, ".mcp.json"), JSON.stringify(mcpConfigs.claude, null, 2) + "\n"]
+    [path.join(workingRoot, ".mcp.json"), JSON.stringify(mcpConfigs.claude, null, 2) + "\n"],
+    [path.join(workingRoot, ".codex", "config.toml"), codexConfig]
   );
 
   const geminiSettingsPath = path.join(workingRoot, ".gemini", "settings.json");

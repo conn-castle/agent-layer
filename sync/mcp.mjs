@@ -211,3 +211,68 @@ export function buildMcpConfigs(catalog) {
 
   return { vscode, claude, gemini };
 }
+
+/**
+ * Render a TOML string value.
+ * @param {string} value
+ * @returns {string}
+ */
+function tomlString(value) {
+  return JSON.stringify(String(value));
+}
+
+/**
+ * Render a TOML array of string values.
+ * @param {string[]} values
+ * @returns {string}
+ */
+function tomlArray(values) {
+  return `[${values.map(tomlString).join(", ")}]`;
+}
+
+/**
+ * Render a TOML key (quoted when needed).
+ * @param {string} key
+ * @returns {string}
+ */
+function tomlKey(key) {
+  const name = String(key);
+  if (/^[A-Za-z0-9_-]+$/.test(name)) return name;
+  return JSON.stringify(name);
+}
+
+/**
+ * Build Codex config.toml content for MCP servers.
+ * @param {{ defaults?: Record<string, unknown>, servers?: unknown[] }} catalog
+ * @param {string} regenCommand
+ * @returns {string}
+ */
+export function renderCodexConfig(catalog, regenCommand) {
+  const servers = enabledServers(catalog.servers ?? []);
+  const lines = [
+    "# GENERATED FILE - DO NOT EDIT DIRECTLY",
+    "# Source: .agent-layer/mcp/servers.json",
+    `# Regenerate: ${regenCommand}`,
+    "",
+  ];
+
+  if (servers.length === 0) {
+    lines.push("# No MCP servers enabled.");
+    lines.push("");
+    return lines.join("\n");
+  }
+
+  for (const s of servers) {
+    if (Array.isArray(s.envVars) && s.envVars.length) {
+      lines.push(`# Requires env: ${s.envVars.join(", ")}`);
+    }
+    lines.push(`[mcp_servers.${tomlKey(s.name)}]`);
+    lines.push(`command = ${tomlString(s.command)}`);
+    if (Array.isArray(s.args) && s.args.length) {
+      lines.push(`args = ${tomlArray(s.args)}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}

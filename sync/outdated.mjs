@@ -38,6 +38,7 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
     let matched = false;
     if (
       rp === "AGENTS.md" ||
+      rp === ".codex/AGENTS.md" ||
       rp === "CLAUDE.md" ||
       rp === "GEMINI.md" ||
       rp === ".github/copilot-instructions.md"
@@ -47,6 +48,7 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
     }
     if (
       rp === ".mcp.json" ||
+      rp === ".codex/config.toml" ||
       rp === ".gemini/settings.json" ||
       rp === ".vscode/mcp.json"
     ) {

@@ -146,7 +146,7 @@ GEMINI.md
 .codex/
 .gemini/
 .claude/
-.vscode/
+.vscode/mcp.json
 # <<< agent-layer
 EOF
 )"

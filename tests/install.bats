@@ -69,7 +69,7 @@ EOF
   grep -q '^\.codex/$' "$gitignore"
   grep -q '^\.gemini/$' "$gitignore"
   grep -q '^\.claude/$' "$gitignore"
-  grep -q '^\.vscode/$' "$gitignore"
+  grep -q '^\.vscode/mcp\.json$' "$gitignore"
 
   rm -rf "$root"
 }
@@ -141,7 +141,7 @@ EOF
   grep -q '^\.codex/$' "$gitignore"
   grep -q '^\.gemini/$' "$gitignore"
   grep -q '^\.claude/$' "$gitignore"
-  grep -q '^\.vscode/$' "$gitignore"
+  grep -q '^\.vscode/mcp\.json$' "$gitignore"
 
   rm -rf "$root"
 }

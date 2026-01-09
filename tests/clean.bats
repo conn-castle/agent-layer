@@ -18,6 +18,8 @@ load "helpers.bash"
   : >"$root/.claude/settings.json"
   : >"$root/.vscode/mcp.json"
   : >"$root/.vscode/settings.json"
+  : >"$root/.codex/AGENTS.md"
+  : >"$root/.codex/config.toml"
   : >"$root/.codex/rules/agent-layer.rules"
   : >"$root/.codex/skills/foo/SKILL.md"
 
@@ -40,6 +42,8 @@ load "helpers.bash"
   [ ! -f "$root/.claude/settings.json" ]
   [ ! -f "$root/.vscode/mcp.json" ]
   [ ! -f "$root/.vscode/settings.json" ]
+  [ ! -f "$root/.codex/AGENTS.md" ]
+  [ ! -f "$root/.codex/config.toml" ]
   [ ! -f "$root/.codex/rules/agent-layer.rules" ]
   [ ! -f "$root/.codex/skills/foo/SKILL.md" ]
   [ ! -d "$root/.codex/skills" ]

@@ -6,8 +6,14 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
+/**
+ * Parse minimal frontmatter metadata from a workflow file.
+ * @param {string} markdown
+ * @returns {{ meta: Record<string, string>, body: string }}
+ */
 function parseFrontMatter(markdown) {
   const lines = markdown.split(/\r?\n/);
   if (lines[0] !== "---") return { meta: {}, body: markdown };
@@ -26,6 +32,11 @@ function parseFrontMatter(markdown) {
   return { meta, body };
 }
 
+/**
+ * Find the nearest workflows directory by walking up the tree.
+ * @param {string} startDir
+ * @returns {string | null}
+ */
 function findWorkflowsDir(startDir) {
   let dir = path.resolve(startDir);
   for (let i = 0; i < 50; i++) {
@@ -41,6 +52,10 @@ function findWorkflowsDir(startDir) {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORKFLOWS_DIR = findWorkflowsDir(process.cwd()) ?? findWorkflowsDir(HERE);
 
+/**
+ * Load workflow prompt definitions from disk.
+ * @returns {{ name: string, description: string, body: string }[]}
+ */
 function loadWorkflows() {
   if (!WORKFLOWS_DIR) return [];
   let files = [];
@@ -64,8 +79,18 @@ function loadWorkflows() {
 
 const server = new Server(
   { name: "agent-layer-prompts", version: "0.1.0" },
-  { capabilities: { prompts: {} } }
+  { capabilities: { prompts: {}, tools: {} } }
 );
+
+/**
+ * Return an empty tool list to satisfy MCP clients that probe for tools.
+ * @returns {{ tools: [] }}
+ */
+function listTools() {
+  return { tools: [] };
+}
+
+server.setRequestHandler(ListToolsRequestSchema, async () => listTools());
 
 server.setRequestHandler(ListPromptsRequestSchema, async () => {
   const workflows = loadWorkflows();
