@@ -27,4 +27,4 @@ jobs:
           mkdir -p work
           ln -s "$PWD" work/.agent-layer
           cd work
-          ./.agent-layer/dev/check.sh
+          ./.agent-layer/tests/run.sh

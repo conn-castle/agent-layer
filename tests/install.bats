@@ -198,6 +198,23 @@ EOF
   rm -rf "$root"
 }
 
+@test "installer does not run sync after setup" {
+  local root work stub_bin installer
+  root="$(make_tmp_dir)"
+  work="$root/work"
+  mkdir -p "$work"
+  git -C "$work" init -q
+  create_min_agent_layer "$work"
+
+  stub_bin="$(create_stub_tools "$root")"
+  installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
+  run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer'"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"==> Running sync"* ]]
+
+  rm -rf "$root"
+}
+
 @test "installer fails without git repo when non-interactive" {
   local root stub_bin installer
   root="$(make_tmp_dir)"
@@ -231,6 +248,60 @@ EOF
   [ -f "$work/docs/FEATURES.md" ]
   [ -f "$work/docs/ROADMAP.md" ]
   [ -f "$work/docs/DECISIONS.md" ]
+
+  rm -rf "$root"
+}
+
+@test "installer upgrades .agent-layer to the latest tag with --upgrade" {
+  local root work src stub_bin installer tag
+  root="$(make_tmp_dir)"
+  work="$root/work"
+  src="$root/src"
+  mkdir -p "$work" "$src"
+  git -C "$work" init -q
+  create_source_repo "$src"
+  git -C "$src" tag v0.1.0
+
+  git clone "$src" "$work/.agent-layer" >/dev/null
+
+  printf "change\n" >"$src/CHANGELOG.md"
+  git -C "$src" add CHANGELOG.md
+  git -C "$src" commit -m "release v0.2.0" -q
+  git -C "$src" tag v0.2.0
+
+  stub_bin="$(create_stub_tools "$root")"
+  installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
+  run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer' --upgrade --repo-url '$src'"
+  [ "$status" -eq 0 ]
+  tag="$(git -C "$work/.agent-layer" describe --tags --exact-match)"
+  [ "$tag" = "v0.2.0" ]
+  [[ "$output" == *"Changes since"* ]]
+
+  rm -rf "$root"
+}
+
+@test "installer updates .agent-layer to the latest branch commit with --latest-branch" {
+  local root work src stub_bin installer dev_commit head_ref
+  root="$(make_tmp_dir)"
+  work="$root/work"
+  src="$root/src"
+  mkdir -p "$work" "$src"
+  git -C "$work" init -q
+  create_source_repo "$src"
+
+  git -C "$src" checkout -b dev -q
+  printf "dev\n" >"$src/DEV.md"
+  git -C "$src" add DEV.md
+  git -C "$src" commit -m "dev commit" -q
+  dev_commit="$(git -C "$src" rev-parse --short dev)"
+
+  stub_bin="$(create_stub_tools "$root")"
+  installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
+  run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer' --latest-branch dev --repo-url '$src'"
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$work/.agent-layer" rev-parse --short HEAD)" = "$dev_commit" ]
+  head_ref="$(git -C "$work/.agent-layer" symbolic-ref --short -q HEAD || true)"
+  [ -z "$head_ref" ]
 
   rm -rf "$root"
 }

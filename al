@@ -31,6 +31,32 @@ fi
 ROOT="$WORKING_ROOT"
 cd "$ROOT"
 
+# Warn when .agent-layer is pinned to an older tag (local tags only).
+warn_if_outdated_tag() {
+  if ! command -v git > /dev/null 2>&1; then
+    return 0
+  fi
+  if ! git -C "$ROOT/.agent-layer" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    return 0
+  fi
+
+  local current_tag latest_tag
+  current_tag="$(git -C "$ROOT/.agent-layer" describe --tags --exact-match 2> /dev/null || true)"
+  if [[ -z "$current_tag" ]]; then
+    return 0
+  fi
+
+  latest_tag="$(git -C "$ROOT/.agent-layer" tag --list --sort=-v:refname | head -n 1)"
+  if [[ -z "$latest_tag" || "$current_tag" == "$latest_tag" ]]; then
+    return 0
+  fi
+
+  echo "warning: .agent-layer is on tag $current_tag; latest local tag is $latest_tag." >&2
+  echo "warning: Run '.agent-layer/agent-layer-install.sh --upgrade' from the working repo root to upgrade." >&2
+}
+
+warn_if_outdated_tag
+
 # If launching Codex, force repo-local CODEX_HOME unless the caller already set it.
 if [[ "${1:-}" == "codex" || "$(basename "${1:-}")" == "codex" ]]; then
   if [[ -n "${CODEX_HOME:-}" ]]; then
@@ -38,6 +64,11 @@ if [[ "${1:-}" == "codex" || "$(basename "${1:-}")" == "codex" ]]; then
   fi
   export CODEX_HOME="${CODEX_HOME:-$ROOT/.codex}"
 fi
+
+command -v node > /dev/null 2>&1 || {
+  echo "ERROR: Node.js is required (node not found). Install Node, then re-run." >&2
+  exit 2
+}
 
 # Option A (default): sync every run, load only .agent-layer/.env, then exec.
 node .agent-layer/sync/sync.mjs

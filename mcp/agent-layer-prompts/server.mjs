@@ -8,49 +8,14 @@ import {
   GetPromptRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-
-/**
- * Parse minimal frontmatter metadata from a workflow file.
- * @param {string} markdown
- * @returns {{ meta: Record<string, string>, body: string }}
- */
-function parseFrontMatter(markdown) {
-  const lines = markdown.split(/\r?\n/);
-  if (lines[0] !== "---") return { meta: {}, body: markdown };
-  const meta = {};
-  let i = 1;
-  for (; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === "---") break;
-    const idx = line.indexOf(":");
-    if (idx === -1) continue;
-    const k = line.slice(0, idx).trim();
-    const v = line.slice(idx + 1).trim();
-    meta[k] = v.replace(/^["']|["']$/g, "");
-  }
-  const body = lines.slice(i + 1).join("\n").replace(/^\n+/, "");
-  return { meta, body };
-}
-
-/**
- * Find the nearest workflows directory by walking up the tree.
- * @param {string} startDir
- * @returns {string | null}
- */
-function findWorkflowsDir(startDir) {
-  let dir = path.resolve(startDir);
-  for (let i = 0; i < 50; i++) {
-    const wf = path.join(dir, ".agent-layer", "workflows");
-    if (fs.existsSync(wf)) return wf;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
+import { parseFrontMatter } from "../../sync/instructions.mjs";
+import { resolveWorkingRoot } from "../../sync/paths.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORKFLOWS_DIR = findWorkflowsDir(process.cwd()) ?? findWorkflowsDir(HERE);
+const WORKING_ROOT = resolveWorkingRoot(process.cwd(), HERE);
+const WORKFLOWS_DIR = WORKING_ROOT
+  ? path.join(WORKING_ROOT, ".agent-layer", "workflows")
+  : null;
 
 /**
  * List workflow markdown files from the workflows directory.
@@ -91,7 +56,7 @@ function loadWorkflows() {
   return files.map((f) => {
     const full = path.join(WORKFLOWS_DIR, f);
     const md = fs.readFileSync(full, "utf8");
-    const { meta, body } = parseFrontMatter(md);
+    const { meta, body } = parseFrontMatter(md, full);
     const name = meta.name || path.basename(f, ".md");
     const description = meta.description || "";
     return { name, description, body };

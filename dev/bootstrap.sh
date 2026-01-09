@@ -2,12 +2,18 @@
 set -euo pipefail
 
 say() { printf "%s\n" "$*"; }
-die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
+die() {
+  printf "ERROR: %s\n" "$*" >&2
+  exit 1
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
+PATHS_SH="$SCRIPT_DIR/.agent-layer/lib/paths.sh"
 if [[ ! -f "$PATHS_SH" ]]; then
-  PATHS_SH="$SCRIPT_DIR/../../lib/paths.sh"
+  PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+fi
+if [[ ! -f "$PATHS_SH" ]]; then
+  PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
 if [[ ! -f "$PATHS_SH" ]]; then
   die "Missing lib/paths.sh (expected near .agent-layer/)."
@@ -20,7 +26,7 @@ WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
 
 AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
-has_cmd() { command -v "$1" >/dev/null 2>&1; }
+has_cmd() { command -v "$1" > /dev/null 2>&1; }
 
 missing=()
 has_cmd git || missing+=("git")
@@ -67,11 +73,10 @@ say "This will:"
 say "  - install missing system dependencies (if any)"
 say "  - run npm install in .agent-layer (if needed)"
 say "  - enable git hooks for this repo (dev-only)"
-say "  - run setup (sync + checks)"
+say "  - run setup (sync + MCP deps; no checks)"
 read -r -p "Continue? [y/N] " reply
 case "$reply" in
-  y|Y|yes|YES)
-    ;;
+  y | Y | yes | YES) ;;
   *)
     die "Aborted."
     ;;
@@ -85,27 +90,28 @@ elif has_cmd apt-get; then
 fi
 
 packages=()
-if [[ " ${missing[*]} " == *" git "* ]]; then
+missing_joined=" ${missing[*]-} "
+if [[ "$missing_joined" == *" git "* ]]; then
   packages+=("git")
 fi
-if [[ " ${missing[*]} " == *" node "* || " ${missing[*]} " == *" npm "* ]]; then
+if [[ "$missing_joined" == *" node "* || "$missing_joined" == *" npm "* ]]; then
   if [[ "$pkg_manager" == "brew" ]]; then
     packages+=("node")
   elif [[ "$pkg_manager" == "apt-get" ]]; then
     packages+=("nodejs" "npm")
   fi
 fi
-if [[ " ${missing[*]} " == *" bats "* ]]; then
+if [[ "$missing_joined" == *" bats "* ]]; then
   if [[ "$pkg_manager" == "brew" ]]; then
     packages+=("bats-core")
   elif [[ "$pkg_manager" == "apt-get" ]]; then
     packages+=("bats")
   fi
 fi
-if [[ " ${missing[*]} " == *" shfmt "* ]]; then
+if [[ "$missing_joined" == *" shfmt "* ]]; then
   packages+=("shfmt")
 fi
-if [[ " ${missing[*]} " == *" shellcheck "* ]]; then
+if [[ "$missing_joined" == *" shellcheck "* ]]; then
   packages+=("shellcheck")
 fi
 
@@ -128,24 +134,24 @@ if [[ "$prettier_installed" == "0" ]]; then
   (cd "$AGENTLAYER_ROOT" && npm install)
 fi
 
-say "==> Running setup"
-bash "$AGENTLAYER_ROOT/setup.sh"
+say "==> Running setup (no checks)"
+bash "$AGENTLAYER_ROOT/setup.sh" --skip-checks
 
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   say "==> Enabling git hooks (core.hooksPath=.agent-layer/.githooks)"
   git config core.hooksPath .agent-layer/.githooks
 
   if [[ -f "$AGENTLAYER_ROOT/.githooks/pre-commit" ]]; then
-    chmod +x "$AGENTLAYER_ROOT/.githooks/pre-commit" 2>/dev/null || true
+    chmod +x "$AGENTLAYER_ROOT/.githooks/pre-commit" 2> /dev/null || true
   else
     die "Missing .agent-layer/.githooks/pre-commit"
   fi
-
-  say "==> Running dev checks"
-  "$AGENTLAYER_ROOT/dev/check.sh"
 else
   say "Skipping hook enable/test (not a git repo)."
 fi
 
+say ""
+say "Next steps:"
+say "  - Run tests (includes checks): ./tests/run.sh"
 say ""
 say "Dev bootstrap complete."

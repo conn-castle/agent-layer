@@ -8,13 +8,36 @@ set -euo pipefail
 # - enables & tests git hooks
 #
 # Usage:
-#   ./.agent-layer/setup.sh
+#   ./.agent-layer/setup.sh [--skip-checks]
 
 say() { printf "%s\n" "$*"; }
-die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
+die() {
+  printf "ERROR: %s\n" "$*" >&2
+  exit 1
+}
+
+SKIP_CHECKS="0"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-checks)
+      SKIP_CHECKS="1"
+      ;;
+    --help | -h)
+      say "Usage: ./.agent-layer/setup.sh [--skip-checks]"
+      exit 0
+      ;;
+    *)
+      die "Unknown argument: $1"
+      ;;
+  esac
+  shift
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+PATHS_SH="$SCRIPT_DIR/.agent-layer/lib/paths.sh"
+if [[ ! -f "$PATHS_SH" ]]; then
+  PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+fi
 if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
@@ -34,12 +57,12 @@ cd "$WORKING_ROOT"
 [[ -d "$AGENTLAYER_ROOT" ]] || die "Missing .agent-layer/ directory. Run the bootstrap script in the repo root first."
 [[ -f "$AGENTLAYER_ROOT/sync/sync.mjs" ]] || die "Missing .agent-layer/sync/sync.mjs. Re-run bootstrap or restore it."
 
-command -v node >/dev/null 2>&1 || die "Node.js is required (node not found). Install Node, then re-run."
-command -v npm >/dev/null 2>&1 || die "npm is required (npm not found). Install npm/Node, then re-run."
-command -v git >/dev/null 2>&1 || die "git is required (git not found)."
+command -v node > /dev/null 2>&1 || die "Node.js is required (node not found). Install Node, then re-run."
+command -v npm > /dev/null 2>&1 || die "npm is required (npm not found). Install npm/Node, then re-run."
+command -v git > /dev/null 2>&1 || die "git is required (git not found)."
 
 # Ensure we're in a git repo (recommended for hooks).
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   say "NOTE: Not inside a git repository. Hooks will not be enabled."
   IN_GIT_REPO="0"
 else
@@ -51,9 +74,9 @@ node "$AGENTLAYER_ROOT/sync/sync.mjs"
 
 say "==> Installing MCP prompt server dependencies"
 if [[ -f "$AGENTLAYER_ROOT/mcp/agent-layer-prompts/package.json" ]]; then
-  pushd "$AGENTLAYER_ROOT/mcp/agent-layer-prompts" >/dev/null
+  pushd "$AGENTLAYER_ROOT/mcp/agent-layer-prompts" > /dev/null
   npm install
-  popd >/dev/null
+  popd > /dev/null
 else
   die "Missing .agent-layer/mcp/agent-layer-prompts/package.json"
 fi
@@ -64,8 +87,12 @@ else
   say "Skipping hook enable/test (not a git repo)."
 fi
 
-say "==> Verifying sync is up-to-date (check mode)"
-node "$AGENTLAYER_ROOT/sync/sync.mjs" --check
+if [[ "$SKIP_CHECKS" == "1" ]]; then
+  say "==> Skipping sync check (--skip-checks)"
+else
+  say "==> Verifying sync is up-to-date (check mode)"
+  node "$AGENTLAYER_ROOT/sync/sync.mjs" --check
+fi
 
 say ""
 say "Setup complete (manual steps below are required)."

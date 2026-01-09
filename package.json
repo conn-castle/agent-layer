@@ -8,7 +8,7 @@
     "prettier": "^3.2.5"
   },
   "scripts": {
-    "dev:check": "./dev/check.sh",
+    "dev:check": "./tests/run.sh",
     "dev:format": "./dev/format.sh"
   }
 }

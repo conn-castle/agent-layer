@@ -8,7 +8,10 @@ set -euo pipefail
 #   ./.agent-layer/with-env.sh --project-env gemini
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+PATHS_SH="$SCRIPT_DIR/.agent-layer/lib/paths.sh"
+if [[ ! -f "$PATHS_SH" ]]; then
+  PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+fi
 if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
@@ -33,12 +36,18 @@ INCLUDE_PROJECT_ENV=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project-env) INCLUDE_PROJECT_ENV=1; shift ;;
-    --help|-h)
+    --project-env)
+      INCLUDE_PROJECT_ENV=1
+      shift
+      ;;
+    --help | -h)
       echo "Usage: ./.agent-layer/with-env.sh [--project-env] <command> [args...]"
       exit 0
       ;;
-    --) shift; break ;;
+    --)
+      shift
+      break
+      ;;
     *) break ;;
   esac
 done

@@ -23,9 +23,9 @@ fi
 
 AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
-if [[ ! -x "$AGENTLAYER_ROOT/dev/check.sh" ]]; then
-  echo "ERROR: Missing .agent-layer/dev/check.sh." >&2
+if [[ ! -x "$AGENTLAYER_ROOT/tests/run.sh" ]]; then
+  echo "ERROR: Missing .agent-layer/tests/run.sh." >&2
   exit 2
 fi
 
-"$AGENTLAYER_ROOT/dev/check.sh"
+"$AGENTLAYER_ROOT/tests/run.sh"

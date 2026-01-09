@@ -52,6 +52,28 @@ If you already have this repo checked out locally:
 /path/to/.agent-layer/agent-layer-install.sh
 ```
 
+Upgrade an existing `.agent-layer` to the latest tagged release:
+
+```bash
+./agent-layer-install.sh --upgrade
+```
+
+Notes:
+- Requires a clean `.agent-layer` working tree (commit or stash local changes first).
+- Checks out the latest tag (detached HEAD) and prints the commit list since the current version.
+- If no `origin` remote is configured, pass `--repo-url` or set `AGENTLAYER_REPO_URL`.
+
+Update an existing `.agent-layer` to the latest commit of a branch (for developers):
+
+```bash
+./agent-layer-install.sh --latest-branch main
+```
+
+Notes:
+- Requires a clean `.agent-layer` working tree (commit or stash local changes first).
+- Fetches from the remote only; checks out the latest commit in detached HEAD mode.
+- Re-run the command to pull the newest commit again.
+
 ## Quickstart
 
 From the agent-layer repo root (inside `.agent-layer/` in your working repo):
@@ -204,6 +226,9 @@ Workflows are exposed as MCP prompts by:
 cd mcp/agent-layer-prompts
 npm install
 ```
+
+Dependency upgrades (maintainers):
+- update `mcp/agent-layer-prompts/package.json`, then run `npm install` to refresh `package-lock.json`.
 
 If you changed `workflows/*.md`:
 - run `node sync/sync.mjs` (or `./al <cmd>`)
@@ -421,7 +446,7 @@ Each section below answers two questions:
 - `sync/sync.mjs`  
   Generator (“build”) for all shims/configs/skills.
 - `clean.sh`  
-  Remove generated shims/configs/skills so they can be regenerated.
+  Remove generated shims/configs/skills and strip agent-layer-managed settings from client config files.
 - `./al`  
   Repo-local launcher (sync + env load + exec; symlink recommended at working repo root).
 
@@ -432,16 +457,16 @@ Dev-only prerequisites (not required to use the tool):
 - `shellcheck` (macOS: `brew install shellcheck`; Ubuntu: `apt-get install shellcheck`)
 - `npm install` (installs Prettier for JS formatting)
 
-Dev bootstrap (installs dev deps + enables git hooks + runs checks):
+Dev bootstrap (installs dev deps + enables git hooks):
 - `./dev/bootstrap.sh`
 
-Run checks (sync check + formatting/lint + tests):
-- `./dev/check.sh`
+Run tests (includes sync check + formatting/lint):
+- `./tests/run.sh`
 
 Autoformat (shell + JS):
 - `./dev/format.sh`
 
-Tests only:
+Test entrypoint (includes checks):
 - `./tests/run.sh`
 
 ## FAQ / Troubleshooting
@@ -470,7 +495,7 @@ Fix:
 The hook runs:
 
 ```bash
-./dev/check.sh
+./tests/run.sh
 ```
 
 If it fails, fix the reported issues (formatting, lint, tests, or sync), then commit again.
@@ -481,13 +506,13 @@ Yes. Keep numeric prefixes if you want stable ordering without changing `sync/sy
 ## Contributing
 
 1) Ensure prerequisites are installed (Node LTS, git). If you use `nvm`, run `nvm use` in `.agent-layer/`.
-2) Run the dev bootstrap (installs dev deps, enables hooks, runs checks):
+2) Run the dev bootstrap (installs dev deps, enables hooks):
    ```bash
    ./dev/bootstrap.sh
    ```
 3) Before committing:
    ```bash
-   ./dev/check.sh
+   ./tests/run.sh
    ```
 4) Autoformat (shell + JS) when needed:
    ```bash

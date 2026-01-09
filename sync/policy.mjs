@@ -102,7 +102,7 @@ function dedupeEntries(entries) {
  * @param {unknown} entry
  * @returns {boolean}
  */
-function isManagedGeminiAllowed(entry) {
+export function isManagedGeminiAllowed(entry) {
   return typeof entry === "string" && entry.startsWith("run_shell_command(");
 }
 
@@ -111,7 +111,7 @@ function isManagedGeminiAllowed(entry) {
  * @param {unknown} entry
  * @returns {boolean}
  */
-function isManagedClaudeAllow(entry) {
+export function isManagedClaudeAllow(entry) {
   return (
     typeof entry === "string" &&
     (entry.startsWith("Bash(") || entry.startsWith("mcp__"))

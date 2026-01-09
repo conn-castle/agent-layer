@@ -42,6 +42,7 @@ import {
   trustedServerNames,
 } from "./mcp.mjs";
 import { diffOrWrite } from "./outdated.mjs";
+import { resolveWorkingRoot } from "./paths.mjs";
 import {
   buildClaudeAllow,
   buildGeminiAllowed,
@@ -83,39 +84,13 @@ function parseArgs(argv) {
 }
 
 /**
- * Find the working repo root containing .agent-layer/.
- * @param {string} startDir
- * @returns {string | null}
- */
-function findWorkingRoot(startDir) {
-  let dir = path.resolve(startDir);
-  for (let i = 0; i < 50; i++) {
-    if (fileExists(path.join(dir, ".agent-layer"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
-}
-
-/**
- * Resolve the working repo root by searching for .agent-layer/.
- * @returns {string | null}
- */
-function resolveWorkingRoot() {
-  const cwdRoot = findWorkingRoot(process.cwd());
-  if (cwdRoot) return cwdRoot;
-  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  return findWorkingRoot(scriptDir);
-}
-
-/**
  * Entry point.
  * @returns {void}
  */
 function main() {
   const args = parseArgs(process.argv);
-  const workingRoot = resolveWorkingRoot();
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const workingRoot = resolveWorkingRoot(process.cwd(), scriptDir);
   if (!workingRoot || !fileExists(path.join(workingRoot, ".agent-layer"))) {
     console.error("agent-layer sync: could not find working repo root containing .agent-layer/");
     process.exit(2);

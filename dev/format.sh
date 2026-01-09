@@ -2,12 +2,18 @@
 set -euo pipefail
 
 say() { printf "%s\n" "$*"; }
-die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
+die() {
+  printf "ERROR: %s\n" "$*" >&2
+  exit 1
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
+PATHS_SH="$SCRIPT_DIR/.agent-layer/lib/paths.sh"
 if [[ ! -f "$PATHS_SH" ]]; then
-  PATHS_SH="$SCRIPT_DIR/../../lib/paths.sh"
+  PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+fi
+if [[ ! -f "$PATHS_SH" ]]; then
+  PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
 if [[ ! -f "$PATHS_SH" ]]; then
   die "Missing lib/paths.sh (expected near .agent-layer/)."
@@ -22,7 +28,7 @@ AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
 
 require_cmd() {
   local cmd="$1" hint="$2"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
+  if ! command -v "$cmd" > /dev/null 2>&1; then
     die "$cmd not found. $hint"
   fi
 }
@@ -32,7 +38,7 @@ require_cmd shfmt "Install shfmt (macOS: brew install shfmt; Ubuntu: apt-get ins
 PRETTIER_BIN="$AGENTLAYER_ROOT/node_modules/.bin/prettier"
 if [[ -x "$PRETTIER_BIN" ]]; then
   PRETTIER="$PRETTIER_BIN"
-elif command -v prettier >/dev/null 2>&1; then
+elif command -v prettier > /dev/null 2>&1; then
   PRETTIER="$(command -v prettier)"
 else
   die "prettier not found. Run: (cd .agent-layer && npm install) or install globally."

@@ -7,10 +7,16 @@ set -euo pipefail
 #   ./.agent-layer/clean.sh
 
 say() { printf "%s\n" "$*"; }
-die() { printf "ERROR: %s\n" "$*" >&2; exit 1; }
+die() {
+  printf "ERROR: %s\n" "$*" >&2
+  exit 1
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+PATHS_SH="$SCRIPT_DIR/.agent-layer/lib/paths.sh"
+if [[ ! -f "$PATHS_SH" ]]; then
+  PATHS_SH="$SCRIPT_DIR/lib/paths.sh"
+fi
 if [[ ! -f "$PATHS_SH" ]]; then
   PATHS_SH="$SCRIPT_DIR/../lib/paths.sh"
 fi
@@ -29,16 +35,34 @@ cd "$WORKING_ROOT"
 
 [[ -f "$AGENTLAYER_ROOT/sync/sync.mjs" ]] || die "Missing .agent-layer/sync/sync.mjs."
 
+managed_settings_files=(
+  ".gemini/settings.json"
+  ".claude/settings.json"
+  ".vscode/settings.json"
+)
+
+should_clean_settings="0"
+for path in "${managed_settings_files[@]}"; do
+  if [[ -f "$path" ]]; then
+    should_clean_settings="1"
+    break
+  fi
+done
+
+if [[ "$should_clean_settings" == "1" ]]; then
+  command -v node > /dev/null 2>&1 || die "Node.js is required (node not found). Install Node, then re-run."
+  [[ -f "$AGENTLAYER_ROOT/sync/clean.mjs" ]] || die "Missing .agent-layer/sync/clean.mjs."
+  say "==> Removing agent-layer-managed settings"
+  node "$AGENTLAYER_ROOT/sync/clean.mjs"
+fi
+
 generated_files=(
   "AGENTS.md"
   "CLAUDE.md"
   "GEMINI.md"
   ".github/copilot-instructions.md"
   ".mcp.json"
-  ".gemini/settings.json"
-  ".claude/settings.json"
   ".vscode/mcp.json"
-  ".vscode/settings.json"
   ".codex/AGENTS.md"
   ".codex/config.toml"
   ".codex/rules/agent-layer.rules"

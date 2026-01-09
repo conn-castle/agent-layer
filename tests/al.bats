@@ -76,3 +76,19 @@ EOF
 
   rm -rf "$root"
 }
+
+@test "al fails when node is missing" {
+  local root stub_bin output bash_bin
+  root="$(create_isolated_working_root)"
+  stub_bin="$root/stub-bin"
+  bash_bin="$(command -v bash)"
+  mkdir -p "$stub_bin"
+  ln -s "$(command -v basename)" "$stub_bin/basename"
+  ln -s "$(command -v dirname)" "$stub_bin/dirname"
+
+  run bash -c "cd '$root/sub/dir' && PATH='$stub_bin' '$bash_bin' '$root/.agent-layer/al' pwd 2>&1"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Node.js is required"* ]]
+
+  rm -rf "$root"
+}

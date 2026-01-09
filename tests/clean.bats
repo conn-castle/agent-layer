@@ -14,20 +14,64 @@ load "helpers.bash"
   : >"$root/GEMINI.md"
   : >"$root/.github/copilot-instructions.md"
   : >"$root/.mcp.json"
-  : >"$root/.gemini/settings.json"
-  : >"$root/.claude/settings.json"
   : >"$root/.vscode/mcp.json"
-  : >"$root/.vscode/settings.json"
   : >"$root/.codex/AGENTS.md"
   : >"$root/.codex/config.toml"
   : >"$root/.codex/rules/agent-layer.rules"
   : >"$root/.codex/skills/foo/SKILL.md"
 
+  cat >"$root/.gemini/settings.json" <<'EOF'
+{
+  "mcpServers": {
+    "agent-layer": { "command": "node" },
+    "context7": { "command": "npx" },
+    "custom": { "command": "custom" }
+  },
+  "tools": {
+    "allowed": [
+      "run_shell_command(git status)",
+      "OtherTool"
+    ]
+  },
+  "ui": { "theme": "dark" }
+}
+EOF
+
+  cat >"$root/.claude/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "mcp__github__*",
+      "Read",
+      "Custom"
+    ]
+  },
+  "ui": { "theme": "light" }
+}
+EOF
+
+  cat >"$root/.vscode/settings.json" <<'EOF'
+{
+  "chat.tools.terminal.autoApprove": { "/^git\\b/": true },
+  "editor.tabSize": 2
+}
+EOF
+
   mkdir -p "$root/.agent-layer/instructions" "$root/.agent-layer/workflows"
   mkdir -p "$root/.agent-layer/mcp" "$root/.agent-layer/policy"
   : >"$root/.agent-layer/instructions/01_test.md"
   : >"$root/.agent-layer/workflows/01_test.md"
-  : >"$root/.agent-layer/mcp/servers.json"
+  cat >"$root/.agent-layer/mcp/servers.json" <<'EOF'
+{
+  "version": 1,
+  "servers": [
+    { "name": "agent-layer", "command": "node" },
+    { "name": "context7", "command": "npx" },
+    { "name": "github", "command": "npx" }
+  ]
+}
+EOF
   : >"$root/.agent-layer/policy/commands.json"
 
   run "$root/.agent-layer/clean.sh"
@@ -38,15 +82,29 @@ load "helpers.bash"
   [ ! -f "$root/GEMINI.md" ]
   [ ! -f "$root/.github/copilot-instructions.md" ]
   [ ! -f "$root/.mcp.json" ]
-  [ ! -f "$root/.gemini/settings.json" ]
-  [ ! -f "$root/.claude/settings.json" ]
   [ ! -f "$root/.vscode/mcp.json" ]
-  [ ! -f "$root/.vscode/settings.json" ]
   [ ! -f "$root/.codex/AGENTS.md" ]
   [ ! -f "$root/.codex/config.toml" ]
   [ ! -f "$root/.codex/rules/agent-layer.rules" ]
   [ ! -f "$root/.codex/skills/foo/SKILL.md" ]
   [ ! -d "$root/.codex/skills" ]
+
+  [ -f "$root/.gemini/settings.json" ]
+  [ -f "$root/.claude/settings.json" ]
+  [ -f "$root/.vscode/settings.json" ]
+  ! grep -Fq "run_shell_command" "$root/.gemini/settings.json"
+  grep -Fq "OtherTool" "$root/.gemini/settings.json"
+  ! grep -Fq "agent-layer" "$root/.gemini/settings.json"
+  ! grep -Fq "context7" "$root/.gemini/settings.json"
+  grep -Fq "custom" "$root/.gemini/settings.json"
+
+  ! grep -Fq "Bash(" "$root/.claude/settings.json"
+  ! grep -Fq "mcp__" "$root/.claude/settings.json"
+  grep -Fq "Read" "$root/.claude/settings.json"
+  grep -Fq "Custom" "$root/.claude/settings.json"
+
+  ! grep -Fq "chat.tools.terminal.autoApprove" "$root/.vscode/settings.json"
+  grep -Fq "editor.tabSize" "$root/.vscode/settings.json"
 
   [ -f "$root/.agent-layer/instructions/01_test.md" ]
   [ -f "$root/.agent-layer/workflows/01_test.md" ]
