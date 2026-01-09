@@ -141,15 +141,12 @@ CLAUDE.md
 GEMINI.md
 .github/copilot-instructions.md
 
-# Agentlayer-generated MCP configs
+# Agentlayer-generated client configs + artifacts
 .mcp.json
-.gemini/settings.json
-.vscode/mcp.json
-.claude/settings.json
-
-# Agentlayer-generated Codex artifacts
-.codex/skills/
-.codex/rules/agentlayer.rules
+.codex/
+.gemini/
+.claude/
+.vscode/
 # <<< agentlayer
 EOF
 )"

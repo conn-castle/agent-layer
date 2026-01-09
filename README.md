@@ -5,7 +5,7 @@ Paths in this README are relative to the agent-layer repo root unless noted as w
 
 ## What this is for
 
-**Goal:** make agentic tooling consistent across Claude Code, Gemini CLI, VS Code/Copilot, and Codex by keeping a **single source of truth** in the repo, then generating the per-client shim/config files those tools require.
+**Goal:** make agentic tooling consistent across Claude Code CLI, Gemini CLI, VS Code/Copilot, and Codex by keeping a **single source of truth** in the repo, then generating the per-client shim/config files those tools require.
 
 **Primary uses**
 - A unified instruction set (system/developer-style guidance) usable across tools.
@@ -25,10 +25,30 @@ Required:
 Optional (depending on which clients you use):
 - VS Code (Copilot Chat)
 - Gemini CLI
-- Claude Code
+- Claude Code CLI
 - Codex CLI / Codex VS Code extension
 
 Note: This tooling is built for macOS. Other operating systems are untested, and the `./al` symlink workflow does not work on Windows.
+
+Contributors using `nvm` can run `nvm use` inside `.agentlayer/` to match `.nvmrc`.
+
+## Install in your repo (working repo root)
+
+From your working repo root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nicholasjconn/agent-layer/main/agent-layer-install.sh -o agent-layer-install.sh
+chmod +x agent-layer-install.sh
+./agent-layer-install.sh
+```
+
+This creates `.agentlayer/`, adds a managed `.gitignore` block, and creates `./al`.
+
+If you already have this repo checked out locally:
+
+```bash
+/path/to/agent-layer/agent-layer-install.sh
+```
 
 ## Quickstart
 
@@ -77,9 +97,10 @@ Examples:
 - MCP server catalog: `mcp/servers.json`
 - Command allowlist: `policy/commands.json`
 
-5) **Regenerate after changes**
+5) **Regenerate after changes (optional if you use `./al`)**
 
 ```bash
+# ./al runs sync automatically; use this only if you want to regenerate without launching a CLI
 node sync/sync.mjs
 ```
 
@@ -170,6 +191,51 @@ If you changed `workflows/*.md`:
 
 ---
 
+## Support matrix
+
+| Client | System instructions | Slash commands | MCP servers | Approved command list |
+| --- | --- | --- | --- | --- |
+| Gemini CLI | ✅ | ✅ | ✅ | ✅ |
+| Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
+| VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
+| Codex CLI | ❌ | ✅ | ❌ | ✅ |
+| Codex VS Code extension | ❌ | ✅ | ❌ | ✅ |
+| Antigravity | ❌ | ❌ | ❌ | ❌ |
+
+Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex` (repo-local `CODEX_HOME`). The VS Code extension only uses them if you set `CODEX_HOME` to the repo.
+
+## Quick examples (per client)
+
+Gemini CLI:
+- Slash command example: `/find-issues`
+- MCP check: `cat .gemini/settings.json` (look for `mcpServers.agentlayer`)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+VS Code / Copilot Chat:
+- Slash command example: `/mcp.agentlayer.find-issues`
+- MCP check: `cat .vscode/mcp.json` (look for `agentlayer`)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Claude Code CLI:
+- Slash command example: `find-issues` (via MCP prompt UI/namespace)
+- MCP check: `cat .mcp.json` (look for `mcpServers.agentlayer`)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Codex CLI:
+- Slash command example: `$find-issues` (Codex Skills)
+- MCP check: not supported (no MCP config generated)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Codex VS Code extension:
+- Slash command example: `$find-issues` (Codex Skills; requires `CODEX_HOME` pointing at the repo)
+- MCP check: not supported (no MCP config generated)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Antigravity:
+- Slash commands: not supported
+- MCP check: not supported
+- Prompt examples: not supported
+
 ## Client-specific notes (MCP config + slash commands)
 
 Each section below answers two questions:
@@ -233,7 +299,7 @@ Each section below answers two questions:
 
 ---
 
-### Claude Code
+### Claude Code CLI
 
 **MCP config file**
 - Project MCP config is in the working repo root: `.mcp.json` (generated).
@@ -243,7 +309,7 @@ Each section below answers two questions:
   ```
 
 **Confirm MCP is connected**
-- Launch Claude Code from repo root:
+- Launch Claude Code CLI from repo root:
   ```bash
   ./al claude
   ```
@@ -253,14 +319,14 @@ Each section below answers two questions:
      ```bash
      cd mcp/agentlayer-prompts && npm install && cd -
      ```
-  3) restart Claude Code after MCP config changes
+  3) restart Claude Code CLI after MCP config changes
 
 **Confirm slash commands (MCP prompts)**
-- In Claude Code, invoke the MCP prompt using its MCP prompt UI/namespace (varies by client build).
+- In Claude Code CLI, invoke the MCP prompt using its MCP prompt UI/namespace (varies by client build).
 - Quick sanity check: the prompt list should include your workflow prompt name (e.g., `find-issues`).
 - If missing:
   1) run `node sync/sync.mjs`
-  2) restart Claude Code
+  2) restart Claude Code CLI
   3) ensure the MCP server process can run (Node installed, deps installed)
 
 ---
@@ -277,9 +343,9 @@ Each section below answers two questions:
   ```bash
   ls -la .codex/skills
   ```
-- In Codex, use:
-  - `/skills` to browse skills
-  - then select the appropriate skill (e.g., `find-issues`)
+- In Codex, skills are available under `$`:
+  - run `$find-issues`
+  - (if your build supports it) list skills with `$skills`
 
 **If a skill is missing**
 1) run `node sync/sync.mjs`
@@ -372,7 +438,7 @@ Fix:
 - Restart/refresh MCP discovery:
   - Gemini: restart Gemini and/or run MCP refresh if available in your build
   - VS Code: restart servers / reset cached tools
-  - Claude Code: restart Claude Code after MCP config changes
+  - Claude Code CLI: restart Claude Code CLI after MCP config changes
 
 ### “Commits are failing after enabling hooks.”
 The hook runs:
@@ -385,3 +451,24 @@ If it fails, fix the reported issues (formatting, lint, tests, or sync), then co
 
 ### “Can I rename the instruction files?”
 Yes. Keep numeric prefixes if you want stable ordering without changing `sync/sync.mjs`.
+
+## Contributing
+
+1) Ensure prerequisites are installed (Node LTS, git). If you use `nvm`, run `nvm use` in `.agentlayer/`.
+2) Run the dev bootstrap (installs dev deps, enables hooks, runs checks):
+   ```bash
+   ./dev/bootstrap.sh
+   ```
+3) Before committing:
+   ```bash
+   ./dev/check.sh
+   ```
+4) Autoformat (shell + JS) when needed:
+   ```bash
+   ./dev/format.sh
+   ```
+
+## Attribution
+
+- Nicholas Conn (developer)
+- Conn Castle Studios (company)

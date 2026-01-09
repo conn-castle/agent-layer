@@ -66,7 +66,10 @@ EOF
   [ "$start_line" -lt "$block_start" ]
   [ "$block_end" -lt "$end_line" ]
   grep -q '^al$' "$gitignore"
-  ! grep -q '^\.vscode/settings\.json$' "$gitignore"
+  grep -q '^\.codex/$' "$gitignore"
+  grep -q '^\.gemini/$' "$gitignore"
+  grep -q '^\.claude/$' "$gitignore"
+  grep -q '^\.vscode/$' "$gitignore"
 
   rm -rf "$root"
 }
@@ -135,7 +138,10 @@ EOF
   grep -q '^# >>> agentlayer$' "$gitignore"
   grep -q '^# <<< agentlayer$' "$gitignore"
   grep -q '^al$' "$gitignore"
-  ! grep -q '^\.vscode/settings\.json$' "$gitignore"
+  grep -q '^\.codex/$' "$gitignore"
+  grep -q '^\.gemini/$' "$gitignore"
+  grep -q '^\.claude/$' "$gitignore"
+  grep -q '^\.vscode/$' "$gitignore"
 
   rm -rf "$root"
 }
