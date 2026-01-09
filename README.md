@@ -1,4 +1,4 @@
-# Agentlayer (repo-local agent standardization)
+# Agent Layer (repo-local agent standardization)
 
 This repository is the agent-layer and is intended to live at `.agentlayer/` inside a working repo.
 Paths in this README are relative to the agent-layer repo root unless noted as working-repo outputs; prefix with `.agentlayer/` when running from the working repo root.

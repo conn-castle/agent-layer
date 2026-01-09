@@ -17,3 +17,40 @@ load "helpers.bash"
 
   rm -rf "$root_a" "$root_b"
 }
+
+@test "al sets CODEX_HOME when unset" {
+  local root stub_bin output
+  root="$(create_isolated_working_root)"
+  stub_bin="$(create_stub_tools "$root")"
+  cat >"$stub_bin/codex" <<'EOF'
+#!/usr/bin/env bash
+printf "%s" "${CODEX_HOME:-}"
+EOF
+  chmod +x "$stub_bin/codex"
+
+  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" "$root/.agentlayer/al" codex)"
+  status=$?
+  [ "$status" -eq 0 ]
+  [ "$output" = "$root/.codex" ]
+
+  rm -rf "$root"
+}
+
+@test "al preserves CODEX_HOME when already set" {
+  local root stub_bin output
+  root="$(create_isolated_working_root)"
+  stub_bin="$(create_stub_tools "$root")"
+  cat >"$stub_bin/codex" <<'EOF'
+#!/usr/bin/env bash
+printf "%s" "${CODEX_HOME:-}"
+EOF
+  chmod +x "$stub_bin/codex"
+
+  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" CODEX_HOME="/tmp/custom-codex" \
+    "$root/.agentlayer/al" codex 2>/dev/null)"
+  status=$?
+  [ "$status" -eq 0 ]
+  [ "$output" = "/tmp/custom-codex" ]
+
+  rm -rf "$root"
+}

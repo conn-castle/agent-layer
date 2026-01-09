@@ -14,13 +14,12 @@ load "helpers.bash"
   rm -rf "$root"
 }
 
-@test "resolve_working_root fails when .agentlayer is missing" {
+@test "resolve_working_root fails when .agentlayer is missing from ancestors" {
   local root
-  root="$(make_tmp_dir)"
+  root="/"
 
   ROOT="$root" AGENTLAYER_ROOT="$AGENTLAYER_ROOT" run bash -c \
     'source "$AGENTLAYER_ROOT/lib/paths.sh"; resolve_working_root "$ROOT"'
 
   [ "$status" -ne 0 ]
-  rm -rf "$root"
 }
