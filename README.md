@@ -1,7 +1,6 @@
 # Agent Layer (repo-local agent standardization)
 
-This repository is the agent-layer and is intended to live at `.agent-layer/` inside a working repo.
-Paths in this README are relative to the agent-layer repo root unless noted as working-repo outputs; prefix with `.agent-layer/` when running from the working repo root.
+Agent Layer is an opinionated framework for AI‑assisted development: one set of instructions, workflows, MCP servers, and project memory (features, roadmap, backlog, issues, decisions) keeps Claude, Gemini, VS Code/Copilot, and Codex aligned. It turns “vibe coding” into "agent orchestration" by giving every tool the same context and direction.
 
 ## What this is for
 
@@ -16,11 +15,25 @@ Paths in this README are relative to the agent-layer repo root unless noted as w
 - A repo-owned allowlist of safe shell command prefixes, projected into each client's auto-approval settings.
 - A lightweight setup flow that works in any project repo.
 
+### Support matrix
+
+| Client | System instructions | Slash commands | MCP servers | Approved command list | Approved MCP tools |
+| --- | --- | --- | --- | --- | --- |
+| Gemini CLI | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Claude Code CLI | ✅ | ✅ | ✅ | ✅ | ✅ |
+| VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Codex CLI | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Codex VS Code extension | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Antigravity | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex` (repo-local `CODEX_HOME`). The VS Code extension only uses them if the extension host sees the same `CODEX_HOME` (see "Codex (CLI / VS Code extension)" below). Antigravity is not supported yet; if you're experimenting there, try the same `CODEX_HOME` setup.
+
 ## Prerequisites
 
 Required:
 - **Node.js + npm** (LTS >=20 recommended; `.nvmrc` included for devs; can use `mise`, `asdf`, `volta`, or `nvm`)
 - **git** (recommended; required for dev hooks)
+- **curl** (for the install script below)
 
 Optional (depending on which clients you use):
 - VS Code (Copilot Chat)
@@ -28,7 +41,7 @@ Optional (depending on which clients you use):
 - Claude Code CLI
 - Codex CLI / Codex VS Code extension
 
-Note: This tooling is built for macOS. Other operating systems are untested, and the `./al` symlink workflow does not work on Windows.
+Note: This tooling is built for macOS. Other operating systems are untested, and the `./al` symlink workflow is not supported on Windows (symlinks require extra setup).
 
 Contributors using `nvm` can run `nvm use` inside `.agent-layer/` to match `.nvmrc`.
 
@@ -44,7 +57,9 @@ chmod +x agent-layer-install.sh
 
 This creates `.agent-layer/`, adds a managed `.gitignore` block, creates `./al`,
 and ensures the project memory files exist under `docs/` (`ISSUES.md`, `FEATURES.md`,
-`ROADMAP.md`, `DECISIONS.md`).
+`ROADMAP.md`, `DECISIONS.md`). Templates live in `.agent-layer/templates/docs`; if a file
+already exists, the installer prompts to keep it (default yes). In non-interactive
+runs, existing files are kept.
 
 If you already have this repo checked out locally:
 
@@ -78,24 +93,27 @@ Notes:
 
 From the agent-layer repo root (inside `.agent-layer/` in your working repo):
 
-1) **Run setup (installs deps, verifies everything)**
+1) **Run setup (installs MCP prompt server deps, runs sync, checks for drift)**
 
 ```bash
 chmod +x setup.sh
 ./setup.sh
 ```
 
-2) **Create your Agent Layer env file (recommended: agent-only secrets)**
+2) **Review/update your Agent Layer env file (recommended: agent-only secrets)**
 
 ```bash
 # Recommended: keep agent-only secrets separate from project env vars
+# If the installer did not create .env yet:
 cp .env.example .env
 # edit .env; do not commit it
 ```
 
-If you also use a project/dev `.env` for your application, keep it separate and do not mix agent-only tokens into it.
+The installer creates `.env` from `.env.example` if it is missing. If you also use a project/dev `.env` for your application, keep it separate and do not mix agent-only tokens into it.
 
-3) **Create the repo-local launcher `./al` (recommended)**
+3) **Ensure the repo-local launcher `./al` exists (recommended)**
+
+If you used the installer, `./al` already exists (wrapper script). You can replace it with a symlink if you prefer:
 
 ```bash
 chmod +x al
@@ -121,7 +139,7 @@ Examples:
 - MCP server catalog: `mcp/servers.json`
 - Command allowlist: `policy/commands.json`
 
-Note: allowlist outputs are authoritative for shell command approvals; sync replaces existing run_shell_command/Bash/terminal auto-approve entries while preserving other allow entries.
+Note: allowlist outputs are authoritative for shell command approvals. Sync replaces managed allowlist entries; non-managed allow entries are preserved for Gemini/Claude, while VS Code terminal auto-approve rules are replaced.
 
 5) **Regenerate after changes (optional if you use `./al`)**
 
@@ -129,6 +147,26 @@ Note: allowlist outputs are authoritative for shell command approvals; sync repl
 # ./al runs sync automatically; use this only if you want to regenerate without launching a CLI
 node sync/sync.mjs
 ```
+
+## Conventions
+
+This repository is the agent-layer and is intended to live at `.agent-layer/` inside a working repo.
+Paths in this README are relative to the agent-layer repo root unless noted as working-repo outputs; prefix with `.agent-layer/` when running from the working repo root.
+
+### Repository layout
+
+- Working repo root: your app plus generated shims/configs (for example, `AGENTS.md`, `.mcp.json`, `.codex/`).
+- `.agent-layer/`: sources of truth (`instructions/`, `workflows/`, `mcp/`, `policy/`) and scripts (`setup.sh`, `sync/`, `clean.sh`).
+- `./al`: launcher in the working repo root that syncs and forwards to CLIs.
+- For the full list, see "What's inside this repository" below.
+
+## Environment variables
+
+`./al` and `with-env.sh` load `.agent-layer/.env` when it exists. The default MCP servers in `mcp/servers.json` expect:
+- `GITHUB_TOKEN` (GitHub MCP server)
+- `CONTEXT7_API_KEY` (Context7 MCP server)
+
+VS Code MCP config uses the generated `.vscode/mcp.json` `envFile`, which defaults to `.agent-layer/.env`.
 
 ## How to use (day-to-day)
 
@@ -148,10 +186,10 @@ Examples:
 ./al codex
 ```
 
-For a one-off run that also includes project env (if configured), use:
+For a one-off run that also includes project env (if configured), from the working repo root use:
 
 ```bash
-./with-env.sh --project-env gemini
+./.agent-layer/with-env.sh --project-env gemini
 ```
 
 `with-env.sh` resolves the repo root for env file paths and does not change your working directory.
@@ -185,11 +223,14 @@ For a one-off run that also includes project env (if configured), use:
 - `.codex/rules/agent-layer.rules`
 - `.codex/skills/*/SKILL.md`
 
-If you accidentally edited a generated file, revert it (example):
+If you accidentally edited a generated file, delete it and re-sync (example from the working repo root):
 
 ```bash
-git checkout -- .mcp.json
+rm .mcp.json
+node .agent-layer/sync/sync.mjs
 ```
+
+If the file is tracked in your repo, `git checkout -- <file>` also works.
 
 ### Instruction file ordering (why the numbers)
 
@@ -236,19 +277,6 @@ If you changed `workflows/*.md`:
 
 ---
 
-## Support matrix
-
-| Client | System instructions | Slash commands | MCP servers | Approved command list | Approved MCP tools |
-| --- | --- | --- | --- | --- | --- |
-| Gemini CLI | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Claude Code CLI | ✅ | ✅ | ✅ | ✅ | ✅ |
-| VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Codex CLI | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Codex VS Code extension | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Antigravity | ❌ | ❌ | ❌ | ❌ | ❌ |
-
-Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex` (repo-local `CODEX_HOME`). The VS Code extension only uses them if the extension host sees the same `CODEX_HOME` (set it in the environment that launches VS Code).
-
 ## Quick examples (per client)
 
 Gemini CLI:
@@ -272,7 +300,7 @@ Codex CLI:
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
 Codex VS Code extension:
-- Slash command example: `$find-issues` (Codex Skills; requires `CODEX_HOME` pointing at the repo)
+- Slash command example: `$find-issues` (Codex Skills; requires `CODEX_HOME` pointing at the repo; see Codex section below)
 - MCP check: `cat .codex/config.toml` (requires `CODEX_HOME` in VS Code env)
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
@@ -382,9 +410,27 @@ Each section below answers two questions:
 - When launched via `./al codex`, `CODEX_HOME` is set to the repo-local `.codex/`.
 - MCP servers are generated into `.codex/config.toml` from `.agent-layer/mcp/servers.json`.
 - System instructions are generated into `.codex/AGENTS.md` from `.agent-layer/instructions/*.md`.
-- Codex also reads the project `AGENTS.md`; both files are generated from the same sources to keep them consistent.
-- The VS Code extension has no workspace setting for `CODEX_HOME`; set it in the environment that launches VS Code (or use a wrapper via `chatgpt.cliExecutable`, which is marked development-only).
+- Agent Layer also generates the project `AGENTS.md` from the same sources for clients that read it.
 - Agent Layer uses **Codex Skills** (and optional rules) as the primary “workflow command” mechanism.
+
+**Getting the Codex VS Code extension to use repo-local `CODEX_HOME`**
+- The extension reads `CODEX_HOME` from the VS Code/Antigravity process environment at startup (no workspace setting).
+- Set `CODEX_HOME` to the absolute path of this repo's `.codex/`, then fully restart the app.
+
+macOS (recommended; if you have the `code` CLI available):
+```bash
+CODEX_HOME="$PWD/.codex" code .
+```
+
+If you launch from Dock/Finder, set the GUI env once per login:
+```bash
+launchctl setenv CODEX_HOME "/absolute/path/to/repo/.codex"
+# restart VS Code/Antigravity (log out/in to clear)
+```
+
+Optional wrapper (handy if you work across multiple repos):
+- Create a small script that exports `CODEX_HOME` and launches VS Code/Antigravity.
+- If your build supports `chatgpt.cliExecutable`, point it at a wrapper that sets `CODEX_HOME` before invoking `codex`.
 
 **Confirm workflow “commands” (Codex Skills)**
 - Skills are generated into the working repo root: `.codex/skills/*/SKILL.md`
@@ -441,12 +487,16 @@ Each section below answers two questions:
   - `.codex/skills/*/SKILL.md`
 
 ### Scripts
+- `agent-layer-install.sh`  
+  Install/upgrade helper for working repos.
 - `setup.sh`  
-  One-shot setup (install MCP deps, validate).
+  One-shot setup (sync + MCP deps + check).
 - `sync/sync.mjs`  
   Generator (“build”) for all shims/configs/skills.
 - `clean.sh`  
   Remove generated shims/configs/skills and strip agent-layer-managed settings from client config files.
+- `with-env.sh`  
+  Load `.agent-layer/.env` (and optionally project `.env`) then exec a command.
 - `./al`  
   Repo-local launcher (sync + env load + exec; symlink recommended at working repo root).
 
@@ -466,8 +516,16 @@ Run tests (includes sync check + formatting/lint):
 Autoformat (shell + JS):
 - `./dev/format.sh`
 
-Test entrypoint (includes checks):
-- `./tests/run.sh`
+## Cleanup / uninstall
+
+Remove generated files and agent-layer-managed settings:
+```bash
+./clean.sh
+```
+
+To remove Agent Layer from a repo entirely:
+- delete `.agent-layer/` and `./al`
+- remove the `# >>> agent-layer` block from `.gitignore`
 
 ## FAQ / Troubleshooting
 
@@ -518,6 +576,10 @@ Yes. Keep numeric prefixes if you want stable ordering without changing `sync/sy
    ```bash
    ./dev/format.sh
    ```
+
+## License
+
+MIT license. See `LICENSE.md`.
 
 ## Attribution
 

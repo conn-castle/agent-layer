@@ -4,7 +4,7 @@ load "helpers.bash"
 
 create_min_agent_layer() {
   local root="$1"
-  mkdir -p "$root/.agent-layer/sync"
+  mkdir -p "$root/.agent-layer/sync" "$root/.agent-layer/templates/docs"
   cat >"$root/.agent-layer/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -13,12 +13,13 @@ EOF
   chmod +x "$root/.agent-layer/setup.sh"
   printf "EXAMPLE=1\n" >"$root/.agent-layer/.env.example"
   : >"$root/.agent-layer/sync/sync.mjs"
+  cp "$AGENTLAYER_ROOT/templates/docs/"*.md "$root/.agent-layer/templates/docs/"
   git -C "$root/.agent-layer" init -q
 }
 
 create_source_repo() {
   local repo="$1"
-  mkdir -p "$repo/sync"
+  mkdir -p "$repo/sync" "$repo/templates/docs"
   cat >"$repo/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -27,6 +28,7 @@ EOF
   chmod +x "$repo/setup.sh"
   printf "EXAMPLE=1\n" >"$repo/.env.example"
   : >"$repo/sync/sync.mjs"
+  cp "$AGENTLAYER_ROOT/templates/docs/"*.md "$repo/templates/docs/"
   git -C "$repo" init -q
   git -C "$repo" config user.email "test@example.com"
   git -C "$repo" config user.name "Test User"
@@ -245,6 +247,32 @@ EOF
   [ -f "$work/.agent-layer/.env" ]
   grep -q '^# >>> agent-layer$' "$work/.gitignore"
   [ -f "$work/docs/ISSUES.md" ]
+  [ -f "$work/docs/FEATURES.md" ]
+  [ -f "$work/docs/ROADMAP.md" ]
+  [ -f "$work/docs/DECISIONS.md" ]
+  cmp -s "$src/templates/docs/ISSUES.md" "$work/docs/ISSUES.md"
+  cmp -s "$src/templates/docs/FEATURES.md" "$work/docs/FEATURES.md"
+  cmp -s "$src/templates/docs/ROADMAP.md" "$work/docs/ROADMAP.md"
+  cmp -s "$src/templates/docs/DECISIONS.md" "$work/docs/DECISIONS.md"
+
+  rm -rf "$root"
+}
+
+@test "installer keeps existing docs without prompt in non-interactive mode" {
+  local root work stub_bin installer
+  root="$(make_tmp_dir)"
+  work="$root/work"
+  mkdir -p "$work/docs"
+  git -C "$work" init -q
+  create_min_agent_layer "$work"
+
+  printf "custom\n" >"$work/docs/ISSUES.md"
+
+  stub_bin="$(create_stub_tools "$root")"
+  installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
+  run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer'"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$work/docs/ISSUES.md")" = "custom" ]
   [ -f "$work/docs/FEATURES.md" ]
   [ -f "$work/docs/ROADMAP.md" ]
   [ -f "$work/docs/DECISIONS.md" ]

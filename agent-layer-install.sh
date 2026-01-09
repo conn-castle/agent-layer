@@ -238,20 +238,46 @@ else
 fi
 
 DOCS_DIR="$WORKING_ROOT/docs"
+TEMPLATES_DIR="$AGENTLAYER_DIR/templates/docs"
 ensure_memory_file() {
   local file_path="$1"
-  local title="$2"
-  if [[ ! -f "$file_path" ]]; then
+  local template_path="$2"
+  local rel_path
+
+  rel_path="${file_path#$WORKING_ROOT/}"
+
+  if [[ ! -f "$template_path" ]]; then
+    die "Missing template: ${template_path#$AGENTLAYER_DIR/}"
+  fi
+
+  if [[ -f "$file_path" ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "$rel_path exists. Keep it? [Y/n] " reply
+      case "$reply" in
+        n | N | no | NO)
+          mkdir -p "$(dirname "$file_path")"
+          cp "$template_path" "$file_path"
+          say "==> Replaced $rel_path with template"
+          ;;
+        *)
+          say "==> Keeping existing $rel_path"
+          ;;
+      esac
+    else
+      say "==> $rel_path exists; leaving as-is (no TTY to confirm)"
+    fi
+  else
     mkdir -p "$(dirname "$file_path")"
-    printf "# %s\n\n" "$title" > "$file_path"
+    cp "$template_path" "$file_path"
+    say "==> Created $rel_path from template"
   fi
 }
 
 say "==> Ensuring project memory files exist"
-ensure_memory_file "$DOCS_DIR/ISSUES.md" "Issues"
-ensure_memory_file "$DOCS_DIR/FEATURES.md" "Features"
-ensure_memory_file "$DOCS_DIR/ROADMAP.md" "Roadmap"
-ensure_memory_file "$DOCS_DIR/DECISIONS.md" "Decisions"
+ensure_memory_file "$DOCS_DIR/ISSUES.md" "$TEMPLATES_DIR/ISSUES.md"
+ensure_memory_file "$DOCS_DIR/FEATURES.md" "$TEMPLATES_DIR/FEATURES.md"
+ensure_memory_file "$DOCS_DIR/ROADMAP.md" "$TEMPLATES_DIR/ROADMAP.md"
+ensure_memory_file "$DOCS_DIR/DECISIONS.md" "$TEMPLATES_DIR/DECISIONS.md"
 
 AL_PATH="$WORKING_ROOT/al"
 write_launcher() {
