@@ -129,7 +129,9 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
   console.error("");
   console.error("If step 2 still fails, check for divergence:");
   console.error("  3) Run: node .agent-layer/src/sync/inspect.mjs");
-  console.error("  4) Update the .agent-layer sources listed above, then re-run sync");
+  console.error(
+    "  4) Update the .agent-layer sources listed above, then re-run sync",
+  );
   console.error(
     "     Or re-run sync with --overwrite to discard client-only entries.",
   );

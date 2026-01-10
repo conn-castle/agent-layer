@@ -235,6 +235,48 @@ function cleanVscodeSettings(existing) {
 }
 
 /**
+ * Remove agent-layer-managed entries from VS Code MCP config.
+ * @param {JsonObject} existing
+ * @param {Set<string>} managedServers
+ * @returns {{ updated: JsonObject, changed: boolean, removedServers: number }}
+ */
+function cleanVscodeMcpConfig(existing, managedServers) {
+  const updated = { ...existing };
+  let changed = false;
+  let removedServers = 0;
+
+  const servers = existing.servers;
+  if (servers !== undefined) {
+    if (!isPlainObject(servers)) {
+      fail(".vscode/mcp.json: servers must be an object");
+    }
+
+    let serversChanged = false;
+    /** @type {JsonObject} */
+    const preserved = {};
+    for (const [name, value] of Object.entries(servers)) {
+      if (managedServers.has(name)) {
+        removedServers += 1;
+        serversChanged = true;
+      } else {
+        preserved[name] = value;
+      }
+    }
+
+    if (serversChanged) {
+      changed = true;
+      if (Object.keys(preserved).length === 0) {
+        delete updated.servers;
+      } else {
+        updated.servers = preserved;
+      }
+    }
+  }
+
+  return { updated, changed, removedServers };
+}
+
+/**
  * Write JSON to disk when changes are present.
  * @param {string} filePath
  * @param {JsonObject} updated
@@ -261,16 +303,23 @@ function main() {
   const geminiPath = path.join(workingRoot, ".gemini", "settings.json");
   const claudePath = path.join(workingRoot, ".claude", "settings.json");
   const vscodePath = path.join(workingRoot, ".vscode", "settings.json");
+  const vscodeMcpPath = path.join(workingRoot, ".vscode", "mcp.json");
 
   const updates = [];
+  let managedServers = null;
+  const getManagedServers = () => {
+    if (!managedServers) {
+      managedServers = new Set(loadServerNames(agentlayerRoot));
+    }
+    return managedServers;
+  };
 
   if (fileExists(geminiPath)) {
     const existing = loadJsonObject(geminiPath);
-    let serverNames = [];
-    if (existing.mcpServers !== undefined) {
-      serverNames = loadServerNames(agentlayerRoot);
-    }
-    const result = cleanGeminiSettings(existing, new Set(serverNames));
+    const result = cleanGeminiSettings(
+      existing,
+      existing.mcpServers !== undefined ? getManagedServers() : new Set(),
+    );
     if (writeIfChanged(geminiPath, result.updated, result.changed)) {
       updates.push(
         `.gemini/settings.json (removed ${result.removedAllowed} tools.allowed entries, ` +
@@ -294,6 +343,19 @@ function main() {
     const result = cleanVscodeSettings(existing);
     if (writeIfChanged(vscodePath, result.updated, result.changed)) {
       updates.push(".vscode/settings.json (removed terminal auto-approve)");
+    }
+  }
+
+  if (fileExists(vscodeMcpPath)) {
+    const existing = loadJsonObject(vscodeMcpPath);
+    const result = cleanVscodeMcpConfig(
+      existing,
+      existing.servers !== undefined ? getManagedServers() : new Set(),
+    );
+    if (writeIfChanged(vscodeMcpPath, result.updated, result.changed)) {
+      updates.push(
+        `.vscode/mcp.json (removed ${result.removedServers} server entries)`,
+      );
     }
   }
 

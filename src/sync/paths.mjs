@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileExists } from "./utils.mjs";
 
+const MAX_WORKING_ROOT_DEPTH = 50; // Guard against infinite ancestor scans.
+
 /**
  * Find the working repo root containing .agent-layer/.
  * @param {string} startDir
@@ -8,7 +10,7 @@ import { fileExists } from "./utils.mjs";
  */
 export function findWorkingRoot(startDir) {
   let dir = path.resolve(startDir);
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < MAX_WORKING_ROOT_DEPTH; i++) {
     if (fileExists(path.join(dir, ".agent-layer"))) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) break;

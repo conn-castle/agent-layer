@@ -14,7 +14,9 @@ load "helpers.bash"
   : >"$root/GEMINI.md"
   : >"$root/.github/copilot-instructions.md"
   : >"$root/.mcp.json"
-  : >"$root/.vscode/mcp.json"
+  cat >"$root/.vscode/mcp.json" <<'EOF'
+{}
+EOF
   : >"$root/.codex/AGENTS.md"
   : >"$root/.codex/config.toml"
   : >"$root/.codex/rules/agent-layer.rules"
@@ -110,6 +112,43 @@ EOF
   [ -f "$root/.agent-layer/config/workflows/01_test.md" ]
   [ -f "$root/.agent-layer/config/mcp-servers.json" ]
   [ -f "$root/.agent-layer/config/policy/commands.json" ]
+
+  rm -rf "$root"
+}
+
+@test "clean.mjs removes managed VS Code MCP servers" {
+  local root
+  root="$(create_isolated_working_root)"
+
+  mkdir -p "$root/.vscode" "$root/.agent-layer/config"
+  cat >"$root/.vscode/mcp.json" <<'EOF'
+{
+  "servers": {
+    "agent-layer": { "type": "stdio", "command": "node" },
+    "context7": { "type": "stdio", "command": "npx" },
+    "custom": { "type": "stdio", "command": "custom" }
+  },
+  "other": true
+}
+EOF
+  cat >"$root/.agent-layer/config/mcp-servers.json" <<'EOF'
+{
+  "version": 1,
+  "servers": [
+    { "name": "agent-layer", "command": "node" },
+    { "name": "context7", "command": "npx" }
+  ]
+}
+EOF
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/clean.mjs"
+  [ "$status" -eq 0 ]
+
+  [ -f "$root/.vscode/mcp.json" ]
+  ! grep -Fq "\"agent-layer\"" "$root/.vscode/mcp.json"
+  ! grep -Fq "\"context7\"" "$root/.vscode/mcp.json"
+  grep -Fq "\"custom\"" "$root/.vscode/mcp.json"
+  grep -Fq "\"other\": true" "$root/.vscode/mcp.json"
 
   rm -rf "$root"
 }

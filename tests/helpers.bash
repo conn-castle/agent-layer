@@ -49,6 +49,7 @@ create_isolated_working_root() {
   agent_layer_dir="$root/.agent-layer"
   mkdir -p "$agent_layer_dir/src/lib" "$agent_layer_dir/src/sync"
   cp "$AGENTLAYER_ROOT/src/lib/paths.sh" "$agent_layer_dir/src/lib/paths.sh"
+  cp "$AGENTLAYER_ROOT/src/lib/entrypoint.sh" "$agent_layer_dir/src/lib/entrypoint.sh"
   cp "$AGENTLAYER_ROOT/src/sync/utils.mjs" "$agent_layer_dir/src/sync/utils.mjs"
   cp "$AGENTLAYER_ROOT/src/sync/paths.mjs" "$agent_layer_dir/src/sync/paths.mjs"
   cp "$AGENTLAYER_ROOT/src/sync/policy.mjs" "$agent_layer_dir/src/sync/policy.mjs"

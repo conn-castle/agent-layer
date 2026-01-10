@@ -5,6 +5,7 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
     "prettier": "^3.2.5"
   },
   "scripts": {

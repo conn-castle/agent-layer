@@ -7,7 +7,7 @@ import {
   ListPromptsRequestSchema,
   ListToolsRequestSchema,
   LATEST_PROTOCOL_VERSION,
-} from "../src/mcp/agent-layer-prompts/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js";
+} from "@modelcontextprotocol/sdk/types.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const AGENTLAYER_ROOT = path.resolve(HERE, "..");

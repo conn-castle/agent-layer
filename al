@@ -7,26 +7,20 @@ set -euo pipefail
 # Uncomment exactly one option below (leave the rest commented).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/.agent-layer/src/lib/paths.sh"
-if [[ ! -f "$PATHS_SH" ]]; then
-  PATHS_SH="$SCRIPT_DIR/src/lib/paths.sh"
+ENTRYPOINT_SH="$SCRIPT_DIR/.agent-layer/src/lib/entrypoint.sh"
+if [[ ! -f "$ENTRYPOINT_SH" ]]; then
+  ENTRYPOINT_SH="$SCRIPT_DIR/src/lib/entrypoint.sh"
 fi
-if [[ ! -f "$PATHS_SH" ]]; then
-  PATHS_SH="$SCRIPT_DIR/../src/lib/paths.sh"
+if [[ ! -f "$ENTRYPOINT_SH" ]]; then
+  ENTRYPOINT_SH="$SCRIPT_DIR/../src/lib/entrypoint.sh"
 fi
-if [[ ! -f "$PATHS_SH" ]]; then
-  echo "ERROR: Missing src/lib/paths.sh (expected near .agent-layer/)." >&2
+if [[ ! -f "$ENTRYPOINT_SH" ]]; then
+  echo "ERROR: Missing src/lib/entrypoint.sh (expected near .agent-layer/)." >&2
   exit 2
 fi
 # shellcheck disable=SC1090
-source "$PATHS_SH"
-
-WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
-
-if [[ -z "$WORKING_ROOT" ]]; then
-  echo "ERROR: Missing .agent-layer/ directory in this path or any parent." >&2
-  exit 2
-fi
+source "$ENTRYPOINT_SH"
+resolve_entrypoint_root || exit $?
 
 ROOT="$WORKING_ROOT"
 cd "$ROOT"
@@ -57,12 +51,13 @@ warn_if_outdated_tag() {
 
 warn_if_outdated_tag
 
-# If launching Codex, force repo-local CODEX_HOME unless the caller already set it.
+# If launching Codex, use repo-local CODEX_HOME unless the caller already set it.
 if [[ "${1:-}" == "codex" || "$(basename "${1:-}")" == "codex" ]]; then
-  if [[ -n "${CODEX_HOME:-}" ]]; then
+  repo_codex_home="$ROOT/.codex"
+  if [[ -n "${CODEX_HOME:-}" && "${CODEX_HOME:-}" != "$repo_codex_home" ]]; then
     echo "warning: CODEX_HOME already set to '$CODEX_HOME'; leaving it unchanged." >&2
   fi
-  export CODEX_HOME="${CODEX_HOME:-$ROOT/.codex}"
+  export CODEX_HOME="${CODEX_HOME:-$repo_codex_home}"
 fi
 
 command -v node > /dev/null 2>&1 || {

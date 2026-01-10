@@ -156,42 +156,14 @@ export function loadServerCatalog(agentlayerRoot) {
 }
 
 /**
- * Return enabled servers after validation.
+ * Return enabled servers from a validated catalog.
  * @param {unknown[]} servers
  * @returns {unknown[]}
  */
 export function enabledServers(servers) {
-  const enabled = servers.filter(
+  return servers.filter(
     (s) => s && s.name && (s.enabled === undefined || s.enabled === true),
   );
-
-  // Validate schema to avoid silently generating broken configs.
-  for (const s of enabled) {
-    const transport = s.transport ?? "stdio";
-    if (transport !== "stdio") {
-      throw new Error(
-        `agent-layer sync: unsupported transport '${transport}' for server '${s.name}'. ` +
-          "This generator currently supports only stdio servers.",
-      );
-    }
-    if (!s.command || typeof s.command !== "string") {
-      throw new Error(
-        `agent-layer sync: server '${s.name}' missing valid 'command'.`,
-      );
-    }
-    if (s.args !== undefined && !Array.isArray(s.args)) {
-      throw new Error(
-        `agent-layer sync: server '${s.name}' has non-array 'args'.`,
-      );
-    }
-    if (s.envVars !== undefined && !Array.isArray(s.envVars)) {
-      throw new Error(
-        `agent-layer sync: server '${s.name}' has non-array 'envVars'.`,
-      );
-    }
-  }
-
-  return enabled;
 }
 
 /**

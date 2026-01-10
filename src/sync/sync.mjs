@@ -83,7 +83,7 @@ function usageAndExit(code) {
 /**
  * Parse CLI arguments.
  * @param {string[]} argv
- * @returns {{ check: boolean, verbose: boolean }}
+ * @returns {{ check: boolean, verbose: boolean, overwrite: boolean, interactive: boolean }}
  */
 function parseArgs(argv) {
   const args = {
@@ -116,6 +116,43 @@ function parseArgs(argv) {
 }
 
 /**
+ * Compare JSON-compatible values for deep equality (object key order ignored).
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {boolean}
+ */
+function jsonDeepEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (typeof a === "number") {
+    if (Number.isNaN(a) && Number.isNaN(b)) return true;
+  }
+  if (a === null || b === null) return false;
+
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!jsonDeepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  if (isPlainObject(a) && isPlainObject(b)) {
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+      if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
+      if (!jsonDeepEqual(a[key], b[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Merge an MCP config object, preserving existing server entries when they differ.
  * @param {unknown} existing
  * @param {Record<string, unknown>} generated
@@ -132,15 +169,21 @@ function mergeMcpConfig(existing, generated, key, options = {}) {
   }
 
   const existingServers = isPlainObject(merged[key]) ? merged[key] : {};
-  const mergedServers = { ...existingServers };
+  const mergedServers = {};
   for (const [name, entry] of Object.entries(generatedServers)) {
     const existingEntry = existingServers[name];
     if (
       isPlainObject(existingEntry) &&
-      JSON.stringify(existingEntry) !== JSON.stringify(entry)
+      !jsonDeepEqual(existingEntry, entry)
     ) {
       mergedServers[name] = existingEntry;
     } else {
+      mergedServers[name] = entry;
+    }
+  }
+
+  for (const [name, entry] of Object.entries(existingServers)) {
+    if (!Object.prototype.hasOwnProperty.call(mergedServers, name)) {
       mergedServers[name] = entry;
     }
   }

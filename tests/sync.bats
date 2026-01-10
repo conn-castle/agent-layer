@@ -34,6 +34,71 @@ load "helpers.bash"
   rm -rf "$root"
 }
 
+@test "sync handles workflow frontmatter with UTF-8 BOM" {
+  local root workflow_file
+  root="$(create_sync_working_root)"
+
+  workflow_file="$root/.agent-layer/config/workflows/bom-workflow.md"
+  printf '\xEF\xBB\xBF' > "$workflow_file"
+  cat >>"$workflow_file" <<'EOF'
+---
+description: BOM workflow
+---
+# BOM workflow
+EOF
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  [ "$status" -eq 0 ]
+
+  [ -f "$root/.codex/skills/bom-workflow/SKILL.md" ]
+  run rg -n "BOM workflow" "$root/.codex/skills/bom-workflow/SKILL.md"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$root"
+}
+
+@test "sync ignores MCP server key order differences" {
+  local root baseline
+  root="$(create_working_root)"
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  [ "$status" -eq 0 ]
+
+  [ -f "$root/.vscode/mcp.json" ]
+  baseline="$root/baseline-vscode-mcp.json"
+  cp "$root/.vscode/mcp.json" "$baseline"
+
+  run node -e '
+const fs = require("fs");
+const file = process.argv[1];
+const reorder = (value) => {
+  if (Array.isArray(value)) return value.map(reorder);
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value).sort().reverse();
+    const out = {};
+    for (const key of keys) out[key] = reorder(value[key]);
+    return out;
+  }
+  return value;
+};
+const data = JSON.parse(fs.readFileSync(file, "utf8"));
+const reordered = reorder(data);
+fs.writeFileSync(file, JSON.stringify(reordered, null, 2) + "\n");
+' "$root/.vscode/mcp.json"
+  [ "$status" -eq 0 ]
+
+  run cmp -s "$baseline" "$root/.vscode/mcp.json"
+  [ "$status" -ne 0 ]
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  [ "$status" -eq 0 ]
+
+  run diff -u "$baseline" "$root/.vscode/mcp.json"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$root"
+}
+
 @test "sync overwrites command allowlists from policy" {
   local root
   root="$(create_working_root)"
@@ -110,6 +175,28 @@ EOF
   rm -rf "$root"
 }
 
+@test "sync rejects --overwrite with --interactive" {
+  local root
+  root="$(create_sync_working_root)"
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --overwrite --interactive"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"choose only one of --overwrite or --interactive."* ]]
+
+  rm -rf "$root"
+}
+
+@test "sync rejects --check with --interactive" {
+  local root
+  root="$(create_sync_working_root)"
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check --interactive"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--interactive cannot be used with --check."* ]]
+
+  rm -rf "$root"
+}
+
 @test "sync fails when policy contains unsafe argv token" {
   local root
   root="$(create_sync_working_root)"
@@ -118,7 +205,7 @@ EOF
 {
   "version": 1,
   "allowed": [
-    { "argv": ["git", "status:all"] }
+    { "argv": ["git", "status|all"] }
   ]
 }
 EOF

@@ -55,8 +55,8 @@ export function validateCommandPolicy(policy, filePath) {
         `${filePath}: allowed[${i}].argv[${j}] must not contain newlines`,
       );
       assert(
-        /^[A-Za-z0-9._/@+=-]+$/.test(arg),
-        `${filePath}: allowed[${i}].argv[${j}] contains unsupported characters (allowed: A-Z a-z 0-9 . _ / @ + = -)`,
+        /^[A-Za-z0-9._/@+=\-:,]+$/.test(arg),
+        `${filePath}: allowed[${i}].argv[${j}] contains unsupported characters (allowed: A-Z a-z 0-9 . _ / @ + = - : ,)`,
       );
       assert(
         /[A-Za-z0-9]/.test(arg),

@@ -13,23 +13,19 @@ die() {
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATHS_SH="$SCRIPT_DIR/.agent-layer/src/lib/paths.sh"
-if [[ ! -f "$PATHS_SH" ]]; then
-  PATHS_SH="$SCRIPT_DIR/src/lib/paths.sh"
+ENTRYPOINT_SH="$SCRIPT_DIR/.agent-layer/src/lib/entrypoint.sh"
+if [[ ! -f "$ENTRYPOINT_SH" ]]; then
+  ENTRYPOINT_SH="$SCRIPT_DIR/src/lib/entrypoint.sh"
 fi
-if [[ ! -f "$PATHS_SH" ]]; then
-  PATHS_SH="$SCRIPT_DIR/../src/lib/paths.sh"
+if [[ ! -f "$ENTRYPOINT_SH" ]]; then
+  ENTRYPOINT_SH="$SCRIPT_DIR/../src/lib/entrypoint.sh"
 fi
-if [[ ! -f "$PATHS_SH" ]]; then
-  die "Missing src/lib/paths.sh (expected near .agent-layer/)."
+if [[ ! -f "$ENTRYPOINT_SH" ]]; then
+  die "Missing src/lib/entrypoint.sh (expected near .agent-layer/)."
 fi
 # shellcheck disable=SC1090
-source "$PATHS_SH"
-
-WORKING_ROOT="$(resolve_working_root "$SCRIPT_DIR" "$PWD" || true)"
-
-[[ -n "$WORKING_ROOT" ]] || die "Missing .agent-layer/ directory in this path or any parent."
-AGENTLAYER_ROOT="$WORKING_ROOT/.agent-layer"
+source "$ENTRYPOINT_SH"
+resolve_entrypoint_root || exit $?
 
 cd "$WORKING_ROOT"
 

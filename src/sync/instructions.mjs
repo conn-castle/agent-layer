@@ -13,14 +13,13 @@ import { fileExists, listFiles, readUtf8 } from "./utils.mjs";
  */
 export function parseFrontMatter(markdown, sourcePath = "<workflow>") {
   // Strip UTF-8 BOM if present.
-  if (markdown.charCodeAt(0) === 0xfeff) {
-    markdown = markdown.slice(1);
-  }
+  const normalizedMarkdown =
+    markdown.charCodeAt(0) === 0xfeff ? markdown.slice(1) : markdown;
 
-  const lines = markdown.split(/\r?\n/);
+  const lines = normalizedMarkdown.split(/\r?\n/);
 
   if (lines.length === 0 || lines[0] !== "---") {
-    return { meta: {}, body: markdown };
+    return { meta: {}, body: normalizedMarkdown };
   }
 
   const meta = {};
