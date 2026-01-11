@@ -24,7 +24,10 @@ jobs:
 
       - name: Run tests
         run: |
-          mkdir -p work
-          ln -s "$PWD" work/.agent-layer
-          cd work
+          work_root="tmp/ci-work"
+          rm -rf "$work_root"
+          mkdir -p "$work_root"
+          ln -s "$PWD" "$work_root/.agent-layer"
+          cd "$work_root"
+          node .agent-layer/src/sync/sync.mjs
           ./.agent-layer/tests/run.sh
