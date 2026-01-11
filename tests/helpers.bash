@@ -4,12 +4,9 @@
 # Resolve the agent-layer root for test fixtures.
 AGENTLAYER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Create a temporary directory under .agent-layer/tmp.
+# Create a temporary directory under /tmp.
 make_tmp_dir() {
-  local base
-  base="$AGENTLAYER_ROOT/tmp"
-  mkdir -p "$base"
-  mktemp -d "$base/agent-layer-test.XXXXXX"
+  mktemp -d "/tmp/agent-layer-test.XXXXXX"
 }
 
 # Create a working repo root that symlinks the real .agent-layer.

@@ -17,7 +17,7 @@ set -euo pipefail
 # | Keeps ./al working as a symlink or as .agent-layer/al.      |
 # | Resolves RUNNER to the correct .agent-layer/run.sh.         |
 # +------------------------------------------------------------+
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Prefer a runner alongside this script (when invoked via .agent-layer/al).
 RUNNER="$SCRIPT_DIR/run.sh"
 # Fall back to the repo-root .agent-layer/run.sh (when invoked via ./al).

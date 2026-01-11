@@ -113,7 +113,7 @@ else
         ;;
     esac
   else
-    die "Not a git repo and no TTY available to confirm. Re-run from a TTY or after init."
+    die "Not a git repo and no TTY available to confirm."
   fi
 fi
 
