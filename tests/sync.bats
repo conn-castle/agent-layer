@@ -198,6 +198,18 @@ EOF
   rm -rf "$root"
 }
 
+# Test: sync --check fails when outputs are missing
+@test "sync --check fails when outputs are missing" {
+  local root
+  root="$(create_working_root)"
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"WARNING: generated files are out of date."* ]]
+
+  rm -rf "$root"
+}
+
 # Test: sync rejects --overwrite with --interactive
 @test "sync rejects --overwrite with --interactive" {
   local root

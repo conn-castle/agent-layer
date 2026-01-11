@@ -555,6 +555,12 @@ Dev bootstrap (installs dev deps + enables git hooks):
 
 Run tests (includes sync check + formatting/lint):
 - `./tests/run.sh`
+  When run inside the agent-layer repo itself (no `.agent-layer/` directory), pass `--work-root <path>` to a consumer root that contains `.agent-layer/`. Example:
+  ```bash
+  mkdir -p tmp/work-root
+  ln -s "$(pwd)" "tmp/work-root/.agent-layer"
+  ./tests/run.sh --work-root "$(pwd)/tmp/work-root"
+  ```
 
 Autoformat (shell + JS):
 - `./dev/format.sh`
@@ -593,10 +599,10 @@ Fix:
   - Claude Code CLI: restart Claude Code CLI after MCP config changes
 
 ### “Commits are failing after enabling hooks.”
-The hook runs:
+The hook runs the test runner (using `--work-root` when invoked from the agent-layer repo):
 
 ```bash
-./tests/run.sh
+./tests/run.sh --work-root "<consumer-root>"
 ```
 
 If it fails, fix the reported issues (formatting, lint, tests, or sync), then commit again.
@@ -612,9 +618,9 @@ Yes. Keep numeric prefixes if you want stable ordering without changing `src/syn
    ./dev/bootstrap.sh
    ```
    Use `./dev/bootstrap.sh --yes` for non-interactive runs.
-3) Before committing:
+3) Before committing (see "Testing" above for work-root setup):
    ```bash
-   ./tests/run.sh
+   ./tests/run.sh --work-root "<consumer-root>"
    ```
 4) Autoformat (shell + JS) when needed:
    ```bash

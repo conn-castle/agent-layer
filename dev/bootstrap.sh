@@ -188,6 +188,8 @@ fi
 # Print next steps for the developer.
 say ""
 say "Next steps:"
-say "  - Run tests (includes checks): ./tests/run.sh"
+say "  - Run tests (includes checks):"
+say "    - From a consumer repo: ./.agent-layer/tests/run.sh"
+say "    - From the agent-layer repo: ./tests/run.sh --work-root <consumer-root>"
 say ""
 say "Dev bootstrap complete."

@@ -2,25 +2,32 @@
 set -euo pipefail
 
 # Ensure generated agent-layer files are up to date before commit.
-# Resolve entrypoint helpers so the hook runs from any working directory.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENTRYPOINT_SH="$SCRIPT_DIR/../src/lib/entrypoint.sh"
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  ENTRYPOINT_SH="$SCRIPT_DIR/src/lib/entrypoint.sh"
-fi
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  echo "ERROR: Missing src/lib/entrypoint.sh (expected near .agent-layer/)." >&2
+die() {
+  echo "ERROR: $*" >&2
   exit 2
-fi
-# shellcheck disable=SC1090
-source "$ENTRYPOINT_SH"
-resolve_entrypoint_root || exit $?
+}
 
-# Require the test runner script before executing it.
-if [[ ! -x "$AGENTLAYER_ROOT/tests/run.sh" ]]; then
-  echo "ERROR: Missing .agent-layer/tests/run.sh." >&2
-  exit 2
+# Resolve the git repo root to locate the correct test runner.
+repo_root="$(git rev-parse --show-toplevel 2> /dev/null || true)"
+if [[ -z "$repo_root" ]]; then
+  die "pre-commit must run inside a git repository."
 fi
 
-# Run the dev checks and test suite.
-"$AGENTLAYER_ROOT/tests/run.sh"
+# Prefer the agent-layer repo runner, otherwise use the consumer runner.
+if [[ -x "$repo_root/tests/run.sh" ]]; then
+  test_runner="$repo_root/tests/run.sh"
+
+  # In the agent-layer repo layout, create a temp consumer work root.
+  tmp_root="$repo_root/tmp"
+  mkdir -p "$tmp_root"
+  work_root="$(mktemp -d "$tmp_root/pre-commit-work.XXXXXX")"
+  trap 'rm -rf "$work_root"' EXIT
+  ln -s "$repo_root" "$work_root/.agent-layer"
+
+  (cd "$repo_root" && "$test_runner" --work-root "$work_root")
+elif [[ -x "$repo_root/.agent-layer/tests/run.sh" ]]; then
+  test_runner="$repo_root/.agent-layer/tests/run.sh"
+  (cd "$repo_root" && "$test_runner" --work-root "$repo_root")
+else
+  die "Missing tests/run.sh (agent-layer) or .agent-layer/tests/run.sh (consumer repo)."
+fi
