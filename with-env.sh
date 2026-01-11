@@ -66,4 +66,8 @@ if [[ "$INCLUDE_PROJECT_ENV" -eq 1 && -f "$PROJECT_ENV" && "$PROJECT_ENV" != "$A
   set +a
 fi
 
+if [[ "${AGENTLAYER_RUN_CODEX:-}" == "1" && -z "${CODEX_HOME:-}" ]]; then
+  export CODEX_HOME="$WORKING_ROOT/.codex"
+fi
+
 exec "$@"

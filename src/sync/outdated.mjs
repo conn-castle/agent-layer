@@ -59,7 +59,7 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
       rp === ".gemini/settings.json" ||
       rp === ".claude/settings.json" ||
       rp === ".vscode/settings.json" ||
-      rp === ".codex/rules/agent-layer.rules"
+      rp === ".codex/rules/default.rules"
     ) {
       commandAllowlistConfigs.push(rp);
       matched = true;

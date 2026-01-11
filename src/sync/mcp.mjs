@@ -212,9 +212,10 @@ export function buildMcpConfigs(catalog) {
   const defaults = catalog.defaults ?? {};
   const servers = enabledServers(catalog.servers ?? []);
 
-  // NOTE: VS Code can load env from an envFile. Default remains project root .env
-  // unless you set defaults.vscodeEnvFile to "${workspaceFolder}/.agent-layer/.env".
-  const vscodeEnvFile = defaults.vscodeEnvFile ?? "${workspaceFolder}/.env";
+  // NOTE: VS Code can load env from an envFile. Default remains .agent-layer/.env
+  // unless you set defaults.vscodeEnvFile to "${workspaceFolder}/.env".
+  const vscodeEnvFile =
+    defaults.vscodeEnvFile ?? "${workspaceFolder}/.agent-layer/.env";
 
   // VS Code
   const vscode = { servers: {} };

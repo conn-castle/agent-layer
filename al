@@ -51,13 +51,10 @@ warn_if_outdated_tag() {
 
 warn_if_outdated_tag
 
-# If launching Codex, use repo-local CODEX_HOME unless the caller already set it.
+SYNC_ARGS=""
 if [[ "${1:-}" == "codex" || "$(basename "${1:-}")" == "codex" ]]; then
-  repo_codex_home="$ROOT/.codex"
-  if [[ -n "${CODEX_HOME:-}" && "${CODEX_HOME:-}" != "$repo_codex_home" ]]; then
-    echo "warning: CODEX_HOME already set to '$CODEX_HOME'; leaving it unchanged." >&2
-  fi
-  export CODEX_HOME="${CODEX_HOME:-$repo_codex_home}"
+  SYNC_ARGS="--codex"
+  export AGENTLAYER_RUN_CODEX=1
 fi
 
 command -v node > /dev/null 2>&1 || {
@@ -66,7 +63,12 @@ command -v node > /dev/null 2>&1 || {
 }
 
 # Option A (default): sync every run, load only .agent-layer/.env, then exec.
-node .agent-layer/src/sync/sync.mjs
+if [[ -n "$SYNC_ARGS" ]]; then
+  node .agent-layer/src/sync/sync.mjs "$SYNC_ARGS"
+else
+  node .agent-layer/src/sync/sync.mjs
+fi
+
 exec "$ROOT/.agent-layer/with-env.sh" "$@"
 
 # Option B: env-only (no sync).

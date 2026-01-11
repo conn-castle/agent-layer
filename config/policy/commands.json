@@ -14,7 +14,10 @@
     { "argv": ["find"] },
     { "argv": ["grep"] },
 
+    { "argv": ["python"] },
+    { "argv": ["pytest"] },
     { "argv": ["node"] },
-    { "argv": ["python"] }
+    { "argv": ["npm"] },
+    { "argv": ["pnpm"] }
   ]
 }

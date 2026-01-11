@@ -61,7 +61,7 @@ generated_files=(
   ".vscode/mcp.json"
   ".codex/AGENTS.md"
   ".codex/config.toml"
-  ".codex/rules/agent-layer.rules"
+  ".codex/rules/default.rules"
 )
 
 shopt -s nullglob

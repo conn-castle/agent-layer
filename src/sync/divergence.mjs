@@ -4,6 +4,7 @@ import { buildMcpConfigs } from "./mcp.mjs";
 import {
   fileExists,
   isPlainObject,
+  listFiles,
   readJsonRelaxed,
   readUtf8,
 } from "./utils.mjs";
@@ -12,7 +13,6 @@ import {
   parseCodexServerSection,
   isEnabledServer,
 } from "./codex-config.mjs";
-import { scanCodexSessionApprovals } from "./codex-sessions.mjs";
 
 /**
  * @typedef {object} ApprovalItem
@@ -205,6 +205,17 @@ function equalStringSets(a, b) {
 }
 
 /**
+ * Convert an absolute path to a repo-relative path for messaging.
+ * @param {string} workingRoot
+ * @param {string} absPath
+ * @returns {string}
+ */
+function relPath(workingRoot, absPath) {
+  const rel = path.relative(workingRoot, absPath);
+  return rel.split(path.sep).join("/");
+}
+
+/**
  * Normalize env var names from an env object.
  * @param {unknown} env
  * @returns {{ envVars: string[], known: boolean } | { reason: string }}
@@ -256,12 +267,9 @@ function parseServerEntry(name, entry, filePath, trust) {
  * Collect approval divergences across managed configs.
  * @param {string} workingRoot
  * @param {import("./policy.mjs").CommandPolicy} policy
- * @param {object} options
- * @param {number=} options.codexMaxFiles
- * @param {boolean=} options.includeCodexSessions
  * @returns {{ items: ApprovalItem[], notes: string[] }}
  */
-export function collectApprovalDivergences(workingRoot, policy, options = {}) {
+export function collectApprovalDivergences(workingRoot, policy) {
   const policySet = new Set(commandPrefixes(policy));
   /** @type {ApprovalItem[]} */
   const items = [];
@@ -391,12 +399,8 @@ export function collectApprovalDivergences(workingRoot, policy, options = {}) {
     }
   }
 
-  const codexRulesPath = path.join(
-    workingRoot,
-    ".codex",
-    "rules",
-    "agent-layer.rules",
-  );
+  const codexRulesDir = path.join(workingRoot, ".codex", "rules");
+  const codexRulesPath = path.join(codexRulesDir, "default.rules");
   if (fileExists(codexRulesPath)) {
     const lines = readUtf8(codexRulesPath).split(/\r?\n/);
     for (const line of lines) {
@@ -430,14 +434,20 @@ export function collectApprovalDivergences(workingRoot, policy, options = {}) {
     }
   }
 
-  if (options.includeCodexSessions !== false) {
-    const { items: codexItems, notes: codexNotes } = scanCodexSessionApprovals(
-      workingRoot,
-      policySet,
-      options.codexMaxFiles ?? 1,
+  const extraRules = listFiles(codexRulesDir, ".rules").filter(
+    (filePath) => path.basename(filePath) !== "default.rules",
+  );
+  if (extraRules.length > 0) {
+    const relRules = extraRules.map((filePath) =>
+      relPath(workingRoot, filePath),
     );
-    items.push(...codexItems);
-    notes.push(...codexNotes);
+    notes.push(
+      "Codex rules: extra rules files detected: " +
+        relRules.join(", ") +
+        ". Agent Layer only reads .codex/rules/default.rules; " +
+        "integrate entries into .agent-layer/config/policy/commands.json and re-run sync, " +
+        "or delete the extra rules files to clear this warning.",
+    );
   }
 
   return { items, notes };
@@ -653,9 +663,7 @@ export function collectMcpDivergences(workingRoot, catalog) {
  * @returns {DivergenceResult}
  */
 export function collectDivergences(workingRoot, policy, catalog) {
-  const approvals = collectApprovalDivergences(workingRoot, policy, {
-    codexMaxFiles: 0,
-  });
+  const approvals = collectApprovalDivergences(workingRoot, policy);
   const mcp = collectMcpDivergences(workingRoot, catalog);
   return {
     approvals: approvals.items,
@@ -676,13 +684,13 @@ export function formatDivergenceWarning(result) {
   if (result.mcp.length) parts.push(`mcp: ${result.mcp.length}`);
   const detail = parts.length ? ` (${parts.join(", ")})` : "";
   return [
-    "agent-layer sync: WARNING: client configs NOT SYNCED due to divergence.",
+    "agent-layer sync: WARNING: client configs diverge from .agent-layer sources.",
     `Detected divergent approvals/MCP servers${detail}.`,
-    "This means a client config has entries missing from or differing from .agent-layer sources.",
+    "Sync preserves existing client entries by default; it will not overwrite them unless you pass --overwrite or choose overwrite in --interactive.",
     "Run: node .agent-layer/src/sync/inspect.mjs (JSON report)",
     "Then either:",
     "  - Add them to .agent-layer/config/policy/commands.json or .agent-layer/config/mcp-servers.json, then re-run sync",
     "  - Or re-run with: node .agent-layer/src/sync/sync.mjs --overwrite (discard client-only entries)",
-    "  - Or re-run with: node .agent-layer/src/sync/sync.mjs --interactive",
+    "  - Or re-run with: node .agent-layer/src/sync/sync.mjs --interactive (review and choose)",
   ].join("\n");
 }

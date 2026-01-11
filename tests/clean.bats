@@ -19,7 +19,7 @@ load "helpers.bash"
 EOF
   : >"$root/.codex/AGENTS.md"
   : >"$root/.codex/config.toml"
-  : >"$root/.codex/rules/agent-layer.rules"
+  : >"$root/.codex/rules/default.rules"
   : >"$root/.codex/skills/foo/SKILL.md"
 
   cat >"$root/.gemini/settings.json" <<'EOF'
@@ -87,7 +87,7 @@ EOF
   [ ! -f "$root/.vscode/mcp.json" ]
   [ ! -f "$root/.codex/AGENTS.md" ]
   [ ! -f "$root/.codex/config.toml" ]
-  [ ! -f "$root/.codex/rules/agent-layer.rules" ]
+  [ ! -f "$root/.codex/rules/default.rules" ]
   [ ! -f "$root/.codex/skills/foo/SKILL.md" ]
   [ ! -d "$root/.codex/skills" ]
 

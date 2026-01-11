@@ -26,7 +26,7 @@ Agent Layer is an opinionated framework for AI‑assisted development: one set o
 | Codex VS Code extension | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Antigravity | ❌ | ❌ | ❌ | ❌ | ❌ |
 
-Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex` (repo-local `CODEX_HOME`). The VS Code extension only uses them if the extension host sees the same `CODEX_HOME` (see "Codex (CLI / VS Code extension)" below). Antigravity is not supported yet; if you're experimenting there, try the same `CODEX_HOME` setup.
+Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex`, and `./al codex` enforces `CODEX_HOME` to resolve to the repo-local `.codex/`. The VS Code extension only uses them if the extension host sees the same `CODEX_HOME` (see "Codex (CLI / VS Code extension)" below). Antigravity is not supported yet; if you're experimenting there, try the same `CODEX_HOME` setup.
 
 ## Prerequisites
 
@@ -237,7 +237,7 @@ For a one-off run that also includes project env (if configured), from the worki
 - `.vscode/settings.json`
 - `.codex/AGENTS.md`
 - `.codex/config.toml`
-- `.codex/rules/agent-layer.rules`
+- `.codex/rules/default.rules`
 - `.codex/skills/*/SKILL.md`
 
 If you accidentally edited a generated file, delete it and re-sync (example from the working repo root):
@@ -274,8 +274,9 @@ Behavior by client:
 If you approve commands or edit MCP settings directly in a client, Agent Layer may detect divergence and print:
 
 ```
-WARNING: client configs NOT SYNCED due to divergence.
-This means a client config has entries missing from or differing from .agent-layer sources.
+WARNING: client configs diverge from .agent-layer sources.
+Detected divergent approvals/MCP servers.
+Sync preserves existing client entries by default; it will not overwrite them unless you pass --overwrite or choose overwrite in --interactive.
 Run: node .agent-layer/src/sync/inspect.mjs (JSON report)
 ```
 
@@ -287,8 +288,8 @@ If you want Agent Layer to overwrite client configs instead of preserving diverg
 - `node .agent-layer/src/sync/sync.mjs --overwrite` (non-interactive)
 - `node .agent-layer/src/sync/sync.mjs --interactive` (TTY only; shows a diff and prompts)
 
-Some entries (especially from client/session logs) may be flagged as `parseable: false` and require manual updates.
-Codex approvals are detected by scanning `$CODEX_HOME/sessions/*.jsonl` (best-effort), so keep `CODEX_HOME` repo-local if you want them captured.
+Some entries may be flagged as `parseable: false` and require manual updates.
+Codex approvals are read only from `.codex/rules/default.rules`. If other `.rules` files exist under `.codex/rules`, Agent Layer ignores them and warns so you can either integrate their entries into `.agent-layer/config/policy/commands.json` and re-sync, or delete the extra rules files to clear the warning.
 Codex MCP config documents env requirements in comments only, so divergence checks ignore env var differences unless an explicit `env = { ... }` entry is present.
 
 ## Refresh / restart guidance (failure modes)
@@ -446,7 +447,7 @@ Each section below answers two questions:
 ### Codex (CLI / VS Code extension)
 
 **MCP config + system instructions**
-- When launched via `./al codex`, `CODEX_HOME` is set to the repo-local `.codex/`.
+- When launched via `./al codex`, `CODEX_HOME` must resolve to the repo-local `.codex/` (symlinks allowed); `./al codex` will error if it points elsewhere.
 - MCP servers are generated into `.codex/config.toml` from `.agent-layer/config/mcp-servers.json`.
 - System instructions are generated into `.codex/AGENTS.md` from `.agent-layer/config/instructions/*.md`.
 - Agent Layer also generates the project `AGENTS.md` from the same sources for clients that read it.
@@ -514,7 +515,7 @@ echo "$CODEX_HOME"
 - MCP configs projected per client:
   - `.mcp.json`, `.gemini/settings.json`, `.vscode/mcp.json`, `.codex/config.toml`
 - Command allowlist configs projected per client:
-  - `.gemini/settings.json`, `.claude/settings.json`, `.vscode/settings.json`, `.codex/rules/agent-layer.rules`
+  - `.gemini/settings.json`, `.claude/settings.json`, `.vscode/settings.json`, `.codex/rules/default.rules`
 - Codex system instructions:
   - `.codex/AGENTS.md`
 - Codex skills:

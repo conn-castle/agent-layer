@@ -57,6 +57,20 @@ EOF
   rm -rf "$root"
 }
 
+@test "sync defaults VS Code MCP envFile to .agent-layer/.env" {
+  local root
+  root="$(create_sync_working_root)"
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  [ "$status" -eq 0 ]
+
+  run rg -n "\"envFile\": \"\\$\\{workspaceFolder\\}/\\.agent-layer/\\.env\"" \
+    "$root/.vscode/mcp.json"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$root"
+}
+
 @test "sync ignores MCP server key order differences" {
   local root baseline
   root="$(create_working_root)"
@@ -197,6 +211,36 @@ EOF
   rm -rf "$root"
 }
 
+@test "sync --codex fails when CODEX_HOME points outside repo" {
+  local root external
+  root="$(create_working_root)"
+  external="$(make_tmp_dir)"
+
+  run bash -c "cd \"$root\" && CODEX_HOME=\"$external\" node .agent-layer/src/sync/sync.mjs --codex"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"CODEX_HOME must point to the repo-local .codex"* ]]
+
+  rm -rf "$root" "$external"
+}
+
+@test "sync --interactive fails without a TTY" {
+  local root
+  root="$(create_working_root)"
+
+  mkdir -p "$root/.gemini"
+  cat >"$root/.gemini/settings.json" <<'EOF'
+{
+  "tools": { "allowed": ["run_shell_command(bad)"] }
+}
+EOF
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --interactive"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--interactive requires a TTY."* ]]
+
+  rm -rf "$root"
+}
+
 @test "sync fails when policy contains unsafe argv token" {
   local root
   root="$(create_sync_working_root)"
@@ -255,7 +299,7 @@ EOF
 [mcp_servers.extra]
 command = "node"
 EOF
-  cat >"$root/.codex/rules/agent-layer.rules" <<'EOF'
+  cat >"$root/.codex/rules/default.rules" <<'EOF'
 prefix_rule(pattern=["bad"], decision="allow", justification="legacy")
 EOF
 
@@ -277,7 +321,7 @@ EOF
   [ "$status" -ne 0 ]
   run rg -n "mcp_servers\\.extra" "$root/.codex/config.toml"
   [ "$status" -ne 0 ]
-  run rg -n "\\[\"bad\"\\]" "$root/.codex/rules/agent-layer.rules"
+  run rg -n "\\[\"bad\"\\]" "$root/.codex/rules/default.rules"
   [ "$status" -ne 0 ]
 
   rm -rf "$root"
@@ -416,32 +460,6 @@ EOF
   rm -rf "$root"
 }
 
-@test "inspect scans only working-root Codex sessions" {
-  local root external
-  root="$(create_working_root)"
-
-  mkdir -p "$root/.codex/sessions/2025/01/01"
-  cat >"$root/.codex/sessions/2025/01/01/rollout-local.jsonl" <<'EOF'
-{"msg":{"type":"exec_approval_request","command":["echo","hi"],"cwd":"/tmp"}}
-EOF
-
-  external="$(make_tmp_dir)"
-  mkdir -p "$external/sessions/2025/01/01"
-  cat >"$external/sessions/2025/01/01/rollout-external.jsonl" <<'EOF'
-{"msg":{"type":"exec_approval_request","command":["echo","external"],"cwd":"/tmp"}}
-EOF
-
-  run bash -c "cd \"$root\" && CODEX_HOME=\"$external\" node .agent-layer/src/sync/inspect.mjs > \"$root/out.json\""
-  [ "$status" -eq 0 ]
-
-  run node -e "const data=require(process.argv[1]); if (data.summary.approvals !== 1) process.exit(1); if (data.divergences.approvals[0].prefix !== 'echo hi') process.exit(1);" "$root/out.json"
-  [ "$status" -eq 0 ]
-  run node -e "const data=require(process.argv[1]); if (data.divergences.approvals.some((a)=>a.prefix==='echo external')) process.exit(1);" "$root/out.json"
-  [ "$status" -eq 0 ]
-
-  rm -rf "$root" "$external"
-}
-
 @test "inspect ignores Codex env var comments" {
   local root
   root="$(create_working_root)"
@@ -453,6 +471,27 @@ EOF
   [ "$status" -eq 0 ]
 
   run node -e "const data=require(process.argv[1]); if (data.summary.approvals !== 0 || data.summary.mcp !== 0) process.exit(1);" "$root/out.json"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$root"
+}
+
+@test "inspect warns when extra Codex rules files exist" {
+  local root
+  root="$(create_working_root)"
+
+  mkdir -p "$root/.codex/rules"
+  cat >"$root/.codex/rules/default.rules" <<'EOF'
+prefix_rule(pattern=["git","status"], decision="allow", justification="agent-layer allowlist")
+EOF
+  cat >"$root/.codex/rules/extra.rules" <<'EOF'
+prefix_rule(pattern=["extra"], decision="allow", justification="custom")
+EOF
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/inspect.mjs > \"$root/out.json\""
+  [ "$status" -eq 0 ]
+
+  run node -e "const data=require(process.argv[1]); const note=data.notes.join('\\n'); if (!note.includes('extra rules files')) process.exit(1); if (!note.includes('.codex/rules/extra.rules')) process.exit(1); if (!note.includes('integrate')) process.exit(1); if (!note.includes('delete')) process.exit(1);" "$root/out.json"
   [ "$status" -eq 0 ]
 
   rm -rf "$root"
@@ -492,27 +531,4 @@ EOF
   [ "$status" -eq 0 ]
 
   rm -rf "$root"
-}
-
-@test "sync warning counts repo-local Codex approvals" {
-  local root external
-  root="$(create_working_root)"
-
-  mkdir -p "$root/.codex/sessions/2025/01/01"
-  cat >"$root/.codex/sessions/2025/01/01/rollout-local.jsonl" <<'EOF'
-{"type":"exec_approval_request","command":["rm","-f","README.md"]}
-{"msg":{"type":"exec_approval_request","command":["whoami"]}}
-EOF
-
-  external="$(make_tmp_dir)"
-  mkdir -p "$external/sessions/2025/01/01"
-  cat >"$external/sessions/2025/01/01/rollout-external.jsonl" <<'EOF'
-{"msg":{"type":"exec_approval_request","command":["echo","external"]}}
-EOF
-
-  run bash -c "cd \"$root\" && CODEX_HOME=\"$external\" node .agent-layer/src/sync/sync.mjs"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"approvals: 2"* ]]
-
-  rm -rf "$root" "$external"
 }

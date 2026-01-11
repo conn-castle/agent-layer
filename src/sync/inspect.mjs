@@ -45,9 +45,7 @@ function main() {
   const agentlayerRoot = path.join(workingRoot, ".agent-layer");
   const policy = loadCommandPolicy(agentlayerRoot);
   const catalog = loadServerCatalog(agentlayerRoot);
-  const approvals = collectApprovalDivergences(workingRoot, policy, {
-    codexMaxFiles: 0,
-  });
+  const approvals = collectApprovalDivergences(workingRoot, policy);
   const mcp = collectMcpDivergences(workingRoot, catalog);
   const divergences = {
     approvals: approvals.items,
