@@ -3,7 +3,9 @@
 Purpose: Phased plan of work; guides architecture decisions and sequencing.
 
 Update rules:
-- The roadmap is a single list of numbered phases. Do not renumber existing phases.
+- The roadmap is a single list of numbered phases.
+- Do not renumber completed phases (phases marked with ✅).
+- You may renumber incomplete phases when updating the roadmap (for example, to insert a new phase).
 - Incomplete phases include Goal, Tasks (checkbox list), and Exit criteria.
 - When a phase is complete:
   - Add a green check emoji to the phase heading: `## Phase N ✅ — <name>`

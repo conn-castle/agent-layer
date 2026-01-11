@@ -59,7 +59,7 @@ If the user provides arguments after the command, interpret them as:
 # Phase 1 — Discover coverage commands and domains (Coverage Scout)
 
 ## 1A) Primary source: docs/COMMANDS.md
-Look for a **Coverage** section and extract:
+Search `docs/COMMANDS.md` for coverage-related commands. Prefer a heading named **Coverage** if it exists, but do not require any specific sections. Extract:
 - coverage domains/components (if monorepo)
 - command(s) to generate coverage per domain
 - working directory for each command

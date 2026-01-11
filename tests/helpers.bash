@@ -55,9 +55,13 @@ create_isolated_working_root() {
   cp "$AGENTLAYER_ROOT/src/sync/policy.mjs" "$agent_layer_dir/src/sync/policy.mjs"
   cp "$AGENTLAYER_ROOT/src/sync/clean.mjs" "$agent_layer_dir/src/sync/clean.mjs"
   cp "$AGENTLAYER_ROOT/with-env.sh" "$agent_layer_dir/with-env.sh"
+  cp "$AGENTLAYER_ROOT/run.sh" "$agent_layer_dir/run.sh"
+  cp "$AGENTLAYER_ROOT/check-updates.sh" "$agent_layer_dir/check-updates.sh"
   cp "$AGENTLAYER_ROOT/al" "$agent_layer_dir/al"
   cp "$AGENTLAYER_ROOT/clean.sh" "$agent_layer_dir/clean.sh"
-  chmod +x "$agent_layer_dir/with-env.sh" "$agent_layer_dir/al" "$agent_layer_dir/clean.sh"
+  chmod +x "$agent_layer_dir/with-env.sh" "$agent_layer_dir/run.sh" \
+    "$agent_layer_dir/check-updates.sh" "$agent_layer_dir/al" \
+    "$agent_layer_dir/clean.sh"
   : >"$agent_layer_dir/src/sync/sync.mjs"
   mkdir -p "$root/sub/dir"
   printf "%s" "$root"

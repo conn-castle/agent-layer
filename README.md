@@ -189,11 +189,14 @@ VS Code MCP config uses the generated `.vscode/mcp.json` `envFile`, which defaul
 
 ### Prefer `./al` for running CLIs
 
-`./al` is intentionally minimal. By default it:
+`./al` is intentionally minimal and delegates the work to `.agent-layer/run.sh` (root resolution + sync/env execution). By default it:
 
 1) Runs `node src/sync/sync.mjs` (or `--check` then regenerates if out of date, depending on your `al`)
 2) Loads `.env` via `with-env.sh`
 3) Executes the command
+
+The commented options in `./al` map to flags handled by `.agent-layer/run.sh`:
+`--env-only`, `--sync-only`, `--check-env`, and `--project-env`.
 
 Examples:
 
@@ -534,6 +537,8 @@ echo "$CODEX_HOME"
   Remove generated shims/configs/skills and strip agent-layer-managed settings from client config files.
 - `with-env.sh`  
   Load `.agent-layer/.env` (and optionally project `.env`) then exec a command.
+- `run.sh`  
+  Internal runner for `./al` (resolve repo root, sync, load env, then exec).
 - `./al`  
   Repo-local launcher (sync + env load + exec; symlink recommended at working repo root).
 

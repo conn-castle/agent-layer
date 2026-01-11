@@ -5,13 +5,13 @@
 - `docs/FEATURES.md` — backlog of deferred user feature requests (not yet scheduled into the roadmap).
 - `docs/ROADMAP.md` — numbered phases; guides architecture and sequencing.
 - `docs/DECISIONS.md` — rolling log of important decisions (brief).
-- `docs/COMMANDS.md` — canonical commands for this repository (tests, coverage, lint/format, typecheck, build, run, migrations). Keep it practical and repeatable.
+- `docs/COMMANDS.md` — canonical, repeatable commands for this repository. Sections are team-defined.
 
 ## Operating rules
 1. **Read before planning:** Before making architectural or cross-cutting decisions, read `ROADMAP.md`, then scan `DECISIONS.md`, and then check relevant entries in `FEATURES.md` and `ISSUES.md`.
 2. **Read before running commands:** Before running or recommending project commands (tests, coverage, build, lint, start services), check `docs/COMMANDS.md` first. If it is missing or incomplete, use auto-discovery, ask the user only when needed, then update `docs/COMMANDS.md` with the definitive approach.
 3. **Initialize if missing:** If any project memory file does not exist, create it from the matching template in `templates/docs/<NAME>.md` (preserve headings and markers).  
-   - If `templates/docs/COMMANDS.md` does not exist, create `docs/COMMANDS.md` with a minimal, readable structure (see rule 13).
+   - If `templates/docs/COMMANDS.md` does not exist, create `docs/COMMANDS.md` with a minimal, readable structure and a single `<!-- ENTRIES START -->` insertion marker.
 4. **Write down deferred work:** If you discover something worth doing and you are not doing it now:
    - Add it to `ISSUES.md` if it is a bug, maintainability refactor, technical debt, reliability, security, test coverage gap, performance concern, or other engineering risk.
    - Add it to `FEATURES.md` only if it is a new user-visible capability.
@@ -28,7 +28,9 @@
 9. **Prevent duplicates:** Search the target file before adding a new entry. Merge or rewrite existing entries instead of adding near-duplicates.
 10. **Keep files living:** When an issue is fixed, remove it from `ISSUES.md`. When a feature is implemented, remove it from `FEATURES.md`. When a feature is scheduled into the roadmap, move it into `ROADMAP.md` and remove it from `FEATURES.md` at that time.
 11. **Roadmap phase behavior:**
-    - The roadmap is a single list of **numbered phases**. Do not renumber existing phases.
+    - The roadmap is a single list of **numbered phases**.
+    - Do not renumber completed phases (phases marked with ✅).
+    - You may renumber incomplete phases when updating the roadmap (for example, to insert a new phase).
     - Incomplete phases have **Goal**, **Tasks** (checkbox list), and **Exit criteria** sections.
     - When a phase is complete, add a green check emoji to the phase heading (✅) and replace the phase content with a **single bullet list** summarizing what was accomplished (no checkbox list).
     - There is no separate "current" or "upcoming" section; done vs not done is indicated by the ✅.
@@ -36,22 +38,12 @@
 13. **COMMANDS.md maintenance (seamless, selective):**
     - Maintain `docs/COMMANDS.md` without asking for confirmation when it improves future work.
     - Only add commands that are expected to be used repeatedly, such as:
-      - setup and installation, development server, build, lint/format, typecheck, unit/integration tests, coverage, database migrations, common scripts.
+      - setup and installation, development server, build, lint and format, typecheck, unit and integration tests, coverage, database migrations, common scripts.
     - Do not add one-off debugging commands (search/grep/find, ad-hoc scripts, temporary environment variables) unless they are a stable part of the workflow.
-    - Keep `docs/COMMANDS.md` concise and structured. Recommended sections:
-      - **Setup**
-      - **Develop**
-      - **Test**
-      - **Coverage**
-      - **Lint and format**
-      - **Typecheck**
-      - **Build and release**
-      - **Migrations and scripts**
-      - **Troubleshooting** (only stable, repeatable fixes)
-    - For each command entry, include:
-      - purpose (one sentence)
-      - command (code block)
-      - where to run it (repo root or subdirectory)
-      - prerequisites (only if critical, e.g., required tool/plugin)
+    - Keep `docs/COMMANDS.md` concise and structured, but **do not hard-code sections**. Sections are team-defined.
+    - When adding a command:
+      - place it under the best existing heading, or create a new heading if none fits,
+      - include purpose, command, where to run it, and prerequisites,
+      - prefer headings named **Test** and **Coverage** when applicable (for discoverability), but do not require them.
     - Deduplicate and update entries when commands change.
 14. **Agent autonomy:** You may propose and apply updates to the roadmap, features, issues, decisions, and commands when it improves clarity and delivery, while keeping the documents compact.
