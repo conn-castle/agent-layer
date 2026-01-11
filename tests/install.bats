@@ -165,7 +165,7 @@ EOF
 
   stub_bin="$(create_stub_tools "$root")"
   installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
-  run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer' < /dev/null"
+  run bash -c "cd '$work' && GIT_CEILING_DIRECTORIES='$work' PATH='$stub_bin:$PATH' '$installer' < /dev/null"
   [ "$status" -ne 0 ]
   [[ "$output" == *".agent-layer exists but is not a git repo"* ]]
 
@@ -234,7 +234,7 @@ EOF
   root="$(make_tmp_dir)"
   stub_bin="$(create_stub_tools "$root")"
   installer="$AGENTLAYER_ROOT/agent-layer-install.sh"
-  run bash -c "cd '$root' && PATH='$stub_bin:$PATH' '$installer' < /dev/null"
+  run bash -c "cd '$root' && GIT_CEILING_DIRECTORIES='$root' PATH='$stub_bin:$PATH' '$installer' < /dev/null"
   [ "$status" -ne 0 ]
   [[ "$output" == *"Not a git repo and no TTY available to confirm."* ]]
 
