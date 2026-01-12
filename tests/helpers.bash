@@ -13,10 +13,16 @@ multiline() {
   printf '%s\n' "$@"
 }
 
-# Create a temporary directory under .agent-layer/tmp/test-roots.
+# Create a temporary directory under tmp/test-roots (relative to current parent root).
 make_tmp_dir() {
   local base dir
-  base="$AGENT_LAYER_ROOT/tmp/test-roots"
+  # When running with --temp-parent-root, PARENT_ROOT is set and we're cd'd there.
+  # Use the current working directory's tmp, not AGENT_LAYER_ROOT's tmp.
+  if [[ -n "${PARENT_ROOT:-}" && "$PWD" == "$PARENT_ROOT" ]]; then
+    base="$PARENT_ROOT/.agent-layer/tmp/test-roots"
+  else
+    base="$AGENT_LAYER_ROOT/tmp/test-roots"
+  fi
   mkdir -p "$base" 2>&1 || {
     printf "ERROR: mkdir -p failed for %s\n" "$base" >&2
     return 1
