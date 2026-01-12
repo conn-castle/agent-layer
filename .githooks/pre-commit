@@ -16,10 +16,10 @@ fi
 # Prefer the agent-layer repo runner, otherwise use the consumer runner.
 if [[ -x "$repo_root/tests/run.sh" ]]; then
   test_runner="$repo_root/tests/run.sh"
-  (cd "$repo_root" && "$test_runner" --temp-work-root)
+  (cd "$repo_root" && "$test_runner" --temp-parent-root)
 elif [[ -x "$repo_root/.agent-layer/tests/run.sh" ]]; then
   test_runner="$repo_root/.agent-layer/tests/run.sh"
-  (cd "$repo_root" && "$test_runner" --work-root "$repo_root")
+  (cd "$repo_root" && "$test_runner" --parent-root "$repo_root")
 else
   die "Missing tests/run.sh (agent-layer) or .agent-layer/tests/run.sh (consumer repo)."
 fi

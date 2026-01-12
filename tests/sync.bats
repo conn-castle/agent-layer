@@ -7,7 +7,7 @@ load "helpers.bash"
 # Test: sync generates Codex config and instructions
 @test "sync generates Codex config and instructions" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
   [ "$status" -eq 0 ]
@@ -23,7 +23,7 @@ load "helpers.bash"
 # Test: sync emits YAML-folded descriptions for Codex skills
 @test "sync emits YAML-folded descriptions for Codex skills" {
   local root skill
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
   [ "$status" -eq 0 ]
@@ -41,7 +41,7 @@ load "helpers.bash"
 # Test: sync handles workflow frontmatter with UTF-8 BOM
 @test "sync handles workflow frontmatter with UTF-8 BOM" {
   local root workflow_file
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   workflow_file="$root/.agent-layer/config/workflows/bom-workflow.md"
   printf '\xEF\xBB\xBF' > "$workflow_file"
@@ -65,7 +65,7 @@ EOF
 # Test: sync defaults VS Code MCP envFile to .agent-layer/.env
 @test "sync defaults VS Code MCP envFile to .agent-layer/.env" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
   [ "$status" -eq 0 ]
@@ -80,7 +80,7 @@ EOF
 # Test: sync ignores MCP server key order differences
 @test "sync ignores MCP server key order differences" {
   local root baseline
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
   [ "$status" -eq 0 ]
@@ -123,7 +123,7 @@ fs.writeFileSync(file, JSON.stringify(reordered, null, 2) + "\n");
 # Test: sync overwrites command allowlists from policy
 @test "sync overwrites command allowlists from policy" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   mkdir -p "$root/.gemini" "$root/.claude" "$root/.vscode"
   cat >"$root/.gemini/settings.json" <<'EOF'
@@ -187,7 +187,7 @@ EOF
 # Test: sync --check passes after sync when outputs are clean
 @test "sync --check passes after sync when outputs are clean" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
   [ "$status" -eq 0 ]
@@ -201,7 +201,7 @@ EOF
 # Test: sync --check fails when outputs are missing
 @test "sync --check fails when outputs are missing" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
   [ "$status" -ne 0 ]
@@ -213,7 +213,7 @@ EOF
 # Test: sync rejects --overwrite with --interactive
 @test "sync rejects --overwrite with --interactive" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --overwrite --interactive"
   [ "$status" -ne 0 ]
@@ -225,7 +225,7 @@ EOF
 # Test: sync rejects --check with --interactive
 @test "sync rejects --check with --interactive" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check --interactive"
   [ "$status" -ne 0 ]
@@ -237,7 +237,7 @@ EOF
 # Test: sync --codex fails when CODEX_HOME points outside repo
 @test "sync --codex fails when CODEX_HOME points outside repo" {
   local root external
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
   external="$(make_tmp_dir)"
 
   run bash -c "cd \"$root\" && CODEX_HOME=\"$external\" node .agent-layer/src/sync/sync.mjs --codex"
@@ -250,7 +250,7 @@ EOF
 # Test: sync --interactive fails without a TTY
 @test "sync --interactive fails without a TTY" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   mkdir -p "$root/.gemini"
   cat >"$root/.gemini/settings.json" <<'EOF'
@@ -269,7 +269,7 @@ EOF
 # Test: sync fails when policy contains unsafe argv token
 @test "sync fails when policy contains unsafe argv token" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   cat >"$root/.agent-layer/config/policy/commands.json" <<'EOF'
 {
@@ -290,7 +290,7 @@ EOF
 # Test: sync --overwrite removes divergent allowlists and mcp entries
 @test "sync --overwrite removes divergent allowlists and mcp entries" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   mkdir -p "$root/.gemini" "$root/.claude" "$root/.vscode" "$root/.codex/rules"
   cat >"$root/.gemini/settings.json" <<'EOF'
@@ -357,7 +357,7 @@ EOF
 # Test: sync --check warns and points to divergence report when outputs are stale
 @test "sync --check warns and points to divergence report when outputs are stale" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
   [ "$status" -eq 0 ]
@@ -376,7 +376,7 @@ EOF
 # Test: sync fails when instructions directory is missing
 @test "sync fails when instructions directory is missing" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   rm -rf "$root/.agent-layer/config/instructions"
 
@@ -390,7 +390,7 @@ EOF
 # Test: sync fails when instructions directory has no markdown files
 @test "sync fails when instructions directory has no markdown files" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   rm -f "$root/.agent-layer/config/instructions/"*.md
 
@@ -404,7 +404,7 @@ EOF
 # Test: sync fails when workflows directory is missing
 @test "sync fails when workflows directory is missing" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   rm -rf "$root/.agent-layer/config/workflows"
 
@@ -418,7 +418,7 @@ EOF
 # Test: sync fails when workflows directory has no markdown files
 @test "sync fails when workflows directory has no markdown files" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   rm -f "$root/.agent-layer/config/workflows/"*.md
 
@@ -432,7 +432,7 @@ EOF
 # Test: sync fails when MCP server catalog is missing
 @test "sync fails when MCP server catalog is missing" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   rm -f "$root/.agent-layer/config/mcp-servers.json"
 
@@ -446,7 +446,7 @@ EOF
 # Test: sync fails when MCP defaults include geminiTrust
 @test "sync fails when MCP defaults include geminiTrust" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   cat >"$root/.agent-layer/config/mcp-servers.json" <<'EOF'
 {
@@ -473,7 +473,7 @@ EOF
 # Test: sync fails when an MCP server includes geminiTrust
 @test "sync fails when an MCP server includes geminiTrust" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   cat >"$root/.agent-layer/config/mcp-servers.json" <<'EOF'
 {
@@ -498,7 +498,7 @@ EOF
 # Test: inspect ignores Codex env var comments
 @test "inspect ignores Codex env var comments" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
   [ "$status" -eq 0 ]
@@ -515,7 +515,7 @@ EOF
 # Test: inspect warns when extra Codex rules files exist
 @test "inspect warns when extra Codex rules files exist" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   mkdir -p "$root/.codex/rules"
   cat >"$root/.codex/rules/default.rules" <<'EOF'
@@ -537,7 +537,7 @@ EOF
 # Test: inspect handles Codex config with empty args
 @test "inspect handles Codex config with empty args" {
   local root
-  root="$(create_sync_working_root)"
+  root="$(create_sync_parent_root)"
 
   cat >"$root/.agent-layer/config/mcp-servers.json" <<'EOF'
 {

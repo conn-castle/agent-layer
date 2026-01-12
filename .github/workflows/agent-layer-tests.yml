@@ -17,12 +17,20 @@ jobs:
           node-version: "20"
 
       - name: Install dev tools
-        run: sudo apt-get update && sudo apt-get install -y bats ripgrep shellcheck shfmt
+        run: sudo apt-get update && sudo apt-get install -y bats ripgrep shellcheck shfmt ruby
 
       - name: Install node dev dependencies
         run: npm install
 
+      - name: Install bashcov
+        run: sudo gem install bashcov --no-document
+
       - name: Run tests
         run: |
           set -euo pipefail
-          ./tests/run.sh --temp-work-root
+          ./tests/run.sh --temp-parent-root
+
+      - name: Coverage (parent-root)
+        run: |
+          set -euo pipefail
+          bash ./tests/coverage.sh

@@ -7,7 +7,7 @@ load "helpers.bash"
 # Test: pre-commit hook runs the test suite
 @test "pre-commit hook runs the test suite" {
   local root bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   bash_bin="$(command -v bash)"
 
   git -C "$root" init -q
@@ -20,7 +20,7 @@ EOF
 
   run "$bash_bin" -c "cd '$root' && '$root/.agent-layer/.githooks/pre-commit'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ran --work-root"* ]]
+  [[ "$output" == *"ran --parent-root"* ]]
 
   rm -rf "$root"
 }
@@ -32,7 +32,7 @@ EOF
   bash_bin="$(command -v bash)"
 
   mkdir -p "$root/.githooks" "$root/tests" "$root/tmp"
-  cp "$AGENTLAYER_ROOT/.githooks/pre-commit" "$root/.githooks/pre-commit"
+  cp "$AGENT_LAYER_ROOT/.githooks/pre-commit" "$root/.githooks/pre-commit"
   chmod +x "$root/.githooks/pre-commit"
 
   cat >"$root/tests/run.sh" <<'EOF'
@@ -45,7 +45,7 @@ EOF
 
   run "$bash_bin" -c "cd '$root' && '$root/.githooks/pre-commit'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ran-agent-layer --temp-work-root"* ]]
+  [[ "$output" == *"ran-agent-layer --temp-parent-root"* ]]
 
   rm -rf "$root"
 }

@@ -7,7 +7,7 @@ load "helpers.bash"
 # Test: check-updates.sh exits quietly when git is unavailable
 @test "check-updates.sh exits quietly when git is unavailable" {
   local root stub_bin bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   bash_bin="$(command -v bash)"
 
@@ -28,7 +28,7 @@ EOF
 # Test: check-updates.sh warns when local tag is behind
 @test "check-updates.sh warns when local tag is behind" {
   local root bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   bash_bin="$(command -v bash)"
 
   git -C "$root/.agent-layer" init -q

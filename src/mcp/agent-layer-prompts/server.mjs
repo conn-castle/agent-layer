@@ -9,17 +9,18 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { parseFrontMatter } from "../../sync/instructions.mjs";
-import { resolveWorkingRoot } from "../../sync/paths.mjs";
+import { resolveRootsFromEnvOrScript } from "../../sync/paths.mjs";
 
 /**
  * MCP prompt server that exposes workflow markdown as prompt definitions.
  */
 
 // Resolve the workflow directory relative to the repo root.
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORKING_ROOT = resolveWorkingRoot(process.cwd(), HERE);
-const WORKFLOWS_DIR = WORKING_ROOT
-  ? path.join(WORKING_ROOT, ".agent-layer", "config", "workflows")
+const ENTRY_PATH = process.argv[1] ?? fileURLToPath(import.meta.url);
+const ROOTS = resolveRootsFromEnvOrScript(ENTRY_PATH);
+const AGENT_LAYER_ROOT = ROOTS ? ROOTS.agentLayerRoot : null;
+const WORKFLOWS_DIR = AGENT_LAYER_ROOT
+  ? path.join(AGENT_LAYER_ROOT, "config", "workflows")
   : null;
 
 /**

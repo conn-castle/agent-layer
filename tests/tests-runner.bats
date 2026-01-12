@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 
-# Tests for tests/run.sh work-root behavior.
+# Tests for tests/run.sh parent-root behavior.
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
@@ -21,58 +21,65 @@ EOF
 create_tool_repo() {
   local root="$1"
   mkdir -p "$root/tests" "$root/src/lib" "$root/src/sync"
-  cp "$AGENTLAYER_ROOT/tests/run.sh" "$root/tests/run.sh"
-  cp "$AGENTLAYER_ROOT/src/lib/discover-root.sh" "$root/src/lib/discover-root.sh"
-  cp "$AGENTLAYER_ROOT/src/lib/temp-work-root.sh" "$root/src/lib/temp-work-root.sh"
+  cp "$AGENT_LAYER_ROOT/tests/run.sh" "$root/tests/run.sh"
+  cp "$AGENT_LAYER_ROOT/src/lib/parent-root.sh" "$root/src/lib/parent-root.sh"
+  cp "$AGENT_LAYER_ROOT/src/lib/temp-parent-root.sh" "$root/src/lib/temp-parent-root.sh"
   : >"$root/src/sync/sync.mjs"
   chmod +x "$root/tests/run.sh"
 }
 
-# Test: tests/run.sh fails without --work-root in agent-layer repo layout
-@test "tests/run.sh requires --work-root when no .agent-layer exists" {
-  local root bash_bin
+# Test: tests/run.sh fails without --parent-root in agent-layer repo layout
+@test "tests/run.sh requires --parent-root when no .agent-layer exists" {
+  local root tool_root bash_bin
   root="$(make_tmp_dir)"
+  tool_root="$root/agent-layer"
   bash_bin="$(command -v bash)"
 
-  create_tool_repo "$root"
+  mkdir -p "$tool_root"
+  create_tool_repo "$tool_root"
 
-  run "$bash_bin" -c "cd '$root' && '$root/tests/run.sh' 2>&1"
+  run "$bash_bin" -c "cd '$tool_root' && '$tool_root/tests/run.sh' 2>&1"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Missing .agent-layer/"* ]]
-  [[ "$output" == *"--work-root"* ]]
+  [[ "$output" == *"Running from agent-layer repo requires explicit parent root configuration."* ]]
+  [[ "$output" == *"--temp-parent-root"* ]]
 
   rm -rf "$root"
 }
 
-# Test: tests/run.sh succeeds with --work-root in agent-layer repo layout
-@test "tests/run.sh accepts --work-root without .agent-layer in agent-layer repo layout" {
-  local tool_root work_root stub_bin bash_bin
-  tool_root="$(make_tmp_dir)"
-  work_root="$(make_tmp_dir)"
-  stub_bin="$work_root/stub-bin"
+# Test: tests/run.sh succeeds with --parent-root in agent-layer repo layout
+@test "tests/run.sh accepts --parent-root without .agent-layer in agent-layer repo layout" {
+  local tool_root parent_root stub_bin bash_bin base
+  base="$(make_tmp_dir)"
+  tool_root="$base/agent-layer"
+  parent_root="$(make_tmp_dir)"
+  stub_bin="$parent_root/stub-bin"
   bash_bin="$(command -v bash)"
 
+  mkdir -p "$tool_root"
   create_tool_repo "$tool_root"
   write_stub_tools "$stub_bin"
+  ln -s "$tool_root" "$parent_root/.agent-layer"
 
-  run "$bash_bin" -c "cd '$tool_root' && PATH='$stub_bin:/usr/bin:/bin' BATS_BIN='bats' '$tool_root/tests/run.sh' --work-root '$work_root'"
+  run "$bash_bin" -c "cd '$tool_root' && PATH='$stub_bin:/usr/bin:/bin' BATS_BIN='bats' '$tool_root/tests/run.sh' --parent-root '$parent_root'"
   [ "$status" -eq 0 ]
 
-  rm -rf "$tool_root" "$work_root"
+  rm -rf "$base" "$parent_root"
 }
 
-# Test: tests/run.sh can create a temp work root in agent-layer repo layout
-@test "tests/run.sh accepts --temp-work-root in agent-layer repo layout" {
-  local tool_root stub_bin bash_bin
-  tool_root="$(make_tmp_dir)"
+# Test: tests/run.sh can create a temp parent root in agent-layer repo layout
+@test "tests/run.sh accepts --temp-parent-root in agent-layer repo layout" {
+  local tool_root stub_bin bash_bin base
+  base="$(make_tmp_dir)"
+  tool_root="$base/agent-layer"
   stub_bin="$tool_root/stub-bin"
   bash_bin="$(command -v bash)"
 
+  mkdir -p "$tool_root"
   create_tool_repo "$tool_root"
   write_stub_tools "$stub_bin"
 
-  run "$bash_bin" -c "cd '$tool_root' && PATH='$stub_bin:/usr/bin:/bin' BATS_BIN='bats' '$tool_root/tests/run.sh' --temp-work-root"
+  run "$bash_bin" -c "cd '$tool_root' && PATH='$stub_bin:/usr/bin:/bin' BATS_BIN='bats' '$tool_root/tests/run.sh' --temp-parent-root"
   [ "$status" -eq 0 ]
 
-  rm -rf "$tool_root"
+  rm -rf "$base"
 }

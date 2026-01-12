@@ -9,21 +9,9 @@ die() {
   exit 1
 }
 
-# Resolve the entrypoint helper to locate the repo root.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENTRYPOINT_SH="$SCRIPT_DIR/.agent-layer/src/lib/entrypoint.sh"
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  ENTRYPOINT_SH="$SCRIPT_DIR/src/lib/entrypoint.sh"
-fi
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  ENTRYPOINT_SH="$SCRIPT_DIR/../src/lib/entrypoint.sh"
-fi
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  die "Missing src/lib/entrypoint.sh (expected near .agent-layer/)."
-fi
-# shellcheck disable=SC1090
-source "$ENTRYPOINT_SH"
-resolve_entrypoint_root || exit $?
+# Resolve the agent-layer root from this script location.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+AGENT_LAYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
 # Require commands that this formatter depends on.
 require_cmd() {
@@ -36,7 +24,7 @@ require_cmd() {
 require_cmd shfmt "Install shfmt (macOS: brew install shfmt; Ubuntu: apt-get install shfmt)."
 
 # Resolve the Prettier binary (local install preferred).
-PRETTIER_BIN="$AGENTLAYER_ROOT/node_modules/.bin/prettier"
+PRETTIER_BIN="$AGENT_LAYER_ROOT/node_modules/.bin/prettier"
 if [[ -x "$PRETTIER_BIN" ]]; then
   PRETTIER="$PRETTIER_BIN"
 elif command -v prettier > /dev/null 2>&1; then
@@ -51,9 +39,9 @@ shell_files=()
 while IFS= read -r -d '' file; do
   shell_files+=("$file")
 done < <(
-  find "$AGENTLAYER_ROOT" \
+  find "$AGENT_LAYER_ROOT" \
     \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
-    -type f \( -name "*.sh" -o -path "$AGENTLAYER_ROOT/al" -o -path "$AGENTLAYER_ROOT/.githooks/pre-commit" \) \
+    -type f \( -name "*.sh" -o -path "$AGENT_LAYER_ROOT/al" -o -path "$AGENT_LAYER_ROOT/.githooks/pre-commit" \) \
     -print0
 )
 if [[ "${#shell_files[@]}" -gt 0 ]]; then
@@ -66,7 +54,7 @@ js_files=()
 while IFS= read -r -d '' file; do
   js_files+=("$file")
 done < <(
-  find "$AGENTLAYER_ROOT" \
+  find "$AGENT_LAYER_ROOT" \
     \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
     -type f \( -name "*.mjs" -o -name "*.js" \) \
     -print0

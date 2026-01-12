@@ -21,7 +21,7 @@ NODE
 # Test: run.sh sync-env runs sync and with-env
 @test "run.sh sync-env runs sync and with-env" {
   local root stub_bin node_log env_log bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   node_log="$root/node-args.log"
   env_log="$root/env-args.log"
@@ -53,7 +53,7 @@ EOF
 # Test: run.sh --env-only skips sync
 @test "run.sh --env-only skips sync" {
   local root stub_bin node_log env_log bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   node_log="$root/node-args.log"
   env_log="$root/env-args.log"
@@ -82,7 +82,7 @@ EOF
 # Test: run.sh --sync-only skips with-env
 @test "run.sh --sync-only skips with-env" {
   local root stub_bin node_log env_log bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   node_log="$root/node-args.log"
   env_log="$root/env-args.log"
@@ -111,7 +111,7 @@ EOF
 # Test: run.sh --check-env reruns sync on failed check
 @test "run.sh --check-env reruns sync on failed check" {
   local root stub_bin node_log env_log bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   node_log="$root/node-args.log"
   env_log="$root/env-args.log"
@@ -140,7 +140,7 @@ EOF
 # Test: run.sh --project-env forwards flag
 @test "run.sh --project-env forwards flag" {
   local root stub_bin node_log env_log bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   node_log="$root/node-args.log"
   env_log="$root/env-args.log"
@@ -165,10 +165,10 @@ EOF
   rm -rf "$root"
 }
 
-# Test: run.sh adds --codex and sets AGENTLAYER_RUN_CODEX
-@test "run.sh adds --codex and sets AGENTLAYER_RUN_CODEX" {
+# Test: run.sh adds --codex and sets AGENT_LAYER_RUN_CODEX
+@test "run.sh adds --codex and sets AGENT_LAYER_RUN_CODEX" {
   local root stub_bin node_log env_log bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   node_log="$root/node-args.log"
   env_log="$root/env-args.log"
@@ -179,7 +179,7 @@ EOF
 
   cat >"$root/.agent-layer/with-env.sh" <<'EOF'
 #!/usr/bin/env bash
-printf "%s\n" "${AGENTLAYER_RUN_CODEX:-}" > "$ENV_LOG"
+printf "%s\n" "${AGENT_LAYER_RUN_CODEX:-}" > "$ENV_LOG"
 exit 0
 EOF
   chmod +x "$root/.agent-layer/with-env.sh"

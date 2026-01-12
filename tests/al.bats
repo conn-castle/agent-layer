@@ -4,16 +4,16 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
-# Test: al uses its script dir when PWD points at another working repo
-@test "al uses its script dir when PWD points at another working repo" {
+# Test: al uses its script dir when PWD points at another parent repo
+@test "al uses its script dir when PWD points at another parent repo" {
   local root_a root_b stub_bin output
-  root_a="$(create_working_root)"
-  root_b="$(create_working_root)"
+  root_a="$(create_parent_root)"
+  root_b="$(create_parent_root)"
 
   ln -s "$root_a/.agent-layer/al" "$root_a/al"
   stub_bin="$(create_stub_node "$root_a")"
 
-  output="$(cd "$root_b/sub/dir" && PATH="$stub_bin:$PATH" "$root_a/al" pwd)"
+  output="$(cd "$root_b/sub/dir" && PATH="$stub_bin:$PATH" "$root_a/al" --parent-root "$root_a" pwd)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "$root_a" ]
@@ -21,22 +21,22 @@ load "helpers.bash"
   rm -rf "$root_a" "$root_b"
 }
 
-# Test: al prefers .agent-layer paths when a root src/lib/discover-root.sh exists
-@test "al prefers .agent-layer paths when a root src/lib/discover-root.sh exists" {
+# Test: al prefers .agent-layer paths when a root src/lib/parent-root.sh exists
+@test "al prefers .agent-layer paths when a root src/lib/parent-root.sh exists" {
   local root stub_bin output
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
 
   ln -s "$root/.agent-layer/al" "$root/al"
   mkdir -p "$root/src/lib"
-  cat >"$root/src/lib/discover-root.sh" <<'EOF'
-resolve_working_root() {
+  cat > "$root/src/lib/parent-root.sh" << 'EOF'
+resolve_parent_root() {
   return 1
 }
 EOF
 
   stub_bin="$(create_stub_node "$root")"
 
-  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" "$root/al" pwd)"
+  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" "$root/al" --parent-root "$root" pwd)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "$root" ]
@@ -47,10 +47,10 @@ EOF
 # Test: al sets CODEX_HOME when unset
 @test "al sets CODEX_HOME when unset" {
   local root stub_bin output
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$(create_stub_tools "$root")"
-  cat >"$stub_bin/codex" <<'EOF'
+  cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
 printf "%s" "${CODEX_HOME:-}"
 EOF
@@ -67,10 +67,10 @@ EOF
 # Test: al does not warn when CODEX_HOME already matches repo-local
 @test "al does not warn when CODEX_HOME already matches repo-local" {
   local root stub_bin output status
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$(create_stub_tools "$root")"
-  cat >"$stub_bin/codex" <<'EOF'
+  cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
 printf "%s" "${CODEX_HOME:-}"
 EOF
@@ -88,10 +88,10 @@ EOF
 # Test: al accepts CODEX_HOME when it resolves to repo-local via symlink
 @test "al accepts CODEX_HOME when it resolves to repo-local via symlink" {
   local root stub_bin output
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$(create_stub_tools "$root")"
-  cat >"$stub_bin/codex" <<'EOF'
+  cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
 printf "%s" "${CODEX_HOME:-}"
 EOF
@@ -111,17 +111,17 @@ EOF
 # Test: al passes --codex to sync when running codex
 @test "al passes --codex to sync when running codex" {
   local root stub_bin output node_args
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$root/stub-bin"
   mkdir -p "$stub_bin"
   node_args="$root/node-args.txt"
-  cat >"$stub_bin/node" <<'EOF'
+  cat > "$stub_bin/node" << 'EOF'
 #!/usr/bin/env bash
 printf "%s\n" "$@" > "$NODE_ARGS_LOG"
 exit 0
 EOF
-  cat >"$stub_bin/codex" <<'EOF'
+  cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
@@ -139,7 +139,7 @@ EOF
 # Test: al fails when node is missing
 @test "al fails when node is missing" {
   local root stub_bin output bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   bash_bin="$(command -v bash)"
   mkdir -p "$stub_bin"

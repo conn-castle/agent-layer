@@ -19,7 +19,7 @@ load "helpers.bash"
 }
 EOF
 
-  UTILS_PATH="$AGENTLAYER_ROOT/src/sync/utils.mjs" run node --input-type=module -e '
+  UTILS_PATH="$AGENT_LAYER_ROOT/src/sync/utils.mjs" run node --input-type=module -e '
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -54,7 +54,7 @@ if (parsed.a !== 1 || parsed.b.length !== 2 || parsed.c.d !== "ok") {
 }
 EOF
 
-  UTILS_PATH="$AGENTLAYER_ROOT/src/sync/utils.mjs" run node --input-type=module -e '
+  UTILS_PATH="$AGENT_LAYER_ROOT/src/sync/utils.mjs" run node --input-type=module -e '
 import { pathToFileURL } from "node:url";
 
 const { readJsonRelaxed } = await import(
@@ -70,7 +70,7 @@ if (!parsed || parsed.answer !== 42 || parsed.values.length !== 2) {
 
 # Test: validateCommandPolicy rejects invalid argv entries
 @test "validateCommandPolicy rejects invalid argv entries" {
-  POLICY_PATH="$AGENTLAYER_ROOT/src/sync/policy.mjs" run node --input-type=module -e '
+  POLICY_PATH="$AGENT_LAYER_ROOT/src/sync/policy.mjs" run node --input-type=module -e '
 import { pathToFileURL } from "node:url";
 
 const { validateCommandPolicy } = await import(

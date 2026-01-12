@@ -5,7 +5,7 @@ import {
   readJsonRelaxed,
   writeUtf8,
 } from "./utils.mjs";
-import { resolveWorkingRoot } from "./paths.mjs";
+import { resolveRootsFromEnvOrScript } from "./paths.mjs";
 import { isManagedClaudeAllow, isManagedGeminiAllowed } from "./policy.mjs";
 
 /**
@@ -294,25 +294,32 @@ function writeIfChanged(filePath, updated, changed) {
  * @returns {void}
  */
 function main() {
-  // Resolve the working root containing .agent-layer.
-  const workingRoot = resolveWorkingRoot(process.cwd());
-  if (!workingRoot) {
-    fail("Missing .agent-layer/ directory in this path or any parent.");
+  // Resolve roots from env or the entry script path.
+  const entryPath = process.argv[1];
+  const roots = resolveRootsFromEnvOrScript(entryPath);
+  if (!roots) {
+    fail(
+      "PARENT_ROOT must be set when running outside an installed .agent-layer.",
+    );
+  }
+  const parentRoot = path.resolve(roots.parentRoot);
+  const agentLayerRoot = path.resolve(roots.agentLayerRoot);
+  if (!fileExists(agentLayerRoot)) {
+    fail("Missing .agent-layer directory for this command.");
   }
 
-  // Build client config paths relative to the working root.
-  const agentlayerRoot = path.join(workingRoot, ".agent-layer");
-  const geminiPath = path.join(workingRoot, ".gemini", "settings.json");
-  const claudePath = path.join(workingRoot, ".claude", "settings.json");
-  const vscodePath = path.join(workingRoot, ".vscode", "settings.json");
-  const vscodeMcpPath = path.join(workingRoot, ".vscode", "mcp.json");
+  // Build client config paths relative to the parent root.
+  const geminiPath = path.join(parentRoot, ".gemini", "settings.json");
+  const claudePath = path.join(parentRoot, ".claude", "settings.json");
+  const vscodePath = path.join(parentRoot, ".vscode", "settings.json");
+  const vscodeMcpPath = path.join(parentRoot, ".vscode", "mcp.json");
 
   const updates = [];
   let managedServers = null;
   // Lazily resolve managed server names only when needed.
   const getManagedServers = () => {
     if (!managedServers) {
-      managedServers = new Set(loadServerNames(agentlayerRoot));
+      managedServers = new Set(loadServerNames(agentLayerRoot));
     }
     return managedServers;
   };

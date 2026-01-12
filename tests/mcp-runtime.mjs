@@ -16,10 +16,10 @@ import {
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const AGENTLAYER_ROOT = path.resolve(HERE, "..");
-const REPO_ROOT = path.resolve(AGENTLAYER_ROOT, "..");
+const AGENT_LAYER_ROOT = path.resolve(HERE, "..");
+const REPO_ROOT = path.resolve(AGENT_LAYER_ROOT, "..");
 const SERVER_PATH = path.join(
-  AGENTLAYER_ROOT,
+  AGENT_LAYER_ROOT,
   "src",
   "mcp",
   "agent-layer-prompts",
@@ -73,6 +73,11 @@ function createTransport() {
   const child = spawn(process.execPath, [SERVER_PATH], {
     cwd: REPO_ROOT,
     stdio: ["pipe", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      PARENT_ROOT: REPO_ROOT,
+      AGENT_LAYER_ROOT,
+    },
   });
   return child;
 }

@@ -46,7 +46,7 @@ import {
   trustedServerNames,
 } from "./mcp.mjs";
 import { diffOrWrite } from "./outdated.mjs";
-import { resolveWorkingRoot } from "./paths.mjs";
+import { resolveRootsFromEnvOrScript } from "./paths.mjs";
 import {
   buildClaudeAllow,
   buildGeminiAllowed,
@@ -120,68 +120,45 @@ function parseArgs(argv) {
 }
 
 /**
- * Resolve working and agent-layer roots, honoring explicit env overrides.
+ * Resolve parent and agent-layer roots, honoring explicit env overrides.
  * @param {string} scriptDir
- * @returns {{ workingRoot: string, agentlayerRoot: string }}
+ * @returns {{ parentRoot: string, agentLayerRoot: string }}
  */
-function resolveRoots(scriptDir) {
-  const useEnvRoots = ["1", "true", "yes"].includes(
-    String(process.env.AGENTLAYER_SYNC_ROOTS ?? "")
-      .trim()
-      .toLowerCase(),
-  );
-  if (useEnvRoots) {
-    const envWorkingRoot = String(process.env.WORKING_ROOT ?? "").trim();
-    const envAgentlayerRoot = String(process.env.AGENTLAYER_ROOT ?? "").trim();
-    if (!envWorkingRoot) {
-      console.error(
-        "agent-layer sync: WORKING_ROOT must be set when AGENTLAYER_SYNC_ROOTS=1.",
-      );
-      process.exit(2);
-    }
-    const workingRoot = path.resolve(envWorkingRoot);
-    const agentlayerRoot = envAgentlayerRoot
-      ? path.resolve(envAgentlayerRoot)
-      : path.join(workingRoot, ".agent-layer");
-    if (!fileExists(workingRoot)) {
-      console.error(
-        `agent-layer sync: WORKING_ROOT does not exist: ${workingRoot}`,
-      );
-      process.exit(2);
-    }
-    if (!fileExists(agentlayerRoot)) {
-      console.error(
-        `agent-layer sync: AGENTLAYER_ROOT does not exist: ${agentlayerRoot}`,
-      );
-      process.exit(2);
-    }
-    return { workingRoot, agentlayerRoot };
-  }
-
-  const workingRoot = resolveWorkingRoot(process.cwd(), scriptDir);
-  if (!workingRoot) {
+function resolveRoots(entryPath) {
+  const roots = resolveRootsFromEnvOrScript(entryPath);
+  if (!roots) {
     console.error(
-      "agent-layer sync: could not find working repo root containing .agent-layer/",
+      "agent-layer sync: PARENT_ROOT must be set when running outside an installed .agent-layer.",
+    );
+    console.error(
+      "agent-layer sync: run via ./al or set PARENT_ROOT/AGENT_LAYER_ROOT.",
     );
     process.exit(2);
   }
-  const agentlayerRoot = path.join(workingRoot, ".agent-layer");
-  if (!fileExists(agentlayerRoot)) {
+  const parentRoot = path.resolve(roots.parentRoot);
+  const agentLayerRoot = path.resolve(roots.agentLayerRoot);
+  if (!fileExists(parentRoot)) {
     console.error(
-      "agent-layer sync: could not find working repo root containing .agent-layer/",
+      `agent-layer sync: PARENT_ROOT does not exist: ${parentRoot}`,
     );
     process.exit(2);
   }
-  return { workingRoot, agentlayerRoot };
+  if (!fileExists(agentLayerRoot)) {
+    console.error(
+      `agent-layer sync: AGENT_LAYER_ROOT does not exist: ${agentLayerRoot}`,
+    );
+    process.exit(2);
+  }
+  return { parentRoot, agentLayerRoot };
 }
 
 /**
  * Enforce repo-local CODEX_HOME when running Codex.
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @param {string|undefined} codexHome
  * @returns {void}
  */
-function enforceCodexHome(workingRoot, codexHome) {
+function enforceCodexHome(parentRoot, codexHome) {
   const trimmed = (codexHome ?? "").trim();
   if (!trimmed) return;
   if (!path.isAbsolute(trimmed)) {
@@ -190,7 +167,7 @@ function enforceCodexHome(workingRoot, codexHome) {
     );
   }
 
-  const expectedPath = path.resolve(workingRoot, ".codex");
+  const expectedPath = path.resolve(parentRoot, ".codex");
   const codexPath = path.resolve(trimmed);
   if (!fileExists(trimmed)) {
     if (codexPath !== expectedPath) {
@@ -350,33 +327,33 @@ function mergeCodexConfig(existingContent, generatedContent, options = {}) {
  * @returns {void}
  */
 async function main() {
-  // Parse arguments and resolve the working repo root.
+  // Parse arguments and resolve the parent repo root.
   let args = parseArgs(process.argv);
-  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  const { workingRoot, agentlayerRoot } = resolveRoots(scriptDir);
+  const entryPath = process.argv[1] ?? fileURLToPath(import.meta.url);
+  const { parentRoot, agentLayerRoot } = resolveRoots(entryPath);
   // Enforce CODEX_HOME when sync runs for Codex.
   if (args.codex) {
-    enforceCodexHome(workingRoot, process.env.CODEX_HOME);
+    enforceCodexHome(parentRoot, process.env.CODEX_HOME);
   }
 
   // Resolve config source directories relative to the repo root.
-  const instructionsDir = path.join(agentlayerRoot, "config", "instructions");
-  const workflowsDir = path.join(agentlayerRoot, "config", "workflows");
+  const instructionsDir = path.join(agentLayerRoot, "config", "instructions");
+  const workflowsDir = path.join(agentLayerRoot, "config", "workflows");
 
   // Load policy and build per-client allowlists.
-  const policy = loadCommandPolicy(agentlayerRoot);
+  const policy = loadCommandPolicy(agentLayerRoot);
   const prefixes = commandPrefixes(policy);
   const geminiAllowed = buildGeminiAllowed(prefixes);
   const claudeAllowed = buildClaudeAllow(prefixes);
   const vscodeAutoApprove = buildVscodeAutoApprove(prefixes);
 
   // Load MCP catalog and handle any divergence warnings or prompts.
-  const catalog = loadServerCatalog(agentlayerRoot);
-  const divergence = collectDivergences(workingRoot, policy, catalog);
+  const catalog = loadServerCatalog(agentLayerRoot);
+  const divergence = collectDivergences(parentRoot, policy, catalog);
   const hasDivergence = divergence.approvals.length || divergence.mcp.length;
   if (hasDivergence) {
     if (args.interactive) {
-      const action = await promptDivergenceAction(divergence, workingRoot);
+      const action = await promptDivergenceAction(divergence, parentRoot);
       if (action === "overwrite") {
         args = { ...args, overwrite: true, interactive: false };
       } else {
@@ -409,11 +386,11 @@ async function main() {
 
   // Seed the outputs list with instruction shims.
   const outputs = [
-    [path.join(workingRoot, "AGENTS.md"), unified],
-    [path.join(workingRoot, ".codex", "AGENTS.md"), unified],
-    [path.join(workingRoot, "CLAUDE.md"), unified],
-    [path.join(workingRoot, "GEMINI.md"), unified],
-    [path.join(workingRoot, ".github", "copilot-instructions.md"), unified],
+    [path.join(parentRoot, "AGENTS.md"), unified],
+    [path.join(parentRoot, ".codex", "AGENTS.md"), unified],
+    [path.join(parentRoot, "CLAUDE.md"), unified],
+    [path.join(parentRoot, "GEMINI.md"), unified],
+    [path.join(parentRoot, ".github", "copilot-instructions.md"), unified],
   ];
 
   // Build MCP configs and merge with existing client settings.
@@ -424,7 +401,7 @@ async function main() {
     ...new Set([...claudeAllowed, ...claudeMcpAllowed]),
   ];
   const codexConfig = renderCodexConfig(catalog, REGEN_COMMAND);
-  const vscodeMcpPath = path.join(workingRoot, ".vscode", "mcp.json");
+  const vscodeMcpPath = path.join(parentRoot, ".vscode", "mcp.json");
   const vscodeMcpExisting = readJsonRelaxed(vscodeMcpPath, {});
   const vscodeMcpMerged = mergeMcpConfig(
     vscodeMcpExisting,
@@ -433,7 +410,7 @@ async function main() {
     { overwrite: args.overwrite },
   );
 
-  const claudeMcpPath = path.join(workingRoot, ".mcp.json");
+  const claudeMcpPath = path.join(parentRoot, ".mcp.json");
   const claudeMcpExisting = readJsonRelaxed(claudeMcpPath, {});
   const claudeMcpMerged = mergeMcpConfig(
     claudeMcpExisting,
@@ -442,7 +419,7 @@ async function main() {
     { overwrite: args.overwrite },
   );
 
-  const codexConfigPath = path.join(workingRoot, ".codex", "config.toml");
+  const codexConfigPath = path.join(parentRoot, ".codex", "config.toml");
   const codexExisting = fileExists(codexConfigPath)
     ? readUtf8(codexConfigPath)
     : null;
@@ -458,7 +435,7 @@ async function main() {
   );
 
   // Merge Gemini settings, preserving non-managed entries.
-  const geminiSettingsPath = path.join(workingRoot, ".gemini", "settings.json");
+  const geminiSettingsPath = path.join(parentRoot, ".gemini", "settings.json");
   const geminiExisting = readJsonRelaxed(geminiSettingsPath, {});
   const geminiMerged = mergeGeminiSettings(
     geminiExisting,
@@ -473,7 +450,7 @@ async function main() {
   ]);
 
   // Merge Claude settings, preserving non-managed entries.
-  const claudeSettingsPath = path.join(workingRoot, ".claude", "settings.json");
+  const claudeSettingsPath = path.join(parentRoot, ".claude", "settings.json");
   const claudeExisting = readJsonRelaxed(claudeSettingsPath, {});
   const claudeMerged = mergeClaudeSettings(
     claudeExisting,
@@ -487,7 +464,7 @@ async function main() {
   ]);
 
   // Merge VS Code settings, preserving non-managed entries.
-  const vscodeSettingsPath = path.join(workingRoot, ".vscode", "settings.json");
+  const vscodeSettingsPath = path.join(parentRoot, ".vscode", "settings.json");
   const vscodeExisting = readJsonRelaxed(vscodeSettingsPath, {});
   const vscodeMerged = mergeVscodeSettings(
     vscodeExisting,
@@ -502,7 +479,7 @@ async function main() {
 
   // Render and merge Codex rules for command policy enforcement.
   const codexRulesPath = path.join(
-    workingRoot,
+    parentRoot,
     ".codex",
     "rules",
     "default.rules",
@@ -519,8 +496,8 @@ async function main() {
   outputs.push([codexRulesPath, codexRulesMerged]);
 
   // Write or diff outputs and regenerate Codex skills.
-  diffOrWrite(outputs, args, workingRoot);
-  generateCodexSkills(workingRoot, workflowsDir, args);
+  diffOrWrite(outputs, args, parentRoot);
+  generateCodexSkills(parentRoot, workflowsDir, args);
 
   // Emit a success summary unless running in --check mode.
   if (!args.check) {

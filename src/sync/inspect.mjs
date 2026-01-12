@@ -8,7 +8,7 @@ import {
 } from "./divergence.mjs";
 import { loadServerCatalog } from "./mcp.mjs";
 import { loadCommandPolicy } from "./policy.mjs";
-import { resolveWorkingRoot } from "./paths.mjs";
+import { resolveRootsFromEnvOrScript } from "./paths.mjs";
 import { fileExists } from "./utils.mjs";
 
 /**
@@ -38,21 +38,27 @@ function outputError(message, code = 2) {
  * Entrypoint.
  */
 function main() {
-  // Resolve the working root and validate the .agent-layer directory.
-  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  const workingRoot = resolveWorkingRoot(process.cwd(), scriptDir);
-  if (!workingRoot || !fileExists(path.join(workingRoot, ".agent-layer"))) {
+  // Resolve the parent root and validate the .agent-layer directory.
+  const entryPath = process.argv[1] ?? fileURLToPath(import.meta.url);
+  const roots = resolveRootsFromEnvOrScript(entryPath);
+  if (!roots) {
     outputError(
-      "agent-layer inspect: could not find working repo root containing .agent-layer/",
+      "agent-layer inspect: PARENT_ROOT must be set when running outside an installed .agent-layer.",
+    );
+  }
+  const parentRoot = path.resolve(roots.parentRoot);
+  const agentLayerRoot = path.resolve(roots.agentLayerRoot);
+  if (!fileExists(agentLayerRoot)) {
+    outputError(
+      "agent-layer inspect: could not find .agent-layer directory for this command.",
     );
   }
 
   // Load source configs and collect divergence details.
-  const agentlayerRoot = path.join(workingRoot, ".agent-layer");
-  const policy = loadCommandPolicy(agentlayerRoot);
-  const catalog = loadServerCatalog(agentlayerRoot);
-  const approvals = collectApprovalDivergences(workingRoot, policy);
-  const mcp = collectMcpDivergences(workingRoot, catalog);
+  const policy = loadCommandPolicy(agentLayerRoot);
+  const catalog = loadServerCatalog(agentLayerRoot);
+  const approvals = collectApprovalDivergences(parentRoot, policy);
+  const mcp = collectMcpDivergences(parentRoot, catalog);
   const divergences = {
     approvals: approvals.items,
     mcp: mcp.items,
@@ -63,7 +69,7 @@ function main() {
   output({
     ok: true,
     generatedAt: new Date().toISOString(),
-    workingRoot,
+    parentRoot,
     summary: {
       approvals: divergences.approvals.length,
       mcp: divergences.mcp.length,

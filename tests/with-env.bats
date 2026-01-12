@@ -7,7 +7,7 @@ load "helpers.bash"
 # Test: with-env.sh loads project .env only with --project-env
 @test "with-env.sh loads project .env only with --project-env" {
   local root output
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
 
   printf "TEST_PROJECT_ENV=from-project\n" >"$root/.env"
 
@@ -29,7 +29,7 @@ load "helpers.bash"
 # Test: with-env.sh loads .agent-layer .env by default
 @test "with-env.sh loads .agent-layer .env by default" {
   local root output
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
 
   printf "TEST_AGENT_ENV=from-agent\n" >"$root/.agent-layer/.env"
 
@@ -45,7 +45,7 @@ load "helpers.bash"
 # Test: with-env.sh is a no-op when .agent-layer .env is missing
 @test "with-env.sh is a no-op when .agent-layer .env is missing" {
   local root output
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
 
   output="$(cd "$root/sub/dir" && "$root/.agent-layer/with-env.sh" \
     bash -c 'echo "${TEST_AGENT_ENV_MISSING:-}"')"
@@ -59,7 +59,7 @@ load "helpers.bash"
 # Test: with-env.sh --help prints usage
 @test "with-env.sh --help prints usage" {
   local root
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
 
   run "$root/.agent-layer/with-env.sh" --help
   [ "$status" -eq 0 ]

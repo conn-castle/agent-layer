@@ -8,7 +8,7 @@ set -euo pipefail
 # - enables & tests git hooks
 #
 # Usage:
-#   ./setup.sh [--skip-checks] [--temp-work-root] [--work-root <path>]
+#   ./setup.sh [--skip-checks] [--temp-parent-root] [--parent-root <path>]
 
 say() { printf "%s\n" "$*"; }
 die() {
@@ -18,37 +18,37 @@ die() {
 
 # Parse CLI flags and reject unknown options.
 SKIP_CHECKS="0"
-work_root=""
-use_temp_work_root="0"
+parent_root=""
+use_temp_parent_root="0"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --temp-work-root)
-      use_temp_work_root="1"
+    --temp-parent-root)
+      use_temp_parent_root="1"
       ;;
     --skip-checks)
       SKIP_CHECKS="1"
       ;;
-    --work-root)
+    --parent-root)
       shift
       if [[ $# -eq 0 || -z "${1:-}" ]]; then
-        die "--work-root requires a path."
+        die "--parent-root requires a path."
       fi
-      work_root="$1"
+      parent_root="$1"
       ;;
-    --work-root=*)
-      work_root="${1#*=}"
-      if [[ -z "$work_root" ]]; then
-        die "--work-root requires a path."
+    --parent-root=*)
+      parent_root="${1#*=}"
+      if [[ -z "$parent_root" ]]; then
+        die "--parent-root requires a path."
       fi
       ;;
     --help | -h)
-      cat << 'EOF'
-Usage: ./setup.sh [--skip-checks] [--temp-work-root] [--work-root <path>]
+      cat << 'USAGE'
+Usage: ./setup.sh [--skip-checks] [--temp-parent-root] [--parent-root <path>]
 
-In a consumer repo, run without work-root flags.
-In the agent-layer repo (no .agent-layer/), a temp work root is used by default
-(system temp or tmp/agent-layer-temp-work-root).
-EOF
+In a consumer repo, run without parent-root flags.
+In the agent-layer repo (no .agent-layer/), you must set --parent-root,
+--temp-parent-root, or PARENT_ROOT in .agent-layer/.env.
+USAGE
       exit 0
       ;;
     *)
@@ -58,32 +58,30 @@ EOF
   shift
 done
 
-# Resolve work roots for consumer and agent-layer layouts.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOTS_HELPER="$SCRIPT_DIR/src/lib/discover-root.sh"
+# Resolve parent root according to the spec.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOTS_HELPER="$SCRIPT_DIR/src/lib/parent-root.sh"
 if [[ ! -f "$ROOTS_HELPER" ]]; then
-  die "Missing src/lib/discover-root.sh (expected near setup.sh)."
+  die "Missing src/lib/parent-root.sh (expected near setup.sh)."
 fi
 # shellcheck disable=SC1090
 source "$ROOTS_HELPER"
-ROOTS_DEFAULT_TEMP_WORK_ROOT="1" \
-  ROOTS_ALLOW_CONSUMER_WORK_ROOT="0" \
-  ROOTS_REQUIRE_WORK_ROOT_IN_AGENT_LAYER="0" \
-  WORK_ROOT="$work_root" \
-  USE_TEMP_WORK_ROOT="$use_temp_work_root" \
-  resolve_roots
+ROOTS_PARENT_ROOT="$parent_root" \
+  ROOTS_USE_TEMP_PARENT_ROOT="$use_temp_parent_root" \
+  resolve_parent_root || exit $?
 
-if [[ "$TEMP_WORK_ROOT_CREATED" == "1" ]]; then
-  trap 'rm -rf "$WORKING_ROOT"' EXIT
-  say "==> Using temporary work root: $WORKING_ROOT"
+if [[ "$TEMP_PARENT_ROOT_CREATED" == "1" ]]; then
+  # shellcheck disable=SC2153
+  trap '[[ "${PARENT_ROOT_KEEP_TEMP:-0}" == "1" ]] || rm -rf "$PARENT_ROOT"' EXIT INT TERM
+  say "==> Using temporary parent root: $PARENT_ROOT"
 fi
 
-# Run from the repo root so all relative paths are stable.
-cd "$WORKING_ROOT"
+# Run from the parent root so all relative paths are stable.
+cd "$PARENT_ROOT"
 
 # Validate required agent-layer files and system tools.
-[[ -d "$AGENTLAYER_ROOT" ]] || die "Missing agent-layer root: $AGENTLAYER_ROOT"
-[[ -f "$AGENTLAYER_ROOT/src/sync/sync.mjs" ]] || die "Missing src/sync/sync.mjs under $AGENTLAYER_ROOT."
+[[ -d "$AGENT_LAYER_ROOT" ]] || die "Missing agent-layer root: $AGENT_LAYER_ROOT"
+[[ -f "$AGENT_LAYER_ROOT/src/sync/sync.mjs" ]] || die "Missing src/sync/sync.mjs under $AGENT_LAYER_ROOT."
 
 command -v node > /dev/null 2>&1 || die "Node.js is required (node not found). Install Node, then re-run."
 command -v npm > /dev/null 2>&1 || die "npm is required (npm not found). Install npm/Node, then re-run."
@@ -99,16 +97,16 @@ fi
 
 # Generate all agent-layer outputs from config sources.
 say "==> Running agent-layer sync"
-AGENTLAYER_SYNC_ROOTS=1 node "$AGENTLAYER_ROOT/src/sync/sync.mjs"
+AGENT_LAYER_SYNC_ROOTS=1 node "$AGENT_LAYER_ROOT/src/sync/sync.mjs"
 
 # Install MCP prompt server dependencies used by the runtime.
 say "==> Installing MCP prompt server dependencies"
-if [[ -f "$AGENTLAYER_ROOT/src/mcp/agent-layer-prompts/package.json" ]]; then
-  pushd "$AGENTLAYER_ROOT/src/mcp/agent-layer-prompts" > /dev/null
+if [[ -f "$AGENT_LAYER_ROOT/src/mcp/agent-layer-prompts/package.json" ]]; then
+  pushd "$AGENT_LAYER_ROOT/src/mcp/agent-layer-prompts" > /dev/null
   npm install
   popd > /dev/null
 else
-  die "Missing src/mcp/agent-layer-prompts/package.json under $AGENTLAYER_ROOT"
+  die "Missing src/mcp/agent-layer-prompts/package.json under $AGENT_LAYER_ROOT"
 fi
 
 # Explain hook behavior based on repo state (hook enable is dev-only).
@@ -123,7 +121,7 @@ if [[ "$SKIP_CHECKS" == "1" ]]; then
   say "==> Skipping sync check (--skip-checks)"
 else
   say "==> Verifying sync is up-to-date (check mode)"
-  AGENTLAYER_SYNC_ROOTS=1 node "$AGENTLAYER_ROOT/src/sync/sync.mjs" --check
+  AGENT_LAYER_SYNC_ROOTS=1 node "$AGENT_LAYER_ROOT/src/sync/sync.mjs" --check
 fi
 
 # Provide manual configuration steps for first-time setup.
@@ -141,8 +139,8 @@ if [[ "$IS_CONSUMER_LAYOUT" == "1" ]]; then
   say "If you do not use ./al, regenerate manually:"
   say "  node .agent-layer/src/sync/sync.mjs"
 else
-  say "Note: running from the agent-layer repo wrote outputs into: $WORKING_ROOT"
+  say "Note: running from the agent-layer repo wrote outputs into: $PARENT_ROOT"
   say "Edit sources in config/ and re-run as needed."
   say "Manual regen:"
-  say "  AGENTLAYER_SYNC_ROOTS=1 node src/sync/sync.mjs"
+  say "  AGENT_LAYER_SYNC_ROOTS=1 node src/sync/sync.mjs"
 fi

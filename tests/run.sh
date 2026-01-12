@@ -9,40 +9,39 @@ die() {
   exit 1
 }
 
-# Parse work-root flags so the runner can be invoked from the agent-layer repo.
+# Parse parent-root flags so the runner can be invoked from the agent-layer repo.
 usage() {
-  cat << 'EOF'
-Usage: tests/run.sh [--work-root <path>] [--temp-work-root]
+  cat << 'USAGE'
+Usage: tests/run.sh [--parent-root <path>] [--temp-parent-root]
 
 Run formatting checks and the Bats suite.
 
-In the agent-layer repo (no .agent-layer/ directory), use --temp-work-root
-or pass --work-root to a temp directory. --temp-work-root uses system temp
-(or tmp/agent-layer-temp-work-root). In a consumer repo, --work-root must
-point to the repo root that contains .agent-layer/.
-EOF
+In the agent-layer repo (no .agent-layer/ directory), use --temp-parent-root
+or pass --parent-root to a temp directory. In a consumer repo, --parent-root
+must point to the repo root that contains .agent-layer/.
+USAGE
 }
 
-work_root=""
-use_temp_work_root="0"
+parent_root=""
+use_temp_parent_root="0"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --temp-work-root)
-      use_temp_work_root="1"
+    --temp-parent-root)
+      use_temp_parent_root="1"
       shift
       ;;
-    --work-root)
+    --parent-root)
       shift
       if [[ $# -eq 0 || -z "${1:-}" ]]; then
-        die "--work-root requires a path."
+        die "--parent-root requires a path."
       fi
-      work_root="$1"
+      parent_root="$1"
       shift
       ;;
-    --work-root=*)
-      work_root="${1#*=}"
-      if [[ -z "$work_root" ]]; then
-        die "--work-root requires a path."
+    --parent-root=*)
+      parent_root="${1#*=}"
+      if [[ -z "$parent_root" ]]; then
+        die "--parent-root requires a path."
       fi
       shift
       ;;
@@ -56,26 +55,23 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOTS_HELPER="$SCRIPT_DIR/../src/lib/discover-root.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOTS_HELPER="$SCRIPT_DIR/../src/lib/parent-root.sh"
 if [[ ! -f "$ROOTS_HELPER" ]]; then
-  die "Missing src/lib/discover-root.sh (expected near tests/)."
+  die "Missing src/lib/parent-root.sh (expected near tests/)."
 fi
 # shellcheck disable=SC1090
 source "$ROOTS_HELPER"
-ROOTS_ALLOW_CONSUMER_WORK_ROOT="1" \
-  ROOTS_DEFAULT_TEMP_WORK_ROOT="0" \
-  ROOTS_REQUIRE_WORK_ROOT_IN_AGENT_LAYER="1" \
-  WORK_ROOT="$work_root" \
-  USE_TEMP_WORK_ROOT="$use_temp_work_root" \
-  resolve_roots
+ROOTS_PARENT_ROOT="$parent_root" \
+  ROOTS_USE_TEMP_PARENT_ROOT="$use_temp_parent_root" \
+  resolve_parent_root || exit $?
 
-if [[ "$TEMP_WORK_ROOT_CREATED" == "1" ]]; then
-  trap 'rm -rf "$WORKING_ROOT"' EXIT
+if [[ "$TEMP_PARENT_ROOT_CREATED" == "1" ]]; then
+  # shellcheck disable=SC2153
+  trap '[[ "${PARENT_ROOT_KEEP_TEMP:-0}" == "1" ]] || rm -rf "$PARENT_ROOT"' EXIT INT TERM
 fi
-if [[ -n "$work_root" || "$TEMP_WORK_ROOT_CREATED" == "1" ]]; then
-  cd "$WORKING_ROOT"
-fi
+
+cd "$PARENT_ROOT"
 
 # Require external tools used by formatting and tests.
 require_cmd() {
@@ -98,7 +94,7 @@ if ! command -v "$BATS_BIN" > /dev/null 2>&1; then
 fi
 
 # Resolve Prettier (local install preferred).
-PRETTIER_BIN="$AGENTLAYER_ROOT/node_modules/.bin/prettier"
+PRETTIER_BIN="$AGENT_LAYER_ROOT/node_modules/.bin/prettier"
 if [[ -x "$PRETTIER_BIN" ]]; then
   PRETTIER="$PRETTIER_BIN"
 elif command -v prettier > /dev/null 2>&1; then
@@ -113,9 +109,9 @@ shell_files=()
 while IFS= read -r -d '' file; do
   shell_files+=("$file")
 done < <(
-  find "$AGENTLAYER_ROOT" \
+  find "$AGENT_LAYER_ROOT" \
     \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
-    -type f \( -name "*.sh" -o -path "$AGENTLAYER_ROOT/al" -o -path "$AGENTLAYER_ROOT/.githooks/pre-commit" \) \
+    -type f \( -name "*.sh" -o -path "$AGENT_LAYER_ROOT/al" -o -path "$AGENT_LAYER_ROOT/.githooks/pre-commit" \) \
     -print0
 )
 if [[ "${#shell_files[@]}" -gt 0 ]]; then
@@ -134,7 +130,7 @@ js_files=()
 while IFS= read -r -d '' file; do
   js_files+=("$file")
 done < <(
-  find "$AGENTLAYER_ROOT" \
+  find "$AGENT_LAYER_ROOT" \
     \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
     -type f \( -name "*.mjs" -o -name "*.js" \) \
     -print0
@@ -145,4 +141,4 @@ fi
 
 # Run the Bats test suite.
 say "==> Tests (bats)"
-"$BATS_BIN" "$AGENTLAYER_ROOT/tests"
+"$BATS_BIN" "$AGENT_LAYER_ROOT/tests"

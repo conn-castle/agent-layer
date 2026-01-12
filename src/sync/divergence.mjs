@@ -206,12 +206,12 @@ function equalStringSets(a, b) {
 
 /**
  * Convert an absolute path to a repo-relative path for messaging.
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @param {string} absPath
  * @returns {string}
  */
-function relPath(workingRoot, absPath) {
-  const rel = path.relative(workingRoot, absPath);
+function relPath(parentRoot, absPath) {
+  const rel = path.relative(parentRoot, absPath);
   return rel.split(path.sep).join("/");
 }
 
@@ -265,17 +265,17 @@ function parseServerEntry(name, entry, filePath, trust) {
 
 /**
  * Collect approval divergences across managed configs.
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @param {import("./policy.mjs").CommandPolicy} policy
  * @returns {{ items: ApprovalItem[], notes: string[] }}
  */
-export function collectApprovalDivergences(workingRoot, policy) {
+export function collectApprovalDivergences(parentRoot, policy) {
   const policySet = new Set(commandPrefixes(policy));
   /** @type {ApprovalItem[]} */
   const items = [];
   const notes = [];
 
-  const geminiPath = path.join(workingRoot, ".gemini", "settings.json");
+  const geminiPath = path.join(parentRoot, ".gemini", "settings.json");
   const gemini = readJsonRelaxed(geminiPath, null);
   if (isPlainObject(gemini)) {
     const allowed = gemini.tools?.allowed;
@@ -312,7 +312,7 @@ export function collectApprovalDivergences(workingRoot, policy) {
     }
   }
 
-  const claudePath = path.join(workingRoot, ".claude", "settings.json");
+  const claudePath = path.join(parentRoot, ".claude", "settings.json");
   const claude = readJsonRelaxed(claudePath, null);
   if (isPlainObject(claude)) {
     const allow = claude.permissions?.allow;
@@ -349,7 +349,7 @@ export function collectApprovalDivergences(workingRoot, policy) {
     }
   }
 
-  const vscodeSettingsPath = path.join(workingRoot, ".vscode", "settings.json");
+  const vscodeSettingsPath = path.join(parentRoot, ".vscode", "settings.json");
   const vscodeSettings = readJsonRelaxed(vscodeSettingsPath, null);
   if (isPlainObject(vscodeSettings)) {
     const autoApprove = vscodeSettings["chat.tools.terminal.autoApprove"];
@@ -399,7 +399,7 @@ export function collectApprovalDivergences(workingRoot, policy) {
     }
   }
 
-  const codexRulesDir = path.join(workingRoot, ".codex", "rules");
+  const codexRulesDir = path.join(parentRoot, ".codex", "rules");
   const codexRulesPath = path.join(codexRulesDir, "default.rules");
   if (fileExists(codexRulesPath)) {
     const lines = readUtf8(codexRulesPath).split(/\r?\n/);
@@ -439,7 +439,7 @@ export function collectApprovalDivergences(workingRoot, policy) {
   );
   if (extraRules.length > 0) {
     const relRules = extraRules.map((filePath) =>
-      relPath(workingRoot, filePath),
+      relPath(parentRoot, filePath),
     );
     notes.push(
       "Codex rules: extra rules files detected: " +
@@ -455,11 +455,11 @@ export function collectApprovalDivergences(workingRoot, policy) {
 
 /**
  * Collect MCP divergences across managed configs.
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @param {{ defaults?: Record<string, unknown>, servers?: unknown[] }} catalog
  * @returns {{ items: McpItem[], notes: string[] }}
  */
-export function collectMcpDivergences(workingRoot, catalog) {
+export function collectMcpDivergences(parentRoot, catalog) {
   /** @type {McpItem[]} */
   const items = [];
   const notes = [];
@@ -477,7 +477,7 @@ export function collectMcpDivergences(workingRoot, catalog) {
     });
   }
 
-  const geminiPath = path.join(workingRoot, ".gemini", "settings.json");
+  const geminiPath = path.join(parentRoot, ".gemini", "settings.json");
   const gemini = readJsonRelaxed(geminiPath, null);
   if (isPlainObject(gemini) && isPlainObject(gemini.mcpServers)) {
     for (const [name, entry] of Object.entries(gemini.mcpServers)) {
@@ -524,7 +524,7 @@ export function collectMcpDivergences(workingRoot, catalog) {
     }
   }
 
-  const claudePath = path.join(workingRoot, ".mcp.json");
+  const claudePath = path.join(parentRoot, ".mcp.json");
   const claude = readJsonRelaxed(claudePath, null);
   if (isPlainObject(claude) && isPlainObject(claude.mcpServers)) {
     for (const [name, entry] of Object.entries(claude.mcpServers)) {
@@ -568,7 +568,7 @@ export function collectMcpDivergences(workingRoot, catalog) {
     }
   }
 
-  const vscodeMcpPath = path.join(workingRoot, ".vscode", "mcp.json");
+  const vscodeMcpPath = path.join(parentRoot, ".vscode", "mcp.json");
   const vscodeMcp = readJsonRelaxed(vscodeMcpPath, null);
   if (isPlainObject(vscodeMcp) && isPlainObject(vscodeMcp.servers)) {
     for (const [name, entry] of Object.entries(vscodeMcp.servers)) {
@@ -608,7 +608,7 @@ export function collectMcpDivergences(workingRoot, catalog) {
     }
   }
 
-  const codexConfigPath = path.join(workingRoot, ".codex", "config.toml");
+  const codexConfigPath = path.join(parentRoot, ".codex", "config.toml");
   if (fileExists(codexConfigPath)) {
     const content = readUtf8(codexConfigPath);
     const parsed = parseCodexConfigSections(content);
@@ -657,14 +657,14 @@ export function collectMcpDivergences(workingRoot, catalog) {
 
 /**
  * Collect divergent approvals + MCP entries for warning output.
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @param {import("./policy.mjs").CommandPolicy} policy
  * @param {{ defaults?: Record<string, unknown>, servers?: unknown[] }} catalog
  * @returns {DivergenceResult}
  */
-export function collectDivergences(workingRoot, policy, catalog) {
-  const approvals = collectApprovalDivergences(workingRoot, policy);
-  const mcp = collectMcpDivergences(workingRoot, catalog);
+export function collectDivergences(parentRoot, policy, catalog) {
+  const approvals = collectApprovalDivergences(parentRoot, policy);
+  const mcp = collectMcpDivergences(parentRoot, catalog);
   return {
     approvals: approvals.items,
     mcp: mcp.items,

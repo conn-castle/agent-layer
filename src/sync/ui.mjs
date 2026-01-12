@@ -3,19 +3,19 @@ import process from "node:process";
 import readline from "node:readline/promises";
 
 /**
- * Format a file path relative to the working root, preserving line suffixes.
+ * Format a file path relative to the parent root, preserving line suffixes.
  * @param {string} filePath
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @returns {string}
  */
-function formatRelativePath(filePath, workingRoot) {
+function formatRelativePath(filePath, parentRoot) {
   if (!filePath) return filePath;
   const match = filePath.match(/^(.*):(\d+)$/);
   const rawPath = match ? match[1] : filePath;
   const suffix = match ? `:${match[2]}` : "";
   const relative =
-    workingRoot && rawPath.startsWith(workingRoot)
-      ? path.relative(workingRoot, rawPath)
+    parentRoot && rawPath.startsWith(parentRoot)
+      ? path.relative(parentRoot, rawPath)
       : rawPath;
   return `${relative || rawPath}${suffix}`;
 }
@@ -23,10 +23,10 @@ function formatRelativePath(filePath, workingRoot) {
 /**
  * Format divergence details for interactive prompts.
  * @param {import("./divergence.mjs").DivergenceResult} divergence
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @returns {string}
  */
-function formatDivergenceDetails(divergence, workingRoot) {
+function formatDivergenceDetails(divergence, parentRoot) {
   const lines = [];
   if (divergence.approvals.length) {
     lines.push("Divergent approvals:");
@@ -35,7 +35,7 @@ function formatDivergenceDetails(divergence, workingRoot) {
       const reason = item.parseable
         ? ""
         : ` (unparseable: ${item.reason ?? "unknown"})`;
-      const filePath = formatRelativePath(item.filePath, workingRoot);
+      const filePath = formatRelativePath(item.filePath, parentRoot);
       const fileNote = filePath ? ` (file: ${filePath})` : "";
       lines.push(`- ${item.source}: ${label}${fileNote}${reason}`);
     }
@@ -45,7 +45,7 @@ function formatDivergenceDetails(divergence, workingRoot) {
     if (lines.length) lines.push("");
     lines.push("Divergent MCP servers:");
     for (const item of divergence.mcp) {
-      const filePath = formatRelativePath(item.filePath, workingRoot);
+      const filePath = formatRelativePath(item.filePath, parentRoot);
       const detailParts = [];
       if (item.parseable && item.server) {
         const args = item.server.args?.length
@@ -76,10 +76,10 @@ function formatDivergenceDetails(divergence, workingRoot) {
 /**
  * Prompt for how to handle divergence when running interactively.
  * @param {import("./divergence.mjs").DivergenceResult} divergence
- * @param {string} workingRoot
+ * @param {string} parentRoot
  * @returns {Promise<"overwrite" | "abort">}
  */
-export async function promptDivergenceAction(divergence, workingRoot) {
+export async function promptDivergenceAction(divergence, parentRoot) {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error("agent-layer sync: --interactive requires a TTY.");
     process.exit(2);
@@ -95,7 +95,7 @@ export async function promptDivergenceAction(divergence, workingRoot) {
   console.warn(
     `agent-layer sync: WARNING: client configs diverge from .agent-layer sources${detail}.`,
   );
-  console.warn(formatDivergenceDetails(divergence, workingRoot));
+  console.warn(formatDivergenceDetails(divergence, parentRoot));
   console.warn("");
   console.warn(
     "By default, sync preserves existing client entries. Choose overwrite to discard client-only entries.",

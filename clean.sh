@@ -4,7 +4,7 @@ set -euo pipefail
 # .agent-layer/clean.sh
 # Remove generated files produced by agent-layer sync.
 # Usage:
-#   ./.agent-layer/clean.sh
+#   ./.agent-layer/clean.sh [--parent-root <path>] [--temp-parent-root]
 
 say() { printf "%s\n" "$*"; }
 die() {
@@ -12,8 +12,39 @@ die() {
   exit 1
 }
 
+parent_root=""
+use_temp_parent_root="0"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --parent-root)
+      shift
+      if [[ $# -eq 0 || -z "${1:-}" ]]; then
+        die "--parent-root requires a path."
+      fi
+      parent_root="$1"
+      ;;
+    --parent-root=*)
+      parent_root="${1#*=}"
+      if [[ -z "$parent_root" ]]; then
+        die "--parent-root requires a path."
+      fi
+      ;;
+    --temp-parent-root)
+      use_temp_parent_root="1"
+      ;;
+    --help | -h)
+      echo "Usage: ./.agent-layer/clean.sh [--parent-root <path>] [--temp-parent-root]"
+      exit 0
+      ;;
+    *)
+      die "Unknown argument: $1"
+      ;;
+  esac
+  shift
+done
+
 # Resolve the entrypoint helper to locate the repo root.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 ENTRYPOINT_SH="$SCRIPT_DIR/.agent-layer/src/lib/entrypoint.sh"
 if [[ ! -f "$ENTRYPOINT_SH" ]]; then
   ENTRYPOINT_SH="$SCRIPT_DIR/src/lib/entrypoint.sh"
@@ -26,13 +57,18 @@ if [[ ! -f "$ENTRYPOINT_SH" ]]; then
 fi
 # shellcheck disable=SC1090
 source "$ENTRYPOINT_SH"
-resolve_entrypoint_root || exit $?
+ROOTS_PARENT_ROOT="$parent_root" ROOTS_USE_TEMP_PARENT_ROOT="$use_temp_parent_root" resolve_entrypoint_root || exit $?
+
+if [[ "${TEMP_PARENT_ROOT_CREATED:-0}" == "1" ]]; then
+  # shellcheck disable=SC2153
+  trap '[[ "${PARENT_ROOT_KEEP_TEMP:-0}" == "1" ]] || rm -rf "$PARENT_ROOT"' EXIT INT TERM
+fi
 
 # Ensure all path operations run from the repo root.
-cd "$WORKING_ROOT"
+cd "$PARENT_ROOT"
 
 # Confirm the clean helper is available before proceeding.
-[[ -f "$AGENTLAYER_ROOT/src/sync/sync.mjs" ]] || die "Missing .agent-layer/src/sync/sync.mjs."
+[[ -f "$AGENT_LAYER_ROOT/src/sync/sync.mjs" ]] || die "Missing .agent-layer/src/sync/sync.mjs."
 
 # Detect whether any managed settings files exist before invoking Node.
 managed_settings_files=(
@@ -52,9 +88,9 @@ done
 # Clean managed settings via the Node helper when needed.
 if [[ "$should_clean_settings" == "1" ]]; then
   command -v node > /dev/null 2>&1 || die "Node.js is required (node not found). Install Node, then re-run."
-  [[ -f "$AGENTLAYER_ROOT/src/sync/clean.mjs" ]] || die "Missing .agent-layer/src/sync/clean.mjs."
+  [[ -f "$AGENT_LAYER_ROOT/src/sync/clean.mjs" ]] || die "Missing .agent-layer/src/sync/clean.mjs."
   say "==> Removing agent-layer-managed settings"
-  node "$AGENTLAYER_ROOT/src/sync/clean.mjs"
+  node "$AGENT_LAYER_ROOT/src/sync/clean.mjs"
 fi
 
 # Enumerate generated files and Codex skills that should be removed.

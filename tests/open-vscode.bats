@@ -4,10 +4,10 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
-# Test: open-vscode.command sets CODEX_HOME and launches the working root
-@test "open-vscode.command sets CODEX_HOME and launches the working root" {
+# Test: open-vscode.command sets CODEX_HOME and launches the parent root
+@test "open-vscode.command sets CODEX_HOME and launches the parent root" {
   local root stub_bin
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$root/stub-bin"
   mkdir -p "$stub_bin"
@@ -29,7 +29,7 @@ EOF
 # Test: open-vscode.command auto-closes Terminal by default when osascript is available
 @test "open-vscode.command auto-closes Terminal by default when osascript is available" {
   local root stub_bin marker
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$root/stub-bin"
   mkdir -p "$stub_bin"
@@ -60,7 +60,7 @@ EOF
 # Test: open-vscode.command skips auto-close when OPEN_VSCODE_NO_CLOSE is set
 @test "open-vscode.command skips auto-close when OPEN_VSCODE_NO_CLOSE is set" {
   local root stub_bin marker
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$root/stub-bin"
   mkdir -p "$stub_bin"
@@ -91,7 +91,7 @@ EOF
 # Test: open-vscode.command fails when code CLI is missing
 @test "open-vscode.command fails when code CLI is missing" {
   local root
-  root="$(create_working_root)"
+  root="$(create_parent_root)"
   mkdir -p "$root/.codex"
 
   PATH="/bin:/usr/bin" run "$root/.agent-layer/open-vscode.command"

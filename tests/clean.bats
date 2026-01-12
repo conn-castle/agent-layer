@@ -7,7 +7,7 @@ load "helpers.bash"
 # Test: clean.sh removes generated outputs but keeps sources
 @test "clean.sh removes generated outputs but keeps sources" {
   local root
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
 
   mkdir -p "$root/.github" "$root/.gemini" "$root/.vscode" "$root/.claude"
   mkdir -p "$root/.codex/rules" "$root/.codex/skills/foo"
@@ -122,7 +122,7 @@ EOF
 # Test: clean.mjs removes managed VS Code MCP servers
 @test "clean.mjs removes managed VS Code MCP servers" {
   local root
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
 
   mkdir -p "$root/.vscode" "$root/.agent-layer/config"
   cat >"$root/.vscode/mcp.json" <<'EOF'

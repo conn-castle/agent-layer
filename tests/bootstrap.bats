@@ -17,12 +17,25 @@ CMD
 # Test: bootstrap fails without TTY unless --yes
 @test "bootstrap fails without TTY unless --yes" {
   local root bash_bin
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   bash_bin="$(command -v bash)"
 
-  run "$bash_bin" -c "cd '$root' && '$root/.agent-layer/dev/bootstrap.sh' < /dev/null 2>&1"
+  run "$bash_bin" -c "cd '$root' && '$root/.agent-layer/dev/bootstrap.sh' --temp-parent-root < /dev/null 2>&1"
   [ "$status" -ne 0 ]
   [[ "$output" == *"No TTY available"* ]]
+
+  rm -rf "$root"
+}
+
+# Test: bootstrap requires a parent root choice
+@test "bootstrap requires parent root choice" {
+  local root bash_bin
+  root="$(create_isolated_parent_root)"
+  bash_bin="$(command -v bash)"
+
+  run "$bash_bin" -c "cd '$root' && '$root/.agent-layer/dev/bootstrap.sh' --yes"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"dev bootstrap requires a parent root target"* ]]
 
   rm -rf "$root"
 }
@@ -30,7 +43,7 @@ CMD
 # Test: bootstrap --yes runs setup and enables hooks
 @test "bootstrap --yes runs setup and enables hooks" {
   local root bash_bin stub_bin setup_log
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   bash_bin="$(command -v bash)"
   stub_bin="$root/stub-bin"
   setup_log="$root/setup.log"
@@ -57,11 +70,15 @@ EOF
   write_stub_cmd "$stub_bin" "bats"
   write_stub_cmd "$stub_bin" "shfmt"
   write_stub_cmd "$stub_bin" "shellcheck"
+  write_stub_cmd "$stub_bin" "ruby"
+  write_stub_cmd "$stub_bin" "bashcov"
 
-  run "$bash_bin" -c "cd '$root' && PATH='$stub_bin:/usr/bin:/bin' '$root/.agent-layer/dev/bootstrap.sh' --yes"
+  run "$bash_bin" -c "cd '$root' && PATH='$stub_bin:/usr/bin:/bin' '$root/.agent-layer/dev/bootstrap.sh' --yes --parent-root '$root'"
   [ "$status" -eq 0 ]
 
   run rg -n -- "--skip-checks" "$setup_log"
+  [ "$status" -eq 0 ]
+  run rg -n -- "--parent-root" "$setup_log"
   [ "$status" -eq 0 ]
 
   run git -C "$root" config core.hooksPath

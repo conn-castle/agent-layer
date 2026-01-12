@@ -7,7 +7,7 @@ load "helpers.bash"
 # Test: format.sh runs shfmt and prettier
 @test "format.sh runs shfmt and prettier" {
   local root stub_bin bash_bin shfmt_log prettier_log
-  root="$(create_isolated_working_root)"
+  root="$(create_isolated_parent_root)"
   stub_bin="$root/stub-bin"
   bash_bin="$(command -v bash)"
   shfmt_log="$root/shfmt.log"

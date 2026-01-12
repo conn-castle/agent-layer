@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Agent Layer installer/upgrader.
-# Run this from the working repo root (the parent of .agent-layer/).
+# Run this from the parent repo root (the parent of .agent-layer/).
 
 say() { printf "%s\n" "$*"; }
 die() {
@@ -32,8 +32,8 @@ LATEST_BRANCH=""
 LATEST_BRANCH_SET="0"
 REPO_URL_DEFAULT="https://github.com/nicholasjconn/agent-layer.git"
 REPO_URL_OVERRIDE="0"
-REPO_URL="${AGENTLAYER_REPO_URL:-$REPO_URL_DEFAULT}"
-if [[ -n "${AGENTLAYER_REPO_URL:-}" ]]; then
+REPO_URL="${AGENT_LAYER_REPO_URL:-$REPO_URL_DEFAULT}"
+if [[ -n "${AGENT_LAYER_REPO_URL:-}" ]]; then
   REPO_URL_OVERRIDE="1"
 fi
 
@@ -89,15 +89,15 @@ fi
 command -v git > /dev/null 2>&1 || die "git is required (not found)."
 
 # Confirm we are running from the repo root (not inside .agent-layer).
-WORKING_ROOT="$(pwd -P)"
-if [[ "$(basename "$WORKING_ROOT")" == ".agent-layer" ]]; then
-  die "Run this from the working repo root (parent of .agent-layer/), not inside .agent-layer/."
+PARENT_ROOT="$(pwd -P)"
+if [[ "$(basename "$PARENT_ROOT")" == ".agent-layer" ]]; then
+  die "Run this from the parent repo root (parent of .agent-layer/), not inside .agent-layer/."
 fi
 
 # Enforce or warn about git repo state to support hooks.
 if git rev-parse --show-toplevel > /dev/null 2>&1; then
   GIT_ROOT="$(git rev-parse --show-toplevel)"
-  if [[ "$GIT_ROOT" != "$WORKING_ROOT" ]]; then
+  if [[ "$GIT_ROOT" != "$PARENT_ROOT" ]]; then
     die "Run this from the repo root: $GIT_ROOT"
   fi
 else
@@ -117,7 +117,7 @@ else
   fi
 fi
 
-AGENTLAYER_DIR="$WORKING_ROOT/.agent-layer"
+AGENT_LAYER_DIR="$PARENT_ROOT/.agent-layer"
 
 # Resolve the fetch target for upgrades (explicit URL or origin remote).
 resolve_fetch_target() {
@@ -125,31 +125,31 @@ resolve_fetch_target() {
     printf "%s" "$REPO_URL"
     return 0
   fi
-  if git -C "$AGENTLAYER_DIR" remote get-url origin > /dev/null 2>&1; then
+  if git -C "$AGENT_LAYER_DIR" remote get-url origin > /dev/null 2>&1; then
     printf "%s" "origin"
     return 0
   fi
-  die "No origin remote found. Use --repo-url <url> or set AGENTLAYER_REPO_URL."
+  die "No origin remote found. Use --repo-url <url> or set AGENT_LAYER_REPO_URL."
 }
 
 # Upgrade .agent-layer to the latest local tag.
 upgrade_agent_layer() {
   local fetch_target latest_tag current_commit current_tag changes
 
-  if [[ -n "$(git -C "$AGENTLAYER_DIR" status --porcelain)" ]]; then
+  if [[ -n "$(git -C "$AGENT_LAYER_DIR" status --porcelain)" ]]; then
     die ".agent-layer has uncommitted changes. Commit or stash before upgrading."
   fi
 
   fetch_target="$(resolve_fetch_target)"
 
   say "==> Fetching tags for .agent-layer"
-  git -C "$AGENTLAYER_DIR" fetch --tags "$fetch_target"
+  git -C "$AGENT_LAYER_DIR" fetch --tags "$fetch_target"
 
-  latest_tag="$(git -C "$AGENTLAYER_DIR" tag --list --sort=-v:refname | head -n 1)"
+  latest_tag="$(git -C "$AGENT_LAYER_DIR" tag --list --sort=-v:refname | head -n 1)"
   [[ -n "$latest_tag" ]] || die "No tags found after fetching; cannot upgrade."
 
-  current_commit="$(git -C "$AGENTLAYER_DIR" rev-parse --short HEAD)"
-  current_tag="$(git -C "$AGENTLAYER_DIR" describe --tags --exact-match 2> /dev/null || true)"
+  current_commit="$(git -C "$AGENT_LAYER_DIR" rev-parse --short HEAD)"
+  current_tag="$(git -C "$AGENT_LAYER_DIR" describe --tags --exact-match 2> /dev/null || true)"
 
   say "==> Current version: ${current_tag:-$current_commit}"
   say "==> Latest tag: $latest_tag"
@@ -160,10 +160,10 @@ upgrade_agent_layer() {
   fi
 
   say "==> Checking out $latest_tag"
-  git -C "$AGENTLAYER_DIR" checkout -q "$latest_tag"
+  git -C "$AGENT_LAYER_DIR" checkout -q "$latest_tag"
 
   say "==> Changes since ${current_tag:-$current_commit}:"
-  changes="$(git -C "$AGENTLAYER_DIR" --no-pager log --oneline "$current_commit..$latest_tag" || true)"
+  changes="$(git -C "$AGENT_LAYER_DIR" --no-pager log --oneline "$current_commit..$latest_tag" || true)"
   if [[ -n "$changes" ]]; then
     printf "%s\n" "$changes"
   else
@@ -178,17 +178,17 @@ latest_branch_agent_layer() {
   local branch="$1"
   local fetch_target current_commit latest_commit changes
 
-  if [[ -n "$(git -C "$AGENTLAYER_DIR" status --porcelain)" ]]; then
+  if [[ -n "$(git -C "$AGENT_LAYER_DIR" status --porcelain)" ]]; then
     die ".agent-layer has uncommitted changes. Commit or stash before updating."
   fi
 
   fetch_target="$(resolve_fetch_target)"
 
   say "==> Fetching latest commit for branch '$branch'"
-  git -C "$AGENTLAYER_DIR" fetch "$fetch_target" "$branch"
+  git -C "$AGENT_LAYER_DIR" fetch "$fetch_target" "$branch"
 
-  latest_commit="$(git -C "$AGENTLAYER_DIR" rev-parse --short FETCH_HEAD)"
-  current_commit="$(git -C "$AGENTLAYER_DIR" rev-parse --short HEAD)"
+  latest_commit="$(git -C "$AGENT_LAYER_DIR" rev-parse --short FETCH_HEAD)"
+  current_commit="$(git -C "$AGENT_LAYER_DIR" rev-parse --short HEAD)"
 
   if [[ "$current_commit" == "$latest_commit" ]]; then
     say "==> .agent-layer is already at latest $branch ($latest_commit)."
@@ -197,10 +197,10 @@ latest_branch_agent_layer() {
     say "==> Latest $branch commit: $latest_commit"
   fi
   say "==> Checking out latest $branch commit"
-  git -C "$AGENTLAYER_DIR" checkout -q --detach FETCH_HEAD
+  git -C "$AGENT_LAYER_DIR" checkout -q --detach FETCH_HEAD
 
   if [[ "$current_commit" != "$latest_commit" ]]; then
-    changes="$(git -C "$AGENTLAYER_DIR" --no-pager log --oneline -n 5 FETCH_HEAD || true)"
+    changes="$(git -C "$AGENT_LAYER_DIR" --no-pager log --oneline -n 5 FETCH_HEAD || true)"
     if [[ -n "$changes" ]]; then
       say "==> Recent commits:"
       printf "%s\n" "$changes"
@@ -212,18 +212,18 @@ latest_branch_agent_layer() {
 }
 
 # Ensure .agent-layer exists, then apply the requested upgrade behavior.
-if [[ ! -e "$AGENTLAYER_DIR" ]]; then
-  [[ -n "$REPO_URL" ]] || die "Missing repo URL (set AGENTLAYER_REPO_URL or use --repo-url)."
+if [[ ! -e "$AGENT_LAYER_DIR" ]]; then
+  [[ -n "$REPO_URL" ]] || die "Missing repo URL (set AGENT_LAYER_REPO_URL or use --repo-url)."
   say "==> Cloning agent-layer into .agent-layer/"
-  git clone "$REPO_URL" "$AGENTLAYER_DIR"
+  git clone "$REPO_URL" "$AGENT_LAYER_DIR"
   if [[ "$UPGRADE" == "1" ]]; then
     upgrade_agent_layer
   elif [[ -n "$LATEST_BRANCH" ]]; then
     latest_branch_agent_layer "$LATEST_BRANCH"
   fi
 else
-  if [[ -d "$AGENTLAYER_DIR" ]]; then
-    if git -C "$AGENTLAYER_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+  if [[ -d "$AGENT_LAYER_DIR" ]]; then
+    if git -C "$AGENT_LAYER_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
       if [[ "$UPGRADE" == "1" ]]; then
         upgrade_agent_layer
       elif [[ -n "$LATEST_BRANCH" ]]; then
@@ -240,9 +240,9 @@ else
 fi
 
 # Ensure .agent-layer/.env exists (copy from .env.example if needed).
-if [[ ! -f "$AGENTLAYER_DIR/.env" ]]; then
-  if [[ -f "$AGENTLAYER_DIR/.env.example" ]]; then
-    cp "$AGENTLAYER_DIR/.env.example" "$AGENTLAYER_DIR/.env"
+if [[ ! -f "$AGENT_LAYER_DIR/.env" ]]; then
+  if [[ -f "$AGENT_LAYER_DIR/.env.example" ]]; then
+    cp "$AGENT_LAYER_DIR/.env.example" "$AGENT_LAYER_DIR/.env"
     say "==> Created .agent-layer/.env from .env.example"
   else
     die "Missing .agent-layer/.env.example; cannot create .agent-layer/.env"
@@ -251,8 +251,8 @@ else
   say "==> .agent-layer/.env already exists; leaving as-is"
 fi
 
-DOCS_DIR="$WORKING_ROOT/docs"
-TEMPLATES_DIR="$AGENTLAYER_DIR/config/templates/docs"
+DOCS_DIR="$PARENT_ROOT/docs"
+TEMPLATES_DIR="$AGENT_LAYER_DIR/config/templates/docs"
 
 # Create or refresh project memory files using provided templates.
 ensure_memory_file() {
@@ -260,10 +260,10 @@ ensure_memory_file() {
   local template_path="$2"
   local rel_path
 
-  rel_path="${file_path#"$WORKING_ROOT"/}"
+  rel_path="${file_path#"$PARENT_ROOT"/}"
 
   if [[ ! -f "$template_path" ]]; then
-    die "Missing template: ${template_path#"$AGENTLAYER_DIR"/}"
+    die "Missing template: ${template_path#"$AGENT_LAYER_DIR"/}"
   fi
 
   if [[ -f "$file_path" ]]; then
@@ -295,7 +295,7 @@ ensure_memory_file "$DOCS_DIR/FEATURES.md" "$TEMPLATES_DIR/FEATURES.md"
 ensure_memory_file "$DOCS_DIR/ROADMAP.md" "$TEMPLATES_DIR/ROADMAP.md"
 ensure_memory_file "$DOCS_DIR/DECISIONS.md" "$TEMPLATES_DIR/DECISIONS.md"
 
-AL_PATH="$WORKING_ROOT/al"
+AL_PATH="$PARENT_ROOT/al"
 
 # Write the repo-local launcher script (overwrites if requested).
 write_launcher() {
@@ -325,7 +325,7 @@ else
   write_launcher
 fi
 
-GITIGNORE_PATH="$WORKING_ROOT/.gitignore"
+GITIGNORE_PATH="$PARENT_ROOT/.gitignore"
 GITIGNORE_BLOCK="$(
   cat << 'EOF'
 # >>> agent-layer
@@ -400,9 +400,9 @@ say "==> Updating .gitignore (agent-layer block)"
 update_gitignore
 
 # Run setup to generate configs and install MCP prompt server dependencies.
-if [[ -f "$AGENTLAYER_DIR/setup.sh" ]]; then
+if [[ -f "$AGENT_LAYER_DIR/setup.sh" ]]; then
   say "==> Running setup"
-  bash "$AGENTLAYER_DIR/setup.sh"
+  bash "$AGENT_LAYER_DIR/setup.sh"
 else
   die "Missing .agent-layer/setup.sh"
 fi
