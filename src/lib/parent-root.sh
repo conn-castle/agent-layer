@@ -376,8 +376,11 @@ resolve_temp_parent_root() {
   fi
 
   local temp_dir
-  temp_dir="$(make_temp_parent_root "$AGENT_LAYER_ROOT")"
+  TEMP_PARENT_ROOT_FAILED_DIR=""
+  TEMP_PARENT_ROOT_RESULT=""
+  make_temp_parent_root "$AGENT_LAYER_ROOT" > /dev/null
   local status=$?
+  temp_dir="$TEMP_PARENT_ROOT_RESULT"
   if [[ $status -ne 0 || -z "$temp_dir" || ! -d "$temp_dir" ]]; then
     if [[ $status -eq 3 ]]; then
       roots_die "$(message_temp_parent_root_symlink_failed "$TEMP_PARENT_ROOT_FAILED_DIR" "$AGENT_LAYER_ROOT")"

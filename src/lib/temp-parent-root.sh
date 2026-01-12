@@ -4,12 +4,16 @@
 # Exposes make_temp_parent_root for use by parent-root.sh.
 
 TEMP_PARENT_ROOT_FAILED_DIR=""
+TEMP_PARENT_ROOT_RESULT=""
 
 make_temp_parent_root() {
   local agent_layer_root="$1"
   local temp_dir=""
   local base_dir=""
   local has_mktemp="0"
+
+  TEMP_PARENT_ROOT_FAILED_DIR=""
+  TEMP_PARENT_ROOT_RESULT=""
 
   if [[ -z "$agent_layer_root" || ! -d "$agent_layer_root" ]]; then
     return 2
@@ -41,13 +45,15 @@ make_temp_parent_root() {
     fi
   fi
 
+  TEMP_PARENT_ROOT_RESULT="$(cd "$temp_dir" && pwd -P)"
+
   if ! ln -s "$agent_layer_root" "$temp_dir/.agent-layer" 2> /dev/null; then
     # shellcheck disable=SC2034
-    TEMP_PARENT_ROOT_FAILED_DIR="$temp_dir"
+    TEMP_PARENT_ROOT_FAILED_DIR="$(cd "$temp_dir" && pwd -P)"
     rm -rf "$temp_dir"
     return 3
   fi
 
-  printf "%s" "$temp_dir"
+  printf "%s" "$TEMP_PARENT_ROOT_RESULT"
   return 0
 }
