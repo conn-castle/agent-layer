@@ -10,6 +10,13 @@ realpath_dir() {
   readlink -f "$1"
 }
 
+cleanup_tmp_dir() {
+  if [[ "${AL_KEEP_TEST_TMP:-0}" == "1" ]]; then
+    return 0
+  fi
+  command rm -rf "$@"
+}
+
 # Spec 1: Consumer repo discovery succeeds
 @test "Spec 1: Consumer repo discovery succeeds" {
   local parent_root agent_layer_root expected_parent expected_agent script
@@ -38,7 +45,7 @@ realpath_dir() {
   [[ "$output" == *"TEMP_PARENT_ROOT_CREATED=0"* ]]
   [[ "$output" == *"IS_CONSUMER_LAYOUT=1"* ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 1 Edge: Symlinks resolved correctly in discovery
@@ -69,7 +76,7 @@ realpath_dir() {
   [[ "$output" == *"PARENT_ROOT=$expected_parent"* ]]
   [[ "$output" == *"AGENT_LAYER_ROOT=$expected_agent"* ]]
 
-  rm -rf "$real_parent" "$link_parent"
+  cleanup_tmp_dir "$real_parent" "$link_parent"
 }
 
 # Spec 1 Error: Discovery consistency check fails
@@ -110,7 +117,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 1 Edge: Parent root may be read-only
@@ -134,7 +141,7 @@ realpath_dir() {
   [ "$status" -eq 0 ]
 
   chmod 755 "$parent_root"
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 1 Error: Agent layer root is filesystem root
@@ -230,7 +237,7 @@ realpath_dir() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected_parent"* ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }
 
 # Spec 2 Edge: Relative parent root from filesystem root
@@ -258,7 +265,7 @@ realpath_dir() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected_parent"* ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }
 
 # Spec 2 Edge: Explicit parent root supports trailing slashes
@@ -284,7 +291,7 @@ realpath_dir() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected_parent"* ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }
 
 # Spec 2 Edge: Explicit parent root accepts symlink paths
@@ -312,7 +319,7 @@ realpath_dir() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected_parent"* ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }
 
 # Spec 2: PARENT_ROOT from .env resolves relative to agent layer root
@@ -341,7 +348,7 @@ realpath_dir() {
   [[ "$output" == *"SECRET="* ]]
   [[ "$output" != *"SECRET=1"* ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2: PARENT_ROOT from .env supports quoted values
@@ -367,7 +374,7 @@ realpath_dir() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected_parent"* ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2 Error: Parent root path does not exist
@@ -401,7 +408,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2 Error: Parent root path does not exist (from .env)
@@ -436,7 +443,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2 Error: Parent root missing .agent-layer
@@ -471,7 +478,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root" "$missing_agent"
+  cleanup_tmp_dir "$parent_root" "$missing_agent"
 }
 
 # Spec 2 Error: Parent root .agent-layer is a file
@@ -507,7 +514,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root" "$file_parent"
+  cleanup_tmp_dir "$parent_root" "$file_parent"
 }
 
 # Spec 2 Error: Parent root consistency check fails
@@ -547,7 +554,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$real_parent" "$fake_parent"
+  cleanup_tmp_dir "$real_parent" "$fake_parent"
 }
 
 # Spec 2 Error: Malformed .env PARENT_ROOT
@@ -579,7 +586,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2 Error: Malformed .env PARENT_ROOT (spaces around '=')
@@ -612,7 +619,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2 Error: Malformed .env PARENT_ROOT (unmatched quotes)
@@ -645,7 +652,7 @@ realpath_dir() {
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2 Error: Duplicate PARENT_ROOT entries
@@ -678,7 +685,7 @@ EOF
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 2: .env without PARENT_ROOT is ignored
@@ -704,7 +711,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected"* ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec Conflict: --parent-root and --temp-parent-root together
@@ -734,7 +741,7 @@ EOF
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 3 Error: Missing temp-parent-root helper
@@ -756,7 +763,7 @@ EOF
   expected="ERROR: Missing src/lib/temp-parent-root.sh (expected in the agent-layer root)."
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 3 Edge: Temp parent root requires agent layer root
@@ -801,7 +808,7 @@ EOF
   [ -L "$temp_root/.agent-layer" ]
   [ "$(cd "$temp_root/.agent-layer" && pwd -P)" = "$(realpath_dir "$agent_layer_root")" ]
 
-  rm -rf "$temp_root" "$parent_root"
+  cleanup_tmp_dir "$temp_root" "$parent_root"
 }
 
 # Spec 3 Edge: Temp parent root works when TMPDIR is unset
@@ -827,7 +834,7 @@ EOF
   temp_root="$(printf "%s\n" "$output" | sed -n "s/^PARENT_ROOT=//p")"
   [ -d "$temp_root" ]
 
-  rm -rf "$temp_root" "$parent_root"
+  cleanup_tmp_dir "$temp_root" "$parent_root"
 }
 
 # Spec Edge: Multiple temp parent roots do not collide
@@ -850,7 +857,7 @@ EOF
 
   [ "$root_one" != "$root_two" ]
 
-  rm -rf "$root_one" "$root_two" "$parent_root"
+  cleanup_tmp_dir "$root_one" "$root_two" "$parent_root"
 }
 
 # Spec 3: Temp parent root falls back when TMPDIR is invalid
@@ -874,7 +881,7 @@ EOF
   temp_root="$(printf "%s\n" "$output" | sed -n "s/^PARENT_ROOT=//p")"
   [[ "$temp_root" == "$(realpath_dir "$agent_layer_root")/tmp/agent-layer-temp-parent-root."* ]]
 
-  rm -rf "$temp_root" "$parent_root"
+  cleanup_tmp_dir "$temp_root" "$parent_root"
 }
 
 # Spec 3 Edge: Temp parent root falls back when TMPDIR is not writable
@@ -903,7 +910,7 @@ EOF
   [[ "$temp_root" == "$(realpath_dir "$agent_layer_root")/tmp/agent-layer-temp-parent-root."* ]]
 
   chmod 755 "$unwritable"
-  rm -rf "$temp_root" "$parent_root"
+  cleanup_tmp_dir "$temp_root" "$parent_root"
 }
 
 # Spec 3 Edge: Temp parent root without mktemp uses manual path
@@ -948,7 +955,7 @@ EOF
   [[ "$temp_root" == "$(realpath_dir "$agent_layer_root")/tmp/agent-layer-temp-parent-root."* ]]
   [ -d "$temp_root" ]
 
-  rm -rf "$temp_root" "$parent_root"
+  cleanup_tmp_dir "$temp_root" "$parent_root"
 }
 
 # Spec 3 Error: Temp parent root manual mkdir fails
@@ -979,7 +986,7 @@ EOF
   [ "$status" -eq 2 ]
   [ "$output" = "status=2" ]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 3 Error: Temp parent root creation fails
@@ -1028,7 +1035,7 @@ EOF
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 3 Error: Temp parent root symlink creation fails
@@ -1078,7 +1085,7 @@ EOF
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 3 Edge: PARENT_ROOT_KEEP_TEMP=1 retains temp root
@@ -1100,7 +1107,7 @@ EOF
   temp_root="$(PARENT_ROOT_KEEP_TEMP=1 bash -c "$script")"
   [ -d "$temp_root" ]
 
-  rm -rf "$temp_root" "$parent_root"
+  cleanup_tmp_dir "$temp_root" "$parent_root"
 }
 
 # Spec 3 Edge: Temp parent root cleaned on interrupt
@@ -1137,7 +1144,7 @@ EOF
 
   [ ! -d "$temp_root" ]
 
-  rm -rf "$parent_root"
+  cleanup_tmp_dir "$parent_root"
 }
 
 # Spec 4: Dev repo requires explicit parent root configuration
@@ -1183,7 +1190,7 @@ EOF
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }
 
 # Spec 4: Renamed agent layer directory cannot discover parent root
@@ -1222,7 +1229,7 @@ EOF
   )"
   [[ "$output" == "$expected" ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }
 
 # Spec Precedence: --parent-root overrides .env
@@ -1251,7 +1258,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$(realpath_dir "$parent_root")"* ]]
 
-  rm -rf "$base" "$env_root" "$parent_root"
+  cleanup_tmp_dir "$base" "$env_root" "$parent_root"
 }
 
 # Spec Precedence: --temp-parent-root overrides .env
@@ -1278,7 +1285,7 @@ EOF
   temp_root="$(printf "%s\n" "$output" | sed -n "s/^PARENT_ROOT=//p")"
   [ "$temp_root" != "$(realpath_dir "$env_root")" ]
 
-  rm -rf "$temp_root" "$base" "$env_root"
+  cleanup_tmp_dir "$temp_root" "$base" "$env_root"
 }
 
 # Spec Precedence: .env overrides discovery
@@ -1304,7 +1311,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$(realpath_dir "$env_root")"* ]]
 
-  rm -rf "$base" "$env_root"
+  cleanup_tmp_dir "$base" "$env_root"
 }
 
 # Spec Edge: Multiple .agent-layer entries in ancestry
@@ -1330,7 +1337,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$(realpath_dir "$inner")"* ]]
 
-  rm -rf "$outer"
+  cleanup_tmp_dir "$outer"
 }
 
 # Spec Edge: Paths with spaces are handled
@@ -1356,7 +1363,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected"* ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }
 
 # Spec Edge: Paths with unicode characters are handled
@@ -1382,5 +1389,5 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"PARENT_ROOT=$expected"* ]]
 
-  rm -rf "$base"
+  cleanup_tmp_dir "$base"
 }

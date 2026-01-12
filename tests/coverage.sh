@@ -16,7 +16,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT_DIR"
 
 rm -rf coverage
-bashcov --root "$ROOT_DIR" -- bats tests/paths.bats
+AL_KEEP_TEST_TMP=1 bashcov --root "$ROOT_DIR" -- bats tests/paths.bats
 
 ruby - << 'RUBY'
 require "json"
@@ -36,19 +36,31 @@ targets = [
   "src/lib/temp-parent-root.sh"
 ]
 
+def merge_coverage(acc, next_lines)
+  max = [acc.length, next_lines.length].max
+  merged = Array.new(max)
+  max.times do |i|
+    av = acc[i]
+    bv = next_lines[i]
+    merged[i] = [av, bv].compact.max
+  end
+  merged
+end
+
 def coverage_for(coverage, target)
-  coverage.keys.find do |key|
+  matches = coverage.select do |key, _|
     key == target || key.end_with?(File::SEPARATOR + target)
   end
+  return nil if matches.empty?
+  matches.values.reduce { |acc, lines| merge_coverage(acc, lines) }
 end
 
 targets.each do |target|
-  key = coverage_for(coverage, target)
-  unless key
+  lines = coverage_for(coverage, target)
+  unless lines
     warn "coverage missing for #{target}"
     exit 1
   end
-  lines = coverage[key]
   total = lines.count { |v| !v.nil? }
   covered = lines.count { |v| v && v > 0 }
   percent = total.zero? ? 0.0 : (covered.to_f / total * 100.0)
