@@ -18,8 +18,8 @@ EOF
   chmod +x "$dir/entrypoint-wrapper.sh"
 }
 
-# Test: entrypoint.sh fails when paths.sh is missing
-@test "entrypoint.sh fails when paths.sh is missing" {
+# Test: entrypoint.sh fails when discover-root.sh is missing
+@test "entrypoint.sh fails when discover-root.sh is missing" {
   local root script_dir bash_bin
   root="$(make_tmp_dir)"
   script_dir="$root/scripts"
@@ -31,7 +31,7 @@ EOF
 
   run "$bash_bin" -c "cd '$root' && '$script_dir/entrypoint-wrapper.sh' 2>&1"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"Missing src/lib/paths.sh"* ]]
+  [[ "$output" == *"Missing src/lib/discover-root.sh"* ]]
 
   rm -rf "$root"
 }
@@ -45,11 +45,7 @@ EOF
 
   mkdir -p "$script_dir/src/lib"
   cp "$AGENTLAYER_ROOT/src/lib/entrypoint.sh" "$script_dir/src/lib/entrypoint.sh"
-  cat >"$script_dir/src/lib/paths.sh" <<'EOF'
-resolve_working_root() {
-  return 1
-}
-EOF
+  cp "$AGENTLAYER_ROOT/src/lib/discover-root.sh" "$script_dir/src/lib/discover-root.sh"
   write_wrapper "$script_dir"
 
   run "$bash_bin" -c "cd '$root' && '$script_dir/entrypoint-wrapper.sh' 2>&1"

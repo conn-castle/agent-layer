@@ -25,14 +25,4 @@ jobs:
       - name: Run tests
         run: |
           set -euo pipefail
-          repo_root="$PWD"
-          work_root="$repo_root/tmp/ci-work"
-          rm -rf "$work_root"
-          mkdir -p "$work_root"
-          ln -s "$repo_root" "$work_root/.agent-layer"
-
-          # Generate outputs into the consumer work root.
-          ( cd "$work_root" && node .agent-layer/src/sync/sync.mjs )
-
-          # Run the suite from the tool repo root to avoid .agent-layer ancestry leakage.
-          "$repo_root/tests/run.sh" --work-root "$work_root"
+          ./tests/run.sh --temp-work-root

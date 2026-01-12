@@ -52,8 +52,7 @@ while IFS= read -r -d '' file; do
   shell_files+=("$file")
 done < <(
   find "$AGENTLAYER_ROOT" \
-    -path "$AGENTLAYER_ROOT/node_modules" -prune -o \
-    -path "$AGENTLAYER_ROOT/.git" -prune -o \
+    \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
     -type f \( -name "*.sh" -o -path "$AGENTLAYER_ROOT/al" -o -path "$AGENTLAYER_ROOT/.githooks/pre-commit" \) \
     -print0
 )
@@ -68,8 +67,7 @@ while IFS= read -r -d '' file; do
   js_files+=("$file")
 done < <(
   find "$AGENTLAYER_ROOT" \
-    -path "$AGENTLAYER_ROOT/node_modules" -prune -o \
-    -path "$AGENTLAYER_ROOT/.git" -prune -o \
+    \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
     -type f \( -name "*.mjs" -o -name "*.js" \) \
     -print0
 )

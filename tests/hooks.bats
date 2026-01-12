@@ -45,7 +45,7 @@ EOF
 
   run "$bash_bin" -c "cd '$root' && '$root/.githooks/pre-commit'"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ran-agent-layer --work-root"* ]]
+  [[ "$output" == *"ran-agent-layer --temp-work-root"* ]]
 
   rm -rf "$root"
 }

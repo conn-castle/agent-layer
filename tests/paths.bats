@@ -10,7 +10,7 @@ load "helpers.bash"
   root="$(create_working_root)"
 
   ROOT="$root" AGENTLAYER_ROOT="$AGENTLAYER_ROOT" run bash -c \
-    'source "$AGENTLAYER_ROOT/src/lib/paths.sh"; resolve_working_root "$ROOT"'
+    'source "$AGENTLAYER_ROOT/src/lib/discover-root.sh"; resolve_working_root "$ROOT"'
 
   [ "$status" -eq 0 ]
   [ "$output" = "$root" ]
@@ -23,7 +23,21 @@ load "helpers.bash"
   root="/"
 
   ROOT="$root" AGENTLAYER_ROOT="$AGENTLAYER_ROOT" run bash -c \
-    'source "$AGENTLAYER_ROOT/src/lib/paths.sh"; resolve_working_root "$ROOT"'
+    'source "$AGENTLAYER_ROOT/src/lib/discover-root.sh"; resolve_working_root "$ROOT"'
 
   [ "$status" -ne 0 ]
+}
+
+# Test: make_temp_work_root creates a .agent-layer symlink.
+@test "make_temp_work_root creates .agent-layer symlink" {
+  AGENTLAYER_ROOT="$AGENTLAYER_ROOT" run bash -c '
+    set -euo pipefail
+    source "$AGENTLAYER_ROOT/src/lib/temp-work-root.sh"
+    dir="$(make_temp_work_root "$AGENTLAYER_ROOT")"
+    test -L "$dir/.agent-layer"
+    test "$(cd "$dir/.agent-layer" && pwd -P)" = "$(cd "$AGENTLAYER_ROOT" && pwd -P)"
+    rm -rf "$dir"
+  '
+
+  [ "$status" -eq 0 ]
 }

@@ -20,19 +20,11 @@ EOF
 # Helper: create a minimal agent-layer repo layout for tests/run.sh.
 create_tool_repo() {
   local root="$1"
-  local paths_mode="${2:-real}"
-  mkdir -p "$root/tests" "$root/src/lib"
+  mkdir -p "$root/tests" "$root/src/lib" "$root/src/sync"
   cp "$AGENTLAYER_ROOT/tests/run.sh" "$root/tests/run.sh"
-  cp "$AGENTLAYER_ROOT/src/lib/entrypoint.sh" "$root/src/lib/entrypoint.sh"
-  if [[ "$paths_mode" == "stub" ]]; then
-    cat >"$root/src/lib/paths.sh" <<'EOF'
-resolve_working_root() {
-  return 1
-}
-EOF
-  else
-    cp "$AGENTLAYER_ROOT/src/lib/paths.sh" "$root/src/lib/paths.sh"
-  fi
+  cp "$AGENTLAYER_ROOT/src/lib/discover-root.sh" "$root/src/lib/discover-root.sh"
+  cp "$AGENTLAYER_ROOT/src/lib/temp-work-root.sh" "$root/src/lib/temp-work-root.sh"
+  : >"$root/src/sync/sync.mjs"
   chmod +x "$root/tests/run.sh"
 }
 
@@ -42,7 +34,7 @@ EOF
   root="$(make_tmp_dir)"
   bash_bin="$(command -v bash)"
 
-  create_tool_repo "$root" "stub"
+  create_tool_repo "$root"
 
   run "$bash_bin" -c "cd '$root' && '$root/tests/run.sh' 2>&1"
   [ "$status" -ne 0 ]
@@ -53,7 +45,7 @@ EOF
 }
 
 # Test: tests/run.sh succeeds with --work-root in agent-layer repo layout
-@test "tests/run.sh accepts --work-root for agent-layer repo layout" {
+@test "tests/run.sh accepts --work-root without .agent-layer in agent-layer repo layout" {
   local tool_root work_root stub_bin bash_bin
   tool_root="$(make_tmp_dir)"
   work_root="$(make_tmp_dir)"
@@ -61,11 +53,26 @@ EOF
   bash_bin="$(command -v bash)"
 
   create_tool_repo "$tool_root"
-  ln -s "$tool_root" "$work_root/.agent-layer"
   write_stub_tools "$stub_bin"
 
   run "$bash_bin" -c "cd '$tool_root' && PATH='$stub_bin:/usr/bin:/bin' BATS_BIN='bats' '$tool_root/tests/run.sh' --work-root '$work_root'"
   [ "$status" -eq 0 ]
 
   rm -rf "$tool_root" "$work_root"
+}
+
+# Test: tests/run.sh can create a temp work root in agent-layer repo layout
+@test "tests/run.sh accepts --temp-work-root in agent-layer repo layout" {
+  local tool_root stub_bin bash_bin
+  tool_root="$(make_tmp_dir)"
+  stub_bin="$tool_root/stub-bin"
+  bash_bin="$(command -v bash)"
+
+  create_tool_repo "$tool_root"
+  write_stub_tools "$stub_bin"
+
+  run "$bash_bin" -c "cd '$tool_root' && PATH='$stub_bin:/usr/bin:/bin' BATS_BIN='bats' '$tool_root/tests/run.sh' --temp-work-root"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$tool_root"
 }

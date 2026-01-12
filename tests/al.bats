@@ -21,14 +21,14 @@ load "helpers.bash"
   rm -rf "$root_a" "$root_b"
 }
 
-# Test: al prefers .agent-layer paths when a root src/lib/paths.sh exists
-@test "al prefers .agent-layer paths when a root src/lib/paths.sh exists" {
+# Test: al prefers .agent-layer paths when a root src/lib/discover-root.sh exists
+@test "al prefers .agent-layer paths when a root src/lib/discover-root.sh exists" {
   local root stub_bin output
   root="$(create_working_root)"
 
   ln -s "$root/.agent-layer/al" "$root/al"
   mkdir -p "$root/src/lib"
-  cat >"$root/src/lib/paths.sh" <<'EOF'
+  cat >"$root/src/lib/discover-root.sh" <<'EOF'
 resolve_working_root() {
   return 1
 }

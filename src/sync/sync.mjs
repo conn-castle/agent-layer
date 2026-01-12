@@ -120,6 +120,62 @@ function parseArgs(argv) {
 }
 
 /**
+ * Resolve working and agent-layer roots, honoring explicit env overrides.
+ * @param {string} scriptDir
+ * @returns {{ workingRoot: string, agentlayerRoot: string }}
+ */
+function resolveRoots(scriptDir) {
+  const useEnvRoots = ["1", "true", "yes"].includes(
+    String(process.env.AGENTLAYER_SYNC_ROOTS ?? "")
+      .trim()
+      .toLowerCase(),
+  );
+  if (useEnvRoots) {
+    const envWorkingRoot = String(process.env.WORKING_ROOT ?? "").trim();
+    const envAgentlayerRoot = String(process.env.AGENTLAYER_ROOT ?? "").trim();
+    if (!envWorkingRoot) {
+      console.error(
+        "agent-layer sync: WORKING_ROOT must be set when AGENTLAYER_SYNC_ROOTS=1.",
+      );
+      process.exit(2);
+    }
+    const workingRoot = path.resolve(envWorkingRoot);
+    const agentlayerRoot = envAgentlayerRoot
+      ? path.resolve(envAgentlayerRoot)
+      : path.join(workingRoot, ".agent-layer");
+    if (!fileExists(workingRoot)) {
+      console.error(
+        `agent-layer sync: WORKING_ROOT does not exist: ${workingRoot}`,
+      );
+      process.exit(2);
+    }
+    if (!fileExists(agentlayerRoot)) {
+      console.error(
+        `agent-layer sync: AGENTLAYER_ROOT does not exist: ${agentlayerRoot}`,
+      );
+      process.exit(2);
+    }
+    return { workingRoot, agentlayerRoot };
+  }
+
+  const workingRoot = resolveWorkingRoot(process.cwd(), scriptDir);
+  if (!workingRoot) {
+    console.error(
+      "agent-layer sync: could not find working repo root containing .agent-layer/",
+    );
+    process.exit(2);
+  }
+  const agentlayerRoot = path.join(workingRoot, ".agent-layer");
+  if (!fileExists(agentlayerRoot)) {
+    console.error(
+      "agent-layer sync: could not find working repo root containing .agent-layer/",
+    );
+    process.exit(2);
+  }
+  return { workingRoot, agentlayerRoot };
+}
+
+/**
  * Enforce repo-local CODEX_HOME when running Codex.
  * @param {string} workingRoot
  * @param {string|undefined} codexHome
@@ -297,20 +353,13 @@ async function main() {
   // Parse arguments and resolve the working repo root.
   let args = parseArgs(process.argv);
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  const workingRoot = resolveWorkingRoot(process.cwd(), scriptDir);
-  if (!workingRoot || !fileExists(path.join(workingRoot, ".agent-layer"))) {
-    console.error(
-      "agent-layer sync: could not find working repo root containing .agent-layer/",
-    );
-    process.exit(2);
-  }
+  const { workingRoot, agentlayerRoot } = resolveRoots(scriptDir);
   // Enforce CODEX_HOME when sync runs for Codex.
   if (args.codex) {
     enforceCodexHome(workingRoot, process.env.CODEX_HOME);
   }
 
   // Resolve config source directories relative to the repo root.
-  const agentlayerRoot = path.join(workingRoot, ".agent-layer");
   const instructionsDir = path.join(agentlayerRoot, "config", "instructions");
   const workflowsDir = path.join(agentlayerRoot, "config", "workflows");
 

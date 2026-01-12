@@ -9,21 +9,20 @@ die() {
   exit 1
 }
 
-# Resolve the entrypoint helper so we can locate the repo root reliably.
+# Resolve work roots for consumer and agent-layer layouts.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENTRYPOINT_SH="$SCRIPT_DIR/.agent-layer/src/lib/entrypoint.sh"
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  ENTRYPOINT_SH="$SCRIPT_DIR/src/lib/entrypoint.sh"
-fi
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  ENTRYPOINT_SH="$SCRIPT_DIR/../src/lib/entrypoint.sh"
-fi
-if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-  die "Missing src/lib/entrypoint.sh (expected near .agent-layer/)."
+ROOTS_HELPER="$SCRIPT_DIR/../src/lib/discover-root.sh"
+if [[ ! -f "$ROOTS_HELPER" ]]; then
+  die "Missing src/lib/discover-root.sh (expected near dev/)."
 fi
 # shellcheck disable=SC1090
-source "$ENTRYPOINT_SH"
-resolve_entrypoint_root || exit $?
+source "$ROOTS_HELPER"
+ROOTS_DEFAULT_TEMP_WORK_ROOT="0" \
+  ROOTS_ALLOW_CONSUMER_WORK_ROOT="0" \
+  ROOTS_REQUIRE_WORK_ROOT_IN_AGENT_LAYER="0" \
+  WORK_ROOT="" \
+  USE_TEMP_WORK_ROOT="0" \
+  resolve_roots
 
 # Lightweight command-existence check for dependency discovery.
 has_cmd() { command -v "$1" > /dev/null 2>&1; }
@@ -36,7 +35,7 @@ while [[ $# -gt 0 ]]; do
       ASSUME_YES="1"
       ;;
     --help | -h)
-      say "Usage: ./.agent-layer/dev/bootstrap.sh [--yes]"
+      say "Usage: ./dev/bootstrap.sh [--yes] (agent-layer repo) or ./.agent-layer/dev/bootstrap.sh [--yes] (consumer repo)"
       exit 0
       ;;
     *)
@@ -97,7 +96,11 @@ say "This will:"
 say "  - install missing system dependencies (if any)"
 say "  - run npm install in .agent-layer (if needed)"
 say "  - enable git hooks for this repo (dev-only)"
-say "  - run setup (sync + MCP deps; no checks)"
+setup_note="run setup (sync + MCP deps; no checks)"
+if [[ "$IS_CONSUMER_LAYOUT" == "0" ]]; then
+  setup_note="run setup in a temporary work root (sync + MCP deps; no checks)"
+fi
+say "  - $setup_note"
 if [[ "$ASSUME_YES" == "1" ]]; then
   say "Proceeding without prompt (--yes)."
 else
@@ -178,7 +181,11 @@ fi
 
 # Run the standard setup script without checks.
 say "==> Running setup (no checks)"
-bash "$AGENTLAYER_ROOT/setup.sh" --skip-checks
+setup_args=(--skip-checks)
+if [[ "$IS_CONSUMER_LAYOUT" == "0" ]]; then
+  setup_args+=(--temp-work-root)
+fi
+bash "$AGENTLAYER_ROOT/setup.sh" "${setup_args[@]}"
 
 # Enable repo-local git hooks if this is a git working tree.
 if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
@@ -199,6 +206,6 @@ say ""
 say "Next steps:"
 say "  - Run tests (includes checks):"
 say "    - From a consumer repo: ./.agent-layer/tests/run.sh"
-say "    - From the agent-layer repo: ./tests/run.sh --work-root <consumer-root>"
+say "    - From the agent-layer repo: ./tests/run.sh --temp-work-root"
 say ""
 say "Dev bootstrap complete."

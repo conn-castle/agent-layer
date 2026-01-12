@@ -45,6 +45,12 @@ Note: This tooling is built for macOS. Other operating systems are untested, and
 
 Contributors using `nvm` can run `nvm use` inside `.agent-layer/` to match `.nvmrc`.
 
+Developing agent-layer itself? Use the repo-root scripts (`./dev/bootstrap.sh`, `./tests/run.sh --temp-work-root`).
+When working in a consumer repo, use the `.agent-layer/` equivalents.
+In the agent-layer repo, setup/bootstrap run sync outputs into a temporary work root (prefix `agent-layer-temp-work-root`);
+use `./setup.sh --work-root <path>` if you want to keep the generated files.
+Docs templates under `docs/` are created by `agent-layer-install.sh` in consumer repos.
+
 ## Install in your repo (working repo root)
 
 From your working repo root:
@@ -91,7 +97,7 @@ Notes:
 
 ## Quickstart
 
-From the agent-layer repo root (inside `.agent-layer/` in your working repo):
+From the `.agent-layer/` directory inside your working repo:
 
 1) **Run setup (installs MCP prompt server deps, runs sync, checks for drift)**
 
@@ -551,17 +557,20 @@ Dev-only prerequisites (not required to use the tool):
 - `npm install` (installs Prettier for JS formatting)
 
 Dev bootstrap (installs dev deps + enables git hooks):
-- `./dev/bootstrap.sh`
-- Use `./dev/bootstrap.sh --yes` for non-interactive runs.
+- Agent-layer repo: `./dev/bootstrap.sh`
+- Consumer repo: `./.agent-layer/dev/bootstrap.sh`
+- Use `--yes` for non-interactive runs.
 
 Run tests (includes sync check + formatting/lint):
-- `./tests/run.sh`
-  When run inside the agent-layer repo itself (no `.agent-layer/` directory), pass `--work-root <path>` to a consumer root that contains `.agent-layer/`. Example:
-  ```bash
-  mkdir -p tmp/work-root
-  ln -s "$(pwd)" "tmp/work-root/.agent-layer"
-  ./tests/run.sh --work-root "$(pwd)/tmp/work-root"
-  ```
+- From the agent-layer repo: `./tests/run.sh --temp-work-root` (uses system temp; falls back to `tmp/agent-layer-temp-work-root`)
+- From a consumer repo: `./.agent-layer/tests/run.sh`
+- CI and git hooks use `./tests/run.sh --temp-work-root` when testing the agent-layer repo.
+
+If you want to pass your own work root, any temp directory works when running from the agent-layer repo:
+```bash
+work_root="$(mktemp -d "${TMPDIR:-/tmp}/agent-layer-temp-work-root.XXXXXX")"
+./tests/run.sh --work-root "$work_root"
+```
 
 Autoformat (shell + JS):
 - `./dev/format.sh`
@@ -600,10 +609,10 @@ Fix:
   - Claude Code CLI: restart Claude Code CLI after MCP config changes
 
 ### “Commits are failing after enabling hooks.”
-The hook runs the test runner (using `--work-root` when invoked from the agent-layer repo):
+The hook runs the test runner with a temporary `--work-root` when invoked from the agent-layer repo:
 
 ```bash
-./tests/run.sh --work-root "<consumer-root>"
+./tests/run.sh --temp-work-root
 ```
 
 If it fails, fix the reported issues (formatting, lint, tests, or sync), then commit again.
@@ -621,7 +630,7 @@ Yes. Keep numeric prefixes if you want stable ordering without changing `src/syn
    Use `./dev/bootstrap.sh --yes` for non-interactive runs.
 3) Before committing (see "Testing" above for work-root setup):
    ```bash
-   ./tests/run.sh --work-root "<consumer-root>"
+   ./tests/run.sh --temp-work-root
    ```
 4) Autoformat (shell + JS) when needed:
    ```bash

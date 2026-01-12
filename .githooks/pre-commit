@@ -16,15 +16,7 @@ fi
 # Prefer the agent-layer repo runner, otherwise use the consumer runner.
 if [[ -x "$repo_root/tests/run.sh" ]]; then
   test_runner="$repo_root/tests/run.sh"
-
-  # In the agent-layer repo layout, create a temp consumer work root.
-  tmp_root="$repo_root/tmp"
-  mkdir -p "$tmp_root"
-  work_root="$(mktemp -d "$tmp_root/pre-commit-work.XXXXXX")"
-  trap 'rm -rf "$work_root"' EXIT
-  ln -s "$repo_root" "$work_root/.agent-layer"
-
-  (cd "$repo_root" && "$test_runner" --work-root "$work_root")
+  (cd "$repo_root" && "$test_runner" --temp-work-root)
 elif [[ -x "$repo_root/.agent-layer/tests/run.sh" ]]; then
   test_runner="$repo_root/.agent-layer/tests/run.sh"
   (cd "$repo_root" && "$test_runner" --work-root "$repo_root")

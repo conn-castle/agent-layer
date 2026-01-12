@@ -9,20 +9,28 @@ die() {
   exit 1
 }
 
-# Parse --work-root so the runner can be invoked from the agent-layer repo.
+# Parse work-root flags so the runner can be invoked from the agent-layer repo.
 usage() {
   cat << 'EOF'
-Usage: tests/run.sh [--work-root <path>]
+Usage: tests/run.sh [--work-root <path>] [--temp-work-root]
 
-Run formatting checks and the Bats suite. When running from inside the
-agent-layer repo itself, pass --work-root to a consumer root that contains
-a .agent-layer/ directory.
+Run formatting checks and the Bats suite.
+
+In the agent-layer repo (no .agent-layer/ directory), use --temp-work-root
+or pass --work-root to a temp directory. --temp-work-root uses system temp
+(or tmp/agent-layer-temp-work-root). In a consumer repo, --work-root must
+point to the repo root that contains .agent-layer/.
 EOF
 }
 
 work_root=""
+use_temp_work_root="0"
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --temp-work-root)
+      use_temp_work_root="1"
+      shift
+      ;;
     --work-root)
       shift
       if [[ $# -eq 0 || -z "${1:-}" ]]; then
@@ -49,43 +57,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PATHS_SH="$REPO_ROOT/src/lib/paths.sh"
-if [[ ! -f "$PATHS_SH" ]]; then
-  die "Missing src/lib/paths.sh (expected in the agent-layer repo)."
+ROOTS_HELPER="$SCRIPT_DIR/../src/lib/discover-root.sh"
+if [[ ! -f "$ROOTS_HELPER" ]]; then
+  die "Missing src/lib/discover-root.sh (expected near tests/)."
 fi
 # shellcheck disable=SC1090
-source "$PATHS_SH"
-if [[ -n "$work_root" ]]; then
-  if [[ ! -d "$work_root" ]]; then
-    die "--work-root does not exist: $work_root"
-  fi
-  work_root="$(cd "$work_root" && pwd)"
-  if [[ ! -d "$work_root/.agent-layer" ]]; then
-    die "--work-root must contain a .agent-layer directory: $work_root"
-  fi
-  cd "$work_root"
-  WORKING_ROOT="$work_root"
-  AGENTLAYER_ROOT="$work_root/.agent-layer"
-  export WORKING_ROOT AGENTLAYER_ROOT
-else
-  if ! resolve_working_root "$SCRIPT_DIR" "$PWD" > /dev/null; then
-    die "Missing .agent-layer/ directory in this path or any parent. Re-run with --work-root <path>."
-  fi
-  # Resolve entrypoint helpers so the runner works from any directory.
-  ENTRYPOINT_SH="$SCRIPT_DIR/.agent-layer/src/lib/entrypoint.sh"
-  if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-    ENTRYPOINT_SH="$SCRIPT_DIR/src/lib/entrypoint.sh"
-  fi
-  if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-    ENTRYPOINT_SH="$SCRIPT_DIR/../src/lib/entrypoint.sh"
-  fi
-  if [[ ! -f "$ENTRYPOINT_SH" ]]; then
-    die "Missing src/lib/entrypoint.sh (expected near .agent-layer/)."
-  fi
-  # shellcheck disable=SC1090
-  source "$ENTRYPOINT_SH"
-  resolve_entrypoint_root || exit $?
+source "$ROOTS_HELPER"
+ROOTS_ALLOW_CONSUMER_WORK_ROOT="1" \
+  ROOTS_DEFAULT_TEMP_WORK_ROOT="0" \
+  ROOTS_REQUIRE_WORK_ROOT_IN_AGENT_LAYER="1" \
+  WORK_ROOT="$work_root" \
+  USE_TEMP_WORK_ROOT="$use_temp_work_root" \
+  resolve_roots
+
+if [[ "$TEMP_WORK_ROOT_CREATED" == "1" ]]; then
+  trap 'rm -rf "$WORKING_ROOT"' EXIT
+fi
+if [[ -n "$work_root" || "$TEMP_WORK_ROOT_CREATED" == "1" ]]; then
+  cd "$WORKING_ROOT"
 fi
 
 # Require external tools used by formatting and tests.
@@ -125,9 +114,7 @@ while IFS= read -r -d '' file; do
   shell_files+=("$file")
 done < <(
   find "$AGENTLAYER_ROOT" \
-    -path "$AGENTLAYER_ROOT/node_modules" -prune -o \
-    -path "$AGENTLAYER_ROOT/.git" -prune -o \
-    -path "$AGENTLAYER_ROOT/tmp" -prune -o \
+    \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
     -type f \( -name "*.sh" -o -path "$AGENTLAYER_ROOT/al" -o -path "$AGENTLAYER_ROOT/.githooks/pre-commit" \) \
     -print0
 )
@@ -148,9 +135,7 @@ while IFS= read -r -d '' file; do
   js_files+=("$file")
 done < <(
   find "$AGENTLAYER_ROOT" \
-    -path "$AGENTLAYER_ROOT/node_modules" -prune -o \
-    -path "$AGENTLAYER_ROOT/.git" -prune -o \
-    -path "$AGENTLAYER_ROOT/tmp" -prune -o \
+    \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
     -type f \( -name "*.mjs" -o -name "*.js" \) \
     -print0
 )
