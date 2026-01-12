@@ -5,7 +5,13 @@
 load "helpers.bash"
 
 realpath_dir() {
-  (cd "$1" && pwd -P)
+  local target="$1"
+  if [[ ! -d "$target" ]]; then
+    printf "ERROR: realpath_dir target does not exist: %s\n" "$target" >&2
+    ls -ld "$(dirname "$target")" >&2 || true
+    return 1
+  fi
+  (cd "$target" && pwd -P)
 }
 
 # Spec 1: Consumer repo discovery succeeds
