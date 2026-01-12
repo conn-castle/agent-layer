@@ -15,10 +15,22 @@ multiline() {
 
 # Create a temporary directory under .agent-layer/tmp.
 make_tmp_dir() {
-  local base
+  local base dir
   base="$AGENT_LAYER_ROOT/tmp"
-  mkdir -p "$base"
-  mktemp -d "$base/agent-layer-test.XXXXXX"
+  if [[ ! -d "$base" ]]; then
+    printf "ERROR: base dir doesn't exist: %s\n" "$base" >&2
+    return 1
+  fi
+  dir="$(mktemp -d "$base/agent-layer-test.XXXXXX" 2>&1)" || {
+    printf "ERROR: mktemp failed: %s\n" "$dir" >&2
+    return 1
+  }
+  if [[ ! -d "$dir" ]]; then
+    printf "ERROR: mktemp output exists but is not a directory: %s\n" "$dir" >&2
+    ls -la "$base" >&2 || true
+    return 1
+  fi
+  printf "%s" "$dir"
 }
 
 # Create a parent repo root that symlinks the real .agent-layer.
