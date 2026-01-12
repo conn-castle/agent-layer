@@ -230,11 +230,13 @@ EOF
 
 # Test: installer fails without git repo when non-interactive
 @test "installer fails without git repo when non-interactive" {
-  local root stub_bin installer
-  root="$(make_tmp_dir)"
+  local root stub_bin installer tmp_base
+  tmp_base="${BATS_TEST_TMPDIR:-/tmp}"
+  mkdir -p "$tmp_base"
+  root="$(mktemp -d "${tmp_base%/}/agent-layer-nogit.XXXXXX")"
   stub_bin="$(create_stub_tools "$root")"
   installer="$AGENT_LAYER_ROOT/agent-layer-install.sh"
-  run bash -c "cd '$root' && GIT_CEILING_DIRECTORIES='$root' PATH='$stub_bin:$PATH' '$installer' < /dev/null"
+  run bash -c "cd '$root' && unset GIT_DIR GIT_WORK_TREE && GIT_CEILING_DIRECTORIES='$root' PATH='$stub_bin:$PATH' '$installer' < /dev/null"
   [ "$status" -ne 0 ]
   [[ "$output" == *"Not a git repo and no TTY available to confirm."* ]]
 

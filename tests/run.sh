@@ -12,22 +12,29 @@ die() {
 # Parse parent-root flags so the runner can be invoked from the agent-layer repo.
 usage() {
   cat << 'USAGE'
-Usage: tests/run.sh [--parent-root <path>] [--temp-parent-root]
+Usage: tests/run.sh [--parent-root <path>] [--temp-parent-root] [--run-from-repo-root]
 
 Run formatting checks and the Bats suite.
 
 In the agent-layer repo (no .agent-layer/ directory), use --temp-parent-root
 or pass --parent-root to a temp directory. In a consumer repo, --parent-root
 must point to the repo root that contains .agent-layer/.
+
+Use --run-from-repo-root to keep the current working directory unchanged.
 USAGE
 }
 
 parent_root=""
 use_temp_parent_root="0"
+run_from_repo_root="0"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --temp-parent-root)
       use_temp_parent_root="1"
+      shift
+      ;;
+    --run-from-repo-root)
+      run_from_repo_root="1"
       shift
       ;;
     --parent-root)
@@ -71,7 +78,9 @@ if [[ "$TEMP_PARENT_ROOT_CREATED" == "1" ]]; then
   trap '[[ "${PARENT_ROOT_KEEP_TEMP:-0}" == "1" ]] || rm -rf "$PARENT_ROOT"' EXIT INT TERM
 fi
 
-cd "$PARENT_ROOT"
+if [[ "$run_from_repo_root" != "1" ]]; then
+  cd "$PARENT_ROOT"
+fi
 
 # Require external tools used by formatting and tests.
 require_cmd() {

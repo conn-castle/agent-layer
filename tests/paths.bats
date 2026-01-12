@@ -542,7 +542,7 @@ realpath_dir() {
       "agent-layer installation but trying to configure a different one." \
       "" \
       "Fix:" \
-      "  - Use scripts from $(realpath_dir \"$fake_parent\")/.agent-layer/" \
+      "  - Use scripts from $(realpath_dir "$fake_parent")/.agent-layer/" \
       "  - Or adjust --parent-root to match script location"
   )"
   [[ "$output" == "$expected" ]]

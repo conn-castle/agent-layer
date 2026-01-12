@@ -51,23 +51,23 @@ Example: `./al gemini` (runs Gemini with your project's agent config)
 
 **Mental Model**:
 ```
-my-app/                     ← Your project (parent root)
-├── .agent-layer/           ← Agent Layer (agent layer root)
-│   ├── config/             ← Your instructions, workflows, MCP servers
-│   │   ├── instructions/   ← System instructions (source of truth)
-│   │   ├── workflows/      ← Workflow definitions (source of truth)
-│   │   ├── mcp-servers.json    ← MCP server catalog (source of truth)
-│   │   └── policy/         ← Command allowlist (source of truth)
-│   ├── setup.sh            ← Setup script
-│   └── src/sync/sync.mjs   ← Generator (builds configs)
-├── al                      ← Launcher (wrapper script, or symlink)
-├── .mcp.json               ← Generated (don't edit)
-├── AGENTS.md               ← Generated (don't edit)
-├── .gemini/                ← Generated Gemini configs
-├── .claude/                ← Generated Claude configs
-├── .vscode/                ← Generated VS Code configs
-├── .codex/                 ← Generated Codex artifacts
-└── docs/                   ← Project memory (ISSUES.md, FEATURES.md, etc.)
+my-app/                        ← Your project (parent root)
+├── .agent-layer/              ← Agent Layer (agent layer root)
+│   ├── config/                ← Your instructions, workflows, MCP servers
+│   │   ├── instructions/      ← System instructions (source of truth)
+│   │   ├── workflows/         ← Workflow definitions (source of truth)
+│   │   ├── mcp-servers.json   ← MCP server catalog (source of truth)
+│   │   └── policy/            ← Command allowlist (source of truth)
+│   ├── setup.sh               ← Setup script
+│   └── src/sync/sync.mjs      ← Generator (builds configs)
+├── al                         ← Launcher (wrapper script, or symlink)
+├── .mcp.json                  ← Generated (don't edit)
+├── AGENTS.md                  ← Generated (don't edit)
+├── .gemini/                   ← Generated Gemini configs
+├── .claude/                   ← Generated Claude configs
+├── .vscode/                   ← Generated VS Code configs
+├── .codex/                    ← Generated Codex artifacts
+└── docs/                      ← Project memory (ISSUES.md, FEATURES.md, etc.)
 ```
 
 **How it works**:

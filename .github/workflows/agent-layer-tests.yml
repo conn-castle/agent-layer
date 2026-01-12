@@ -27,14 +27,5 @@ jobs:
       - name: Install bashcov
         run: sudo gem install bashcov --no-document
 
-      - name: Run tests
-        run: |
-          set -euo pipefail
-          # Create tmp directory in the agent-layer checkout (not gitignored in CI)
-          mkdir -p "$PWD/tmp"
-          ./tests/run.sh --temp-parent-root
-
-      - name: Coverage (parent-root)
-        run: |
-          set -euo pipefail
-          bash ./tests/coverage.sh
+      - name: Run CI
+        run: ./tests/ci.sh
