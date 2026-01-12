@@ -5,7 +5,20 @@
 load "helpers.bash"
 
 realpath_dir() {
-  (cd "$1" && pwd -P)
+  local target="$1"
+  if [[ ! -d "$target" ]]; then
+    printf "ERROR in realpath_dir: target doesn't exist: %s\n" "$target" >&2
+    printf "  PWD in realpath_dir: %s\n" "$PWD" >&2
+    printf "  Test from parent shell:\n" >&2
+    ls -la "$target" >&2 2>&1 || printf "  ls failed from parent\n" >&2
+    (
+      printf "  PWD in subshell: %s\n" "$PWD" >&2
+      printf "  Test from subshell:\n" >&2
+      ls -la "$target" 2>&1 || printf "  ls failed from subshell\n" >&2
+    ) >&2
+    return 1
+  fi
+  (cd "$target" && pwd -P)
 }
 
 # Spec 1: Consumer repo discovery succeeds
