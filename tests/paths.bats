@@ -454,6 +454,8 @@ realpath_dir() {
 @test "Spec 2 Error: Parent root missing .agent-layer" {
   local parent_root agent_layer_root missing_agent expected script
   parent_root="$(make_tmp_dir)"
+  printf "DEBUG: parent_root=%s\n" "$parent_root" >&2
+  ls -la "$parent_root" >&2 || printf "ERROR: cannot ls parent_root\n" >&2
   if [[ ! -d "$parent_root" ]]; then
     printf "ERROR: parent_root doesn't exist right after make_tmp_dir: %s\n" "$parent_root" >&2
     return 1
@@ -462,6 +464,8 @@ realpath_dir() {
   create_agent_layer_root "$agent_layer_root"
 
   missing_agent="$(make_tmp_dir)"
+  printf "DEBUG: missing_agent=%s\n" "$missing_agent" >&2
+  ls -la "$missing_agent" >&2 || printf "ERROR: cannot ls missing_agent\n" >&2
   if [[ ! -d "$missing_agent" ]]; then
     printf "ERROR: missing_agent doesn't exist right after make_tmp_dir: %s\n" "$missing_agent" >&2
     return 1
