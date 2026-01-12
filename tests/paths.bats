@@ -5,14 +5,9 @@
 load "helpers.bash"
 
 realpath_dir() {
-  local target="$1" saved_pwd result
-  # Avoid subshells - they have issues accessing temp directories in some CI environments.
-  # Instead, cd directly, get the path, and cd back.
-  saved_pwd="$PWD"
-  cd "$target" || return 1
-  result="$(pwd -P)"
-  cd "$saved_pwd" || return 1
-  printf "%s" "$result"
+  # Use readlink -f which is POSIX standard and works on all Unix systems.
+  # It resolves symlinks and returns canonical absolute path without requiring cd.
+  readlink -f "$1"
 }
 
 # Spec 1: Consumer repo discovery succeeds
