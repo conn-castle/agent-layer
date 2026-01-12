@@ -441,10 +441,18 @@ realpath_dir() {
 @test "Spec 2 Error: Parent root missing .agent-layer" {
   local parent_root agent_layer_root missing_agent expected script
   parent_root="$(make_tmp_dir)"
+  if [[ ! -d "$parent_root" ]]; then
+    printf "ERROR: parent_root doesn't exist right after make_tmp_dir: %s\n" "$parent_root" >&2
+    return 1
+  fi
   agent_layer_root="$parent_root/.agent-layer"
   create_agent_layer_root "$agent_layer_root"
 
   missing_agent="$(make_tmp_dir)"
+  if [[ ! -d "$missing_agent" ]]; then
+    printf "ERROR: missing_agent doesn't exist right after make_tmp_dir: %s\n" "$missing_agent" >&2
+    return 1
+  fi
 
   script="$(
     multiline \
@@ -454,6 +462,12 @@ realpath_dir() {
 
   run bash -c "$script"
   [ "$status" -ne 0 ]
+
+  if [[ ! -d "$missing_agent" ]]; then
+    printf "ERROR: missing_agent disappeared before realpath_dir call: %s\n" "$missing_agent" >&2
+    ls -la "$(dirname "$missing_agent")" >&2 || true
+    return 1
+  fi
 
   expected="$(
     multiline \
