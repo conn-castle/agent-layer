@@ -79,6 +79,8 @@ fi
 # Run from the parent root so all relative paths are stable.
 cd "$PARENT_ROOT"
 
+say "Note: setup is required after install or config changes. ./al runs sync before each command."
+
 # Validate required agent-layer files and system tools.
 [[ -d "$AGENT_LAYER_ROOT" ]] || die "Missing agent-layer root: $AGENT_LAYER_ROOT"
 [[ -f "$AGENT_LAYER_ROOT/src/sync/sync.mjs" ]] || die "Missing src/sync/sync.mjs under $AGENT_LAYER_ROOT."

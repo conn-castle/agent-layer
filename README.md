@@ -30,6 +30,60 @@ Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./
 
 ---
 
+## Quick Start (2 Minutes)
+
+The fastest way to try agent-layer in your existing project:
+
+```bash
+# 1. Download and run installer (from your parent root)
+curl -fsSL https://github.com/nicholasjconn/agent-layer/releases/latest/download/agent-layer-install.sh | bash
+
+# 2. Run setup once (installer already ran this; re-run only after config changes or if dependencies were cleaned)
+./.agent-layer/setup.sh
+
+# 3. Try it with gemini, codex, or claude
+./al gemini
+```
+
+Once Gemini starts, type:
+```
+What are the repo rules?
+```
+
+If you see a response summarizing your project's agent instructions, it's working!
+
+**What just happened?**
+1. Installer created `.agent-layer/` in your project (gitignored by default)
+2. Setup installed dependencies and generated configs
+3. `./al gemini` synced configs and launched Gemini with your project context
+4. Gemini read your instructions and can now help with your project
+
+**Note**: `.agent-layer/` is gitignored, so you can try this without team buy-in or committing anything.
+
+**Next**: See [Installation](#installation) for details and customization options.
+
+---
+
+## Table of Contents
+
+- [Key Concepts](#key-concepts)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [First Steps](#first-steps)
+- [Agent-Specific Guide](#agent-specific-guide)
+- [How Commands Work in This README](#how-commands-work-in-this-readme)
+- [Parent Root Resolution](#parent-root-resolution)
+- [Day-to-Day Usage](#day-to-day-usage)
+- [Customizing Your Agent](#customizing-your-agent)
+- [Approvals and Permissions](#approvals-and-permissions)
+- [Reference](#reference)
+- [Troubleshooting](#troubleshooting)
+- [Cleanup / Uninstall](#cleanup--uninstall)
+- [Contributing](#contributing)
+- [FAQ](#faq)
+- [License](#license)
+- [Attribution](#attribution)
+
 ## Key Concepts
 
 Before you start, understand these three components:
@@ -81,40 +135,6 @@ my-app/                        ← Your project (parent root)
 
 ---
 
-## Quick Demo (2 Minutes)
-
-The fastest way to try agent-layer in your existing project:
-
-```bash
-# 1. Download and run installer (from your parent root)
-curl -fsSL https://github.com/nicholasjconn/agent-layer/releases/latest/download/agent-layer-install.sh | bash
-
-# 2. Run setup (installer already ran this; re-run if you change config or skipped install output)
-./.agent-layer/setup.sh
-
-# 3. Try it with gemini, codex, or claude
-./al gemini
-```
-
-Once Gemini starts, type:
-```
-What are the repo rules?
-```
-
-If you see a response summarizing your project's agent instructions, it's working!
-
-**What just happened?**
-1. Installer created `.agent-layer/` in your project (gitignored by default)
-2. Setup installed dependencies and generated configs
-3. `./al gemini` synced configs and launched Gemini with your project context
-4. Gemini read your instructions and can now help with your project
-
-**Note**: `.agent-layer/` is gitignored, so you can try this without team buy-in or committing anything.
-
-**Next**: See [Installation](#installation) for details and customization options.
-
----
-
 ## Prerequisites
 
 Required:
@@ -153,6 +173,8 @@ chmod +x agent-layer-install.sh
 
 Fresh installs pin `.agent-layer/` to the latest tagged release by default (detached HEAD). Use `--latest-branch` for dev builds. Check the installed version with `./al --version`.
 
+Cleanup: if you downloaded `agent-layer-install.sh`, remove it after install. The installer deletes itself when run from a downloaded file outside `.agent-layer/`.
+
 This creates `.agent-layer/`, adds a managed `.gitignore` block (ignoring `.agent-layer/` by default), creates `./al`,
 and ensures the project memory files exist under `docs/` (`ISSUES.md`, `FEATURES.md`,
 `ROADMAP.md`, `DECISIONS.md`). Templates live in `.agent-layer/config/templates/docs`; if a file
@@ -174,7 +196,7 @@ runs, existing files are kept.
 Fresh installs already pin to the latest tagged release; use this to update an existing `.agent-layer/`.
 
 ```bash
-./agent-layer-install.sh --upgrade
+./.agent-layer/agent-layer-install.sh --upgrade
 ```
 
 Notes:
@@ -185,7 +207,7 @@ Notes:
 **Update to latest commit of a branch** (for developers):
 
 ```bash
-./agent-layer-install.sh --latest-branch main
+./.agent-layer/agent-layer-install.sh --latest-branch main
 ```
 
 Notes:
@@ -196,7 +218,7 @@ Notes:
 **Install a specific tagged release**:
 
 ```bash
-./agent-layer-install.sh --version v0.1.0
+./.agent-layer/agent-layer-install.sh --version v0.1.0
 ```
 
 Notes:
@@ -217,7 +239,7 @@ From your parent root:
 ./.agent-layer/setup.sh
 ```
 
-If you installed via the installer, setup already ran once. Re-run it when you change config or want to refresh outputs. It installs MCP prompt server dependencies, runs sync (generates configs), and checks for drift.
+If you installed via the installer, setup already ran once. Re-run it only after config changes or if you cleaned dependencies. It installs MCP prompt server dependencies, runs sync (generates configs), and checks for drift. `./al` still runs sync before each command.
 
 ### Step 2: Configure Environment (Optional)
 
@@ -296,6 +318,171 @@ What are the repo rules?
 2. Generated client configs (`.gemini/settings.json`, `.mcp.json`, etc.)
 3. Launched Gemini with those configs loaded
 4. Gemini read your instructions and can now help with your project
+
+---
+
+## Agent-Specific Guide
+
+### Quick Examples (Per Client)
+
+Gemini CLI:
+- Slash command example: `/find-issues`
+- MCP check: `cat .gemini/settings.json` (look for `mcpServers["agent-layer"]`)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+VS Code / Copilot Chat:
+- Slash command example: `/mcp.agent-layer.find-issues`
+- MCP check: `cat .vscode/mcp.json` (look for `agent-layer`)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Claude Code CLI:
+- Slash command example: `find-issues` (via MCP prompt UI/namespace)
+- MCP check: `cat .mcp.json` (look for `mcpServers["agent-layer"]`)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Codex CLI:
+- Slash command example: `$find-issues` (Codex Skills)
+- MCP check: `cat .codex/config.toml` (look for `mcp_servers.agent-layer`)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Codex VS Code extension:
+- Slash command example: `$find-issues` (Codex Skills; requires `CODEX_HOME` pointing at the repo; see Codex section below)
+- MCP check: `cat .codex/config.toml` (requires `CODEX_HOME` in VS Code env)
+- Prompt example: `Summarize the repo rules in 3 bullets.`
+
+Antigravity:
+- Slash commands: not supported
+- MCP check: not supported
+- Prompt examples: not supported
+
+### Gemini CLI
+
+**MCP config file**
+- Project MCP config is in the parent root: `.gemini/settings.json` (generated).
+- Quick check:
+  ```bash
+  cat .gemini/settings.json
+  ```
+  Confirm you see `"mcpServers"` with the servers you expect (e.g., `agent-layer`, `context7`).
+
+**Confirm the MCP server can start**
+- If you ran `setup.sh`, Node deps are already installed. If you skipped setup or cleaned `node_modules`, install them:
+  ```bash
+  cd .agent-layer/src/mcp/agent-layer-prompts && npm install && cd -
+  ```
+- Then run Gemini via `./al gemini`.
+
+**Confirm slash commands (MCP prompts)**
+- In Gemini, try a workflow name directly:
+  - `/find-issues`
+- If it's present, it will expand and run the workflow prompt.
+- If it's missing:
+  1) run `node .agent-layer/src/sync/sync.mjs`
+  2) restart Gemini
+  3) confirm `.gemini/settings.json` still lists `agent-layer` under `mcpServers`
+
+**Common failure mode**
+- If Gemini prompts for approvals on shell commands like `git status`, that is a *shell tool approval*, not MCP. (Solving this uses the repo allowlist `config/policy/commands.json` projected into Gemini's `tools.allowed`.)
+
+---
+
+### VS Code / Copilot Chat
+
+**MCP config file**
+- Project MCP config is in the parent root: `.vscode/mcp.json` (generated).
+- Quick check:
+  ```bash
+  cat .vscode/mcp.json
+  ```
+
+**Confirm MCP server is running**
+- Open the repo in VS Code.
+- Ensure Copilot Chat is enabled and MCP is enabled in your environment.
+- If MCP tools/prompts look stale:
+  - restart MCP servers and/or run VS Code's "Chat: Reset Cached Tools" action.
+
+**Confirm slash commands (MCP prompts)**
+- In Copilot Chat, invoke:
+  - `/mcp.agent-layer.find-issues`
+- If it autocompletes, the prompt is registered.
+
+**Common failure mode**
+- VS Code can cache tool lists. Reset cached tools and reload window if needed.
+
+---
+
+### Claude Code CLI
+
+**MCP config file**
+- Project MCP config is in the parent root: `.mcp.json` (generated).
+- Quick check:
+  ```bash
+  cat .mcp.json
+  ```
+
+**Confirm MCP is connected**
+- Launch Claude Code CLI from repo root:
+  ```bash
+  ./al claude
+  ```
+- If MCP servers are not available:
+  1) verify `.mcp.json` exists and includes `mcpServers["agent-layer"]`
+  2) ensure MCP prompt server deps installed:
+     ```bash
+     cd .agent-layer/src/mcp/agent-layer-prompts && npm install && cd -
+     ```
+  3) restart Claude Code CLI after MCP config changes
+
+**Confirm slash commands (MCP prompts)**
+- In Claude Code CLI, invoke the MCP prompt using its MCP prompt UI/namespace (varies by client build).
+- Quick sanity check: the prompt list should include your workflow prompt name (e.g., `find-issues`).
+- If missing:
+  1) run `node .agent-layer/src/sync/sync.mjs`
+  2) restart Claude Code CLI
+  3) ensure the MCP server process can run (Node installed, deps installed)
+
+---
+
+### Codex (CLI / VS Code extension)
+
+**MCP config + system instructions**
+- When launched via `./al codex`, `CODEX_HOME` must resolve to the repo-local `.codex/` (symlinks allowed); `./al codex` will error if it points elsewhere.
+- MCP servers are generated into `.codex/config.toml` from `.agent-layer/config/mcp-servers.json`.
+- System instructions are generated into `.codex/AGENTS.md` from `.agent-layer/config/instructions/*.md`.
+- Agent Layer also generates the project `AGENTS.md` from the same sources for clients that read it.
+- Agent Layer uses **Codex Skills** (and optional rules) as the primary "workflow command" mechanism.
+
+**Getting the Codex VS Code extension to use repo-local `CODEX_HOME`**
+- The extension reads `CODEX_HOME` from the VS Code/Antigravity process environment at startup (no workspace setting).
+- Set `CODEX_HOME` to the absolute path of this repo's `.codex/`, then fully restart the app.
+- See First Steps step 4 for the recommended launcher commands.
+
+Optional wrapper (handy if you work across multiple repos):
+- Create a small script that exports `CODEX_HOME` and launches VS Code/Antigravity.
+- If your build supports `chatgpt.cliExecutable`, point it at a wrapper that sets `CODEX_HOME` before invoking `codex`.
+
+Quick verification inside VS Code:
+```bash
+echo "$CODEX_HOME"
+```
+
+**Confirm workflow "commands" (Codex Skills)**
+- Skills are generated into the parent root: `.codex/skills/*/SKILL.md`
+- Quick check:
+  ```bash
+  ls -la .codex/skills
+  ```
+- In Codex, skills are available under `$`:
+  - run `$find-issues`
+  - (if your build supports it) list skills with `$skills`
+
+**If a skill is missing**
+1) run `node .agent-layer/src/sync/sync.mjs`
+2) verify the workflow exists: `config/workflows/<workflow>.md`
+3) verify `.codex/skills/<workflow>/SKILL.md` was generated
+
+**Common failure mode**
+- Codex may require a restart to pick up new/updated skills.
 
 ---
 
@@ -489,173 +676,6 @@ If you want Agent Layer to overwrite client configs instead of preserving diverg
 Some entries may be flagged as `parseable: false` and require manual updates.
 Codex approvals are read only from `.codex/rules/default.rules`. If other `.rules` files exist under `.codex/rules`, Agent Layer ignores them and warns so you can either integrate their entries into `.agent-layer/config/policy/commands.json` and re-sync, or delete the extra rules files to clear the warning.
 Codex MCP config documents env requirements in comments only, so divergence checks ignore env var differences unless an explicit `env = { ... }` entry is present.
-
----
-
-## Client-Specific Guides
-
-### Quick Examples (Per Client)
-
-Gemini CLI:
-- Slash command example: `/find-issues`
-- MCP check: `cat .gemini/settings.json` (look for `mcpServers["agent-layer"]`)
-- Prompt example: `Summarize the repo rules in 3 bullets.`
-
-VS Code / Copilot Chat:
-- Slash command example: `/mcp.agent-layer.find-issues`
-- MCP check: `cat .vscode/mcp.json` (look for `agent-layer`)
-- Prompt example: `Summarize the repo rules in 3 bullets.`
-
-Claude Code CLI:
-- Slash command example: `find-issues` (via MCP prompt UI/namespace)
-- MCP check: `cat .mcp.json` (look for `mcpServers["agent-layer"]`)
-- Prompt example: `Summarize the repo rules in 3 bullets.`
-
-Codex CLI:
-- Slash command example: `$find-issues` (Codex Skills)
-- MCP check: `cat .codex/config.toml` (look for `mcp_servers.agent-layer`)
-- Prompt example: `Summarize the repo rules in 3 bullets.`
-
-Codex VS Code extension:
-- Slash command example: `$find-issues` (Codex Skills; requires `CODEX_HOME` pointing at the repo; see Codex section below)
-- MCP check: `cat .codex/config.toml` (requires `CODEX_HOME` in VS Code env)
-- Prompt example: `Summarize the repo rules in 3 bullets.`
-
-Antigravity:
-- Slash commands: not supported
-- MCP check: not supported
-- Prompt examples: not supported
-
-### Gemini CLI
-
-**MCP config file**
-- Project MCP config is in the parent root: `.gemini/settings.json` (generated).
-- Quick check:
-  ```bash
-  cat .gemini/settings.json
-  ```
-  Confirm you see `"mcpServers"` with the servers you expect (e.g., `agent-layer`, `context7`).
-
-**Confirm the MCP server can start**
-- If you ran `setup.sh`, Node deps are already installed. If you skipped setup or cleaned `node_modules`, install them:
-  ```bash
-  cd .agent-layer/src/mcp/agent-layer-prompts && npm install && cd -
-  ```
-- Then run Gemini via `./al gemini`.
-
-**Confirm slash commands (MCP prompts)**
-- In Gemini, try a workflow name directly:
-  - `/find-issues`
-- If it's present, it will expand and run the workflow prompt.
-- If it's missing:
-  1) run `node .agent-layer/src/sync/sync.mjs`
-  2) restart Gemini
-  3) confirm `.gemini/settings.json` still lists `agent-layer` under `mcpServers`
-
-**Common failure mode**
-- If Gemini prompts for approvals on shell commands like `git status`, that is a *shell tool approval*, not MCP. (Solving this uses the repo allowlist `config/policy/commands.json` projected into Gemini's `tools.allowed`.)
-
----
-
-### VS Code / Copilot Chat
-
-**MCP config file**
-- Project MCP config is in the parent root: `.vscode/mcp.json` (generated).
-- Quick check:
-  ```bash
-  cat .vscode/mcp.json
-  ```
-
-**Confirm MCP server is running**
-- Open the repo in VS Code.
-- Ensure Copilot Chat is enabled and MCP is enabled in your environment.
-- If MCP tools/prompts look stale:
-  - restart MCP servers and/or run VS Code's "Chat: Reset Cached Tools" action.
-
-**Confirm slash commands (MCP prompts)**
-- In Copilot Chat, invoke:
-  - `/mcp.agent-layer.find-issues`
-- If it autocompletes, the prompt is registered.
-
-**Common failure mode**
-- VS Code can cache tool lists. Reset cached tools and reload window if needed.
-
----
-
-### Claude Code CLI
-
-**MCP config file**
-- Project MCP config is in the parent root: `.mcp.json` (generated).
-- Quick check:
-  ```bash
-  cat .mcp.json
-  ```
-
-**Confirm MCP is connected**
-- Launch Claude Code CLI from repo root:
-  ```bash
-  ./al claude
-  ```
-- If MCP servers are not available:
-  1) verify `.mcp.json` exists and includes `mcpServers["agent-layer"]`
-  2) ensure MCP prompt server deps installed:
-     ```bash
-     cd .agent-layer/src/mcp/agent-layer-prompts && npm install && cd -
-     ```
-  3) restart Claude Code CLI after MCP config changes
-
-**Confirm slash commands (MCP prompts)**
-- In Claude Code CLI, invoke the MCP prompt using its MCP prompt UI/namespace (varies by client build).
-- Quick sanity check: the prompt list should include your workflow prompt name (e.g., `find-issues`).
-- If missing:
-  1) run `node .agent-layer/src/sync/sync.mjs`
-  2) restart Claude Code CLI
-  3) ensure the MCP server process can run (Node installed, deps installed)
-
----
-
-### Codex (CLI / VS Code extension)
-
-**MCP config + system instructions**
-- When launched via `./al codex`, `CODEX_HOME` must resolve to the repo-local `.codex/` (symlinks allowed); `./al codex` will error if it points elsewhere.
-- MCP servers are generated into `.codex/config.toml` from `.agent-layer/config/mcp-servers.json`.
-- System instructions are generated into `.codex/AGENTS.md` from `.agent-layer/config/instructions/*.md`.
-- Agent Layer also generates the project `AGENTS.md` from the same sources for clients that read it.
-- Agent Layer uses **Codex Skills** (and optional rules) as the primary "workflow command" mechanism.
-
-**Getting the Codex VS Code extension to use repo-local `CODEX_HOME`**
-- The extension reads `CODEX_HOME` from the VS Code/Antigravity process environment at startup (no workspace setting).
-- Set `CODEX_HOME` to the absolute path of this repo's `.codex/`, then fully restart the app.
-- See First Steps step 4 for the recommended launcher commands.
-
-Optional wrapper (handy if you work across multiple repos):
-- Create a small script that exports `CODEX_HOME` and launches VS Code/Antigravity.
-- If your build supports `chatgpt.cliExecutable`, point it at a wrapper that sets `CODEX_HOME` before invoking `codex`.
-
-Quick verification inside VS Code:
-```bash
-echo "$CODEX_HOME"
-```
-
-**Confirm workflow "commands" (Codex Skills)**
-- Skills are generated into the parent root: `.codex/skills/*/SKILL.md`
-- Quick check:
-  ```bash
-  ls -la .codex/skills
-  ```
-- In Codex, skills are available under `$`:
-  - run `$find-issues`
-  - (if your build supports it) list skills with `$skills`
-
-**If a skill is missing**
-1) run `node .agent-layer/src/sync/sync.mjs`
-2) verify the workflow exists: `config/workflows/<workflow>.md`
-3) verify `.codex/skills/<workflow>/SKILL.md` was generated
-
-**Common failure mode**
-- Codex may require a restart to pick up new/updated skills.
-
----
 
 ## Reference
 

@@ -501,3 +501,45 @@ say "After completing the required manual steps above, run one of:"
 say "  ./al gemini"
 say "  ./al claude"
 say "  ./al codex"
+
+cleanup_installer() {
+  local script_source script_dir script_path repo_root rel_path
+
+  script_source="${BASH_SOURCE[0]}"
+  if [[ -z "$script_source" ]]; then
+    return 0
+  fi
+  if [[ "$script_source" == "-" || "$script_source" == "bash" || "$script_source" == */bash ]]; then
+    return 0
+  fi
+  if [[ ! -f "$script_source" ]]; then
+    return 0
+  fi
+
+  script_dir="$(cd "$(dirname "$script_source")" && pwd -P)"
+  script_path="$script_dir/$(basename "$script_source")"
+
+  if [[ "$script_path" == "$AGENT_LAYER_DIR/"* ]]; then
+    say "==> Installer lives in .agent-layer; keeping it in place."
+    return 0
+  fi
+
+  if repo_root="$(git -C "$script_dir" rev-parse --show-toplevel 2> /dev/null)"; then
+    if [[ "$script_path" == "$repo_root/"* ]]; then
+      rel_path="${script_path#"$repo_root/"}"
+      if git -C "$repo_root" ls-files --error-unmatch "$rel_path" > /dev/null 2>&1; then
+        say "==> Installer is tracked in git; keeping it in place."
+        return 0
+      fi
+    fi
+  fi
+
+  if [[ -w "$script_path" ]]; then
+    rm -f "$script_path"
+    say "==> Removed downloaded installer: $script_path"
+  else
+    say "==> Installer still present at $script_path (remove it if you no longer need it)."
+  fi
+}
+
+cleanup_installer

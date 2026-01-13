@@ -5,6 +5,7 @@
     { "argv": ["git", "diff"] },
     { "argv": ["git", "log"] },
     { "argv": ["git", "show"] },
+    { "argv": ["git", "rev-parse"] },
 
     { "argv": ["cd"] },
     { "argv": ["ls"] },
@@ -13,6 +14,8 @@
     { "argv": ["cat"] },
     { "argv": ["find"] },
     { "argv": ["grep"] },
+    { "argv": ["head"] },
+    { "argv": ["tail"] },
 
     { "argv": ["python"] },
     { "argv": ["pytest"] },
