@@ -17,6 +17,8 @@ EOF
   printf "EXAMPLE=1\n" >"$root/.agent-layer/.env.example"
   : >"$root/.agent-layer/src/sync/sync.mjs"
   cp "$AGENT_LAYER_ROOT/config/templates/docs/"*.md "$root/.agent-layer/config/templates/docs/"
+  cp "$AGENT_LAYER_ROOT/agent-layer" "$root/.agent-layer/agent-layer"
+  chmod +x "$root/.agent-layer/agent-layer"
   git -C "$root/.agent-layer" init -q
 }
 
@@ -33,6 +35,8 @@ EOF
   printf "EXAMPLE=1\n" >"$repo/.env.example"
   : >"$repo/src/sync/sync.mjs"
   cp "$AGENT_LAYER_ROOT/config/templates/docs/"*.md "$repo/config/templates/docs/"
+  cp "$AGENT_LAYER_ROOT/agent-layer" "$repo/agent-layer"
+  chmod +x "$repo/agent-layer"
   git -C "$repo" init -q
   git -C "$repo" config user.email "test@example.com"
   git -C "$repo" config user.name "Test User"
@@ -205,7 +209,7 @@ EOF
   installer="$AGENT_LAYER_ROOT/agent-layer-install.sh"
   run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer' --force < /dev/null"
   [ "$status" -eq 0 ]
-  grep -q '\.agent-layer/al' "$work/al"
+  grep -q '\.agent-layer/agent-layer' "$work/al"
 
   rm -rf "$root"
 }

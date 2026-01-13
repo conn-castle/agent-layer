@@ -46,7 +46,7 @@ This is where instructions, workflows, and MCP server configs live.
 **By default**, `.agent-layer/` is not committed to your project repo (it's gitignored). This lets you use agent-layer individually without requiring team buy-in. For team use, fork and maintain your own version of agent-layer instead of committing config to each project.
 
 ### 3. Launcher (`./al`)
-A script in your parent root that syncs configs and launches AI tools.
+A script in your parent root that syncs configs and launches AI tools. It delegates to `.agent-layer/agent-layer`.
 Example: `./al gemini` (runs Gemini with your project's agent config)
 
 **Mental Model**:
@@ -58,6 +58,7 @@ my-app/                        ← Your project (parent root)
 │   │   ├── workflows/         ← Workflow definitions (source of truth)
 │   │   ├── mcp-servers.json   ← MCP server catalog (source of truth)
 │   │   └── policy/            ← Command allowlist (source of truth)
+│   ├── agent-layer            ← Launcher entrypoint (used by ./al)
 │   ├── setup.sh               ← Setup script
 │   └── src/sync/sync.mjs      ← Generator (builds configs)
 ├── al                         ← Launcher (wrapper script, or symlink)
@@ -250,7 +251,7 @@ You should see a file or symlink. If it's missing, the installer had an issue.
 
 **For advanced users**: The installer creates a wrapper script. You can replace it with a symlink if you prefer:
 ```bash
-ln -sf .agent-layer/al ./al
+ln -sf .agent-layer/agent-layer ./al
 ```
 
 ### Step 4: Codex Users (Special Setup)
@@ -711,8 +712,8 @@ VS Code MCP config uses the generated `.vscode/mcp.json` `envFile`, which defaul
 - `src/sync/inspect.mjs` - JSON report of divergent approvals and MCP servers (no edits)
 - `clean.sh` - Remove generated shims/configs/skills and strip agent-layer-managed settings from client config files
 - `with-env.sh` - Load `.agent-layer/.env` (and optionally project `.env`) then exec a command
-- `run.sh` - Internal runner for `./al` (resolve parent root, sync, load env, then exec)
-- `./al` - Repo-local launcher (sync + env load + exec; wrapper script at parent root, or optionally symlink)
+- `run.sh` - Internal runner for `./al` and `.agent-layer/agent-layer` (resolve parent root, sync, load env, then exec)
+- `agent-layer` - Repo-local launcher (sync + env load + exec; invoked by parent-root `./al`, or optionally via symlink)
 
 ### Refresh / Restart Guidance (Failure Modes)
 

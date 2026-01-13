@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ./al - repo-local launcher
+# ./agent-layer - repo-local launcher
 #
 # Purpose:
 #   Select a single default behavior for the Agent Layer runner.
@@ -13,12 +13,13 @@ set -euo pipefail
 #   - Do not leave multiple options uncommented.
 
 # +------------------------------------------------------------+
-# | al path glue (do not edit)                                 |
-# | Keeps ./al working as a symlink or as .agent-layer/al.      |
-# | Resolves RUNNER to the correct .agent-layer/run.sh.         |
+# | agent-layer path glue (do not edit)                        |
+# | Keeps ./al working as a symlink or as                      |
+# | .agent-layer/agent-layer.                                  |
+# | Resolves RUNNER to the correct .agent-layer/run.sh.        |
 # +------------------------------------------------------------+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-# Prefer a runner alongside this script (when invoked via .agent-layer/al).
+# Prefer a runner alongside this script (when invoked via .agent-layer/agent-layer).
 RUNNER="$SCRIPT_DIR/run.sh"
 # Fall back to the repo-root .agent-layer/run.sh (when invoked via ./al).
 if [[ ! -f "$RUNNER" ]]; then

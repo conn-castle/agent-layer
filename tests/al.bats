@@ -10,7 +10,7 @@ load "helpers.bash"
   root_a="$(create_parent_root)"
   root_b="$(create_parent_root)"
 
-  ln -s "$root_a/.agent-layer/al" "$root_a/al"
+  ln -s "$root_a/.agent-layer/agent-layer" "$root_a/al"
   stub_bin="$(create_stub_node "$root_a")"
 
   output="$(cd "$root_b/sub/dir" && PATH="$stub_bin:$PATH" "$root_a/al" --parent-root "$root_a" pwd)"
@@ -26,7 +26,7 @@ load "helpers.bash"
   local root stub_bin output
   root="$(create_parent_root)"
 
-  ln -s "$root/.agent-layer/al" "$root/al"
+  ln -s "$root/.agent-layer/agent-layer" "$root/al"
   mkdir -p "$root/src/lib"
   cat > "$root/src/lib/parent-root.sh" << 'EOF'
 resolve_parent_root() {
@@ -56,7 +56,7 @@ EOF
   git -C "$root/.agent-layer" commit -m "init" -q
   git -C "$root/.agent-layer" tag v0.1.0
 
-  output="$("$root/.agent-layer/al" --version)"
+  output="$("$root/.agent-layer/agent-layer" --version)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "v0.1.0" ]
@@ -76,7 +76,7 @@ printf "%s" "${CODEX_HOME:-}"
 EOF
   chmod +x "$stub_bin/codex"
 
-  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" CODEX_HOME= "$root/.agent-layer/al" codex)"
+  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" CODEX_HOME= "$root/.agent-layer/agent-layer" codex)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "$root/.codex" ]
@@ -97,7 +97,7 @@ EOF
   chmod +x "$stub_bin/codex"
 
   output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" CODEX_HOME="$root/.codex" \
-    "$root/.agent-layer/al" codex 2>&1)"
+    "$root/.agent-layer/agent-layer" codex 2>&1)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "$root/.codex" ]
@@ -120,7 +120,7 @@ EOF
   ln -s "$root/.codex" "$root/.codex-link"
 
   output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" CODEX_HOME="$root/.codex-link" \
-    "$root/.agent-layer/al" codex 2>&1)"
+    "$root/.agent-layer/agent-layer" codex 2>&1)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "$root/.codex-link" ]
@@ -147,7 +147,7 @@ exit 0
 EOF
   chmod +x "$stub_bin/node" "$stub_bin/codex"
 
-  run bash -c "cd \"$root/sub/dir\" && PATH=\"$stub_bin:$PATH\" NODE_ARGS_LOG=\"$node_args\" \"$root/.agent-layer/al\" codex"
+  run bash -c "cd \"$root/sub/dir\" && PATH=\"$stub_bin:$PATH\" NODE_ARGS_LOG=\"$node_args\" \"$root/.agent-layer/agent-layer\" codex"
   [ "$status" -eq 0 ]
 
   run rg -n -- "--codex" "$node_args"
@@ -167,7 +167,7 @@ EOF
   ln -s "$(command -v basename)" "$stub_bin/basename"
   ln -s "$(command -v dirname)" "$stub_bin/dirname"
 
-  run "$bash_bin" -c "cd '$root/sub/dir' && PATH='$stub_bin' '$bash_bin' '$root/.agent-layer/al' pwd 2>&1"
+  run "$bash_bin" -c "cd '$root/sub/dir' && PATH='$stub_bin' '$bash_bin' '$root/.agent-layer/agent-layer' pwd 2>&1"
   [ "$status" -ne 0 ]
   [[ "$output" == *"Node.js is required"* ]]
 

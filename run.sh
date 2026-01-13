@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # .agent-layer/run.sh
-# Internal runner for ./al (root resolution + sync/env execution).
+# Internal runner for ./al and .agent-layer/agent-layer (root resolution + sync/env execution).
 
 # Resolve the repo root using the shared entrypoint helper.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -14,7 +14,7 @@ fi
 # shellcheck disable=SC1090
 source "$ENTRYPOINT_SH"
 
-# Parse root flags plus internal mode flags (used by the commented options in ./al).
+# Parse root flags plus internal mode flags (used by the launcher options in .agent-layer/agent-layer).
 parent_root=""
 use_temp_parent_root="0"
 mode="sync-env"

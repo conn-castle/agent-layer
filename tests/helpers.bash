@@ -109,10 +109,10 @@ create_isolated_parent_root() {
   cp "$AGENT_LAYER_ROOT/with-env.sh" "$agent_layer_dir/with-env.sh"
   cp "$AGENT_LAYER_ROOT/run.sh" "$agent_layer_dir/run.sh"
   cp "$AGENT_LAYER_ROOT/check-updates.sh" "$agent_layer_dir/check-updates.sh"
-  cp "$AGENT_LAYER_ROOT/al" "$agent_layer_dir/al"
+  cp "$AGENT_LAYER_ROOT/agent-layer" "$agent_layer_dir/agent-layer"
   cp "$AGENT_LAYER_ROOT/clean.sh" "$agent_layer_dir/clean.sh"
   chmod +x "$agent_layer_dir/with-env.sh" "$agent_layer_dir/run.sh" \
-    "$agent_layer_dir/check-updates.sh" "$agent_layer_dir/al" \
+    "$agent_layer_dir/check-updates.sh" "$agent_layer_dir/agent-layer" \
     "$agent_layer_dir/clean.sh" "$agent_layer_dir/setup.sh" \
     "$agent_layer_dir/dev/bootstrap.sh" "$agent_layer_dir/dev/format.sh" \
     "$agent_layer_dir/.githooks/pre-commit"

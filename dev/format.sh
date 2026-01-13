@@ -41,7 +41,7 @@ while IFS= read -r -d '' file; do
 done < <(
   find "$AGENT_LAYER_ROOT" \
     \( -type d \( -name node_modules -o -name .git -o -name tmp \) -prune \) -o \
-    -type f \( -name "*.sh" -o -path "$AGENT_LAYER_ROOT/al" -o -path "$AGENT_LAYER_ROOT/.githooks/pre-commit" \) \
+    -type f \( -name "*.sh" -o -path "$AGENT_LAYER_ROOT/agent-layer" -o -path "$AGENT_LAYER_ROOT/.githooks/pre-commit" \) \
     -print0
 )
 if [[ "${#shell_files[@]}" -gt 0 ]]; then

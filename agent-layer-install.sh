@@ -393,9 +393,9 @@ set -euo pipefail
 
 # Repo-local launcher.
 # This script delegates to the managed Agent Layer entrypoint in .agent-layer/.
-# If you prefer, replace this file with a symlink to .agent-layer/al.
+# If you prefer, replace this file with a symlink to .agent-layer/agent-layer.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/.agent-layer/al" "$@"
+exec "$SCRIPT_DIR/.agent-layer/agent-layer" "$@"
 EOF
   chmod +x "$AL_PATH"
 }

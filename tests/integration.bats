@@ -76,7 +76,7 @@ EOF
   run rg -n "^install$" "$npm_log"
   [ "$status" -eq 0 ]
 
-  run "$bash_bin" -c "cd '$root' && PATH='$stub_bin:/usr/bin:/bin' '$root/.agent-layer/al' echo ok"
+  run "$bash_bin" -c "cd '$root' && PATH='$stub_bin:/usr/bin:/bin' '$root/.agent-layer/agent-layer' echo ok"
   [ "$status" -eq 0 ]
   [ "$output" = "ok" ]
 
