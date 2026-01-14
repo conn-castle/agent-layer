@@ -9,9 +9,9 @@
 
 ## Operating rules
 1. **Read before planning:** Before making architectural or cross-cutting decisions, read `ROADMAP.md`, then scan `DECISIONS.md`, and then check relevant entries in `FEATURES.md` and `ISSUES.md`.
-2. **Read before running commands:** Before running or recommending project commands (tests, coverage, build, lint, start services), check `docs/COMMANDS.md` first. If it is missing or incomplete, use auto-discovery, ask the user only when needed, then update `docs/COMMANDS.md` with the definitive approach.
-3. **Initialize if missing:** If any project memory file does not exist, create it from the matching template in `templates/docs/<NAME>.md` (preserve headings and markers).  
-   - If `templates/docs/COMMANDS.md` does not exist, create `docs/COMMANDS.md` with a minimal, readable structure and a single `<!-- ENTRIES START -->` insertion marker.
+2. **Read before running commands:** Before running or recommending project commands (tests, coverage, build, lint, start services), check `docs/COMMANDS.md` first. If it is missing, ask the user before creating it by copying `.agent-layer/config/templates/docs/COMMANDS.md` into `docs/COMMANDS.md`. If it is incomplete, use auto-discovery, ask the user only when needed, then update `docs/COMMANDS.md` with the definitive approach.
+3. **Initialize if missing:** If any project memory file does not exist, ask the user before creating it. If approved, copy `.agent-layer/config/templates/docs/<NAME>.md` into `docs/<NAME>.md` (preserve headings and markers).  
+   - If `.agent-layer/config/templates/docs/COMMANDS.md` does not exist, ask the user before creating `docs/COMMANDS.md` with a minimal, readable structure and a single `<!-- ENTRIES START -->` insertion marker.
 4. **Write down deferred work:** If you discover something worth doing and you are not doing it now:
    - Add it to `ISSUES.md` if it is a bug, maintainability refactor, technical debt, reliability, security, test coverage gap, performance concern, or other engineering risk.
    - Add it to `FEATURES.md` only if it is a new user-visible capability.

@@ -48,10 +48,10 @@ curl -fsSL https://github.com/nicholasjconn/agent-layer/releases/latest/download
 
 Once Gemini starts, type:
 ```
-What are the repo rules?
+Please explain how you handle memory.
 ```
 
-If you see a response summarizing your project's agent instructions, it's working!
+If you see a response that mentions your project's memory files (issues, features, roadmap, decisions) and summarizes the agent instructions, it's working!
 
 **What just happened?**
 1. Installer created `.agent-layer/` in your project (gitignored by default)
@@ -271,7 +271,7 @@ Optional customization:
 
 **macOS Finder launcher**:
 - Use `.agent-layer/open-vscode.command` to launch VS Code for this repo.
-- `.agent-layer` is hidden in Finder; use Command+Shift+. to show hidden files.
+- `.agent-layer` is hidden in Finder; use `Command+Shift+.` to show hidden files.
 - The launcher leaves its Terminal window open after launch.
 - If you need to switch repos, fully quit VS Code first so `CODEX_HOME` is re-read.
 
@@ -295,7 +295,7 @@ Test that agent-layer is working:
 
 Once Gemini starts, try:
 ```
-What are the repo rules?
+Please explain how you handle memory.
 ```
 
 **Expected result**: Gemini should summarize your project's agent instructions.
@@ -825,6 +825,7 @@ Remove generated files and agent-layer-managed settings:
 ```bash
 ./.agent-layer/clean.sh
 ```
+Note: `clean.sh` removes generated shims/configs/skills and agent-layer-managed settings only; it does not delete `docs/` memory files or the `.agent-layer/` directory.
 
 To remove Agent Layer from a repo entirely:
 - delete `.agent-layer/` and `./al`

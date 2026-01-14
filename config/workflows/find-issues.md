@@ -24,7 +24,7 @@ This workflow is **report-first**:
 - `docs/ROADMAP.md` — numbered phases; guides architecture and sequencing.
 - `docs/DECISIONS.md` — rolling log of important decisions (brief).
 
-If any are missing, create them from `config/templates/docs/<NAME>.md` (preserve headings and markers), but only if the user explicitly asks to apply changes.
+If any are missing, ask the user before creating them. If approved, copy `.agent-layer/config/templates/docs/<NAME>.md` into `docs/<NAME>.md` (preserve headings and markers), but only if the user explicitly asks to apply changes.
 
 ---
 
@@ -247,7 +247,7 @@ Formats:
 
 Proceed only if the user explicitly asked to apply changes.
 
-1. Ensure all memory files exist (create from templates if missing).
+1. Ensure all memory files exist (ask the user before creating any missing files; if approved, copy `.agent-layer/config/templates/docs/<NAME>.md` into `docs/<NAME>.md`).
 2. For each approved finding:
    - Add to `docs/ISSUES.md` if it is a defect, refactor, technical debt, reliability/security/performance risk, or test gap.
    - Add to `docs/FEATURES.md` only if it is a user-visible capability request.

@@ -74,7 +74,7 @@ If not a git repo:
 Tag each file into one category:
 - **Primary**: `README*.md`
 - **Docs**: `docs/**`
-- **Templates**: `templates/**` or `config/templates/**`
+- **Templates**: `.agent-layer/config/templates/**`
 - **Workflows**: `workflows/**` or `.agent-layer/**`
 - **Other**: everything else
 

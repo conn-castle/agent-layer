@@ -53,7 +53,7 @@ If the user provides extra direction, interpret it as:
 1. Confirm baseline:
    - `git status --porcelain`
 2. Ensure `docs/COMMANDS.md` exists:
-   - If missing, create it (minimal structure) so coverage commands have a canonical home.
+   - If missing, ask the user before creating it. If approved, copy `.agent-layer/config/templates/docs/COMMANDS.md` into `docs/COMMANDS.md` when available; otherwise ask before creating a minimal structured file.
 
 ---
 

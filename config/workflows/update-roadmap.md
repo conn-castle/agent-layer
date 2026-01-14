@@ -60,7 +60,7 @@ If only one agent is available, execute phases in this order with explicit headi
    - `docs/DECISIONS.md`
 
 If any are missing:
-- Create them from `templates/docs/<NAME>.md` when available, preserving headings and markers.
+- Ask the user before creating them. If approved, copy `.agent-layer/config/templates/docs/<NAME>.md` into `docs/<NAME>.md` when available, preserving headings and markers.
 - If a template is not available, create a minimal file with a clear purpose header and an entries section.
 
 2. Read in this order (when present):

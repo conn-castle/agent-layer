@@ -22,7 +22,7 @@ This is **not** a full codebase audit. Only document what you touched or passive
 - `docs/ROADMAP.md` — numbered phases; guides architecture and sequencing.
 - `docs/DECISIONS.md` — rolling log of important decisions (brief).
 
-If any are missing, create them from `config/templates/docs/<NAME>.md` (preserve headings and markers).
+If any are missing, ask the user before creating them. If approved, copy `.agent-layer/config/templates/docs/<NAME>.md` into `docs/<NAME>.md` (preserve headings and markers).
 
 ---
 
@@ -137,7 +137,7 @@ For each of:
 - `docs/DECISIONS.md`
 
 If missing:
-- create it from `config/templates/docs/<NAME>.md` (preserve headings and markers).
+- ask the user before creating it. If approved, copy `.agent-layer/config/templates/docs/<NAME>.md` into `docs/<NAME>.md` (preserve headings and markers).
 
 ## 2B) Decide where each finding belongs
 - Add to **`docs/ISSUES.md`** if it is:

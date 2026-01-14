@@ -57,7 +57,7 @@ If only one agent is available, execute phases in this order with explicit headi
 1. Confirm baseline:
    - `git status --porcelain`
 2. Ensure `docs/COMMANDS.md` exists.
-   - If missing, create it from `templates/docs/COMMANDS.md` if available; otherwise create a minimal structured file.
+   - If missing, ask the user before creating it. If approved, copy `.agent-layer/config/templates/docs/COMMANDS.md` into `docs/COMMANDS.md` when available; otherwise ask before creating a minimal structured file.
 3. Read (in this order):
    - `docs/ROADMAP.md`
    - `docs/DECISIONS.md` (if present)
