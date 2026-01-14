@@ -95,15 +95,20 @@ export async function promptDivergenceAction(divergence, parentRoot) {
   console.warn(
     `agent-layer sync: WARNING: client configs diverge from .agent-layer sources${detail}.`,
   );
+  console.warn("");
+  console.warn("Details:");
   console.warn(formatDivergenceDetails(divergence, parentRoot));
   console.warn("");
+  console.warn("Notes:");
   console.warn(
-    "By default, sync preserves existing client entries. Choose overwrite to discard client-only entries.",
+    "- Sync preserves existing client entries by default; it will not overwrite them unless you pass --overwrite or choose overwrite in --interactive.",
   );
   console.warn("");
+  console.warn("Next steps:");
   console.warn(
-    "Run: node .agent-layer/src/sync/inspect.mjs (JSON report) to see what differs, then update .agent-layer sources.",
+    "- Run: node .agent-layer/src/sync/inspect.mjs (JSON report) to see what differs, then update .agent-layer sources.",
   );
+  console.warn("- Or choose overwrite to discard client-only entries now.");
   console.warn("");
 
   const rl = readline.createInterface({

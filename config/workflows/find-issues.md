@@ -34,7 +34,7 @@ If the user provides extra direction, interpret it as:
 - Scope: default to uncommitted changes; the user may request the last commit, a specific git range, specific paths, or the full repository.
 - Depth: default to a full pass (narrow → deep → broad); the user may request narrow, deep, or broad only.
 - Risk level: default to medium; use higher risk to prioritize more severe findings.
-- Report path: default to `quality_audit_report.md` unless the user specifies a different location.
+- Report path: default to `.agent-layer/tmp/quality_audit_report.md` unless the user specifies a different location.
 - Maximum findings: default to 20.
 - Snippet length: default to short; omit snippets if the user requests none.
 - Write mode: default to report-only; provide proposals if requested; apply changes only if the user explicitly requests it.

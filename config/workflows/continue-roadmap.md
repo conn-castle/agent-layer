@@ -8,7 +8,7 @@ description: Continue executing the roadmap by selecting the next actionable tas
 Pick up where the project left off by:
 1) finding the **active phase** in `docs/ROADMAP.md`,  
 2) selecting the **next unchecked task(s)**,  
-3) creating an approval-gated `implementation_plan.md`,  
+3) creating an approval-gated `.agent-layer/tmp/implementation_plan.md`,  
 4) implementing + verifying, and  
 5) updating `docs/ROADMAP.md` and project memory files.
 
@@ -22,7 +22,7 @@ If the user provides extra direction, interpret it as:
 - Whether they want planning only or to proceed to execution after approval (default: plan).
 - A specific roadmap phase number to use; otherwise select the first incomplete phase.
 - How many tasks to bundle (default: the smallest coherent set, usually one task).
-- Alternate paths for the plan and checklist files (defaults: `implementation_plan.md` and `.agent-layer/tmp/task.md`).
+- Alternate path for the checklist file (default: `.agent-layer/tmp/task.md`). The plan file is always stored at `.agent-layer/tmp/implementation_plan.md`.
 - Desired risk level and verification depth (defaults: medium risk and automatic verification).
 - Whether to update `docs/COMMANDS.md` when new repeatable commands are discovered (default: yes).
 
@@ -33,7 +33,7 @@ If the user provides extra direction, interpret it as:
 
 ## Roles and handoffs (multi-agent)
 1. **Phase Scout**: identifies the active phase and next task(s); assembles required context.
-2. **Planner**: produces `implementation_plan.md` + checklist; integrates relevant ISSUES; flags ambiguities.
+2. **Planner**: produces `.agent-layer/tmp/implementation_plan.md` + checklist; integrates relevant ISSUES; flags ambiguities.
 3. **Implementer**: executes the plan with tight scope and root-cause fixes.
 4. **Verifier**: runs the most credible verification commands for the touched areas.
 5. **Memory Curator**: updates ROADMAP/ISSUES/DECISIONS/COMMANDS; removes resolved entries.
@@ -87,7 +87,7 @@ Task selection rules:
 - If the user specifies a number of tasks, select that many unchecked tasks (in order).
 - If the user asks for all tasks, select all unchecked tasks.
 - Otherwise select the **smallest coherent set**:
-  - usually 1 task,
+  - usually more than 1 task,
   - select as many tasks as possible when they are tightly coupled, clearly parallelizable, or needed to reach a clean testing stopping point,
   - prioritize maximizing the batch size without blurring review scope or spanning unrelated areas.
 
@@ -137,7 +137,7 @@ If anything is ambiguous or contradictory (task definition, acceptance criteria,
 
 Create:
 
-## 3A) `implementation_plan.md`
+## 3A) `.agent-layer/tmp/implementation_plan.md`
 Required sections:
 1. **Objective**
    - active phase + selected task(s)

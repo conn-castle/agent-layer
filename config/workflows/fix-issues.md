@@ -19,7 +19,7 @@ Treat this as a starting point. Adjust scope limits and verification rigor based
 If the user provides extra direction, interpret it as:
 
 - Whether they want planning only or to proceed to execution after approval (default: plan).
-- Alternate paths for the issues ledger, README, or plan file (defaults: `docs/ISSUES.md`, `README.md`, `implementation_plan.md`).
+- Alternate paths for the issues ledger or README (defaults: `docs/ISSUES.md`, `README.md`). The plan file is always stored at `.agent-layer/tmp/implementation_plan.md`.
 - Maximum number of issues to fix in one run (default: 3).
 - Maximum number of files to touch (default: 12).
 - Desired risk level and verification depth (default: medium risk and automatic verification; skip only if explicitly requested).
@@ -33,7 +33,7 @@ If the user provides extra direction, interpret it as:
 ## Roles and handoffs (multi-agent)
 1. **Issue Triage Lead**: parse ISSUES, cluster themes, select a coherent subset.
 2. **Architect / Standards Reviewer**: extract project standards from README and define acceptance criteria.
-3. **Planner**: write `implementation_plan.md` (explicit steps, files, tests, risks).
+3. **Planner**: write `.agent-layer/tmp/implementation_plan.md` (explicit steps, files, tests, risks).
 4. **Implementer**: execute the plan, keeping diffs tight and behavior-preserving unless an issue explicitly requires behavior change.
 5. **Auditor**: review touched code for maintainability, standards alignment, and hidden regressions.
 6. **Verifier**: run the fastest credible checks available; escalate to broader checks if risk warrants.
@@ -72,7 +72,7 @@ If only one agent is available, execute phases in this order and clearly label e
   - populate it with any obvious issues discovered during triage (keep brief)
 
 **Deliverable**
-- Paths used (README, issues ledger, plan file)
+- Paths used (README, issues ledger, plan file at `.agent-layer/tmp/implementation_plan.md`)
 - Repo status summary (clean/dirty)
 - Any missing-docs remediation performed
 
@@ -101,8 +101,12 @@ Parse the issues ledger and build a structured shortlist:
 - dependencies (if any)
 
 ## 1C) Select a logical subset
-Choose up to the issue cap (default: 3) that form a coherent batch (e.g., same module, same failure mode, same refactor boundary).
-Avoid mixing unrelated issues that produce wide diffs.
+- If the user specifies a number of issues, select that many in order (treat that number as the cap).
+- If the user asks for all issues, select all open issues.
+- Otherwise select the smallest coherent set:
+  - usually more than 1 issue,
+  - select as many issues as possible when they are tightly coupled, clearly parallelizable, or needed to reach a clean testing stopping point,
+  - prioritize maximizing the batch size without blurring review scope or spanning unrelated areas.
 
 **Deliverable**
 - Selected issues (with rationale)
@@ -112,9 +116,9 @@ Avoid mixing unrelated issues that produce wide diffs.
 
 # Phase 2 — Write the plan and stop for approval (Planner)
 
-Create the plan file (default: `implementation_plan.md`) with:
+Create the plan file at `.agent-layer/tmp/implementation_plan.md` (create the directory if needed) with:
 
-## Required sections in `implementation_plan.md`
+## Required sections in `.agent-layer/tmp/implementation_plan.md`
 1. **Objective**
    - what will be fixed and why (tie directly to issues)
 2. **Scope**
@@ -134,7 +138,7 @@ Create the plan file (default: `implementation_plan.md`) with:
    - risk areas, how to detect problems, how to revert safely
 
 ## Approval gate (mandatory)
-After creating `implementation_plan.md`:
+After creating `.agent-layer/tmp/implementation_plan.md`:
 - Summarize the plan in chat (brief, structured)
 - **Stop** and request explicit approval.
 
@@ -237,8 +241,8 @@ If no commands exist:
 - Ensure the ledger remains clean and deduplicated.
 
 ## 6D) Handle the plan artifact
-- If repo conventions prefer deleting: delete the plan file
-- Otherwise: mark it “Completed” with a short completion note and keep it for traceability
+- If repo conventions prefer deleting: delete `.agent-layer/tmp/implementation_plan.md`
+- Otherwise: mark it “Completed” with a short completion note and keep it in `.agent-layer/tmp/implementation_plan.md` for traceability
 
 ## 6E) Final report
 Return:
@@ -251,7 +255,7 @@ Return:
 ---
 
 ## Output expectations (what “done” looks like)
-- `implementation_plan.md` exists (plan mode) OR is completed/removed (execute mode).
+- `.agent-layer/tmp/implementation_plan.md` exists (plan mode) OR is completed/removed (execute mode).
 - Selected issues are fixed and removed/marked resolved in `docs/ISSUES.md`.
 - Any discovered out-of-scope issues are captured in `docs/ISSUES.md`.
 - Verification was performed at the appropriate level (or explicitly skipped with documented limitation).

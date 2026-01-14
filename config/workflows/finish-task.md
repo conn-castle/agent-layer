@@ -34,7 +34,6 @@ If the user provides extra direction, interpret it as:
 - Verification depth and risk level: default to automatic verification with medium risk.
 - Roadmap updates: default to automatic updates when the work maps to roadmap tasks; skip if the user asks to avoid updates.
 - Maximum new entries across memory files: default to 10.
-- Dry run: if the user asks for a dry run, do not edit files and only propose changes.
 
 ---
 
@@ -199,11 +198,6 @@ If more exist:
 - add the most impactful first
 - summarize the remainder in the final report as “not logged due to limit”
 
-## 2H) Dry run support
-If running in dry-run mode:
-- do not modify files
-- produce a proposed diff-style summary of what would change
-
 ---
 
 # Phase 3 — Regression test and verification (Verifier)
@@ -231,7 +225,7 @@ If no credible commands exist:
 ## 3C) If verification fails
 - Fix failures only if the fix is directly connected to the recent work and remains in-scope.
 - If the failure indicates a broader problem:
-  - log it to `docs/ISSUES.md` (unless running in dry-run mode)
+  - log it to `docs/ISSUES.md`
   - stop further scope expansion.
 
 ---
@@ -255,7 +249,17 @@ Provide a structured summary:
   - limitations (if any)
 
 ## Out-of-scope discoveries
-List any out-of-scope items that were observed and where they were logged (ISSUES/FEATURES), or note if they were not logged due to the entry cap or dry-run mode.
+List any out-of-scope items that were observed and where they were logged (ISSUES/FEATURES), or note if they were not logged due to the entry cap.
+
+---
+
+# Phase 5 — Cleanup (Reporter)
+
+- If a plan file path was used (default: `implementation_plan.md`) and the run completed successfully:
+  - delete the plan file only if it exists
+  - delete any other workflow-generated files explicitly listed in the workflow that was just completed, only if they exist and are under `.agent-layer/tmp`
+  - do not delete any other files
+- If no plan file exists, state that cleanup was not needed.
 
 ---
 
@@ -263,4 +267,5 @@ List any out-of-scope items that were observed and where they were logged (ISSUE
 - Recent work has been reviewed for plan alignment and passive best-practice concerns.
 - Project memory files are up to date, deduplicated, and compact.
 - Fixed issues/features have been removed from their ledgers.
+- Plan file cleanup is complete (plan file deleted if it existed).
 - Fast verification has been run (or explicitly skipped with a clear limitation note).

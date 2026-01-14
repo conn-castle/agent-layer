@@ -382,6 +382,7 @@ ensure_memory_file "$DOCS_DIR/ISSUES.md" "$TEMPLATES_DIR/ISSUES.md"
 ensure_memory_file "$DOCS_DIR/FEATURES.md" "$TEMPLATES_DIR/FEATURES.md"
 ensure_memory_file "$DOCS_DIR/ROADMAP.md" "$TEMPLATES_DIR/ROADMAP.md"
 ensure_memory_file "$DOCS_DIR/DECISIONS.md" "$TEMPLATES_DIR/DECISIONS.md"
+ensure_memory_file "$DOCS_DIR/COMMANDS.md" "$TEMPLATES_DIR/COMMANDS.md"
 
 AL_PATH="$PARENT_ROOT/al"
 

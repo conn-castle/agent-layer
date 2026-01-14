@@ -354,6 +354,62 @@ EOF
   rm -rf "$root"
 }
 
+# Test: sync warns with readable divergence sections
+@test "sync warns with readable divergence sections" {
+  local root
+  root="$(create_parent_root)"
+
+  mkdir -p "$root/.gemini" "$root/.claude" "$root/.vscode" "$root/.codex/rules"
+  cat >"$root/.gemini/settings.json" <<'EOF'
+{
+  "tools": { "allowed": ["run_shell_command(bad)", "some_tool"], "extra": true },
+  "mcpServers": { "extra": { "command": "node", "args": [] } }
+}
+EOF
+  cat >"$root/.claude/settings.json" <<'EOF'
+{
+  "permissions": { "allow": ["Bash(bad:*)", "mcp__bad__*", "Edit"], "extra": true }
+}
+EOF
+  cat >"$root/.vscode/settings.json" <<'EOF'
+{
+  "chat.tools.terminal.autoApprove": { "/^bad(\\b.*)?$/": true },
+  "other": 1
+}
+EOF
+  cat >"$root/.mcp.json" <<'EOF'
+{
+  "mcpServers": { "extra": { "command": "node", "args": [] } }
+}
+EOF
+  cat >"$root/.vscode/mcp.json" <<'EOF'
+{
+  "servers": { "extra": { "type": "stdio", "command": "node", "args": [] } }
+}
+EOF
+  mkdir -p "$root/.codex"
+  cat >"$root/.codex/config.toml" <<'EOF'
+# GENERATED FILE - DO NOT EDIT DIRECTLY
+[mcp_servers.extra]
+command = "node"
+EOF
+  cat >"$root/.codex/rules/default.rules" <<'EOF'
+prefix_rule(pattern=["bad"], decision="allow", justification="legacy")
+EOF
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"client configs diverge"* ]]
+  [[ "$output" == *"Details:"* ]]
+  [[ "$output" == *"Next steps:"* ]]
+  [[ "$output" == *"inspect.mjs"* ]]
+  [[ "$output" == *"- approvals:"* ]]
+  [[ "$output" == *"- mcp:"* ]]
+  [[ "$output" == *"Sync preserves existing client entries"* ]]
+
+  rm -rf "$root"
+}
+
 # Test: sync --check warns and points to divergence report when outputs are stale
 @test "sync --check warns and points to divergence report when outputs are stale" {
   local root

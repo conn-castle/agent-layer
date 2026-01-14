@@ -270,12 +270,14 @@ EOF
   [ -f "$work/docs/FEATURES.md" ]
   [ -f "$work/docs/ROADMAP.md" ]
   [ -f "$work/docs/DECISIONS.md" ]
+  [ -f "$work/docs/COMMANDS.md" ]
   tag="$(git -C "$work/.agent-layer" describe --tags --exact-match)"
   [ "$tag" = "v0.1.0" ]
   cmp -s "$src/config/templates/docs/ISSUES.md" "$work/docs/ISSUES.md"
   cmp -s "$src/config/templates/docs/FEATURES.md" "$work/docs/FEATURES.md"
   cmp -s "$src/config/templates/docs/ROADMAP.md" "$work/docs/ROADMAP.md"
   cmp -s "$src/config/templates/docs/DECISIONS.md" "$work/docs/DECISIONS.md"
+  cmp -s "$src/config/templates/docs/COMMANDS.md" "$work/docs/COMMANDS.md"
 
   rm -rf "$root"
 }
@@ -341,6 +343,7 @@ EOF
   [ -f "$work/docs/FEATURES.md" ]
   [ -f "$work/docs/ROADMAP.md" ]
   [ -f "$work/docs/DECISIONS.md" ]
+  [ -f "$work/docs/COMMANDS.md" ]
 
   rm -rf "$root"
 }

@@ -633,14 +633,20 @@ Behavior by client:
 If you approve commands or edit MCP settings directly in a client, Agent Layer may detect divergence and print:
 
 ```
-agent-layer sync: WARNING: client configs diverge from .agent-layer sources.
-Detected divergent approvals/MCP servers.
-Sync preserves existing client entries by default; it will not overwrite them unless you pass --overwrite or choose overwrite in --interactive.
-Run: node .agent-layer/src/sync/inspect.mjs (JSON report)
-Then either:
-  - Add them to .agent-layer/config/policy/commands.json or .agent-layer/config/mcp-servers.json, then re-run sync
-  - Or re-run with: node .agent-layer/src/sync/sync.mjs --overwrite (discard client-only entries)
-  - Or re-run with: node .agent-layer/src/sync/sync.mjs --interactive (review and choose)
+agent-layer sync: WARNING: client configs diverge from .agent-layer sources (approvals: 2, mcp: 1).
+
+Details:
+- approvals: 2
+- mcp: 1
+
+Notes:
+- Sync preserves existing client entries by default; it will not overwrite them unless you pass --overwrite or choose overwrite in --interactive.
+
+Next steps:
+- Run: node .agent-layer/src/sync/inspect.mjs (JSON report)
+- Add them to .agent-layer/config/policy/commands.json or .agent-layer/config/mcp-servers.json, then re-run sync
+- Or re-run with: node .agent-layer/src/sync/sync.mjs --overwrite (discard client-only entries)
+- Or re-run with: node .agent-layer/src/sync/sync.mjs --interactive (review and choose)
 ```
 
 The inspect script emits a JSON report of divergent approvals and MCP servers and **never** edits files.
