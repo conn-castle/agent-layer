@@ -7,7 +7,8 @@ load "helpers.bash"
 # Helper: create a minimal .agent-layer repo for installer tests.
 create_min_agent_layer() {
   local root="$1"
-  mkdir -p "$root/.agent-layer/src/sync" "$root/.agent-layer/config/templates/docs"
+  mkdir -p "$root/.agent-layer/src/lib" "$root/.agent-layer/src/sync" \
+    "$root/.agent-layer/config/templates/docs" "$root/.agent-layer/config"
   cat >"$root/.agent-layer/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -15,6 +16,9 @@ exit 0
 EOF
   chmod +x "$root/.agent-layer/setup.sh"
   printf "EXAMPLE=1\n" >"$root/.agent-layer/.env.example"
+  cp "$AGENT_LAYER_ROOT/config/agents.json" "$root/.agent-layer/config/agents.json"
+  cp "$AGENT_LAYER_ROOT/src/lib/agent-config.mjs" "$root/.agent-layer/src/lib/agent-config.mjs"
+  cp "$AGENT_LAYER_ROOT/src/sync/utils.mjs" "$root/.agent-layer/src/sync/utils.mjs"
   : >"$root/.agent-layer/src/sync/sync.mjs"
   cp "$AGENT_LAYER_ROOT/config/templates/docs/"*.md "$root/.agent-layer/config/templates/docs/"
   cp "$AGENT_LAYER_ROOT/agent-layer" "$root/.agent-layer/agent-layer"
@@ -25,7 +29,7 @@ EOF
 # Helper: create a source repo to simulate cloning during install.
 create_source_repo() {
   local repo="$1"
-  mkdir -p "$repo/src/sync" "$repo/config/templates/docs"
+  mkdir -p "$repo/src/lib" "$repo/src/sync" "$repo/config/templates/docs" "$repo/config"
   cat >"$repo/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -33,6 +37,9 @@ exit 0
 EOF
   chmod +x "$repo/setup.sh"
   printf "EXAMPLE=1\n" >"$repo/.env.example"
+  cp "$AGENT_LAYER_ROOT/config/agents.json" "$repo/config/agents.json"
+  cp "$AGENT_LAYER_ROOT/src/lib/agent-config.mjs" "$repo/src/lib/agent-config.mjs"
+  cp "$AGENT_LAYER_ROOT/src/sync/utils.mjs" "$repo/src/sync/utils.mjs"
   : >"$repo/src/sync/sync.mjs"
   cp "$AGENT_LAYER_ROOT/config/templates/docs/"*.md "$repo/config/templates/docs/"
   cp "$AGENT_LAYER_ROOT/agent-layer" "$repo/agent-layer"

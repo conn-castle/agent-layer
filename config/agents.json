@@ -1,0 +1,9 @@
+{
+  "gemini": { "enabled": true },
+  "claude": { "enabled": true },
+  "codex": {
+    "enabled": true,
+    "defaultArgs": ["--model", "gpt-5.2-codex", "--reasoning", "high"]
+  },
+  "vscode": { "enabled": true }
+}

@@ -6,6 +6,11 @@ import {
   collectApprovalDivergences,
   collectMcpDivergences,
 } from "./divergence.mjs";
+import {
+  SUPPORTED_AGENTS,
+  getEnabledAgents,
+  loadAgentConfig,
+} from "../lib/agent-config.mjs";
 import { loadServerCatalog } from "./mcp.mjs";
 import { loadCommandPolicy } from "./policy.mjs";
 import { resolveRootsFromEnvOrScript } from "./paths.mjs";
@@ -57,12 +62,28 @@ function main() {
   // Load source configs and collect divergence details.
   const policy = loadCommandPolicy(agentLayerRoot);
   const catalog = loadServerCatalog(agentLayerRoot);
-  const approvals = collectApprovalDivergences(parentRoot, policy);
-  const mcp = collectMcpDivergences(parentRoot, catalog);
+  const agentConfig = loadAgentConfig(agentLayerRoot);
+  const enabledAgents = getEnabledAgents(agentConfig);
+  const disabledAgents = SUPPORTED_AGENTS.filter(
+    (name) => !enabledAgents.has(name),
+  );
+  const approvals = collectApprovalDivergences(
+    parentRoot,
+    policy,
+    enabledAgents,
+  );
+  const mcp = collectMcpDivergences(parentRoot, catalog, enabledAgents);
+  const notes = [...approvals.notes, ...mcp.notes];
+  if (disabledAgents.length) {
+    const enabledList = Array.from(enabledAgents).join(", ") || "none";
+    notes.push(
+      `inspect filtered to enabled agents (${enabledList}); disabled agents: ${disabledAgents.join(", ")}.`,
+    );
+  }
   const divergences = {
     approvals: approvals.items,
     mcp: mcp.items,
-    notes: [...approvals.notes, ...mcp.notes],
+    notes,
   };
 
   // Emit a structured JSON report for downstream tooling.

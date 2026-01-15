@@ -138,7 +138,11 @@ EOF
   node_args="$root/node-args.txt"
   cat > "$stub_bin/node" << 'EOF'
 #!/usr/bin/env bash
-printf "%s\n" "$@" > "$NODE_ARGS_LOG"
+printf "%s\n" "$@" >> "$NODE_ARGS_LOG"
+if [[ " $* " == *" --print-shell "* ]]; then
+  printf "%s\n" "enabled=true"
+  exit 0
+fi
 exit 0
 EOF
   cat > "$stub_bin/codex" << 'EOF'

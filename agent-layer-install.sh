@@ -141,6 +141,7 @@ else
 fi
 
 AGENT_LAYER_DIR="$PARENT_ROOT/.agent-layer"
+NEW_INSTALL="0"
 
 # Resolve the fetch target for upgrades (explicit URL or origin remote).
 resolve_fetch_target() {
@@ -294,6 +295,7 @@ latest_branch_agent_layer() {
 
 # Ensure .agent-layer exists, then apply the requested upgrade behavior.
 if [[ ! -e "$AGENT_LAYER_DIR" ]]; then
+  NEW_INSTALL="1"
   [[ -n "$REPO_URL" ]] || die "Missing repo URL (set AGENT_LAYER_REPO_URL or use --repo-url)."
   if [[ -n "$VERSION" ]]; then
     ensure_version_exists_remote "$VERSION" "$REPO_URL"
@@ -489,8 +491,65 @@ update_gitignore() {
 say "==> Updating .gitignore (agent-layer block)"
 update_gitignore
 
+# Prompt for agent enablement before the first setup/sync.
+prompt_yes_no() {
+  local prompt="$1"
+  local default_reply="$2"
+  local reply
+  while true; do
+    read -r -p "$prompt" reply
+    if [[ -z "$reply" ]]; then
+      reply="$default_reply"
+    fi
+    case "$reply" in
+      y | Y | yes | YES)
+        printf "%s" "true"
+        return 0
+        ;;
+      n | N | no | NO)
+        printf "%s" "false"
+        return 0
+        ;;
+      *)
+        say "Please answer y or n."
+        ;;
+    esac
+  done
+}
+
+configure_agents() {
+  local config_path enable_gemini enable_claude enable_codex enable_vscode
+  config_path="$AGENT_LAYER_DIR/config/agents.json"
+  [[ -f "$config_path" ]] || die "Missing .agent-layer/config/agents.json; cannot configure enabled agents."
+
+  if [[ -t 0 ]]; then
+    say "==> Choose which agents to enable (press Enter for yes)."
+    enable_gemini="$(prompt_yes_no "Enable Gemini CLI? [Y/n] " "y")"
+    enable_claude="$(prompt_yes_no "Enable Claude Code CLI? [Y/n] " "y")"
+    enable_codex="$(prompt_yes_no "Enable Codex CLI? [Y/n] " "y")"
+    enable_vscode="$(prompt_yes_no "Enable VS Code / Copilot Chat? [Y/n] " "y")"
+  else
+    say "==> Non-interactive install: enabling all agents"
+    enable_gemini="true"
+    enable_claude="true"
+    enable_codex="true"
+    enable_vscode="true"
+  fi
+
+  command -v node > /dev/null 2>&1 || die "Node.js is required to update config/agents.json."
+  node "$AGENT_LAYER_DIR/src/lib/agent-config.mjs" --set-enabled \
+    "gemini=$enable_gemini" \
+    "claude=$enable_claude" \
+    "codex=$enable_codex" \
+    "vscode=$enable_vscode"
+  say "==> Updated .agent-layer/config/agents.json"
+}
+
 # Run setup to generate configs and install MCP prompt server dependencies.
 if [[ -f "$AGENT_LAYER_DIR/setup.sh" ]]; then
+  if [[ "$NEW_INSTALL" == "1" ]]; then
+    configure_agents
+  fi
   say "==> Running setup"
   bash "$AGENT_LAYER_DIR/setup.sh"
 else

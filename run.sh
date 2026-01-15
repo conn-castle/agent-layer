@@ -46,10 +46,6 @@ while [[ $# -gt 0 ]]; do
       mode="env-only"
       shift
       ;;
-    --sync-only)
-      mode="sync-only"
-      shift
-      ;;
     --sync)
       mode="sync-only"
       shift
@@ -83,12 +79,19 @@ fi
 ROOT="$PARENT_ROOT"
 cd "$ROOT"
 
-# Build the sync command; when launching Codex, pass --codex for enforcement.
-SYNC_CMD=(node "$AGENT_LAYER_ROOT/src/sync/sync.mjs")
-if [[ "${1:-}" == "codex" || "$(basename "${1:-}")" == "codex" ]]; then
-  SYNC_CMD+=(--codex)
-  export AGENT_LAYER_RUN_CODEX=1
+# Detect agent commands for opt-in + defaults.
+agent_cmd=""
+if [[ $# -gt 0 ]]; then
+  agent_candidate="$(basename -- "${1:-}")"
+  case "$agent_candidate" in
+    gemini | claude | codex)
+      agent_cmd="$agent_candidate"
+      ;;
+  esac
 fi
+
+# Build the sync command; add --codex later if needed.
+SYNC_CMD=(node "$AGENT_LAYER_ROOT/src/sync/sync.mjs")
 
 # Decide which stages to run for the selected mode.
 need_sync="0"
@@ -110,6 +113,47 @@ case "$mode" in
     ;;
 esac
 
+# Resolve agent opt-in + defaults (only when launching a CLI).
+agent_enabled=""
+agent_default_args=()
+if [[ -n "$agent_cmd" && "$need_env" == "1" ]]; then
+  command -v node > /dev/null 2>&1 || {
+    echo "ERROR: Node.js is required (node not found). Install Node, then re-run." >&2
+    exit 2
+  }
+  if ! agent_info="$(node "$AGENT_LAYER_ROOT/src/lib/agent-config.mjs" --print-shell "$agent_cmd")"; then
+    exit $?
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      enabled=*)
+        agent_enabled="${line#enabled=}"
+        ;;
+      defaultArg=*)
+        agent_default_args+=("${line#defaultArg=}")
+        ;;
+    esac
+  done <<< "$agent_info"
+  if [[ "$agent_enabled" != "true" ]]; then
+    cat << EOF >&2
+ERROR: ${agent_cmd} is disabled in .agent-layer/config/agents.json.
+
+Enable it, then re-run:
+  ./al --sync
+  # or: ./al ${agent_cmd}
+EOF
+    exit 2
+  fi
+fi
+
+# Pass --codex when launching Codex and export the codex run flag.
+if [[ "$agent_cmd" == "codex" ]]; then
+  export AGENT_LAYER_RUN_CODEX=1
+  if [[ "$need_sync" == "1" ]]; then
+    SYNC_CMD+=(--codex)
+  fi
+fi
+
 # Run sync if requested (and ensure Node is available).
 if [[ "$need_sync" == "1" ]]; then
   command -v node > /dev/null 2>&1 || {
@@ -125,17 +169,59 @@ fi
 
 # Run the CLI with agent-layer env (and optional project env).
 if [[ "$need_env" == "1" ]]; then
+  final_args=("$@")
+  if [[ -n "$agent_cmd" && ${#agent_default_args[@]} -gt 0 ]]; then
+    appended=()
+    i=0
+    while [[ $i -lt ${#agent_default_args[@]} ]]; do
+      token="${agent_default_args[$i]}"
+      if [[ "$token" == --* ]]; then
+        flag="${token%%=*}"
+        has_flag="0"
+        if [[ ${#final_args[@]} -gt 1 ]]; then
+          for user_arg in "${final_args[@]:1}"; do
+            if [[ "$user_arg" == "$flag" || "$user_arg" == "$flag="* ]]; then
+              has_flag="1"
+              break
+            fi
+          done
+        fi
+        if [[ "$has_flag" == "1" ]]; then
+          if [[ "$token" != *=* ]]; then
+            next="${agent_default_args[$((i + 1))]:-}"
+            if [[ -n "$next" && "$next" != --* ]]; then
+              i=$((i + 1))
+            fi
+          fi
+        else
+          appended+=("$token")
+          if [[ "$token" != *=* ]]; then
+            next="${agent_default_args[$((i + 1))]:-}"
+            if [[ -n "$next" && "$next" != --* ]]; then
+              appended+=("$next")
+              i=$((i + 1))
+            fi
+          fi
+        fi
+      else
+        appended+=("$token")
+      fi
+      i=$((i + 1))
+    done
+    final_args+=("${appended[@]}")
+  fi
+
   if [[ "$project_env" == "1" ]]; then
     if [[ "$TEMP_PARENT_ROOT_CREATED" == "1" ]]; then
-      "$AGENT_LAYER_ROOT/with-env.sh" --project-env "$@"
+      "$AGENT_LAYER_ROOT/with-env.sh" --project-env "${final_args[@]}"
       exit $?
     fi
-    exec "$AGENT_LAYER_ROOT/with-env.sh" --project-env "$@"
+    exec "$AGENT_LAYER_ROOT/with-env.sh" --project-env "${final_args[@]}"
   else
     if [[ "$TEMP_PARENT_ROOT_CREATED" == "1" ]]; then
-      "$AGENT_LAYER_ROOT/with-env.sh" "$@"
+      "$AGENT_LAYER_ROOT/with-env.sh" "${final_args[@]}"
       exit $?
     fi
-    exec "$AGENT_LAYER_ROOT/with-env.sh" "$@"
+    exec "$AGENT_LAYER_ROOT/with-env.sh" "${final_args[@]}"
   fi
 fi

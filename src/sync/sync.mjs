@@ -71,6 +71,7 @@ import {
 import { collectDivergences, formatDivergenceWarning } from "./divergence.mjs";
 import { parseCodexConfigSections } from "./codex-config.mjs";
 import { promptDivergenceAction } from "./ui.mjs";
+import { getEnabledAgents, loadAgentConfig } from "../lib/agent-config.mjs";
 
 /**
  * Print usage and exit.
@@ -195,6 +196,58 @@ function enforceCodexHome(parentRoot, codexHome) {
   if (codexReal !== expectedReal) {
     throw new Error(
       "agent-layer sync: CODEX_HOME must point to the repo-local .codex directory when running ./al codex.",
+    );
+  }
+}
+
+/**
+ * Warn when outputs exist for disabled agents.
+ * @param {string} parentRoot
+ * @param {Set<string>} enabledAgents
+ * @returns {void}
+ */
+function warnDisabledOutputs(parentRoot, enabledAgents) {
+  const toRel = (p) => path.relative(parentRoot, p).split(path.sep).join("/");
+  const warnings = [];
+
+  const check = (agent, paths) => {
+    if (enabledAgents.has(agent)) return;
+    const existing = paths.filter((p) => fileExists(p));
+    if (!existing.length) return;
+    warnings.push({ agent, existing });
+  };
+
+  check("gemini", [
+    path.join(parentRoot, "GEMINI.md"),
+    path.join(parentRoot, ".gemini", "settings.json"),
+  ]);
+  check("claude", [
+    path.join(parentRoot, "CLAUDE.md"),
+    path.join(parentRoot, ".claude", "settings.json"),
+    path.join(parentRoot, ".mcp.json"),
+  ]);
+  check("codex", [
+    path.join(parentRoot, ".codex", "AGENTS.md"),
+    path.join(parentRoot, ".codex", "config.toml"),
+    path.join(parentRoot, ".codex", "rules", "default.rules"),
+    path.join(parentRoot, ".codex", "skills"),
+  ]);
+  check("vscode", [
+    path.join(parentRoot, ".github", "copilot-instructions.md"),
+    path.join(parentRoot, ".vscode", "mcp.json"),
+    path.join(parentRoot, ".vscode", "settings.json"),
+    path.join(parentRoot, ".vscode", "prompts"),
+  ]);
+
+  if (!warnings.length) return;
+
+  for (const warn of warnings) {
+    const rels = warn.existing.map(toRel).join(", ");
+    console.warn(
+      `agent-layer sync: WARNING: ${warn.agent} is disabled in .agent-layer/config/agents.json, but outputs exist: ${rels}`,
+    );
+    console.warn(
+      "agent-layer sync: To remove them, run ./clean.sh or delete them manually. To re-enable, update config/agents.json and re-run ./al --sync.",
     );
   }
 }
@@ -424,6 +477,14 @@ async function main() {
   const instructionsDir = path.join(agentLayerRoot, "config", "instructions");
   const workflowsDir = path.join(agentLayerRoot, "config", "workflows");
 
+  // Load agent config to determine enabled outputs.
+  const agentConfig = loadAgentConfig(agentLayerRoot);
+  const enabledAgents = getEnabledAgents(agentConfig);
+  const geminiEnabled = enabledAgents.has("gemini");
+  const claudeEnabled = enabledAgents.has("claude");
+  const codexEnabled = enabledAgents.has("codex");
+  const vscodeEnabled = enabledAgents.has("vscode");
+
   // Load policy and build per-client allowlists.
   const policy = loadCommandPolicy(agentLayerRoot);
   const prefixes = commandPrefixes(policy);
@@ -433,7 +494,12 @@ async function main() {
 
   // Load MCP catalog and handle any divergence warnings or prompts.
   const catalog = loadServerCatalog(agentLayerRoot);
-  const divergence = collectDivergences(parentRoot, policy, catalog);
+  const divergence = collectDivergences(
+    parentRoot,
+    policy,
+    catalog,
+    enabledAgents,
+  );
   const hasDivergence = divergence.approvals.length || divergence.mcp.length;
   if (hasDivergence) {
     if (args.interactive) {
@@ -469,13 +535,22 @@ async function main() {
     concatInstructions(instructionsDir);
 
   // Seed the outputs list with instruction shims.
-  const outputs = [
-    [path.join(parentRoot, "AGENTS.md"), unified],
-    [path.join(parentRoot, ".codex", "AGENTS.md"), unified],
-    [path.join(parentRoot, "CLAUDE.md"), unified],
-    [path.join(parentRoot, "GEMINI.md"), unified],
-    [path.join(parentRoot, ".github", "copilot-instructions.md"), unified],
-  ];
+  const outputs = [[path.join(parentRoot, "AGENTS.md"), unified]];
+  if (codexEnabled) {
+    outputs.push([path.join(parentRoot, ".codex", "AGENTS.md"), unified]);
+  }
+  if (claudeEnabled) {
+    outputs.push([path.join(parentRoot, "CLAUDE.md"), unified]);
+  }
+  if (geminiEnabled) {
+    outputs.push([path.join(parentRoot, "GEMINI.md"), unified]);
+  }
+  if (vscodeEnabled) {
+    outputs.push([
+      path.join(parentRoot, ".github", "copilot-instructions.md"),
+      unified,
+    ]);
+  }
 
   // Build MCP configs and merge with existing client settings.
   const mcpConfigs = buildMcpConfigs(catalog);
@@ -485,117 +560,156 @@ async function main() {
       managedServerNames.add(server.name);
     }
   }
-  const trustedServers = trustedServerNames(catalog, "claude");
-  const claudeMcpAllowed = trustedServers.map((name) => `mcp__${name}__*`);
-  const claudeAllowPatterns = [
-    ...new Set([...claudeAllowed, ...claudeMcpAllowed]),
-  ];
-  const codexConfig = renderCodexConfig(catalog, REGEN_COMMAND);
-  const vscodeMcpPath = path.join(parentRoot, ".vscode", "mcp.json");
-  const vscodeMcpExisting = readJsonRelaxed(vscodeMcpPath, {});
-  const vscodeMcpMerged = mergeMcpConfig(
-    vscodeMcpExisting,
-    mcpConfigs.vscode,
-    "servers",
-    { overwrite: args.overwrite },
-    managedServerNames,
-  );
-
-  const claudeMcpPath = path.join(parentRoot, ".mcp.json");
-  const claudeMcpExisting = readJsonRelaxed(claudeMcpPath, {});
-  const claudeMcpMerged = mergeMcpConfig(
-    claudeMcpExisting,
-    mcpConfigs.claude,
-    "mcpServers",
-    { overwrite: args.overwrite },
-    managedServerNames,
-  );
-
-  const codexConfigPath = path.join(parentRoot, ".codex", "config.toml");
-  const codexExisting = fileExists(codexConfigPath)
-    ? readUtf8(codexConfigPath)
+  let claudeAllowPatterns = null;
+  if (claudeEnabled) {
+    const trustedServers = trustedServerNames(catalog, "claude");
+    const claudeMcpAllowed = trustedServers.map((name) => `mcp__${name}__*`);
+    claudeAllowPatterns = [...new Set([...claudeAllowed, ...claudeMcpAllowed])];
+  }
+  const codexConfig = codexEnabled
+    ? renderCodexConfig(catalog, REGEN_COMMAND)
     : null;
-  const codexMerged = mergeCodexConfig(
-    codexExisting,
-    codexConfig,
-    {
-      overwrite: args.overwrite,
-    },
-    managedServerNames,
-  );
+  if (vscodeEnabled) {
+    const vscodeMcpPath = path.join(parentRoot, ".vscode", "mcp.json");
+    const vscodeMcpExisting = readJsonRelaxed(vscodeMcpPath, {});
+    const vscodeMcpMerged = mergeMcpConfig(
+      vscodeMcpExisting,
+      mcpConfigs.vscode,
+      "servers",
+      { overwrite: args.overwrite },
+      managedServerNames,
+    );
+    outputs.push([
+      vscodeMcpPath,
+      JSON.stringify(vscodeMcpMerged, null, 2) + "\n",
+    ]);
+  }
 
-  // Add MCP config outputs for VS Code, Claude, and Codex.
-  outputs.push(
-    [vscodeMcpPath, JSON.stringify(vscodeMcpMerged, null, 2) + "\n"],
-    [claudeMcpPath, JSON.stringify(claudeMcpMerged, null, 2) + "\n"],
-    [codexConfigPath, codexMerged],
-  );
+  if (claudeEnabled) {
+    const claudeMcpPath = path.join(parentRoot, ".mcp.json");
+    const claudeMcpExisting = readJsonRelaxed(claudeMcpPath, {});
+    const claudeMcpMerged = mergeMcpConfig(
+      claudeMcpExisting,
+      mcpConfigs.claude,
+      "mcpServers",
+      { overwrite: args.overwrite },
+      managedServerNames,
+    );
+    outputs.push([
+      claudeMcpPath,
+      JSON.stringify(claudeMcpMerged, null, 2) + "\n",
+    ]);
+  }
+
+  if (codexEnabled) {
+    const codexConfigPath = path.join(parentRoot, ".codex", "config.toml");
+    const codexExisting = fileExists(codexConfigPath)
+      ? readUtf8(codexConfigPath)
+      : null;
+    const codexMerged = mergeCodexConfig(
+      codexExisting,
+      codexConfig,
+      {
+        overwrite: args.overwrite,
+      },
+      managedServerNames,
+    );
+    outputs.push([codexConfigPath, codexMerged]);
+  }
 
   // Merge Gemini settings, preserving non-managed entries.
-  const geminiSettingsPath = path.join(parentRoot, ".gemini", "settings.json");
-  const geminiExisting = readJsonRelaxed(geminiSettingsPath, {});
-  const geminiMerged = mergeGeminiSettings(
-    geminiExisting,
-    /** @type {{ mcpServers: Record<string, unknown> }} */ (mcpConfigs.gemini),
-    geminiAllowed,
-    geminiSettingsPath,
-    { overwrite: args.overwrite, managedServers: managedServerNames },
-  );
-  outputs.push([
-    geminiSettingsPath,
-    JSON.stringify(geminiMerged, null, 2) + "\n",
-  ]);
+  if (geminiEnabled) {
+    const geminiSettingsPath = path.join(
+      parentRoot,
+      ".gemini",
+      "settings.json",
+    );
+    const geminiExisting = readJsonRelaxed(geminiSettingsPath, {});
+    const geminiMerged = mergeGeminiSettings(
+      geminiExisting,
+      /** @type {{ mcpServers: Record<string, unknown> }} */ (
+        mcpConfigs.gemini
+      ),
+      geminiAllowed,
+      geminiSettingsPath,
+      { overwrite: args.overwrite, managedServers: managedServerNames },
+    );
+    outputs.push([
+      geminiSettingsPath,
+      JSON.stringify(geminiMerged, null, 2) + "\n",
+    ]);
+  }
 
   // Merge Claude settings, preserving non-managed entries.
-  const claudeSettingsPath = path.join(parentRoot, ".claude", "settings.json");
-  const claudeExisting = readJsonRelaxed(claudeSettingsPath, {});
-  const claudeMerged = mergeClaudeSettings(
-    claudeExisting,
-    claudeAllowPatterns,
-    claudeSettingsPath,
-    { overwrite: args.overwrite },
-  );
-  outputs.push([
-    claudeSettingsPath,
-    JSON.stringify(claudeMerged, null, 2) + "\n",
-  ]);
+  if (claudeEnabled) {
+    const claudeSettingsPath = path.join(
+      parentRoot,
+      ".claude",
+      "settings.json",
+    );
+    const claudeExisting = readJsonRelaxed(claudeSettingsPath, {});
+    const claudeMerged = mergeClaudeSettings(
+      claudeExisting,
+      claudeAllowPatterns ?? [],
+      claudeSettingsPath,
+      { overwrite: args.overwrite },
+    );
+    outputs.push([
+      claudeSettingsPath,
+      JSON.stringify(claudeMerged, null, 2) + "\n",
+    ]);
+  }
 
   // Merge VS Code settings, preserving non-managed entries.
-  const vscodeSettingsPath = path.join(parentRoot, ".vscode", "settings.json");
-  const vscodeExisting = readJsonRelaxed(vscodeSettingsPath, {});
-  const vscodeMerged = mergeVscodeSettings(
-    vscodeExisting,
-    vscodeAutoApprove,
-    vscodeSettingsPath,
-    { overwrite: args.overwrite },
-  );
-  outputs.push([
-    vscodeSettingsPath,
-    JSON.stringify(vscodeMerged, null, 2) + "\n",
-  ]);
+  if (vscodeEnabled) {
+    const vscodeSettingsPath = path.join(
+      parentRoot,
+      ".vscode",
+      "settings.json",
+    );
+    const vscodeExisting = readJsonRelaxed(vscodeSettingsPath, {});
+    const vscodeMerged = mergeVscodeSettings(
+      vscodeExisting,
+      vscodeAutoApprove,
+      vscodeSettingsPath,
+      { overwrite: args.overwrite },
+    );
+    outputs.push([
+      vscodeSettingsPath,
+      JSON.stringify(vscodeMerged, null, 2) + "\n",
+    ]);
+  }
 
   // Render and merge Codex rules for command policy enforcement.
-  const codexRulesPath = path.join(
-    parentRoot,
-    ".codex",
-    "rules",
-    "default.rules",
-  );
-  const codexRulesGenerated = renderCodexRules(policy.allowed);
-  const codexRulesExisting = fileExists(codexRulesPath)
-    ? readUtf8(codexRulesPath)
-    : null;
-  const codexRulesMerged = codexRulesExisting
-    ? mergeCodexRules(codexRulesExisting, codexRulesGenerated, {
-        overwrite: args.overwrite,
-      })
-    : codexRulesGenerated;
-  outputs.push([codexRulesPath, codexRulesMerged]);
+  if (codexEnabled) {
+    const codexRulesPath = path.join(
+      parentRoot,
+      ".codex",
+      "rules",
+      "default.rules",
+    );
+    const codexRulesGenerated = renderCodexRules(policy.allowed);
+    const codexRulesExisting = fileExists(codexRulesPath)
+      ? readUtf8(codexRulesPath)
+      : null;
+    const codexRulesMerged = codexRulesExisting
+      ? mergeCodexRules(codexRulesExisting, codexRulesGenerated, {
+          overwrite: args.overwrite,
+        })
+      : codexRulesGenerated;
+    outputs.push([codexRulesPath, codexRulesMerged]);
+  }
+
+  warnDisabledOutputs(parentRoot, enabledAgents);
 
   // Write or diff outputs and regenerate Codex skills/prompts.
   diffOrWrite(outputs, args, parentRoot);
-  generateCodexSkills(parentRoot, workflowsDir, args);
-  generateVscodePrompts(parentRoot, workflowsDir, args);
+  if (codexEnabled) {
+    generateCodexSkills(parentRoot, workflowsDir, args);
+  }
+  if (vscodeEnabled) {
+    generateVscodePrompts(parentRoot, workflowsDir, args);
+  }
 
   // Emit a success summary unless running in --check mode.
   if (!args.check) {

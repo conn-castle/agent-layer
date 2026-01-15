@@ -4,6 +4,15 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
+setup() {
+  AGENT_CONFIG_BACKUP="$(backup_agent_config)"
+  write_agent_config "$AGENT_LAYER_ROOT/config/agents.json" true true true true
+}
+
+teardown() {
+  restore_agent_config "$AGENT_CONFIG_BACKUP"
+}
+
 # Test: sync generates Codex config and instructions
 @test "sync generates Codex config and instructions" {
   local root
@@ -51,6 +60,29 @@ load "helpers.bash"
   run rg -n "^name: find-issues$" "$prompt"
   [ "$status" -eq 0 ]
   run rg -n "GENERATED FILE" "$prompt"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$root"
+}
+
+# Test: sync skips outputs for disabled agents
+@test "sync skips outputs for disabled agents" {
+  local root
+  root="$(create_sync_parent_root)"
+  write_agent_config "$root/.agent-layer/config/agents.json" true true false false
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  [ "$status" -eq 0 ]
+
+  [ -f "$root/AGENTS.md" ]
+  [ -f "$root/CLAUDE.md" ]
+  [ -f "$root/GEMINI.md" ]
+  [ ! -f "$root/.codex/AGENTS.md" ]
+  [ ! -f "$root/.codex/config.toml" ]
+  [ ! -f "$root/.vscode/settings.json" ]
+  [ ! -d "$root/.vscode/prompts" ]
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
   [ "$status" -eq 0 ]
 
   rm -rf "$root"
@@ -622,6 +654,27 @@ EOF
   rm -rf "$root"
 }
 
+# Test: sync fails when default args are positional
+@test "sync fails when default args are positional" {
+  local root
+  root="$(create_sync_parent_root)"
+
+  cat >"$root/.agent-layer/config/agents.json" <<'EOF'
+{
+  "gemini": { "enabled": true },
+  "claude": { "enabled": true },
+  "codex": { "enabled": true, "defaultArgs": ["gpt-5.2-codex"] },
+  "vscode": { "enabled": true }
+}
+EOF
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs 2>&1"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"defaultArgs[0] must follow a --flag"* ]]
+
+  rm -rf "$root"
+}
+
 # Test: sync fails when MCP defaults include geminiTrust
 @test "sync fails when MCP defaults include geminiTrust" {
   local root
@@ -838,6 +891,21 @@ EOF
   [ "$status" -eq 0 ]
 
   run node -e "const data=require(process.argv[1]); if (data.summary.approvals !== 0 || data.summary.mcp !== 0) process.exit(1);" "$root/out.json"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$root"
+}
+
+# Test: inspect reports filtered agents
+@test "inspect reports filtered agents" {
+  local root
+  root="$(create_parent_root)"
+  write_agent_config "$AGENT_LAYER_ROOT/config/agents.json" true true false false
+
+  run bash -c "cd \"$root\" && node .agent-layer/src/sync/inspect.mjs > \"$root/out.json\""
+  [ "$status" -eq 0 ]
+
+  run node -e "const data=require(process.argv[1]); const note=data.notes.join('\\n'); if (!note.includes('filtered to enabled agents')) process.exit(1); if (!note.includes('disabled agents')) process.exit(1);" "$root/out.json"
   [ "$status" -eq 0 ]
 
   rm -rf "$root"

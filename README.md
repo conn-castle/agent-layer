@@ -111,6 +111,7 @@ my-app/                        ← Your project (parent root)
 │   ├── config/                ← Your instructions, workflows, MCP servers
 │   │   ├── instructions/      ← System instructions (source of truth)
 │   │   ├── workflows/         ← Workflow definitions (source of truth)
+│   │   ├── agents.json        ← Agent enablement + default args (source of truth)
 │   │   ├── mcp-servers.json   ← MCP server catalog (source of truth)
 │   │   └── policy/            ← Command allowlist (source of truth)
 │   ├── agent-layer            ← Launcher entrypoint (used by ./al)
@@ -181,6 +182,8 @@ and ensures the project memory files exist under `docs/` (`ISSUES.md`, `FEATURES
 `ROADMAP.md`, `DECISIONS.md`). Templates live in `.agent-layer/config/templates/docs`; if a file
 already exists, the installer prompts to keep it (default yes). In non-interactive
 runs, existing files are kept.
+On fresh installs, the installer prompts to enable each supported agent (default yes) and writes the choices to `.agent-layer/config/agents.json`.
+In non-interactive runs, all agents are enabled; edit the file later and re-run `./al --sync` to change the selection.
 
 **Note**: `.agent-layer/` is gitignored by default so you can use it individually without team buy-in. For team use, fork agent-layer and have team members install your fork instead of committing config to each project repo.
 
@@ -562,6 +565,8 @@ All resolved paths are normalized with `pwd -P` (realpath) before comparisons.
 ./al codex
 ```
 
+If a launch fails with "is disabled", update `.agent-layer/config/agents.json` and re-run `./al --sync`.
+
 For a one-off run that also includes project env (if configured), from the parent root use:
 
 ```bash
@@ -590,6 +595,7 @@ Agent Layer uses a "source of truth" model:
 **Edit these (sources of truth)**:
 - `config/instructions/*.md` - System instructions for AI agents
 - `config/workflows/*.md` - Workflow definitions (Claude/Gemini MCP prompts, VS Code prompt files, Codex skills)
+- `config/agents.json` - Agent enablement and default CLI args (applied by `./al`)
 - `config/mcp-servers.json` - MCP server catalog
 - `config/policy/commands.json` - Command allowlist (safe shell commands)
 
@@ -604,6 +610,22 @@ Agent Layer uses a "source of truth" model:
 **Why this matters**: If you edit generated files, sync will overwrite them. Always edit sources, then run sync.
 
 **Per-client MCP servers**: In `config/mcp-servers.json`, set `clients` to an allowlist of client IDs (`claude`, `gemini`, `vscode`, `codex`). If omitted, the server is included for all clients.
+
+### Agent enablement and default args
+
+`config/agents.json` lists every supported agent (even if disabled). Set `enabled: true` to generate its outputs and allow `./al <agent>` to launch it; set `enabled: false` to skip outputs and block launches. After changes, run `./al --sync`. If you disable an agent and already have outputs, sync warns; remove them with `./clean.sh` or delete them manually.
+
+You can also set `defaultArgs` per agent; `./al` appends them unless you already pass the same flag. `defaultArgs` must be `--flag` tokens with optional values (either as the next array entry or as `--flag=value`). Positional args and short flags are not supported; if a value starts with `-`, use `--flag=value` to avoid ambiguity.
+
+Example snippet:
+```json
+{
+  "codex": {
+    "enabled": true,
+    "defaultArgs": ["--model", "gpt-5.2-codex", "--reasoning", "high"]
+  }
+}
+```
 
 ### If You Accidentally Edited a Generated File
 
@@ -671,6 +693,7 @@ Next steps:
 The inspect script emits a JSON report of divergent approvals and MCP servers and **never** edits files.
 Use the report to update `.agent-layer/config/policy/commands.json` (approvals) or `.agent-layer/config/mcp-servers.json` (MCP servers),
 then run `./al --sync` (or `node .agent-layer/src/sync/sync.mjs`) to regenerate outputs.
+Inspect only reports divergences for enabled agents in `config/agents.json`; the report includes a note listing any disabled agents it filtered out.
 
 If you want Agent Layer to overwrite client configs instead of preserving divergent entries, run:
 - `node .agent-layer/src/sync/sync.mjs --overwrite` (non-interactive)
