@@ -88,6 +88,23 @@ name: custom
 Custom prompt body.
 EOF
 
+  mkdir -p "$root/.agent/workflows"
+  cat >"$root/.agent/workflows/generated.md" <<'EOF'
+---
+# GENERATED FILE
+# Source: .agent-layer/config/workflows/generated.md
+# Regenerate: ./al --sync
+description: Generated workflow
+---
+Generated workflow body.
+EOF
+  cat >"$root/.agent/workflows/custom.md" <<'EOF'
+---
+description: Custom workflow
+---
+Custom workflow body.
+EOF
+
   mkdir -p "$root/.agent-layer/config/instructions" "$root/.agent-layer/config/workflows"
   mkdir -p "$root/.agent-layer/config/policy"
   : >"$root/.agent-layer/config/instructions/01_test.md"
@@ -138,6 +155,8 @@ EOF
 
   [ ! -f "$root/.vscode/prompts/generated.prompt.md" ]
   [ -f "$root/.vscode/prompts/custom.prompt.md" ]
+  [ ! -f "$root/.agent/workflows/generated.md" ]
+  [ -f "$root/.agent/workflows/custom.md" ]
 
   [ -f "$root/.agent-layer/config/instructions/01_test.md" ]
   [ -f "$root/.agent-layer/config/workflows/01_test.md" ]

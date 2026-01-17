@@ -109,4 +109,24 @@ describe("src/lib/cleanup.mjs", () => {
     assert.ok(!fs.existsSync(generated), "Generated prompt should be removed");
     assert.ok(fs.existsSync(user), "User prompt should remain");
   });
+
+  test("removeGeneratedArtifacts handles Antigravity workflows", () => {
+    const workflowDir = path.join(tmpRoot, ".agent", "workflows");
+    fs.mkdirSync(workflowDir, { recursive: true });
+
+    const generated = path.join(workflowDir, "generated.md");
+    const generatedContent = `---\n# GENERATED FILE\n# Source: .agent-layer/config/workflows/generated.md\n# Regenerate: ./al --sync\ndescription: Generated\n---\nGenerated body.\n`;
+    fs.writeFileSync(generated, generatedContent);
+
+    const user = path.join(workflowDir, "user.md");
+    fs.writeFileSync(user, "---\ndescription: User\n---\nUser content\n");
+
+    removeGeneratedArtifacts(tmpRoot);
+
+    assert.ok(
+      !fs.existsSync(generated),
+      "Generated workflow should be removed",
+    );
+    assert.ok(fs.existsSync(user), "User workflow should remain");
+  });
 });

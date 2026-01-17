@@ -17,6 +17,9 @@
  * Generates Codex Skills from `.agent-layer/config/workflows/*.md`:
  * - .codex/skills/<workflow>/SKILL.md
  *
+ * Generates Antigravity workflows from `.agent-layer/config/workflows/*.md`:
+ * - .agent/workflows/<workflow>.md
+ *
  * Generates per-client command allowlists from `.agent-layer/config/policy/commands.json`:
  * - .gemini/settings.json
  * - .claude/settings.json
@@ -57,6 +60,7 @@ import {
   mergeCodexRules,
   renderCodexRules,
 } from "./policy.mjs";
+import { generateAntigravityWorkflows } from "./antigravity.mjs";
 import { generateCodexSkills } from "./skills.mjs";
 import { generateVscodePrompts } from "./prompts.mjs";
 import {
@@ -649,6 +653,7 @@ export async function runSync(parentRoot, agentLayerRoot, args) {
 
   // Write or diff outputs and regenerate Codex skills/prompts.
   diffOrWrite(outputs, options, resolvedParent);
+  generateAntigravityWorkflows(resolvedParent, workflowsDir, options);
   if (codexEnabled) {
     generateCodexSkills(resolvedParent, workflowsDir, options);
   }
@@ -659,7 +664,7 @@ export async function runSync(parentRoot, agentLayerRoot, args) {
   // Emit a success summary unless running in --check mode.
   if (!options.check) {
     console.log(
-      "agent-layer sync: updated shims + MCP configs + allowlists + Codex skills + VS Code prompts",
+      "agent-layer sync: updated shims + MCP configs + allowlists + Antigravity workflows + Codex skills + VS Code prompts",
     );
   }
 }

@@ -16,11 +16,7 @@
       "command": "node",
       "args": [
         "./.agent-layer/src/cli.mjs",
-        "--mcp-prompts",
-        "--parent-root",
-        ".",
-        "--agent-layer-root",
-        "./.agent-layer"
+        "--mcp-prompts"
       ],
       "envVars": [],
       "trust": true

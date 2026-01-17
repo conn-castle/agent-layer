@@ -63,6 +63,12 @@ export const CODEX_SKILLS_DIR = ".codex/skills";
 export const VSCODE_PROMPTS_DIR = ".vscode/prompts";
 
 /**
+ * Repo-relative path for the Antigravity workflows directory.
+ * @type {string}
+ */
+export const ANTIGRAVITY_WORKFLOWS_DIR = ".agent/workflows";
+
+/**
  * Repo-relative paths for client settings cleaned by `./al --clean`.
  * @type {{ geminiSettings: string, claudeSettings: string, vscodeSettings: string, vscodeMcp: string, claudeMcp: string }}
  */
@@ -81,7 +87,7 @@ const COMMAND_ALLOWLIST_SET = new Set(COMMAND_ALLOWLIST_PATHS);
 /**
  * Classify a repo-relative path into generated output buckets.
  * @param {string} relPath
- * @returns {{ instructionShims: boolean, mcpConfigs: boolean, commandAllowlistConfigs: boolean, codexSkills: boolean, vscodePrompts: boolean }}
+ * @returns {{ instructionShims: boolean, mcpConfigs: boolean, commandAllowlistConfigs: boolean, codexSkills: boolean, vscodePrompts: boolean, antigravityWorkflows: boolean }}
  */
 export function classifyGeneratedOutput(relPath) {
   return {
@@ -92,5 +98,8 @@ export function classifyGeneratedOutput(relPath) {
     vscodePrompts:
       relPath.startsWith(`${VSCODE_PROMPTS_DIR}/`) &&
       relPath.endsWith(".prompt.md"),
+    antigravityWorkflows:
+      relPath.startsWith(`${ANTIGRAVITY_WORKFLOWS_DIR}/`) &&
+      relPath.endsWith(".md"),
   };
 }

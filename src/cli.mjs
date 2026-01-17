@@ -21,6 +21,7 @@ const CLI_USAGE = [
   "  ./al --inspect [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
   "  ./al --clean [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
   "  ./al --setup [--skip-checks] [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
+  "  ./al --wizard [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
   "  ./al --mcp-prompts [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
   "  ./al --open-vscode [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
   "  ./al --version",
@@ -32,6 +33,7 @@ const MODE_FLAGS = new Map([
   ["--inspect", "inspect"],
   ["--clean", "clean"],
   ["--setup", "setup"],
+  ["--wizard", "wizard"],
   ["--mcp-prompts", "mcp-prompts"],
   ["--open-vscode", "open-vscode"],
   ["--install-config", "install-config"],
@@ -375,6 +377,12 @@ async function main() {
       console.log(SETUP_USAGE);
       return;
     }
+    if (mode === "wizard") {
+      console.log(
+        "Usage: ./al --wizard [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]\n\nInteractively configure agent enablement and model defaults.",
+      );
+      return;
+    }
     if (mode === "mcp-prompts") {
       console.log(
         "Usage: ./al --mcp-prompts [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
@@ -486,6 +494,20 @@ async function main() {
       { parentRoot, useTempParentRoot, agentLayerRoot },
       async (roots) => {
         await runSetup(roots, skipChecks);
+      },
+    );
+    return;
+  }
+
+  if (mode === "wizard") {
+    if (modeArgs.length > 0 || commandArgs.length > 0) {
+      exitWith("agent-layer cli: wizard does not accept extra arguments.", 2);
+    }
+    const { runWizard } = await import("./lib/install-config.mjs");
+    await withResolvedRoots(
+      { parentRoot, useTempParentRoot, agentLayerRoot },
+      async (roots) => {
+        await runWizard(roots);
       },
     );
     return;

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileExists, readUtf8, readJsonRelaxed } from "../sync/utils.mjs";
 import {
   CLEANUP_FILE_PATHS,
+  ANTIGRAVITY_WORKFLOWS_DIR,
   CODEX_SKILLS_DIR,
   VSCODE_PROMPTS_DIR,
 } from "./generated-outputs.mjs";
@@ -121,6 +122,25 @@ export function removeGeneratedArtifacts(parentRoot) {
       }
     }
     removeEmptyDir(promptDir, result);
+  }
+
+  const antigravityDir = path.join(parentRoot, ANTIGRAVITY_WORKFLOWS_DIR);
+  if (fileExists(antigravityDir)) {
+    const entries = fs.readdirSync(antigravityDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      if (!entry.name.endsWith(".md")) continue;
+      const workflowPath = path.join(antigravityDir, entry.name);
+      const content = readUtf8(workflowPath);
+      if (
+        content.includes("GENERATED FILE") &&
+        content.includes("Regenerate: ./al --sync")
+      ) {
+        removeFile(workflowPath, result);
+      }
+    }
+    removeEmptyDir(antigravityDir, result);
+    removeEmptyDir(path.dirname(antigravityDir), result);
   }
 
   return result;

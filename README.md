@@ -25,9 +25,9 @@ Agent Layer is an opinionated framework for AI‑assisted development: one set o
 | VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Codex CLI | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Codex VS Code extension | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Antigravity | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Antigravity | ✅ | ✅ | ❌ | ❌ | ❌ |
 
-Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex`, and `./al codex` warns if `CODEX_HOME` is set to a different path (it never overrides; it only sets repo-local `.codex/` when unset). The VS Code extension only uses them if the extension host sees the same `CODEX_HOME` (see "Codex (CLI / VS Code extension)" below). Antigravity is not supported yet; if you're experimenting there, try the same `CODEX_HOME` setup.
+Note: Codex artifacts live in `.codex/`. The CLI uses them when launched via `./al codex`, and `./al codex` warns if `CODEX_HOME` is set to a different path (it never overrides; it only sets repo-local `.codex/` when unset). The VS Code extension only uses them if the extension host sees the same `CODEX_HOME` (see "Codex (CLI / VS Code extension)" below). Antigravity reads `GEMINI.md` for instructions and `.agent/workflows/*.md` for workflows; MCP servers and approvals are not supported.
 
 ---
 
@@ -346,9 +346,11 @@ Codex VS Code extension:
 - Prompt example: `Summarize the repo rules in 3 bullets.`
 
 Antigravity:
-- Slash commands: not supported
+- Instructions: `GEMINI.md` (generated)
+- Slash commands: `.agent/workflows/*.md` (generated from workflows)
 - MCP check: not supported
-- Prompt examples: not supported
+- Prompt example: `find-issues` (from `.agent/workflows/find-issues.md`)
+- Format limits: description <= 250 chars, content <= 12000 chars
 
 ### Gemini CLI
 
@@ -562,6 +564,7 @@ Note: the `.env` file lives at `AGENT_LAYER_ROOT/.env` (typically `.agent-layer/
 | `./al --inspect` | Print divergence report (JSON). |
 | `./al --clean` | Remove agent-layer-managed outputs. |
 | `./al --setup` | Run setup (sync + MCP deps + check). |
+| `./al --wizard` | Interactive configuration of enabled agents and model defaults. |
 | `./al --mcp-prompts` | Run the MCP prompt server. |
 | `./al --open-vscode` | Launch VS Code with repo-local `CODEX_HOME` when unset (warns and keeps existing value when set elsewhere). |
 | `./al --version` | Print version. |
@@ -770,6 +773,8 @@ Workflow names are derived from the workflow filename (case-sensitive, without `
   - `.gemini/settings.json`, `.claude/settings.json`, `.vscode/settings.json`, `.codex/rules/default.rules`
 - VS Code prompt files:
   - `.vscode/prompts/*.prompt.md`
+- Antigravity workflows:
+  - `.agent/workflows/*.md`
 - Codex system instructions:
   - `.codex/AGENTS.md`
 - Codex skills:
@@ -812,6 +817,7 @@ If you changed `config/workflows/*.md`:
 - run `./al --sync`
 - then refresh MCP discovery in your client (or restart the client/session)
 - VS Code prompt files update on sync; reload VS Code if prompt files do not appear
+- Antigravity workflows update on sync under `.agent/workflows/*.md`
 
 ---
 
@@ -867,7 +873,7 @@ Remove generated files and agent-layer-managed settings:
 ```bash
 ./al --clean
 ```
-Note: `./al --clean` removes generated shims/configs/skills and agent-layer-managed settings only; it does not delete `docs/` memory files or the `.agent-layer/` directory.
+Note: `./al --clean` removes generated shims/configs/skills/workflows and agent-layer-managed settings only; it does not delete `docs/` memory files or the `.agent-layer/` directory.
 
 To remove Agent Layer from a repo entirely:
 - delete `.agent-layer/` and `./al`

@@ -66,6 +66,24 @@ teardown() {
   rm -rf "$root"
 }
 
+# Test: sync generates Antigravity workflow files
+@test "sync generates Antigravity workflow files" {
+  local root workflow
+  root="$(create_sync_parent_root)"
+
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
+  [ "$status" -eq 0 ]
+
+  workflow="$root/.agent/workflows/find-issues.md"
+  [ -f "$workflow" ]
+  run rg -n "^description: " "$workflow"
+  [ "$status" -eq 0 ]
+  run rg -n "GENERATED FILE" "$workflow"
+  [ "$status" -eq 0 ]
+
+  rm -rf "$root"
+}
+
 # Test: sync skips outputs for disabled agents
 @test "sync skips outputs for disabled agents" {
   local root
@@ -116,6 +134,31 @@ EOF
   rm -rf "$root"
 }
 
+# Test: sync removes stale generated Antigravity workflow files
+@test "sync removes stale generated Antigravity workflow files" {
+  local root workflow_dir stale_workflow
+  root="$(create_sync_parent_root)"
+
+  workflow_dir="$root/.agent/workflows"
+  mkdir -p "$workflow_dir"
+  stale_workflow="$workflow_dir/stale.md"
+  cat >"$stale_workflow" <<'EOF'
+---
+# GENERATED FILE
+# Source: .agent-layer/config/workflows/stale.md
+# Regenerate: ./al --sync
+description: Stale workflow
+---
+Stale workflow body.
+EOF
+
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
+  [ "$status" -eq 0 ]
+  [ ! -f "$stale_workflow" ]
+
+  rm -rf "$root"
+}
+
 # Test: sync --check fails when a VS Code prompt file is missing
 @test "sync --check fails when a VS Code prompt file is missing" {
   local root prompt
@@ -130,6 +173,24 @@ EOF
   run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check"
   [ "$status" -ne 0 ]
   [[ "$output" == *"VS Code prompt files are generated from .agent-layer/config/workflows/*.md."* ]]
+
+  rm -rf "$root"
+}
+
+# Test: sync --check fails when an Antigravity workflow file is missing
+@test "sync --check fails when an Antigravity workflow file is missing" {
+  local root workflow
+  root="$(create_sync_parent_root)"
+
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
+  [ "$status" -eq 0 ]
+
+  workflow="$root/.agent/workflows/find-issues.md"
+  rm -f "$workflow"
+
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Antigravity workflow files are generated from .agent-layer/config/workflows/*.md."* ]]
 
   rm -rf "$root"
 }
@@ -233,11 +294,7 @@ data.servers["agent-layer"] = {
   command: "node",
   args: [
     "./.agent-layer/src/cli.mjs",
-    "mcp-prompts",
-    "--parent-root",
-    ".",
-    "--agent-layer-root",
-    "./.agent-layer",
+    "--mcp-prompts",
   ],
 };
 fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
@@ -247,7 +304,7 @@ fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
   cat >>"$root/.codex/config.toml" <<'EOF'
 [mcp_servers.agent-layer]
 command = "node"
-args = ["./.agent-layer/src/cli.mjs", "mcp-prompts", "--parent-root", ".", "--agent-layer-root", "./.agent-layer"]
+args = ["./.agent-layer/src/cli.mjs", "--mcp-prompts"]
 EOF
 
   run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"

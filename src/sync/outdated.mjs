@@ -34,6 +34,7 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
   const commandAllowlistConfigs = [];
   const codexSkills = [];
   const vscodePrompts = [];
+  const antigravityWorkflows = [];
   const other = [];
 
   for (const rp of rels) {
@@ -57,6 +58,10 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
     }
     if (categories.vscodePrompts) {
       vscodePrompts.push(rp);
+      matched = true;
+    }
+    if (categories.antigravityWorkflows) {
+      antigravityWorkflows.push(rp);
       matched = true;
     }
     if (!matched) {
@@ -113,6 +118,14 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
       "VS Code prompt files (edit: .agent-layer/config/workflows/*.md):",
     );
     for (const p of vscodePrompts) console.error(`  - ${p}`);
+    console.error("");
+  }
+
+  if (antigravityWorkflows.length) {
+    console.error(
+      "Antigravity workflow files (edit: .agent-layer/config/workflows/*.md):",
+    );
+    for (const p of antigravityWorkflows) console.error(`  - ${p}`);
     console.error("");
   }
 

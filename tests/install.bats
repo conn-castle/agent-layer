@@ -111,6 +111,7 @@ EOF
   grep -q '^\.claude/$' "$gitignore"
   grep -q '^\.vscode/mcp\.json$' "$gitignore"
   grep -q '^\.vscode/prompts/$' "$gitignore"
+  grep -q '^\.agent/workflows/$' "$gitignore"
 
   rm -rf "$root"
 }
@@ -186,6 +187,7 @@ EOF
   grep -q '^\.claude/$' "$gitignore"
   grep -q '^\.vscode/mcp\.json$' "$gitignore"
   grep -q '^\.vscode/prompts/$' "$gitignore"
+  grep -q '^\.agent/workflows/$' "$gitignore"
 
   rm -rf "$root"
 }
