@@ -12,8 +12,8 @@ export function parseCommandPrefix(prefix) {
   if (/["'\\`]/.test(trimmed))
     return { reason: "contains quotes or backslashes" };
   if (/[;&|><]/.test(trimmed)) return { reason: "contains shell operators" };
-  if (/\$\（/.test(trimmed)) return { reason: "contains command substitution" };
-  if (/[\n]/.test(trimmed)) return { reason: "contains newline" };
+  if (/\$\(/.test(trimmed)) return { reason: "contains command substitution" };
+  if (/[\r\n]/.test(trimmed)) return { reason: "contains newline" };
 
   const argv = trimmed.split(/\s+/).filter(Boolean);
   if (!argv.length) return { reason: "no argv tokens found" };

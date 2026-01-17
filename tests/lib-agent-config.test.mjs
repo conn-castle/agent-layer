@@ -6,7 +6,6 @@ import os from "node:os";
 import {
   loadAgentConfig,
   validateAgentConfig,
-  SUPPORTED_AGENTS,
 } from "../src/lib/agent-config.mjs";
 
 describe("src/lib/agent-config.mjs", () => {

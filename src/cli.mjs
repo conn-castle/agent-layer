@@ -392,8 +392,7 @@ async function main() {
   }
 
   if (mode === "sync") {
-    const { SYNC_USAGE, parseSyncArgs, runSync } =
-      await import("./sync/sync.mjs");
+    const { parseSyncArgs, runSync } = await import("./sync/sync.mjs");
     if (modeArgs.length === 0 && commandArgs.length > 0) {
       exitWith("agent-layer cli: sync does not accept extra arguments.", 2);
     }

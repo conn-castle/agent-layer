@@ -534,14 +534,13 @@ Note: the `.env` file lives at `AGENT_LAYER_ROOT/.env` (typically `.agent-layer/
 5) **No valid parent root (error)**  
    In the agent-layer dev repo (directory name `agent-layer`), discovery is blocked. You must use `--parent-root`, `--temp-parent-root`, or set `PARENT_ROOT` in `.agent-layer/.env`.
 
-### How to Tell Which Scenario You’re In
+### How to Tell Which Scenario You're In
 
-- If your agent layer directory is named `.agent-layer` inside a repo and you didn’t pass any root flags, you’re in discovery (Scenario 1).
-- If you passed `--parent-root`, you’re in explicit parent root (Scenario 1).
-- If you passed `--temp-parent-root`, you’re in temp root (Scenario 2).
-- If `PARENT_ROOT` is set in `.agent-layer/.env` and you didn’t provide flags, you’re in Scenario 3.
-- If your agent layer directory is named `.agent-layer` and you didn’t provide flags or `PARENT_ROOT`, you’re in discovery (Scenario 4).
-- If the directory name is `agent-layer` and you didn’t provide flags or `PARENT_ROOT`, you’ll get the Scenario 5 error.
+- If you passed `--parent-root`, you're in explicit parent root (Scenario 1).
+- If you passed `--temp-parent-root`, you're in temp root (Scenario 2).
+- If `PARENT_ROOT` is set in `.agent-layer/.env` and you didn't provide flags, you're in explicit parent root via .env (Scenario 3).
+- If your agent layer directory is named `.agent-layer` and you didn't provide flags or a `PARENT_ROOT` in `.env`, you're in discovery (Scenario 4).
+- If the directory name is `agent-layer` and you didn't provide flags or a `PARENT_ROOT` in `.env`, you'll get an error (Scenario 5).
 
 ### Environment Loading
 

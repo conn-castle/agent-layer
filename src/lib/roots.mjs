@@ -192,7 +192,7 @@ function messageTempParentRootSymlinkFailed(tempDir, agentLayerRoot) {
     "",
     "Possible causes:",
     "  - Filesystem doesn't support symlinks (e.g., FAT32, some network mounts)",
-    "  - Path already exists at ${tempDir}/.agent-layer",
+    `  - Path already exists at ${tempDir}/.agent-layer`,
     "  - Permission denied",
     "",
     "Fix:",
