@@ -523,7 +523,7 @@ Note: the `.env` file lives at `AGENT_LAYER_ROOT/.env` (typically `.agent-layer/
    Use `--parent-root <path>`. The parent root must contain a `.agent-layer` entry (dir or symlink) that resolves to the running agent-layer.
 
 2) **Temporary parent root (flag)**  
-   Use `--temp-parent-root` to create a temporary parent root, symlink `.agent-layer` into it, and clean it up on exit (unless `PARENT_ROOT_KEEP_TEMP=1`).
+   Use `--temp-parent-root` to create a temporary parent root, symlink `.agent-layer` into it, and clean it up on exit (unless `PARENT_ROOT_KEEP_TEMP=1`). Temp parent roots use the system temp directory and fall back to `<agent-layer-root>/tmp`; `PARENT_ROOT` does not change this location.
 
 3) **Explicit parent root (.env)**  
    Set `PARENT_ROOT` in `.agent-layer/.env`. Relative paths are resolved from the agent-layer root. The parent root must contain a `.agent-layer` entry (dir or symlink) that resolves to the running agent-layer.
@@ -640,7 +640,12 @@ Example snippet:
 {
   "codex": {
     "enabled": true,
-    "defaultArgs": ["--model", "gpt-5.2-codex", "--reasoning", "high"]
+    "defaultArgs": [
+      "--model",
+      "gpt-5.2-codex",
+      "--config",
+      "model_reasoning_effort=high"
+    ]
   }
 }
 ```

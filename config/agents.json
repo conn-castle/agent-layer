@@ -3,7 +3,12 @@
   "claude": { "enabled": true },
   "codex": {
     "enabled": true,
-    "defaultArgs": ["--model", "gpt-5.2-codex", "--reasoning", "high"]
+    "defaultArgs": [
+      "--model",
+      "gpt-5.2-codex",
+      "--config",
+      "model_reasoning_effort=high"
+    ]
   },
   "vscode": { "enabled": true }
 }

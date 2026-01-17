@@ -80,7 +80,7 @@ write_agent_config() {
   "claude": { "enabled": $claude_enabled },
   "codex": {
     "enabled": $codex_enabled,
-    "defaultArgs": ["--model", "gpt-5.2-codex", "--reasoning", "high"]
+    "defaultArgs": ["--model", "gpt-5.2-codex", "--config", "model_reasoning_effort=high"]
   },
   "vscode": { "enabled": $vscode_enabled }
 }
