@@ -537,9 +537,7 @@ async function main() {
     }
     await withResolvedRoots(
       { parentRoot, useTempParentRoot, agentLayerRoot },
-      async (roots) => {
-        runOpenVscode(roots);
-      },
+      runOpenVscode,
     );
     return;
   }
