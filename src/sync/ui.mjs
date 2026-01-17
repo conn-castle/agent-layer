@@ -116,7 +116,7 @@ export async function promptDivergenceAction(divergence, parentRoot) {
   console.warn("");
   console.warn("Next steps:");
   console.warn(
-    "- Run: node .agent-layer/src/sync/inspect.mjs (JSON report) to see what differs, then update .agent-layer sources.",
+    "- Run: ./al --inspect (JSON report) to see what differs, then update .agent-layer sources.",
   );
   console.warn("- Or choose overwrite to discard client-only entries now.");
   console.warn("");

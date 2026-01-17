@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Agent Layer sync (Node-based generator)
  *
@@ -25,12 +24,11 @@
  * - .codex/rules/default.rules
  *
  * Usage:
- *   node .agent-layer/src/sync/sync.mjs
- *   node .agent-layer/src/sync/sync.mjs --check
- *   node .agent-layer/src/sync/sync.mjs --verbose
- *   node .agent-layer/src/sync/sync.mjs --overwrite
- *   node .agent-layer/src/sync/sync.mjs --interactive
- *   node .agent-layer/src/sync/sync.mjs --codex
+ *   ./al --sync
+ *   ./al --sync --check
+ *   ./al --sync --verbose
+ *   ./al --sync --overwrite
+ *   ./al --sync --interactive
  */
 
 import fs from "node:fs";
@@ -47,7 +45,6 @@ import {
   trustedServerNames,
 } from "./mcp.mjs";
 import { diffOrWrite } from "./outdated.mjs";
-import { resolveRootsFromEnvOrScript } from "./paths.mjs";
 import {
   buildClaudeAllow,
   buildGeminiAllowed,
@@ -73,131 +70,43 @@ import { parseCodexConfigSections } from "./codex-config.mjs";
 import { promptDivergenceAction } from "./ui.mjs";
 import { getEnabledAgents, loadAgentConfig } from "../lib/agent-config.mjs";
 
-/**
- * Print usage and exit.
- * @param {number} code
- * @returns {void}
- */
-function usageAndExit(code) {
-  console.error(
-    `Usage: ${REGEN_COMMAND} [--check] [--verbose] [--overwrite] [--interactive] [--codex]`,
-  );
-  process.exit(code);
-}
+export const SYNC_USAGE = [
+  "Usage:",
+  "  ./al --sync [--check] [--verbose] [--overwrite] [--interactive] [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
+].join("\n");
 
 /**
- * Parse CLI arguments.
+ * Parse sync command arguments.
  * @param {string[]} argv
- * @returns {{ check: boolean, verbose: boolean, overwrite: boolean, interactive: boolean, codex: boolean }}
+ * @returns {{ check: boolean, verbose: boolean, overwrite: boolean, interactive: boolean }}
  */
-function parseArgs(argv) {
+export function parseSyncArgs(argv) {
   const args = {
     check: false,
     verbose: false,
     overwrite: false,
     interactive: false,
-    codex: false,
   };
-  for (const a of argv.slice(2)) {
+  for (const a of argv) {
     if (a === "--check") args.check = true;
     else if (a === "--verbose") args.verbose = true;
     else if (a === "--overwrite") args.overwrite = true;
     else if (a === "--interactive") args.interactive = true;
-    else if (a === "--codex") args.codex = true;
-    else if (a === "-h" || a === "--help") usageAndExit(0);
-    else usageAndExit(2);
+    else if (a === "-h" || a === "--help")
+      throw new Error("agent-layer sync: help requested.");
+    else throw new Error(`agent-layer sync: unknown argument "${a}".`);
   }
   if (args.overwrite && args.interactive) {
-    console.error(
+    throw new Error(
       "agent-layer sync: choose only one of --overwrite or --interactive.",
     );
-    usageAndExit(2);
   }
   if (args.check && args.interactive) {
-    console.error(
+    throw new Error(
       "agent-layer sync: --interactive cannot be used with --check.",
     );
-    usageAndExit(2);
   }
   return args;
-}
-
-/**
- * Resolve parent and agent-layer roots, honoring explicit env overrides.
- * @param {string} scriptDir
- * @returns {{ parentRoot: string, agentLayerRoot: string }}
- */
-function resolveRoots(entryPath) {
-  const roots = resolveRootsFromEnvOrScript(entryPath);
-  if (!roots) {
-    console.error(
-      "agent-layer sync: PARENT_ROOT must be set when running outside an installed .agent-layer.",
-    );
-    console.error(
-      "agent-layer sync: run via ./al or set PARENT_ROOT/AGENT_LAYER_ROOT.",
-    );
-    process.exit(2);
-  }
-  const parentRoot = path.resolve(roots.parentRoot);
-  const agentLayerRoot = path.resolve(roots.agentLayerRoot);
-  if (!fileExists(parentRoot)) {
-    console.error(
-      `agent-layer sync: PARENT_ROOT does not exist: ${parentRoot}`,
-    );
-    process.exit(2);
-  }
-  if (!fileExists(agentLayerRoot)) {
-    console.error(
-      `agent-layer sync: AGENT_LAYER_ROOT does not exist: ${agentLayerRoot}`,
-    );
-    process.exit(2);
-  }
-  return { parentRoot, agentLayerRoot };
-}
-
-/**
- * Enforce repo-local CODEX_HOME when running Codex.
- * @param {string} parentRoot
- * @param {string|undefined} codexHome
- * @returns {void}
- */
-function enforceCodexHome(parentRoot, codexHome) {
-  const trimmed = (codexHome ?? "").trim();
-  if (!trimmed) return;
-  if (!path.isAbsolute(trimmed)) {
-    throw new Error(
-      "agent-layer sync: CODEX_HOME must be an absolute path when running ./al codex.",
-    );
-  }
-
-  const expectedPath = path.resolve(parentRoot, ".codex");
-  const codexPath = path.resolve(trimmed);
-  if (!fileExists(trimmed)) {
-    if (codexPath !== expectedPath) {
-      throw new Error(
-        "agent-layer sync: CODEX_HOME must point to the repo-local .codex directory when running ./al codex.",
-      );
-    }
-    return;
-  }
-
-  const stats = fs.statSync(trimmed);
-  if (!stats.isDirectory()) {
-    throw new Error(
-      "agent-layer sync: CODEX_HOME must point to the repo-local .codex directory when running ./al codex.",
-    );
-  }
-
-  const codexReal = fs.realpathSync(trimmed);
-  let expectedReal = expectedPath;
-  if (fileExists(expectedPath)) {
-    expectedReal = fs.realpathSync(expectedPath);
-  }
-  if (codexReal !== expectedReal) {
-    throw new Error(
-      "agent-layer sync: CODEX_HOME must point to the repo-local .codex directory when running ./al codex.",
-    );
-  }
 }
 
 /**
@@ -247,7 +156,7 @@ function warnDisabledOutputs(parentRoot, enabledAgents) {
       `agent-layer sync: WARNING: ${warn.agent} is disabled in .agent-layer/config/agents.json, but outputs exist: ${rels}`,
     );
     console.warn(
-      "agent-layer sync: To remove them, run ./clean.sh or delete them manually. To re-enable, update config/agents.json and re-run ./al --sync.",
+      "agent-layer sync: To remove them, run ./al --clean or delete them manually. To re-enable, update config/agents.json and re-run ./al --sync.",
     );
   }
 }
@@ -463,22 +372,53 @@ function mergeCodexConfig(
  * Entry point.
  * @returns {void}
  */
-async function main() {
-  // Parse arguments and resolve the parent repo root.
-  let args = parseArgs(process.argv);
-  const entryPath = process.argv[1] ?? fileURLToPath(import.meta.url);
-  const { parentRoot, agentLayerRoot } = resolveRoots(entryPath);
-  // Enforce CODEX_HOME when sync runs for Codex.
-  if (args.codex) {
-    enforceCodexHome(parentRoot, process.env.CODEX_HOME);
+/**
+ * Run the sync generator with explicit roots.
+ * @param {string} parentRoot
+ * @param {string} agentLayerRoot
+ * @param {{ check: boolean, verbose: boolean, overwrite: boolean, interactive: boolean }} args
+ * @returns {Promise<void>}
+ */
+export async function runSync(parentRoot, agentLayerRoot, args) {
+  if (
+    !parentRoot ||
+    !agentLayerRoot ||
+    typeof parentRoot !== "string" ||
+    typeof agentLayerRoot !== "string"
+  ) {
+    throw new Error(
+      "agent-layer sync: parentRoot and agentLayerRoot are required.",
+    );
   }
+  const resolvedParent = path.resolve(parentRoot);
+  const resolvedAgentLayer = path.resolve(agentLayerRoot);
+  if (!fileExists(resolvedParent)) {
+    throw new Error(
+      `agent-layer sync: parent root does not exist: ${resolvedParent}`,
+    );
+  }
+  if (!fileExists(resolvedAgentLayer)) {
+    throw new Error(
+      `agent-layer sync: agent-layer root does not exist: ${resolvedAgentLayer}`,
+    );
+  }
+  const options = args ?? {
+    check: false,
+    verbose: false,
+    overwrite: false,
+    interactive: false,
+  };
 
   // Resolve config source directories relative to the repo root.
-  const instructionsDir = path.join(agentLayerRoot, "config", "instructions");
-  const workflowsDir = path.join(agentLayerRoot, "config", "workflows");
+  const instructionsDir = path.join(
+    resolvedAgentLayer,
+    "config",
+    "instructions",
+  );
+  const workflowsDir = path.join(resolvedAgentLayer, "config", "workflows");
 
   // Load agent config to determine enabled outputs.
-  const agentConfig = loadAgentConfig(agentLayerRoot);
+  const agentConfig = loadAgentConfig(resolvedAgentLayer);
   const enabledAgents = getEnabledAgents(agentConfig);
   const geminiEnabled = enabledAgents.has("gemini");
   const claudeEnabled = enabledAgents.has("claude");
@@ -486,26 +426,27 @@ async function main() {
   const vscodeEnabled = enabledAgents.has("vscode");
 
   // Load policy and build per-client allowlists.
-  const policy = loadCommandPolicy(agentLayerRoot);
+  const policy = loadCommandPolicy(resolvedAgentLayer);
   const prefixes = commandPrefixes(policy);
   const geminiAllowed = buildGeminiAllowed(prefixes);
   const claudeAllowed = buildClaudeAllow(prefixes);
   const vscodeAutoApprove = buildVscodeAutoApprove(prefixes);
 
   // Load MCP catalog and handle any divergence warnings or prompts.
-  const catalog = loadServerCatalog(agentLayerRoot);
+  const catalog = loadServerCatalog(resolvedAgentLayer);
   const divergence = collectDivergences(
-    parentRoot,
+    resolvedParent,
     policy,
     catalog,
     enabledAgents,
+    resolvedAgentLayer,
   );
   const hasDivergence = divergence.approvals.length || divergence.mcp.length;
   if (hasDivergence) {
-    if (args.interactive) {
-      const action = await promptDivergenceAction(divergence, parentRoot);
+    if (options.interactive) {
+      const action = await promptDivergenceAction(divergence, resolvedParent);
       if (action === "overwrite") {
-        args = { ...args, overwrite: true, interactive: false };
+        Object.assign(options, { overwrite: true, interactive: false });
       } else {
         console.error(
           "agent-layer sync: divergence not resolved. Update Agent Layer and re-run sync.",
@@ -523,7 +464,7 @@ async function main() {
       console.warn(`agent-layer sync: WARNING: ${note}`),
     );
   }
-  if (args.overwrite && hasDivergence) {
+  if (options.overwrite && hasDivergence) {
     console.warn(
       "agent-layer sync: overwriting client configs to match Agent Layer sources.",
     );
@@ -535,25 +476,29 @@ async function main() {
     concatInstructions(instructionsDir);
 
   // Seed the outputs list with instruction shims.
-  const outputs = [[path.join(parentRoot, "AGENTS.md"), unified]];
+  const outputs = [[path.join(resolvedParent, "AGENTS.md"), unified]];
   if (codexEnabled) {
-    outputs.push([path.join(parentRoot, ".codex", "AGENTS.md"), unified]);
+    outputs.push([path.join(resolvedParent, ".codex", "AGENTS.md"), unified]);
   }
   if (claudeEnabled) {
-    outputs.push([path.join(parentRoot, "CLAUDE.md"), unified]);
+    outputs.push([path.join(resolvedParent, "CLAUDE.md"), unified]);
   }
   if (geminiEnabled) {
-    outputs.push([path.join(parentRoot, "GEMINI.md"), unified]);
+    outputs.push([path.join(resolvedParent, "GEMINI.md"), unified]);
   }
   if (vscodeEnabled) {
     outputs.push([
-      path.join(parentRoot, ".github", "copilot-instructions.md"),
+      path.join(resolvedParent, ".github", "copilot-instructions.md"),
       unified,
     ]);
   }
 
   // Build MCP configs and merge with existing client settings.
-  const mcpConfigs = buildMcpConfigs(catalog, enabledAgents);
+  const mcpConfigs = buildMcpConfigs(
+    catalog,
+    enabledAgents,
+    resolvedAgentLayer,
+  );
   const managedServerNames = new Set();
   for (const server of enabledServers(catalog.servers ?? [])) {
     if (server && typeof server.name === "string") {
@@ -570,13 +515,13 @@ async function main() {
     ? renderCodexConfig(catalog, REGEN_COMMAND)
     : null;
   if (vscodeEnabled) {
-    const vscodeMcpPath = path.join(parentRoot, ".vscode", "mcp.json");
+    const vscodeMcpPath = path.join(resolvedParent, ".vscode", "mcp.json");
     const vscodeMcpExisting = readJsonRelaxed(vscodeMcpPath, {});
     const vscodeMcpMerged = mergeMcpConfig(
       vscodeMcpExisting,
       mcpConfigs.vscode,
       "servers",
-      { overwrite: args.overwrite },
+      { overwrite: options.overwrite },
       managedServerNames,
     );
     outputs.push([
@@ -586,13 +531,13 @@ async function main() {
   }
 
   if (claudeEnabled) {
-    const claudeMcpPath = path.join(parentRoot, ".mcp.json");
+    const claudeMcpPath = path.join(resolvedParent, ".mcp.json");
     const claudeMcpExisting = readJsonRelaxed(claudeMcpPath, {});
     const claudeMcpMerged = mergeMcpConfig(
       claudeMcpExisting,
       mcpConfigs.claude,
       "mcpServers",
-      { overwrite: args.overwrite },
+      { overwrite: options.overwrite },
       managedServerNames,
     );
     outputs.push([
@@ -602,7 +547,7 @@ async function main() {
   }
 
   if (codexEnabled) {
-    const codexConfigPath = path.join(parentRoot, ".codex", "config.toml");
+    const codexConfigPath = path.join(resolvedParent, ".codex", "config.toml");
     const codexExisting = fileExists(codexConfigPath)
       ? readUtf8(codexConfigPath)
       : null;
@@ -610,7 +555,7 @@ async function main() {
       codexExisting,
       codexConfig,
       {
-        overwrite: args.overwrite,
+        overwrite: options.overwrite,
       },
       managedServerNames,
     );
@@ -620,7 +565,7 @@ async function main() {
   // Merge Gemini settings, preserving non-managed entries.
   if (geminiEnabled) {
     const geminiSettingsPath = path.join(
-      parentRoot,
+      resolvedParent,
       ".gemini",
       "settings.json",
     );
@@ -632,7 +577,7 @@ async function main() {
       ),
       geminiAllowed,
       geminiSettingsPath,
-      { overwrite: args.overwrite, managedServers: managedServerNames },
+      { overwrite: options.overwrite, managedServers: managedServerNames },
     );
     outputs.push([
       geminiSettingsPath,
@@ -643,7 +588,7 @@ async function main() {
   // Merge Claude settings, preserving non-managed entries.
   if (claudeEnabled) {
     const claudeSettingsPath = path.join(
-      parentRoot,
+      resolvedParent,
       ".claude",
       "settings.json",
     );
@@ -652,7 +597,7 @@ async function main() {
       claudeExisting,
       claudeAllowPatterns ?? [],
       claudeSettingsPath,
-      { overwrite: args.overwrite },
+      { overwrite: options.overwrite },
     );
     outputs.push([
       claudeSettingsPath,
@@ -663,7 +608,7 @@ async function main() {
   // Merge VS Code settings, preserving non-managed entries.
   if (vscodeEnabled) {
     const vscodeSettingsPath = path.join(
-      parentRoot,
+      resolvedParent,
       ".vscode",
       "settings.json",
     );
@@ -672,7 +617,7 @@ async function main() {
       vscodeExisting,
       vscodeAutoApprove,
       vscodeSettingsPath,
-      { overwrite: args.overwrite },
+      { overwrite: options.overwrite },
     );
     outputs.push([
       vscodeSettingsPath,
@@ -683,7 +628,7 @@ async function main() {
   // Render and merge Codex rules for command policy enforcement.
   if (codexEnabled) {
     const codexRulesPath = path.join(
-      parentRoot,
+      resolvedParent,
       ".codex",
       "rules",
       "default.rules",
@@ -694,34 +639,32 @@ async function main() {
       : null;
     const codexRulesMerged = codexRulesExisting
       ? mergeCodexRules(codexRulesExisting, codexRulesGenerated, {
-          overwrite: args.overwrite,
+          overwrite: options.overwrite,
         })
       : codexRulesGenerated;
     outputs.push([codexRulesPath, codexRulesMerged]);
   }
 
-  warnDisabledOutputs(parentRoot, enabledAgents);
+  warnDisabledOutputs(resolvedParent, enabledAgents);
 
   // Write or diff outputs and regenerate Codex skills/prompts.
-  diffOrWrite(outputs, args, parentRoot);
+  diffOrWrite(outputs, options, resolvedParent);
   if (codexEnabled) {
-    generateCodexSkills(parentRoot, workflowsDir, args);
+    generateCodexSkills(resolvedParent, workflowsDir, options);
   }
   if (vscodeEnabled) {
-    generateVscodePrompts(parentRoot, workflowsDir, args);
+    generateVscodePrompts(resolvedParent, workflowsDir, options);
   }
 
   // Emit a success summary unless running in --check mode.
-  if (!args.check) {
+  if (!options.check) {
     console.log(
       "agent-layer sync: updated shims + MCP configs + allowlists + Codex skills + VS Code prompts",
     );
   }
 }
 
-main().catch((err) => {
-  console.error(
-    `agent-layer sync: ${err instanceof Error ? err.message : String(err)}`,
-  );
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  console.error("agent-layer sync: use ./al --sync");
+  process.exit(2);
+}

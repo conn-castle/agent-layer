@@ -4,19 +4,18 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
+teardown() {
+  cleanup_test_temp_dirs
+}
+
 # Helper: create a minimal .agent-layer repo for installer tests.
 create_min_agent_layer() {
   local root="$1"
   mkdir -p "$root/.agent-layer/src/lib" "$root/.agent-layer/src/sync" \
     "$root/.agent-layer/config/templates/docs" "$root/.agent-layer/config"
-  cat >"$root/.agent-layer/setup.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-exit 0
-EOF
-  chmod +x "$root/.agent-layer/setup.sh"
   printf "EXAMPLE=1\n" >"$root/.agent-layer/.env.example"
   cp "$AGENT_LAYER_ROOT/config/agents.json" "$root/.agent-layer/config/agents.json"
+  cp "$AGENT_LAYER_ROOT/src/cli.mjs" "$root/.agent-layer/src/cli.mjs"
   cp "$AGENT_LAYER_ROOT/src/lib/agent-config.mjs" "$root/.agent-layer/src/lib/agent-config.mjs"
   cp "$AGENT_LAYER_ROOT/src/sync/utils.mjs" "$root/.agent-layer/src/sync/utils.mjs"
   : >"$root/.agent-layer/src/sync/sync.mjs"
@@ -30,14 +29,9 @@ EOF
 create_source_repo() {
   local repo="$1"
   mkdir -p "$repo/src/lib" "$repo/src/sync" "$repo/config/templates/docs" "$repo/config"
-  cat >"$repo/setup.sh" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-exit 0
-EOF
-  chmod +x "$repo/setup.sh"
   printf "EXAMPLE=1\n" >"$repo/.env.example"
   cp "$AGENT_LAYER_ROOT/config/agents.json" "$repo/config/agents.json"
+  cp "$AGENT_LAYER_ROOT/src/cli.mjs" "$repo/src/cli.mjs"
   cp "$AGENT_LAYER_ROOT/src/lib/agent-config.mjs" "$repo/src/lib/agent-config.mjs"
   cp "$AGENT_LAYER_ROOT/src/sync/utils.mjs" "$repo/src/sync/utils.mjs"
   : >"$repo/src/sync/sync.mjs"
@@ -382,6 +376,53 @@ EOF
   tag="$(git -C "$work/.agent-layer" describe --tags --exact-match)"
   [ "$tag" = "v0.2.0" ]
   [[ "$output" == *"Changes since"* ]]
+
+  rm -rf "$root"
+}
+
+# Test: installer preserves user config during upgrade without --force
+@test "installer preserves user config during --upgrade" {
+  local root work src stub_bin installer tag
+  root="$(make_tmp_dir)"
+  work="$root/work"
+  src="$root/src"
+  mkdir -p "$work" "$src"
+  git -C "$work" init -q
+  create_source_repo "$src"
+  git -C "$src" tag v0.1.0
+
+  git clone "$src" "$work/.agent-layer" >/dev/null
+
+  cat >"$work/.agent-layer/config/agents.json" <<'EOF'
+{
+  "gemini": { "enabled": false },
+  "claude": { "enabled": false },
+  "codex": { "enabled": false },
+  "vscode": { "enabled": false }
+}
+EOF
+
+  printf "release\n" >"$src/CHANGELOG.md"
+  cat >"$src/config/agents.json" <<'EOF'
+{
+  "gemini": { "enabled": true },
+  "claude": { "enabled": true },
+  "codex": { "enabled": true },
+  "vscode": { "enabled": true }
+}
+EOF
+  git -C "$src" add CHANGELOG.md config/agents.json
+  git -C "$src" commit -m "release v0.2.0" -q
+  git -C "$src" tag v0.2.0
+
+  stub_bin="$(create_stub_tools "$root")"
+  installer="$AGENT_LAYER_ROOT/agent-layer-install.sh"
+  run bash -c "cd '$work' && PATH='$stub_bin:$PATH' '$installer' --upgrade --repo-url '$src' < /dev/null"
+  [ "$status" -eq 0 ]
+  tag="$(git -C "$work/.agent-layer" describe --tags --exact-match)"
+  [ "$tag" = "v0.2.0" ]
+  run rg -n "\"gemini\": \\{ \"enabled\": false \\}" "$work/.agent-layer/config/agents.json"
+  [ "$status" -eq 0 ]
 
   rm -rf "$root"
 }

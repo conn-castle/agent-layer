@@ -1,5 +1,4 @@
 import path from "node:path";
-import { resolveAgentLayerRoot } from "./paths.mjs";
 import { assert, fileExists, isPlainObject, readUtf8 } from "./utils.mjs";
 
 const KNOWN_CLIENTS = new Set(["claude", "codex", "gemini", "vscode"]);
@@ -57,12 +56,13 @@ function readEnvVarFromFile(filePath, name) {
 /**
  * Resolve an environment variable from process.env or the local .env.
  * @param {string} name
+ * @param {string} agentLayerRoot
  * @returns {string|null}
  */
-function getEnvVarValue(name) {
+function getEnvVarValue(name, agentLayerRoot) {
   const direct = process.env[name];
   if (typeof direct === "string" && direct.trim()) return direct.trim();
-  const envPath = path.join(resolveAgentLayerRoot(), ".env");
+  const envPath = path.join(agentLayerRoot, ".env");
   const fileValue = readEnvVarFromFile(envPath, name);
   if (fileValue && String(fileValue).trim()) return String(fileValue).trim();
   return null;
@@ -103,10 +103,11 @@ function buildVscodeInputId(name) {
  * Resolve a bearer token value for Gemini HTTP configs.
  * @param {string} envVar
  * @param {string} serverName
+ * @param {string} agentLayerRoot
  * @returns {string}
  */
-function resolveBearerToken(envVar, serverName) {
-  const token = getEnvVarValue(envVar);
+function resolveBearerToken(envVar, serverName, agentLayerRoot) {
+  const token = getEnvVarValue(envVar, agentLayerRoot);
   assert(
     token,
     `Missing ${envVar} for Gemini HTTP server "${serverName}". Set it in .agent-layer/.env or your shell environment.`,
@@ -428,9 +429,15 @@ export function trustedServerNames(catalog, client) {
  * Build MCP config objects for each client from the server catalog.
  * @param {{ defaults?: Record<string, unknown>, servers?: unknown[] }} catalog
  * @param {Set<string>=} enabledAgents
+ * @param {string} agentLayerRoot
  * @returns {{ vscode: Record<string, unknown>, claude: Record<string, unknown>, gemini: Record<string, unknown> }}
  */
-export function buildMcpConfigs(catalog, enabledAgents) {
+export function buildMcpConfigs(catalog, enabledAgents, agentLayerRoot) {
+  assert(
+    typeof agentLayerRoot === "string" && agentLayerRoot.trim().length > 0,
+    "agent-layer sync: agentLayerRoot is required for MCP config generation.",
+  );
+  const normalizedRoot = path.resolve(agentLayerRoot);
   const defaults = catalog.defaults ?? {};
   const vscodeEnabled = isClientEnabled(enabledAgents, "vscode");
   const claudeEnabled = isClientEnabled(enabledAgents, "claude");
@@ -530,7 +537,11 @@ export function buildMcpConfigs(catalog, enabledAgents) {
     if (transport === "http") {
       let authorization;
       if (s.bearerTokenEnvVar) {
-        const token = resolveBearerToken(s.bearerTokenEnvVar, s.name);
+        const token = resolveBearerToken(
+          s.bearerTokenEnvVar,
+          s.name,
+          normalizedRoot,
+        );
         authorization = `Bearer ${token}`;
       }
       const headers = buildHeaders(

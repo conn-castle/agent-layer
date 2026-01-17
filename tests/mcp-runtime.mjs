@@ -17,14 +17,7 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const AGENT_LAYER_ROOT = path.resolve(HERE, "..");
-const REPO_ROOT = path.resolve(AGENT_LAYER_ROOT, "..");
-const SERVER_PATH = path.join(
-  AGENT_LAYER_ROOT,
-  "src",
-  "mcp",
-  "agent-layer-prompts",
-  "server.mjs",
-);
+const SERVER_PATH = path.join(AGENT_LAYER_ROOT, "src", "cli.mjs");
 
 /**
  * Match the launcher version logic using git describe.
@@ -87,15 +80,23 @@ function getMethod(schema) {
  * @returns {import("node:child_process").ChildProcess}
  */
 function createTransport() {
-  const child = spawn(process.execPath, [SERVER_PATH], {
-    cwd: REPO_ROOT,
-    stdio: ["pipe", "pipe", "pipe"],
-    env: {
-      ...process.env,
-      PARENT_ROOT: REPO_ROOT,
+  const child = spawn(
+    process.execPath,
+    [
+      SERVER_PATH,
+      "--mcp-prompts",
+      "--temp-parent-root",
+      "--agent-layer-root",
       AGENT_LAYER_ROOT,
+    ],
+    {
+      cwd: AGENT_LAYER_ROOT,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+      },
     },
-  });
+  );
   return child;
 }
 

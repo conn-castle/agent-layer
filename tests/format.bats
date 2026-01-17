@@ -4,6 +4,10 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
+teardown() {
+  cleanup_test_temp_dirs
+}
+
 # Test: format.sh runs shfmt and prettier
 @test "format.sh runs shfmt and prettier" {
   local root stub_bin bash_bin shfmt_log prettier_log

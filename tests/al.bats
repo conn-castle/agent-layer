@@ -4,6 +4,10 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
+teardown() {
+  cleanup_test_temp_dirs
+}
+
 # Test: al uses its script dir when PWD points at another parent repo
 @test "al uses its script dir when PWD points at another parent repo" {
   local root_a root_b stub_bin output
@@ -11,37 +15,20 @@ load "helpers.bash"
   root_b="$(create_parent_root)"
 
   ln -s "$root_a/.agent-layer/agent-layer" "$root_a/al"
-  stub_bin="$(create_stub_node "$root_a")"
+  stub_bin="$root_a/stub-bin"
+  mkdir -p "$stub_bin"
+  cat >"$stub_bin/print-root" <<'EOF'
+#!/usr/bin/env bash
+printf "%s" "${PARENT_ROOT:-}"
+EOF
+  chmod +x "$stub_bin/print-root"
 
-  output="$(cd "$root_b/sub/dir" && PATH="$stub_bin:$PATH" "$root_a/al" --parent-root "$root_a" pwd)"
+  output="$(cd "$root_b/sub/dir" && PATH="$stub_bin:$PATH" "$root_a/al" --no-sync --parent-root "$root_a" print-root)"
   status=$?
   [ "$status" -eq 0 ]
   [ "$output" = "$root_a" ]
 
   rm -rf "$root_a" "$root_b"
-}
-
-# Test: al prefers .agent-layer paths when a root src/lib/parent-root.sh exists
-@test "al prefers .agent-layer paths when a root src/lib/parent-root.sh exists" {
-  local root stub_bin output
-  root="$(create_parent_root)"
-
-  ln -s "$root/.agent-layer/agent-layer" "$root/al"
-  mkdir -p "$root/src/lib"
-  cat > "$root/src/lib/parent-root.sh" << 'EOF'
-resolve_parent_root() {
-  return 1
-}
-EOF
-
-  stub_bin="$(create_stub_node "$root")"
-
-  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" "$root/al" --parent-root "$root" pwd)"
-  status=$?
-  [ "$status" -eq 0 ]
-  [ "$output" = "$root" ]
-
-  rm -rf "$root"
 }
 
 # Test: al prints the current version with --version
@@ -69,7 +56,8 @@ EOF
   local root stub_bin output
   root="$(create_isolated_parent_root)"
   mkdir -p "$root/.codex"
-  stub_bin="$(create_stub_tools "$root")"
+  stub_bin="$root/stub-bin"
+  mkdir -p "$stub_bin"
   cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
 printf "%s" "${CODEX_HOME:-}"
@@ -89,7 +77,8 @@ EOF
   local root stub_bin output status
   root="$(create_isolated_parent_root)"
   mkdir -p "$root/.codex"
-  stub_bin="$(create_stub_tools "$root")"
+  stub_bin="$root/stub-bin"
+  mkdir -p "$stub_bin"
   cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
 printf "%s" "${CODEX_HOME:-}"
@@ -110,7 +99,8 @@ EOF
   local root stub_bin output
   root="$(create_isolated_parent_root)"
   mkdir -p "$root/.codex"
-  stub_bin="$(create_stub_tools "$root")"
+  stub_bin="$root/stub-bin"
+  mkdir -p "$stub_bin"
   cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
 printf "%s" "${CODEX_HOME:-}"
@@ -128,34 +118,25 @@ EOF
   rm -rf "$root"
 }
 
-# Test: al passes --codex to sync when running codex
-@test "al passes --codex to sync when running codex" {
-  local root stub_bin output node_args
+# Test: al warns when CODEX_HOME points elsewhere
+@test "al warns when CODEX_HOME points outside repo-local" {
+  local root stub_bin output status
   root="$(create_isolated_parent_root)"
-  mkdir -p "$root/.codex"
+  mkdir -p "$root/.codex" "$root/alt-codex"
   stub_bin="$root/stub-bin"
   mkdir -p "$stub_bin"
-  node_args="$root/node-args.txt"
-  cat > "$stub_bin/node" << 'EOF'
-#!/usr/bin/env bash
-printf "%s\n" "$@" >> "$NODE_ARGS_LOG"
-if [[ " $* " == *" --print-shell "* ]]; then
-  printf "%s\n" "enabled=true"
-  exit 0
-fi
-exit 0
-EOF
   cat > "$stub_bin/codex" << 'EOF'
 #!/usr/bin/env bash
-exit 0
+printf "%s" "${CODEX_HOME:-}"
 EOF
-  chmod +x "$stub_bin/node" "$stub_bin/codex"
+  chmod +x "$stub_bin/codex"
 
-  run bash -c "cd \"$root/sub/dir\" && PATH=\"$stub_bin:$PATH\" NODE_ARGS_LOG=\"$node_args\" \"$root/.agent-layer/agent-layer\" codex"
+  output="$(cd "$root/sub/dir" && PATH="$stub_bin:$PATH" CODEX_HOME="$root/alt-codex" \
+    "$root/.agent-layer/agent-layer" codex 2>&1)"
+  status=$?
   [ "$status" -eq 0 ]
-
-  run rg -n -- "--codex" "$node_args"
-  [ "$status" -eq 0 ]
+  [[ "$output" == *"CODEX_HOME is set to $root/alt-codex"* ]]
+  [[ "$output" == *"expected $root/.codex"* ]]
 
   rm -rf "$root"
 }
@@ -171,9 +152,8 @@ EOF
   ln -s "$(command -v basename)" "$stub_bin/basename"
   ln -s "$(command -v dirname)" "$stub_bin/dirname"
 
-  run "$bash_bin" -c "cd '$root/sub/dir' && PATH='$stub_bin' '$bash_bin' '$root/.agent-layer/agent-layer' pwd 2>&1"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Node.js is required"* ]]
+  run -127 "$bash_bin" -c "cd '$root/sub/dir' && PATH='$stub_bin' '$bash_bin' '$root/.agent-layer/agent-layer' pwd 2>&1"
+  [[ "$output" == *"node"* ]]
 
   rm -rf "$root"
 }

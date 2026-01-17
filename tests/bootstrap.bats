@@ -4,6 +4,10 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
+teardown() {
+  cleanup_test_temp_dirs
+}
+
 # Helper: write a stub command that exits successfully.
 write_stub_cmd() {
   local bin="$1" name="$2"
@@ -42,20 +46,22 @@ CMD
 
 # Test: bootstrap --yes runs setup and enables hooks
 @test "bootstrap --yes runs setup and enables hooks" {
-  local root bash_bin stub_bin setup_log
+  local root bash_bin stub_bin setup_log git_bin rg_bin
   root="$(create_isolated_parent_root)"
   bash_bin="$(command -v bash)"
   stub_bin="$root/stub-bin"
   setup_log="$root/setup.log"
+  git_bin="$(dirname "$(command -v git)")"
+  rg_bin="$(dirname "$(command -v rg)")"
 
   git -C "$root" init -q
 
-  cat >"$root/.agent-layer/setup.sh" <<EOF
+  cat >"$root/.agent-layer/agent-layer" <<STUB
 #!/usr/bin/env bash
-printf "%s\n" "\$@" > "$setup_log"
+printf '%s\n' "\$@" > "$setup_log"
 exit 0
-EOF
-  chmod +x "$root/.agent-layer/setup.sh"
+STUB
+  chmod +x "$root/.agent-layer/agent-layer"
 
   mkdir -p "$root/.agent-layer/node_modules/.bin"
   cat >"$root/.agent-layer/node_modules/.bin/prettier" <<'EOF'
@@ -71,7 +77,7 @@ EOF
   write_stub_cmd "$stub_bin" "shfmt"
   write_stub_cmd "$stub_bin" "shellcheck"
 
-  run "$bash_bin" -c "cd '$root' && PATH='$stub_bin:/usr/bin:/bin' '$root/.agent-layer/dev/bootstrap.sh' --yes --parent-root '$root'"
+  run "$bash_bin" -c "cd '$root' && PATH='$stub_bin:$git_bin:$rg_bin:/usr/bin:/bin' '$root/.agent-layer/dev/bootstrap.sh' --yes --parent-root '$root'"
   [ "$status" -eq 0 ]
 
   run rg -n -- "--skip-checks" "$setup_log"

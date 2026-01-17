@@ -12,7 +12,7 @@ die() {
 # Parse parent-root flags so the runner can be invoked from the agent-layer repo.
 usage() {
   cat << 'USAGE'
-Usage: tests/run.sh [--parent-root <path>] [--temp-parent-root] [--run-from-repo-root]
+Usage: tests/run.sh [--parent-root <path>] [--temp-parent-root] [--run-from-repo-root] [--setup-only]
 
 Run formatting checks and the Bats suite.
 
@@ -21,12 +21,14 @@ or pass --parent-root to a temp directory. In a consumer repo, --parent-root
 must point to the repo root that contains .agent-layer/.
 
 Use --run-from-repo-root to keep the current working directory unchanged.
+Use --setup-only to validate setup and resolve paths without running tests.
 USAGE
 }
 
 parent_root=""
 use_temp_parent_root="0"
 run_from_repo_root="0"
+setup_only="0"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --temp-parent-root)
@@ -35,6 +37,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --run-from-repo-root)
       run_from_repo_root="1"
+      shift
+      ;;
+    --setup-only)
+      setup_only="1"
       shift
       ;;
     --parent-root)
@@ -63,15 +69,43 @@ while [[ $# -gt 0 ]]; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-ROOTS_HELPER="$SCRIPT_DIR/../src/lib/parent-root.sh"
-if [[ ! -f "$ROOTS_HELPER" ]]; then
-  die "Missing src/lib/parent-root.sh (expected near tests/)."
+AGENT_LAYER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
+ROOTS_OUTPUT="$(
+  cd "$AGENT_LAYER_ROOT" &&
+    ROOTS_PARENT_ROOT="$parent_root" \
+      ROOTS_USE_TEMP_PARENT_ROOT="$use_temp_parent_root" \
+      ROOTS_AGENT_LAYER_ROOT="$AGENT_LAYER_ROOT" \
+      node --input-type=module << 'NODE' 2>&1
+import { resolveParentRoot } from "./src/lib/roots.mjs";
+const parentRoot = process.env.ROOTS_PARENT_ROOT || null;
+const useTempParentRoot = process.env.ROOTS_USE_TEMP_PARENT_ROOT === "1";
+const agentLayerRoot = process.env.ROOTS_AGENT_LAYER_ROOT || null;
+const roots = resolveParentRoot({ parentRoot, useTempParentRoot, agentLayerRoot, cwd: process.cwd() });
+console.log(`PARENT_ROOT=${roots.parentRoot}`);
+console.log(`AGENT_LAYER_ROOT=${roots.agentLayerRoot}`);
+console.log(`TEMP_PARENT_ROOT_CREATED=${roots.tempParentRootCreated ? "1" : "0"}`);
+NODE
+)" || {
+  printf "%s\n" "$ROOTS_OUTPUT" >&2
+  exit 1
+}
+
+PARENT_ROOT=""
+AGENT_LAYER_ROOT=""
+TEMP_PARENT_ROOT_CREATED="0"
+while IFS= read -r line; do
+  case "$line" in
+    PARENT_ROOT=*) PARENT_ROOT="${line#PARENT_ROOT=}" ;;
+    AGENT_LAYER_ROOT=*) AGENT_LAYER_ROOT="${line#AGENT_LAYER_ROOT=}" ;;
+    TEMP_PARENT_ROOT_CREATED=*) TEMP_PARENT_ROOT_CREATED="${line#TEMP_PARENT_ROOT_CREATED=}" ;;
+  esac
+done <<< "$ROOTS_OUTPUT"
+
+if [[ -z "$PARENT_ROOT" || -z "$AGENT_LAYER_ROOT" ]]; then
+  printf "ERROR: Failed to resolve roots.\n" >&2
+  printf "%s\n" "$ROOTS_OUTPUT" >&2
+  exit 1
 fi
-# shellcheck disable=SC1090
-source "$ROOTS_HELPER"
-ROOTS_PARENT_ROOT="$parent_root" \
-  ROOTS_USE_TEMP_PARENT_ROOT="$use_temp_parent_root" \
-  resolve_parent_root || exit $?
 
 if [[ "$TEMP_PARENT_ROOT_CREATED" == "1" ]]; then
   # shellcheck disable=SC2153
@@ -110,6 +144,14 @@ elif command -v prettier > /dev/null 2>&1; then
   PRETTIER="$(command -v prettier)"
 else
   die "prettier not found. Run: (cd .agent-layer && npm install) or install globally."
+fi
+
+# Exit early if only validating setup.
+if [[ "$setup_only" == "1" ]]; then
+  say "Setup validated successfully."
+  say "PARENT_ROOT=$PARENT_ROOT"
+  say "AGENT_LAYER_ROOT=$AGENT_LAYER_ROOT"
+  exit 0
 fi
 
 # Collect shell sources for formatting and linting.
@@ -151,3 +193,23 @@ fi
 # Run the Bats test suite.
 say "==> Tests (bats)"
 "$BATS_BIN" "$AGENT_LAYER_ROOT/tests"
+
+# Run Node unit tests (lib-*).
+say "==> Node tests (node --test)"
+lib_tests=("$AGENT_LAYER_ROOT/tests/lib-"*.test.mjs)
+if [[ "${lib_tests[0]}" == "$AGENT_LAYER_ROOT/tests/lib-*.test.mjs" ]]; then
+  say "No Node unit tests found."
+else
+  node --test "${lib_tests[@]}"
+fi
+
+# Run MCP server E2E test (requires SDK).
+say "==> MCP E2E test"
+mcp_sdk_root="$AGENT_LAYER_ROOT/node_modules/@modelcontextprotocol/sdk"
+mcp_sdk_nested="$AGENT_LAYER_ROOT/src/mcp/agent-layer-prompts/node_modules/@modelcontextprotocol/sdk"
+if [[ ! -d "$mcp_sdk_root" && ! -d "$mcp_sdk_nested" ]]; then
+  echo "ERROR: MCP server dependencies not installed." >&2
+  echo "Run: cd $AGENT_LAYER_ROOT/src/mcp/agent-layer-prompts && npm install" >&2
+  exit 1
+fi
+node "$AGENT_LAYER_ROOT/tests/mcp-runtime.mjs"

@@ -1,17 +1,22 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   fileExists,
   isPlainObject,
   readJsonRelaxed,
   writeUtf8,
 } from "./utils.mjs";
-import { resolveRootsFromEnvOrScript } from "./paths.mjs";
 import { isManagedClaudeAllow, isManagedGeminiAllowed } from "./policy.mjs";
 import { enabledServers, loadServerCatalog } from "./mcp.mjs";
 
 /**
  * @typedef {Record<string, unknown>} JsonObject
  */
+
+export const CLEAN_USAGE = [
+  "Usage:",
+  "  ./al --clean [--parent-root <path>] [--temp-parent-root] [--agent-layer-root <path>]",
+].join("\n");
 
 /**
  * Throw a clean-specific error.
@@ -310,29 +315,34 @@ function writeIfChanged(filePath, updated, changed) {
 
 /**
  * Remove agent-layer-managed settings from client config files.
+ * @param {string} parentRoot
+ * @param {string} agentLayerRoot
  * @returns {void}
  */
-function main() {
-  // Resolve roots from env or the entry script path.
-  const entryPath = process.argv[1];
-  const roots = resolveRootsFromEnvOrScript(entryPath);
-  if (!roots) {
-    fail(
-      "PARENT_ROOT must be set when running outside an installed .agent-layer.",
-    );
+export function runClean(parentRoot, agentLayerRoot) {
+  if (
+    !parentRoot ||
+    !agentLayerRoot ||
+    typeof parentRoot !== "string" ||
+    typeof agentLayerRoot !== "string"
+  ) {
+    fail("parentRoot and agentLayerRoot are required.");
   }
-  const parentRoot = path.resolve(roots.parentRoot);
-  const agentLayerRoot = path.resolve(roots.agentLayerRoot);
-  if (!fileExists(agentLayerRoot)) {
+  const resolvedParent = path.resolve(parentRoot);
+  const resolvedAgentLayer = path.resolve(agentLayerRoot);
+  if (!fileExists(resolvedParent)) {
+    fail(`parent root does not exist: ${resolvedParent}`);
+  }
+  if (!fileExists(resolvedAgentLayer)) {
     fail("Missing .agent-layer directory for this command.");
   }
 
   // Build client config paths relative to the parent root.
-  const geminiPath = path.join(parentRoot, ".gemini", "settings.json");
-  const claudePath = path.join(parentRoot, ".claude", "settings.json");
-  const vscodePath = path.join(parentRoot, ".vscode", "settings.json");
-  const vscodeMcpPath = path.join(parentRoot, ".vscode", "mcp.json");
-  const claudeMcpPath = path.join(parentRoot, ".mcp.json");
+  const geminiPath = path.join(resolvedParent, ".gemini", "settings.json");
+  const claudePath = path.join(resolvedParent, ".claude", "settings.json");
+  const vscodePath = path.join(resolvedParent, ".vscode", "settings.json");
+  const vscodeMcpPath = path.join(resolvedParent, ".vscode", "mcp.json");
+  const claudeMcpPath = path.join(resolvedParent, ".mcp.json");
 
   const updates = [];
   let catalog = null;
@@ -341,7 +351,7 @@ function main() {
   const getManagedServers = () => {
     if (!managedServers) {
       if (!catalog) {
-        catalog = loadCatalog(agentLayerRoot);
+        catalog = loadCatalog(resolvedAgentLayer);
       }
       const names = new Set();
       const servers = enabledServers(catalog.servers ?? []);
@@ -421,4 +431,7 @@ function main() {
   }
 }
 
-main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  console.error("agent-layer clean: use ./al --clean");
+  process.exit(2);
+}

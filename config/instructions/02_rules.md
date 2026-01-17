@@ -10,4 +10,5 @@ Keep this document as a single flat bullet list. When adding a new rule, add a n
 - **Secrets and credentials:** Never add secrets, private keys, access tokens, or credentials to repository files, logs, or outputs. Use placeholders and documented variable names in `.env.example`, and instruct the user to supply real values locally.
 - **Destructive actions:** Never run or recommend destructive operations that can remove or overwrite large amounts of data without explicit confirmation from the user, and always name the exact paths that would be affected.
 - **Verification claims:** Never claim that you ran commands, tests, or verification unless you actually did and observed the output. If you did not run verification, state what should be run and why.
+- **Test integrity:** Never skip tests. If a test fails, fix the underlying issue or fix the test. If a test cannot run due to missing dependencies, ensure the dependencies are available rather than skipping the test.
 ```

@@ -5,32 +5,25 @@ import { fileURLToPath } from "node:url";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
-  ListPromptsRequestSchema,
   GetPromptRequestSchema,
+  ListPromptsRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { parseFrontMatter } from "../../sync/instructions.mjs";
-import { resolveRootsFromEnvOrScript } from "../../sync/paths.mjs";
 
 /**
  * MCP prompt server that exposes workflow markdown as prompt definitions.
  */
 
-// Resolve the workflow directory relative to the repo root.
-const ENTRY_PATH = process.argv[1] ?? fileURLToPath(import.meta.url);
-const ROOTS = resolveRootsFromEnvOrScript(ENTRY_PATH);
-const AGENT_LAYER_ROOT = ROOTS ? ROOTS.agentLayerRoot : null;
-const WORKFLOWS_DIR = AGENT_LAYER_ROOT
-  ? path.join(AGENT_LAYER_ROOT, "config", "workflows")
-  : null;
-
 /**
  * Resolve the server version by matching the launcher git describe behavior.
- * @param {string | null} agentLayerRoot
+ * @param {string} agentLayerRoot
  * @returns {string}
  */
 function resolveServerVersion(agentLayerRoot) {
-  if (!agentLayerRoot) return "unknown";
+  if (!agentLayerRoot) {
+    throw new Error("agent-layer prompts: agentLayerRoot is required.");
+  }
   const result = spawnSync(
     "git",
     ["-C", agentLayerRoot, "describe", "--tags", "--always", "--dirty"],
@@ -40,18 +33,16 @@ function resolveServerVersion(agentLayerRoot) {
   return version || "unknown";
 }
 
-const SERVER_VERSION = resolveServerVersion(AGENT_LAYER_ROOT);
-
 /**
  * List workflow markdown files from the workflows directory.
- * @param {string | null} workflowsDir
+ * @param {string} workflowsDir
  * @returns {string[]}
  */
 function listWorkflowFiles(workflowsDir) {
   if (!workflowsDir) {
     throw new Error(
-      "agent-layer prompts: could not find .agent-layer/config/workflows. " +
-        "Run from a repo that contains .agent-layer or fix the MCP server path.",
+      "agent-layer prompts: missing workflows directory. " +
+        "Set --agent-layer-root to a repo that contains .agent-layer.",
     );
   }
   let files;
@@ -74,12 +65,13 @@ function listWorkflowFiles(workflowsDir) {
 
 /**
  * Load workflow prompt definitions from disk.
+ * @param {string} workflowsDir
  * @returns {{ name: string, description: string, body: string }[]}
  */
-function loadWorkflows() {
-  const files = listWorkflowFiles(WORKFLOWS_DIR);
+function loadWorkflows(workflowsDir) {
+  const files = listWorkflowFiles(workflowsDir);
   return files.map((f) => {
-    const full = path.join(WORKFLOWS_DIR, f);
+    const full = path.join(workflowsDir, f);
     const md = fs.readFileSync(full, "utf8");
     const { meta, body } = parseFrontMatter(md, full);
     const name = meta.name || path.basename(f, ".md");
@@ -88,77 +80,86 @@ function loadWorkflows() {
   });
 }
 
-// Instantiate the MCP server with prompt/tool capabilities enabled.
-const server = new Server(
-  { name: "agent-layer-prompts", version: SERVER_VERSION },
-  { capabilities: { prompts: {}, tools: {} } },
-);
-
 /**
- * Return an empty tool list to satisfy MCP clients that probe for tools.
- * @returns {{ tools: [] }}
+ * Start the MCP prompt server.
+ * @param {string} parentRoot
+ * @param {string} agentLayerRoot
+ * @returns {Promise<void>}
  */
-function listTools() {
-  return { tools: [] };
-}
+export async function runPromptServer(parentRoot, agentLayerRoot) {
+  if (!agentLayerRoot || typeof agentLayerRoot !== "string") {
+    throw new Error("agent-layer prompts: agentLayerRoot is required.");
+  }
 
-// Register handlers for the MCP prompt/tool request types.
-server.setRequestHandler(ListToolsRequestSchema, async () => listTools());
+  const workflowsDir = path.join(agentLayerRoot, "config", "workflows");
+  listWorkflowFiles(workflowsDir);
+  const serverVersion = resolveServerVersion(agentLayerRoot);
 
-server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  const workflows = loadWorkflows();
-  return {
-    prompts: workflows.map((w) => ({
-      name: w.name,
-      description: w.description,
-    })),
-  };
-});
+  const server = new Server(
+    { name: "agent-layer-prompts", version: serverVersion },
+    { capabilities: { prompts: {}, tools: {} } },
+  );
 
-server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-  const name = request.params?.name;
-  const workflows = loadWorkflows();
-  const w = workflows.find((x) => x.name === name);
-  if (!w) {
+  /**
+   * Return an empty tool list to satisfy MCP clients that probe for tools.
+   * @returns {{ tools: [] }}
+   */
+  function listTools() {
+    return { tools: [] };
+  }
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => listTools());
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    const workflows = loadWorkflows(workflowsDir);
     return {
-      description: "Unknown workflow",
+      prompts: workflows.map((w) => ({
+        name: w.name,
+        description: w.description,
+      })),
+    };
+  });
+
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const name = request.params?.name;
+    const workflows = loadWorkflows(workflowsDir);
+    const w = workflows.find((x) => x.name === name);
+    if (!w) {
+      return {
+        description: "Unknown workflow",
+        messages: [
+          {
+            role: "user",
+            content: { type: "text", text: `Unknown workflow: ${name}` },
+          },
+        ],
+      };
+    }
+
+    return {
+      description: w.description,
       messages: [
         {
           role: "user",
-          content: { type: "text", text: `Unknown workflow: ${name}` },
+          content: {
+            type: "text",
+            text:
+              `${w.body.trim()}\n\n` +
+              `---\n` +
+              `Notes:\n` +
+              `- Follow the workflow exactly.\n` +
+              `- If you modify .agent-layer/**, run: ./al --sync\n`,
+          },
         },
       ],
     };
-  }
+  });
 
-  return {
-    description: w.description,
-    messages: [
-      {
-        role: "user",
-        content: {
-          type: "text",
-          text:
-            `${w.body.trim()}\n\n` +
-            `---\n` +
-            `Notes:\n` +
-            `- Follow the workflow exactly.\n` +
-            `- If you modify .agent-layer/**, run: node .agent-layer/src/sync/sync.mjs\n`,
-        },
-      },
-    ],
-  };
-});
-
-// Validate inputs and start the stdio server.
-async function main() {
-  listWorkflowFiles(WORKFLOWS_DIR);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
-main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error(err);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  console.error("agent-layer prompts: use ./al --mcp-prompts");
+  process.exit(2);
+}

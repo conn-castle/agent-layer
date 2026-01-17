@@ -15,7 +15,12 @@
       "transport": "stdio",
       "command": "node",
       "args": [
-        "./.agent-layer/src/mcp/agent-layer-prompts/server.mjs"
+        "./.agent-layer/src/cli.mjs",
+        "--mcp-prompts",
+        "--parent-root",
+        ".",
+        "--agent-layer-root",
+        "./.agent-layer"
       ],
       "envVars": [],
       "trust": true

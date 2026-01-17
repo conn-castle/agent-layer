@@ -4,6 +4,10 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
+teardown() {
+  cleanup_test_temp_dirs
+}
+
 # Test: pre-commit hook runs the test suite
 @test "pre-commit hook runs the test suite" {
   local root bash_bin

@@ -11,6 +11,7 @@ setup() {
 
 teardown() {
   restore_agent_config "$AGENT_CONFIG_BACKUP"
+  cleanup_test_temp_dirs
 }
 
 # Test: sync generates Codex config and instructions
@@ -18,7 +19,7 @@ teardown() {
   local root
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   [ -f "$root/.codex/config.toml" ]
@@ -34,7 +35,7 @@ teardown() {
   local root skill
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   skill="$root/.codex/skills/find-issues/SKILL.md"
@@ -52,7 +53,7 @@ teardown() {
   local root prompt
   root="$(create_sync_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   prompt="$root/.vscode/prompts/find-issues.prompt.md"
@@ -71,7 +72,7 @@ teardown() {
   root="$(create_sync_parent_root)"
   write_agent_config "$root/.agent-layer/config/agents.json" true true false false
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   [ -f "$root/AGENTS.md" ]
@@ -82,7 +83,7 @@ teardown() {
   [ ! -f "$root/.vscode/settings.json" ]
   [ ! -d "$root/.vscode/prompts" ]
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check"
   [ "$status" -eq 0 ]
 
   rm -rf "$root"
@@ -103,12 +104,12 @@ name: stale
 <!--
   GENERATED FILE
   Source: .agent-layer/config/workflows/stale.md
-  Regenerate: node .agent-layer/src/sync/sync.mjs
+  Regenerate: ./al --sync
 -->
 Stale prompt body.
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
   [ ! -f "$stale_prompt" ]
 
@@ -120,13 +121,13 @@ EOF
   local root prompt
   root="$(create_sync_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   prompt="$root/.vscode/prompts/find-issues.prompt.md"
   rm -f "$prompt"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check"
   [ "$status" -ne 0 ]
   [[ "$output" == *"VS Code prompt files are generated from .agent-layer/config/workflows/*.md."* ]]
 
@@ -147,7 +148,7 @@ description: BOM workflow
 # BOM workflow
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   [ -f "$root/.codex/skills/bom-workflow/SKILL.md" ]
@@ -162,7 +163,7 @@ EOF
   local root
   root="$(create_sync_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run rg -n "\"envFile\": \"\\$\\{workspaceFolder\\}/\\.agent-layer/\\.env\"" \
@@ -177,7 +178,7 @@ EOF
   local root
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run rg -n "\"agent-layer\"" "$root/.vscode/mcp.json"
@@ -198,7 +199,7 @@ EOF
   local root
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run node -e '
@@ -209,7 +210,14 @@ data.servers = data.servers || {};
 data.servers["agent-layer"] = {
   type: "stdio",
   command: "node",
-  args: ["./.agent-layer/src/mcp/agent-layer-prompts/server.mjs"],
+  args: [
+    "./.agent-layer/src/cli.mjs",
+    "mcp-prompts",
+    "--parent-root",
+    ".",
+    "--agent-layer-root",
+    "./.agent-layer",
+  ],
 };
 fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
 ' "$root/.vscode/mcp.json"
@@ -218,10 +226,10 @@ fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n");
   cat >>"$root/.codex/config.toml" <<'EOF'
 [mcp_servers.agent-layer]
 command = "node"
-args = ["./.agent-layer/src/mcp/agent-layer-prompts/server.mjs"]
+args = ["./.agent-layer/src/cli.mjs", "mcp-prompts", "--parent-root", ".", "--agent-layer-root", "./.agent-layer"]
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run rg -n "\"agent-layer\"" "$root/.vscode/mcp.json"
@@ -237,7 +245,7 @@ EOF
   local root baseline
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   [ -f "$root/.vscode/mcp.json" ]
@@ -266,7 +274,7 @@ fs.writeFileSync(file, JSON.stringify(reordered, null, 2) + "\n");
   run cmp -s "$baseline" "$root/.vscode/mcp.json"
   [ "$status" -ne 0 ]
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run diff -u "$baseline" "$root/.vscode/mcp.json"
@@ -298,7 +306,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run rg -n "run_shell_command\\(bad\\)" "$root/.gemini/settings.json"
@@ -344,10 +352,10 @@ EOF
   local root
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check"
   [ "$status" -eq 0 ]
 
   rm -rf "$root"
@@ -358,7 +366,7 @@ EOF
   local root
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check"
   [ "$status" -ne 0 ]
   [[ "$output" == *"WARNING: generated files are out of date."* ]]
 
@@ -370,7 +378,7 @@ EOF
   local root
   root="$(create_sync_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --overwrite --interactive"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --overwrite --interactive"
   [ "$status" -ne 0 ]
   [[ "$output" == *"choose only one of --overwrite or --interactive."* ]]
 
@@ -382,24 +390,11 @@ EOF
   local root
   root="$(create_sync_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check --interactive"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check --interactive"
   [ "$status" -ne 0 ]
   [[ "$output" == *"--interactive cannot be used with --check."* ]]
 
   rm -rf "$root"
-}
-
-# Test: sync --codex fails when CODEX_HOME points outside repo
-@test "sync --codex fails when CODEX_HOME points outside repo" {
-  local root external
-  root="$(create_parent_root)"
-  external="$(make_tmp_dir)"
-
-  run bash -c "cd \"$root\" && CODEX_HOME=\"$external\" node .agent-layer/src/sync/sync.mjs --codex"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"CODEX_HOME must point to the repo-local .codex"* ]]
-
-  rm -rf "$root" "$external"
 }
 
 # Test: sync --interactive fails without a TTY
@@ -414,7 +409,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --interactive"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --interactive"
   [ "$status" -ne 0 ]
   [[ "$output" == *"--interactive requires a TTY."* ]]
 
@@ -435,7 +430,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"unsupported characters"* ]]
 
@@ -485,7 +480,7 @@ EOF
 prefix_rule(pattern=["bad"], decision="allow", justification="legacy")
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --overwrite"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --overwrite"
   [ "$status" -eq 0 ]
 
   run rg -n "run_shell_command\\(bad\\)" "$root/.gemini/settings.json"
@@ -552,12 +547,12 @@ EOF
 prefix_rule(pattern=["bad"], decision="allow", justification="legacy")
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
   [[ "$output" == *"client configs diverge"* ]]
   [[ "$output" == *"Details:"* ]]
   [[ "$output" == *"Next steps:"* ]]
-  [[ "$output" == *"inspect.mjs"* ]]
+  [[ "$output" == *"./al --inspect"* ]]
   [[ "$output" == *"- approvals:"* ]]
   [[ "$output" == *"- mcp:"* ]]
   [[ "$output" == *"Sync preserves existing client entries"* ]]
@@ -570,16 +565,16 @@ EOF
   local root
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   printf '\n# test\n' >> "$root/AGENTS.md"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs --check"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer --check"
   [ "$status" -ne 0 ]
   [[ "$output" == *"WARNING: generated files are out of date."* ]]
   [[ "$output" == *"divergence"* ]]
-  [[ "$output" == *"inspect.mjs"* ]]
+  [[ "$output" == *"./al --inspect"* ]]
 
   rm -rf "$root"
 }
@@ -591,7 +586,7 @@ EOF
 
   rm -rf "$root/.agent-layer/config/instructions"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"missing instructions directory"* ]]
 
@@ -605,7 +600,7 @@ EOF
 
   rm -f "$root/.agent-layer/config/instructions/"*.md
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"no instruction files found"* ]]
 
@@ -619,7 +614,7 @@ EOF
 
   rm -rf "$root/.agent-layer/config/workflows"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"missing workflows directory"* ]]
 
@@ -633,7 +628,7 @@ EOF
 
   rm -f "$root/.agent-layer/config/workflows/"*.md
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"no workflow files found"* ]]
 
@@ -647,7 +642,7 @@ EOF
 
   rm -f "$root/.agent-layer/config/mcp-servers.json"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"servers.json not found"* ]]
 
@@ -668,7 +663,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs 2>&1"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer 2>&1"
   [ "$status" -ne 0 ]
   [[ "$output" == *"defaultArgs[0] must follow a --flag"* ]]
 
@@ -695,7 +690,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"defaults.geminiTrust is not supported"* ]]
 
@@ -720,7 +715,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"bad-server.geminiTrust is not supported"* ]]
 
@@ -745,7 +740,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"clients contains unknown client"* ]]
 
@@ -769,7 +764,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"missing-url.url must be a non-empty string"* ]]
 
@@ -794,7 +789,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"bad-stdio.url is not allowed for stdio servers"* ]]
 
@@ -808,7 +803,7 @@ EOF
 
   rm -f "$root/.agent-layer/.env"
 
-  run bash -c "cd \"$root\" && env -u GITHUB_PERSONAL_ACCESS_TOKEN -u AGENT_LAYER_ROOT node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && env -u GITHUB_PERSONAL_ACCESS_TOKEN -u AGENT_LAYER_ROOT ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -ne 0 ]
   [[ "$output" == *"Missing GITHUB_PERSONAL_ACCESS_TOKEN"* ]]
 
@@ -821,7 +816,7 @@ EOF
   root="$(create_sync_parent_root)"
   write_agent_config "$root/.agent-layer/config/agents.json" false true true true
 
-  run bash -c "cd \"$root\" && env -u GITHUB_PERSONAL_ACCESS_TOKEN -u AGENT_LAYER_ROOT node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && env -u GITHUB_PERSONAL_ACCESS_TOKEN -u AGENT_LAYER_ROOT ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
   [ ! -f "$root/.gemini/settings.json" ]
 
@@ -834,7 +829,7 @@ EOF
   root="$(create_sync_parent_root)"
   token="test-gh-token"
 
-  run bash -c "cd \"$root\" && GITHUB_PERSONAL_ACCESS_TOKEN=\"$token\" node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && GITHUB_PERSONAL_ACCESS_TOKEN=\"$token\" ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run rg -n "https://api.githubcopilot.com/mcp/" "$root/.mcp.json"
@@ -881,7 +876,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && GITHUB_PERSONAL_ACCESS_TOKEN=\"$token\" node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && GITHUB_PERSONAL_ACCESS_TOKEN=\"$token\" ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   run rg -n "\"id\": \"custom-token\"" "$root/.vscode/mcp.json"
@@ -897,10 +892,10 @@ EOF
   local root
   root="$(create_parent_root)"
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/sync.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/inspect.mjs > \"$root/out.json\""
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --inspect --parent-root . --agent-layer-root ./.agent-layer > \"$root/out.json\""
   [ "$status" -eq 0 ]
 
   run node -e "const data=require(process.argv[1]); if (data.summary.approvals !== 0 || data.summary.mcp !== 0) process.exit(1);" "$root/out.json"
@@ -915,7 +910,7 @@ EOF
   root="$(create_parent_root)"
   write_agent_config "$AGENT_LAYER_ROOT/config/agents.json" true true false false
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/inspect.mjs > \"$root/out.json\""
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --inspect --parent-root . --agent-layer-root ./.agent-layer > \"$root/out.json\""
   [ "$status" -eq 0 ]
 
   run node -e "const data=require(process.argv[1]); const note=data.notes.join('\\n'); if (!note.includes('filtered to enabled agents')) process.exit(1); if (!note.includes('disabled agents')) process.exit(1);" "$root/out.json"
@@ -937,7 +932,7 @@ EOF
 prefix_rule(pattern=["extra"], decision="allow", justification="custom")
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/inspect.mjs > \"$root/out.json\""
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --inspect --parent-root . --agent-layer-root ./.agent-layer > \"$root/out.json\""
   [ "$status" -eq 0 ]
 
   run node -e "const data=require(process.argv[1]); const note=data.notes.join('\\n'); if (!note.includes('extra rules files')) process.exit(1); if (!note.includes('.codex/rules/extra.rules')) process.exit(1); if (!note.includes('integrate')) process.exit(1); if (!note.includes('delete')) process.exit(1);" "$root/out.json"
@@ -974,7 +969,7 @@ EOF
 command = "node"
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/inspect.mjs > \"$root/out.json\""
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --inspect --parent-root . --agent-layer-root ./.agent-layer > \"$root/out.json\""
   [ "$status" -eq 0 ]
 
   run node -e "const data=require(process.argv[1]); if (data.summary.mcp !== 0) process.exit(1);" "$root/out.json"

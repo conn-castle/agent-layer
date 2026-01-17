@@ -141,7 +141,7 @@ export function failOutOfDate(repoRoot, changedAbsPaths, extraMessage = "") {
   console.error(`  2) Re-run: ${REGEN_COMMAND} --check`);
   console.error("");
   console.error("If step 2 still fails, check for divergence:");
-  console.error("  3) Run: node .agent-layer/src/sync/inspect.mjs");
+  console.error("  3) Run: ./al --inspect");
   console.error(
     "  4) Update the .agent-layer sources listed above, then re-run sync",
   );

@@ -211,13 +211,13 @@ fi
 
 # Run the standard setup script without checks.
 say "==> Running setup (no checks)"
-setup_args=(--skip-checks)
+setup_args=(--setup --skip-checks)
 if [[ "$use_temp_parent_root" == "1" ]]; then
   setup_args+=(--temp-parent-root)
 elif [[ -n "$parent_root" ]]; then
   setup_args+=(--parent-root "$parent_root")
 fi
-bash "$AGENT_LAYER_ROOT/setup.sh" "${setup_args[@]}"
+"$AGENT_LAYER_ROOT/agent-layer" "${setup_args[@]}"
 
 # Enable repo-local git hooks if this is a git working tree.
 if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then

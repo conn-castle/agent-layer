@@ -4,12 +4,17 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
-# Test: open-vscode.command sets CODEX_HOME and launches the parent root
-@test "open-vscode.command sets CODEX_HOME and launches the parent root" {
-  local root stub_bin
+teardown() {
+  cleanup_test_temp_dirs
+}
+
+# Test: ./al --open-vscode sets CODEX_HOME and launches the parent root
+@test "al --open-vscode sets CODEX_HOME and launches the parent root" {
+  local root stub_bin node_bin
   root="$(create_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$root/stub-bin"
+  node_bin="$(dirname "$(command -v node)")"
   mkdir -p "$stub_bin"
 
   cat >"$stub_bin/code" <<'EOF'
@@ -18,20 +23,51 @@ echo "$CODEX_HOME|$1"
 EOF
   chmod +x "$stub_bin/code"
 
-  PATH="$stub_bin:/bin:/usr/bin" run "$root/.agent-layer/open-vscode.command"
+  # Unset CODEX_HOME to test default behavior; resolve root for macOS /var vs /private/var
+  local real_root
+  real_root="$(cd "$root" && pwd -P)"
+  CODEX_HOME= PATH="$stub_bin:$node_bin:/bin:/usr/bin" run "$root/.agent-layer/agent-layer" --open-vscode --parent-root "$root"
 
   [ "$status" -eq 0 ]
-  [ "$output" = "$root/.codex|$root" ]
+  [ "$output" = "$real_root/.codex|$real_root" ]
 
   rm -rf "$root"
 }
 
-# Test: open-vscode.command does not auto-close Terminal
-@test "open-vscode.command does not auto-close Terminal" {
-  local root stub_bin marker
+# Test: ./al --open-vscode warns and does not override CODEX_HOME
+@test "al --open-vscode warns and does not override CODEX_HOME" {
+  local root stub_bin output status node_bin
+  root="$(create_parent_root)"
+  mkdir -p "$root/.codex" "$root/alt-codex"
+  stub_bin="$root/stub-bin"
+  node_bin="$(dirname "$(command -v node)")"
+  mkdir -p "$stub_bin"
+
+  cat >"$stub_bin/code" <<'EOF'
+#!/usr/bin/env bash
+echo "$CODEX_HOME|$1"
+EOF
+  chmod +x "$stub_bin/code"
+
+  output="$(PATH="$stub_bin:$node_bin:/bin:/usr/bin" CODEX_HOME="$root/alt-codex" \
+    "$root/.agent-layer/agent-layer" --open-vscode --parent-root "$root" 2>&1)"
+  status=$?
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CODEX_HOME is set to $root/alt-codex"* ]]
+  [[ "$output" == *"expected $root/.codex"* ]]
+  [[ "$output" == *"$root/alt-codex|$root" ]]
+
+  rm -rf "$root"
+}
+
+# Test: ./al --open-vscode does not auto-close Terminal
+@test "al --open-vscode does not auto-close Terminal" {
+  local root stub_bin marker node_bin
   root="$(create_parent_root)"
   mkdir -p "$root/.codex"
   stub_bin="$root/stub-bin"
+  node_bin="$(dirname "$(command -v node)")"
   mkdir -p "$stub_bin"
   marker="$root/osascript-called"
 
@@ -49,7 +85,7 @@ EOF
   chmod +x "$stub_bin/code" "$stub_bin/osascript"
 
   TERM_PROGRAM="Apple_Terminal" OSASCRIPT_MARKER="$marker" \
-    PATH="$stub_bin:/bin:/usr/bin" run "$root/.agent-layer/open-vscode.command"
+    PATH="$stub_bin:$node_bin:/bin:/usr/bin" run "$root/.agent-layer/agent-layer" --open-vscode --parent-root "$root"
 
   [ "$status" -eq 0 ]
   [ ! -f "$marker" ]
@@ -57,13 +93,14 @@ EOF
   rm -rf "$root"
 }
 
-# Test: open-vscode.command fails when code CLI is missing
-@test "open-vscode.command fails when code CLI is missing" {
-  local root
+# Test: ./al --open-vscode fails when code CLI is missing
+@test "al --open-vscode fails when code CLI is missing" {
+  local root node_bin
   root="$(create_parent_root)"
+  node_bin="$(dirname "$(command -v node)")"
   mkdir -p "$root/.codex"
 
-  PATH="/bin:/usr/bin" run "$root/.agent-layer/open-vscode.command"
+  PATH="$node_bin:/bin:/usr/bin" run "$root/.agent-layer/agent-layer" --open-vscode --parent-root "$root"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"code"* ]]

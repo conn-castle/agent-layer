@@ -4,8 +4,12 @@
 # Load shared helpers for temp roots and stub binaries.
 load "helpers.bash"
 
-# Test: clean.sh removes generated outputs but keeps sources
-@test "clean.sh removes generated outputs but keeps sources" {
+teardown() {
+  cleanup_test_temp_dirs
+}
+
+# Test: ./al --clean removes generated outputs but keeps sources
+@test "al --clean removes generated outputs but keeps sources" {
   local root
   root="$(create_isolated_parent_root)"
 
@@ -73,7 +77,7 @@ name: generated
 <!--
   GENERATED FILE
   Source: .agent-layer/config/workflows/generated.md
-  Regenerate: node .agent-layer/src/sync/sync.mjs
+  Regenerate: ./al --sync
 -->
 Generated prompt body.
 EOF
@@ -100,7 +104,7 @@ EOF
 EOF
   : >"$root/.agent-layer/config/policy/commands.json"
 
-  run "$root/.agent-layer/clean.sh"
+  run "$root/.agent-layer/agent-layer" --clean
   [ "$status" -eq 0 ]
 
   [ ! -f "$root/AGENTS.md" ]
@@ -143,8 +147,8 @@ EOF
   rm -rf "$root"
 }
 
-# Test: clean.mjs removes managed VS Code MCP servers
-@test "clean.mjs removes managed VS Code MCP servers" {
+# Test: cli clean removes managed VS Code MCP servers
+@test "cli clean removes managed VS Code MCP servers" {
   local root
   root="$(create_isolated_parent_root)"
 
@@ -169,7 +173,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/clean.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --clean --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   [ -f "$root/.vscode/mcp.json" ]
@@ -181,8 +185,8 @@ EOF
   rm -rf "$root"
 }
 
-# Test: clean.mjs removes managed Claude MCP servers
-@test "clean.mjs removes managed Claude MCP servers" {
+# Test: cli clean removes managed Claude MCP servers
+@test "cli clean removes managed Claude MCP servers" {
   local root
   root="$(create_isolated_parent_root)"
 
@@ -207,7 +211,7 @@ EOF
 }
 EOF
 
-  run bash -c "cd \"$root\" && node .agent-layer/src/sync/clean.mjs"
+  run bash -c "cd \"$root\" && ./.agent-layer/agent-layer --clean --parent-root . --agent-layer-root ./.agent-layer"
   [ "$status" -eq 0 ]
 
   [ -f "$root/.mcp.json" ]

@@ -19,13 +19,13 @@ jobs:
           node-version: "20"
 
       - name: Install dev tools
-        run: sudo apt-get update && sudo apt-get install -y bats ripgrep shellcheck shfmt ruby
+        run: |
+          sudo apt-get update && sudo apt-get install -y ripgrep shellcheck shfmt
+          # Install bats-core from npm (apt version is too old, need 1.5.0+)
+          npm install -g bats
 
       - name: Install node dev dependencies
         run: npm install
-
-      - name: Install bashcov
-        run: sudo gem install bashcov --no-document
 
       - name: Run CI
         run: ./tests/ci.sh

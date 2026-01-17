@@ -10,6 +10,12 @@ ln -s "$repo_root" "$parent_root/.agent-layer"
 
 trap '[[ "${PARENT_ROOT_KEEP_TEMP:-0}" == "1" ]] || rm -rf "$parent_root"' EXIT INT TERM
 
-(cd "$parent_root" && node .agent-layer/src/sync/sync.mjs)
+(cd "$parent_root" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer)
+
+# Install MCP prompt server deps for SDK-required tests.
+mcp_sdk_dir="$repo_root/src/mcp/agent-layer-prompts/node_modules/@modelcontextprotocol/sdk"
+if [[ ! -d "$mcp_sdk_dir" ]]; then
+  (cd "$repo_root/src/mcp/agent-layer-prompts" && npm install)
+fi
 
 "$repo_root/tests/run.sh" --parent-root "$parent_root" --run-from-repo-root

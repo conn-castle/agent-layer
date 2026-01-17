@@ -21,6 +21,7 @@
     { "argv": ["pytest"] },
     { "argv": ["node"] },
     { "argv": ["npm"] },
-    { "argv": ["pnpm"] }
+    { "argv": ["pnpm"] },
+    { "argv": ["pre-commit"] }
   ]
 }
