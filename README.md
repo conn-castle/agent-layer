@@ -928,6 +928,7 @@ If you want to run `./al ...` directly in this repo and have configs/docs genera
    cp config/templates/docs/FEATURES.md docs/FEATURES.md
    cp config/templates/docs/ROADMAP.md docs/ROADMAP.md
    cp config/templates/docs/DECISIONS.md docs/DECISIONS.md
+   cp config/templates/docs/COMMANDS.md docs/COMMANDS.md
    ```
 
 Note: Ensure this repo's `.gitignore` includes the managed agent-layer block so the symlink and generated outputs stay ignored.

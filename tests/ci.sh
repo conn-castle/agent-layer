@@ -10,6 +10,11 @@ ln -s "$repo_root" "$parent_root/.agent-layer"
 
 trap '[[ "${PARENT_ROOT_KEEP_TEMP:-0}" == "1" ]] || rm -rf "$parent_root"' EXIT INT TERM
 
+# Export dummy tokens for CI (sync needs these for Gemini HTTP server configs).
+export GITHUB_PERSONAL_ACCESS_TOKEN="${GITHUB_PERSONAL_ACCESS_TOKEN:-ci-dummy-token}"
+export CONTEXT7_API_KEY="${CONTEXT7_API_KEY:-ci-dummy-token}"
+export TAVILY_API_KEY="${TAVILY_API_KEY:-ci-dummy-token}"
+
 (cd "$parent_root" && ./.agent-layer/agent-layer --sync --parent-root . --agent-layer-root ./.agent-layer)
 
 # Install MCP prompt server deps for SDK-required tests.

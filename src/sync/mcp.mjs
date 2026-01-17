@@ -13,7 +13,6 @@ function readEnvVarFromFile(filePath, name) {
   if (!fileExists(filePath)) return null;
   const lines = readUtf8(filePath).split(/\r?\n/);
   const keyPattern = new RegExp(`^${name}\\s*=`);
-  const barePattern = new RegExp(`^${name}(\\b|\\s)`);
   let found = null;
 
   for (const rawLine of lines) {
