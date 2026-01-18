@@ -1,5 +1,5 @@
 ---
-description: Issue-driven maintenance loop: triage docs/ISSUES.md, produce an explicit implementation plan, pause for human approval, then execute, audit, and verify—updating ISSUES.md throughout.
+description: Issue-driven maintenance loop: triage docs/agent-layer/ISSUES.md, produce an explicit implementation plan, pause for human approval, then execute, audit, and verify—updating ISSUES.md throughout.
 ---
 
 # Issue-driven maintenance loop (plan → execute → audit → verify)
@@ -9,7 +9,7 @@ This workflow is designed to work in **any repository**.
 
 - It prefers **repo-defined commands** (Make/Task/Just/Turbo/package scripts/custom CI scripts).
 - It supports a **human approval gate** to prevent unintended changes.
-- It assumes an issues ledger file exists at `docs/ISSUES.md`, but includes fallbacks if it does not.
+- It assumes an issues ledger file exists at `docs/agent-layer/ISSUES.md`, but includes fallbacks if it does not.
 
 Treat this as a starting point. Adjust scope limits and verification rigor based on project maturity and risk.
 
@@ -19,7 +19,7 @@ Treat this as a starting point. Adjust scope limits and verification rigor based
 If the user provides extra direction, interpret it as:
 
 - Whether they want planning only or to proceed to execution after approval (default: plan).
-- Alternate paths for the issues ledger or README (defaults: `docs/ISSUES.md`, `README.md`). The plan file is always stored at `.agent-layer/tmp/implementation_plan.md`.
+- Alternate paths for the issues ledger or README (defaults: `docs/agent-layer/ISSUES.md`, `README.md`). The plan file is always stored at `.agent-layer/tmp/implementation_plan.md`.
 - Maximum number of issues to fix in one run (default: 3).
 - Maximum number of files to touch (default: 12).
 - Desired risk level and verification depth (default: medium risk and automatic verification; skip only if explicitly requested).
@@ -63,12 +63,12 @@ If only one agent is available, execute phases in this order and clearly label e
 
 2. Verify documentation files exist:
    - Open the README (default: `README.md`).
-   - Open the issues ledger (default: `docs/ISSUES.md`).
+   - Open the issues ledger (default: `docs/agent-layer/ISSUES.md`).
 
 **If the issues ledger file does not exist**
 - Search for an issue ledger file (examples: `ISSUES.md`, `docs/issues.md`, `docs/TODO.md`, `TODO.md`).
 - If none exists:
-  - create a minimal `docs/ISSUES.md` with a header + “Known Issues” section
+  - create a minimal `docs/agent-layer/ISSUES.md` with a header + “Known Issues” section
   - populate it with any obvious issues discovered during triage (keep brief)
 
 **Deliverable**
@@ -256,6 +256,6 @@ Return:
 
 ## Output expectations (what “done” looks like)
 - `.agent-layer/tmp/implementation_plan.md` exists (plan mode) OR is completed/removed (execute mode).
-- Selected issues are fixed and removed/marked resolved in `docs/ISSUES.md`.
-- Any discovered out-of-scope issues are captured in `docs/ISSUES.md`.
+- Selected issues are fixed and removed/marked resolved in `docs/agent-layer/ISSUES.md`.
+- Any discovered out-of-scope issues are captured in `docs/agent-layer/ISSUES.md`.
 - Verification was performed at the appropriate level (or explicitly skipped with documented limitation).

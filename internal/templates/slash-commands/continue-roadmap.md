@@ -6,13 +6,13 @@ description: Continue executing the roadmap by selecting the next actionable tas
 
 ## Intent
 Pick up where the project left off by:
-1) finding the **active phase** in `docs/ROADMAP.md`,  
+1) finding the **active phase** in `docs/agent-layer/ROADMAP.md`,  
 2) selecting the **next unchecked task(s)**,  
 3) creating an approval-gated `.agent-layer/tmp/implementation_plan.md`,  
 4) implementing + verifying, and  
-5) updating `docs/ROADMAP.md` and project memory files.
+5) updating `docs/agent-layer/ROADMAP.md` and project memory files.
 
-This workflow is **roadmap-driven**. It should not “freestyle” features from `docs/FEATURES.md` unless they are already scheduled into the roadmap.
+This workflow is **roadmap-driven**. It should not “freestyle” features from `docs/agent-layer/FEATURES.md` unless they are already scheduled into the roadmap.
 
 ---
 
@@ -24,7 +24,7 @@ If the user provides extra direction, interpret it as:
 - How many tasks to bundle (default: the smallest coherent set, usually one task).
 - Alternate path for the checklist file (default: `.agent-layer/tmp/task.md`). The plan file is always stored at `.agent-layer/tmp/implementation_plan.md`.
 - Desired risk level and verification depth (defaults: medium risk and automatic verification).
-- Whether to update `docs/COMMANDS.md` when new repeatable commands are discovered (default: yes).
+- Whether to update `docs/agent-layer/COMMANDS.md` when new repeatable commands are discovered (default: yes).
 
 **Approval gate**
 - Code changes are allowed only when the user has asked to execute **and** explicit approval is given.
@@ -56,14 +56,14 @@ If only one agent is available, execute phases in this order with explicit headi
 
 1. Confirm baseline:
    - `git status --porcelain`
-2. Ensure `docs/COMMANDS.md` exists.
-   - If missing, ask the user before creating it. If approved, copy `.agent-layer/templates/docs/COMMANDS.md` into `docs/COMMANDS.md` when available; otherwise ask before creating a minimal structured file.
+2. Ensure `docs/agent-layer/COMMANDS.md` exists.
+   - If missing, ask the user before creating it. If approved, copy `.agent-layer/templates/docs/COMMANDS.md` into `docs/agent-layer/COMMANDS.md` when available; otherwise ask before creating a minimal structured file.
 3. Read (in this order):
-   - `docs/ROADMAP.md`
-   - `docs/DECISIONS.md` (if present)
+   - `docs/agent-layer/ROADMAP.md`
+   - `docs/agent-layer/DECISIONS.md` (if present)
    - `README.md`
-   - `docs/ISSUES.md`
-   - `docs/FEATURES.md` (for awareness only; do not schedule from it here)
+   - `docs/agent-layer/ISSUES.md`
+   - `docs/agent-layer/FEATURES.md` (for awareness only; do not schedule from it here)
 
 ---
 
@@ -113,7 +113,7 @@ Inspect only what is necessary:
 - relevant docs referenced by README/ROADMAP (for example schema docs if present)
 
 ## 2C) Issues intersection
-Scan `docs/ISSUES.md` for:
+Scan `docs/agent-layer/ISSUES.md` for:
 - issues that block the selected tasks (treat as prerequisites)
 - issues likely to be fixed “for free” by this work
 - issues that would become obsolete once the task is done
@@ -123,7 +123,7 @@ Rules:
 - If it is large, document it as a prerequisite and ask the user whether to expand scope.
 
 ## 2D) Feature intersection (awareness only)
-- Do not pull new work from `docs/FEATURES.md`.
+- Do not pull new work from `docs/agent-layer/FEATURES.md`.
 - If you notice a feature that is already effectively scheduled in the roadmap (duplicated wording), note it for cleanup (FEATURES should remain unscheduled only).
 
 ## 2E) Ambiguity gate
@@ -151,7 +151,7 @@ Required sections:
 5. **Documentation**
    - which docs might need updates (README, COMMANDS, schema docs)
 6. **Verification plan**
-   - commands to run (prefer `docs/COMMANDS.md`)
+   - commands to run (prefer `docs/agent-layer/COMMANDS.md`)
    - success criteria
 7. **Risks and rollback**
    - what could break and how to revert safely
@@ -196,10 +196,10 @@ Execution rules:
 
 While executing:
 - If you discover out-of-scope problems:
-  - add them to `docs/ISSUES.md` (compact entry)
+  - add them to `docs/agent-layer/ISSUES.md` (compact entry)
   - do not expand scope
 - If you discover new reusable commands:
-  - update `docs/COMMANDS.md` unless the user asked not to update commands
+  - update `docs/agent-layer/COMMANDS.md` unless the user asked not to update commands
 
 ---
 
@@ -211,23 +211,23 @@ While executing:
 - If the user requests full verification, run the repo’s full checks.
 - Otherwise choose fast by default and escalate to full when risk is high or changes touch core interfaces.
 
-## 6B) Use `docs/COMMANDS.md` first
+## 6B) Use `docs/agent-layer/COMMANDS.md` first
 Run the most relevant commands documented there (tests, typecheck, lint, build), prioritizing the smallest set that credibly verifies the change.
 
 If the required command is missing from COMMANDS:
 - attempt discovery (Makefile/scripts/README)
 - if still unclear, ask the user
-- then add the final command to `docs/COMMANDS.md` if it will be reused
+- then add the final command to `docs/agent-layer/COMMANDS.md` if it will be reused
 
 If verification fails:
 - fix failures that are directly caused by the change
-- log broader issues to `docs/ISSUES.md` if out-of-scope
+- log broader issues to `docs/agent-layer/ISSUES.md` if out-of-scope
 
 ---
 
 # Phase 7 — Update roadmap and memory files (Memory Curator)
 
-## 7A) Update `docs/ROADMAP.md`
+## 7A) Update `docs/agent-layer/ROADMAP.md`
 - For each selected roadmap task completed:
   - change `- [ ]` to `- [x]`
 - If the phase Exit criteria are satisfied:
@@ -236,14 +236,14 @@ If verification fails:
 
 Do not renumber completed phases. Only renumber incomplete phases if necessary for consistency and only when explicitly editing sequencing (rare for this workflow).
 
-## 7B) Update `docs/ISSUES.md`
+## 7B) Update `docs/agent-layer/ISSUES.md`
 - Remove issues that were fixed by this work.
 - Add any newly discovered out-of-scope issues (compact, deduplicated).
 
-## 7C) Update `docs/DECISIONS.md` (if needed)
+## 7C) Update `docs/agent-layer/DECISIONS.md` (if needed)
 If a significant decision was made, log it (briefly).
 
-## 7D) Update `docs/FEATURES.md` (if needed)
+## 7D) Update `docs/agent-layer/FEATURES.md` (if needed)
 If a feature was implemented as part of roadmap work and it still exists in FEATURES:
 - remove it (FEATURES should only contain unscheduled/unfinished user-visible requests)
 

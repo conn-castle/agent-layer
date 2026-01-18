@@ -6,12 +6,12 @@ description: Propose roadmap updates by integrating a coherent slice of the FEAT
 
 ## Intent
 Treat:
-- `docs/FEATURES.md` as the **unscheduled backlog** of user-visible capabilities.
-- `docs/ROADMAP.md` as the **source of truth for sequencing** and planned work.
+- `docs/agent-layer/FEATURES.md` as the **unscheduled backlog** of user-visible capabilities.
+- `docs/agent-layer/ROADMAP.md` as the **source of truth for sequencing** and planned work.
 
 This workflow **does not implement features**. It produces a **reviewable proposal** for how to schedule backlog items into the roadmap, with explicit options for partial approval.
 
-It also checks `docs/ISSUES.md` because scheduling a forthcoming feature can:
+It also checks `docs/agent-layer/ISSUES.md` because scheduling a forthcoming feature can:
 - make an issue obsolete,
 - turn an issue into a prerequisite,
 - or reveal a missing issue that should exist.
@@ -47,28 +47,28 @@ If only one agent is available, execute phases in this order with explicit headi
 - Do not propose scheduling hundreds of items. The proposal must remain reviewable.
 - Prefer a small number of **coherent groupings** over many scattered suggestions.
 - Do not invent new requirements. Use only what is in FEATURES/ISSUES/ROADMAP/README/DECISIONS.
-- Do not schedule non-user-visible work from `FEATURES.md`. If an entry is really an engineering improvement, recommend moving it to `docs/ISSUES.md` instead.
+- Do not schedule non-user-visible work from `FEATURES.md`. If an entry is really an engineering improvement, recommend moving it to `docs/agent-layer/ISSUES.md` instead.
 
 ---
 
 # Phase 0 — Preflight (Standards Reader)
 
 1. Ensure the project memory files exist:
-   - `docs/ROADMAP.md`
-   - `docs/FEATURES.md`
-   - `docs/ISSUES.md`
-   - `docs/DECISIONS.md`
+   - `docs/agent-layer/ROADMAP.md`
+   - `docs/agent-layer/FEATURES.md`
+   - `docs/agent-layer/ISSUES.md`
+   - `docs/agent-layer/DECISIONS.md`
 
 If any are missing:
-- Ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/<NAME>.md` when available, preserving headings and markers.
+- Ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/agent-layer/<NAME>.md` when available, preserving headings and markers.
 - If a template is not available, create a minimal file with a clear purpose header and an entries section.
 
 2. Read in this order (when present):
-- `docs/ROADMAP.md`
-- `docs/DECISIONS.md`
+- `docs/agent-layer/ROADMAP.md`
+- `docs/agent-layer/DECISIONS.md`
 - `README.md`
-- `docs/FEATURES.md`
-- `docs/ISSUES.md`
+- `docs/agent-layer/FEATURES.md`
+- `docs/agent-layer/ISSUES.md`
 
 Extract:
 - current phases (done vs not done)
@@ -81,7 +81,7 @@ Extract:
 # Phase 1 — Backlog triage (Backlog Triage Lead)
 
 ## 1A) Parse and normalize the backlog
-From `docs/FEATURES.md`, extract each feature’s:
+From `docs/agent-layer/FEATURES.md`, extract each feature’s:
 - priority (Critical/High/Medium/Low)
 - area
 - capability
@@ -91,7 +91,7 @@ From `docs/FEATURES.md`, extract each feature’s:
 ## 1B) Validate classification
 Identify entries that do **not** appear user-visible (examples: refactors, test harness only, CI changes).
 For each misclassified entry, prepare a “Recommendation” section:
-- “Move to `docs/ISSUES.md` as engineering work” (do not schedule in roadmap as a feature).
+- “Move to `docs/agent-layer/ISSUES.md` as engineering work” (do not schedule in roadmap as a feature).
 
 ## 1C) Candidate selection (reviewable but adaptive)
 Select a **reasonable** subset using these heuristics:
@@ -118,7 +118,7 @@ Within a single suggestion, you may include more features **if they are strongly
 
 If the user wants issue impacts included:
 
-1. Scan `docs/ISSUES.md` for issues related to selected candidate features.
+1. Scan `docs/agent-layer/ISSUES.md` for issues related to selected candidate features.
 2. For each candidate feature/group, classify issue impact:
 - **Obsoleted**: implementing the feature would likely remove the need for the issue.
 - **Prerequisite**: the issue likely must be resolved before the feature is feasible.

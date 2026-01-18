@@ -14,17 +14,17 @@ Perform a structured audit to find:
 
 This workflow is **report-first**:
 - **Do not modify code**.
-- **Do not write to** `docs/ISSUES.md`, `docs/FEATURES.md`, `docs/ROADMAP.md`, or `docs/DECISIONS.md` unless the user explicitly requests it.
+- **Do not write to** `docs/agent-layer/ISSUES.md`, `docs/agent-layer/FEATURES.md`, `docs/agent-layer/ROADMAP.md`, or `docs/agent-layer/DECISIONS.md` unless the user explicitly requests it.
 
 ---
 
 ## Project memory files (authoritative)
-- `docs/ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.
-- `docs/FEATURES.md` — backlog of deferred user feature requests (not yet scheduled into the roadmap).
-- `docs/ROADMAP.md` — numbered phases; guides architecture and sequencing.
-- `docs/DECISIONS.md` — rolling log of important decisions (brief).
+- `docs/agent-layer/ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.
+- `docs/agent-layer/FEATURES.md` — backlog of deferred user feature requests (not yet scheduled into the roadmap).
+- `docs/agent-layer/ROADMAP.md` — numbered phases; guides architecture and sequencing.
+- `docs/agent-layer/DECISIONS.md` — rolling log of important decisions (brief).
 
-If any are missing, ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/<NAME>.md` (preserve headings and markers), but only if the user explicitly asks to apply changes.
+If any are missing, ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/agent-layer/<NAME>.md` (preserve headings and markers), but only if the user explicitly asks to apply changes.
 
 ---
 
@@ -43,7 +43,7 @@ If the user provides extra direction, interpret it as:
 ---
 
 ## Roles and handoffs (multi-agent)
-1. **Standards Extractor**: read `docs/ROADMAP.md` then `docs/DECISIONS.md`, then scan `docs/FEATURES.md` and `docs/ISSUES.md`, then read `README.md` to derive the “audit lens”.
+1. **Standards Extractor**: read `docs/agent-layer/ROADMAP.md` then `docs/agent-layer/DECISIONS.md`, then scan `docs/agent-layer/FEATURES.md` and `docs/agent-layer/ISSUES.md`, then read `README.md` to derive the “audit lens”.
 2. **Diff Auditor**: narrow audit on changed files per `scope`.
 3. **Deep-Dive Investigator**: expand one layer outward from the highest-impact narrow findings.
 4. **Broad Scanner**: lightweight smell scanning + hotspot spot-checking.
@@ -92,10 +92,10 @@ If uncommitted changes yield no files, fall back to the last commit and note it 
 # Phase 1 — Standards and roadmap lens (Standards Extractor)
 
 Read in this order (when present):
-1. `docs/ROADMAP.md`
-2. `docs/DECISIONS.md`
-3. `docs/FEATURES.md`
-4. `docs/ISSUES.md`
+1. `docs/agent-layer/ROADMAP.md`
+2. `docs/agent-layer/DECISIONS.md`
+3. `docs/agent-layer/FEATURES.md`
+4. `docs/agent-layer/ISSUES.md`
 5. `README.md`
 
 Extract:
@@ -247,12 +247,12 @@ Formats:
 
 Proceed only if the user explicitly asked to apply changes.
 
-1. Ensure all memory files exist (ask the user before creating any missing files; if approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/<NAME>.md`).
+1. Ensure all memory files exist (ask the user before creating any missing files; if approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/agent-layer/<NAME>.md`).
 2. For each approved finding:
-   - Add to `docs/ISSUES.md` if it is a defect, refactor, technical debt, reliability/security/performance risk, or test gap.
-   - Add to `docs/FEATURES.md` only if it is a user-visible capability request.
-   - Add to `docs/DECISIONS.md` only if it is a significant decision and the user wants it logged.
-   - Consider `docs/ROADMAP.md` updates only if the user explicitly wants roadmap edits.
+   - Add to `docs/agent-layer/ISSUES.md` if it is a defect, refactor, technical debt, reliability/security/performance risk, or test gap.
+   - Add to `docs/agent-layer/FEATURES.md` only if it is a user-visible capability request.
+   - Add to `docs/agent-layer/DECISIONS.md` only if it is a significant decision and the user wants it logged.
+   - Consider `docs/agent-layer/ROADMAP.md` updates only if the user explicitly wants roadmap edits.
 3. Deduplicate by merging into existing entries; keep entries compact.
 
 ---

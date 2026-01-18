@@ -16,6 +16,7 @@ grep
 head
 tail
 
+make
 python
 pytest
 node
