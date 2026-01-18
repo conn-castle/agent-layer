@@ -2,9 +2,10 @@
 # Managed by Agent Layer. Do not edit this block directly.
 # Edit .agent-layer/gitignore.block and re-run ./al install to apply changes.
 #
-# Agent Layer config
-.agent-layer/
+# Agent Layer config (always ignore .env)
 .agent-layer/.env
+# Optional: keep uncommented to ignore .agent-layer/ config.
+.agent-layer/
 
 # Agent Layer launcher
 al
@@ -16,15 +17,15 @@ GEMINI.md
 .github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts
+.agent/
 .mcp.json
 .codex/
 .gemini/
 .claude/
 .vscode/mcp.json
 .vscode/prompts/
-# Optional: uncomment to ignore VS Code settings.
-# .vscode/settings.json
-.agent/
+# Optional: keep uncommented to ignore VS Code settings.
+.vscode/settings.json
 
 # Agent Layer temp runs
 tmp/agent-layer/

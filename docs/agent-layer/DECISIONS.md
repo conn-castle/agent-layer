@@ -1,4 +1,4 @@
-# Decisions (vNext / Go rewrite)
+# Decisions
 
 Purpose: Rolling log of important decisions (brief).
 
@@ -9,7 +9,7 @@ Notes for updates:
 - Lines below the first line must be indented by 4 spaces so they stay associated with the entry.
 
 Entry format:
-- Decision YYYY-MM-DD: Short title
+- Decision YYYY-MM-DD abcdef: Short title
     Decision: <what was chosen>
     Reason: <why it was chosen>
     Tradeoffs: <what is gained and what is lost>

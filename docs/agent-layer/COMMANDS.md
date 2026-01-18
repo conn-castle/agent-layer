@@ -19,7 +19,11 @@ Run from: <repo root or path>
 Prerequisites: <only if critical>  
 Notes: <optional constraints or tips>
 
-## Setup
+## Commands
+
+<!-- ENTRIES START -->
+
+### Setup
 
 - Setup a fresh clone (installs pinned tools + pre-commit hooks)
 ```bash
@@ -51,7 +55,7 @@ pre-commit run --all-files
 Run from: repo root  
 Prerequisites: `pre-commit` installed
 
-## Format
+### Format
 
 - Format Go code (gofmt + goimports)
 ```bash
@@ -69,7 +73,7 @@ Run from: repo root
 Prerequisites: `make tools` has been run  
 Notes: Fails if any files need formatting.
 
-## Lint
+### Lint
 
 - Run golangci-lint
 ```bash
@@ -78,7 +82,7 @@ make lint
 Run from: repo root  
 Prerequisites: `make tools` has been run
 
-## Test
+### Test
 
 - Run all tests
 ```bash
@@ -88,7 +92,7 @@ Run from: repo root
 Prerequisites: `make tools` has been run  
 Notes: Uses `gotestsum` for nicer output.
 
-## Modules
+### Modules
 
 - Run go mod tidy
 ```bash
@@ -105,7 +109,7 @@ Run from: repo root
 Prerequisites: Go 1.25.6+  
 Notes: Fails if `go.mod`/`go.sum` would change.
 
-## Coverage
+### Coverage
 
 - Enforce coverage threshold (>= 95%)
 ```bash
@@ -114,7 +118,7 @@ make coverage
 Run from: repo root  
 Prerequisites: Go 1.25.6+
 
-## Dev
+### Dev
 
 - Fast local checks (format + fmt-check + lint + test)
 ```bash
@@ -123,7 +127,7 @@ make dev
 Run from: repo root  
 Prerequisites: Go 1.25.6+, `make tools` has been run
 
-## CI
+### CI
 
 - Run CI checks locally
 ```bash
@@ -133,7 +137,7 @@ Run from: repo root
 Prerequisites: Go 1.25.6+, `make tools` has been run  
 Notes: Includes `make tidy-check`; requires a clean working tree.
 
-## Release
+### Release
 
 - Build release artifacts locally (cross-compile)
 ```bash
