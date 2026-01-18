@@ -4,11 +4,7 @@
 !.env.example
 
 tmp/
-state/
-node_modules/
-**/node_modules/
 .DS_Store
-/.actrc
 
 .vscode/settings.json
 /docs/
