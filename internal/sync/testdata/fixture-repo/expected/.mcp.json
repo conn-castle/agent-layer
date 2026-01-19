@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "agent-layer": {
+      "command": "./al",
+      "args": [
+        "mcp-prompts"
+      ]
+    },
+    "example": {
+      "url": "https://mcp.example.com?token=${EXAMPLE_TOKEN}",
+      "headers": {
+        "Authorization": "Bearer ${EXAMPLE_TOKEN}"
+      }
+    }
+  }
+}

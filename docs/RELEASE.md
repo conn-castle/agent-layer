@@ -29,7 +29,7 @@ git push origin "$VERSION"
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
 2. The workflow publishes `agent-layer-install.sh`, platform binaries, and `SHA256SUMS`.
-3. Use the `CHANGELOG.md` entry for release notes.
+3. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
 
 ## Post-release verification (fresh repo)
 ```bash

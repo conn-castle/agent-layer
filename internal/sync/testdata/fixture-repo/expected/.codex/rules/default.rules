@@ -1,0 +1,6 @@
+# GENERATED FILE
+# Source: .agent-layer/commands.allow
+# Regenerate: ./al sync
+
+prefix_rule(pattern=["git", "status"], decision="allow", justification="agent-layer allowlist")
+prefix_rule(pattern=["ls"], decision="allow", justification="agent-layer allowlist")

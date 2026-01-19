@@ -55,25 +55,14 @@ Phase template (incomplete):
 - Added shared launch pipeline and client launchers with per-agent model/effort wiring.
 - Ensured Antigravity runs with generated instructions and slash commands only.
 
-## Phase 5 — v0.3.0 minimum viable product (first Go release)
-
-### Goal
-- Ship the first Go release that fulfills the README contract and is stable for daily use.
-
-### Tasks
-- [x] Implement `[[mcp.servers]]` projection for both `transport = "http"` and `transport = "stdio"` (including env wiring).
-- [x] Implement `${ENV_VAR}` substitution from `.agent-layer/.env` where needed for config generation.
-- [x] Implement approvals modes: `all`, `mcp`, `commands`, `none` and generate per-client projections.
-- [x] Wire `.agent-layer/.env` tokens into generated client configs (client-specific best practice).
-- [x] Warn about existing files and support `al install --overwrite` to reset templates.
-- [x] Fix `go run ./cmd/al <client>` to avoid `spawn ./al ENOENT` when launching the internal MCP prompt server.
-- [x] Update the default `.agent-layer/gitignore.block` to make `.agent-layer/` optional and explain customization.
-
-### Exit criteria
-- All README-listed commands and behaviors are implemented and tested.
-- No open issues tagged for v0.3.0 in `docs/agent-layer/ISSUES.md`.
-- Installer, sync, and client launch work from both `go run` and the built `./al` binary.
-- Continuous integration is green and the release workflow produces usable binaries.
+## Phase 5 ✅ — v0.3.0 minimum viable product (first Go release)
+- Implemented `[[mcp.servers]]` projection for HTTP and stdio transports with environment variable wiring.
+- Added `${ENV_VAR}` substitution from `.agent-layer/.env` with client-specific placeholder syntax preservation.
+- Implemented approval modes (`all`, `mcp`, `commands`, `none`) with per-client projections.
+- Added `al install --overwrite` flag and warnings for existing files that differ from templates.
+- Fixed `go run ./cmd/al <client>` to locate the binary correctly for the internal MCP prompt server.
+- Updated default `gitignore.block` to make `.agent-layer/` optional with customization guidance.
+- Release workflow now auto-extracts release notes from `CHANGELOG.md`.
 
 ## Phase 6 — Post-v0.3.0 experience improvements
 
@@ -85,7 +74,7 @@ Phase template (incomplete):
 - [ ] Implement `al wizard` for agent enablement + model selection + Codex reasoning.
 - [ ] Implement shell completions (`al completion bash|zsh|fish|powershell`).
 - [ ] Improve `.agent-layer/config.toml` usability (comments, structure, and editing aids).
-- [ ] Add interaction monitoring to suggest instruction and rules improvements.
+- [ ] Add interaction monitoring to agent system instructions to self-improve all prompts, rules, and workflows. This should be add as an explicit ask in the finish task workflow.
 - [ ] Rename `FEATURES.md` to a backlog name and update references in docs and prompts.
 - [ ] Enforce a single blank line between entries in all memory files.
 - [ ] Remove the quality audit report file from `find-issues` outputs and switch to a report path that supports concurrent agents.

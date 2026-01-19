@@ -1,0 +1,11 @@
+# Allow expected outputs that are normally gitignored at repo root.
+!.claude/
+!.claude/**
+!.codex/
+!.codex/**
+!.gemini/
+!.gemini/**
+!.mcp.json
+!AGENTS.md
+!CLAUDE.md
+!GEMINI.md

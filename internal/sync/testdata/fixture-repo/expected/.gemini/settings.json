@@ -1,0 +1,24 @@
+{
+  "tools": {
+    "allowed": [
+      "run_shell_command(git status)",
+      "run_shell_command(ls)"
+    ]
+  },
+  "mcpServers": {
+    "agent-layer": {
+      "command": "./al",
+      "args": [
+        "mcp-prompts"
+      ],
+      "trust": true
+    },
+    "example": {
+      "httpUrl": "https://mcp.example.com?token=${EXAMPLE_TOKEN}",
+      "headers": {
+        "Authorization": "Bearer ${EXAMPLE_TOKEN}"
+      },
+      "trust": true
+    }
+  }
+}

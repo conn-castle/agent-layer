@@ -69,7 +69,10 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 		return "", err
 	}
 
-	for _, server := range resolved {
+	for i, server := range resolved {
+		if i > 0 {
+			builder.WriteString("\n")
+		}
 		builder.WriteString(fmt.Sprintf("[mcp_servers.%s]\n", server.ID))
 		switch server.Transport {
 		case "http":
@@ -81,7 +84,6 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 		default:
 			return "", fmt.Errorf("mcp server %s: unsupported transport %s", server.ID, server.Transport)
 		}
-		builder.WriteString("\n")
 	}
 
 	return builder.String(), nil
