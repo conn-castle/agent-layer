@@ -85,7 +85,15 @@ func buildGeminiSettings(project *config.ProjectConfig) (*geminiSettings, error)
 		Trust:   &trust,
 	}
 
-	resolved, err := projection.ResolveMCPServers(project.Config.MCP.Servers, project.Env, "gemini", nil)
+	// Preserve env var placeholders - Gemini CLI resolves ${VAR} at runtime.
+	resolved, err := projection.ResolveMCPServers(
+		project.Config.MCP.Servers,
+		project.Env,
+		"gemini",
+		func(name string, _ string) string {
+			return fmt.Sprintf("${%s}", name)
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -103,7 +103,15 @@ func buildVSCodeMCPConfig(project *config.ProjectConfig) (*vscodeMCPConfig, erro
 		Servers: make(OrderedMap[vscodeMCPServer]),
 	}
 
-	resolved, err := projection.ResolveMCPServers(project.Config.MCP.Servers, project.Env, "vscode", nil)
+	// Transform to VS Code env syntax - VS Code resolves ${env:VAR} at runtime.
+	resolved, err := projection.ResolveMCPServers(
+		project.Config.MCP.Servers,
+		project.Env,
+		"vscode",
+		func(name string, _ string) string {
+			return fmt.Sprintf("${env:%s}", name)
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

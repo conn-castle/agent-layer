@@ -64,7 +64,7 @@ Phase template (incomplete):
 - [x] Implement `[[mcp.servers]]` projection for both `transport = "http"` and `transport = "stdio"` (including env wiring).
 - [x] Implement `${ENV_VAR}` substitution from `.agent-layer/.env` where needed for config generation.
 - [x] Implement approvals modes: `all`, `mcp`, `commands`, `none` and generate per-client projections.
-- [ ] Wire `.agent-layer/.env` tokens into generated client configs (client-specific best practice).
+- [x] Wire `.agent-layer/.env` tokens into generated client configs (client-specific best practice).
 - [ ] Implement `al doctor` to report missing tokens, disabled servers, and common misconfigurations.
 - [ ] Implement `al wizard` for agent enablement + model selection + Codex reasoning.
 - [ ] Implement shell completions (`al completion bash|zsh|fish|powershell`).

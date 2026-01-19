@@ -122,21 +122,22 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
 		t.Fatalf("expected tool permissions")
 	}
+	// Gemini preserves ${VAR} placeholders - Gemini CLI resolves them at runtime.
 	httpServer := settings.MCPServers["http"]
-	if httpServer.HTTPURL != "https://example.com?token=abc" {
+	if httpServer.HTTPURL != "https://example.com?token=${TOKEN}" {
 		t.Fatalf("unexpected http url: %s", httpServer.HTTPURL)
 	}
-	if httpServer.Headers["X-Token"] != "abc" {
+	if httpServer.Headers["X-Token"] != "${TOKEN}" {
 		t.Fatalf("unexpected header value: %s", httpServer.Headers["X-Token"])
 	}
 	stdioServer := settings.MCPServers["stdio"]
-	if stdioServer.Command != "tool-abc" {
+	if stdioServer.Command != "tool-${TOKEN}" {
 		t.Fatalf("unexpected command: %s", stdioServer.Command)
 	}
-	if len(stdioServer.Args) != 2 || stdioServer.Args[1] != "123" {
+	if len(stdioServer.Args) != 2 || stdioServer.Args[1] != "${KEY}" {
 		t.Fatalf("unexpected args: %#v", stdioServer.Args)
 	}
-	if stdioServer.Env["API_KEY"] != "123" {
+	if stdioServer.Env["API_KEY"] != "${KEY}" {
 		t.Fatalf("unexpected env value: %s", stdioServer.Env["API_KEY"])
 	}
 	if settings.MCPServers["agent-layer"].Trust == nil || !*settings.MCPServers["agent-layer"].Trust {

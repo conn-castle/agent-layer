@@ -99,7 +99,8 @@ func TestBuildVSCodeMCPConfig(t *testing.T) {
 	if server.Type != "http" {
 		t.Fatalf("unexpected server type: %s", server.Type)
 	}
-	if server.URL != "https://example.com?token=abc" {
+	// VS Code uses ${env:VAR} syntax - VS Code resolves at runtime.
+	if server.URL != "https://example.com?token=${env:TOKEN}" {
 		t.Fatalf("unexpected url: %s", server.URL)
 	}
 }
@@ -135,11 +136,12 @@ func TestBuildVSCodeMCPConfigHeadersAndEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildVSCodeMCPConfig error: %v", err)
 	}
+	// VS Code uses ${env:VAR} syntax - VS Code resolves at runtime.
 	httpServer, ok := cfg.Servers["http"]
 	if !ok {
 		t.Fatalf("expected http server entry")
 	}
-	if httpServer.Headers["X-Token"] != "abc" {
+	if httpServer.Headers["X-Token"] != "${env:TOKEN}" {
 		t.Fatalf("unexpected header value: %s", httpServer.Headers["X-Token"])
 	}
 
@@ -150,13 +152,13 @@ func TestBuildVSCodeMCPConfigHeadersAndEnv(t *testing.T) {
 	if server.Type != "stdio" {
 		t.Fatalf("unexpected server type: %s", server.Type)
 	}
-	if server.Command != "tool-abc" {
+	if server.Command != "tool-${env:TOKEN}" {
 		t.Fatalf("unexpected command: %s", server.Command)
 	}
-	if len(server.Args) != 2 || server.Args[1] != "123" {
+	if len(server.Args) != 2 || server.Args[1] != "${env:KEY}" {
 		t.Fatalf("unexpected args: %#v", server.Args)
 	}
-	if server.Env["API_KEY"] != "123" {
+	if server.Env["API_KEY"] != "${env:KEY}" {
 		t.Fatalf("unexpected env value: %s", server.Env["API_KEY"])
 	}
 }

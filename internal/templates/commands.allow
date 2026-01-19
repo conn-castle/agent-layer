@@ -19,6 +19,7 @@ tail
 make
 python
 pytest
+go
 node
 npm
 pnpm

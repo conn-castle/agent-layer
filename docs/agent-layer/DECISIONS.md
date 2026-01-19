@@ -117,3 +117,8 @@ Entry format:
     Decision: Use Makefile targets for format/lint/test/ci and install pinned tools into `.tools/bin` via `make tools`, with checks failing fast if tools are missing.
     Reason: Keeps the workflow consistent, repo-local, and avoids PATH mutations or hidden installs.
     Tradeoffs: Requires a one-time tools install per clone and explicit tool setup in CI.
+
+- Decision 2026-01-18: Preserve env var placeholders in generated client configs
+    Decision: Never embed actual secret values in generated config files; use client-specific placeholder syntax that each client resolves at runtime (Gemini: `${VAR}`, Claude: `${VAR}`, VS Code: `${env:VAR}`, Codex: `bearer_token_env_var`).
+    Reason: Prevents accidental secret exposure if generated configs are committed; aligns with each client's documented best practice.
+    Tradeoffs: Users running clients directly (not via `./al <client>`) must have tokens in their shell environment.
