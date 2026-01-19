@@ -122,3 +122,8 @@ Entry format:
     Decision: Never embed actual secret values in generated config files; use client-specific placeholder syntax that each client resolves at runtime (Gemini: `${VAR}`, Claude: `${VAR}`, VS Code: `${env:VAR}`, Codex: `bearer_token_env_var`).
     Reason: Prevents accidental secret exposure if generated configs are committed; aligns with each client's documented best practice.
     Tradeoffs: Users running clients directly (not via `./al <client>`) must have tokens in their shell environment.
+
+- Decision 2026-01-19: Use charmbracelet/huh for Wizard UI
+    Decision: Use `github.com/charmbracelet/huh` for the `al wizard` interactive TTY interface.
+    Reason: Provides a polished, accessible, and declarative API for forms, selects, and inputs in Go.
+    Tradeoffs: Adds a dependency; restricted to TTY environments (wizard is interactive-only).

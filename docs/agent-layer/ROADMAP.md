@@ -71,8 +71,8 @@ Phase template (incomplete):
 
 ### Tasks
 - [x] Implement `al doctor` to report missing secrets, disabled servers, and common misconfigurations.
-- [ ] Implement `al wizard` for agent enablement + model selection + Codex reasoning.
-- [ ] Implement shell completions (`al completion bash|zsh|fish|powershell`).
+- [x] Implement `al wizard` for agent enablement + model selection + Codex reasoning.
+- [ ] Implement `al completion bash|zsh|fish|powershell`.
 - [ ] Improve `.agent-layer/config.toml` usability (comments, structure, and editing aids).
 - [ ] Add interaction monitoring to agent system instructions to self-improve all prompts, rules, and workflows. This should be add as an explicit ask in the finish task workflow.
 - [ ] Rename `FEATURES.md` to a backlog name and update references in docs and prompts.

@@ -45,3 +45,18 @@ Entry format:
     Priority: Medium. Area: user experience.
     Capability: The system should warn the user if a large number of MCP servers are enabled, as this can confuse agents or degrade performance.
     Acceptance criteria: `al sync` displays a warning if enabled MCP servers > threshold (e.g. 5).
+
+- Feature 2026-01-19 q4r5s6: Persist conversation history in local model folders
+    Priority: Medium. Area: model configuration.
+    Capability: Gemini and all other supported models should persist their conversation history inside this repository in their respective local folders (e.g. `.agent-layer/gemini/`, `.agent-layer/openai/`).
+    Acceptance criteria: Each model's configuration directs conversation history to a model-specific folder within the repository; history files are created and maintained locally.
+
+- Feature 2026-01-19 r5s6t7: Audit instructions and slash commands for duplicate content
+    Priority: Low. Area: code organization and maintainability.
+    Capability: Review all instruction templates and slash command definitions to identify and consolidate duplicate instructions (e.g., memory formatting rules that appear multiple times across different files).
+    Acceptance criteria: Each instruction appears in exactly one canonical location; other locations reference or include the canonical source rather than duplicating the text.
+
+- Feature 2026-01-19 s6t7u8: Finish task and cleanup commands ensure commit-ready state
+    Priority: Medium. Area: slash commands.
+    Capability: Running finish-task or cleanup-code commands should ensure the codebase is in a fully passing state (tests pass, linting passes, precommit hooks pass) so users can immediately stage and commit without worrying about failures.
+    Acceptance criteria: After running finish-task or cleanup-code, all tests pass, lint checks pass, and precommit hooks would succeed on the changed files.
