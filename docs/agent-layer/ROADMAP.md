@@ -69,7 +69,7 @@ Phase template (incomplete):
 - [ ] Implement `al wizard` for agent enablement + model selection + Codex reasoning.
 - [ ] Implement shell completions (`al completion bash|zsh|fish|powershell`).
 - [x] Warn about existing files and support `al install --overwrite` to reset templates.
-- [ ] Fix `go run ./cmd/al <client>` to avoid `spawn ./al ENOENT` when launching the internal MCP prompt server.
+- [x] Fix `go run ./cmd/al <client>` to avoid `spawn ./al ENOENT` when launching the internal MCP prompt server.
 - [x] Update the default `.agent-layer/gitignore.block` to make `.agent-layer/` optional and explain customization.
 
 ### Exit criteria

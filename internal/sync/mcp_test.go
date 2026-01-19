@@ -10,6 +10,8 @@ import (
 
 func TestBuildMCPConfig(t *testing.T) {
 	enabled := true
+	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			MCP: config.MCPConfig{
@@ -26,7 +28,8 @@ func TestBuildMCPConfig(t *testing.T) {
 				},
 			},
 		},
-		Env: map[string]string{"TOKEN": "abc"},
+		Env:  map[string]string{"TOKEN": "abc"},
+		Root: root,
 	}
 
 	cfg, err := buildMCPConfig(project)
@@ -46,6 +49,7 @@ func TestBuildMCPConfig(t *testing.T) {
 
 func TestWriteMCPConfig(t *testing.T) {
 	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -60,7 +64,8 @@ func TestWriteMCPConfig(t *testing.T) {
 				},
 			},
 		},
-		Env: map[string]string{"TOKEN": "abc"},
+		Env:  map[string]string{"TOKEN": "abc"},
+		Root: root,
 	}
 
 	if err := WriteMCPConfig(root, project); err != nil {
@@ -73,11 +78,12 @@ func TestWriteMCPConfig(t *testing.T) {
 
 func TestWriteMCPConfigError(t *testing.T) {
 	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	project := &config.ProjectConfig{}
+	project := &config.ProjectConfig{Root: root}
 	if err := WriteMCPConfig(file, project); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -85,6 +91,7 @@ func TestWriteMCPConfigError(t *testing.T) {
 
 func TestWriteMCPConfigWriteError(t *testing.T) {
 	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	if err := os.Mkdir(filepath.Join(root, ".mcp.json"), 0o755); err != nil {
 		t.Fatalf("mkdir .mcp.json: %v", err)
 	}
@@ -92,6 +99,7 @@ func TestWriteMCPConfigWriteError(t *testing.T) {
 		Config: config.Config{
 			MCP: config.MCPConfig{Servers: nil},
 		},
+		Root: root,
 	}
 	if err := WriteMCPConfig(root, project); err == nil {
 		t.Fatalf("expected error")
@@ -100,6 +108,8 @@ func TestWriteMCPConfigWriteError(t *testing.T) {
 
 func TestBuildMCPConfigMissingEnv(t *testing.T) {
 	enabled := true
+	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			MCP: config.MCPConfig{
@@ -113,7 +123,8 @@ func TestBuildMCPConfigMissingEnv(t *testing.T) {
 				},
 			},
 		},
-		Env: map[string]string{},
+		Env:  map[string]string{},
+		Root: root,
 	}
 
 	_, err := buildMCPConfig(project)
@@ -124,6 +135,8 @@ func TestBuildMCPConfigMissingEnv(t *testing.T) {
 
 func TestBuildMCPConfigStdioServer(t *testing.T) {
 	enabled := true
+	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			MCP: config.MCPConfig{
@@ -141,7 +154,8 @@ func TestBuildMCPConfigStdioServer(t *testing.T) {
 				},
 			},
 		},
-		Env: map[string]string{"TOKEN": "abc"},
+		Env:  map[string]string{"TOKEN": "abc"},
+		Root: root,
 	}
 
 	cfg, err := buildMCPConfig(project)

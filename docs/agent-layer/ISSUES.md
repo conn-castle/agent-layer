@@ -20,8 +20,7 @@ Entry format:
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-18 b2c3d4: Development launch fails when the prompt server calls ./al
-    Priority: High. Area: development workflow.
-    Description: `go run ./cmd/al gemini` can fail because the internal prompt server spawns `./al`, which does not exist.
-    Next step: Resolve the prompt server command when running from source, or provide a fallback path.
-    Notes: Target v0.3.0.
+- Issue 2026-01-18 e5f6g7: Slash commands not output for antigravity
+    Priority: Medium. Area: antigravity support.
+    Description: Slash commands are not being output when antigravity mode is enabled.
+    Next step: Investigate where slash commands are generated and ensure antigravity support is included.

@@ -9,11 +9,14 @@ import (
 )
 
 func TestBuildGeminiSettingsCommandsOnly(t *testing.T) {
+	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
 		},
 		CommandsAllow: []string{"git status"},
+		Root:          root,
 	}
 
 	settings, err := buildGeminiSettings(project)
@@ -30,10 +33,12 @@ func TestBuildGeminiSettingsCommandsOnly(t *testing.T) {
 
 func TestWriteGeminiSettings(t *testing.T) {
 	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "none"},
 		},
+		Root: root,
 	}
 
 	if err := WriteGeminiSettings(root, project); err != nil {
@@ -46,11 +51,12 @@ func TestWriteGeminiSettings(t *testing.T) {
 
 func TestWriteGeminiSettingsError(t *testing.T) {
 	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	project := &config.ProjectConfig{}
+	project := &config.ProjectConfig{Root: root}
 	if err := WriteGeminiSettings(file, project); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -58,6 +64,7 @@ func TestWriteGeminiSettingsError(t *testing.T) {
 
 func TestWriteGeminiSettingsWriteError(t *testing.T) {
 	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	geminiDir := filepath.Join(root, ".gemini")
 	if err := os.MkdirAll(geminiDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -69,6 +76,7 @@ func TestWriteGeminiSettingsWriteError(t *testing.T) {
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "none"},
 		},
+		Root: root,
 	}
 	if err := WriteGeminiSettings(root, project); err == nil {
 		t.Fatalf("expected error")
@@ -77,6 +85,8 @@ func TestWriteGeminiSettingsWriteError(t *testing.T) {
 
 func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	enabled := true
+	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "all"},
@@ -102,6 +112,7 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 		},
 		Env:           map[string]string{"TOKEN": "abc", "KEY": "123"},
 		CommandsAllow: []string{"git status"},
+		Root:          root,
 	}
 
 	settings, err := buildGeminiSettings(project)
@@ -135,6 +146,8 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 
 func TestBuildGeminiSettingsMissingEnv(t *testing.T) {
 	enabled := true
+	root := t.TempDir()
+	writePromptServerBinary(t, root)
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "all"},
@@ -144,7 +157,8 @@ func TestBuildGeminiSettingsMissingEnv(t *testing.T) {
 				},
 			},
 		},
-		Env: map[string]string{},
+		Env:  map[string]string{},
+		Root: root,
 	}
 
 	_, err := buildGeminiSettings(project)

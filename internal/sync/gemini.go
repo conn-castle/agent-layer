@@ -75,9 +75,13 @@ func buildGeminiSettings(project *config.ProjectConfig) (*geminiSettings, error)
 	trust := allowMCP
 
 	// Internal prompt server
+	promptCommand, promptArgs, err := resolvePromptServerCommand(project.Root)
+	if err != nil {
+		return nil, err
+	}
 	settings.MCPServers["agent-layer"] = geminiMCPServer{
-		Command: "./al",
-		Args:    []string{"mcp-prompts"},
+		Command: promptCommand,
+		Args:    promptArgs,
 		Trust:   &trust,
 	}
 

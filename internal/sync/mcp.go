@@ -49,9 +49,13 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	}
 
 	// Internal prompt server for Claude.
+	promptCommand, promptArgs, err := resolvePromptServerCommand(project.Root)
+	if err != nil {
+		return nil, err
+	}
 	cfg.Servers["agent-layer"] = mcpServer{
-		Command: "./al",
-		Args:    []string{"mcp-prompts"},
+		Command: promptCommand,
+		Args:    promptArgs,
 	}
 
 	resolved, err := projection.ResolveMCPServers(

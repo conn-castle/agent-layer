@@ -58,12 +58,14 @@ go build -o ./al ./cmd/al
 mkdir -p tmp/dev-repo
 cd tmp/dev-repo
 go run ../../cmd/al install
-go run ../../cmd/al gemini
+go build -o ./al ../../cmd/al
+./al gemini
 ```
 
 Notes:
 - `install` is required once per repo to seed `.agent-layer/` and `docs/agent-layer/`.
 - `sync` is optional because `./al <client>` always syncs before launch.
+- Build a local `./al` in scratch repos so the internal MCP prompt server can launch.
 - `./scripts/setup.sh` is only for tool + hook setup, not required just to run the CLI.
 
 ## Run checks locally

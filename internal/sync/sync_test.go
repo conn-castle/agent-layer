@@ -13,6 +13,7 @@ func TestRunGolden(t *testing.T) {
 	if err := copyFixture(fixtureRoot, root); err != nil {
 		t.Fatalf("copy fixture: %v", err)
 	}
+	writePromptServerBinary(t, root)
 
 	if err := Run(root); err != nil {
 		t.Fatalf("sync run: %v", err)

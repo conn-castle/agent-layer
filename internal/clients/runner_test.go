@@ -175,4 +175,7 @@ Do it.`
 	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "al"), []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write al stub: %v", err)
+	}
 }
