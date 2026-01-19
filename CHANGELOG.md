@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.3.1 - 2026-01-19
+
+### Added
+- Installer failure output now includes clear, actionable error messages.
+
+### Fixed
+- Installer checksum verification now handles SHA256SUMS entries with "./" prefixes.
+
+### Changed
+- Quick start documentation no longer suggests manual install fallback when only `./al` is present.
+
 ## v0.3.0 - 2026-01-18
 
 Complete rewrite in Go for simpler installation and fewer moving parts.
