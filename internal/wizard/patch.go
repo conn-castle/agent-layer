@@ -5,7 +5,8 @@ import (
 	"strings"
 )
 
-// PatchConfig applies the choices to the config content.
+// PatchConfig applies wizard choices to TOML config content.
+// content is the current config; choices holds selections; returns updated content or error.
 func PatchConfig(content string, choices *Choices) (string, error) {
 	var err error
 
@@ -19,39 +20,41 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 
 	// 2. Agents
 	for _, agent := range SupportedAgents {
-		// Enablement
-		if choices.EnabledAgentsTouched {
-			enabled := choices.EnabledAgents[agent]
-			content, err = patchTableKey(content, fmt.Sprintf("agents.%s", agent), "enabled", fmt.Sprintf("%t", enabled))
-			if err != nil {
-				return "", err
-			}
+		if !choices.EnabledAgentsTouched {
+			continue
 		}
+		enabled := choices.EnabledAgents[agent]
+		content, err = patchTableKey(content, fmt.Sprintf("agents.%s", agent), "enabled", fmt.Sprintf("%t", enabled))
+		if err != nil {
+			return "", err
+		}
+	}
 
-		// Models (only if touched)
-		if agent == AgentGemini && choices.GeminiModelTouched {
-			content, err = patchTableKey(content, "agents.gemini", "model", fmt.Sprintf("%q", choices.GeminiModel))
-			if err != nil {
-				return "", err
-			}
+	optionalKeys := []struct {
+		table   string
+		key     string
+		value   string
+		touched bool
+	}{
+		{table: "agents.gemini", key: "model", value: choices.GeminiModel, touched: choices.GeminiModelTouched},
+		{table: "agents.claude", key: "model", value: choices.ClaudeModel, touched: choices.ClaudeModelTouched},
+		{table: "agents.codex", key: "model", value: choices.CodexModel, touched: choices.CodexModelTouched},
+		{table: "agents.codex", key: "reasoning_effort", value: choices.CodexReasoning, touched: choices.CodexReasoningTouched},
+	}
+	for _, item := range optionalKeys {
+		if !item.touched {
+			continue
 		}
-		if agent == AgentClaude && choices.ClaudeModelTouched {
-			content, err = patchTableKey(content, "agents.claude", "model", fmt.Sprintf("%q", choices.ClaudeModel))
-			if err != nil {
-				return "", err
-			}
+		content, err = patchOptionalTableKey(content, item.table, item.key, item.value)
+		if err != nil {
+			return "", err
 		}
-		if agent == AgentCodex && choices.CodexModelTouched {
-			content, err = patchTableKey(content, "agents.codex", "model", fmt.Sprintf("%q", choices.CodexModel))
-			if err != nil {
-				return "", err
-			}
-		}
-		if agent == AgentCodex && choices.CodexReasoningTouched {
-			content, err = patchTableKey(content, "agents.codex", "reasoning_effort", fmt.Sprintf("%q", choices.CodexReasoning))
-			if err != nil {
-				return "", err
-			}
+	}
+
+	if choices.RestoreMissingMCPServers && len(choices.MissingDefaultMCPServers) > 0 {
+		content, err = appendMissingDefaultMCPServers(content, choices.MissingDefaultMCPServers)
+		if err != nil {
+			return "", err
 		}
 	}
 
@@ -67,6 +70,7 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 }
 
 // patchTableKey finds [table] and updates/inserts key = value.
+// content/tableName/key/value identify the target; returns updated content or error.
 func patchTableKey(content, tableName, key, value string) (string, error) {
 	lines := strings.Split(content, "\n")
 	tableHeader := fmt.Sprintf("[%s]", tableName)
@@ -139,7 +143,51 @@ func patchTableKey(content, tableName, key, value string) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+// patchOptionalTableKey sets a key or removes it when value is blank.
+// content/tableName/key/value identify the target; returns updated content or error.
+func patchOptionalTableKey(content, tableName, key, value string) (string, error) {
+	if value == "" {
+		return deleteTableKey(content, tableName, key)
+	}
+	return patchTableKey(content, tableName, key, fmt.Sprintf("%q", value))
+}
+
+// deleteTableKey removes a key from a table if present.
+// content/tableName/key identify the target; returns updated content or error.
+func deleteTableKey(content, tableName, key string) (string, error) {
+	lines := strings.Split(content, "\n")
+	tableHeader := fmt.Sprintf("[%s]", tableName)
+
+	tableIndex := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == tableHeader {
+			tableIndex = i
+			break
+		}
+	}
+	if tableIndex == -1 {
+		return content, nil
+	}
+
+	for i := tableIndex + 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(trimmed, "[") {
+			break
+		}
+		if strings.HasPrefix(trimmed, key) {
+			rest := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
+			if strings.HasPrefix(rest, "=") {
+				lines = append(lines[:i], lines[i+1:]...)
+				break
+			}
+		}
+	}
+
+	return strings.Join(lines, "\n"), nil
+}
+
 // patchMCPServer finds [[mcp.servers]] with specific id and toggles enabled.
+// content is the TOML config; returns updated content with the enabled flag set.
 func patchMCPServer(content, serverID string, enabled bool) string {
 	lines := strings.Split(content, "\n")
 
@@ -208,6 +256,7 @@ func patchMCPServer(content, serverID string, enabled bool) string {
 	return strings.Join(lines, "\n")
 }
 
+// insertStringAt inserts value at index in slice and returns the updated slice.
 func insertStringAt(slice []string, index int, value string) []string {
 	if index >= len(slice) {
 		return append(slice, value)

@@ -20,45 +20,40 @@ Entry format:
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-19 cb3ff7e: Wizard cannot restore default Model Context Protocol servers
-    Priority: Medium. Area: wizard Model Context Protocol setup.
-    Description: If default Model Context Protocol server entries are missing from the configuration file, the wizard cannot re-add them and only toggles existing entries.
-    Next step: Prompt to restore missing default server definitions and append them before selection.
-
 - Issue 2026-01-19 cb3ff7e: Wizard configuration edits remove inline comments
     Priority: Medium. Area: configuration editing.
     Description: The line-based patcher replaces keys without preserving inline comments or original formatting in `.agent-layer/config.toml`.
     Next step: Use a comment-preserving configuration editor or extend the patcher to retain inline comments when updating keys.
 
-- Issue 2026-01-19 cb3ff7e: Wizard secret detection misreads commented keys
-    Priority: Medium. Area: environment file handling.
-    Description: Secret checks rely on substring matches, so commented lines or similar variable names can be treated as existing values and skip prompts.
-    Next step: Parse `.agent-layer/.env` line by line and only treat uncommented exact keys as present.
+- Issue 2026-01-19 68d1672: Wizard Model Context Protocol server parsing is duplicated
+    Priority: Low. Area: wizard configuration parsing.
+    Description: Server block scanning is implemented separately for toggling enabled flags and for restoring template blocks, which can drift if the format changes.
+    Next step: Extract a shared parser for Model Context Protocol server blocks and reuse it in both paths.
 
-- Issue 2026-01-19 cb3ff7e: Wizard summary omits disabled servers caused by missing secrets
-    Priority: Low. Area: wizard summary.
-    Description: When a secret prompt is skipped, the wizard disables the server but does not explain why in the summary, which can confuse users.
-    Next step: Track disabled-by-missing-secret servers and include them in the summary output.
+- Issue 2026-01-19 68d1672: Wizard table key scanning logic is duplicated
+    Priority: Low. Area: wizard configuration patching.
+    Description: The code for locating table boundaries and matching keys is repeated across update and delete paths.
+    Next step: Factor table scanning into a shared helper to keep key detection consistent.
 
-- Issue 2026-01-19 cb3ff7e: Wizard prompts omit required explanations
-    Priority: Low. Area: wizard user experience.
-    Description: The wizard does not provide approval mode meanings, preview model warnings, or full multi-select control hints that the specification requires.
-    Next step: Add clear explanatory text for approval modes, preview model options, and selection controls in the wizard prompts.
+- Issue 2026-01-19 68d1672: Wizard environment line parsing logic is duplicated
+    Priority: Low. Area: wizard environment handling.
+    Description: Line parsing is split between ParseEnv and parseEnvKey with overlapping logic, risking inconsistent behavior over time.
+    Next step: Centralize environment line parsing into a single helper that returns key and value for both uses.
 
-- Issue 2026-01-19 cb3ff7e: Wizard writes configuration files non-atomically
-    Priority: Medium. Area: configuration persistence.
-    Description: Configuration and environment file updates write directly to disk without a temporary file, which risks partial writes if the process is interrupted.
-    Next step: Write to a temporary file, synchronize file contents to disk, and rename to ensure atomic updates.
+- Issue 2026-01-19 68d1672: Environment parsing is duplicated between config and wizard
+    Priority: Low. Area: environment handling.
+    Description: `internal/config/env.go` and `internal/wizard/env.go` implement nearly identical .env parsing logic, which can drift.
+    Next step: Extract a shared environment parser in config and reuse it in the wizard.
 
-- Issue 2026-01-19 cb3ff7e: Wizard environment patching can duplicate keys
-    Priority: Low. Area: environment file handling.
-    Description: The environment patcher only matches `KEY=` lines, so entries with spacing or export statements can be duplicated instead of updated.
-    Next step: Parse `.agent-layer/.env` line by line and update keys regardless of spacing or export prefixes.
+- Issue 2026-01-19 68d1672: Secrets requirement detection differs between wizard and doctor
+    Priority: Low. Area: secrets detection.
+    Description: The wizard uses a fixed list of default server secrets while doctor scans configuration placeholders, so required secret sets can diverge.
+    Next step: Create a shared helper to derive required secrets from configuration and reuse it in wizard and doctor.
 
-- Issue 2026-01-19 cb3ff7e: Wizard command bypasses working directory helper
-    Priority: Low. Area: command wiring.
-    Description: The wizard command uses `os.Getwd` directly instead of the shared working directory helper used by other commands.
-    Next step: Use the shared working directory helper to keep command behavior and tests consistent.
+- Issue 2026-01-19 68d1672: Atomic file writes are only used in the wizard
+    Priority: Low. Area: file persistence.
+    Description: The wizard uses atomic writes while install and sync write files directly, which keeps durability behavior inconsistent.
+    Next step: Introduce a shared atomic write helper and migrate install and sync writes where appropriate.
 
 - Issue 2026-01-19 ceddb83: `.agent-layer/.env` overrides shell environment variables
     Priority: Medium. Area: environment handling.

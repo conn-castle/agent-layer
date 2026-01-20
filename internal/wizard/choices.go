@@ -26,6 +26,9 @@ type Choices struct {
 	// MCP
 	EnabledMCPServers        map[string]bool
 	EnabledMCPServersTouched bool
+	DisabledMCPServers       map[string]bool
+	MissingDefaultMCPServers []string
+	RestoreMissingMCPServers bool
 
 	// Secrets (Env vars)
 	Secrets map[string]string
@@ -34,8 +37,9 @@ type Choices struct {
 // NewChoices returns a Choices struct initialized with defaults.
 func NewChoices() *Choices {
 	return &Choices{
-		EnabledAgents:     make(map[string]bool),
-		EnabledMCPServers: make(map[string]bool),
-		Secrets:           make(map[string]string),
+		EnabledAgents:      make(map[string]bool),
+		EnabledMCPServers:  make(map[string]bool),
+		DisabledMCPServers: make(map[string]bool),
+		Secrets:            make(map[string]string),
 	}
 }

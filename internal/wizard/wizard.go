@@ -15,6 +15,8 @@ import (
 	"github.com/nicholasjconn/agent-layer/internal/sync"
 )
 
+const leaveBlankOption = "Leave blank (use client default)"
+
 // Run starts the interactive wizard.
 func Run(ctx context.Context, root string) error {
 	// 1. Interactive check
@@ -60,39 +62,20 @@ func Run(ctx context.Context, root string) error {
 	}
 
 	// Agents
-	if cfg.Config.Agents.Gemini.Enabled != nil && *cfg.Config.Agents.Gemini.Enabled {
-		choices.EnabledAgents[AgentGemini] = true
+	agentConfigs := []agentEnabledConfig{
+		{id: AgentGemini, enabled: cfg.Config.Agents.Gemini.Enabled},
+		{id: AgentClaude, enabled: cfg.Config.Agents.Claude.Enabled},
+		{id: AgentCodex, enabled: cfg.Config.Agents.Codex.Enabled},
+		{id: AgentVSCode, enabled: cfg.Config.Agents.VSCode.Enabled},
+		{id: AgentAntigravity, enabled: cfg.Config.Agents.Antigravity.Enabled},
 	}
-	if cfg.Config.Agents.Claude.Enabled != nil && *cfg.Config.Agents.Claude.Enabled {
-		choices.EnabledAgents[AgentClaude] = true
-	}
-	if cfg.Config.Agents.Codex.Enabled != nil && *cfg.Config.Agents.Codex.Enabled {
-		choices.EnabledAgents[AgentCodex] = true
-	}
-	if cfg.Config.Agents.VSCode.Enabled != nil && *cfg.Config.Agents.VSCode.Enabled {
-		choices.EnabledAgents[AgentVSCode] = true
-	}
-	if cfg.Config.Agents.Antigravity.Enabled != nil && *cfg.Config.Agents.Antigravity.Enabled {
-		choices.EnabledAgents[AgentAntigravity] = true
-	}
+	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
 	// Models
 	choices.GeminiModel = cfg.Config.Agents.Gemini.Model
-	if choices.GeminiModel == "" {
-		choices.GeminiModel = "auto"
-	}
 	choices.ClaudeModel = cfg.Config.Agents.Claude.Model
-	if choices.ClaudeModel == "" {
-		choices.ClaudeModel = "default"
-	}
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
-	if choices.CodexModel == "" {
-		choices.CodexModel = "gpt-5.2-codex"
-	}
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
-	if choices.CodexReasoning == "" {
-		choices.CodexReasoning = "xhigh"
-	}
 
 	// MCP Servers
 	for _, srv := range cfg.Config.MCP.Servers {
@@ -104,54 +87,63 @@ func Run(ctx context.Context, root string) error {
 	// 5. UI Flow
 
 	// Approvals
+	if err := ui.Note("Approval Modes", approvalModeHelpText()); err != nil {
+		return err
+	}
 	if err := ui.Select("Approval Mode", ApprovalModes, &choices.ApprovalMode); err != nil {
 		return err
 	}
 	choices.ApprovalModeTouched = true
 
 	// Agents
-	var enabledAgents []string
-	for a, enabled := range choices.EnabledAgents {
-		if enabled {
-			enabledAgents = append(enabledAgents, a)
-		}
-	}
+	enabledAgents := enabledAgentIDs(choices.EnabledAgents)
 	if err := ui.MultiSelect("Enable Agents", SupportedAgents, &enabledAgents); err != nil {
 		return err
 	}
 	// Update map
-	choices.EnabledAgents = make(map[string]bool)
-	for _, a := range enabledAgents {
-		choices.EnabledAgents[a] = true
-	}
+	choices.EnabledAgents = agentIDSet(enabledAgents)
 	choices.EnabledAgentsTouched = true
 
 	// Models (for enabled agents)
 	if choices.EnabledAgents[AgentGemini] {
-		if err := ui.Select("Gemini Model", GeminiModels, &choices.GeminiModel); err != nil {
+		if hasPreviewModels(GeminiModels) {
+			if err := ui.Note("Preview Model Warning", previewModelWarningText()); err != nil {
+				return err
+			}
+		}
+		if err := selectOptionalValue(ui, "Gemini Model", GeminiModels, &choices.GeminiModel); err != nil {
 			return err
 		}
 		choices.GeminiModelTouched = true
 	}
 	if choices.EnabledAgents[AgentClaude] {
-		if err := ui.Select("Claude Model", ClaudeModels, &choices.ClaudeModel); err != nil {
+		if err := selectOptionalValue(ui, "Claude Model", ClaudeModels, &choices.ClaudeModel); err != nil {
 			return err
 		}
 		choices.ClaudeModelTouched = true
 	}
 	if choices.EnabledAgents[AgentCodex] {
-		if err := ui.Select("Codex Model", CodexModels, &choices.CodexModel); err != nil {
+		if err := selectOptionalValue(ui, "Codex Model", CodexModels, &choices.CodexModel); err != nil {
 			return err
 		}
 		choices.CodexModelTouched = true
 
-		if err := ui.Select("Codex Reasoning Effort", CodexReasoningEfforts, &choices.CodexReasoning); err != nil {
+		if err := selectOptionalValue(ui, "Codex Reasoning Effort", CodexReasoningEfforts, &choices.CodexReasoning); err != nil {
 			return err
 		}
 		choices.CodexReasoningTouched = true
 	}
 
 	// MCP Servers
+	missingDefaults := missingDefaultMCPServers(cfg.Config.MCP.Servers)
+	if len(missingDefaults) > 0 {
+		choices.MissingDefaultMCPServers = missingDefaults
+		restore := true
+		if err := ui.Confirm(fmt.Sprintf("Default MCP server entries are missing from config.toml: %s. Restore them before selection?", strings.Join(missingDefaults, ", ")), &restore); err != nil {
+			return err
+		}
+		choices.RestoreMissingMCPServers = restore
+	}
 	var defaultServerIDs []string
 	var enabledDefaultServers []string
 	for _, s := range KnownDefaultMCPServers {
@@ -175,9 +167,15 @@ func Run(ctx context.Context, root string) error {
 	// Secrets
 	// Load existing env to know what's set
 	envPath := filepath.Join(root, ".agent-layer", ".env")
-	envContent := ""
+	envValues := make(map[string]string)
 	if b, err := os.ReadFile(envPath); err == nil {
-		envContent = string(b)
+		parsed, err := ParseEnv(string(b))
+		if err != nil {
+			return err
+		}
+		envValues = parsed
+	} else if !os.IsNotExist(err) {
+		return err
 	}
 
 	for _, srv := range KnownDefaultMCPServers {
@@ -185,7 +183,7 @@ func Run(ctx context.Context, root string) error {
 			key := srv.RequiredEnv
 
 			// Check if already in file
-			if strings.Contains(envContent, key+"=") || strings.Contains(envContent, key+" =") {
+			if _, ok := envValues[key]; ok {
 				override := false
 				if err := ui.Confirm(fmt.Sprintf("Secret %s is already set. Override?", key), &override); err != nil {
 					return err
@@ -217,6 +215,7 @@ func Run(ctx context.Context, root string) error {
 			} else {
 				// Warn and disable
 				choices.EnabledMCPServers[srv.ID] = false
+				choices.DisabledMCPServers[srv.ID] = true
 				// We don't have a simple way to show a warning without pausing, but we can note it in summary
 			}
 		}
@@ -249,26 +248,7 @@ func buildSummary(c *Choices) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Approvals Mode: %s\n", c.ApprovalMode))
 
-	var agents []string
-	for a, e := range c.EnabledAgents {
-		if e {
-			mod := ""
-			if a == AgentGemini {
-				mod = c.GeminiModel
-			}
-			if a == AgentClaude {
-				mod = c.ClaudeModel
-			}
-			if a == AgentCodex {
-				mod = fmt.Sprintf("%s (%s)", c.CodexModel, c.CodexReasoning)
-			}
-			if mod != "" {
-				agents = append(agents, fmt.Sprintf("- %s: %s", a, mod))
-			} else {
-				agents = append(agents, fmt.Sprintf("- %s", a))
-			}
-		}
-	}
+	agents := agentSummaryLines(c)
 	sort.Strings(agents)
 	sb.WriteString("\nEnabled Agents:\n")
 	for _, a := range agents {
@@ -290,6 +270,24 @@ func buildSummary(c *Choices) string {
 		sb.WriteString("(none)\n")
 	}
 
+	restoredMCP := restoredMCPServers(c)
+	if len(restoredMCP) > 0 {
+		sb.WriteString("\nRestored Default MCP Servers:\n")
+		for _, m := range restoredMCP {
+			sb.WriteString(fmt.Sprintf("- %s\n", m))
+		}
+	}
+
+	disabledMCP := disabledMCPServers(c)
+	sb.WriteString("\nDisabled MCP Servers (missing secrets):\n")
+	if len(disabledMCP) > 0 {
+		for _, m := range disabledMCP {
+			sb.WriteString(fmt.Sprintf("- %s\n", m))
+		}
+	} else {
+		sb.WriteString("(none)\n")
+	}
+
 	sb.WriteString("\nSecrets to Update:\n")
 	if len(c.Secrets) > 0 {
 		for k := range c.Secrets {
@@ -300,6 +298,125 @@ func buildSummary(c *Choices) string {
 	}
 
 	return sb.String()
+}
+
+type agentEnabledConfig struct {
+	id      string
+	enabled *bool
+}
+
+func setEnabledAgentsFromConfig(dest map[string]bool, configs []agentEnabledConfig) {
+	for _, cfg := range configs {
+		if cfg.enabled != nil && *cfg.enabled {
+			dest[cfg.id] = true
+		}
+	}
+}
+
+func enabledAgentIDs(enabled map[string]bool) []string {
+	ids := make([]string, 0, len(enabled))
+	for id, isEnabled := range enabled {
+		if isEnabled {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func agentIDSet(ids []string) map[string]bool {
+	enabled := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		enabled[id] = true
+	}
+	return enabled
+}
+
+// selectOptionalValue prompts for an optional selection and updates value.
+// title and options define the prompt; value holds the current selection.
+func selectOptionalValue(ui UI, title string, options []string, value *string) error {
+	selection := *value
+	if selection == "" {
+		selection = leaveBlankOption
+	}
+	opts := append([]string{leaveBlankOption}, options...)
+	if err := ui.Select(title, opts, &selection); err != nil {
+		return err
+	}
+	if selection == leaveBlankOption {
+		*value = ""
+		return nil
+	}
+	*value = selection
+	return nil
+}
+
+func agentSummaryLines(c *Choices) []string {
+	var agents []string
+	for _, agent := range SupportedAgents {
+		if !c.EnabledAgents[agent] {
+			continue
+		}
+		modelSummary := agentModelSummary(agent, c)
+		if modelSummary == "" {
+			agents = append(agents, fmt.Sprintf("- %s", agent))
+			continue
+		}
+		agents = append(agents, fmt.Sprintf("- %s: %s", agent, modelSummary))
+	}
+	return agents
+}
+
+func agentModelSummary(agent string, c *Choices) string {
+	switch agent {
+	case AgentGemini:
+		return c.GeminiModel
+	case AgentClaude:
+		return c.ClaudeModel
+	case AgentCodex:
+		return codexModelSummary(c)
+	default:
+		return ""
+	}
+}
+
+func codexModelSummary(c *Choices) string {
+	if c.CodexModel != "" && c.CodexReasoning != "" {
+		return fmt.Sprintf("%s (%s)", c.CodexModel, c.CodexReasoning)
+	}
+	if c.CodexModel != "" {
+		return c.CodexModel
+	}
+	if c.CodexReasoning != "" {
+		return fmt.Sprintf("reasoning: %s", c.CodexReasoning)
+	}
+	return ""
+}
+
+// disabledMCPServers returns sorted IDs of servers disabled due to missing secrets.
+// c is the current wizard choices; returns nil when none are disabled.
+func disabledMCPServers(c *Choices) []string {
+	if len(c.DisabledMCPServers) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(c.DisabledMCPServers))
+	for _, srv := range KnownDefaultMCPServers {
+		if c.DisabledMCPServers[srv.ID] {
+			ids = append(ids, srv.ID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// restoredMCPServers returns IDs of default servers being restored to config.toml.
+// c is the current wizard choices; returns nil when no restoration is requested.
+func restoredMCPServers(c *Choices) []string {
+	if !c.RestoreMissingMCPServers || len(c.MissingDefaultMCPServers) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(c.MissingDefaultMCPServers))
+	ids = append(ids, c.MissingDefaultMCPServers...)
+	return ids
 }
 
 func applyChanges(root, configPath, envPath string, c *Choices) error {
@@ -317,7 +434,7 @@ func applyChanges(root, configPath, envPath string, c *Choices) error {
 	if err != nil {
 		return fmt.Errorf("failed to patch config: %w", err)
 	}
-	if err := os.WriteFile(configPath, []byte(newConfig), 0644); err != nil {
+	if err := writeFileAtomic(configPath, []byte(newConfig), 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -333,7 +450,7 @@ func applyChanges(root, configPath, envPath string, c *Choices) error {
 	}
 	// Patch
 	newEnv := PatchEnv(string(rawEnv), c.Secrets)
-	if err := os.WriteFile(envPath, []byte(newEnv), 0600); err != nil {
+	if err := writeFileAtomic(envPath, []byte(newEnv), 0600); err != nil {
 		return fmt.Errorf("failed to write .env: %w", err)
 	}
 

@@ -49,7 +49,7 @@ func (ui *HuhUI) MultiSelect(title string, options []string, selected *[]string)
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title(title).
-				Description("Space to toggle, Enter to continue").
+				Description("Arrow keys to navigate, Space to toggle, Enter to continue, Esc to cancel.").
 				Options(opts...).
 				Value(selected),
 		),

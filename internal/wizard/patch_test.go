@@ -13,6 +13,7 @@ func TestPatchConfig(t *testing.T) {
 		input    string
 		choices  *Choices
 		contains []string
+		absent   []string
 	}{
 		{
 			name: "approvals mode change",
@@ -75,6 +76,39 @@ foo = "bar"
 			},
 			contains: []string{`[approvals]`, `mode = "all"`},
 		},
+		{
+			name: "clear model",
+			input: `
+[agents.gemini]
+model = "old"
+`,
+			choices: &Choices{
+				GeminiModelTouched: true,
+				GeminiModel:        "",
+			},
+			absent: []string{`model = "old"`, `model = ""`},
+		},
+		{
+			name: "clear reasoning effort",
+			input: `
+[agents.codex]
+reasoning_effort = "high"
+`,
+			choices: &Choices{
+				CodexReasoningTouched: true,
+				CodexReasoning:        "",
+			},
+			absent: []string{`reasoning_effort = "high"`, `reasoning_effort = ""`},
+		},
+		{
+			name:  "restore missing default mcp server",
+			input: "[mcp]\n",
+			choices: &Choices{
+				RestoreMissingMCPServers: true,
+				MissingDefaultMCPServers: []string{"github"},
+			},
+			contains: []string{`id = "github"`},
+		},
 	}
 
 	for _, tt := range tests {
@@ -83,6 +117,9 @@ foo = "bar"
 			require.NoError(t, err)
 			for _, c := range tt.contains {
 				assert.Contains(t, got, c)
+			}
+			for _, c := range tt.absent {
+				assert.NotContains(t, got, c)
 			}
 		})
 	}

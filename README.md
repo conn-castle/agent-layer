@@ -41,7 +41,7 @@ Run `./al wizard` to interactively configure the most important settings:
 
 - **Approvals Mode** (all, mcp, commands, none)
 - **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity)
-- **Model Selection** (e.g., Gemini 2.5 vs 3 preview, Codex reasoning effort)
+- **Model Selection** (optional; leave blank to use client defaults, including Codex reasoning effort)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 
 **Controls:**
