@@ -17,12 +17,12 @@ This is **not** a full codebase audit. Only document what you touched or passive
 ---
 
 ## Project memory files (authoritative)
-- `docs/agent-layer/ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.
-- `docs/agent-layer/FEATURES.md` — backlog of deferred user feature requests (not yet scheduled into the roadmap).
-- `docs/agent-layer/ROADMAP.md` — numbered phases; guides architecture and sequencing.
-- `docs/agent-layer/DECISIONS.md` — rolling log of important decisions (brief).
+- `ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.
+- `FEATURES.md` — backlog of deferred user feature requests (not yet scheduled into the roadmap).
+- `ROADMAP.md` — numbered phases; guides architecture and sequencing.
+- `DECISIONS.md` — rolling log of important decisions (brief).
 
-If any are missing, ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/agent-layer/<NAME>.md` (preserve headings and markers).
+If any are missing, ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `<NAME>.md` (preserve headings and markers).
 
 ---
 
@@ -131,22 +131,22 @@ Capture:
 
 ## 2A) Ensure memory files exist
 For each of:
-- `docs/agent-layer/ISSUES.md`
-- `docs/agent-layer/FEATURES.md`
-- `docs/agent-layer/ROADMAP.md`
-- `docs/agent-layer/DECISIONS.md`
+- `ISSUES.md`
+- `FEATURES.md`
+- `ROADMAP.md`
+- `DECISIONS.md`
 
 If missing:
-- ask the user before creating it. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `docs/agent-layer/<NAME>.md` (preserve headings and markers).
+- ask the user before creating it. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `<NAME>.md` (preserve headings and markers).
 
 ## 2B) Decide where each finding belongs
-- Add to **`docs/agent-layer/ISSUES.md`** if it is:
+- Add to **`ISSUES.md`** if it is:
   - a bug, correctness defect, maintainability refactor, technical debt, reliability gap, security concern, test gap, performance concern, or engineering risk.
-- Add to **`docs/agent-layer/FEATURES.md`** only if it is a **new user-visible capability** request.
-- Add to **`docs/agent-layer/DECISIONS.md`** if the task required a significant decision:
+- Add to **`FEATURES.md`** only if it is a **new user-visible capability** request.
+- Add to **`DECISIONS.md`** if the task required a significant decision:
   - record decision, reason, and tradeoffs
   - keep it brief and add new entries at the bottom so the oldest decisions remain at the top
-- Update **`docs/agent-layer/ROADMAP.md`** only if the user asks for roadmap updates, or if automatic updates are appropriate and:
+- Update **`ROADMAP.md`** only if the user asks for roadmap updates, or if automatic updates are appropriate and:
   - the completed work clearly maps to existing roadmap tasks, or
   - the roadmap is now stale/contradicted by what was implemented.
 
@@ -158,7 +158,7 @@ Before adding a new entry:
   - keep the final entry within 3–5 lines
 
 ## 2D) Entry formatting rules (mandatory)
-### Issues (`docs/agent-layer/ISSUES.md`)
+### Issues (`ISSUES.md`)
 Add entries in this format (example):
 - `- Issue 2026-01-10 abcdef: Short title`
     `Priority: High. Area: <module or subsystem>`
@@ -166,14 +166,14 @@ Add entries in this format (example):
     `Next step: Concrete next action to take.`
     `Notes: Optional dependencies or context.`
 
-### Features (`docs/agent-layer/FEATURES.md`)
+### Features (`FEATURES.md`)
 - `- Feature 2026-01-10 abcdef: Short title`
     `Priority: Medium. Area: <user-facing area>`
     `Description: One sentence describing the requested capability.`
     `Acceptance criteria: One sentence describing what “done” means.`
     `Notes: Optional dependencies or context.`
 
-### Decisions (`docs/agent-layer/DECISIONS.md`)
+### Decisions (`DECISIONS.md`)
 Add entries at the bottom:
 - `- Decision 2026-01-10 abcdef: Short decision title`
     `Decision: What was chosen.`
@@ -182,9 +182,9 @@ Add entries at the bottom:
 
 ## 2E) Remove resolved items
 - For each issue that is now fixed by the recent work:
-  - remove it from `docs/agent-layer/ISSUES.md` completely
+  - remove it from `ISSUES.md` completely
 - For each feature that is now implemented:
-  - remove it from `docs/agent-layer/FEATURES.md`
+  - remove it from `FEATURES.md`
 
 ## 2F) Consolidate and keep files readable
 - Merge duplicates.
@@ -225,7 +225,7 @@ If no credible commands exist:
 ## 3C) If verification fails
 - Fix failures only if the fix is directly connected to the recent work and remains in-scope.
 - If the failure indicates a broader problem:
-  - log it to `docs/agent-layer/ISSUES.md`
+  - log it to `ISSUES.md`
   - stop further scope expansion.
 
 ---

@@ -1,5 +1,5 @@
 ---
-description: Audit all Markdown documentation for accuracy and cross-document consistency against the repository (static validation only). Produce a reviewable report and ask the user which findings to fix, log to docs/agent-layer/ISSUES.md, or ignore.
+description: Audit all Markdown documentation for accuracy and cross-document consistency against the repository (static validation only). Produce a reviewable report and ask the user which findings to fix, log to ISSUES.md, or ignore.
 ---
 
 # Documentation audit (all Markdown, report-first)
@@ -16,7 +16,7 @@ Default behavior is **report-first**:
 
 After presenting findings, ask the user which items should be:
 - fixed in documentation,
-- logged to `docs/agent-layer/ISSUES.md`,
+- logged to `ISSUES.md`,
 - both,
 - or ignored/deprioritized.
 
@@ -210,7 +210,7 @@ If issue logging is requested or allowed, generate an issue candidate for each r
     `Next step: <smallest concrete action>`
     `Notes: <optional>`
 
-Do not write to `docs/agent-layer/ISSUES.md` unless the user selects it, or the user asked for automatic issue logging during apply.
+Do not write to `ISSUES.md` unless the user selects it, or the user asked for automatic issue logging during apply.
 
 ---
 
@@ -228,7 +228,7 @@ Do not write to `docs/agent-layer/ISSUES.md` unless the user selects it, or the 
 The user replies with one line per finding ID:
 
 - `A: fix` — apply doc fix (only when apply mode has been explicitly approved)
-- `A: log` — add an issue entry to `docs/agent-layer/ISSUES.md` (only when apply mode has been explicitly approved)
+- `A: log` — add an issue entry to `ISSUES.md` (only when apply mode has been explicitly approved)
 - `A: fix+log` — do both (only when apply mode has been explicitly approved)
 - `A: ignore` — do not act on it
 - `A: other <instruction>` — user provides a specific edit (e.g., “fix but do not log” or “log as Low priority”)

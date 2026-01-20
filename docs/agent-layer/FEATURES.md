@@ -7,7 +7,7 @@ Notes for updates:
 - Keep each entry 3 to 5 lines (the first line plus 2 to 4 indented lines).
 - Lines 2 to 5 must be indented by 4 spaces so they stay associated with the entry.
 - Prevent duplicates by searching and merging.
-- When a feature is scheduled into a roadmap phase, move it into `docs/agent-layer/ROADMAP.md` and remove it from this file.
+- When a feature is scheduled into a roadmap phase, move it into `ROADMAP.md` and remove it from this file.
 - When a feature is implemented, ensure it is removed from this file.
 
 Entry format:

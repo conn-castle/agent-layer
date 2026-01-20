@@ -1,5 +1,5 @@
 ---
-description: Identify the single lowest-covered business-logic file across coverage domains, add tests to raise that file above the repo-defined coverage threshold, and verify—using repo-defined coverage commands documented in docs/agent-layer/COMMANDS.md.
+description: Identify the single lowest-covered business-logic file across coverage domains, add tests to raise that file above the repo-defined coverage threshold, and verify—using repo-defined coverage commands documented in COMMANDS.md.
 ---
 
 # Boost coverage for the weakest file (repo-adaptive, monorepo-safe)
@@ -7,26 +7,26 @@ description: Identify the single lowest-covered business-logic file across cover
 ## Intent
 Increase test coverage for exactly one **eligible business-logic** file:
 - Select the file with the **lowest line coverage** (across coverage domains/components when applicable).
-- Add or update tests to raise that file’s coverage to meet the repo-defined coverage threshold (from CI requirements or `docs/agent-layer/DECISIONS.md`).
-- If no threshold is documented, ask the user to provide one, log it in `docs/agent-layer/DECISIONS.md`, and use it going forward.
+- Add or update tests to raise that file’s coverage to meet the repo-defined coverage threshold (from CI requirements or `DECISIONS.md`).
+- If no threshold is documented, ask the user to provide one, log it in `DECISIONS.md`, and use it going forward.
 - Verify with the most credible file-scoped or component-scoped coverage check available.
 
 This workflow is designed for agentic environments:
 - It prevents “silent partial coverage” in monorepos by using a **confidence gate**.
-- It persists the definitive coverage commands in `docs/agent-layer/COMMANDS.md` for repeated reuse.
+- It persists the definitive coverage commands in `COMMANDS.md` for repeated reuse.
 
 ---
 
 ## Optional guidance from the user
 If the user provides extra direction, interpret it as:
 
-- Coverage threshold: use the repo-defined threshold (CI requirements or `docs/agent-layer/DECISIONS.md`). If none is documented, ask the user to provide one and log it in `docs/agent-layer/DECISIONS.md`.
+- Coverage threshold: use the repo-defined threshold (CI requirements or `DECISIONS.md`). If none is documented, ask the user to provide one and log it in `DECISIONS.md`.
 - A specific target file path; if provided, skip selection and work only on that file.
 - A coverage domain/component to focus on (default: auto-detect).
 - Scope preference (default: automatic, choose repo or domain as appropriate).
 - Verification depth (default: automatic).
 - Whether to install missing coverage tooling (default: ask; always requires approval).
-- Whether to persist coverage commands to `docs/agent-layer/COMMANDS.md` (default: yes).
+- Whether to persist coverage commands to `COMMANDS.md` (default: yes).
 
 ---
 
@@ -37,7 +37,7 @@ If the user provides extra direction, interpret it as:
 4. **Test Designer**: derive behavior-driven test cases that cover branches and edge cases meaningfully.
 5. **Test Implementer**: add/update tests to raise coverage to the agreed threshold without changing behavior.
 6. **Verifier**: re-run the smallest credible coverage check to confirm the target file meets the agreed threshold.
-7. **Reporter**: summarize before/after, commands, and changes; update `docs/agent-layer/COMMANDS.md` if enabled.
+7. **Reporter**: summarize before/after, commands, and changes; update `COMMANDS.md` if enabled.
 
 ---
 
@@ -52,15 +52,15 @@ If the user provides extra direction, interpret it as:
 # Phase 0 — Preflight (Coverage Scout)
 1. Confirm baseline:
    - `git status --porcelain`
-2. Ensure `docs/agent-layer/COMMANDS.md` exists:
-   - If missing, ask the user before creating it. If approved, copy `.agent-layer/templates/docs/agent-layer/COMMANDS.md` into `docs/agent-layer/COMMANDS.md` when available; otherwise ask before creating a minimal structured file.
+2. Ensure `COMMANDS.md` exists:
+   - If missing, ask the user before creating it. If approved, copy `.agent-layer/templates/docs/COMMANDS.md` into `COMMANDS.md` when available; otherwise ask before creating a minimal structured file.
 
 ---
 
 # Phase 1 — Discover coverage commands and domains (Coverage Scout)
 
-## 1A) Primary source: docs/agent-layer/COMMANDS.md
-Search `docs/agent-layer/COMMANDS.md` for coverage-related commands. Prefer a heading named **Coverage** if it exists, but do not require any specific sections. Extract:
+## 1A) Primary source: COMMANDS.md
+Search `COMMANDS.md` for coverage-related commands. Prefer a heading named **Coverage** if it exists, but do not require any specific sections. Extract:
 - coverage domains/components (if monorepo)
 - command(s) to generate coverage per domain
 - working directory for each command
@@ -102,15 +102,15 @@ Assign confidence for the coverage plan:
 
 ## 1E) Persist commands (seamless)
 If the user confirms/provides commands and wants them recorded:
-- Update `docs/agent-layer/COMMANDS.md` under **Coverage** (and **Test** if relevant).
+- Update `COMMANDS.md` under **Coverage** (and **Test** if relevant).
 - Only record commands expected to be reused.
 
 ## 1F) Determine the coverage threshold (repo-defined)
 1. Check CI or test requirements for an explicit coverage gate (for example, coverage configuration or workflow checks).
-2. Check `docs/agent-layer/DECISIONS.md` for an existing coverage threshold decision.
+2. Check `DECISIONS.md` for an existing coverage threshold decision.
 3. If a threshold is found, use it and avoid adding a duplicate decision.
 4. If no threshold is documented, ask the user to provide one before proceeding.
-5. Once provided, add a `Decision YYYY-MM-DD abcdef` entry to `docs/agent-layer/DECISIONS.md` and use that threshold for this run and future runs.
+5. Once provided, add a `Decision YYYY-MM-DD abcdef` entry to `DECISIONS.md` and use that threshold for this run and future runs.
 
 ---
 
@@ -120,7 +120,7 @@ If coverage execution fails due to missing tooling (plugin/runner):
 1. Propose the smallest viable installation approach (exact command and why it is needed).
 2. Ask the user for approval.
 3. Only after approval, install and re-run coverage.
-4. Update `docs/agent-layer/COMMANDS.md` prerequisites if the user wants commands recorded.
+4. Update `COMMANDS.md` prerequisites if the user wants commands recorded.
 
 ---
 
@@ -208,4 +208,4 @@ Return:
 - tests changed/added (files and scenarios)
 - commands run (coverage + verification)
 - any tool installation approved/performed
-- `docs/agent-layer/COMMANDS.md` updates (if any)
+- `COMMANDS.md` updates (if any)

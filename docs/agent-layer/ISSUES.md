@@ -20,10 +20,10 @@ Entry format:
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-20 d6ea375: Wizard rewrites inline comments during configuration edits
-    Priority: Medium. Area: wizard configuration editing.
-    Description: When editing TOML values, inline comments are re-emitted as leading comments, changing the original layout users may want to preserve.
-    Next step: Decide whether to document this behavior or adopt a formatter that preserves inline comment placement.
+- Issue 2026-01-20 9b1c2d: Generated headers reference `./al --sync`
+    Priority: Low. Area: documentation tooling.
+    Description: Generated instruction and skill headers say `./al --sync`, but the command line tool exposes `./al sync`.
+    Next step: Update the generator or templates to point at `./al sync` and regenerate outputs.
 
 - Issue 2026-01-20 e7fb486: Wizard comment parsing does not handle all TOML string forms
     Priority: Low. Area: wizard configuration editing.
@@ -34,11 +34,6 @@ Entry format:
     Priority: Low. Area: wizard configuration editing.
     Description: Restored server blocks reuse template position metadata, but comment preservation reads the original configuration lines, which can mis-associate or drop comments.
     Next step: Clone restored server nodes with cleared positions or skip comment preservation for newly appended servers.
-
-- Issue 2026-01-20 g9bd6a8: Wizard patch tests do not assert comment placement
-    Priority: Low. Area: wizard tests.
-    Description: The tests only check that a comment exists, not whether inline comment placement is preserved or intentionally moved.
-    Next step: Add assertions for the exact expected comment placement behavior.
 
 - Issue 2026-01-19 ceddb83: `.agent-layer/.env` overrides shell environment variables
     Priority: Medium. Area: environment handling.
@@ -54,11 +49,6 @@ Entry format:
     Priority: Medium. Area: project memory.
     Description: The decisions log grows unbounded as entries accumulate, eventually consuming too many tokens when agents read it for context.
     Next step: Consider archiving old decisions, summarizing completed phases, or splitting into a compact summary plus detailed archive.
-
-- Issue 2026-01-18 b1c2d3: Memory file path convention investigation
-    Priority: Low. Area: project memory.
-    Description: Should memory files use full relative paths or just filenames in 01_memory.md and slash commands?
-    Next step: Audit current usage and establish a single convention for referring to memory files.
 
 - Issue 2026-01-18 e4f5g6: Memory file template structure investigation
     Priority: Medium. Area: templates.
@@ -84,11 +74,6 @@ Entry format:
     Priority: High. Area: MCP configuration generation.
     Description: Claude fails to parse the generated `.mcp.json` file, reporting that `mcpServers.github` and `mcpServers.tavily` do not adhere to the MCP server configuration schema.
     Next step: Compare the generated schema against Claude's expected MCP server configuration format and fix the output structure.
-
-- Issue 2026-01-19 k7l8n0: COMMANDS.md purpose unclear in instructions
-    Priority: Low. Area: documentation.
-    Description: The instructions do not clearly state that COMMANDS.md is only for development workflow commands (build, test, lint), not for documenting all application commands or CLI usage.
-    Next step: Update 01_memory.md to explicitly clarify that COMMANDS.md covers development commands only.
 
 - Issue 2026-01-19 c9d2e1: Wizard UI depends on pre-release Charmbracelet packages
     Priority: Low. Area: dependencies.

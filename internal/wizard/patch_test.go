@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -107,6 +108,27 @@ func TestCommentForLine_BlankLineBreaksComments(t *testing.T) {
 	comment := commentForLine(lines, 2)
 	// Blank line breaks the comment chain
 	assert.Empty(t, comment)
+}
+
+func TestPatchConfig_MovesInlineCommentToLeading(t *testing.T) {
+	input := `
+[agents.codex]
+model = "old" # comment
+`
+	choices := &Choices{
+		CodexModelTouched: true,
+		CodexModel:        "new",
+	}
+	got, err := PatchConfig(input, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, got, `model = "new" # comment`)
+
+	commentIdx := strings.Index(got, "# comment")
+	modelIdx := strings.Index(got, `model = "new"`)
+	assert.NotEqual(t, -1, commentIdx)
+	assert.NotEqual(t, -1, modelIdx)
+	assert.Less(t, commentIdx, modelIdx)
 }
 
 func TestPatchConfig(t *testing.T) {

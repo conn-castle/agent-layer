@@ -147,3 +147,8 @@ Entry format:
     Decision: After `al install`, prompt to launch the setup wizard by default; skip in non-interactive shells or with `--no-wizard`.
     Reason: Keep defaults safe while guiding users through setup without reading docs.
     Tradeoffs: Adds an extra prompt during install and requires an opt-out flag.
+
+- Decision 2026-01-20 488b743: Memory file references use filenames after initial path list
+    Decision: List full memory file paths once in the memory instruction file, then use filename-only references in instructions and slash commands.
+    Reason: Reduce visual clutter while keeping a single canonical location for memory file paths.
+    Tradeoffs: Readers must consult the memory instruction file to see the full paths.
