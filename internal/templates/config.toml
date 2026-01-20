@@ -15,7 +15,7 @@ enabled = true
 [agents.codex]
 enabled = true
 model = "gpt-5.2-codex"
-reasoning_effort = "xhigh" # codex only
+reasoning_effort = "high" # codex only
 
 [agents.vscode]
 enabled = true
@@ -51,11 +51,3 @@ enabled = false
 clients = ["gemini", "claude", "vscode", "codex"]
 transport = "http"
 url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
-
-[[mcp.servers]]
-id = "local-mcp"
-enabled = false
-transport = "stdio"
-command = "my-mcp-server"
-args = ["--flag", "value"]
-env = { MY_TOKEN = "${MY_TOKEN}" }

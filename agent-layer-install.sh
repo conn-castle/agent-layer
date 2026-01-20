@@ -18,9 +18,10 @@ on_error() {
 trap 'on_error ${LINENO} "$BASH_COMMAND"' ERR
 
 VERSION="latest"
+NO_WIZARD=false
 
 usage() {
-  echo "Usage: $0 [--version <tag>]" >&2
+  echo "Usage: $0 [--version <tag>] [--no-wizard]" >&2
 }
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +33,10 @@ while [[ $# -gt 0 ]]; do
       fi
       VERSION="$2"
       shift 2
+      ;;
+    --no-wizard)
+      NO_WIZARD=true
+      shift
       ;;
     -h|--help)
       usage
@@ -144,6 +149,11 @@ else
   echo "Warning: shasum/sha256sum not available; skipping checksum verification." >&2
 fi
 
-if ! ./al install; then
+install_args=()
+if [[ "$NO_WIZARD" == "true" ]]; then
+  install_args+=(--no-wizard)
+fi
+
+if ! ./al install "${install_args[@]}"; then
   fail "Agent Layer install failed. Run this from the repo root where you want .agent-layer/ created."
 fi

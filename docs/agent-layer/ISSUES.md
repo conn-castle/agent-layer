@@ -70,30 +70,10 @@ Entry format:
     Description: The boost-coverage command only picks one file at a time and stops too early. It should iterate until coverage targets are met, even if it requires many tests.
     Next step: Refactor the boost-coverage logic to support continuous iteration and multiple file targets in a single run.
 
-- Issue 2026-01-18 f1g2h3: Codex initial reasoning effort should be high
-    Priority: Medium. Area: configuration templates.
-    Description: The initial example configuration for Codex sets reasoning_effort to "xhigh", which can be unnecessarily expensive or slow for a default. It should be "high".
-    Next step: Update `internal/templates/config.toml` and `README.md` to use "high" instead of "xhigh".
-
-- Issue 2026-01-18 i4j5k6: Remove MY_TOKEN from default configuration template
-    Priority: Low. Area: configuration templates.
-    Description: The `MY_TOKEN` placeholder in the default configuration template is unnecessary and should be removed to keep the default config clean. It can remain in the README as an example of environment variable usage.
-    Next step: Remove `MY_TOKEN` from `internal/templates/config.toml`.
-
-- Issue 2026-01-18 k7l8m9: Set MCP servers to enabled by default
-    Priority: Medium. Area: configuration templates.
-    Description: Current MCP server examples in the default configuration are disabled by default. They should be enabled by default to provide a better out-of-the-box experience when tokens are provided.
-    Next step: Update `internal/templates/config.toml` to set `enabled = true` for default MCP servers.
-
 - Issue 2026-01-18 l8m9n0: Limit exposed commands for GitHub MCP
     Priority: Medium. Area: mcp configuration.
     Description: The GitHub MCP server exposes many tools. We should explicitly list only the necessary commands in the configuration to reduce noise and potential security risks.
     Next step: Research useful GitHub MCP commands and configure `args` or `commands` whitelist in the default config template.
-
-- Issue 2026-01-19 f2g3h4: Wizard sets Codex reasoning effort to xhigh by default
-    Priority: Medium. Area: wizard defaults.
-    Description: The wizard implementation hardcodes the default reasoning effort for Codex to "xhigh", which may be too aggressive/expensive for a default. It should align with the template default (which is also currently xhigh but planned to change to high).
-    Next step: Change `internal/wizard/catalog.go` default to "high" once the template decision is finalized.
 
 - Issue 2026-01-19 i5j6k7: Wizard model catalogs require manual updates
     Priority: Low. Area: maintenance.

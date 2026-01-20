@@ -80,7 +80,13 @@ func TestStubCmd(t *testing.T) {
 func TestInstallAndSyncCommands(t *testing.T) {
 	root := t.TempDir()
 	withWorkingDir(t, root, func() {
-		if err := newInstallCmd().RunE(nil, nil); err != nil {
+		cmd := newInstallCmd()
+		cmd.SetArgs([]string{"--no-wizard"})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+		cmd.SetIn(bytes.NewBufferString(""))
+		if err := cmd.Execute(); err != nil {
 			t.Fatalf("install error: %v", err)
 		}
 		writeStub(t, root, "al")
@@ -93,6 +99,99 @@ func TestInstallAndSyncCommands(t *testing.T) {
 			t.Fatalf("expected config.toml to exist: %v", err)
 		}
 	})
+}
+
+func TestInstallCommandNoWizardSkipsWizard(t *testing.T) {
+	root := t.TempDir()
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	originalIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = originalIsTerminal })
+
+	originalRunWizard := runWizard
+	wizardCalled := false
+	runWizard = func(_ string) error {
+		wizardCalled = true
+		return nil
+	}
+	t.Cleanup(func() { runWizard = originalRunWizard })
+
+	cmd := newInstallCmd()
+	cmd.SetArgs([]string{"--no-wizard"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("y\n"))
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+	if wizardCalled {
+		t.Fatalf("expected wizard to be skipped with --no-wizard")
+	}
+}
+
+func TestInstallCommandPromptYesRunsWizard(t *testing.T) {
+	root := t.TempDir()
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	originalIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = originalIsTerminal })
+
+	originalRunWizard := runWizard
+	wizardCalled := false
+	runWizard = func(_ string) error {
+		wizardCalled = true
+		return nil
+	}
+	t.Cleanup(func() { runWizard = originalRunWizard })
+
+	cmd := newInstallCmd()
+	cmd.SetArgs([]string{})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("y\n"))
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+	if !wizardCalled {
+		t.Fatalf("expected wizard to run after confirmation")
+	}
+}
+
+func TestInstallCommandNonInteractiveSkipsWizard(t *testing.T) {
+	root := t.TempDir()
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	originalIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = originalIsTerminal })
+
+	originalRunWizard := runWizard
+	wizardCalled := false
+	runWizard = func(_ string) error {
+		wizardCalled = true
+		return nil
+	}
+	t.Cleanup(func() { runWizard = originalRunWizard })
+
+	cmd := newInstallCmd()
+	cmd.SetArgs([]string{})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+	if wizardCalled {
+		t.Fatalf("expected wizard to be skipped in non-interactive mode")
+	}
 }
 
 func TestClientCommandsMissingConfig(t *testing.T) {

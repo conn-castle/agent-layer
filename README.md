@@ -24,6 +24,7 @@ curl -fsSL https://github.com/nicholasjconn/agent-layer/releases/latest/download
 ```
 
 The installer downloads `./al` and runs `./al install` in the current directory.
+By default, `./al install` prompts to run `./al wizard` after seeding files. Use `./al install --no-wizard` (or `agent-layer-install.sh --no-wizard`) to skip; non-interactive shells skip automatically.
 
 Then run an agent:
 
@@ -129,7 +130,7 @@ enabled = true
 [agents.codex]
 enabled = true
 model = "gpt-5.2-codex"
-reasoning_effort = "xhigh" # codex only
+reasoning_effort = "high" # codex only
 
 [agents.vscode]
 enabled = true

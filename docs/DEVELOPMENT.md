@@ -64,6 +64,7 @@ go build -o ./al ../../cmd/al
 
 Notes:
 - `install` is required once per repo to seed `.agent-layer/` and `docs/agent-layer/`.
+- `install` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically).
 - `sync` is optional because `./al <client>` always syncs before launch.
 - Build a local `./al` in scratch repos so the internal MCP prompt server can launch.
 - `./scripts/setup.sh` is only for tool + hook setup, not required just to run the CLI.

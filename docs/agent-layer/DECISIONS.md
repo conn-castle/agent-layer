@@ -142,3 +142,8 @@ Entry format:
     Decision: Retain the Charmbracelet bubbles/colorprofile versions required by `github.com/charmbracelet/huh` v0.8.0 instead of overriding to newer tags.
     Reason: Upstream pins pseudo versions; overriding them risks incompatibility without upstream support.
     Tradeoffs: go.mod includes pre-release pseudo versions until upstream tags stable releases.
+
+- Decision 2026-01-20 e327f69: Prompt to run wizard after install
+    Decision: After `al install`, prompt to launch the setup wizard by default; skip in non-interactive shells or with `--no-wizard`.
+    Reason: Keep defaults safe while guiding users through setup without reading docs.
+    Tradeoffs: Adds an extra prompt during install and requires an opt-out flag.
