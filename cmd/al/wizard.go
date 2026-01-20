@@ -6,9 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
-
-	alsync "github.com/nicholasjconn/agent-layer/internal/sync"
-	"github.com/nicholasjconn/agent-layer/internal/wizard"
 )
 
 func newWizardCmd() *cobra.Command {
@@ -26,7 +23,7 @@ func newWizardCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return wizard.Run(root, wizard.NewHuhUI(), alsync.Run)
+			return runWizard(root)
 		},
 	}
 }

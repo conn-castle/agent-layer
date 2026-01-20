@@ -11,7 +11,7 @@ import (
 	"github.com/nicholasjconn/agent-layer/internal/fsutil"
 )
 
-const promptHeaderTemplate = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/%s.md\n  Regenerate: ./al --sync\n-->\n"
+const promptHeaderTemplate = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/%s.md\n  Regenerate: ./al sync\n-->\n"
 
 // WriteVSCodePrompts generates VS Code prompt files for slash commands.
 func WriteVSCodePrompts(root string, commands []config.SlashCommand) error {

@@ -13,6 +13,7 @@ type UI interface {
 	Select(title string, options []string, current *string) error
 	MultiSelect(title string, options []string, selected *[]string) error
 	Confirm(title string, value *bool) error
+	Input(title string, value *string) error
 	SecretInput(title string, value *string) error
 	Note(title string, body string) error
 }
@@ -92,6 +93,17 @@ func (ui *HuhUI) Confirm(title string, value *bool) error {
 	return ui.runForm(huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
+				Title(title).
+				Value(value),
+		),
+	))
+}
+
+// Input renders a plain text input prompt.
+func (ui *HuhUI) Input(title string, value *string) error {
+	return ui.runForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
 				Title(title).
 				Value(value),
 		),

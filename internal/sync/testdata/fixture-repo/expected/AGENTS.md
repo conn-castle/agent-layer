@@ -1,7 +1,7 @@
 <!--
   GENERATED FILE
   Source: .agent-layer/instructions/*.md
-  Regenerate: ./al --sync
+  Regenerate: ./al sync
 -->
 
 <!-- BEGIN: 00_base.md -->

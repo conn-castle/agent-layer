@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -129,6 +130,40 @@ model = "old" # comment
 	assert.NotEqual(t, -1, commentIdx)
 	assert.NotEqual(t, -1, modelIdx)
 	assert.Less(t, commentIdx, modelIdx)
+}
+
+func TestPatchConfig_RestoredServerSkipsCommentPreservation(t *testing.T) {
+	blocks, err := defaultMCPServerTrees()
+	require.NoError(t, err)
+	github, ok := blocks["github"]
+	require.True(t, ok)
+
+	pos := github.GetPositionPath([]string{"enabled"})
+	require.False(t, pos.Invalid())
+	require.Greater(t, pos.Line, 1)
+
+	lines := make([]string, pos.Line)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("key_%d = \"value\"", i)
+	}
+	lines[pos.Line-2] = "# should-not-attach"
+	lines[pos.Line-1] = fmt.Sprintf("key_%d = \"value\"", pos.Line-1)
+	content := strings.Join(lines, "\n") + "\n[mcp]\n"
+
+	choices := &Choices{
+		RestoreMissingMCPServers: true,
+		MissingDefaultMCPServers: []string{"github"},
+		DefaultMCPServers:        []DefaultMCPServer{{ID: "github"}},
+		EnabledMCPServersTouched: true,
+		EnabledMCPServers:        map[string]bool{"github": true},
+	}
+	got, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, got, `id = "github"`)
+	assert.Contains(t, got, `enabled = true`)
+	assert.NotContains(t, got, "# should-not-attach\nenabled = true")
+	assert.NotContains(t, got, `enabled = true # should-not-attach`)
 }
 
 func TestPatchConfig(t *testing.T) {

@@ -6,7 +6,10 @@ import (
 	"strings"
 )
 
-const leaveBlankOption = "Leave blank (use client default)"
+const (
+	leaveBlankOption = "Leave blank (use client default)"
+	customOption     = "Custom..."
+)
 
 // buildSummary returns a formatted summary of wizard choices.
 // c is the current choices; returns the summary text.
@@ -110,18 +113,44 @@ func agentIDSet(ids []string) map[string]bool {
 
 // selectOptionalValue prompts for an optional selection and updates value.
 // title and options define the prompt; value holds the current selection.
-// Returns an error if the prompt fails.
+// Returns an error if the prompt fails or a custom value is left blank.
 func selectOptionalValue(ui UI, title string, options []string, value *string) error {
 	selection := *value
 	if selection == "" {
 		selection = leaveBlankOption
+	} else {
+		found := false
+		for _, option := range options {
+			if selection == option {
+				found = true
+				break
+			}
+		}
+		if !found {
+			selection = customOption
+		}
 	}
-	opts := append([]string{leaveBlankOption}, options...)
+	opts := make([]string, 0, len(options)+2)
+	opts = append(opts, leaveBlankOption)
+	opts = append(opts, options...)
+	opts = append(opts, customOption)
 	if err := ui.Select(title, opts, &selection); err != nil {
 		return err
 	}
 	if selection == leaveBlankOption {
 		*value = ""
+		return nil
+	}
+	if selection == customOption {
+		customValue := *value
+		if err := ui.Input(fmt.Sprintf("Custom %s", title), &customValue); err != nil {
+			return err
+		}
+		customValue = strings.TrimSpace(customValue)
+		if customValue == "" {
+			return fmt.Errorf("custom value required for %s", title)
+		}
+		*value = customValue
 		return nil
 	}
 	*value = selection

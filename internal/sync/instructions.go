@@ -10,7 +10,7 @@ import (
 	"github.com/nicholasjconn/agent-layer/internal/fsutil"
 )
 
-const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: ./al --sync\n-->\n\n"
+const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: ./al sync\n-->\n\n"
 
 // WriteInstructionShims generates instruction shims for supported clients.
 func WriteInstructionShims(root string, instructions []config.InstructionFile) error {

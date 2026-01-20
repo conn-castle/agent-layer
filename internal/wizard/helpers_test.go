@@ -100,6 +100,60 @@ func TestCodexModelSummary(t *testing.T) {
 	}
 }
 
+func TestSelectOptionalValue_Custom(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			*current = customOption
+			return nil
+		},
+		InputFunc: func(title string, value *string) error {
+			*value = "custom-model"
+			return nil
+		},
+	}
+
+	value := ""
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.NoError(t, err)
+	assert.Equal(t, "custom-model", value)
+}
+
+func TestSelectOptionalValue_CustomBlank(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			*current = customOption
+			return nil
+		},
+		InputFunc: func(title string, value *string) error {
+			*value = "   "
+			return nil
+		},
+	}
+
+	value := ""
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "custom value required")
+}
+
+func TestSelectOptionalValue_CustomPrefill(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			assert.Equal(t, customOption, *current)
+			return nil
+		},
+		InputFunc: func(title string, value *string) error {
+			assert.Equal(t, "custom-model", *value)
+			return nil
+		},
+	}
+
+	value := "custom-model"
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.NoError(t, err)
+	assert.Equal(t, "custom-model", value)
+}
+
 func TestBuildSummary(t *testing.T) {
 	t.Run("with MCP servers enabled", func(t *testing.T) {
 		c := NewChoices()

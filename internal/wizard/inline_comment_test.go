@@ -8,66 +8,94 @@ import (
 
 func TestInlineComment(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected string
+		name      string
+		lines     []string
+		lineIndex int
+		expected  string
 	}{
 		{
-			name:     "no comment",
-			input:    `key = "value"`,
-			expected: "",
+			name:      "no comment",
+			lines:     []string{`key = "value"`},
+			lineIndex: 0,
+			expected:  "",
 		},
 		{
-			name:     "simple comment",
-			input:    `key = "value" # comment`,
-			expected: "comment",
+			name:      "simple comment",
+			lines:     []string{`key = "value" # comment`},
+			lineIndex: 0,
+			expected:  "comment",
 		},
 		{
-			name:     "comment with spaces",
-			input:    `key = "value"   #    spaced   `,
-			expected: "spaced",
+			name:      "comment with spaces",
+			lines:     []string{`key = "value"   #    spaced   `},
+			lineIndex: 0,
+			expected:  "spaced",
 		},
 		{
-			name:     "hash in string",
-			input:    `key = "val#ue" # comment`,
-			expected: "comment",
+			name:      "hash in string",
+			lines:     []string{`key = "val#ue" # comment`},
+			lineIndex: 0,
+			expected:  "comment",
 		},
 		{
-			name:     "hash in single quoted string",
-			input:    `key = 'val#ue' # comment`,
-			expected: "comment",
+			name:      "hash in single quoted string",
+			lines:     []string{`key = 'val#ue' # comment`},
+			lineIndex: 0,
+			expected:  "comment",
 		},
 		{
-			name:     "escaped quote",
-			input:    `key = "val\"ue" # comment`,
-			expected: "comment",
-		},
-		// The following cases are expected to FAIL with current implementation
-		{
-			name:     "hash in triple double quotes",
-			input:    `key = """val#ue""" # comment`,
-			expected: "comment",
+			name:      "escaped quote",
+			lines:     []string{`key = "val\"ue" # comment`},
+			lineIndex: 0,
+			expected:  "comment",
 		},
 		{
-			name:     "hash in triple single quotes",
-			input:    `key = '''val#ue''' # comment`,
-			expected: "comment",
+			name:      "hash in triple double quotes",
+			lines:     []string{`key = """val#ue""" # comment`},
+			lineIndex: 0,
+			expected:  "comment",
 		},
 		{
-			name:     "triple quote with inner quote and hash",
-			input:    `key = """ " # """ # real comment`,
-			expected: "real comment",
+			name:      "hash in triple single quotes",
+			lines:     []string{`key = '''val#ue''' # comment`},
+			lineIndex: 0,
+			expected:  "comment",
 		},
 		{
-			name:     "multiline string start",
-			input:    `key = """line1`,
-			expected: "",
+			name:      "triple quote with inner quote and hash",
+			lines:     []string{`key = """ " # """ # real comment`},
+			lineIndex: 0,
+			expected:  "real comment",
+		},
+		{
+			name:      "multiline basic string ignores hash",
+			lines:     []string{`key = """line1`, `line#2`, `line3""" # comment`},
+			lineIndex: 1,
+			expected:  "",
+		},
+		{
+			name:      "multiline basic string comment after close",
+			lines:     []string{`key = """line1`, `line2`, `line3""" # comment`},
+			lineIndex: 2,
+			expected:  "comment",
+		},
+		{
+			name:      "multiline literal string ignores hash",
+			lines:     []string{`key = '''line1`, `line#2`, `line3''' # comment`},
+			lineIndex: 1,
+			expected:  "",
+		},
+		{
+			name:      "multiline literal string comment after close",
+			lines:     []string{`key = '''line1`, `line2`, `line3''' # comment`},
+			lineIndex: 2,
+			expected:  "comment",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := inlineComment(tt.input)
+			got := inlineCommentForLine(tt.lines, tt.lineIndex)
 			assert.Equal(t, tt.expected, got)
 		})
 	}

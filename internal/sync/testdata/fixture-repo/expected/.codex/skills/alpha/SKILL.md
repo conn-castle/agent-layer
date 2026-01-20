@@ -7,7 +7,7 @@ description: >-
 <!--
   GENERATED FILE
   Source: .agent-layer/slash-commands/alpha.md
-  Regenerate: ./al --sync
+  Regenerate: ./al sync
 -->
 
 # alpha
