@@ -14,14 +14,6 @@ import (
 // Launch starts the Codex CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
 	args := []string{}
-	model := cfg.Config.Agents.Codex.Model
-	if model != "" {
-		args = append(args, "--model", model)
-	}
-	reasoning := cfg.Config.Agents.Codex.ReasoningEffort
-	if reasoning != "" {
-		args = append(args, "--reasoning-effort", reasoning)
-	}
 
 	env = ensureCodexHome(cfg.Root, env)
 

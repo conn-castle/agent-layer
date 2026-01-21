@@ -179,6 +179,8 @@ API tokens and other secrets live in `.agent-layer/.env` (always gitignored). Ex
 - `CONTEXT7_API_KEY`
 - `TAVILY_API_KEY`
 
+When launching via `./al`, your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens).
+
 ### Instructions: `.agent-layer/instructions/`
 
 - Files are concatenated in **lexicographic order**

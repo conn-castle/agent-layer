@@ -20,11 +20,6 @@ Entry format:
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-19 ceddb83: `.agent-layer/.env` overrides shell environment variables
-    Priority: Medium. Area: environment handling.
-    Description: When launching via `./al`, values from `.agent-layer/.env` override existing shell environment variables, and empty template keys can shadow valid tokens.
-    Next step: Decide precedence and update environment merge logic or templates to avoid overriding with empty values; document the chosen behavior.
-
 - Issue 2026-01-18 e5f6g7: Slash commands not output for antigravity
     Priority: Medium. Area: antigravity support.
     Description: Slash commands are not being output when antigravity mode is enabled.
@@ -44,11 +39,6 @@ Entry format:
     Priority: Medium. Area: mcp configuration.
     Description: The GitHub MCP server exposes many tools. We should explicitly list only the necessary commands in the configuration to reduce noise and potential security risks.
     Next step: Research useful GitHub MCP commands and configure `args` or `commands` whitelist in the default config template.
-
-- Issue 2026-01-19 j6k7l8: Generated .mcp.json does not adhere to Claude MCP server schema
-    Priority: High. Area: MCP configuration generation.
-    Description: Claude fails to parse the generated `.mcp.json` file, reporting that `mcpServers.github` and `mcpServers.tavily` do not adhere to the MCP server configuration schema.
-    Next step: Compare the generated schema against Claude's expected MCP server configuration format and fix the output structure.
 
 - Issue 2026-01-19 c9d2e1: Wizard UI depends on pre-release Charmbracelet packages
     Priority: Low. Area: dependencies.

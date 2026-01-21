@@ -9,7 +9,7 @@ import (
 
 // BuildEnv merges base env with project env and run metadata.
 func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []string {
-	env := mergeEnv(base, projectEnv)
+	env := mergeEnvFillMissing(base, projectEnv)
 	if runInfo != nil {
 		env = mergeEnv(env, map[string]string{
 			"AL_RUN_DIR": runInfo.Dir,
@@ -47,6 +47,22 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 		return base
 	}
 	for key, value := range overrides {
+		base = SetEnv(base, key, value)
+	}
+	return base
+}
+
+func mergeEnvFillMissing(base []string, additions map[string]string) []string {
+	if len(additions) == 0 {
+		return base
+	}
+	for key, value := range additions {
+		if value == "" {
+			continue
+		}
+		if _, ok := GetEnv(base, key); ok {
+			continue
+		}
 		base = SetEnv(base, key, value)
 	}
 	return base

@@ -15,6 +15,7 @@ type mcpConfig struct {
 }
 
 type mcpServer struct {
+	Type    string             `json:"type"`
 	Command string             `json:"command,omitempty"`
 	Args    []string           `json:"args,omitempty"`
 	Env     OrderedMap[string] `json:"env,omitempty"`
@@ -54,6 +55,7 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 		return nil, err
 	}
 	cfg.Servers["agent-layer"] = mcpServer{
+		Type:    "stdio",
 		Command: promptCommand,
 		Args:    promptArgs,
 	}
@@ -72,6 +74,7 @@ func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 
 	for _, server := range resolved {
 		entry := mcpServer{
+			Type:    server.Transport,
 			Command: server.Command,
 			Args:    server.Args,
 			URL:     server.URL,

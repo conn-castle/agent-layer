@@ -3,6 +3,7 @@ package sync
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/nicholasjconn/agent-layer/internal/config"
@@ -247,5 +248,115 @@ func TestBuildVSCodeMCPConfigMissingEnv(t *testing.T) {
 	_, err := buildVSCodeMCPConfig(project)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteVSCodeLaunchers(t *testing.T) {
+	root := t.TempDir()
+
+	if err := WriteVSCodeLaunchers(root); err != nil {
+		t.Fatalf("WriteVSCodeLaunchers error: %v", err)
+	}
+
+	// Verify macOS launcher
+	shPath := filepath.Join(root, ".agent-layer", "open-vscode.command")
+	shInfo, err := os.Stat(shPath)
+	if err != nil {
+		t.Fatalf("expected open-vscode.command: %v", err)
+	}
+	if shInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("expected 0755 permissions on .command file, got %o", shInfo.Mode().Perm())
+	}
+
+	// Verify Windows launcher
+	batPath := filepath.Join(root, ".agent-layer", "open-vscode.bat")
+	batInfo, err := os.Stat(batPath)
+	if err != nil {
+		t.Fatalf("expected open-vscode.bat: %v", err)
+	}
+	if batInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("expected 0755 permissions on .bat file, got %o", batInfo.Mode().Perm())
+	}
+}
+
+func TestWriteVSCodeLaunchersContent(t *testing.T) {
+	root := t.TempDir()
+
+	if err := WriteVSCodeLaunchers(root); err != nil {
+		t.Fatalf("WriteVSCodeLaunchers error: %v", err)
+	}
+
+	// Verify macOS launcher content
+	shPath := filepath.Join(root, ".agent-layer", "open-vscode.command")
+	shContent, err := os.ReadFile(shPath)
+	if err != nil {
+		t.Fatalf("read .command file: %v", err)
+	}
+	shStr := string(shContent)
+
+	// Check required elements
+	if len(shStr) == 0 {
+		t.Fatal("macOS launcher is empty")
+	}
+	if shStr[:2] != "#!" {
+		t.Fatal("macOS launcher missing shebang")
+	}
+	if !strings.Contains(shStr, "CODEX_HOME") {
+		t.Fatal("macOS launcher missing CODEX_HOME")
+	}
+	if !strings.Contains(shStr, "code .") {
+		t.Fatal("macOS launcher missing 'code .' command")
+	}
+	if !strings.Contains(shStr, "Shell Command: Install") {
+		t.Fatal("macOS launcher missing install instructions")
+	}
+
+	// Verify Windows launcher content
+	batPath := filepath.Join(root, ".agent-layer", "open-vscode.bat")
+	batContent, err := os.ReadFile(batPath)
+	if err != nil {
+		t.Fatalf("read .bat file: %v", err)
+	}
+	batStr := string(batContent)
+
+	if len(batStr) == 0 {
+		t.Fatal("Windows launcher is empty")
+	}
+	if !strings.Contains(batStr, "@echo off") {
+		t.Fatal("Windows launcher missing @echo off")
+	}
+	if !strings.Contains(batStr, "CODEX_HOME") {
+		t.Fatal("Windows launcher missing CODEX_HOME")
+	}
+	if !strings.Contains(batStr, "code .") {
+		t.Fatal("Windows launcher missing 'code .' command")
+	}
+	if !strings.Contains(batStr, "Shell Command: Install") {
+		t.Fatal("Windows launcher missing install instructions")
+	}
+}
+
+func TestWriteVSCodeLaunchersDirectoryError(t *testing.T) {
+	root := t.TempDir()
+	// Create a file where the directory should be
+	file := filepath.Join(root, ".agent-layer")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	if err := WriteVSCodeLaunchers(root); err == nil {
+		t.Fatalf("expected error when .agent-layer is a file")
+	}
+}
+
+func TestWriteVSCodeLaunchersWriteError(t *testing.T) {
+	root := t.TempDir()
+	agentLayerDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(agentLayerDir, 0o500); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := WriteVSCodeLaunchers(root); err == nil {
+		t.Fatalf("expected error when directory is read-only")
 	}
 }

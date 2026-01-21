@@ -152,3 +152,13 @@ Entry format:
     Decision: List full memory file paths once in the memory instruction file, then use filename-only references in instructions and slash commands.
     Reason: Reduce visual clutter while keeping a single canonical location for memory file paths.
     Tradeoffs: Readers must consult the memory instruction file to see the full paths.
+
+- Decision 2026-01-20 3859afb: `.agent-layer/.env` does not override shell environment
+    Decision: When launching via `./al`, use `.agent-layer/.env` to fill missing environment variables only and ignore empty values; never override existing process environment variables.
+    Reason: Prevent empty template keys (and `.agent-layer/.env` values) from shadowing real tokens set in the shell while still allowing placeholder-based config generation.
+    Tradeoffs: Users must unset a shell variable if they want the `.agent-layer/.env` value to take effect.
+
+- Decision 2026-01-20 f9a8b7c: Remove unsupported `--reasoning-effort` flag for Codex CLI
+    Decision: Removed the `--reasoning-effort` flag from the `al codex` launch command.
+    Reason: The current Codex CLI (v0.80.0) does not support this flag directly; the configuration is already correctly handled via the `.codex/config.toml` file generated during the sync phase.
+    Tradeoffs: Simplifies the launch arguments; ensures compatibility with the existing Codex CLI while maintaining the desired configuration via the config file.

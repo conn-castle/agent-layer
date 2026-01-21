@@ -1,12 +1,14 @@
 {
   "mcpServers": {
     "agent-layer": {
+      "type": "stdio",
       "command": "./al",
       "args": [
         "mcp-prompts"
       ]
     },
     "example": {
+      "type": "http",
       "url": "https://mcp.example.com?token=${EXAMPLE_TOKEN}",
       "headers": {
         "Authorization": "Bearer ${EXAMPLE_TOKEN}"

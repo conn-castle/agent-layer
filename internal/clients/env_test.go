@@ -24,6 +24,28 @@ func TestBuildEnv(t *testing.T) {
 	}
 }
 
+func TestBuildEnvDoesNotOverrideBase(t *testing.T) {
+	base := []string{"TOKEN=real"}
+	projectEnv := map[string]string{"TOKEN": "abc"}
+
+	env := BuildEnv(base, projectEnv, nil)
+
+	if value, ok := GetEnv(env, "TOKEN"); !ok || value != "real" {
+		t.Fatalf("expected TOKEN to remain from base env, got %v", value)
+	}
+}
+
+func TestBuildEnvDoesNotOverrideBaseWithEmptyProjectValue(t *testing.T) {
+	base := []string{"TOKEN=real"}
+	projectEnv := map[string]string{"TOKEN": ""}
+
+	env := BuildEnv(base, projectEnv, nil)
+
+	if value, ok := GetEnv(env, "TOKEN"); !ok || value != "real" {
+		t.Fatalf("expected TOKEN to remain from base env, got %v", value)
+	}
+}
+
 func TestSetEnvUpdatesExisting(t *testing.T) {
 	env := []string{"KEY=old"}
 	env = SetEnv(env, "KEY", "new")

@@ -39,6 +39,12 @@ func TestBuildMCPConfig(t *testing.T) {
 	if cfg.Servers["agent-layer"].Command == "" {
 		t.Fatalf("expected internal prompt server")
 	}
+	if cfg.Servers["agent-layer"].Type != "stdio" {
+		t.Fatalf("unexpected internal prompt server type: %s", cfg.Servers["agent-layer"].Type)
+	}
+	if cfg.Servers["example"].Type != "http" {
+		t.Fatalf("unexpected server type: %s", cfg.Servers["example"].Type)
+	}
 	if cfg.Servers["example"].URL != "https://example.com?token=${TOKEN}" {
 		t.Fatalf("unexpected url: %s", cfg.Servers["example"].URL)
 	}
@@ -165,6 +171,9 @@ func TestBuildMCPConfigStdioServer(t *testing.T) {
 	server, ok := cfg.Servers["stdio"]
 	if !ok {
 		t.Fatalf("expected stdio server")
+	}
+	if server.Type != "stdio" {
+		t.Fatalf("unexpected type: %s", server.Type)
 	}
 	if server.Command != "tool" {
 		t.Fatalf("unexpected command: %s", server.Command)

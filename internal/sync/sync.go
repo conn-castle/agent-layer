@@ -36,6 +36,7 @@ func RunWithProject(root string, project *config.ProjectConfig) error {
 			func() error { return WriteVSCodePrompts(root, project.SlashCommands) },
 			func() error { return WriteVSCodeSettings(root, project) },
 			func() error { return WriteVSCodeMCPConfig(root, project) },
+			func() error { return WriteVSCodeLaunchers(root) },
 		)
 	}
 

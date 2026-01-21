@@ -60,3 +60,8 @@ Entry format:
     Priority: Medium. Area: slash commands.
     Capability: Running finish-task or cleanup-code commands should ensure the codebase is in a fully passing state (tests pass, linting passes, precommit hooks pass) so users can immediately stage and commit without worrying about failures.
     Acceptance criteria: After running finish-task or cleanup-code, all tests pass, lint checks pass, and precommit hooks would succeed on the changed files.
+
+- Feature 2026-01-20 t8u9v0: SQL Database MCP Server
+    Priority: Medium. Area: MCP Servers.
+    Capability: Support an MCP server that makes it easier to query and work with SQLite and other SQL databases.
+    Acceptance criteria: An MCP server for SQL databases is identified and documented or integrated.

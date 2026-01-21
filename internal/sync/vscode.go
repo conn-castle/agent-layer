@@ -81,6 +81,55 @@ func WriteVSCodeMCPConfig(root string, project *config.ProjectConfig) error {
 	return nil
 }
 
+// WriteVSCodeLaunchers generates .agent-layer/open-vscode.command (macOS) and .agent-layer/open-vscode.bat (Windows).
+func WriteVSCodeLaunchers(root string) error {
+	agentLayerDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create %s: %w", agentLayerDir, err)
+	}
+
+	// macOS launcher
+	shContent := `#!/usr/bin/env bash
+set -e
+# Navigate to the parent root
+PARENT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+export CODEX_HOME="$PARENT_ROOT/.codex"
+cd "$PARENT_ROOT"
+if command -v code >/dev/null 2>&1; then
+  code .
+else
+  echo "Error: 'code' command not found."
+  echo "To install: Open VS Code, press Cmd+Shift+P, type 'Shell Command: Install code command in PATH', and run it."
+  exit 1
+fi
+`
+	shPath := filepath.Join(agentLayerDir, "open-vscode.command")
+	if err := fsutil.WriteFileAtomic(shPath, []byte(shContent), 0o755); err != nil {
+		return fmt.Errorf("failed to write %s: %w", shPath, err)
+	}
+
+	// Windows launcher
+	batContent := `@echo off
+set "PARENT_ROOT=%~dp0.."
+set "CODEX_HOME=%PARENT_ROOT%\.codex"
+cd /d "%PARENT_ROOT%"
+where code >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+  code .
+) else (
+  echo Error: 'code' command not found.
+  echo To install: Open VS Code, press Ctrl+Shift+P, type 'Shell Command: Install code command in PATH', and run it.
+  pause
+)
+`
+	batPath := filepath.Join(agentLayerDir, "open-vscode.bat")
+	if err := fsutil.WriteFileAtomic(batPath, []byte(batContent), 0o755); err != nil {
+		return fmt.Errorf("failed to write %s: %w", batPath, err)
+	}
+
+	return nil
+}
+
 func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error) {
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	settings := &vscodeSettings{}
