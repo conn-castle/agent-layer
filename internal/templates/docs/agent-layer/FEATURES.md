@@ -13,7 +13,7 @@ Notes for updates:
 Entry format:
 - Feature YYYY-MM-DD abcdef: Short title
     Priority: Critical, High, Medium, or Low. Area: <area>
-    Capability: <what the user should be able to do>
+    Description: <what the user should be able to do>
     Acceptance criteria: <clear condition to consider it done>
     Notes: <optional dependencies or constraints>
 

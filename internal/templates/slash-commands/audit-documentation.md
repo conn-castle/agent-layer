@@ -31,6 +31,7 @@ If the user provides extra direction, interpret it as:
 - Snippet length: default to short excerpts; omit if the user requests none.
 - Issue logging preference: default to asking which findings to log; the user may request no logging or automatic logging during apply.
 - Documentation update preference: default to asking which doc fixes to apply; the user may request no doc fixes or automatic fixes during apply.
+- Decision hygiene preference: default to performing decision cleanup during apply; the user may request skipping it.
 
 **Approval gate**
 - If the user asks to apply changes, you must have explicit approval and a selection list (see “User response protocol”).
@@ -54,6 +55,7 @@ If the user provides extra direction, interpret it as:
 - Prefer targeted repo search over manual line-by-line reading.
 - Keep diffs minimal and localized when applying doc fixes.
 - Never claim verification was run unless it was run and observed.
+- Decision hygiene edits are allowed only in apply mode after explicit approval.
 
 ---
 
@@ -251,6 +253,19 @@ Apply rules:
 - If a finding suggests code changes, do not implement code changes in this workflow. Instead:
   - log an issue (if selected), and/or
   - recommend a follow-up implementation workflow.
+
+## 7B) Decision hygiene (apply-only)
+After apply approval, review `DECISIONS.md` and remove or consolidate decisions that are:
+- unmade or no longer relevant,
+- too obvious to help future developers,
+- or have no future ramifications.
+
+Use judgment to keep the log concise. If multiple related decisions exist, you may replace them with a single new decision that preserves meaningful context and delete the originals.
+
+## 7C) Post-apply report (Reporter)
+After all changes are applied:
+- Tell the user to review the diff.
+- Summarize which decisions were removed or combined.
 
 ---
 

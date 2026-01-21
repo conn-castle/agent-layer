@@ -20,11 +20,6 @@ Entry format:
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-18 h8i9j0: DECISIONS.md grows too large and consumes excessive tokens
-    Priority: Medium. Area: project memory.
-    Description: The decisions log grows unbounded as entries accumulate, eventually consuming too many tokens when agents read it for context.
-    Next step: Consider archiving old decisions, summarizing completed phases, or splitting into a compact summary plus detailed archive.
-
 - Issue 2026-01-18 e4f5g6: Memory file template structure investigation
     Priority: Medium. Area: templates.
     Description: Should templates in .agent-layer only contain headers, and how should generated content be handled when overwriting?
@@ -34,8 +29,3 @@ Entry format:
     Priority: Medium. Area: mcp configuration.
     Description: The GitHub MCP server exposes many tools. We should explicitly list only the necessary commands in the configuration to reduce noise and potential security risks.
     Next step: Research useful GitHub MCP commands and configure `args` or `commands` whitelist in the default config template.
-
-- Issue 2026-01-19 c9d2e1: Wizard UI depends on pre-release Charmbracelet packages
-    Priority: Low. Area: dependencies.
-    Description: `github.com/charmbracelet/huh` v0.8.0 requires pseudo versions of bubbles and colorprofile, leaving go.mod on pre-release commits.
-    Next step: Re-evaluate when upstream tags stable releases or update the wizard UI dependency once stable versions are available.

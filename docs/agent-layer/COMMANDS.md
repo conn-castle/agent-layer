@@ -120,7 +120,7 @@ Prerequisites: Go 1.25.6+
 
 ### Dev
 
-- Fast local checks (format + fmt-check + lint + test)
+- Fast local checks (format + fmt-check + lint + coverage)
 ```bash
 make dev
 ```

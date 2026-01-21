@@ -28,7 +28,7 @@
 ## Daily workflow
 - Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage, and release builds.
 - Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH.
-- Use `make dev` for a quick local pass (format + fmt-check + lint + test). Run `./scripts/setup.sh` or `make tools` first.
+- Use `make dev` for a quick local pass (format + fmt-check + lint + coverage). Run `./scripts/setup.sh` or `make tools` first.
 - If you change installer templates (anything under `internal/templates/`), re-run `./al install` in a target repo to re-seed files. Use `./al install --overwrite` to reset template-managed files.
 
 ## Go Tooling & Environment

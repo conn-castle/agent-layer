@@ -12,6 +12,7 @@ Keep this document as a single flat bullet list. When adding a new rule, add a n
 - **Temporary files:** One-off debug artifacts must go in `.agent-layer/tmp` and be deleted when no longer needed.
 - **Environment files:** Never modify the `.env` file. Only modify the `.env.example` file. If a change is needed in `.env`, ask the user to make the change and provide exact, copyable instructions.
 - **Repository boundary:** Never delete files outside of the repository. If a file outside of the repository needs to be deleted, ask the user to delete it.
+- **Unexpected repository changes:** If you notice unexpected repository changes, pause only when they affect files you are touching or could cause a conflict; otherwise ignore the change and continue.
 - **Secrets and credentials:** Never add secrets, private keys, access tokens, or credentials to repository files, logs, or outputs. Use placeholders and documented variable names in `.env.example`, and instruct the user to supply real values locally.
 - **Destructive actions:** Never run or recommend destructive operations that can remove or overwrite large amounts of data without explicit confirmation from the user, and always name the exact paths that would be affected.
 - **No system Python:** Never use system Python. Always prefer the project virtual environment Python, and if no virtual environment exists, ask the user if you should create one.
