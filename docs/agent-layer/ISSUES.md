@@ -20,11 +20,6 @@ Entry format:
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-18 e5f6g7: Slash commands not output for antigravity
-    Priority: Medium. Area: antigravity support.
-    Description: Slash commands are not being output when antigravity mode is enabled.
-    Next step: Investigate where slash commands are generated and ensure antigravity support is included.
-
 - Issue 2026-01-18 h8i9j0: DECISIONS.md grows too large and consumes excessive tokens
     Priority: Medium. Area: project memory.
     Description: The decisions log grows unbounded as entries accumulate, eventually consuming too many tokens when agents read it for context.

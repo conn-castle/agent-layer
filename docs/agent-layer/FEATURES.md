@@ -70,3 +70,8 @@ Entry format:
     Priority: Medium. Area: agent permissions.
     Capability: Users should be able to specify a "Full access" option for all agents (similar to Codex functionality), granting broader permissions with clear security warnings.
     Acceptance criteria: An option to enable full access exists; enabling it displays a prominent security warning; agents operate with elevated permissions when active.
+
+- Feature 2026-01-20 d5e6f7: Tool instructions for timely search and Context 7
+    Priority: High. Area: system instructions.
+    Capability: Update system instructions to explicitly guide models to use online search or Context 7 when information is time-sensitive or likely post-dates their training cutoff. This guidance should reside in a separate tool instruction file to keep it distinct.
+    Acceptance criteria: A separate tool instruction file exists; it mandates search for recent/timely info; it specifies when to use Context 7 versus general search.

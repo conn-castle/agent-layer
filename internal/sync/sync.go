@@ -40,6 +40,10 @@ func RunWithProject(root string, project *config.ProjectConfig) error {
 		)
 	}
 
+	if project.Config.Agents.Antigravity.Enabled != nil && *project.Config.Agents.Antigravity.Enabled {
+		steps = append(steps, func() error { return WriteAntigravitySkills(root, project.SlashCommands) })
+	}
+
 	if project.Config.Agents.Gemini.Enabled != nil && *project.Config.Agents.Gemini.Enabled {
 		steps = append(steps, func() error { return WriteGeminiSettings(root, project) })
 	}

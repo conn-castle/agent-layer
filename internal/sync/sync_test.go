@@ -10,7 +10,7 @@ import (
 func TestRunGolden(t *testing.T) {
 	fixtureRoot := filepath.Join("testdata", "fixture-repo")
 	root := t.TempDir()
-	if err := copyFixture(fixtureRoot, root); err != nil {
+	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
 		t.Fatalf("copy fixture: %v", err)
 	}
 	envPath := filepath.Join(root, ".agent-layer", ".env")
@@ -34,6 +34,8 @@ func TestRunGolden(t *testing.T) {
 		".codex/rules/default.rules",
 		".codex/skills/alpha/SKILL.md",
 		".codex/skills/beta/SKILL.md",
+		".agent/skills/alpha/SKILL.md",
+		".agent/skills/beta/SKILL.md",
 		".vscode/prompts/alpha.prompt.md",
 		".vscode/prompts/beta.prompt.md",
 		".vscode/settings.json",
@@ -49,7 +51,7 @@ func TestRunGolden(t *testing.T) {
 	}
 }
 
-func copyFixture(src string, dest string) error {
+func copyFixtureRepo(src string, dest string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -66,11 +68,6 @@ func copyFixture(src string, dest string) error {
 				return filepath.SkipDir
 			}
 			return nil
-		}
-		if rel == "fixture-agent-layer" {
-			rel = ".agent-layer"
-		} else if strings.HasPrefix(rel, "fixture-agent-layer"+string(filepath.Separator)) {
-			rel = filepath.Join(".agent-layer", strings.TrimPrefix(rel, "fixture-agent-layer"+string(filepath.Separator)))
 		}
 		target := filepath.Join(dest, rel)
 		if info.IsDir() {

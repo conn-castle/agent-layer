@@ -106,6 +106,23 @@ func TestBuildCodexSkill(t *testing.T) {
 	}
 }
 
+func TestBuildAntigravitySkill(t *testing.T) {
+	cmd := config.SlashCommand{Name: "alpha", Description: "desc", Body: "Body"}
+	content := buildAntigravitySkill(cmd)
+	if !strings.Contains(content, "name: alpha") {
+		t.Fatalf("expected name in skill")
+	}
+	if !strings.Contains(content, "description:") {
+		t.Fatalf("expected description in skill")
+	}
+	if !strings.Contains(content, "Body") {
+		t.Fatalf("expected body in skill")
+	}
+	if !strings.HasSuffix(content, "\n") {
+		t.Fatalf("expected trailing newline")
+	}
+}
+
 func TestWriteCodexSkillsError(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
@@ -130,6 +147,52 @@ func TestWriteCodexSkillsWriteError(t *testing.T) {
 	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
 	if err := WriteCodexSkills(root, cmds); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteAntigravitySkillsError(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	err := WriteAntigravitySkills(file, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteAntigravitySkillsWriteError(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, ".agent", "skills", "alpha")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
+		t.Fatalf("mkdir SKILL.md: %v", err)
+	}
+	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	if err := WriteAntigravitySkills(root, cmds); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteAntigravitySkillsMkdirSkillDirError(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	err := WriteAntigravitySkills(root, cmds)
+	if err == nil {
+		t.Fatalf("expected error for skill dir creation failure")
+	}
+	if !strings.Contains(err.Error(), "failed to create") {
+		t.Fatalf("expected mkdir error, got %v", err)
 	}
 }
 

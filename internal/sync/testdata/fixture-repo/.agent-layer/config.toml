@@ -14,7 +14,7 @@ enabled = true
 enabled = true
 
 [agents.antigravity]
-enabled = false
+enabled = true
 
 [mcp]
 [[mcp.servers]]

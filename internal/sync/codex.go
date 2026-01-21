@@ -12,7 +12,12 @@ import (
 	"github.com/nicholasjconn/agent-layer/internal/projection"
 )
 
-const codexHeader = "# GENERATED FILE\n# Source: .agent-layer/config.toml\n# Regenerate: ./al sync\n\n"
+const codexHeader = `# GENERATED FILE — MAY CONTAIN SECRETS
+# This file is gitignored. Do not commit or share it.
+# Source: .agent-layer/config.toml
+# Regenerate: ./al sync
+
+`
 
 // WriteCodexConfig generates .codex/config.toml.
 func WriteCodexConfig(root string, project *config.ProjectConfig) error {
@@ -58,6 +63,7 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	}
 	builder.WriteString(codexHeader)
 
+	// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
 	resolved, err := projection.ResolveMCPServers(
 		project.Config.MCP.Servers,
 		project.Env,
@@ -77,11 +83,13 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 		builder.WriteString(fmt.Sprintf("[mcp_servers.%s]\n", server.ID))
 		switch server.Transport {
 		case "http":
-			if err := writeCodexHTTPServer(&builder, server); err != nil {
+			if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
 				return "", err
 			}
 		case "stdio":
-			writeCodexStdioServer(&builder, server)
+			if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
+				return "", err
+			}
 		default:
 			return "", fmt.Errorf("mcp server %s: unsupported transport %s", server.ID, server.Transport)
 		}
@@ -90,7 +98,7 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	return builder.String(), nil
 }
 
-func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMCPServer) error {
+func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMCPServer, env map[string]string) error {
 	if len(server.Headers) > 0 {
 		bearerEnv, err := extractBearerEnvVar(server.Headers)
 		if err != nil {
@@ -100,18 +108,49 @@ func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMC
 			builder.WriteString(fmt.Sprintf("bearer_token_env_var = %q\n", bearerEnv))
 		}
 	}
-	builder.WriteString(fmt.Sprintf("url = %q\n", server.URL))
+	// Resolve actual values in the URL (Codex doesn't support ${VAR} placeholders in URLs).
+	resolvedURL, err := config.SubstituteEnvVars(server.URL, env)
+	if err != nil {
+		return fmt.Errorf("mcp server %s url: %w", server.ID, err)
+	}
+	builder.WriteString(fmt.Sprintf("url = %q\n", resolvedURL))
 	return nil
 }
 
-func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedMCPServer) {
-	builder.WriteString(fmt.Sprintf("command = %q\n", server.Command))
+func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedMCPServer, env map[string]string) error {
+	// Resolve actual values in command (Codex doesn't support ${VAR} placeholders).
+	resolvedCommand, err := config.SubstituteEnvVars(server.Command, env)
+	if err != nil {
+		return fmt.Errorf("mcp server %s command: %w", server.ID, err)
+	}
+	builder.WriteString(fmt.Sprintf("command = %q\n", resolvedCommand))
+
 	if len(server.Args) > 0 {
-		builder.WriteString(fmt.Sprintf("args = %s\n", tomlStringArray(server.Args)))
+		resolvedArgs := make([]string, 0, len(server.Args))
+		for _, arg := range server.Args {
+			resolvedArg, err := config.SubstituteEnvVars(arg, env)
+			if err != nil {
+				return fmt.Errorf("mcp server %s arg: %w", server.ID, err)
+			}
+			resolvedArgs = append(resolvedArgs, resolvedArg)
+		}
+		builder.WriteString(fmt.Sprintf("args = %s\n", tomlStringArray(resolvedArgs)))
 	}
+
 	if len(server.Env) > 0 {
-		builder.WriteString(fmt.Sprintf("env = %s\n", tomlInlineTable(server.Env)))
+		// Resolve actual values in env vars (Codex doesn't support ${VAR} placeholders).
+		resolvedEnv := make(map[string]string, len(server.Env))
+		for key, value := range server.Env {
+			resolvedValue, err := config.SubstituteEnvVars(value, env)
+			if err != nil {
+				return fmt.Errorf("mcp server %s env %s: %w", server.ID, key, err)
+			}
+			resolvedEnv[key] = resolvedValue
+		}
+		builder.WriteString(fmt.Sprintf("env = %s\n", tomlInlineTable(resolvedEnv)))
 	}
+
+	return nil
 }
 
 func extractBearerEnvVar(headers map[string]string) (string, error) {

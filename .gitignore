@@ -14,35 +14,35 @@ coverage.out
 
 
 # >>> agent-layer
-# Template hash: 7736d1c99115d03dbad50520f8eedeaf7a2907f29aadf61fc409184f933ea109
+# Template hash: 1d37241f0399c62ae451f1b640b05e27d83eebfb552d9de79cb661f8d77086e1
 # Managed by Agent Layer. Do not edit this block directly.
 # Edit .agent-layer/gitignore.block and re-run ./al install to apply changes.
 #
 # Agent Layer config (always ignore .env)
-.agent-layer/.env
+/.agent-layer/.env
 # Optional: keep uncommented to ignore .agent-layer/ config.
-.agent-layer/
+/.agent-layer/
 
 # Agent Layer launcher
 /al
 
 # Agent Layer-generated instruction shims
-AGENTS.md
-CLAUDE.md
-GEMINI.md
-.github/copilot-instructions.md
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/.github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts
-.agent/
-.mcp.json
-.codex/
-.gemini/
-.claude/
-.vscode/mcp.json
-.vscode/prompts/
+/.agent/
+/.mcp.json
+/.codex/
+/.gemini/
+/.claude/
+/.vscode/mcp.json
+/.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.
-.vscode/settings.json
+/.vscode/settings.json
 
 # Agent Layer temp runs
-tmp/agent-layer/
+/tmp/agent-layer/
 # <<< agent-layer

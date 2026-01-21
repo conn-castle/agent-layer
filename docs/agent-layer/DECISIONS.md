@@ -162,3 +162,13 @@ Entry format:
     Decision: Removed the `--reasoning-effort` flag from the `al codex` launch command.
     Reason: The current Codex CLI (v0.80.0) does not support this flag directly; the configuration is already correctly handled via the `.codex/config.toml` file generated during the sync phase.
     Tradeoffs: Simplifies the launch arguments; ensures compatibility with the existing Codex CLI while maintaining the desired configuration via the config file.
+
+- Decision 2026-01-20 7c2a9fd: Antigravity slash commands exported as skills
+    Decision: Map slash command definitions to Antigravity workspace skills at `.agent/skills/<command>/SKILL.md`.
+    Reason: Antigravity documents skills as the workspace-scoped format for reusable command workflows.
+    Tradeoffs: Skills are agent-triggered rather than explicit slash-invoked workflows, so behavior may differ from other clients.
+
+- Decision 2026-01-20 b9212c2: Embed resolved secrets in Codex config (reverses part of 2026-01-18 decision)
+    Decision: For Codex specifically, resolve and embed actual secret values in `.codex/config.toml` for URLs and stdio env vars. Keep `bearer_token_env_var` for Authorization headers. Add a warning header about secrets.
+    Reason: Codex CLI does not support `${VAR}` placeholder syntax in URLs or env values like Claude Code does. The `.codex/` directory is gitignored, so embedding secrets is acceptable.
+    Tradeoffs: Secrets appear in the generated file; the warning header and gitignore mitigate accidental exposure.

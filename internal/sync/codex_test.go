@@ -68,7 +68,8 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 	if !strings.Contains(output, "bearer_token_env_var = \"TOKEN\"") {
 		t.Fatalf("missing bearer_token_env_var in output:\n%s", output)
 	}
-	if !strings.Contains(output, "url = \"https://example.com?token=${TOKEN}\"") {
+	// URL should have resolved value (not placeholder) since Codex doesn't support ${VAR} in URLs.
+	if !strings.Contains(output, "url = \"https://example.com?token=abc\"") {
 		t.Fatalf("missing url in output:\n%s", output)
 	}
 }
@@ -108,7 +109,8 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 	if !strings.Contains(output, "args = [\"--flag\", \"value\"]") {
 		t.Fatalf("missing args in output:\n%s", output)
 	}
-	if !strings.Contains(output, "env = { TOKEN = \"${TOKEN}\" }") {
+	// Env should have resolved value (not placeholder) since Codex doesn't support ${VAR} in env vars.
+	if !strings.Contains(output, "env = { TOKEN = \"abc\" }") {
 		t.Fatalf("missing env in output:\n%s", output)
 	}
 }

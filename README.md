@@ -81,7 +81,7 @@ Default instructions and slash commands rely on these files existing.
 
 ### Generated client files (gitignored by default)
 Generated outputs are written to the repo root in client-specific formats (examples):
-- `.gemini/`, `.claude/`, `.vscode/`, `.codex/`
+- `.agent/`, `.gemini/`, `.claude/`, `.vscode/`, `.codex/`
 - `.mcp.json`, `AGENTS.md`, etc.
 
 ---
@@ -95,11 +95,11 @@ Generated outputs are written to the repo root in client-specific formats (examp
 | VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
 | Codex CLI | ✅ | ✅ | ✅ | ✅ |
 | Codex VS Code extension | ✅ | ✅ | ✅ | ✅ |
-| Antigravity | ✅ | (TODO) | ❌ | ❌ |
+| Antigravity | ✅ | ✅ | ❌ | ❌ |
 
 Notes:
 - VS Code/Codex “slash commands” are generated in their native formats (prompt files / skills).
-- Antigravity support is currently limited to instructions. (TODO: slash commands integration.)
+- Antigravity slash commands are generated as skills in `.agent/skills/<command>/SKILL.md`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
 
 ---
@@ -190,6 +190,7 @@ When launching via `./al`, your existing process environment takes precedence. `
 
 - One Markdown file per command.
 - Filename (without `.md`) is the canonical command name.
+- Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
 
 ### Approved commands: `.agent-layer/commands.allow`
 

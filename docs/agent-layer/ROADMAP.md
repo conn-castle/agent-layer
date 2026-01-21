@@ -82,7 +82,9 @@ Phase template (incomplete):
 - [ ] Provide opt-in guidance for reading gitignored files in VS Code, Claude Code, and Gemini CLI.
 - [ ] Enable safe auto-approval for slash-command workflows invoked through the workflow system.
 - [ ] Auto-merge client-side approvals or MCP server edits back into agent-layer sources.
-- [ ] Add optional operating system launchers (macOS app, Windows shortcut, Linux desktop entry).
+- [x] Add macOS VS Code launchers (`.app` bundle and `.command` script with `CODEX_HOME` support).
+- [x] Add Windows VS Code launcher (`.bat` script with `CODEX_HOME` support).
+- [ ] Add Linux VS Code launcher (desktop entry with `CODEX_HOME` support).
 
 ### Exit criteria
 - Configuration and workflow ergonomics improve without changing the core contract.

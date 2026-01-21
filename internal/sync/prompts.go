@@ -106,6 +106,30 @@ func WriteCodexSkills(root string, commands []config.SlashCommand) error {
 	return removeStaleSkillDirs(skillsDir, wanted)
 }
 
+// WriteAntigravitySkills generates Antigravity skill files for slash commands.
+func WriteAntigravitySkills(root string, commands []config.SlashCommand) error {
+	skillsDir := filepath.Join(root, ".agent", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create %s: %w", skillsDir, err)
+	}
+
+	wanted := make(map[string]struct{}, len(commands))
+	for _, cmd := range commands {
+		wanted[cmd.Name] = struct{}{}
+		skillDir := filepath.Join(skillsDir, cmd.Name)
+		if err := os.MkdirAll(skillDir, 0o755); err != nil {
+			return fmt.Errorf("failed to create %s: %w", skillDir, err)
+		}
+		path := filepath.Join(skillDir, "SKILL.md")
+		content := buildAntigravitySkill(cmd)
+		if err := fsutil.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("failed to write %s: %w", path, err)
+		}
+	}
+
+	return removeStaleSkillDirs(skillsDir, wanted)
+}
+
 func buildCodexSkill(cmd config.SlashCommand) string {
 	var builder strings.Builder
 	builder.WriteString("---\n")
@@ -127,6 +151,32 @@ func buildCodexSkill(cmd config.SlashCommand) string {
 	builder.WriteString(cmd.Description)
 	builder.WriteString("\n\n")
 	if cmd.Body != "" {
+		builder.WriteString(cmd.Body)
+		if !strings.HasSuffix(cmd.Body, "\n") {
+			builder.WriteString("\n")
+		}
+	}
+	return builder.String()
+}
+
+// buildAntigravitySkill returns the Antigravity SKILL.md content for a slash command.
+func buildAntigravitySkill(cmd config.SlashCommand) string {
+	var builder strings.Builder
+	builder.WriteString("---\n")
+	builder.WriteString("name: ")
+	builder.WriteString(cmd.Name)
+	builder.WriteString("\n")
+	builder.WriteString("description: >-\n")
+	wrapped := wrapDescription(cmd.Description, 72)
+	for _, line := range wrapped {
+		builder.WriteString("  ")
+		builder.WriteString(line)
+		builder.WriteString("\n")
+	}
+	builder.WriteString("---\n\n")
+	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, cmd.Name))
+	if cmd.Body != "" {
+		builder.WriteString("\n")
 		builder.WriteString(cmd.Body)
 		if !strings.HasSuffix(cmd.Body, "\n") {
 			builder.WriteString("\n")

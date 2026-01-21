@@ -1,7 +1,8 @@
-# GENERATED FILE
+# GENERATED FILE — MAY CONTAIN SECRETS
+# This file is gitignored. Do not commit or share it.
 # Source: .agent-layer/config.toml
 # Regenerate: ./al sync
 
 [mcp_servers.example]
 bearer_token_env_var = "EXAMPLE_TOKEN"
-url = "https://mcp.example.com?token=${EXAMPLE_TOKEN}"
+url = "https://mcp.example.com?token=token123"
