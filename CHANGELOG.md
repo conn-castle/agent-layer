@@ -1,6 +1,29 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.4.0 - 2026-01-21
+
+### Added
+- `al doctor` command reports missing secrets, disabled servers, and common misconfigurations.
+- `al wizard` command provides interactive setup for approval modes, agent enablement, model selection, MCP servers, secrets, and warning thresholds.
+- Configurable warning system with thresholds for instruction token count, MCP server/tool counts, and schema token sizes.
+- Antigravity slash commands now generate skills in `.agent/skills/<command>/SKILL.md`.
+- VS Code launchers: macOS `.app` bundle (no Terminal window), macOS `.command` script, and Windows `.bat` file, all with `CODEX_HOME` support.
+- `al install --no-wizard` flag skips the post-install wizard prompt.
+- Atomic file writes across all sync operations prevent partial file corruption.
+
+### Changed
+- `al install` now prompts to run the wizard after seeding files (interactive terminals only).
+- Gitignore patterns use root-anchored paths (`/AGENTS.md` instead of `AGENTS.md`) for precision.
+- Default Codex reasoning effort changed from `xhigh` to `high`.
+- Codex config header now warns about potential secrets in generated files.
+- Environment variable loading: process environment takes precedence; `.agent-layer/.env` fills missing keys only; empty values in `.env` are ignored.
+- Improved instruction and slash-command templates.
+
+### Fixed
+- VS Code launcher now works correctly with proper error messages for missing `code` command.
+- MCP configuration for Codex HTTP servers now handles bearer token environment variables correctly.
+
 ## v0.3.1 - 2026-01-19
 
 ### Added
