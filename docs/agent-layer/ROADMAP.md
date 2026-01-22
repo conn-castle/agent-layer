@@ -64,45 +64,69 @@ Phase template (incomplete):
 - Updated default `gitignore.block` to make `.agent-layer/` optional with customization guidance.
 - Release workflow now auto-extracts release notes from `CHANGELOG.md`.
 
-## Phase 6 — Post-v0.3.0 experience improvements
+## Phase 6 ✅ — v0.4.0 CLI polish and sync warnings
+- Implemented `al doctor` for missing secrets, disabled servers, and common misconfigurations.
+- Implemented `al wizard` for agent enablement, model selection, and Codex reasoning.
+- Added macOS VS Code launchers (`.app` bundle and `.command` script with `CODEX_HOME` support).
+- Added Windows VS Code launcher (`.bat` script with `CODEX_HOME` support).
+- Added configurable sync warnings for oversized instructions (token count threshold) and excessive MCP servers (per-client server count threshold).
+
+## Phase 7 — v0.5.0 CLI completion and install improvements
 
 ### Goal
-- Improve configuration and workflow usability without expanding the core contract.
+- Complete CLI experience with shell completion and improved install flow.
 
 ### Tasks
-- [x] Implement `al doctor` to report missing secrets, disabled servers, and common misconfigurations.
-- [x] Implement `al wizard` for agent enablement + model selection + Codex reasoning.
 - [ ] Implement `al completion bash|zsh|fish|powershell`.
-- [ ] Improve `.agent-layer/config.toml` usability (comments, structure, and editing aids).
-- [ ] Add interaction monitoring to agent system instructions to self-improve all prompts, rules, and workflows. This should be add as an explicit ask in the finish task workflow.
+- [ ] Add Linux VS Code launcher (desktop entry with `CODEX_HOME` support).
+- [ ] Add commented-out gitignore entry for `docs/agent-layer/` with explanatory note.
+- [ ] Add per-file overwrite prompts during `al install --overwrite`; add `--force` flag to skip prompts. Update user facing language to make this clear.
+
+### Exit criteria
+- Shell completion works for all major shells.
+- Linux launcher ships with `CODEX_HOME` support.
+- Install flow offers an optional `docs/agent-layer/` gitignore entry.
+- Install overwrite prompts allow per-file decisions or force override.
+
+## Phase 8 — v0.6.0 Workflows and instructions
+
+### Goal
+- Improve agent effectiveness through better workflows and instruction quality.
+
+### Tasks
+- [ ] Add tool instruction file that guides models to use search or Context7 for time-sensitive information.
+- [ ] Implement `fix-tests` workflow that runs all checks (lint, pre-commit, tests) and iteratively fixes failures until passing.
+- [ ] Update finish-task and cleanup-code to ensure commit-ready state (tests pass, lint passes, precommit hooks pass).
+- [ ] Remove the quality audit report file from `find-issues` outputs and switch to a report path that supports concurrent agents.
+- [ ] Move `fix-issues` plans into `tmp`, add a "what the human needs to know" section, and relax approval keyword requirements.
 - [ ] Rename `FEATURES.md` to a backlog name and update references in docs and prompts.
 - [ ] Enforce a single blank line between entries in all memory files.
-- [ ] Remove the quality audit report file from `find-issues` outputs and switch to a report path that supports concurrent agents.
-- [ ] Move `fix-issues` plans into `tmp`, add a “what the human needs to know” section, and relax approval keyword requirements.
+- [ ] Improve `.agent-layer/config.toml` usability (comments, structure, and editing aids).
+
+### Exit criteria
+- Workflows reliably produce commit-ready code.
+- `find-issues` and `fix-issues` outputs are concurrency-safe and documented.
+
+## Phase 9 — v0.7.0 Advanced automation
+
+### Goal
+- Enable sophisticated automation and integration patterns.
+
+### Tasks
 - [ ] Provide opt-in guidance for reading gitignored files in VS Code, Claude Code, and Gemini CLI.
 - [ ] Enable safe auto-approval for slash-command workflows invoked through the workflow system.
 - [ ] Auto-merge client-side approvals or MCP server edits back into agent-layer sources.
-- [x] Add macOS VS Code launchers (`.app` bundle and `.command` script with `CODEX_HOME` support).
-- [x] Add Windows VS Code launcher (`.bat` script with `CODEX_HOME` support).
-- [ ] Add Linux VS Code launcher (desktop entry with `CODEX_HOME` support).
+- [ ] Identify, document, or integrate an MCP server for SQL databases.
+- [ ] Add interaction monitoring to agent system instructions to self-improve all prompts, rules, and workflows.
+
 
 ### Exit criteria
-- Configuration and workflow ergonomics improve without changing the core contract.
+- Workflows can run with minimal human intervention where safe.
+- Agent-layer sources stay in sync with client-side changes.
+- An MCP server for SQL databases is documented or integrated.
+- Instruction quality improves through monitoring feedback.
 
-## Phase 7 — Migration + compatibility
-
-### Goal
-- Existing users can adopt v2 without rebuilding their mental model.
-
-### Tasks
-- [ ] Provide a one-time migration command to translate v1 config layout into v2 layout (where possible).
-- [ ] Document “v1 → v2” mapping and breaking changes.
-- [ ] Ensure install/upgrade path is stable and reversible.
-
-### Exit criteria
-- A v1 repo can migrate to v2 with minimal manual edits and maintain equivalent behavior.
-
-## Phase 8 — Deep future exploration
+## Phase 10 — Deep future exploration
 
 ### Goal
 - Explore longer-term ideas without blocking core delivery.
@@ -115,6 +139,8 @@ Phase template (incomplete):
 - [ ] Build a Ralph Wiggum-like tool where different agents can chat with each other.
 - [ ] Build a unified documentation repository with Model Context Protocol tool access for shared notes.
 - [ ] Add indexed chat history in the unified documentation repository for searchable context.
+- [ ] Persist conversation history in model-specific local folders (e.g., `.agent-layer/gemini/`, `.agent-layer/openai/`).
+- [ ] Implement "full access" mode for all agents with security warnings (similar to Codex full-auto).
 
 ### Exit criteria
 - Long-term initiatives are scoped and ready for selection in a future roadmap cycle.

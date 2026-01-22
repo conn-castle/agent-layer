@@ -27,7 +27,8 @@ func TestEnsureEnabled(t *testing.T) {
 }
 
 func TestRunMissingConfig(t *testing.T) {
-	if err := Run(t.TempDir()); err == nil {
+	_, err := Run(t.TempDir())
+	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -52,7 +53,7 @@ func TestRunWithProjectError(t *testing.T) {
 		Root: file,
 	}
 
-	err := RunWithProject(file, project)
+	_, err := RunWithProject(file, project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

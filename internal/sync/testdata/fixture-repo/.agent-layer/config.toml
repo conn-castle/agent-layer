@@ -24,3 +24,7 @@ clients = ["gemini", "claude", "vscode", "codex"]
 transport = "http"
 url = "https://mcp.example.com?token=${EXAMPLE_TOKEN}"
 headers = { Authorization = "Bearer ${EXAMPLE_TOKEN}" }
+
+[warnings]
+instruction_token_threshold = 50000
+mcp_server_threshold = 5

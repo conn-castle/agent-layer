@@ -48,6 +48,16 @@ func Run(root string, ui UI, runSync syncer) error {
 		return fmt.Errorf("failed to load default MCP servers: %w", err)
 	}
 	choices.DefaultMCPServers = defaultServers
+	warningDefaults, err := loadWarningDefaults()
+	if err != nil {
+		return fmt.Errorf("failed to load warning defaults: %w", err)
+	}
+	choices.InstructionTokenThreshold = warningDefaults.InstructionTokenThreshold
+	choices.MCPServerThreshold = warningDefaults.MCPServerThreshold
+	choices.MCPToolsTotalThreshold = warningDefaults.MCPToolsTotalThreshold
+	choices.MCPServerToolsThreshold = warningDefaults.MCPServerToolsThreshold
+	choices.MCPSchemaTokensTotalThreshold = warningDefaults.MCPSchemaTokensTotalThreshold
+	choices.MCPSchemaTokensServerThreshold = warningDefaults.MCPSchemaTokensServerThreshold
 
 	// Approvals
 	choices.ApprovalMode = cfg.Config.Approvals.Mode
@@ -76,6 +86,32 @@ func Run(root string, ui UI, runSync syncer) error {
 		if srv.Enabled != nil && *srv.Enabled {
 			choices.EnabledMCPServers[srv.ID] = true
 		}
+	}
+
+	// Warnings
+	choices.WarningsEnabled = cfg.Config.Warnings.InstructionTokenThreshold != nil ||
+		cfg.Config.Warnings.MCPServerThreshold != nil ||
+		cfg.Config.Warnings.MCPToolsTotalThreshold != nil ||
+		cfg.Config.Warnings.MCPServerToolsThreshold != nil ||
+		cfg.Config.Warnings.MCPSchemaTokensTotalThreshold != nil ||
+		cfg.Config.Warnings.MCPSchemaTokensServerThreshold != nil
+	if cfg.Config.Warnings.InstructionTokenThreshold != nil {
+		choices.InstructionTokenThreshold = *cfg.Config.Warnings.InstructionTokenThreshold
+	}
+	if cfg.Config.Warnings.MCPServerThreshold != nil {
+		choices.MCPServerThreshold = *cfg.Config.Warnings.MCPServerThreshold
+	}
+	if cfg.Config.Warnings.MCPToolsTotalThreshold != nil {
+		choices.MCPToolsTotalThreshold = *cfg.Config.Warnings.MCPToolsTotalThreshold
+	}
+	if cfg.Config.Warnings.MCPServerToolsThreshold != nil {
+		choices.MCPServerToolsThreshold = *cfg.Config.Warnings.MCPServerToolsThreshold
+	}
+	if cfg.Config.Warnings.MCPSchemaTokensTotalThreshold != nil {
+		choices.MCPSchemaTokensTotalThreshold = *cfg.Config.Warnings.MCPSchemaTokensTotalThreshold
+	}
+	if cfg.Config.Warnings.MCPSchemaTokensServerThreshold != nil {
+		choices.MCPSchemaTokensServerThreshold = *cfg.Config.Warnings.MCPSchemaTokensServerThreshold
 	}
 
 	// 5. UI Flow
@@ -230,6 +266,34 @@ func Run(root string, ui UI, runSync syncer) error {
 					break
 				}
 			}
+		}
+	}
+
+	// Warnings
+	warningsEnabled := choices.WarningsEnabled
+	if err := ui.Confirm("Enable warnings for performance and usage issues?", &warningsEnabled); err != nil {
+		return err
+	}
+	choices.WarningsEnabled = warningsEnabled
+	choices.WarningsEnabledTouched = true
+	if choices.WarningsEnabled {
+		if err := promptPositiveInt(ui, "Instruction token threshold", &choices.InstructionTokenThreshold); err != nil {
+			return err
+		}
+		if err := promptPositiveInt(ui, "MCP server threshold", &choices.MCPServerThreshold); err != nil {
+			return err
+		}
+		if err := promptPositiveInt(ui, "MCP tools total threshold", &choices.MCPToolsTotalThreshold); err != nil {
+			return err
+		}
+		if err := promptPositiveInt(ui, "MCP server tools threshold", &choices.MCPServerToolsThreshold); err != nil {
+			return err
+		}
+		if err := promptPositiveInt(ui, "MCP schema tokens total threshold", &choices.MCPSchemaTokensTotalThreshold); err != nil {
+			return err
+		}
+		if err := promptPositiveInt(ui, "MCP schema tokens server threshold", &choices.MCPSchemaTokensServerThreshold); err != nil {
+			return err
 		}
 	}
 

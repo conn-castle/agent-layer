@@ -3,6 +3,7 @@ package wizard
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -70,6 +71,18 @@ func buildSummary(c *Choices) string {
 	} else {
 		sb.WriteString("(none)\n")
 	}
+
+	sb.WriteString("\nWarnings:\n")
+	if !c.WarningsEnabled {
+		sb.WriteString("(disabled)\n")
+		return sb.String()
+	}
+	sb.WriteString(fmt.Sprintf("- instruction_token_threshold = %d\n", c.InstructionTokenThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_server_threshold = %d\n", c.MCPServerThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_tools_total_threshold = %d\n", c.MCPToolsTotalThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_server_tools_threshold = %d\n", c.MCPServerToolsThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_schema_tokens_total_threshold = %d\n", c.MCPSchemaTokensTotalThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_schema_tokens_server_threshold = %d\n", c.MCPSchemaTokensServerThreshold))
 
 	return sb.String()
 }
@@ -154,6 +167,25 @@ func selectOptionalValue(ui UI, title string, options []string, value *string) e
 		return nil
 	}
 	*value = selection
+	return nil
+}
+
+// promptPositiveInt asks for a positive integer, defaulting to the current value.
+// ui is the wizard UI; title is the prompt label; value holds the default and receives the parsed value.
+func promptPositiveInt(ui UI, title string, value *int) error {
+	input := strconv.Itoa(*value)
+	if err := ui.Input(title, &input); err != nil {
+		return err
+	}
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return nil
+	}
+	parsed, err := strconv.Atoi(input)
+	if err != nil || parsed <= 0 {
+		return fmt.Errorf("%s must be a positive integer", title)
+	}
+	*value = parsed
 	return nil
 }
 

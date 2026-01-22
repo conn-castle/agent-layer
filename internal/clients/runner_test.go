@@ -153,6 +153,10 @@ enabled = false
 
 [agents.antigravity]
 enabled = false
+
+[warnings]
+instruction_token_threshold = 50000
+mcp_server_threshold = 5
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

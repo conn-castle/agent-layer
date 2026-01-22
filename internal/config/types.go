@@ -5,6 +5,7 @@ type Config struct {
 	Approvals ApprovalsConfig `toml:"approvals"`
 	Agents    AgentsConfig    `toml:"agents"`
 	MCP       MCPConfig       `toml:"mcp"`
+	Warnings  WarningsConfig  `toml:"warnings"`
 }
 
 // ApprovalsConfig controls auto-approval behavior per client.
@@ -37,6 +38,16 @@ type CodexConfig struct {
 // MCPConfig contains the external MCP servers configuration.
 type MCPConfig struct {
 	Servers []MCPServer `toml:"servers"`
+}
+
+// WarningsConfig configures optional warning thresholds. Nil disables warnings.
+type WarningsConfig struct {
+	InstructionTokenThreshold      *int `toml:"instruction_token_threshold"`
+	MCPServerThreshold             *int `toml:"mcp_server_threshold"`
+	MCPToolsTotalThreshold         *int `toml:"mcp_tools_total_threshold"`
+	MCPServerToolsThreshold        *int `toml:"mcp_server_tools_threshold"`
+	MCPSchemaTokensTotalThreshold  *int `toml:"mcp_schema_tokens_total_threshold"`
+	MCPSchemaTokensServerThreshold *int `toml:"mcp_schema_tokens_server_threshold"`
 }
 
 // MCPServer defines a single MCP server entry.

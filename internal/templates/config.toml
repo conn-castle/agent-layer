@@ -51,3 +51,12 @@ enabled = false
 clients = ["gemini", "claude", "vscode", "codex"]
 transport = "http"
 url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
+
+[warnings]
+# Optional thresholds for warning checks. Omit or comment out to disable.
+instruction_token_threshold = 10000
+mcp_server_threshold = 15
+mcp_tools_total_threshold = 60
+mcp_server_tools_threshold = 25
+mcp_schema_tokens_total_threshold = 10000
+mcp_schema_tokens_server_threshold = 7500

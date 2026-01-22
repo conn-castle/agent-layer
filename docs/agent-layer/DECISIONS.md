@@ -93,3 +93,8 @@ Entry format:
     Decision: Map slash commands to Antigravity skills at `.agent/skills/<command>/SKILL.md`.
     Reason: Antigravity documents skills as the workspace format for reusable workflows.
     Tradeoffs: Skills are agent-triggered rather than explicit slash-invoked.
+
+- Decision 2026-01-21 bb93bc0: Sync warnings (configurable thresholds with opt-out)
+    Decision: Warning thresholds for instruction token count and MCP checks are configurable via `config.toml` with pointer fields (nil disables the warning). Token estimation uses a byte/rune heuristic (max(bytes/3, runes/4) with 10% buffer).
+    Reason: Users need control over warning thresholds without exposing estimation internals; nil pointers clearly indicate disabled state.
+    Tradeoffs: Pointer fields require careful handling in code; wizard must support "disable" as a selection option.

@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"errors"
 	"sort"
 	"testing"
 
@@ -152,6 +153,150 @@ func TestSelectOptionalValue_CustomPrefill(t *testing.T) {
 	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
 	assert.NoError(t, err)
 	assert.Equal(t, "custom-model", value)
+}
+
+func TestSelectOptionalValue_ValueInOptions(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			// Current should be the predefined value from options
+			assert.Equal(t, "gemini-2.5-pro", *current)
+			return nil
+		},
+	}
+
+	value := "gemini-2.5-pro"
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.NoError(t, err)
+	assert.Equal(t, "gemini-2.5-pro", value)
+}
+
+func TestSelectOptionalValue_SelectError(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			return errors.New("select error")
+		},
+	}
+
+	value := ""
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "select error")
+}
+
+func TestSelectOptionalValue_InputError(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			*current = customOption
+			return nil
+		},
+		InputFunc: func(title string, value *string) error {
+			return errors.New("input error")
+		},
+	}
+
+	value := ""
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "input error")
+}
+
+func TestSelectOptionalValue_LeaveBlank(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			*current = leaveBlankOption
+			return nil
+		},
+	}
+
+	value := "some-value"
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.NoError(t, err)
+	assert.Equal(t, "", value)
+}
+
+func TestPromptPositiveInt_Default(t *testing.T) {
+	ui := &MockUI{}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.NoError(t, err)
+	assert.Equal(t, 10, value)
+}
+
+func TestPromptPositiveInt_Override(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "42"
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.NoError(t, err)
+	assert.Equal(t, 42, value)
+}
+
+func TestPromptPositiveInt_Invalid(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "0"
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "positive integer")
+}
+
+func TestPromptPositiveInt_NegativeNumber(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "-5"
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "positive integer")
+}
+
+func TestPromptPositiveInt_NotANumber(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "abc"
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "positive integer")
+}
+
+func TestPromptPositiveInt_InputError(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			return errors.New("input error")
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "input error")
+}
+
+func TestPromptPositiveInt_EmptyInput(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "   " // whitespace only
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.NoError(t, err)
+	assert.Equal(t, 10, value) // keeps original value
 }
 
 func TestBuildSummary(t *testing.T) {

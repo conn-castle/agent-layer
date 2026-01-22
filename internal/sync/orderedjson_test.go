@@ -26,3 +26,12 @@ func TestOrderedMapMarshalNil(t *testing.T) {
 		t.Fatalf("unexpected json: %s", string(data))
 	}
 }
+
+func TestOrderedMapMarshalValueError(t *testing.T) {
+	// func values cannot be marshaled to JSON
+	value := OrderedMap[func()]{"key": func() {}}
+	_, err := value.MarshalJSON()
+	if err == nil {
+		t.Fatalf("expected error for unmarshalable value")
+	}
+}

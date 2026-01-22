@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nicholasjconn/agent-layer/internal/warnings"
 )
 
 func TestApplyChanges(t *testing.T) {
@@ -35,10 +37,10 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 
 		syncCalled := false
-		mockSync := func(root string) error {
+		mockSync := func(root string) ([]warnings.Warning, error) {
 			syncCalled = true
 			assert.Equal(t, tmpDir, root)
-			return nil
+			return nil, nil
 		}
 
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
@@ -64,7 +66,7 @@ mode = "none"
 		err := os.Mkdir(configPath+".bak", 0755)
 		require.NoError(t, err)
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err = applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 
 		assert.Error(t, err)
@@ -78,7 +80,7 @@ mode = "none"
 		err := os.Mkdir(envPath+".bak", 0755)
 		require.NoError(t, err)
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err = applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 
 		assert.Error(t, err)
@@ -91,8 +93,8 @@ mode = "none"
 	t.Run("sync failure", func(t *testing.T) {
 		tmpDir, configPath, envPath := setup(t)
 
-		mockSync := func(root string) error {
-			return errors.New("sync exploded")
+		mockSync := func(root string) ([]warnings.Warning, error) {
+			return nil, errors.New("sync exploded")
 		}
 
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
@@ -108,7 +110,7 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 		require.NoError(t, os.Remove(envPath)) // Env file missing
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 		require.NoError(t, err)
 
@@ -129,7 +131,7 @@ mode = "none"
 		require.NoError(t, os.WriteFile(configPath+".bak", []byte("old-backup"), 0644))
 		require.NoError(t, os.WriteFile(envPath+".bak", []byte("old-backup"), 0600))
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 		require.NoError(t, err)
 
@@ -176,7 +178,7 @@ mode = "none"
 		// Config does not exist
 		require.NoError(t, os.WriteFile(envPath, []byte(initialEnv), 0600))
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 		assert.Error(t, err)
 	})
@@ -194,7 +196,7 @@ mode = "none"
 		// Write a file inside so we can't read configPath as file
 		require.NoError(t, os.WriteFile(filepath.Join(configPath, "dummy"), []byte(""), 0644))
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 		assert.Error(t, err)
 	})
@@ -206,7 +208,7 @@ mode = "none"
 		require.NoError(t, os.Mkdir(envPath, 0755))
 		require.NoError(t, os.WriteFile(filepath.Join(envPath, "dummy"), []byte(""), 0644))
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 		assert.Error(t, err)
 		// Config backup should be cleaned up
@@ -219,7 +221,7 @@ mode = "none"
 		require.NoError(t, os.Chmod(envPath, 0000))
 		t.Cleanup(func() { _ = os.Chmod(envPath, 0600) })
 
-		mockSync := func(root string) error { return nil }
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 		assert.Error(t, err)
 		// Config backup should be cleaned up
@@ -327,8 +329,34 @@ broken toml`
 	require.NoError(t, os.WriteFile(configPath, []byte(invalidConfig), 0644))
 	require.NoError(t, os.WriteFile(envPath, []byte("KEY=val"), 0600))
 
-	mockSync := func(root string) error { return nil }
+	mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 	err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to patch config")
+}
+
+func TestApplyChanges_SyncWarnings(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = "all"
+	choices.ApprovalModeTouched = true
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.toml")
+	envPath := filepath.Join(tmpDir, ".env")
+
+	initialConfig := `[approvals]
+mode = "none"
+`
+	require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0644))
+	require.NoError(t, os.WriteFile(envPath, []byte(""), 0600))
+
+	// Return warnings from sync
+	mockSync := func(root string) ([]warnings.Warning, error) {
+		return []warnings.Warning{
+			{Code: "TEST_WARNING", Subject: "test", Message: "Test warning message"},
+		}, nil
+	}
+
+	err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
+	require.NoError(t, err)
 }

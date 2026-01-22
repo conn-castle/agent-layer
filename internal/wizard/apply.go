@@ -6,9 +6,10 @@ import (
 
 	"github.com/nicholasjconn/agent-layer/internal/envfile"
 	"github.com/nicholasjconn/agent-layer/internal/fsutil"
+	"github.com/nicholasjconn/agent-layer/internal/warnings"
 )
 
-type syncer func(root string) error
+type syncer func(root string) ([]warnings.Warning, error)
 
 // applyChanges writes config/env updates and runs sync.
 // root/configPath/envPath identify files; c holds wizard selections; runSync is the sync function to call; returns an error on failure.
@@ -69,7 +70,15 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) 
 
 	// Sync
 	fmt.Println("Running sync...")
-	return runSync(root)
+	warnings, err := runSync(root)
+	if err != nil {
+		return err
+	}
+	// Print any warnings from sync
+	for _, w := range warnings {
+		fmt.Printf("Warning: %s\n", w.Message)
+	}
+	return nil
 }
 
 // filePermOr returns the file permission bits or a fallback when the file is missing.

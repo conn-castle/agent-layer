@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nicholasjconn/agent-layer/internal/config"
+	"github.com/nicholasjconn/agent-layer/internal/doctor"
 )
 
 func TestRootVersionFlag(t *testing.T) {
@@ -91,7 +92,9 @@ func TestInstallAndSyncCommands(t *testing.T) {
 		}
 		writeStub(t, root, "al")
 
-		if err := newSyncCmd().RunE(nil, nil); err != nil {
+		err := newSyncCmd().RunE(nil, nil)
+		// Sync might fail with warnings if templates are large, which is expected behavior now.
+		if err != nil && !errors.Is(err, ErrSyncCompletedWithWarnings) {
 			t.Fatalf("sync error: %v", err)
 		}
 
@@ -194,6 +197,37 @@ func TestInstallCommandNonInteractiveSkipsWizard(t *testing.T) {
 	}
 }
 
+func TestInstallCommandPromptNoDeclinesWizard(t *testing.T) {
+	root := t.TempDir()
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	originalIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = originalIsTerminal })
+
+	originalRunWizard := runWizard
+	wizardCalled := false
+	runWizard = func(_ string) error {
+		wizardCalled = true
+		return nil
+	}
+	t.Cleanup(func() { runWizard = originalRunWizard })
+
+	cmd := newInstallCmd()
+	cmd.SetArgs([]string{})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("n\n")) // Decline wizard
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("install error: %v", err)
+	}
+	if wizardCalled {
+		t.Fatalf("expected wizard to be skipped when user declines")
+	}
+}
+
 func TestClientCommandsMissingConfig(t *testing.T) {
 	root := t.TempDir()
 	withWorkingDir(t, root, func() {
@@ -274,6 +308,51 @@ func TestDoctorCommand(t *testing.T) {
 	})
 }
 
+func TestDoctorCommand_WithWarnings(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoWithWarnings(t, root)
+	withWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		err := cmd.RunE(cmd, nil)
+		// Doctor should fail when warnings exist
+		if err == nil {
+			t.Fatal("expected doctor to fail when warnings exist")
+		}
+		if !strings.Contains(err.Error(), "doctor checks failed") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestPrintResult_AllStatuses(t *testing.T) {
+	// Test all status types to ensure coverage
+	results := []doctor.Result{
+		{Status: doctor.StatusOK, CheckName: "test-ok", Message: "OK message"},
+		{Status: doctor.StatusWarn, CheckName: "test-warn", Message: "Warning message", Recommendation: "Fix it"},
+		{Status: doctor.StatusFail, CheckName: "test-fail", Message: "Fail message"},
+	}
+	for _, r := range results {
+		// printResult prints to stdout, just verify it doesn't panic
+		printResult(r)
+	}
+}
+
+func TestSyncCommand_WithWarnings(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoWithWarnings(t, root)
+	withWorkingDir(t, root, func() {
+		cmd := newSyncCmd()
+		err := cmd.RunE(cmd, nil)
+		// Sync should fail when warnings exist
+		if err == nil {
+			t.Fatal("expected sync to fail when warnings exist")
+		}
+		if !errors.Is(err, ErrSyncCompletedWithWarnings) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 func TestWizardCommand(t *testing.T) {
 	originalIsTerminal := isTerminal
 	isTerminal = func() bool { return false }
@@ -310,11 +389,61 @@ func TestCommandsGetwdError(t *testing.T) {
 		newCodexCmd(),
 		newVSCodeCmd(),
 		newAntigravityCmd(),
+		newDoctorCmd(),
 	}
 	for _, cmd := range commands {
 		if err := cmd.RunE(cmd, nil); err == nil {
 			t.Fatalf("expected error for %s", cmd.Use)
 		}
+	}
+}
+
+func TestInstallCommandInstallRunError(t *testing.T) {
+	// Point to a file instead of directory to cause install.Run to fail
+	root := t.TempDir()
+	blockingFile := filepath.Join(root, ".agent-layer")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	cmd := newInstallCmd()
+	cmd.SetArgs([]string{})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when install.Run fails")
+	}
+}
+
+func TestInstallCommandPromptError(t *testing.T) {
+	root := t.TempDir()
+	originalGetwd := getwd
+	getwd = func() (string, error) { return root, nil }
+	t.Cleanup(func() { getwd = originalGetwd })
+
+	originalIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = originalIsTerminal })
+
+	cmd := newInstallCmd()
+	cmd.SetArgs([]string{})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(errorReader{}) // Use errorReader to cause promptYesNo to fail
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when promptYesNo fails")
+	}
+	if !strings.Contains(err.Error(), "read failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -367,6 +496,59 @@ description: test
 Do it.`
 	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "alpha.md"), []byte(command), 0o644); err != nil {
 		t.Fatalf("write slash command: %v", err)
+	}
+	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
+		t.Fatalf("write commands allow: %v", err)
+	}
+	writeStub(t, root, "al")
+}
+
+func writeTestRepoWithWarnings(t *testing.T, root string) {
+	t.Helper()
+	paths := config.DefaultPaths(root)
+	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
+		t.Fatalf("mkdir instructions: %v", err)
+	}
+	if err := os.MkdirAll(paths.SlashCommandsDir, 0o755); err != nil {
+		t.Fatalf("mkdir slash commands: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+
+	// Config with very low instruction token threshold to trigger a warning
+	configToml := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = true
+
+[warnings]
+instruction_token_threshold = 1
+`
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	// Write large instructions to exceed the threshold
+	largeContent := strings.Repeat("This is a test instruction that will exceed the low token threshold. ", 50)
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte(largeContent), 0o644); err != nil {
+		t.Fatalf("write instructions: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)

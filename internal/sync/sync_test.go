@@ -19,8 +19,13 @@ func TestRunGolden(t *testing.T) {
 	}
 	writePromptServerBinary(t, root)
 
-	if err := Run(root); err != nil {
+	warnings, err := Run(root)
+	if err != nil {
 		t.Fatalf("sync run: %v", err)
+	}
+	// No warnings expected for the fixture (small content, few servers)
+	if len(warnings) > 0 {
+		t.Logf("unexpected warnings: %v", warnings)
 	}
 
 	expectedRoot := filepath.Join(fixtureRoot, "expected")

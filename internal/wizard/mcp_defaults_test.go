@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"errors"
 	"testing"
 
 	toml "github.com/pelletier/go-toml"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nicholasjconn/agent-layer/internal/config"
+	"github.com/nicholasjconn/agent-layer/internal/templates"
 )
 
 func TestMissingDefaultMCPServers(t *testing.T) {
@@ -125,4 +127,117 @@ servers = "bad"
 	err = appendMissingDefaultMCPServers(tree, []string{"github"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected type")
+}
+
+func TestLoadDefaultMCPServersReadError(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return nil, errors.New("mock read error")
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := loadDefaultMCPServers()
+	assert.Error(t, err)
+}
+
+func TestLoadDefaultMCPServersNoServers(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		// Return valid TOML with required fields but no MCP servers
+		return []byte(`[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = true
+
+[mcp]
+`), nil
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := loadDefaultMCPServers()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no MCP servers")
+}
+
+func TestDefaultMCPServerTreesReadError(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return nil, errors.New("mock read error")
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := defaultMCPServerTrees()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to read config template")
+}
+
+func TestDefaultMCPServerTreesParseError(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return []byte("invalid toml [[["), nil
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := defaultMCPServerTrees()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse config template")
+}
+
+func TestDefaultMCPServerTreesNoServers(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return []byte(`[mcp]
+`), nil
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := defaultMCPServerTrees()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no MCP server blocks")
+}
+
+func TestDefaultMCPServerTreesMissingID(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return []byte(`[[mcp.servers]]
+enabled = true
+`), nil
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := defaultMCPServerTrees()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "missing MCP server id")
+}
+
+func TestDefaultMCPServerTreesDuplicateID(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return []byte(`[[mcp.servers]]
+id = "github"
+enabled = true
+
+[[mcp.servers]]
+id = "github"
+enabled = true
+`), nil
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := defaultMCPServerTrees()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate MCP server id")
 }

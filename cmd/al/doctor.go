@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/nicholasjconn/agent-layer/internal/doctor"
+	"github.com/nicholasjconn/agent-layer/internal/warnings"
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -46,9 +48,43 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
+			// 5. Run Warning System (Instructions + MCP)
+			// Only run if basic config loaded successfully, otherwise we might crash or be useless.
+			var warningList []warnings.Warning
+			if cfg != nil {
+				fmt.Println("\n🔍 Running warning system checks...")
+
+				// Instructions check
+				instWarnings, err := warnings.CheckInstructions(root, cfg.Config.Warnings.InstructionTokenThreshold)
+				if err != nil {
+					color.Red("Failed to check instructions: %v", err)
+					hasFail = true
+				} else {
+					warningList = append(warningList, instWarnings...)
+				}
+
+				// MCP check (Doctor runs discovery)
+				mcpWarnings, err := warnings.CheckMCPServers(context.Background(), cfg, nil)
+				if err != nil {
+					color.Red("Failed to check MCP servers: %v", err)
+					hasFail = true
+				} else {
+					warningList = append(warningList, mcpWarnings...)
+				}
+			}
+
+			if len(warningList) > 0 {
+				fmt.Println()
+				for _, w := range warningList {
+					fmt.Println(w.String())
+					fmt.Println() // Spacer
+				}
+				hasFail = true // Warnings cause exit 1 per spec
+			}
+
 			fmt.Println()
 			if hasFail {
-				color.Red("❌ Some checks failed. Please address the issues above.")
+				color.Red("❌ Some checks failed or triggered warnings. Please address the issues above.")
 				return fmt.Errorf("doctor checks failed")
 			} else {
 				color.Green("✅ All systems go! Agent Layer is ready.")
