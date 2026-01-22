@@ -271,7 +271,7 @@ func Run(root string, ui UI, runSync syncer) error {
 
 	// Warnings
 	warningsEnabled := choices.WarningsEnabled
-	if err := ui.Confirm("Enable warnings for common issues that hurt performance or use up usage limits?", &warningsEnabled); err != nil {
+	if err := ui.Confirm("Enable warnings for performance and usage issues?", &warningsEnabled); err != nil {
 		return err
 	}
 	choices.WarningsEnabled = warningsEnabled

@@ -105,10 +105,7 @@ func validateWarnings(path string, warnings WarningsConfig) error {
 		{"warnings.mcp_schema_tokens_server_threshold", warnings.MCPSchemaTokensServerThreshold},
 	}
 	for _, threshold := range thresholds {
-		if threshold.value == nil {
-			continue
-		}
-		if *threshold.value <= 0 {
+		if threshold.value != nil && *threshold.value <= 0 {
 			return fmt.Errorf("%s: %s must be greater than zero", path, threshold.name)
 		}
 	}
