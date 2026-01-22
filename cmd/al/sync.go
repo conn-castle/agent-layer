@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -21,9 +22,11 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Print warnings to stderr
-			for _, w := range warnings {
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", w.Message)
+			if len(warnings) > 0 {
+				for _, w := range warnings {
+					fmt.Fprintln(os.Stderr, w.String())
+				}
+				return fmt.Errorf("sync completed with warnings")
 			}
 			return nil
 		},

@@ -8,13 +8,6 @@ type Config struct {
 	Warnings  WarningsConfig  `toml:"warnings"`
 }
 
-// WarningsConfig controls sync-time warning thresholds.
-// Nil values disable the corresponding warning.
-type WarningsConfig struct {
-	InstructionTokenThreshold *int `toml:"instruction_token_threshold"`
-	MCPServerThreshold        *int `toml:"mcp_server_threshold"`
-}
-
 // ApprovalsConfig controls auto-approval behavior per client.
 type ApprovalsConfig struct {
 	Mode string `toml:"mode"`
@@ -45,6 +38,16 @@ type CodexConfig struct {
 // MCPConfig contains the external MCP servers configuration.
 type MCPConfig struct {
 	Servers []MCPServer `toml:"servers"`
+}
+
+// WarningsConfig configures optional warning thresholds. Nil disables warnings.
+type WarningsConfig struct {
+	InstructionTokenThreshold      *int `toml:"instruction_token_threshold"`
+	MCPServerThreshold             *int `toml:"mcp_server_threshold"`
+	MCPToolsTotalThreshold         *int `toml:"mcp_tools_total_threshold"`
+	MCPServerToolsThreshold        *int `toml:"mcp_server_tools_threshold"`
+	MCPSchemaTokensTotalThreshold  *int `toml:"mcp_schema_tokens_total_threshold"`
+	MCPSchemaTokensServerThreshold *int `toml:"mcp_schema_tokens_server_threshold"`
 }
 
 // MCPServer defines a single MCP server entry.

@@ -14,6 +14,24 @@ func TestInlineComment(t *testing.T) {
 		expected  string
 	}{
 		{
+			name:      "negative lineIndex",
+			lines:     []string{`key = "value"`},
+			lineIndex: -1,
+			expected:  "",
+		},
+		{
+			name:      "lineIndex out of bounds",
+			lines:     []string{`key = "value"`},
+			lineIndex: 5,
+			expected:  "",
+		},
+		{
+			name:      "empty lines",
+			lines:     []string{},
+			lineIndex: 0,
+			expected:  "",
+		},
+		{
 			name:      "no comment",
 			lines:     []string{`key = "value"`},
 			lineIndex: 0,

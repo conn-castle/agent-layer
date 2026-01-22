@@ -6,10 +6,10 @@ import (
 
 	"github.com/nicholasjconn/agent-layer/internal/envfile"
 	"github.com/nicholasjconn/agent-layer/internal/fsutil"
-	"github.com/nicholasjconn/agent-layer/internal/sync"
+	"github.com/nicholasjconn/agent-layer/internal/warnings"
 )
 
-type syncer func(root string) ([]sync.Warning, error)
+type syncer func(root string) ([]warnings.Warning, error)
 
 // applyChanges writes config/env updates and runs sync.
 // root/configPath/envPath identify files; c holds wizard selections; runSync is the sync function to call; returns an error on failure.

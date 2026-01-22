@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"errors"
 	"sort"
 	"testing"
 
@@ -154,154 +155,148 @@ func TestSelectOptionalValue_CustomPrefill(t *testing.T) {
 	assert.Equal(t, "custom-model", value)
 }
 
-func TestSelectOptionalThreshold_SelectPredefined(t *testing.T) {
+func TestSelectOptionalValue_ValueInOptions(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
-			*current = "50000"
+			// Current should be the predefined value from options
+			assert.Equal(t, "gemini-2.5-pro", *current)
 			return nil
 		},
 	}
 
-	var value *int
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
+	value := "gemini-2.5-pro"
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
 	assert.NoError(t, err)
-	assert.NotNil(t, value)
-	assert.Equal(t, 50000, *value)
+	assert.Equal(t, "gemini-2.5-pro", value)
 }
 
-func TestSelectOptionalThreshold_SelectDisable(t *testing.T) {
+func TestSelectOptionalValue_SelectError(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
-			*current = disableWarningOption
-			return nil
+			return errors.New("select error")
 		},
 	}
 
-	initial := 50000
-	value := &initial
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
-	assert.NoError(t, err)
-	assert.Nil(t, value)
-}
-
-func TestSelectOptionalThreshold_SelectCustom(t *testing.T) {
-	ui := &MockUI{
-		SelectFunc: func(title string, options []string, current *string) error {
-			*current = customOption
-			return nil
-		},
-		InputFunc: func(title string, value *string) error {
-			*value = "75000"
-			return nil
-		},
-	}
-
-	var value *int
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
-	assert.NoError(t, err)
-	assert.NotNil(t, value)
-	assert.Equal(t, 75000, *value)
-}
-
-func TestSelectOptionalThreshold_CustomBlank(t *testing.T) {
-	ui := &MockUI{
-		SelectFunc: func(title string, options []string, current *string) error {
-			*current = customOption
-			return nil
-		},
-		InputFunc: func(title string, value *string) error {
-			*value = ""
-			return nil
-		},
-	}
-
-	initial := 50000
-	value := &initial
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
-	assert.NoError(t, err)
-	assert.Nil(t, value) // Blank custom disables the warning
-}
-
-func TestSelectOptionalThreshold_CustomInvalid(t *testing.T) {
-	ui := &MockUI{
-		SelectFunc: func(title string, options []string, current *string) error {
-			*current = customOption
-			return nil
-		},
-		InputFunc: func(title string, value *string) error {
-			*value = "not-a-number"
-			return nil
-		},
-	}
-
-	var value *int
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
+	value := ""
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid threshold value")
+	assert.Contains(t, err.Error(), "select error")
 }
 
-func TestSelectOptionalThreshold_CustomZero(t *testing.T) {
+func TestSelectOptionalValue_InputError(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
 			*current = customOption
 			return nil
 		},
+		InputFunc: func(title string, value *string) error {
+			return errors.New("input error")
+		},
+	}
+
+	value := ""
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "input error")
+}
+
+func TestSelectOptionalValue_LeaveBlank(t *testing.T) {
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			*current = leaveBlankOption
+			return nil
+		},
+	}
+
+	value := "some-value"
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	assert.NoError(t, err)
+	assert.Equal(t, "", value)
+}
+
+func TestPromptPositiveInt_Default(t *testing.T) {
+	ui := &MockUI{}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.NoError(t, err)
+	assert.Equal(t, 10, value)
+}
+
+func TestPromptPositiveInt_Override(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "42"
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.NoError(t, err)
+	assert.Equal(t, 42, value)
+}
+
+func TestPromptPositiveInt_Invalid(t *testing.T) {
+	ui := &MockUI{
 		InputFunc: func(title string, value *string) error {
 			*value = "0"
 			return nil
 		},
 	}
-
-	var value *int
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid threshold value")
+	assert.Contains(t, err.Error(), "positive integer")
 }
 
-func TestSelectOptionalThreshold_CurrentValueOutsideOptions(t *testing.T) {
+func TestPromptPositiveInt_NegativeNumber(t *testing.T) {
 	ui := &MockUI{
-		SelectFunc: func(title string, options []string, current *string) error {
-			// Verify custom is pre-selected when current value is not in options
-			assert.Equal(t, customOption, *current)
-			return nil
-		},
 		InputFunc: func(title string, value *string) error {
+			*value = "-5"
 			return nil
 		},
 	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "positive integer")
+}
 
-	initial := 99999 // Not in options
-	value := &initial
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
+func TestPromptPositiveInt_NotANumber(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "abc"
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "positive integer")
+}
+
+func TestPromptPositiveInt_InputError(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			return errors.New("input error")
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "input error")
+}
+
+func TestPromptPositiveInt_EmptyInput(t *testing.T) {
+	ui := &MockUI{
+		InputFunc: func(title string, value *string) error {
+			*value = "   " // whitespace only
+			return nil
+		},
+	}
+	value := 10
+	err := promptPositiveInt(ui, "Threshold", &value)
 	assert.NoError(t, err)
-}
-
-func TestSelectOptionalThreshold_SelectError(t *testing.T) {
-	ui := &MockUI{
-		SelectFunc: func(title string, options []string, current *string) error {
-			return assert.AnError
-		},
-	}
-
-	var value *int
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
-	assert.Error(t, err)
-}
-
-func TestSelectOptionalThreshold_InputError(t *testing.T) {
-	ui := &MockUI{
-		SelectFunc: func(title string, options []string, current *string) error {
-			*current = customOption
-			return nil
-		},
-		InputFunc: func(title string, value *string) error {
-			return assert.AnError
-		},
-	}
-
-	var value *int
-	err := selectOptionalThreshold(ui, "Token Threshold", []int{10000, 50000}, &value)
-	assert.Error(t, err)
+	assert.Equal(t, 10, value) // keeps original value
 }
 
 func TestBuildSummary(t *testing.T) {
@@ -362,33 +357,5 @@ func TestBuildSummary(t *testing.T) {
 		assert.Contains(t, summary, "Secrets to Update:")
 		assert.Contains(t, summary, "- GITHUB_TOKEN")
 		assert.Contains(t, summary, "- OTHER_TOKEN")
-	})
-
-	t.Run("with warning thresholds enabled", func(t *testing.T) {
-		c := NewChoices()
-		c.ApprovalMode = "all"
-		c.DefaultMCPServers = []DefaultMCPServer{{ID: "github"}}
-		tokenThreshold := 50000
-		mcpThreshold := 5
-		c.InstructionTokenThreshold = &tokenThreshold
-		c.MCPServerThreshold = &mcpThreshold
-
-		summary := buildSummary(c)
-		assert.Contains(t, summary, "Warning Thresholds:")
-		assert.Contains(t, summary, "Instruction tokens: 50000")
-		assert.Contains(t, summary, "MCP servers per client: 5")
-	})
-
-	t.Run("with warning thresholds disabled", func(t *testing.T) {
-		c := NewChoices()
-		c.ApprovalMode = "all"
-		c.DefaultMCPServers = []DefaultMCPServer{{ID: "github"}}
-		c.InstructionTokenThreshold = nil
-		c.MCPServerThreshold = nil
-
-		summary := buildSummary(c)
-		assert.Contains(t, summary, "Warning Thresholds:")
-		assert.Contains(t, summary, "Instruction tokens: disabled")
-		assert.Contains(t, summary, "MCP servers per client: disabled")
 	})
 }

@@ -137,3 +137,79 @@ func withServers(cfg Config, servers []MCPServer) Config {
 	cfg.MCP.Servers = servers
 	return cfg
 }
+
+func TestValidateWarningsThresholds(t *testing.T) {
+	enabled := true
+	base := Config{
+		Approvals: ApprovalsConfig{Mode: "all"},
+		Agents: AgentsConfig{
+			Gemini:      AgentConfig{Enabled: &enabled},
+			Claude:      AgentConfig{Enabled: &enabled},
+			Codex:       CodexConfig{Enabled: &enabled},
+			VSCode:      AgentConfig{Enabled: &enabled},
+			Antigravity: AgentConfig{Enabled: &enabled},
+		},
+	}
+
+	intPtr := func(value int) *int { return &value }
+
+	tests := []struct {
+		name        string
+		set         func(*Config)
+		errContains string
+	}{
+		{
+			name: "instruction token threshold",
+			set: func(cfg *Config) {
+				cfg.Warnings.InstructionTokenThreshold = intPtr(0)
+			},
+			errContains: "warnings.instruction_token_threshold",
+		},
+		{
+			name: "mcp server threshold",
+			set: func(cfg *Config) {
+				cfg.Warnings.MCPServerThreshold = intPtr(-1)
+			},
+			errContains: "warnings.mcp_server_threshold",
+		},
+		{
+			name: "mcp tools total threshold",
+			set: func(cfg *Config) {
+				cfg.Warnings.MCPToolsTotalThreshold = intPtr(0)
+			},
+			errContains: "warnings.mcp_tools_total_threshold",
+		},
+		{
+			name: "mcp server tools threshold",
+			set: func(cfg *Config) {
+				cfg.Warnings.MCPServerToolsThreshold = intPtr(0)
+			},
+			errContains: "warnings.mcp_server_tools_threshold",
+		},
+		{
+			name: "mcp schema tokens total threshold",
+			set: func(cfg *Config) {
+				cfg.Warnings.MCPSchemaTokensTotalThreshold = intPtr(0)
+			},
+			errContains: "warnings.mcp_schema_tokens_total_threshold",
+		},
+		{
+			name: "mcp schema tokens server threshold",
+			set: func(cfg *Config) {
+				cfg.Warnings.MCPSchemaTokensServerThreshold = intPtr(0)
+			},
+			errContains: "warnings.mcp_schema_tokens_server_threshold",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base
+			tc.set(&cfg)
+			err := cfg.Validate("config.toml")
+			if err == nil || !strings.Contains(err.Error(), tc.errContains) {
+				t.Fatalf("expected error containing %q, got %v", tc.errContains, err)
+			}
+		})
+	}
+}

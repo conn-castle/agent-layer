@@ -35,10 +35,14 @@ type Choices struct {
 	Secrets map[string]string
 
 	// Warnings
-	InstructionTokenThreshold        *int
-	InstructionTokenThresholdTouched bool
-	MCPServerThreshold               *int
-	MCPServerThresholdTouched        bool
+	WarningsEnabled                bool
+	WarningsEnabledTouched         bool
+	InstructionTokenThreshold      int
+	MCPServerThreshold             int
+	MCPToolsTotalThreshold         int
+	MCPServerToolsThreshold        int
+	MCPSchemaTokensTotalThreshold  int
+	MCPSchemaTokensServerThreshold int
 }
 
 // NewChoices returns a Choices struct initialized with defaults.

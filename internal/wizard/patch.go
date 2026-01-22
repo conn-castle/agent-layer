@@ -79,25 +79,19 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 		}
 	}
 
-	// 4. Warning thresholds
-	if choices.InstructionTokenThresholdTouched {
-		path := []string{"warnings", "instruction_token_threshold"}
-		if choices.InstructionTokenThreshold == nil {
-			if err := deletePath(configTree, path); err != nil {
+	// 4. Warnings
+	if choices.WarningsEnabledTouched {
+		if !choices.WarningsEnabled {
+			if err := deletePath(configTree, []string{"warnings"}); err != nil {
 				return "", err
 			}
 		} else {
-			setPathPreservingComment(configTree, lines, path, *choices.InstructionTokenThreshold)
-		}
-	}
-	if choices.MCPServerThresholdTouched {
-		path := []string{"warnings", "mcp_server_threshold"}
-		if choices.MCPServerThreshold == nil {
-			if err := deletePath(configTree, path); err != nil {
-				return "", err
-			}
-		} else {
-			setPathPreservingComment(configTree, lines, path, *choices.MCPServerThreshold)
+			setPathPreservingComment(configTree, lines, []string{"warnings", "instruction_token_threshold"}, choices.InstructionTokenThreshold)
+			setPathPreservingComment(configTree, lines, []string{"warnings", "mcp_server_threshold"}, choices.MCPServerThreshold)
+			setPathPreservingComment(configTree, lines, []string{"warnings", "mcp_tools_total_threshold"}, choices.MCPToolsTotalThreshold)
+			setPathPreservingComment(configTree, lines, []string{"warnings", "mcp_server_tools_threshold"}, choices.MCPServerToolsThreshold)
+			setPathPreservingComment(configTree, lines, []string{"warnings", "mcp_schema_tokens_total_threshold"}, choices.MCPSchemaTokensTotalThreshold)
+			setPathPreservingComment(configTree, lines, []string{"warnings", "mcp_schema_tokens_server_threshold"}, choices.MCPSchemaTokensServerThreshold)
 		}
 	}
 
@@ -111,6 +105,10 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 // setPathPreservingComment sets a value while retaining existing inline/leading comments when possible.
 // tree is the parsed config; lines is the original content split by line; keys is the TOML path; value is the new value.
 func setPathPreservingComment(tree *toml.Tree, lines []string, keys []string, value interface{}) {
+	switch v := value.(type) {
+	case int:
+		value = int64(v)
+	}
 	comment := commentForPath(tree, lines, keys)
 	if comment != "" {
 		tree.SetPathWithComment(keys, comment, false, value)

@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/nicholasjconn/agent-layer/internal/sync"
+	"github.com/nicholasjconn/agent-layer/internal/warnings"
 )
 
 func setupRepo(t *testing.T, root string) {
@@ -35,7 +35,7 @@ func TestRun_NotInstalled_UserCancels(t *testing.T) {
 		},
 	}
 
-	mockSync := func(root string) ([]sync.Warning, error) { return nil, nil }
+	mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 
 	err := Run(root, ui, mockSync)
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestRun_Install(t *testing.T) {
 		NoteFunc:        func(title, body string) error { return nil },
 	}
 
-	mockSync := func(root string) ([]sync.Warning, error) { return nil, nil }
+	mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
 
 	err := Run(root, ui, mockSync)
 	require.NoError(t, err)
@@ -129,7 +129,7 @@ enabled = false
 	}
 
 	syncCalled := false
-	mockSync := func(r string) ([]sync.Warning, error) {
+	mockSync := func(r string) ([]warnings.Warning, error) {
 		syncCalled = true
 		return nil, nil
 	}
@@ -179,7 +179,7 @@ enabled = false
 	}
 
 	syncCalled := false
-	mockSync := func(r string) ([]sync.Warning, error) {
+	mockSync := func(r string) ([]warnings.Warning, error) {
 		syncCalled = true
 		return nil, nil
 	}
@@ -220,7 +220,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) ([]sync.Warning, error) {
+	mockSync := func(r string) ([]warnings.Warning, error) {
 		return nil, errors.New("sync failed")
 	}
 
@@ -283,7 +283,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) ([]sync.Warning, error) { return nil, nil }
+	mockSync := func(r string) ([]warnings.Warning, error) { return nil, nil }
 
 	err := Run(root, ui, mockSync)
 	require.NoError(t, err)
@@ -339,7 +339,7 @@ enabled = false
 			},
 		}
 
-		err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+		err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 		require.NoError(t, err)
 
 		envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -373,7 +373,7 @@ enabled = false
 			},
 		}
 
-		err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+		err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 		require.NoError(t, err)
 
 		envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -414,7 +414,7 @@ enabled = false
 		NoteFunc:        func(title, body string) error { return nil },
 	}
 
-	mockSync := func(r string) ([]sync.Warning, error) { return nil, nil }
+	mockSync := func(r string) ([]warnings.Warning, error) { return nil, nil }
 
 	err := Run(root, ui, mockSync)
 	require.NoError(t, err)
@@ -433,7 +433,7 @@ func TestRun_ConfirmError_Install(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "confirm error")
 }
@@ -455,7 +455,7 @@ func TestRun_NoteError_Approvals(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "note error")
 }
@@ -478,7 +478,7 @@ func TestRun_SelectError_Approvals(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "select error")
 }
@@ -502,7 +502,7 @@ func TestRun_MultiSelectError_Agents(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "multiselect error")
 }
@@ -531,7 +531,7 @@ func TestRun_NoteError_PreviewModelWarning(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "preview note error")
 }
@@ -562,7 +562,7 @@ func TestRun_SelectError_GeminiModel(t *testing.T) {
 	}
 	_ = callCount
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "gemini model error")
 }
@@ -591,7 +591,7 @@ func TestRun_SelectError_ClaudeModel(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "claude model error")
 }
@@ -620,7 +620,7 @@ func TestRun_SelectError_CodexModel(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "codex model error")
 }
@@ -649,7 +649,7 @@ func TestRun_SelectError_CodexReasoning(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "codex reasoning error")
 }
@@ -680,7 +680,7 @@ func TestRun_ConfirmError_RestoreMissing(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "restore confirm error")
 }
@@ -708,7 +708,7 @@ func TestRun_MultiSelectError_MCPServers(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "mcp multiselect error")
 }
@@ -736,7 +736,7 @@ func TestRun_NoteError_Summary(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "summary note error")
 }
@@ -762,7 +762,7 @@ func TestRun_ConfirmError_Apply(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "apply confirm error")
 }
@@ -786,7 +786,7 @@ func TestRun_EnvFileReadError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 }
 
@@ -809,7 +809,7 @@ func TestRun_EnvFileParseError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid env file")
 }
@@ -838,7 +838,7 @@ func TestRun_SecretFromEnv(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	require.NoError(t, err)
 
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -875,7 +875,7 @@ func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "env confirm error")
 }
@@ -915,7 +915,7 @@ func TestRun_SecretFromEnv_Declined(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	require.NoError(t, err)
 
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -949,7 +949,7 @@ func TestRun_SecretInputError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "secret input error")
 }
@@ -984,7 +984,7 @@ func TestRun_SecretBlank_DisableMCP(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	require.NoError(t, err)
 	assert.Equal(t, 1, secretInputCalls)
 }
@@ -1023,7 +1023,7 @@ func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "disable confirm error")
 }
@@ -1069,7 +1069,7 @@ func TestRun_SecretBlank_Retry(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	require.NoError(t, err)
 	assert.Equal(t, 2, secretInputCalls)
 
@@ -1107,7 +1107,7 @@ func TestRun_ExistingSecret_OverrideConfirmError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "override confirm error")
 }
@@ -1145,7 +1145,7 @@ func TestRun_InstallFailure(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "install failed")
 }
@@ -1170,7 +1170,7 @@ mode = "none"`
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load config")
 }
@@ -1190,7 +1190,7 @@ func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
 	}
 
 	// Run wizard - install will succeed
-	err := Run(root, ui, func(r string) ([]sync.Warning, error) { return nil, nil })
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
 	// Install succeeds, config load should succeed too
 	// This test verifies the path works when install succeeds
 	// To test config failure after install, we'd need to corrupt config after install
@@ -1201,4 +1201,265 @@ func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
 	}
 	// If we get here, install and config load both succeeded
 	// The test still exercises the code path
+}
+
+func TestRun_WarningsConfirmError(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	confirmCalls := 0
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		ConfirmFunc: func(title string, value *bool) error {
+			confirmCalls++
+			// Restore missing is first, warnings is second
+			if strings.Contains(title, "Enable warnings") {
+				return errors.New("warnings confirm error")
+			}
+			*value = true
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "warnings confirm error")
+}
+
+func TestRun_WarningsEnabled_HappyPath(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		InputFunc: func(title string, value *string) error {
+			// Accept the defaults for all warning thresholds
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if strings.Contains(title, "Enable warnings") {
+				*value = true // Enable warnings
+			} else {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	require.NoError(t, err)
+
+	// Verify warnings thresholds are in config
+	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	assert.Contains(t, string(data), "[warnings]")
+}
+
+func TestRun_WarningsEnabled_InputError(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		InputFunc: func(title string, value *string) error {
+			// Error on first input
+			return errors.New("input error")
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if strings.Contains(title, "Enable warnings") {
+				*value = true // Enable warnings
+			} else {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "input error")
+}
+
+func TestRun_WarningsEnabled_SecondInputError(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	inputCalls := 0
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		InputFunc: func(title string, value *string) error {
+			inputCalls++
+			if inputCalls == 2 {
+				return errors.New("second input error")
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if strings.Contains(title, "Enable warnings") {
+				*value = true
+			} else {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "second input error")
+}
+
+func TestRun_WarningsEnabled_ThirdInputError(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	inputCalls := 0
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		InputFunc: func(title string, value *string) error {
+			inputCalls++
+			if inputCalls == 3 {
+				return errors.New("third input error")
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if strings.Contains(title, "Enable warnings") {
+				*value = true
+			} else {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "third input error")
+}
+
+func TestRun_WarningsEnabled_FourthInputError(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	inputCalls := 0
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		InputFunc: func(title string, value *string) error {
+			inputCalls++
+			if inputCalls == 4 {
+				return errors.New("fourth input error")
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if strings.Contains(title, "Enable warnings") {
+				*value = true
+			} else {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "fourth input error")
+}
+
+func TestRun_WarningsEnabled_FifthInputError(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	inputCalls := 0
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		InputFunc: func(title string, value *string) error {
+			inputCalls++
+			if inputCalls == 5 {
+				return errors.New("fifth input error")
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if strings.Contains(title, "Enable warnings") {
+				*value = true
+			} else {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "fifth input error")
+}
+
+func TestRun_WarningsEnabled_SixthInputError(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	inputCalls := 0
+	ui := &MockUI{
+		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc:      func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
+		InputFunc: func(title string, value *string) error {
+			inputCalls++
+			if inputCalls == 6 {
+				return errors.New("sixth input error")
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if strings.Contains(title, "Enable warnings") {
+				*value = true
+			} else {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil })
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "sixth input error")
 }

@@ -64,3 +64,40 @@ func TestParseDescription_EmptyBlock(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestParseDescription_MissingDescription(t *testing.T) {
+	_, err := parseDescription([]string{"name: test", "version: 1"})
+	if err == nil {
+		t.Fatalf("expected error for missing description")
+	}
+	if !strings.Contains(err.Error(), "missing description") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDescription_EmptyLines(t *testing.T) {
+	_, err := parseDescription([]string{})
+	if err == nil {
+		t.Fatalf("expected error for empty lines")
+	}
+	if !strings.Contains(err.Error(), "missing description") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseDescription_MultiLineBlockTerminates(t *testing.T) {
+	// Multi-line description that terminates when encountering a non-indented line
+	lines := []string{
+		"description: >-",
+		"  First line of description",
+		"  Second line of description",
+		"another_field: value",
+	}
+	desc, err := parseDescription(lines)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if desc != "First line of description Second line of description" {
+		t.Fatalf("expected combined description, got %q", desc)
+	}
+}

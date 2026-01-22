@@ -186,6 +186,29 @@ enabled = false
 	}
 }
 
+func TestCheckSecretsNoRequired(t *testing.T) {
+	// Config with no MCP servers = no required secrets
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	results := CheckSecrets(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusOK {
+		t.Errorf("expected OK status, got %s", results[0].Status)
+	}
+	if results[0].Message != "No required secrets detected in configuration." {
+		t.Errorf("unexpected message: %s", results[0].Message)
+	}
+}
+
 func TestCheckAgents(t *testing.T) {
 	tBool := true
 	fBool := false

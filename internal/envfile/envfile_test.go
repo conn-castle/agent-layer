@@ -182,6 +182,12 @@ func TestPatch(t *testing.T) {
 			updates:  map[string]string{"COMPLEX": `C:\path\"file"`},
 			contains: []string{`COMPLEX="C:\\path\\\"file\""`},
 		},
+		{
+			name:     "preserves comments and skips invalid lines",
+			input:    "# comment\nKEY=old\nINVALID_NO_EQUALS",
+			updates:  map[string]string{"KEY": "new"},
+			contains: []string{"# comment", "KEY=new", "INVALID_NO_EQUALS"},
+		},
 	}
 
 	for _, tt := range tests {

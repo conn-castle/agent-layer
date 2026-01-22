@@ -81,21 +81,3 @@ var CodexReasoningEfforts = []string{
 	"high",
 	"xhigh",
 }
-
-// Warning threshold options
-
-// InstructionTokenOptions lists common instruction token threshold values.
-var InstructionTokenOptions = []int{
-	10000,
-	25000,
-	50000,
-	100000,
-}
-
-// MCPServerThresholdOptions lists common MCP server count threshold values.
-var MCPServerThresholdOptions = []int{
-	10,
-	20,
-	30,
-	40,
-}

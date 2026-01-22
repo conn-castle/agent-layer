@@ -72,17 +72,17 @@ func buildSummary(c *Choices) string {
 		sb.WriteString("(none)\n")
 	}
 
-	sb.WriteString("\nWarning Thresholds:\n")
-	if c.InstructionTokenThreshold != nil {
-		sb.WriteString(fmt.Sprintf("- Instruction tokens: %d\n", *c.InstructionTokenThreshold))
-	} else {
-		sb.WriteString("- Instruction tokens: disabled\n")
+	sb.WriteString("\nWarnings:\n")
+	if !c.WarningsEnabled {
+		sb.WriteString("(disabled)\n")
+		return sb.String()
 	}
-	if c.MCPServerThreshold != nil {
-		sb.WriteString(fmt.Sprintf("- MCP servers per client: %d\n", *c.MCPServerThreshold))
-	} else {
-		sb.WriteString("- MCP servers per client: disabled\n")
-	}
+	sb.WriteString(fmt.Sprintf("- instruction_token_threshold = %d\n", c.InstructionTokenThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_server_threshold = %d\n", c.MCPServerThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_tools_total_threshold = %d\n", c.MCPToolsTotalThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_server_tools_threshold = %d\n", c.MCPServerToolsThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_schema_tokens_total_threshold = %d\n", c.MCPSchemaTokensTotalThreshold))
+	sb.WriteString(fmt.Sprintf("- mcp_schema_tokens_server_threshold = %d\n", c.MCPSchemaTokensServerThreshold))
 
 	return sb.String()
 }
@@ -170,75 +170,22 @@ func selectOptionalValue(ui UI, title string, options []string, value *string) e
 	return nil
 }
 
-const (
-	disableWarningOption = "Disable warning"
-)
-
-// selectOptionalThreshold prompts for an optional threshold value and updates value.
-// title is the prompt; options are predefined values; value holds the current selection (nil = disabled).
-func selectOptionalThreshold(ui UI, title string, options []int, value **int) error {
-	// Build options list
-	opts := make([]string, 0, len(options)+2)
-	opts = append(opts, disableWarningOption)
-	for _, opt := range options {
-		opts = append(opts, strconv.Itoa(opt))
-	}
-	opts = append(opts, customOption)
-
-	// Determine current selection
-	selection := disableWarningOption
-	if *value != nil {
-		current := **value
-		selection = strconv.Itoa(current)
-		// Check if current value is in options
-		found := false
-		for _, opt := range options {
-			if opt == current {
-				found = true
-				break
-			}
-		}
-		if !found {
-			selection = customOption
-		}
-	}
-
-	if err := ui.Select(title, opts, &selection); err != nil {
+// promptPositiveInt asks for a positive integer, defaulting to the current value.
+// ui is the wizard UI; title is the prompt label; value holds the default and receives the parsed value.
+func promptPositiveInt(ui UI, title string, value *int) error {
+	input := strconv.Itoa(*value)
+	if err := ui.Input(title, &input); err != nil {
 		return err
 	}
-
-	if selection == disableWarningOption {
-		*value = nil
+	input = strings.TrimSpace(input)
+	if input == "" {
 		return nil
 	}
-
-	if selection == customOption {
-		customStr := ""
-		if *value != nil {
-			customStr = strconv.Itoa(**value)
-		}
-		if err := ui.Input(fmt.Sprintf("Custom %s", title), &customStr); err != nil {
-			return err
-		}
-		customStr = strings.TrimSpace(customStr)
-		if customStr == "" {
-			*value = nil
-			return nil
-		}
-		customVal, err := strconv.Atoi(customStr)
-		if err != nil || customVal <= 0 {
-			return fmt.Errorf("invalid threshold value: %s (must be a positive integer)", customStr)
-		}
-		*value = &customVal
-		return nil
+	parsed, err := strconv.Atoi(input)
+	if err != nil || parsed <= 0 {
+		return fmt.Errorf("%s must be a positive integer", title)
 	}
-
-	// Parse selected option
-	val, err := strconv.Atoi(selection)
-	if err != nil {
-		return fmt.Errorf("invalid selection: %s", selection)
-	}
-	*value = &val
+	*value = parsed
 	return nil
 }
 

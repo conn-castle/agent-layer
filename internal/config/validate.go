@@ -83,5 +83,34 @@ func (c *Config) Validate(path string) error {
 		}
 	}
 
+	if err := validateWarnings(path, c.Warnings); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateWarnings validates optional warning thresholds.
+// path is used for error context; warnings carries the thresholds; returns an error when a threshold is non-positive.
+func validateWarnings(path string, warnings WarningsConfig) error {
+	thresholds := []struct {
+		name  string
+		value *int
+	}{
+		{"warnings.instruction_token_threshold", warnings.InstructionTokenThreshold},
+		{"warnings.mcp_server_threshold", warnings.MCPServerThreshold},
+		{"warnings.mcp_tools_total_threshold", warnings.MCPToolsTotalThreshold},
+		{"warnings.mcp_server_tools_threshold", warnings.MCPServerToolsThreshold},
+		{"warnings.mcp_schema_tokens_total_threshold", warnings.MCPSchemaTokensTotalThreshold},
+		{"warnings.mcp_schema_tokens_server_threshold", warnings.MCPSchemaTokensServerThreshold},
+	}
+	for _, threshold := range thresholds {
+		if threshold.value == nil {
+			continue
+		}
+		if *threshold.value <= 0 {
+			return fmt.Errorf("%s: %s must be greater than zero", path, threshold.name)
+		}
+	}
 	return nil
 }

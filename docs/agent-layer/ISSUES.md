@@ -20,6 +20,16 @@ Entry format:
 
 <!-- ENTRIES START -->
 
+- Issue 2026-01-21 b1c2d3: Wizard Approval Mode should show descriptions
+    Priority: Medium. Area: wizard.
+    Description: Approval Mode selection in the wizard does not display the description of the mode, making it hard for users to remember details.
+    Next step: Update the wizard's Approval Mode selection step to display the description for each option.
+
+- Issue 2026-01-21 5af6278: Wizard run tests are oversized
+    Priority: Low. Area: wizard tests.
+    Description: `internal/wizard/run_test.go` is over 1200 lines, which makes review and maintenance harder.
+    Next step: Split the test file by scenario into smaller files with shared helpers.
+
 - Issue 2026-01-18 e4f5g6: Memory file template structure investigation
     Priority: Medium. Area: templates.
     Description: Should templates in .agent-layer only contain headers, and how should generated content be handled when overwriting?

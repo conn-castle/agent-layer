@@ -1,10 +1,13 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nicholasjconn/agent-layer/internal/templates"
 )
 
 func TestLoadProjectConfig(t *testing.T) {
@@ -322,5 +325,21 @@ func TestLoadTemplateConfig(t *testing.T) {
 	// Verify the template config has MCP servers
 	if len(cfg.MCP.Servers) == 0 {
 		t.Fatalf("expected MCP servers in template config")
+	}
+}
+
+func TestLoadTemplateConfigReadError(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return nil, errors.New("mock read error")
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := LoadTemplateConfig()
+	if err == nil {
+		t.Fatalf("expected error when template read fails")
+	}
+	if !strings.Contains(err.Error(), "failed to read template") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

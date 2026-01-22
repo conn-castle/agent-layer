@@ -44,6 +44,7 @@ Run `./al wizard` to interactively configure the most important settings:
 - **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex reasoning effort)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
+- **Warning Thresholds** (optional; configure warnings for common performance/usage issues)
 
 **Controls:**
 - **Arrow keys**: Navigate
@@ -158,7 +159,20 @@ transport = "stdio"
 command = "my-mcp-server"
 args = ["--flag", "value"]
 env = { MY_TOKEN = "${MY_TOKEN}" }
+
+[warnings]
+# Optional thresholds for warning checks. Omit or comment out to disable.
+instruction_token_threshold = 10000
+mcp_server_threshold = 15
+mcp_tools_total_threshold = 60
+mcp_server_tools_threshold = 25
+mcp_schema_tokens_total_threshold = 10000
+mcp_schema_tokens_server_threshold = 7500
 ```
+
+### Warning thresholds (`[warnings]`)
+
+Warning thresholds are optional. When a threshold is omitted, its warning is disabled. Values must be positive integers (zero/negative are rejected by config validation). `al sync` uses `instruction_token_threshold`, while `al doctor` evaluates all configured MCP warning thresholds.
 
 ### Approvals modes (`approvals.mode`)
 

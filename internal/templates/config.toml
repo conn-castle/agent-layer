@@ -53,12 +53,10 @@ transport = "http"
 url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
 
 [warnings]
-# Sync-time warnings for risky configurations.
-# Comment out a threshold to disable that warning.
-
-# Warn when estimated token count in generated instructions exceeds this value.
-# Tokens are estimated as character_count / 4.
-instruction_token_threshold = 50000
-
-# Warn when number of enabled MCP servers for any client exceeds this value.
-mcp_server_threshold = 5
+# Optional thresholds for warning checks. Omit or comment out to disable.
+instruction_token_threshold = 10000
+mcp_server_threshold = 15
+mcp_tools_total_threshold = 60
+mcp_server_tools_threshold = 25
+mcp_schema_tokens_total_threshold = 10000
+mcp_schema_tokens_server_threshold = 7500

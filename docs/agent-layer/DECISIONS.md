@@ -95,6 +95,6 @@ Entry format:
     Tradeoffs: Skills are agent-triggered rather than explicit slash-invoked.
 
 - Decision 2026-01-21 bb93bc0: Sync warnings (configurable thresholds with opt-out)
-    Decision: Sync warnings for instruction token count and MCP server count are configurable via `config.toml` with pointer fields (nil disables the warning). Token estimation uses an internal constant (4 characters per token).
+    Decision: Warning thresholds for instruction token count and MCP checks are configurable via `config.toml` with pointer fields (nil disables the warning). Token estimation uses a byte/rune heuristic (max(bytes/3, runes/4) with 10% buffer).
     Reason: Users need control over warning thresholds without exposing estimation internals; nil pointers clearly indicate disabled state.
     Tradeoffs: Pointer fields require careful handling in code; wizard must support "disable" as a selection option.
