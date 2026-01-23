@@ -21,10 +21,11 @@ VERSION="latest"
 PREFIX="${HOME}/.local"
 NO_COMPLETIONS=false
 SHELL_OVERRIDE=""
+ASSET_ROOT="${AL_INSTALL_ASSET_ROOT:-}"
 
 usage() {
   cat <<'USAGE' >&2
-Usage: al-install.sh [--version <tag>] [--prefix <dir>] [--no-completions] [--shell <bash|zsh|fish>]
+Usage: al-install.sh [--version <tag>] [--prefix <dir>] [--no-completions] [--shell <bash|zsh|fish>] [--asset-root <dir-or-url>]
 USAGE
 }
 
@@ -65,6 +66,14 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       SHELL_OVERRIDE="$2"
+      shift 2
+      ;;
+    --asset-root)
+      if [[ $# -lt 2 ]]; then
+        usage
+        exit 1
+      fi
+      ASSET_ROOT="$2"
       shift 2
       ;;
     -h|--help)
@@ -122,15 +131,30 @@ case "$ARCH" in
 ASSET="al-${OS}-${ARCH}"
 BASE_URL="https://github.com/conn-castle/agent-layer/releases"
 
-if [[ "$VERSION" == "latest" ]]; then
-  TAG="latest"
-  URL="${BASE_URL}/latest/download/${ASSET}"
-  SUMS_URL="${BASE_URL}/latest/download/checksums.txt"
-else
+TAG="latest"
+if [[ "$VERSION" != "latest" ]]; then
   NORMALIZED_VERSION="$(normalize_version "$VERSION")"
   TAG="v${NORMALIZED_VERSION}"
-  URL="${BASE_URL}/download/${TAG}/${ASSET}"
-  SUMS_URL="${BASE_URL}/download/${TAG}/checksums.txt"
+fi
+
+if [[ -n "$ASSET_ROOT" ]]; then
+  if [[ "$ASSET_ROOT" == http://* || "$ASSET_ROOT" == https://* || "$ASSET_ROOT" == file://* ]]; then
+    :
+  elif [[ -d "$ASSET_ROOT" ]]; then
+    ASSET_ROOT="file://${ASSET_ROOT}"
+  else
+    fail "Asset root must be a URL or an existing directory: $ASSET_ROOT"
+  fi
+  URL="${ASSET_ROOT}/${ASSET}"
+  SUMS_URL="${ASSET_ROOT}/checksums.txt"
+else
+  if [[ "$TAG" == "latest" ]]; then
+    URL="${BASE_URL}/latest/download/${ASSET}"
+    SUMS_URL="${BASE_URL}/latest/download/checksums.txt"
+  else
+    URL="${BASE_URL}/download/${TAG}/${ASSET}"
+    SUMS_URL="${BASE_URL}/download/${TAG}/checksums.txt"
+  fi
 fi
 
 bin_dir="${PREFIX}/bin"

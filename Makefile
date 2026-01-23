@@ -116,6 +116,10 @@ coverage: check-gotestsum ## Enforce coverage threshold (>= $(COVERAGE_THRESHOLD
 test-release: ## Run release artifact tests
 	@./scripts/test-release.sh
 
+.PHONY: test-e2e
+test-e2e: ## Run end-to-end build/install smoke tests
+	@./scripts/test-e2e.sh
+
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh
@@ -125,7 +129,7 @@ setup: ## Run one-time setup for this clone
 	@./scripts/setup.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint coverage test-release ## Run CI checks locally
+ci: tidy-check fmt-check lint coverage test-release test-e2e ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local checks during development (format + lint + coverage + release tests)

@@ -92,6 +92,14 @@ Run from: repo root
 Prerequisites: `make tools` has been run  
 Notes: Uses `gotestsum` for nicer output.
 
+- Run end-to-end build/install smoke tests
+```bash
+make test-e2e
+```
+Run from: repo root  
+Prerequisites: Go 1.25.6+, `curl`, `sha256sum` or `shasum`  
+Notes: Builds release artifacts and exercises `al-install.sh` against a local dist.
+
 ### Modules
 
 - Run go mod tidy
@@ -135,7 +143,7 @@ make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.25.6+, `make tools` has been run
-Notes: Includes `make tidy-check` and `make test-release`; requires a clean working tree.
+Notes: Includes `make tidy-check`, `make test-release`, and `make test-e2e`; requires a clean working tree.
 
 ### Release
 
