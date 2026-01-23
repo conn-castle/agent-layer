@@ -1,6 +1,35 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.5.0 - 2026-01-23
+
+Major shift from repo-local binary to globally installed CLI with per-repo version pinning.
+
+### Added
+- Global CLI installation via Homebrew (`brew install conn-castle/tap/agent-layer`), shell script (macOS/Linux), or PowerShell (Windows).
+- `al init` command initializes `.agent-layer/` and `docs/agent-layer/` in any repo.
+- Per-repo version pinning via `.agent-layer/al.version`; global CLI dispatches to the pinned version automatically.
+- Cached binary downloads with SHA-256 verification; cached binaries stored in `~/.cache/agent-layer/versions/`.
+- Shell completion for bash, zsh, and fish (`al completion <shell>` with optional `--install` flag).
+- Update checking: `al init` and `al doctor` warn when a newer release is available.
+- Linux desktop entry launcher (`.agent-layer/open-vscode.desktop`).
+- E2E test suite (`scripts/test-e2e.sh`) and release test script (`scripts/test-release.sh`).
+- Environment variables: `AL_CACHE_DIR` (override cache location), `AL_VERSION` (force version), `AL_NO_NETWORK` (disable downloads).
+
+### Changed
+- **Breaking:** Repo-local `./al` executable replaced with globally installed `al` CLI.
+- **Breaking:** `al install` renamed to `al init`.
+- **Breaking:** Repository moved from `nicholasjconn/agent-layer` to `conn-castle/agent-layer`.
+- Install script renamed from `agent-layer-install.sh` to `al-install.sh`.
+- `al init --overwrite` now prompts before each overwrite; use `--force` to skip prompts.
+- `al init --version <tag>` pins the repo to a specific release version.
+- Commands run from any subdirectory now resolve the repo root automatically.
+- `.agent-layer/.gitignore` added to ignore launchers, template copies, and backups.
+
+### Removed
+- Repo-local `./al` binary; global `al` dispatches to pinned versions as needed.
+- `agent-layer-install.sh` (replaced by `al-install.sh`).
+
 ## v0.4.0 - 2026-01-21
 
 ### Added
