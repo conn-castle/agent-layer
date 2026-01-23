@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -36,6 +39,32 @@ func newDoctorCmd() *cobra.Command {
 			// 2. Check Config
 			configResults, cfg := doctor.CheckConfig(root)
 			allResults = append(allResults, configResults...)
+
+			updateResult := doctor.Result{CheckName: "Update"}
+			if strings.TrimSpace(os.Getenv(dispatch.EnvNoNetwork)) != "" {
+				updateResult.Status = doctor.StatusWarn
+				updateResult.Message = fmt.Sprintf("Update check skipped because %s is set", dispatch.EnvNoNetwork)
+				updateResult.Recommendation = fmt.Sprintf("Unset %s to check for updates.", dispatch.EnvNoNetwork)
+			} else {
+				result, err := checkForUpdate(context.Background(), Version)
+				if err != nil {
+					updateResult.Status = doctor.StatusWarn
+					updateResult.Message = fmt.Sprintf("Failed to check for updates: %v", err)
+					updateResult.Recommendation = "Verify network access and try again."
+				} else if result.CurrentIsDev {
+					updateResult.Status = doctor.StatusWarn
+					updateResult.Message = fmt.Sprintf("Running dev build; latest release is %s", result.Latest)
+					updateResult.Recommendation = "Install a release build to use version pinning and dispatch."
+				} else if result.Outdated {
+					updateResult.Status = doctor.StatusWarn
+					updateResult.Message = fmt.Sprintf("Update available: %s (current %s)", result.Latest, result.Current)
+					updateResult.Recommendation = "Upgrade the global CLI or update your repo pin if needed."
+				} else {
+					updateResult.Status = doctor.StatusOK
+					updateResult.Message = fmt.Sprintf("Agent Layer is up to date (%s)", result.Current)
+				}
+			}
+			allResults = append(allResults, updateResult)
 
 			if cfg != nil {
 				// 3. Check Secrets

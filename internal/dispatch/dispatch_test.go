@@ -52,8 +52,8 @@ func TestReadPinnedVersionEmptyFile(t *testing.T) {
 }
 
 func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
-	t.Setenv(envVersionOverride, "v1.2.3")
-	t.Setenv(envNoNetwork, "")
+	t.Setenv(EnvVersionOverride, "v1.2.3")
+	t.Setenv(EnvNoNetwork, "")
 
 	got, source, err := resolveRequestedVersion(t.TempDir(), false, "0.5.0")
 	if err != nil {
@@ -62,8 +62,8 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	if got != "1.2.3" {
 		t.Fatalf("expected 1.2.3, got %q", got)
 	}
-	if source != envVersionOverride {
-		t.Fatalf("expected source %s, got %s", envVersionOverride, source)
+	if source != EnvVersionOverride {
+		t.Fatalf("expected source %s, got %s", EnvVersionOverride, source)
 	}
 }
 
@@ -103,7 +103,7 @@ func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
 }
 
 func TestCacheRootDir(t *testing.T) {
-	t.Setenv(envCacheDir, "/custom/cache")
+	t.Setenv(EnvCacheDir, "/custom/cache")
 	got, err := cacheRootDir()
 	if err != nil {
 		t.Fatalf("cacheRootDir error: %v", err)
@@ -112,7 +112,7 @@ func TestCacheRootDir(t *testing.T) {
 		t.Errorf("got %q, want /custom/cache", got)
 	}
 
-	t.Setenv(envCacheDir, "")
+	t.Setenv(EnvCacheDir, "")
 	// Just check it doesn't error and looks like a path
 	got, err = cacheRootDir()
 	if err != nil {
@@ -160,8 +160,8 @@ func TestMaybeExec_InvalidCurrentVersion(t *testing.T) {
 }
 
 func TestMaybeExec_DispatchAlreadyActive(t *testing.T) {
-	t.Setenv(envShimActive, "1")
-	t.Setenv(envVersionOverride, "1.1.0") // Different from current
+	t.Setenv(EnvShimActive, "1")
+	t.Setenv(EnvVersionOverride, "1.1.0") // Different from current
 
 	err := MaybeExec([]string{"cmd"}, "1.0.0", t.TempDir(), func(int) {})
 	if err == nil {
@@ -208,9 +208,9 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 	defer func() { execBinaryFunc = originalExec }()
 
 	// Setup env
-	t.Setenv(envVersionOverride, version)
+	t.Setenv(EnvVersionOverride, version)
 	cacheDir := t.TempDir()
-	t.Setenv(envCacheDir, cacheDir)
+	t.Setenv(EnvCacheDir, cacheDir)
 
 	// Call MaybeExec
 	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
@@ -229,7 +229,7 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 }
 
 func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
-	t.Setenv(envVersionOverride, "1.0.0")
+	t.Setenv(EnvVersionOverride, "1.0.0")
 	// If requested == current, it returns nil (no dispatch)
 	err := MaybeExec([]string{"cmd"}, "1.0.0", ".", func(int) {})
 	if err != nil {
@@ -238,7 +238,7 @@ func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
 }
 
 func TestMaybeExec_InvalidOverride(t *testing.T) {
-	t.Setenv(envVersionOverride, "invalid-version")
+	t.Setenv(EnvVersionOverride, "invalid-version")
 	err := MaybeExec([]string{"cmd"}, "1.0.0", ".", func(int) {})
 	if err == nil {
 		t.Fatal("expected error for invalid override")
@@ -270,7 +270,7 @@ func TestMaybeExec_ReadPinnedVersionError(t *testing.T) {
 }
 
 func TestMaybeExec_DevTarget(t *testing.T) {
-	t.Setenv(envVersionOverride, "dev")
+	t.Setenv(EnvVersionOverride, "dev")
 	err := MaybeExec([]string{"cmd"}, "1.0.0", t.TempDir(), func(int) {})
 	if err == nil {
 		t.Fatal("expected error when dispatching to dev")
@@ -279,7 +279,7 @@ func TestMaybeExec_DevTarget(t *testing.T) {
 
 func TestMaybeExec_ExecBinaryError(t *testing.T) {
 	// Setup env
-	t.Setenv(envVersionOverride, "1.0.0")
+	t.Setenv(EnvVersionOverride, "1.0.0")
 	// Must mock ensureCachedBinary or ensure it succeeds.
 	// We can use the logic from DispatchSuccess but make exec fail.
 
@@ -312,7 +312,7 @@ func TestMaybeExec_ExecBinaryError(t *testing.T) {
 	}
 	defer func() { execBinaryFunc = originalExec }()
 
-	t.Setenv(envCacheDir, t.TempDir())
+	t.Setenv(EnvCacheDir, t.TempDir())
 
 	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err == nil || err.Error() != "exec failed" {
@@ -321,8 +321,8 @@ func TestMaybeExec_ExecBinaryError(t *testing.T) {
 }
 
 func TestMaybeExec_EnsureCachedBinaryError(t *testing.T) {
-	t.Setenv(envVersionOverride, "1.0.0")
-	t.Setenv(envCacheDir, t.TempDir())
+	t.Setenv(EnvVersionOverride, "1.0.0")
+	t.Setenv(EnvCacheDir, t.TempDir())
 
 	// No mock server -> download fails
 
@@ -340,7 +340,7 @@ func TestCacheRootDir_Error(t *testing.T) {
 		return "", errors.New("user cache dir failed")
 	}
 
-	t.Setenv(envCacheDir, "") // Ensure we use userCacheDir
+	t.Setenv(EnvCacheDir, "") // Ensure we use userCacheDir
 
 	_, err := cacheRootDir()
 	if err == nil {
@@ -356,8 +356,8 @@ func TestMaybeExec_CacheRootDirError(t *testing.T) {
 		return "", errors.New("user cache dir failed")
 	}
 
-	t.Setenv(envCacheDir, "")
-	t.Setenv(envVersionOverride, "1.0.0")
+	t.Setenv(EnvCacheDir, "")
+	t.Setenv(EnvVersionOverride, "1.0.0")
 
 	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err == nil {
@@ -378,8 +378,8 @@ func TestMaybeExec_CurrentIsDev(t *testing.T) {
 }
 
 func TestMaybeExec_ExecReturnsDispatched(t *testing.T) {
-	t.Setenv(envVersionOverride, "1.0.0")
-	t.Setenv(envCacheDir, t.TempDir())
+	t.Setenv(EnvVersionOverride, "1.0.0")
+	t.Setenv(EnvCacheDir, t.TempDir())
 
 	// Mock ensureCachedBinary success
 	// We can cheat and point to a local file

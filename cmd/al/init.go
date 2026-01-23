@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/install"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -43,6 +46,7 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			warnInitUpdate(cmd, pinVersion)
 			opts := install.Options{
 				Overwrite:  overwriteMode,
 				Force:      force,
@@ -77,6 +81,31 @@ func newInitCmd() *cobra.Command {
 	cmd.Flags().StringVar(&pinVersion, "version", "", "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z)")
 
 	return cmd
+}
+
+// warnInitUpdate emits a warning when a newer Agent Layer release is available.
+func warnInitUpdate(cmd *cobra.Command, flagVersion string) {
+	if strings.TrimSpace(flagVersion) != "" {
+		return
+	}
+	if strings.TrimSpace(os.Getenv(dispatch.EnvVersionOverride)) != "" {
+		return
+	}
+	if strings.TrimSpace(os.Getenv(dispatch.EnvNoNetwork)) != "" {
+		return
+	}
+	result, err := checkForUpdate(context.Background(), Version)
+	if err != nil {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to check for updates: %v\n", err)
+		return
+	}
+	if result.CurrentIsDev {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: running dev build; latest release is %s\n", result.Latest)
+		return
+	}
+	if result.Outdated {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: update available: %s (current %s)\n", result.Latest, result.Current)
+	}
 }
 
 // resolvePinVersion returns the normalized pin version for init, or empty when dev builds should not pin.

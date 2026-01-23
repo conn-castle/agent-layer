@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/install"
+	"github.com/conn-castle/agent-layer/internal/update"
 )
 
 func TestInitCmd(t *testing.T) {
@@ -17,13 +21,19 @@ func TestInitCmd(t *testing.T) {
 	origIsTerminal := isTerminal
 	origInstallRun := installRun
 	origRunWizard := runWizard
+	origCheckForUpdate := checkForUpdate
 
 	t.Cleanup(func() {
 		getwd = origGetwd
 		isTerminal = origIsTerminal
 		installRun = origInstallRun
 		runWizard = origRunWizard
+		checkForUpdate = origCheckForUpdate
 	})
+
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
+	}
 
 	tests := []struct {
 		name           string
@@ -205,6 +215,8 @@ func TestInitCmd(t *testing.T) {
 			cmd.SetIn(&stdin)
 			var stdout bytes.Buffer
 			cmd.SetOut(&stdout)
+			var stderr bytes.Buffer
+			cmd.SetErr(&stderr)
 
 			err := cmd.Execute()
 			if (err != nil) != tt.wantErr {
@@ -296,6 +308,122 @@ func TestResolvePinVersion(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("resolvePinVersion() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInitCmd_UpdateWarning(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origRunWizard := runWizard
+	origCheckForUpdate := checkForUpdate
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		runWizard = origRunWizard
+		checkForUpdate = origCheckForUpdate
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return false }
+	installRun = func(string, install.Options) error { return nil }
+	runWizard = func(string, string) error { return nil }
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil
+	}
+
+	cmd := newInitCmd()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "Warning: update available") {
+		t.Fatalf("expected update warning, got %q", stderr.String())
+	}
+}
+
+func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		envKey     string
+		envValue   string
+		shouldCall bool
+	}{
+		{
+			name:       "Skip when --version is set",
+			args:       []string{"--version", "1.2.3"},
+			shouldCall: false,
+		},
+		{
+			name:       "Skip when AL_VERSION is set",
+			envKey:     dispatch.EnvVersionOverride,
+			envValue:   "1.2.3",
+			shouldCall: false,
+		},
+		{
+			name:       "Skip when AL_NO_NETWORK is set",
+			envKey:     dispatch.EnvNoNetwork,
+			envValue:   "1",
+			shouldCall: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origGetwd := getwd
+			origIsTerminal := isTerminal
+			origInstallRun := installRun
+			origRunWizard := runWizard
+			origCheckForUpdate := checkForUpdate
+			t.Cleanup(func() {
+				getwd = origGetwd
+				isTerminal = origIsTerminal
+				installRun = origInstallRun
+				runWizard = origRunWizard
+				checkForUpdate = origCheckForUpdate
+			})
+
+			tmpDir := t.TempDir()
+			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			getwd = func() (string, error) { return tmpDir, nil }
+			isTerminal = func() bool { return false }
+			installRun = func(string, install.Options) error { return nil }
+			runWizard = func(string, string) error { return nil }
+
+			calls := 0
+			checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+				calls++
+				return update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil
+			}
+
+			if tt.envKey != "" {
+				t.Setenv(tt.envKey, tt.envValue)
+			}
+
+			cmd := newInitCmd()
+			cmd.SetArgs(tt.args)
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("init failed: %v", err)
+			}
+
+			if tt.shouldCall && calls == 0 {
+				t.Fatal("expected update check to run")
+			}
+			if !tt.shouldCall && calls != 0 {
+				t.Fatalf("expected update check to be skipped, got %d calls", calls)
 			}
 		})
 	}

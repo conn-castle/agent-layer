@@ -11,9 +11,11 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/update"
 )
 
-var releaseBaseURL = "https://github.com/conn-castle/agent-layer/releases"
+var releaseBaseURL = update.ReleasesBaseURL
 
 var (
 	platformStringsFunc = platformStrings
@@ -37,7 +39,7 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 	}
 
 	if noNetwork() {
-		return "", fmt.Errorf("version %s is not cached (expected at %s); network access disabled via %s", version, binPath, envNoNetwork)
+		return "", fmt.Errorf("version %s is not cached (expected at %s); network access disabled via %s", version, binPath, EnvNoNetwork)
 	}
 
 	lockPath := binPath + ".lock"
@@ -134,7 +136,7 @@ func assetName(osName string, arch string) string {
 
 // noNetwork reports whether downloads are disabled via AL_NO_NETWORK.
 func noNetwork() bool {
-	return strings.TrimSpace(os.Getenv(envNoNetwork)) != ""
+	return strings.TrimSpace(os.Getenv(EnvNoNetwork)) != ""
 }
 
 // downloadToFile fetches url and writes it to dest.

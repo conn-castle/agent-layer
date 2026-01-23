@@ -11,11 +11,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
+// EnvCacheDir, EnvNoNetwork, EnvVersionOverride, and EnvShimActive define dispatch environment keys.
 const (
-	envCacheDir        = "AL_CACHE_DIR"
-	envNoNetwork       = "AL_NO_NETWORK"
-	envVersionOverride = "AL_VERSION"
-	envShimActive      = "AL_SHIM_ACTIVE"
+	EnvCacheDir        = "AL_CACHE_DIR"
+	EnvNoNetwork       = "AL_NO_NETWORK"
+	EnvVersionOverride = "AL_VERSION"
+	EnvShimActive      = "AL_SHIM_ACTIVE"
 )
 
 // ErrDispatched signals that execution has been handed off to another binary.
@@ -56,11 +57,11 @@ func MaybeExec(args []string, currentVersion string, cwd string, exit func(int))
 	if requested == current {
 		return nil
 	}
-	if os.Getenv(envShimActive) != "" {
+	if os.Getenv(EnvShimActive) != "" {
 		return fmt.Errorf("version dispatch already active (current %s, requested %s)", current, requested)
 	}
 	if version.IsDev(requested) {
-		return fmt.Errorf("cannot dispatch to dev version; set %s to a release version", envVersionOverride)
+		return fmt.Errorf("cannot dispatch to dev version; set %s to a release version", EnvVersionOverride)
 	}
 
 	cacheRoot, err := cacheRootDir()
@@ -72,7 +73,7 @@ func MaybeExec(args []string, currentVersion string, cwd string, exit func(int))
 		return err
 	}
 
-	env := append(os.Environ(), fmt.Sprintf("%s=1", envShimActive))
+	env := append(os.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
 	execArgs := append([]string{path}, args[1:]...)
 	if err := execBinaryFunc(path, execArgs, env, exit); err != nil {
 		if errors.Is(err, ErrDispatched) {
@@ -97,13 +98,13 @@ func normalizeCurrentVersion(raw string) (string, error) {
 
 // resolveRequestedVersion determines the target version and its source (env override, pin, or current).
 func resolveRequestedVersion(rootDir string, hasRoot bool, current string) (string, string, error) {
-	override := strings.TrimSpace(os.Getenv(envVersionOverride))
+	override := strings.TrimSpace(os.Getenv(EnvVersionOverride))
 	if override != "" {
 		normalized, err := version.Normalize(override)
 		if err != nil {
-			return "", "", fmt.Errorf("invalid %s: %w", envVersionOverride, err)
+			return "", "", fmt.Errorf("invalid %s: %w", EnvVersionOverride, err)
 		}
-		return normalized, envVersionOverride, nil
+		return normalized, EnvVersionOverride, nil
 	}
 
 	if hasRoot {
@@ -121,7 +122,7 @@ func resolveRequestedVersion(rootDir string, hasRoot bool, current string) (stri
 
 // cacheRootDir resolves the cache root directory, honoring AL_CACHE_DIR when set.
 func cacheRootDir() (string, error) {
-	if override := strings.TrimSpace(os.Getenv(envCacheDir)); override != "" {
+	if override := strings.TrimSpace(os.Getenv(EnvCacheDir)); override != "" {
 		return override, nil
 	}
 	base, err := userCacheDir()

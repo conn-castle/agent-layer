@@ -13,8 +13,22 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/doctor"
+	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
+
+func stubUpdateCheck(t *testing.T, result update.CheckResult, err error) *int {
+	t.Helper()
+
+	orig := checkForUpdate
+	calls := 0
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		calls++
+		return result, err
+	}
+	t.Cleanup(func() { checkForUpdate = orig })
+	return &calls
+}
 
 func TestRootVersionFlag(t *testing.T) {
 	cmd := newRootCmd()
@@ -336,6 +350,7 @@ func TestClientCommandsSuccess(t *testing.T) {
 
 func TestDoctorCommand(t *testing.T) {
 	root := t.TempDir()
+	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
 
 	// Test failure (no repo)
 	withWorkingDir(t, root, func() {
@@ -356,11 +371,15 @@ func TestDoctorCommand(t *testing.T) {
 			t.Fatalf("doctor failed in valid repo: %v", err)
 		}
 	})
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
 }
 
 func TestDoctorCommand_WithWarnings(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepoWithWarnings(t, root)
+	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil)
 	withWorkingDir(t, root, func() {
 		cmd := newDoctorCmd()
 		err := cmd.RunE(cmd, nil)
@@ -377,6 +396,7 @@ func TestDoctorCommand_WithWarnings(t *testing.T) {
 func TestDoctorCommand_InstructionsError(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepo(t, root)
+	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
 
 	origInstructions := checkInstructions
 	origMCP := checkMCPServers
@@ -404,6 +424,7 @@ func TestDoctorCommand_InstructionsError(t *testing.T) {
 func TestDoctorCommand_MCPError(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepo(t, root)
+	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
 
 	origInstructions := checkInstructions
 	origMCP := checkMCPServers

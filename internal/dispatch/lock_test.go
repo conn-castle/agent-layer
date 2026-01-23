@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -61,5 +62,50 @@ func TestFileLock_Release_Nil(t *testing.T) {
 	l = &fileLock{}
 	if err := l.release(); err != nil {
 		t.Errorf("expected nil error for nil file release, got %v", err)
+	}
+}
+
+func TestAcquireFileLock_LockError(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "test.lock")
+
+	expectedErr := fmt.Errorf("lock error")
+	origLockFile := lockFileFn
+	lockFileFn = func(*os.File) error {
+		return expectedErr
+	}
+	t.Cleanup(func() {
+		lockFileFn = origLockFile
+	})
+
+	lock, err := acquireFileLock(path)
+	if lock != nil {
+		t.Fatalf("expected nil lock on error, got %+v", lock)
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected error %v, got %v", expectedErr, err)
+	}
+}
+
+func TestFileLock_Release_UnlockError(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "test.lock")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create lock: %v", err)
+	}
+
+	expectedErr := fmt.Errorf("unlock error")
+	origUnlockFile := unlockFileFn
+	unlockFileFn = func(*os.File) error {
+		return expectedErr
+	}
+	t.Cleanup(func() {
+		unlockFileFn = origUnlockFile
+	})
+
+	lock := &fileLock{file: file}
+	if err := lock.release(); !errors.Is(err, expectedErr) {
+		t.Fatalf("expected error %v, got %v", expectedErr, err)
 	}
 }

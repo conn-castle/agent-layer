@@ -130,7 +130,7 @@ func TestEnsureCachedBinary_Download404(t *testing.T) {
 }
 
 func TestEnsureCachedBinary_NoNetwork(t *testing.T) {
-	t.Setenv(envNoNetwork, "1")
+	t.Setenv(EnvNoNetwork, "1")
 	cacheRoot := t.TempDir()
 
 	_, err := ensureCachedBinary(cacheRoot, "1.0.0")
@@ -386,7 +386,7 @@ func TestEnsureCachedBinary_DownloadStatusError(t *testing.T) {
 }
 
 func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
-	t.Setenv(envNoNetwork, "1")
+	t.Setenv(EnvNoNetwork, "1")
 	cacheRoot := t.TempDir()
 	version := "1.0.0"
 

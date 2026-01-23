@@ -9,6 +9,9 @@ type fileLock struct {
 	file *os.File
 }
 
+var lockFileFn = lockFile
+var unlockFileFn = unlockFile
+
 // withFileLock acquires a lock for path, runs fn, and releases the lock.
 func withFileLock(path string, fn func() error) error {
 	lock, err := acquireFileLock(path)
@@ -27,7 +30,7 @@ func acquireFileLock(path string) (*fileLock, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open lock %s: %w", path, err)
 	}
-	if err := lockFile(file); err != nil {
+	if err := lockFileFn(file); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
@@ -39,7 +42,7 @@ func (l *fileLock) release() error {
 	if l == nil || l.file == nil {
 		return nil
 	}
-	if err := unlockFile(l.file); err != nil {
+	if err := unlockFileFn(l.file); err != nil {
 		_ = l.file.Close()
 		return err
 	}

@@ -93,6 +93,8 @@ Update the global CLI:
 
 If a repo is pinned, edit `.agent-layer/al.version` to the new release (`vX.Y.Z` or `X.Y.Z`) and run `al` to download it.
 
+`al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
+
 ---
 
 ## Interactive setup (optional, `al wizard`)
@@ -341,7 +343,7 @@ Other commands:
 
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
 - `al sync` — regenerate configs without launching a client
-- `al doctor` — check common setup issues (secrets missing, files not writable, etc.)
+- `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)
 - `al completion` — generate shell completion scripts (bash/zsh/fish, macOS/Linux only)
 - `al mcp-prompts` — internal MCP prompt server (normally launched by the client)
