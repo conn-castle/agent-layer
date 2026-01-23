@@ -120,11 +120,11 @@ Prerequisites: Go 1.25.6+
 
 ### Dev
 
-- Fast local checks (format + fmt-check + lint + coverage)
+- Fast local checks (format + fmt-check + lint + coverage + release tests)
 ```bash
 make dev
 ```
-Run from: repo root  
+Run from: repo root
 Prerequisites: Go 1.25.6+, `make tools` has been run
 
 ### CI
@@ -133,9 +133,9 @@ Prerequisites: Go 1.25.6+, `make tools` has been run
 ```bash
 make ci
 ```
-Run from: repo root  
-Prerequisites: Go 1.25.6+, `make tools` has been run  
-Notes: Includes `make tidy-check`; requires a clean working tree.
+Run from: repo root
+Prerequisites: Go 1.25.6+, `make tools` has been run
+Notes: Includes `make tidy-check` and `make test-release`; requires a clean working tree.
 
 ### Release
 
@@ -143,5 +143,6 @@ Notes: Includes `make tidy-check`; requires a clean working tree.
 ```bash
 make release-dist AL_VERSION=dev DIST_DIR=dist
 ```
-Run from: repo root  
+Run from: repo root
 Prerequisites: Go 1.25.6+
+Notes: Runs `test-release` first to validate release scripts.

@@ -112,8 +112,12 @@ coverage: check-gotestsum ## Enforce coverage threshold (>= $(COVERAGE_THRESHOLD
 	  GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run -tags tools ./internal/tools/coverreport -profile coverage.out -threshold "$(COVERAGE_THRESHOLD)"; \
 	  exit $$status
 
+.PHONY: test-release
+test-release: ## Run release artifact tests
+	@./scripts/test-release.sh
+
 .PHONY: release-dist
-release-dist: ## Build release artifacts (cross-compile)
+release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh
 
 .PHONY: setup
@@ -121,11 +125,12 @@ setup: ## Run one-time setup for this clone
 	@./scripts/setup.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint coverage ## Run CI checks locally
+ci: tidy-check fmt-check lint coverage test-release ## Run CI checks locally
 
 .PHONY: dev
-dev: ## Fast local checks during development (format + lint + coverage)
+dev: ## Fast local checks during development (format + lint + coverage + release tests)
 	@$(MAKE) fmt
 	@$(MAKE) fmt-check
 	@$(MAKE) lint
 	@$(MAKE) coverage
+	@$(MAKE) test-release

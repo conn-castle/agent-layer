@@ -366,99 +366,87 @@ func TestCommentForLine_EdgeCases(t *testing.T) {
 	})
 }
 
-func TestInlineCommentForLine_EdgeCases(t *testing.T) {
-	t.Run("negative lineIndex", func(t *testing.T) {
-		got := inlineCommentForLine([]string{"test"}, -1)
-		assert.Equal(t, "", got)
-	})
-
-	t.Run("lineIndex out of bounds", func(t *testing.T) {
-		got := inlineCommentForLine([]string{"test"}, 100)
-		assert.Equal(t, "", got)
-	})
-}
-
-func TestScanLineForComment_MultilineStrings(t *testing.T) {
+func TestScanTomlLineForComment_MultilineStrings(t *testing.T) {
 	t.Run("multiline basic string", func(t *testing.T) {
 		// Start multiline basic string with """
-		comment, state := scanLineForComment(`key = """start`, stateNone, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateMultiBasic, state)
+		commentPos, state := ScanTomlLineForComment(`key = """start`, tomlStateNone)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateMultiBasic, state)
 
-		// Continue in multiline basic string
-		comment, state = scanLineForComment(`middle # not a comment`, state, true)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateMultiBasic, state)
+		// Continue in multiline basic string - # is not a comment
+		commentPos, state = ScanTomlLineForComment(`middle # not a comment`, state)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateMultiBasic, state)
 
 		// End multiline basic string with """
-		comment, state = scanLineForComment(`end"""`, state, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateNone, state)
+		commentPos, state = ScanTomlLineForComment(`end"""`, state)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateNone, state)
 	})
 
 	t.Run("multiline literal string", func(t *testing.T) {
 		// Start multiline literal string with '''
-		comment, state := scanLineForComment(`key = '''start`, stateNone, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateMultiLiteral, state)
+		commentPos, state := ScanTomlLineForComment(`key = '''start`, tomlStateNone)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateMultiLiteral, state)
 
-		// Continue in multiline literal string
-		comment, state = scanLineForComment(`middle # not a comment`, state, true)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateMultiLiteral, state)
+		// Continue in multiline literal string - # is not a comment
+		commentPos, state = ScanTomlLineForComment(`middle # not a comment`, state)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateMultiLiteral, state)
 
 		// End multiline literal string with '''
-		comment, state = scanLineForComment(`end'''`, state, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateNone, state)
+		commentPos, state = ScanTomlLineForComment(`end'''`, state)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateNone, state)
 	})
 
 	t.Run("basic string with escape", func(t *testing.T) {
 		// String with escaped quote
-		comment, state := scanLineForComment(`key = "value \" more"`, stateNone, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateNone, state)
+		commentPos, state := ScanTomlLineForComment(`key = "value \" more"`, tomlStateNone)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateNone, state)
 	})
 
 	t.Run("multiline basic string with escape", func(t *testing.T) {
 		// Start multiline basic string
-		_, state := scanLineForComment(`key = """`, stateNone, false)
-		assert.Equal(t, stateMultiBasic, state)
+		_, state := ScanTomlLineForComment(`key = """`, tomlStateNone)
+		assert.Equal(t, tomlStateMultiBasic, state)
 
 		// Line with escaped quote
-		comment, state := scanLineForComment(`escape \" here`, state, true)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateMultiBasic, state)
+		commentPos, state := ScanTomlLineForComment(`escape \" here`, state)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateMultiBasic, state)
 	})
 
 	t.Run("literal string", func(t *testing.T) {
 		// Start literal string with '
-		comment, state := scanLineForComment(`key = 'value`, stateNone, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateLiteral, state)
+		commentPos, state := ScanTomlLineForComment(`key = 'value`, tomlStateNone)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateLiteral, state)
 
 		// End literal string with '
-		comment, state = scanLineForComment(`more'`, state, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateNone, state)
+		commentPos, state = ScanTomlLineForComment(`more'`, state)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateNone, state)
 	})
 
 	t.Run("basic string", func(t *testing.T) {
 		// Start basic string with "
-		comment, state := scanLineForComment(`key = "value`, stateNone, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateBasic, state)
+		commentPos, state := ScanTomlLineForComment(`key = "value`, tomlStateNone)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateBasic, state)
 
 		// End basic string with "
-		comment, state = scanLineForComment(`more"`, state, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateNone, state)
+		commentPos, state = ScanTomlLineForComment(`more"`, state)
+		assert.Equal(t, -1, commentPos)
+		assert.Equal(t, tomlStateNone, state)
 	})
 
-	t.Run("comment in basic string state (non-capture)", func(t *testing.T) {
-		// Should not extract comment when not capturing
-		comment, state := scanLineForComment(`key = "value" # comment`, stateNone, false)
-		assert.Equal(t, "", comment)
-		assert.Equal(t, stateNone, state)
+	t.Run("comment after closed string", func(t *testing.T) {
+		// Comment after string is closed
+		commentPos, state := ScanTomlLineForComment(`key = "value" # comment`, tomlStateNone)
+		assert.Equal(t, 14, commentPos)
+		assert.Equal(t, tomlStateNone, state)
 	})
 }
