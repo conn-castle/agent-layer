@@ -11,6 +11,27 @@ Running `al <client>` always:
 
 ---
 
+## Supported clients
+
+MCP = Model Context Protocol (tool/data servers).
+
+| Client | Instructions | Slash commands | MCP servers | Approved commands |
+|---|---:|---:|---:|---:|
+| Gemini CLI | ✅ | ✅ | ✅ | ✅ |
+| Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
+| VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
+| Codex CLI | ✅ | ✅ | ✅ | ✅ |
+| Codex VS Code extension | ✅ | ✅ | ✅ | ✅ |
+| Antigravity | ✅ | ✅ | ❌ | ❌ |
+
+Notes:
+- VS Code/Codex "slash commands" are generated in their native formats (prompt files / skills).
+- Antigravity slash commands are generated as skills in `.agent/skills/<command>/SKILL.md`.
+- Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
+- Antigravity does not support MCP servers because it only reads from the home directory and does not load repo-local `.gemini/` or `.agent/` MCP configs.
+
+---
+
 ## Install
 
 Install once per machine; choose one:
@@ -147,27 +168,6 @@ Common memory files include:
 Generated outputs are written to the repo root in client-specific formats (examples):
 - `.agent/`, `.gemini/`, `.claude/`, `.vscode/`, `.codex/`
 - `.mcp.json`, `AGENTS.md`, etc.
-
----
-
-## Supported clients
-
-MCP = Model Context Protocol (tool/data servers).
-
-| Client | Instructions | Slash commands | MCP servers | Approved commands |
-|---|---:|---:|---:|---:|
-| Gemini CLI | ✅ | ✅ | ✅ | ✅ |
-| Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
-| VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
-| Codex CLI | ✅ | ✅ | ✅ | ✅ |
-| Codex VS Code extension | ✅ | ✅ | ✅ | ✅ |
-| Antigravity | ✅ | ✅ | ❌ | ❌ |
-
-Notes:
-- VS Code/Codex “slash commands” are generated in their native formats (prompt files / skills).
-- Antigravity slash commands are generated as skills in `.agent/skills/<command>/SKILL.md`.
-- Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
-- Antigravity does not support MCP servers because it only reads from the home directory and does not load repo-local `.gemini/` or `.agent/` MCP configs.
 
 ---
 

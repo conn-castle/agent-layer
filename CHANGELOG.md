@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.5.1 - 2026-01-23
+
+### Added
+- Source tarball (`agent-layer-<version>.tar.gz`) published with releases for Homebrew formula support.
+
+### Changed
+- Release scripts now generate and verify the source tarball via `git archive` + `gzip -n`.
+- Documentation cleanup: simplified release process, corrected `make dev` description.
+
 ## v0.5.0 - 2026-01-23
 
 Major shift from repo-local binary to globally installed CLI with per-repo version pinning.

@@ -4,7 +4,6 @@
 - On `main` and up to date with `origin/main`.
 - Clean working tree (`git status --porcelain` is empty).
 - All release changes committed (including `CHANGELOG.md`).
-- Tests passing (run the repo test command from `docs/agent-layer/COMMANDS.md`).
 
 ## Release commands
 ```bash
@@ -15,8 +14,6 @@ git checkout main
 git fetch origin
 git pull --ff-only origin main
 git status --porcelain
-
-# Run the release test suite (see docs/agent-layer/COMMANDS.md)
 
 # Tag and push
 git tag -a "$VERSION" -m "$VERSION"
