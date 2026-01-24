@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // EnvVarResolver returns a replacement string for a resolved env var.
@@ -63,7 +64,7 @@ func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client
 		case "http":
 			url, err := config.SubstituteEnvVarsWith(server.URL, env, resolver)
 			if err != nil {
-				return nil, fmt.Errorf("mcp server %s url: %w", server.ID, err)
+				return nil, fmt.Errorf(messages.MCPServerURLFmt, server.ID, err)
 			}
 			entry.URL = url
 
@@ -72,7 +73,7 @@ func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client
 				for key, value := range server.Headers {
 					resolvedValue, err := config.SubstituteEnvVarsWith(value, env, resolver)
 					if err != nil {
-						return nil, fmt.Errorf("mcp server %s header %s: %w", server.ID, key, err)
+						return nil, fmt.Errorf(messages.MCPServerHeaderFmt, server.ID, key, err)
 					}
 					headers[key] = resolvedValue
 				}
@@ -81,7 +82,7 @@ func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client
 		case "stdio":
 			command, err := config.SubstituteEnvVarsWith(server.Command, env, resolver)
 			if err != nil {
-				return nil, fmt.Errorf("mcp server %s command: %w", server.ID, err)
+				return nil, fmt.Errorf(messages.MCPServerCommandFmt, server.ID, err)
 			}
 			entry.Command = command
 
@@ -90,7 +91,7 @@ func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client
 				for _, arg := range server.Args {
 					resolvedArg, err := config.SubstituteEnvVarsWith(arg, env, resolver)
 					if err != nil {
-						return nil, fmt.Errorf("mcp server %s arg %s: %w", server.ID, arg, err)
+						return nil, fmt.Errorf(messages.MCPServerArgFmt, server.ID, arg, err)
 					}
 					args = append(args, resolvedArg)
 				}
@@ -102,14 +103,14 @@ func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client
 				for key, value := range server.Env {
 					resolvedValue, err := config.SubstituteEnvVarsWith(value, env, resolver)
 					if err != nil {
-						return nil, fmt.Errorf("mcp server %s env %s: %w", server.ID, key, err)
+						return nil, fmt.Errorf(messages.MCPServerEnvFmt, server.ID, key, err)
 					}
 					envMap[key] = resolvedValue
 				}
 				entry.Env = envMap
 			}
 		default:
-			return nil, fmt.Errorf("mcp server %s: unsupported transport %s", server.ID, server.Transport)
+			return nil, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 		}
 
 		resolved = append(resolved, entry)

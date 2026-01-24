@@ -9,6 +9,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/install"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var (
@@ -24,26 +25,26 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	// 2. Install gating
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		confirm := true
-		err := ui.Confirm("Agent Layer is not installed in this repo. Run 'al init' now? (recommended)", &confirm)
+		err := ui.Confirm(messages.WizardInstallPrompt, &confirm)
 		if err != nil {
 			return err
 		}
 		if !confirm {
-			fmt.Println("Exiting without changes.")
+			fmt.Println(messages.WizardExitWithoutChanges)
 			return nil
 		}
 
 		// Run install
 		if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion}); err != nil {
-			return fmt.Errorf("install failed: %w", err)
+			return fmt.Errorf(messages.WizardInstallFailedFmt, err)
 		}
-		fmt.Println("Installation complete. Continuing wizard...")
+		fmt.Println(messages.WizardInstallComplete)
 	}
 
 	// 3. Load config
 	cfg, err := config.LoadProjectConfig(root)
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
 	}
 
 	// 4. Initialize choices from config
@@ -51,12 +52,12 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 
 	defaultServers, err := loadDefaultMCPServersFunc()
 	if err != nil {
-		return fmt.Errorf("failed to load default MCP servers: %w", err)
+		return fmt.Errorf(messages.WizardLoadDefaultMCPServersFailedFmt, err)
 	}
 	choices.DefaultMCPServers = defaultServers
 	warningDefaults, err := loadWarningDefaultsFunc()
 	if err != nil {
-		return fmt.Errorf("failed to load warning defaults: %w", err)
+		return fmt.Errorf(messages.WizardLoadWarningDefaultsFailedFmt, err)
 	}
 	choices.InstructionTokenThreshold = warningDefaults.InstructionTokenThreshold
 	choices.MCPServerThreshold = warningDefaults.MCPServerThreshold
@@ -125,21 +126,21 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	// Approvals
 	approvalModeLabel, ok := approvalModeLabelForValue(choices.ApprovalMode)
 	if !ok {
-		return fmt.Errorf("unknown approval mode: %q", choices.ApprovalMode)
+		return fmt.Errorf(messages.WizardUnknownApprovalModeFmt, choices.ApprovalMode)
 	}
-	if err := ui.Select("Approval Mode", approvalModeLabels(), &approvalModeLabel); err != nil {
+	if err := ui.Select(messages.WizardApprovalModeTitle, approvalModeLabels(), &approvalModeLabel); err != nil {
 		return err
 	}
 	approvalModeValue, ok := approvalModeValueForLabel(approvalModeLabel)
 	if !ok {
-		return fmt.Errorf("unknown approval mode selection: %q", approvalModeLabel)
+		return fmt.Errorf(messages.WizardUnknownApprovalModeSelectionFmt, approvalModeLabel)
 	}
 	choices.ApprovalMode = approvalModeValue
 	choices.ApprovalModeTouched = true
 
 	// Agents
 	enabledAgents := enabledAgentIDs(choices.EnabledAgents)
-	if err := ui.MultiSelect("Enable Agents", SupportedAgents, &enabledAgents); err != nil {
+	if err := ui.MultiSelect(messages.WizardEnableAgentsTitle, SupportedAgents, &enabledAgents); err != nil {
 		return err
 	}
 	// Update map
@@ -149,28 +150,28 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	// Models (for enabled agents)
 	if choices.EnabledAgents[AgentGemini] {
 		if hasPreviewModels(GeminiModels) {
-			if err := ui.Note("Preview Model Warning", previewModelWarningText()); err != nil {
+			if err := ui.Note(messages.WizardPreviewModelWarningTitle, previewModelWarningText()); err != nil {
 				return err
 			}
 		}
-		if err := selectOptionalValue(ui, "Gemini Model", GeminiModels, &choices.GeminiModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardGeminiModelTitle, GeminiModels, &choices.GeminiModel); err != nil {
 			return err
 		}
 		choices.GeminiModelTouched = true
 	}
 	if choices.EnabledAgents[AgentClaude] {
-		if err := selectOptionalValue(ui, "Claude Model", ClaudeModels, &choices.ClaudeModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, ClaudeModels, &choices.ClaudeModel); err != nil {
 			return err
 		}
 		choices.ClaudeModelTouched = true
 	}
 	if choices.EnabledAgents[AgentCodex] {
-		if err := selectOptionalValue(ui, "Codex Model", CodexModels, &choices.CodexModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels, &choices.CodexModel); err != nil {
 			return err
 		}
 		choices.CodexModelTouched = true
 
-		if err := selectOptionalValue(ui, "Codex Reasoning Effort", CodexReasoningEfforts, &choices.CodexReasoning); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, CodexReasoningEfforts, &choices.CodexReasoning); err != nil {
 			return err
 		}
 		choices.CodexReasoningTouched = true
@@ -181,7 +182,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	if len(missingDefaults) > 0 {
 		choices.MissingDefaultMCPServers = missingDefaults
 		restore := true
-		if err := ui.Confirm(fmt.Sprintf("Default MCP server entries are missing from config.toml: %s. Restore them before selection?", strings.Join(missingDefaults, ", ")), &restore); err != nil {
+		if err := ui.Confirm(fmt.Sprintf(messages.WizardMissingDefaultMCPServersPromptFmt, strings.Join(missingDefaults, ", ")), &restore); err != nil {
 			return err
 		}
 		choices.RestoreMissingMCPServers = restore
@@ -194,7 +195,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 			enabledDefaultServers = append(enabledDefaultServers, s.ID)
 		}
 	}
-	if err := ui.MultiSelect("Enable Default MCP Servers", defaultServerIDs, &enabledDefaultServers); err != nil {
+	if err := ui.MultiSelect(messages.WizardEnableDefaultMCPServersTitle, defaultServerIDs, &enabledDefaultServers); err != nil {
 		return err
 	}
 	// Only update known defaults in the map
@@ -213,7 +214,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	if b, err := os.ReadFile(envPath); err == nil {
 		parsed, err := envfile.Parse(string(b))
 		if err != nil {
-			return fmt.Errorf("invalid env file %s: %w", envPath, err)
+			return fmt.Errorf(messages.WizardInvalidEnvFileFmt, envPath, err)
 		}
 		envValues = parsed
 	} else if !os.IsNotExist(err) {
@@ -235,7 +236,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 				}
 				if val, ok := envValues[key]; ok && val != "" {
 					override := false
-					if err := ui.Confirm(fmt.Sprintf("Secret %s is already set. Override?", key), &override); err != nil {
+					if err := ui.Confirm(fmt.Sprintf(messages.WizardSecretAlreadySetPromptFmt, key), &override); err != nil {
 						return err
 					}
 					if !override {
@@ -245,7 +246,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 				} else {
 					if val := os.Getenv(key); val != "" {
 						useEnv := false
-						if err := ui.Confirm(fmt.Sprintf("%s found in your environment. Write to .agent-layer/.env?", key), &useEnv); err != nil {
+						if err := ui.Confirm(fmt.Sprintf(messages.WizardEnvSecretFoundPromptFmt, key), &useEnv); err != nil {
 							return err
 						}
 						if useEnv {
@@ -257,7 +258,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 
 				for {
 					var val string
-					if err := ui.SecretInput(fmt.Sprintf("Enter %s (leave blank to skip)", key), &val); err != nil {
+					if err := ui.SecretInput(fmt.Sprintf(messages.WizardSecretInputPromptFmt, key), &val); err != nil {
 						return err
 					}
 					if val != "" {
@@ -265,7 +266,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 						break
 					}
 					disable := true
-					if err := ui.Confirm(fmt.Sprintf("No value provided for %s. Disable MCP server %s?", key, srv.ID), &disable); err != nil {
+					if err := ui.Confirm(fmt.Sprintf(messages.WizardSecretMissingDisablePromptFmt, key, srv.ID), &disable); err != nil {
 						return err
 					}
 					if disable {
@@ -283,28 +284,28 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 
 	// Warnings
 	warningsEnabled := choices.WarningsEnabled
-	if err := ui.Confirm("Enable warnings for performance and usage issues?", &warningsEnabled); err != nil {
+	if err := ui.Confirm(messages.WizardEnableWarningsPrompt, &warningsEnabled); err != nil {
 		return err
 	}
 	choices.WarningsEnabled = warningsEnabled
 	choices.WarningsEnabledTouched = true
 	if choices.WarningsEnabled {
-		if err := promptPositiveInt(ui, "Instruction token threshold", &choices.InstructionTokenThreshold); err != nil {
+		if err := promptPositiveInt(ui, messages.WizardInstructionTokenThresholdTitle, &choices.InstructionTokenThreshold); err != nil {
 			return err
 		}
-		if err := promptPositiveInt(ui, "MCP server threshold", &choices.MCPServerThreshold); err != nil {
+		if err := promptPositiveInt(ui, messages.WizardMCPServerThresholdTitle, &choices.MCPServerThreshold); err != nil {
 			return err
 		}
-		if err := promptPositiveInt(ui, "MCP tools total threshold", &choices.MCPToolsTotalThreshold); err != nil {
+		if err := promptPositiveInt(ui, messages.WizardMCPToolsTotalThresholdTitle, &choices.MCPToolsTotalThreshold); err != nil {
 			return err
 		}
-		if err := promptPositiveInt(ui, "MCP server tools threshold", &choices.MCPServerToolsThreshold); err != nil {
+		if err := promptPositiveInt(ui, messages.WizardMCPServerToolsThresholdTitle, &choices.MCPServerToolsThreshold); err != nil {
 			return err
 		}
-		if err := promptPositiveInt(ui, "MCP schema tokens total threshold", &choices.MCPSchemaTokensTotalThreshold); err != nil {
+		if err := promptPositiveInt(ui, messages.WizardMCPSchemaTokensTotalThresholdTitle, &choices.MCPSchemaTokensTotalThreshold); err != nil {
 			return err
 		}
-		if err := promptPositiveInt(ui, "MCP schema tokens server threshold", &choices.MCPSchemaTokensServerThreshold); err != nil {
+		if err := promptPositiveInt(ui, messages.WizardMCPSchemaTokensServerThresholdTitle, &choices.MCPSchemaTokensServerThreshold); err != nil {
 			return err
 		}
 	}
@@ -312,14 +313,14 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	// 6. Summary
 	summary := buildSummary(choices)
 	confirmApply := true
-	if err := ui.Note("Summary of Changes", summary); err != nil {
+	if err := ui.Note(messages.WizardSummaryTitle, summary); err != nil {
 		return err
 	}
-	if err := ui.Confirm("Apply these changes?", &confirmApply); err != nil {
+	if err := ui.Confirm(messages.WizardApplyChangesPrompt, &confirmApply); err != nil {
 		return err
 	}
 	if !confirmApply {
-		fmt.Println("Exiting without changes.")
+		fmt.Println(messages.WizardExitWithoutChanges)
 		return nil
 	}
 
@@ -328,6 +329,6 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 		return err
 	}
 
-	fmt.Println("Wizard completed successfully.")
+	fmt.Println(messages.WizardCompleted)
 	return nil
 }

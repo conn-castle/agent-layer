@@ -6,6 +6,7 @@ import (
 	toml "github.com/pelletier/go-toml"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -30,7 +31,7 @@ func loadDefaultMCPServers() ([]DefaultMCPServer, error) {
 		})
 	}
 	if len(defaults) == 0 {
-		return nil, fmt.Errorf("template config contains no MCP servers")
+		return nil, fmt.Errorf(messages.WizardTemplateNoMCPServers)
 	}
 	return defaults, nil
 }
@@ -75,7 +76,7 @@ func appendMissingDefaultMCPServers(tree *toml.Tree, missing []string) error {
 	for _, id := range missing {
 		block, ok := blocks[id]
 		if !ok {
-			return fmt.Errorf("missing default MCP server template for %q", id)
+			return fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
 		}
 		servers = append(servers, block)
 	}
@@ -93,7 +94,7 @@ func mcpServerTrees(tree *toml.Tree) ([]*toml.Tree, error) {
 	}
 	servers, ok := raw.([]*toml.Tree)
 	if !ok {
-		return nil, fmt.Errorf("mcp.servers has unexpected type %T", raw)
+		return nil, fmt.Errorf(messages.WizardMCPServersUnexpectedTypeFmt, raw)
 	}
 	return servers, nil
 }
@@ -103,28 +104,28 @@ func mcpServerTrees(tree *toml.Tree) ([]*toml.Tree, error) {
 func defaultMCPServerTrees() (map[string]*toml.Tree, error) {
 	data, err := templates.Read("config.toml")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config template: %w", err)
+		return nil, fmt.Errorf(messages.WizardReadConfigTemplateFailedFmt, err)
 	}
 	templateTree, err := toml.LoadBytes(data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse config template: %w", err)
+		return nil, fmt.Errorf(messages.WizardParseConfigTemplateFailedFmt, err)
 	}
 	servers, err := mcpServerTrees(templateTree)
 	if err != nil {
 		return nil, err
 	}
 	if len(servers) == 0 {
-		return nil, fmt.Errorf("no MCP server blocks found in template")
+		return nil, fmt.Errorf(messages.WizardNoMCPServerBlocksFound)
 	}
 
 	blocks := make(map[string]*toml.Tree, len(servers))
 	for _, server := range servers {
 		id, ok := server.Get("id").(string)
 		if !ok || id == "" {
-			return nil, fmt.Errorf("missing MCP server id in template block")
+			return nil, fmt.Errorf(messages.WizardMissingMCPServerIDInTemplate)
 		}
 		if _, exists := blocks[id]; exists {
-			return nil, fmt.Errorf("duplicate MCP server id %q in template", id)
+			return nil, fmt.Errorf(messages.WizardDuplicateMCPServerIDInTemplateFmt, id)
 		}
 		blocks[id] = server
 	}

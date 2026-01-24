@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 const (
@@ -16,11 +18,11 @@ const (
 // It returns the root path, whether it was found, and any error encountered.
 func FindAgentLayerRoot(start string) (string, bool, error) {
 	if start == "" {
-		return "", false, fmt.Errorf("start path is required")
+		return "", false, fmt.Errorf(messages.RootStartPathRequired)
 	}
 	abs, err := filepath.Abs(start)
 	if err != nil {
-		return "", false, fmt.Errorf("resolve path %s: %w", start, err)
+		return "", false, fmt.Errorf(messages.RootResolvePathFmt, start, err)
 	}
 
 	dir := abs
@@ -29,12 +31,12 @@ func FindAgentLayerRoot(start string) (string, bool, error) {
 		info, err := os.Stat(candidate)
 		if err == nil {
 			if !info.IsDir() {
-				return "", false, fmt.Errorf("%s exists but is not a directory", candidate)
+				return "", false, fmt.Errorf(messages.RootPathNotDirFmt, candidate)
 			}
 			return dir, true, nil
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", false, fmt.Errorf("check %s: %w", candidate, err)
+			return "", false, fmt.Errorf(messages.RootCheckPathFmt, candidate, err)
 		}
 
 		parent := filepath.Dir(dir)
@@ -49,11 +51,11 @@ func FindAgentLayerRoot(start string) (string, bool, error) {
 // It prefers an existing .agent-layer directory, then a .git directory or file, and falls back to start.
 func FindRepoRoot(start string) (string, error) {
 	if start == "" {
-		return "", fmt.Errorf("start path is required")
+		return "", fmt.Errorf(messages.RootStartPathRequired)
 	}
 	abs, err := filepath.Abs(start)
 	if err != nil {
-		return "", fmt.Errorf("resolve path %s: %w", start, err)
+		return "", fmt.Errorf(messages.RootResolvePathFmt, start, err)
 	}
 
 	if root, found, err := FindAgentLayerRoot(abs); err != nil {
@@ -70,10 +72,10 @@ func FindRepoRoot(start string) (string, error) {
 			if info.IsDir() || info.Mode().IsRegular() {
 				return dir, nil
 			}
-			return "", fmt.Errorf("%s exists but is not a directory or file", candidate)
+			return "", fmt.Errorf(messages.RootPathNotDirOrFileFmt, candidate)
 		}
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("check %s: %w", candidate, err)
+			return "", fmt.Errorf(messages.RootCheckPathFmt, candidate, err)
 		}
 
 		parent := filepath.Dir(dir)

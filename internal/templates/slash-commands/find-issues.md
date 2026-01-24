@@ -14,17 +14,18 @@ Perform a structured audit to find:
 
 This workflow is **report-first**:
 - **Do not modify code**.
-- **Do not write to** `ISSUES.md`, `FEATURES.md`, `ROADMAP.md`, or `DECISIONS.md` unless the user explicitly requests it.
+- **Do not write to** project memory files unless the user explicitly requests it.
 
 ---
 
 ## Project memory files (authoritative)
-- `ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.
-- `FEATURES.md` — backlog of deferred user feature requests (not yet scheduled into the roadmap).
-- `ROADMAP.md` — numbered phases; guides architecture and sequencing.
-- `DECISIONS.md` — rolling log of important decisions (brief).
+Canonical list (read order for this workflow):
+1. `ROADMAP.md`
+2. `DECISIONS.md`
+3. `FEATURES.md`
+4. `ISSUES.md`
 
-If any are missing, ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `<NAME>.md` (preserve headings and markers), but only if the user explicitly asks to apply changes.
+Formatting: follow the entry formats defined in each file. If any required files are missing, ask the user before creating them.
 
 ---
 
@@ -43,7 +44,7 @@ If the user provides extra direction, interpret it as:
 ---
 
 ## Roles and handoffs (multi-agent)
-1. **Standards Extractor**: read `ROADMAP.md` then `DECISIONS.md`, then scan `FEATURES.md` and `ISSUES.md`, then read `README.md` to derive the “audit lens”.
+1. **Standards Extractor**: read the project memory files in the order listed above, then read `README.md` to derive the “audit lens”.
 2. **Diff Auditor**: narrow audit on changed files per `scope`.
 3. **Deep-Dive Investigator**: expand one layer outward from the highest-impact narrow findings.
 4. **Broad Scanner**: lightweight smell scanning + hotspot spot-checking.
@@ -90,13 +91,6 @@ If uncommitted changes yield no files, fall back to the last commit and note it 
 ---
 
 # Phase 1 — Standards and roadmap lens (Standards Extractor)
-
-Read in this order (when present):
-1. `ROADMAP.md`
-2. `DECISIONS.md`
-3. `FEATURES.md`
-4. `ISSUES.md`
-5. `README.md`
 
 Extract:
 - architectural boundaries and layering rules
@@ -230,14 +224,7 @@ Create the report file at the chosen path with:
 If the user asked for proposals or apply mode, include an “Entry candidates” section.
 
 ### Candidate entry rules (mandatory)
-- Entries must be **3 to 5 lines**.
-- No abbreviations. Prefer short sentences.
 - Search existing memory files first and avoid near-duplicates.
-
-Formats:
-- Issues: `- Issue YYYY-MM-DD <entry_id>: <short title>`
-- Features: `- Feature YYYY-MM-DD <entry_id>: <short title>` (user-visible only)
-- Decisions: `- Decision YYYY-MM-DD <entry_id>: <short title>`
 
 **Important:** If the user asked for proposals, do not modify files—only provide candidates.
 

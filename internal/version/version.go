@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var semverPattern = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
@@ -13,11 +15,11 @@ var semverPattern = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)$`)
 func Normalize(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return "", fmt.Errorf("version is required")
+		return "", fmt.Errorf(messages.VersionRequired)
 	}
 	match := semverPattern.FindStringSubmatch(trimmed)
 	if match == nil {
-		return "", fmt.Errorf("version %q must be in the form vX.Y.Z or X.Y.Z", raw)
+		return "", fmt.Errorf(messages.VersionInvalidFmt, raw)
 	}
 	return fmt.Sprintf("%s.%s.%s", match[1], match[2], match[3]), nil
 }

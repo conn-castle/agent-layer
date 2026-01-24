@@ -6,12 +6,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/vscode"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func newVSCodeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "vscode",
-		Short: "Sync and launch VS Code with CODEX_HOME configured",
+		Use:   messages.VSCodeUse,
+		Short: messages.VSCodeShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

@@ -2,6 +2,8 @@ package config
 
 import (
 	"fmt"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var validApprovals = map[string]struct{}{
@@ -22,63 +24,63 @@ var validClients = map[string]struct{}{
 // Validate ensures the config is complete and consistent.
 func (c *Config) Validate(path string) error {
 	if _, ok := validApprovals[c.Approvals.Mode]; !ok {
-		return fmt.Errorf("%s: approvals.mode must be one of all, mcp, commands, none", path)
+		return fmt.Errorf(messages.ConfigApprovalsModeInvalidFmt, path)
 	}
 
 	if c.Agents.Gemini.Enabled == nil {
-		return fmt.Errorf("%s: agents.gemini.enabled is required", path)
+		return fmt.Errorf(messages.ConfigGeminiEnabledRequiredFmt, path)
 	}
 	if c.Agents.Claude.Enabled == nil {
-		return fmt.Errorf("%s: agents.claude.enabled is required", path)
+		return fmt.Errorf(messages.ConfigClaudeEnabledRequiredFmt, path)
 	}
 	if c.Agents.Codex.Enabled == nil {
-		return fmt.Errorf("%s: agents.codex.enabled is required", path)
+		return fmt.Errorf(messages.ConfigCodexEnabledRequiredFmt, path)
 	}
 	if c.Agents.VSCode.Enabled == nil {
-		return fmt.Errorf("%s: agents.vscode.enabled is required", path)
+		return fmt.Errorf(messages.ConfigVSCodeEnabledRequiredFmt, path)
 	}
 	if c.Agents.Antigravity.Enabled == nil {
-		return fmt.Errorf("%s: agents.antigravity.enabled is required", path)
+		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
 
 	for i, server := range c.MCP.Servers {
 		if server.ID == "" {
-			return fmt.Errorf("%s: mcp.servers[%d].id is required", path, i)
+			return fmt.Errorf(messages.ConfigMcpServerIDRequiredFmt, path, i)
 		}
 		if server.ID == "agent-layer" {
-			return fmt.Errorf("%s: mcp.servers[%d].id is reserved for the internal prompt server", path, i)
+			return fmt.Errorf(messages.ConfigMcpServerIDReservedFmt, path, i)
 		}
 		if server.Enabled == nil {
-			return fmt.Errorf("%s: mcp.servers[%d].enabled is required", path, i)
+			return fmt.Errorf(messages.ConfigMcpServerEnabledRequiredFmt, path, i)
 		}
 		switch server.Transport {
 		case "http":
 			if server.URL == "" {
-				return fmt.Errorf("%s: mcp.servers[%d].url is required for http transport", path, i)
+				return fmt.Errorf(messages.ConfigMcpServerURLRequiredFmt, path, i)
 			}
 			if server.Command != "" || len(server.Args) > 0 {
-				return fmt.Errorf("%s: mcp.servers[%d].command/args are not allowed for http transport", path, i)
+				return fmt.Errorf(messages.ConfigMcpServerCommandNotAllowedFmt, path, i)
 			}
 			if len(server.Env) > 0 {
-				return fmt.Errorf("%s: mcp.servers[%d].env is not allowed for http transport", path, i)
+				return fmt.Errorf(messages.ConfigMcpServerEnvNotAllowedFmt, path, i)
 			}
 		case "stdio":
 			if server.Command == "" {
-				return fmt.Errorf("%s: mcp.servers[%d].command is required for stdio transport", path, i)
+				return fmt.Errorf(messages.ConfigMcpServerCommandRequiredFmt, path, i)
 			}
 			if server.URL != "" {
-				return fmt.Errorf("%s: mcp.servers[%d].url is not allowed for stdio transport", path, i)
+				return fmt.Errorf(messages.ConfigMcpServerURLNotAllowedFmt, path, i)
 			}
 			if len(server.Headers) > 0 {
-				return fmt.Errorf("%s: mcp.servers[%d].headers are not allowed for stdio transport", path, i)
+				return fmt.Errorf(messages.ConfigMcpServerHeadersNotAllowedFmt, path, i)
 			}
 		default:
-			return fmt.Errorf("%s: mcp.servers[%d].transport must be http or stdio", path, i)
+			return fmt.Errorf(messages.ConfigMcpServerTransportInvalidFmt, path, i)
 		}
 
 		for _, client := range server.Clients {
 			if _, ok := validClients[client]; !ok {
-				return fmt.Errorf("%s: mcp.servers[%d].clients contains invalid client %q", path, i, client)
+				return fmt.Errorf(messages.ConfigMcpServerClientInvalidFmt, path, i, client)
 			}
 		}
 	}
@@ -106,7 +108,7 @@ func validateWarnings(path string, warnings WarningsConfig) error {
 	}
 	for _, threshold := range thresholds {
 		if threshold.value != nil && *threshold.value <= 0 {
-			return fmt.Errorf("%s: %s must be greater than zero", path, threshold.name)
+			return fmt.Errorf(messages.ConfigWarningThresholdInvalidFmt, path, threshold.name)
 		}
 	}
 	return nil

@@ -6,17 +6,19 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func newWizardCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "wizard",
-		Short: "Interactive setup wizard",
-		Long:  `Run an interactive wizard to configure Agent Layer for this repository.`,
+		Use:   messages.WizardUse,
+		Short: messages.WizardShort,
+		Long:  messages.WizardLong,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !isTerminal() {
-				return fmt.Errorf("Agent Layer wizard requires an interactive terminal")
+				return fmt.Errorf(messages.WizardRequiresTerminal)
 			}
 
 			root, err := resolveInitRoot()

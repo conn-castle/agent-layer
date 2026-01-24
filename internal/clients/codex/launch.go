@@ -8,6 +8,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
@@ -24,7 +25,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
 	cmd.Env = env
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("codex exited with error: %w", err)
+		return fmt.Errorf(messages.ClientsCodexExitErrorFmt, err)
 	}
 
 	return nil
@@ -38,7 +39,7 @@ func ensureCodexHome(root string, env []string) []string {
 	}
 
 	if !samePath(current, expected) {
-		if _, err := fmt.Fprintf(os.Stderr, "WARNING: CODEX_HOME is set to %s; expected %s\n", current, expected); err != nil {
+		if _, err := fmt.Fprintf(os.Stderr, messages.ClientsCodexHomeWarningFmt, current, expected); err != nil {
 			return env
 		}
 	}

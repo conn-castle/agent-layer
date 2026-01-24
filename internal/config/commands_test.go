@@ -51,7 +51,7 @@ func TestLoadCommandsAllowScannerError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected scanner error")
 	}
-	if !strings.Contains(err.Error(), "failed reading commands allowlist") {
+	if !strings.Contains(err.Error(), "failed to read commands allowlist") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

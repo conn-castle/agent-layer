@@ -1,5 +1,7 @@
 package wizard
 
+import "github.com/conn-castle/agent-layer/internal/messages"
+
 // AgentID constants matching config keys
 const (
 	AgentGemini      = "gemini"
@@ -35,10 +37,10 @@ type ApprovalModeOption struct {
 
 // ApprovalModeOptions lists available approval modes and their descriptions.
 var ApprovalModeOptions = []ApprovalModeOption{
-	{Value: ApprovalAll, Description: "Auto-approve shell commands and MCP tool calls (where supported)."},
-	{Value: ApprovalMCP, Description: "Auto-approve MCP tool calls only; commands still prompt."},
-	{Value: ApprovalCommands, Description: "Auto-approve shell commands only; MCP tools still prompt."},
-	{Value: ApprovalNone, Description: "Prompt for everything."},
+	{Value: ApprovalAll, Description: messages.WizardApprovalAllDescription},
+	{Value: ApprovalMCP, Description: messages.WizardApprovalMCPDescription},
+	{Value: ApprovalCommands, Description: messages.WizardApprovalCommandsDescription},
+	{Value: ApprovalNone, Description: messages.WizardApprovalNoneDescription},
 }
 
 // ApprovalModes lists the canonical approval mode values.

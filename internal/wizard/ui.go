@@ -6,6 +6,8 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"golang.org/x/term"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // UI defines the interaction methods.
@@ -44,7 +46,7 @@ func (ui *HuhUI) ensureInteractive() error {
 	if checker() {
 		return nil
 	}
-	return fmt.Errorf("wizard UI requires an interactive terminal")
+	return fmt.Errorf(messages.WizardRequiresTerminal)
 }
 
 // runForm validates terminal availability and runs the provided form.
@@ -83,7 +85,7 @@ func (ui *HuhUI) MultiSelect(title string, options []string, selected *[]string)
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title(title).
-				Description("Arrow keys to navigate, Space to toggle, Enter to continue, Esc to cancel.").
+				Description(messages.WizardMultiSelectDescription).
 				Options(opts...).
 				Value(selected),
 		),

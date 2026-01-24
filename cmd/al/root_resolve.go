@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/root"
 )
 
@@ -17,7 +18,7 @@ func resolveRepoRoot() (string, error) {
 		return "", err
 	}
 	if !found {
-		return "", fmt.Errorf("Agent Layer is not initialized in this repo (missing .agent-layer). Run `al init` to initialize.")
+		return "", fmt.Errorf(messages.RootMissingAgentLayer)
 	}
 	return repoRoot, nil
 }

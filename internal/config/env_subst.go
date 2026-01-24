@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var envVarPattern = regexp.MustCompile(`\$\{([A-Z0-9_]+)\}`)
@@ -57,7 +59,7 @@ func SubstituteEnvVarsWith(input string, env map[string]string, replacer EnvVarR
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		return "", fmt.Errorf("missing env vars: %s", strings.Join(names, ", "))
+		return "", fmt.Errorf(messages.ConfigMissingEnvVarsFmt, strings.Join(names, ", "))
 	}
 
 	return result, nil

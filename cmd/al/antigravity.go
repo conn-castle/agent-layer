@@ -6,12 +6,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/antigravity"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func newAntigravityCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "antigravity",
-		Short: "Sync and launch Antigravity",
+		Use:   messages.AntigravityUse,
+		Short: messages.AntigravityShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

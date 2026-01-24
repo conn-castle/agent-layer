@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // CheckMCPServers performs discovery on enabled MCP servers and checks against warning thresholds.
@@ -25,8 +26,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 				return []Warning{{
 					Code:    CodeMCPServerUnreachable,
 					Subject: s.ID,
-					Message: fmt.Sprintf("Failed to resolve configuration: %v", err),
-					Fix:     "Correct URL/command/auth or environment variables.",
+					Message: fmt.Sprintf(messages.WarningsResolveConfigFailedFmt, err),
+					Fix:     messages.WarningsResolveConfigFix,
 				}}, nil
 			}
 			enabledServers = append(enabledServers, resolved)
@@ -42,8 +43,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 		warnings = append(warnings, Warning{
 			Code:    CodeMCPTooManyServers,
 			Subject: "mcp.servers",
-			Message: fmt.Sprintf("enabled server count > %d (%d > %d)", *thresholds.MCPServerThreshold, len(enabledServers), *thresholds.MCPServerThreshold),
-			Fix:     "disable rarely used servers; consolidate.",
+			Message: fmt.Sprintf(messages.WarningsTooManyServersFmt, *thresholds.MCPServerThreshold, len(enabledServers), *thresholds.MCPServerThreshold),
+			Fix:     messages.WarningsTooManyServersFix,
 		})
 	}
 
@@ -60,8 +61,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			warnings = append(warnings, Warning{
 				Code:    CodeMCPServerUnreachable,
 				Subject: res.ServerID,
-				Message: fmt.Sprintf("cannot connect, initialize, or list tools: %v", res.Error),
-				Fix:     "correct URL/command/auth; or disable the server.",
+				Message: fmt.Sprintf(messages.WarningsMCPConnectFailedFmt, res.Error),
+				Fix:     messages.WarningsMCPConnectFix,
 			})
 			continue
 		}
@@ -71,8 +72,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			warnings = append(warnings, Warning{
 				Code:    CodeMCPServerTooManyTools,
 				Subject: res.ServerID,
-				Message: fmt.Sprintf("server has > %d tools (%d > %d)", *thresholds.MCPServerToolsThreshold, len(res.Tools), *thresholds.MCPServerToolsThreshold),
-				Fix:     "split the server by domain or reduce exported tools.",
+				Message: fmt.Sprintf(messages.WarningsMCPServerTooManyToolsFmt, *thresholds.MCPServerToolsThreshold, len(res.Tools), *thresholds.MCPServerToolsThreshold),
+				Fix:     messages.WarningsMCPServerTooManyToolsFix,
 			})
 		}
 
@@ -81,8 +82,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			warnings = append(warnings, Warning{
 				Code:    CodeMCPToolSchemaBloatServer,
 				Subject: res.ServerID,
-				Message: fmt.Sprintf("estimated tokens for tool definitions > %d (%d > %d)", *thresholds.MCPSchemaTokensServerThreshold, res.SchemaTokens, *thresholds.MCPSchemaTokensServerThreshold),
-				Fix:     "reduce schema verbosity; shorten descriptions; remove huge enums/oneOf; reduce tools.",
+				Message: fmt.Sprintf(messages.WarningsMCPSchemaBloatServerFmt, *thresholds.MCPSchemaTokensServerThreshold, res.SchemaTokens, *thresholds.MCPSchemaTokensServerThreshold),
+				Fix:     messages.WarningsMCPSchemaBloatFix,
 			})
 		}
 
@@ -99,8 +100,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 		warnings = append(warnings, Warning{
 			Code:    CodeMCPTooManyToolsTotal,
 			Subject: "mcp.tools.total",
-			Message: fmt.Sprintf("total discovered tools > %d (%d > %d)", *thresholds.MCPToolsTotalThreshold, totalTools, *thresholds.MCPToolsTotalThreshold),
-			Fix:     "disable servers; reduce tool surface.",
+			Message: fmt.Sprintf(messages.WarningsMCPTooManyToolsTotalFmt, *thresholds.MCPToolsTotalThreshold, totalTools, *thresholds.MCPToolsTotalThreshold),
+			Fix:     messages.WarningsMCPTooManyToolsTotalFix,
 		})
 	}
 
@@ -109,8 +110,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 		warnings = append(warnings, Warning{
 			Code:    CodeMCPToolSchemaBloatTotal,
 			Subject: "mcp.tools.schema.total",
-			Message: fmt.Sprintf("estimated tokens for all tool definitions > %d (%d > %d)", *thresholds.MCPSchemaTokensTotalThreshold, totalSchemaTokens, *thresholds.MCPSchemaTokensTotalThreshold),
-			Fix:     "reduce schema verbosity; shorten descriptions; remove huge enums/oneOf; reduce tools.",
+			Message: fmt.Sprintf(messages.WarningsMCPSchemaBloatTotalFmt, *thresholds.MCPSchemaTokensTotalThreshold, totalSchemaTokens, *thresholds.MCPSchemaTokensTotalThreshold),
+			Fix:     messages.WarningsMCPSchemaBloatFix,
 		})
 	}
 
@@ -120,8 +121,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			warnings = append(warnings, Warning{
 				Code:    CodeMCPToolNameCollision,
 				Subject: name,
-				Message: fmt.Sprintf("same tool name appears in more than one server: %v", servers),
-				Fix:     "namespace tool names per server (recommended pattern: <server>__<action>).",
+				Message: fmt.Sprintf(messages.WarningsMCPToolNameCollisionFmt, servers),
+				Fix:     messages.WarningsMCPToolNameCollisionFix,
 			})
 		}
 	}

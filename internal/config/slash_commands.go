@@ -8,13 +8,15 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // LoadSlashCommands reads .agent-layer/slash-commands/*.md in lexicographic order.
 func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("missing slash commands directory %s: %w", dir, err)
+		return nil, fmt.Errorf(messages.ConfigMissingSlashCommandsDirFmt, dir, err)
 	}
 
 	var names []string
@@ -35,12 +37,12 @@ func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("failed reading slash command %s: %w", path, err)
+			return nil, fmt.Errorf(messages.ConfigFailedReadSlashCommandFmt, path, err)
 		}
 		data = bytes.TrimPrefix(data, utf8BOM)
 		description, body, err := parseSlashCommand(string(data))
 		if err != nil {
-			return nil, fmt.Errorf("invalid slash command %s: %w", path, err)
+			return nil, fmt.Errorf(messages.ConfigInvalidSlashCommandFmt, path, err)
 		}
 		commands = append(commands, SlashCommand{
 			Name:        strings.TrimSuffix(name, ".md"),
@@ -56,10 +58,10 @@ func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 func parseSlashCommand(content string) (string, string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	if !scanner.Scan() {
-		return "", "", fmt.Errorf("missing content")
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandMissingContent)
 	}
 	if strings.TrimSpace(scanner.Text()) != "---" {
-		return "", "", fmt.Errorf("missing front matter")
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandMissingFrontMatter)
 	}
 
 	var fmLines []string
@@ -73,7 +75,7 @@ func parseSlashCommand(content string) (string, string, error) {
 		fmLines = append(fmLines, line)
 	}
 	if !foundEnd {
-		return "", "", fmt.Errorf("unterminated front matter")
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandUnterminatedFrontMatter)
 	}
 
 	var bodyBuilder strings.Builder
@@ -82,7 +84,7 @@ func parseSlashCommand(content string) (string, string, error) {
 		bodyBuilder.WriteString("\n")
 	}
 	if err := scanner.Err(); err != nil {
-		return "", "", fmt.Errorf("failed reading content: %w", err)
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandFailedReadContentFmt, err)
 	}
 
 	body := strings.TrimPrefix(bodyBuilder.String(), "\n")
@@ -104,7 +106,7 @@ func parseDescription(lines []string) (string, error) {
 		}
 		value := strings.TrimSpace(strings.TrimPrefix(line, "description:"))
 		if value == "" {
-			return "", fmt.Errorf("description is empty")
+			return "", fmt.Errorf(messages.ConfigSlashCommandDescriptionEmpty)
 		}
 		if value == ">-" || value == ">" || value == "|" || value == "|+" || value == "|-" {
 			var parts []string
@@ -117,12 +119,12 @@ func parseDescription(lines []string) (string, error) {
 			}
 			description := strings.TrimSpace(strings.Join(parts, " "))
 			if description == "" {
-				return "", fmt.Errorf("description is empty")
+				return "", fmt.Errorf(messages.ConfigSlashCommandDescriptionEmpty)
 			}
 			return description, nil
 		}
 		return strings.Trim(value, "\""), nil
 	}
 
-	return "", fmt.Errorf("missing description in front matter")
+	return "", fmt.Errorf(messages.ConfigSlashCommandMissingDescription)
 }

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
@@ -18,7 +19,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
 	cmd.Env = env
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("antigravity exited with error: %w", err)
+		return fmt.Errorf(messages.ClientsAntigravityExitErrorFmt, err)
 	}
 
 	return nil

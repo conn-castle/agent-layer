@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -69,31 +70,31 @@ type latestReleaseResponse struct {
 func fetchLatestReleaseVersion(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, latestReleaseURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("create latest release request: %w", err)
+		return "", fmt.Errorf(messages.UpdateCreateRequestErrFmt, err)
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "agent-layer")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("fetch latest release: %w", err)
+		return "", fmt.Errorf(messages.UpdateFetchLatestReleaseErrFmt, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("fetch latest release: unexpected status %s", resp.Status)
+		return "", fmt.Errorf(messages.UpdateFetchLatestReleaseStatusFmt, resp.Status)
 	}
 
 	var payload latestReleaseResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf("decode latest release: %w", err)
+		return "", fmt.Errorf(messages.UpdateDecodeLatestReleaseErrFmt, err)
 	}
 	if strings.TrimSpace(payload.TagName) == "" {
-		return "", fmt.Errorf("latest release missing tag_name")
+		return "", fmt.Errorf(messages.UpdateLatestReleaseMissingTag)
 	}
 	normalized, err := version.Normalize(payload.TagName)
 	if err != nil {
-		return "", fmt.Errorf("invalid latest release tag %q: %w", payload.TagName, err)
+		return "", fmt.Errorf(messages.UpdateInvalidLatestReleaseTagFmt, payload.TagName, err)
 	}
 	return normalized, nil
 }
@@ -105,7 +106,7 @@ func normalizeCurrentVersion(raw string) (string, bool, error) {
 	}
 	normalized, err := version.Normalize(raw)
 	if err != nil {
-		return "", false, fmt.Errorf("invalid current version %q: %w", raw, err)
+		return "", false, fmt.Errorf(messages.UpdateInvalidCurrentVersionFmt, raw, err)
 	}
 	return normalized, false, nil
 }
@@ -140,13 +141,13 @@ func parseSemver(raw string) ([3]int, error) {
 	}
 	parts := strings.Split(normalized, ".")
 	if len(parts) != 3 {
-		return [3]int{}, fmt.Errorf("invalid version %q", raw)
+		return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionFmt, raw)
 	}
 	var out [3]int
 	for i, part := range parts {
 		value, err := strconv.Atoi(part)
 		if err != nil {
-			return [3]int{}, fmt.Errorf("invalid version segment %q: %w", part, err)
+			return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionSegmentFmt, part, err)
 		}
 		out[i] = value
 	}

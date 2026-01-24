@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // WarningDefaults holds wizard defaults sourced from the template config.
@@ -30,7 +31,7 @@ func loadWarningDefaults() (WarningDefaults, error) {
 		w.MCPServerToolsThreshold == nil ||
 		w.MCPSchemaTokensTotalThreshold == nil ||
 		w.MCPSchemaTokensServerThreshold == nil {
-		return WarningDefaults{}, fmt.Errorf("template config warnings defaults are incomplete")
+		return WarningDefaults{}, fmt.Errorf(messages.WizardTemplateWarningsDefaultsIncomplete)
 	}
 
 	return WarningDefaults{

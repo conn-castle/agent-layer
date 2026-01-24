@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 const promptHeaderTemplate = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/%s.md\n  Regenerate: al sync\n-->\n"
@@ -17,7 +18,7 @@ const promptHeaderTemplate = "<!--\n  GENERATED FILE\n  Source: .agent-layer/sla
 func WriteVSCodePrompts(root string, commands []config.SlashCommand) error {
 	promptDir := filepath.Join(root, ".vscode", "prompts")
 	if err := os.MkdirAll(promptDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", promptDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, promptDir, err)
 	}
 
 	wanted := make(map[string]struct{}, len(commands))
@@ -26,7 +27,7 @@ func WriteVSCodePrompts(root string, commands []config.SlashCommand) error {
 		content := buildVSCodePrompt(cmd)
 		path := filepath.Join(promptDir, fmt.Sprintf("%s.prompt.md", cmd.Name))
 		if err := fsutil.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 		}
 	}
 
@@ -52,7 +53,7 @@ func buildVSCodePrompt(cmd config.SlashCommand) string {
 func removeStalePromptFiles(promptDir string, wanted map[string]struct{}) error {
 	entries, err := os.ReadDir(promptDir)
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", promptDir, err)
+		return fmt.Errorf(messages.SyncReadFailedFmt, promptDir, err)
 	}
 
 	for _, entry := range entries {
@@ -74,7 +75,7 @@ func removeStalePromptFiles(promptDir string, wanted map[string]struct{}) error 
 		}
 		if isGenerated {
 			if err := os.Remove(path); err != nil {
-				return fmt.Errorf("failed to remove %s: %w", path, err)
+				return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)
 			}
 		}
 	}
@@ -86,7 +87,7 @@ func removeStalePromptFiles(promptDir string, wanted map[string]struct{}) error 
 func WriteCodexSkills(root string, commands []config.SlashCommand) error {
 	skillsDir := filepath.Join(root, ".codex", "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", skillsDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillsDir, err)
 	}
 
 	wanted := make(map[string]struct{}, len(commands))
@@ -94,12 +95,12 @@ func WriteCodexSkills(root string, commands []config.SlashCommand) error {
 		wanted[cmd.Name] = struct{}{}
 		skillDir := filepath.Join(skillsDir, cmd.Name)
 		if err := os.MkdirAll(skillDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create %s: %w", skillDir, err)
+			return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillDir, err)
 		}
 		path := filepath.Join(skillDir, "SKILL.md")
 		content := buildCodexSkill(cmd)
 		if err := fsutil.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 		}
 	}
 
@@ -110,7 +111,7 @@ func WriteCodexSkills(root string, commands []config.SlashCommand) error {
 func WriteAntigravitySkills(root string, commands []config.SlashCommand) error {
 	skillsDir := filepath.Join(root, ".agent", "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", skillsDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillsDir, err)
 	}
 
 	wanted := make(map[string]struct{}, len(commands))
@@ -118,12 +119,12 @@ func WriteAntigravitySkills(root string, commands []config.SlashCommand) error {
 		wanted[cmd.Name] = struct{}{}
 		skillDir := filepath.Join(skillsDir, cmd.Name)
 		if err := os.MkdirAll(skillDir, 0o755); err != nil {
-			return fmt.Errorf("failed to create %s: %w", skillDir, err)
+			return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillDir, err)
 		}
 		path := filepath.Join(skillDir, "SKILL.md")
 		content := buildAntigravitySkill(cmd)
 		if err := fsutil.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 		}
 	}
 
@@ -216,7 +217,7 @@ func wrapDescription(text string, width int) []string {
 func removeStaleSkillDirs(skillsDir string, wanted map[string]struct{}) error {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
-		return fmt.Errorf("failed to read %s: %w", skillsDir, err)
+		return fmt.Errorf(messages.SyncReadFailedFmt, skillsDir, err)
 	}
 
 	var stale []string
@@ -241,7 +242,7 @@ func removeStaleSkillDirs(skillsDir string, wanted map[string]struct{}) error {
 	sort.Strings(stale)
 	for _, dir := range stale {
 		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("failed to remove %s: %w", dir, err)
+			return fmt.Errorf(messages.SyncRemoveFailedFmt, dir, err)
 		}
 	}
 
@@ -254,7 +255,7 @@ func hasGeneratedMarker(path string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to read %s: %w", path, err)
+		return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
 	return strings.Contains(string(data), "GENERATED FILE"), nil
 }

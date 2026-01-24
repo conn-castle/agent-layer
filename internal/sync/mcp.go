@@ -7,6 +7,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
@@ -32,13 +33,13 @@ func WriteMCPConfig(root string, project *config.ProjectConfig) error {
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal mcp config: %w", err)
+		return fmt.Errorf(messages.SyncMarshalMCPConfigFailedFmt, err)
 	}
 	data = append(data, '\n')
 
 	path := filepath.Join(root, ".mcp.json")
 	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 
 	return nil

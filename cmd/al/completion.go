@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var (
@@ -26,8 +27,8 @@ var (
 func newCompletionCmd() *cobra.Command {
 	var install bool
 	cmd := &cobra.Command{
-		Use:       "completion [bash|zsh|fish]",
-		Short:     "Generate shell completion scripts",
+		Use:       messages.CompletionUse,
+		Short:     messages.CompletionShort,
 		Args:      cobra.ExactArgs(1),
 		ValidArgs: []string{"bash", "zsh", "fish"},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -43,7 +44,7 @@ func newCompletionCmd() *cobra.Command {
 			return installCompletion(shell, script, cmd.OutOrStdout())
 		},
 	}
-	cmd.Flags().BoolVar(&install, "install", false, "Install the completion script for the specified shell")
+	cmd.Flags().BoolVar(&install, "install", false, messages.CompletionInstall)
 	return cmd
 }
 
@@ -64,7 +65,7 @@ func generateCompletion(root *cobra.Command, shell string) (string, error) {
 			return "", err
 		}
 	default:
-		return "", fmt.Errorf("unsupported shell %q (supported: bash, zsh, fish)", shell)
+		return "", fmt.Errorf(messages.CompletionUnsupportedShellFmt, shell)
 	}
 	return buf.String(), nil
 }
@@ -76,13 +77,13 @@ func installCompletion(shell string, script string, out io.Writer) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create completion dir: %w", err)
+		return fmt.Errorf(messages.CompletionCreateDirErrFmt, err)
 	}
 	if err := fsutil.WriteFileAtomic(path, []byte(script), 0o644); err != nil {
-		return fmt.Errorf("write completion file: %w", err)
+		return fmt.Errorf(messages.CompletionWriteFileErrFmt, err)
 	}
 
-	if _, err := fmt.Fprintf(out, "Installed %s completion to %s\n", shell, path); err != nil {
+	if _, err := fmt.Fprintf(out, messages.CompletionInstalledFmt, shell, path); err != nil {
 		return err
 	}
 	if note != "" {
@@ -102,7 +103,7 @@ func completionInstallPath(shell string) (string, string, error) {
 			return "", "", err
 		}
 		path := filepath.Join(xdgData, "bash-completion", "completions", "al")
-		note := "Bash completion requires bash-completion to be enabled in your shell."
+		note := messages.CompletionBashNote
 		return path, note, nil
 	case "fish":
 		xdgConfig, err := xdgConfigHome()
@@ -110,7 +111,7 @@ func completionInstallPath(shell string) (string, string, error) {
 			return "", "", err
 		}
 		path := filepath.Join(xdgConfig, "fish", "completions", "al.fish")
-		note := "Restart fish or open a new terminal to enable completions."
+		note := messages.CompletionFishNote
 		return path, note, nil
 	case "zsh":
 		dir, ok := firstWritableFpath()
@@ -122,10 +123,10 @@ func completionInstallPath(shell string) (string, string, error) {
 			return "", "", err
 		}
 		fallbackDir := filepath.Join(xdgData, "zsh", "site-functions")
-		note := fmt.Sprintf("Add this to your .zshrc before compinit:\n  fpath=(%s $fpath)", fallbackDir)
+		note := fmt.Sprintf(messages.CompletionZshNoteFmt, fallbackDir)
 		return filepath.Join(fallbackDir, "_al"), note, nil
 	default:
-		return "", "", fmt.Errorf("unsupported shell %q (supported: bash, zsh, fish)", shell)
+		return "", "", fmt.Errorf(messages.CompletionUnsupportedShellFmt, shell)
 	}
 }
 
@@ -136,7 +137,7 @@ func xdgDataHome() (string, error) {
 	}
 	home, err := userHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
+		return "", fmt.Errorf(messages.CompletionResolveHomeErrFmt, err)
 	}
 	return filepath.Join(home, ".local", "share"), nil
 }
@@ -148,7 +149,7 @@ func xdgConfigHome() (string, error) {
 	}
 	home, err := userHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
+		return "", fmt.Errorf(messages.CompletionResolveHomeErrFmt, err)
 	}
 	return filepath.Join(home, ".config"), nil
 }

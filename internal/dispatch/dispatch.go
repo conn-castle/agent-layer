@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/root"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -20,7 +21,7 @@ const (
 )
 
 // ErrDispatched signals that execution has been handed off to another binary.
-var ErrDispatched = errors.New("dispatch executed")
+var ErrDispatched = errors.New(messages.DispatchErrDispatched)
 
 var (
 	execBinaryFunc = execBinary
@@ -31,13 +32,13 @@ var (
 // It returns ErrDispatched if execution was handed off.
 func MaybeExec(args []string, currentVersion string, cwd string, exit func(int)) error {
 	if len(args) == 0 {
-		return fmt.Errorf("missing argv[0]")
+		return fmt.Errorf(messages.DispatchMissingArgv0)
 	}
 	if cwd == "" {
-		return fmt.Errorf("working directory is required")
+		return fmt.Errorf(messages.DispatchWorkingDirRequired)
 	}
 	if exit == nil {
-		return fmt.Errorf("exit handler is required")
+		return fmt.Errorf(messages.DispatchExitHandlerRequired)
 	}
 
 	current, err := normalizeCurrentVersion(currentVersion)
@@ -58,10 +59,10 @@ func MaybeExec(args []string, currentVersion string, cwd string, exit func(int))
 		return nil
 	}
 	if os.Getenv(EnvShimActive) != "" {
-		return fmt.Errorf("version dispatch already active (current %s, requested %s)", current, requested)
+		return fmt.Errorf(messages.DispatchAlreadyActiveFmt, current, requested)
 	}
 	if version.IsDev(requested) {
-		return fmt.Errorf("cannot dispatch to dev version; set %s to a release version", EnvVersionOverride)
+		return fmt.Errorf(messages.DispatchDevVersionNotAllowedFmt, EnvVersionOverride)
 	}
 
 	cacheRoot, err := cacheRootDir()
@@ -91,7 +92,7 @@ func normalizeCurrentVersion(raw string) (string, error) {
 	}
 	normalized, err := version.Normalize(raw)
 	if err != nil {
-		return "", fmt.Errorf("invalid build version %q: %w", raw, err)
+		return "", fmt.Errorf(messages.DispatchInvalidBuildVersionFmt, raw, err)
 	}
 	return normalized, nil
 }
@@ -102,7 +103,7 @@ func resolveRequestedVersion(rootDir string, hasRoot bool, current string) (stri
 	if override != "" {
 		normalized, err := version.Normalize(override)
 		if err != nil {
-			return "", "", fmt.Errorf("invalid %s: %w", EnvVersionOverride, err)
+			return "", "", fmt.Errorf(messages.DispatchInvalidEnvVersionFmt, EnvVersionOverride, err)
 		}
 		return normalized, EnvVersionOverride, nil
 	}
@@ -127,7 +128,7 @@ func cacheRootDir() (string, error) {
 	}
 	base, err := userCacheDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve user cache dir: %w", err)
+		return "", fmt.Errorf(messages.DispatchResolveUserCacheDirFmt, err)
 	}
 	return filepath.Join(base, "agent-layer"), nil
 }

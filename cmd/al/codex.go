@@ -6,12 +6,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/codex"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func newCodexCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "codex",
-		Short: "Sync and launch Codex CLI",
+		Use:   messages.CodexUse,
+		Short: messages.CodexShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

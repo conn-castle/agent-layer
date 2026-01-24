@@ -82,6 +82,9 @@ jobs:
         with:
           ref: ${{ github.ref }}
           path: agent-layer
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent-layer/go.mod
 
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -125,6 +128,7 @@ jobs:
           exit 1
 
       - name: Update formula url + sha256
+        working-directory: agent-layer
         run: |
           set -euo pipefail
 
@@ -133,28 +137,28 @@ jobs:
           TARBALL="agent-layer-${SEMVER}.tar.gz"
           URL="https://github.com/conn-castle/agent-layer/releases/download/${TAG}/${TARBALL}"
 
-          if [ ! -f "dist/checksums.txt" ]; then
+          if [ ! -f "../dist/checksums.txt" ]; then
             echo "::error::dist/checksums.txt not found in workflow artifacts"
             exit 1
           fi
 
-          SHA="$(python3 agent-layer/scripts/extract-checksum.py dist/checksums.txt "${TARBALL}")"
+          SHA="$(go run -tags tools ./internal/tools/extractchecksum ../dist/checksums.txt "${TARBALL}")"
 
           if [ -z "${SHA}" ]; then
             echo "::error::Failed to locate sha256 for ${TARBALL} in dist/checksums.txt"
             exit 1
           fi
 
-          FORMULA="homebrew-tap/Formula/agent-layer.rb"
+          FORMULA="../homebrew-tap/Formula/agent-layer.rb"
           if [ ! -f "${FORMULA}" ]; then
             echo "::error::${FORMULA} not found in tap repo"
             exit 1
           fi
 
-          python3 agent-layer/scripts/update-formula.py "${FORMULA}" "${URL}" "${SHA}"
+          go run -tags tools ./internal/tools/updateformula "${FORMULA}" "${URL}" "${SHA}"
 
-          git -C homebrew-tap status --porcelain
-          git -C homebrew-tap diff -- Formula/agent-layer.rb
+          git -C ../homebrew-tap status --porcelain
+          git -C ../homebrew-tap diff -- Formula/agent-layer.rb
 
       - name: Create PR in tap repo
         uses: peter-evans/create-pull-request@v6

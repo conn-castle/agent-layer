@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // CheckInstructions checks if the combined instruction payload exceeds the threshold.
@@ -25,8 +27,8 @@ func CheckInstructions(rootDir string, threshold *int) ([]Warning, error) {
 		return []Warning{{
 			Code:    CodeInstructionsTooLarge,
 			Subject: subject,
-			Message: fmt.Sprintf("estimated tokens of the combined instruction payload > %d (%d > %d)", *threshold, tokens, *threshold),
-			Fix:     "reduce always-on instructions; move reference material into docs/ and link to it; remove repetition.",
+			Message: fmt.Sprintf(messages.WarningsInstructionsTooLargeFmt, *threshold, tokens, *threshold),
+			Fix:     messages.WarningsInstructionsTooLargeFix,
 		}}, nil
 	}
 

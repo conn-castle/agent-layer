@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -18,15 +19,15 @@ func readPinnedVersion(rootDir string) (string, bool, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", false, nil
 		}
-		return "", false, fmt.Errorf("read %s: %w", path, err)
+		return "", false, fmt.Errorf(messages.DispatchReadPinFailedFmt, path, err)
 	}
 	raw := strings.TrimSpace(string(data))
 	if raw == "" {
-		return "", false, fmt.Errorf("pin file %s is empty", path)
+		return "", false, fmt.Errorf(messages.DispatchPinFileEmptyFmt, path)
 	}
 	normalized, err := version.Normalize(raw)
 	if err != nil {
-		return "", false, fmt.Errorf("invalid pinned version in %s: %w", path, err)
+		return "", false, fmt.Errorf(messages.DispatchInvalidPinnedVersionFmt, path, err)
 	}
 	return normalized, true, nil
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -37,12 +38,12 @@ type installer struct {
 // Run initializes the repository with the required Agent Layer structure.
 func Run(root string, opts Options) error {
 	if root == "" {
-		return fmt.Errorf("root path is required")
+		return fmt.Errorf(messages.InstallRootRequired)
 	}
 
 	overwrite := opts.Overwrite || opts.Force
 	if overwrite && !opts.Force && opts.PromptOverwrite == nil {
-		return fmt.Errorf("overwrite prompts require a prompt handler; re-run with --force to overwrite without prompts")
+		return fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
 
 	inst := &installer{
@@ -54,7 +55,7 @@ func Run(root string, opts Options) error {
 	if strings.TrimSpace(opts.PinVersion) != "" {
 		normalized, err := version.Normalize(opts.PinVersion)
 		if err != nil {
-			return fmt.Errorf("invalid pin version: %w", err)
+			return fmt.Errorf(messages.InstallInvalidPinVersionFmt, err)
 		}
 		inst.pinVersion = normalized
 	}
@@ -94,7 +95,7 @@ func (inst *installer) createDirs() error {
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+			return fmt.Errorf(messages.InstallCreateDirFailedFmt, dir, err)
 		}
 	}
 	return nil
@@ -137,7 +138,7 @@ func (inst *installer) writeVersionFile() error {
 	if err == nil {
 		existing := strings.TrimSpace(string(existingBytes))
 		if existing == "" {
-			return fmt.Errorf("existing pin file %s is empty", path)
+			return fmt.Errorf(messages.InstallExistingPinFileEmptyFmt, path)
 		}
 		normalized, err := version.Normalize(existing)
 		if err != nil {
@@ -155,15 +156,15 @@ func (inst *installer) writeVersionFile() error {
 			return nil
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to read %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory for %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedCreateDirForFmt, path, err)
 	}
 	content := []byte(inst.pinVersion + "\n")
 	if err := fsutil.WriteFileAtomic(path, content, 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
 	return nil
 }
@@ -192,7 +193,7 @@ func (inst *installer) updateGitignore() error {
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
 	blockBytes, err := os.ReadFile(blockPath)
 	if err != nil {
-		return fmt.Errorf("failed to read gitignore block %s: %w", blockPath, err)
+		return fmt.Errorf(messages.InstallFailedReadGitignoreBlockFmt, blockPath, err)
 	}
 	return ensureGitignore(filepath.Join(root, ".gitignore"), string(blockBytes))
 }
@@ -211,7 +212,7 @@ func (inst *installer) shouldOverwrite(path string) (bool, error) {
 		return true, nil
 	}
 	if inst.prompt == nil {
-		return false, fmt.Errorf("overwrite prompts require a prompt handler; re-run with --force to overwrite without prompts")
+		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
 	rel := path
 	if inst.root != "" {
@@ -228,15 +229,15 @@ func (inst *installer) warnDifferences() {
 	}
 
 	sort.Strings(inst.diffs)
-	_, _ = fmt.Fprintln(os.Stderr, "Agent Layer install found existing files that differ from the templates:")
+	_, _ = fmt.Fprintln(os.Stderr, messages.InstallDiffHeader)
 	for _, path := range inst.diffs {
 		rel, err := filepath.Rel(inst.root, path)
 		if err != nil {
 			rel = path
 		}
-		_, _ = fmt.Fprintf(os.Stderr, "  - %s\n", rel)
+		_, _ = fmt.Fprintf(os.Stderr, messages.InstallDiffLineFmt, rel)
 	}
-	_, _ = fmt.Fprintln(os.Stderr, "Re-run `al init --overwrite` to review each file, or `al init --force` to replace them without prompts.")
+	_, _ = fmt.Fprintln(os.Stderr, messages.InstallDiffFooter)
 }
 
 func writeTemplateIfMissing(path string, templatePath string, perm fs.FileMode) error {
@@ -253,7 +254,7 @@ func writeTemplateDir(templateRoot string, destRoot string, shouldOverwrite Prom
 		}
 		rel := strings.TrimPrefix(path, templateRoot+"/")
 		if rel == path {
-			return fmt.Errorf("unexpected template path %s", path)
+			return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
 		}
 		destPath := filepath.Join(destRoot, rel)
 		return writeTemplateFile(destPath, path, 0o644, shouldOverwrite, recordDiff)
@@ -264,12 +265,12 @@ func ensureGitignore(path string, block string) error {
 	block = normalizeGitignoreBlock(block)
 	contentBytes, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to read %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 	}
 
 	if errors.Is(err, os.ErrNotExist) {
 		if err := fsutil.WriteFileAtomic(path, []byte(block), 0o644); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 		}
 		return nil
 	}
@@ -277,7 +278,7 @@ func ensureGitignore(path string, block string) error {
 	content := normalizeGitignoreBlock(string(contentBytes))
 	updated := updateGitignoreContent(content, block)
 	if err := fsutil.WriteFileAtomic(path, []byte(updated), 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
 	return nil
 }
@@ -285,7 +286,7 @@ func ensureGitignore(path string, block string) error {
 func writeGitignoreBlock(path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc, recordDiff func(string)) error {
 	templateBytes, err := templates.Read(templatePath)
 	if err != nil {
-		return fmt.Errorf("failed to read template %s: %w", templatePath, err)
+		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
 	}
 	templateBlock := normalizeGitignoreBlock(string(templateBytes))
 	rendered := renderGitignoreBlock(templateBlock)
@@ -293,13 +294,13 @@ func writeGitignoreBlock(path string, templatePath string, perm fs.FileMode, sho
 	existingBytes, err := os.ReadFile(path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("failed to read %s: %w", path, err)
+			return fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return fmt.Errorf("failed to create directory for %s: %w", path, err)
+			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, path, err)
 		}
 		if err := fsutil.WriteFileAtomic(path, []byte(rendered), perm); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 		}
 		return nil
 	}
@@ -307,7 +308,7 @@ func writeGitignoreBlock(path string, templatePath string, perm fs.FileMode, sho
 	existing := normalizeGitignoreBlock(string(existingBytes))
 	if existing == templateBlock || gitignoreBlockMatchesHash(existing) {
 		if err := fsutil.WriteFileAtomic(path, []byte(rendered), perm); err != nil {
-			return fmt.Errorf("failed to write %s: %w", path, err)
+			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 		}
 		return nil
 	}
@@ -319,7 +320,7 @@ func writeGitignoreBlock(path string, templatePath string, perm fs.FileMode, sho
 		}
 		if overwrite {
 			if err := fsutil.WriteFileAtomic(path, []byte(rendered), perm); err != nil {
-				return fmt.Errorf("failed to write %s: %w", path, err)
+				return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 			}
 			return nil
 		}
@@ -355,18 +356,18 @@ func writeTemplateFile(path string, templatePath string, perm fs.FileMode, shoul
 			return nil
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to stat %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
 	}
 
 	data, err := templates.Read(templatePath)
 	if err != nil {
-		return fmt.Errorf("failed to read template %s: %w", templatePath, err)
+		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("failed to create directory for %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedCreateDirForFmt, path, err)
 	}
 	if err := fsutil.WriteFileAtomic(path, data, perm); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
 	return nil
 }
@@ -374,11 +375,11 @@ func writeTemplateFile(path string, templatePath string, perm fs.FileMode, shoul
 func fileMatchesTemplate(path string, templatePath string) (bool, error) {
 	existing, err := os.ReadFile(path)
 	if err != nil {
-		return false, fmt.Errorf("failed to read %s: %w", path, err)
+		return false, fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 	}
 	template, err := templates.Read(templatePath)
 	if err != nil {
-		return false, fmt.Errorf("failed to read template %s: %w", templatePath, err)
+		return false, fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
 	}
 	return normalizeTemplateContent(string(existing)) == normalizeTemplateContent(string(template)), nil
 }

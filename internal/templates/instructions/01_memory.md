@@ -9,6 +9,8 @@
 
 After this list, refer to memory files by filename only (ISSUES.md, FEATURES.md, ROADMAP.md, DECISIONS.md, COMMANDS.md).
 
+These memory rules are canonical and are not repeated elsewhere.
+
 ## Operating rules
 1. **Read before planning:** Before making architectural or cross-cutting decisions, read `ROADMAP.md`, then scan `DECISIONS.md`, and then check relevant entries in `FEATURES.md` and `ISSUES.md`.
 2. **Read before running commands:** Before running or recommending project commands (tests, coverage, build, lint, start services), check `COMMANDS.md` first. `COMMANDS.md` is only for development workflow commands (build, test, lint, format, coverage, migrations, scripts), not application or CLI usage documentation. If it is missing, ask the user before creating it by copying `.agent-layer/templates/docs/COMMANDS.md` into `COMMANDS.md`. If it is incomplete, use auto-discovery, ask the user only when needed, then update `COMMANDS.md` with the definitive approach.

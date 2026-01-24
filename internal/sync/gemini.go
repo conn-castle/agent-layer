@@ -8,6 +8,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
@@ -38,18 +39,18 @@ func WriteGeminiSettings(root string, project *config.ProjectConfig) error {
 
 	geminiDir := filepath.Join(root, ".gemini")
 	if err := os.MkdirAll(geminiDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", geminiDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, geminiDir, err)
 	}
 
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal gemini settings: %w", err)
+		return fmt.Errorf(messages.SyncMarshalGeminiSettingsFailedFmt, err)
 	}
 	data = append(data, '\n')
 
 	path := filepath.Join(geminiDir, "settings.json")
 	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 
 	return nil

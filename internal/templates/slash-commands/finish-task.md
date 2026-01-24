@@ -1,5 +1,5 @@
 ---
-description: Post-task wrap-up: reflect on recent changes, update project memory files (ISSUES/FEATURES/ROADMAP/DECISIONS) with compact deduplicated entries, run fast verification, and summarize.
+description: Post-task wrap-up: reflect on recent changes, update project memory files with compact deduplicated entries, run fast verification, and summarize.
 ---
 
 # Post-task cleanup and project memory update
@@ -17,12 +17,13 @@ This is **not** a full codebase audit. Only document what you touched or passive
 ---
 
 ## Project memory files (authoritative)
-- `ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.
-- `FEATURES.md` — backlog of deferred user feature requests (not yet scheduled into the roadmap).
-- `ROADMAP.md` — numbered phases; guides architecture and sequencing.
-- `DECISIONS.md` — rolling log of important decisions (brief).
+Canonical list:
+- `ISSUES.md`
+- `FEATURES.md`
+- `ROADMAP.md`
+- `DECISIONS.md`
 
-If any are missing, ask the user before creating them. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `<NAME>.md` (preserve headings and markers).
+Formatting: follow the entry formats defined in each file. If any required files are missing, ask the user before creating them.
 
 ---
 
@@ -39,7 +40,7 @@ If the user provides extra direction, interpret it as:
 
 ## Roles and handoffs (multi-agent)
 1. **Change Reviewer**: enumerates what changed, checks plan alignment, and notes passive observations.
-2. **Memory Curator**: updates `ISSUES/FEATURES/ROADMAP/DECISIONS` with compact deduplicated entries; removes resolved items.
+2. **Memory Curator**: updates project memory files with compact deduplicated entries; removes resolved items.
 3. **Verifier**: runs the best available fast checks; escalates when risk warrants.
 4. **Reporter**: summarizes outcomes (what changed, what was logged/removed, what was verified).
 
@@ -50,13 +51,6 @@ If only one agent is available, execute phases in this order with explicit headi
 ## Global constraints
 - Keep scope tight. No opportunistic refactors.
 - Do not start a broad audit; focus on touched files and nearby context only.
-- Follow the memory formatting rules:
-  - Each entry is **3 to 5 lines**.
-  - Line 1 starts with `- Issue YYYY-MM-DD abcdef:` or `- Feature YYYY-MM-DD abcdef:` plus a short title.
-  - Lines 2–5 are indented by **4 spaces** and include priority/area, description, next step or acceptance criteria, and optional notes.
-  - No abbreviations. Prefer full words and short sentences.
-  - Prevent duplicates: search before adding; merge instead of creating near-duplicates.
-  - When fixed/implemented: remove the entry from the ledger.
 
 ---
 
@@ -130,11 +124,7 @@ Capture:
 # Phase 2 — Update project memory files (Memory Curator)
 
 ## 2A) Ensure memory files exist
-For each of:
-- `ISSUES.md`
-- `FEATURES.md`
-- `ROADMAP.md`
-- `DECISIONS.md`
+Ensure the project memory files listed above exist.
 
 If missing:
 - ask the user before creating it. If approved, copy `.agent-layer/templates/docs/<NAME>.md` into `<NAME>.md` (preserve headings and markers).
@@ -157,42 +147,19 @@ Before adding a new entry:
   - merge the new information into the existing entry
   - keep the final entry within 3–5 lines
 
-## 2D) Entry formatting rules (mandatory)
-### Issues (`ISSUES.md`)
-Add entries in this format (example):
-- `- Issue 2026-01-10 abcdef: Short title`
-    `Priority: High. Area: <module or subsystem>`
-    `Description: One sentence describing the observed problem.`
-    `Next step: Concrete next action to take.`
-    `Notes: Optional dependencies or context.`
-
-### Features (`FEATURES.md`)
-- `- Feature 2026-01-10 abcdef: Short title`
-    `Priority: Medium. Area: <user-facing area>`
-    `Description: One sentence describing the requested capability.`
-    `Acceptance criteria: One sentence describing what “done” means.`
-    `Notes: Optional dependencies or context.`
-
-### Decisions (`DECISIONS.md`)
-Add entries at the bottom:
-- `- Decision 2026-01-10 abcdef: Short decision title`
-    `Decision: What was chosen.`
-    `Reason: Why it was chosen.`
-    `Tradeoffs: What was sacrificed or deferred.`
-
-## 2E) Remove resolved items
+## 2D) Remove resolved items
 - For each issue that is now fixed by the recent work:
   - remove it from `ISSUES.md` completely
 - For each feature that is now implemented:
   - remove it from `FEATURES.md`
 
-## 2F) Consolidate and keep files readable
+## 2E) Consolidate and keep files readable
 - Merge duplicates.
 - Ensure entries remain compact (3–5 lines).
 - Ensure no abbreviations.
 - Keep the file easy to scan (follow the existing ordering convention for that file).
 
-## 2G) Respect entry limits
+## 2F) Respect entry limits
 Do not add more than the entry cap across all memory files in a single run.
 If more exist:
 - add the most impactful first

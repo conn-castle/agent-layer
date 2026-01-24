@@ -1,0 +1,37 @@
+package messages
+
+// Sync messages for the sync command.
+const (
+	// SyncUse is the sync command name.
+	SyncUse                                      = "sync"
+	SyncShort                                    = "Regenerate client outputs from .agent-layer"
+	SyncCompletedWithWarnings                    = "sync completed with warnings"
+	SyncAgentEnabledFlagMissingFmt               = "agent %s is missing enabled flag in config"
+	SyncAgentDisabledFmt                         = "agent %s is disabled in config"
+	SyncMarshalMCPConfigFailedFmt                = "failed to marshal mcp config: %w"
+	SyncCreateDirFailedFmt                       = "failed to create %s: %w"
+	SyncWriteFileFailedFmt                       = "failed to write %s: %w"
+	SyncMarshalClaudeSettingsFailedFmt           = "failed to marshal claude settings: %w"
+	SyncMarshalGeminiSettingsFailedFmt           = "failed to marshal gemini settings: %w"
+	SyncMarshalVSCodeSettingsFailedFmt           = "failed to marshal vscode settings: %w"
+	SyncMarshalVSCodeMCPConfigFailedFmt          = "failed to marshal vscode mcp config: %w"
+	SyncMissingPromptServerNoRoot                = "al not found on PATH and no repo root available for go run"
+	SyncMissingPromptServerSourceFmt             = "missing prompt server source at %s"
+	SyncCheckPathFmt                             = "check %s: %w"
+	SyncPromptServerNotDirFmt                    = "prompt server source path %s is not a directory"
+	SyncMissingGoForPromptServerFmt              = "missing go on PATH for prompt server: %w"
+	SyncReadFailedFmt                            = "failed to read %s: %w"
+	SyncRemoveFailedFmt                          = "failed to remove %s: %w"
+	SyncMCPServerErrorFmt                        = "mcp server %s: %w"
+	SyncMCPServerArgFailedFmt                    = "mcp server %s arg: %w"
+	SyncCodexUnsupportedHeaderFmt                = "unsupported header %s for codex http server"
+	SyncCodexAuthorizationBearerRequired         = "authorization header must use Bearer token"
+	SyncCodexAuthorizationEnvPlaceholderRequired = "authorization header must use env var placeholder"
+
+	MCPServerURLFmt                  = "mcp server %s url: %w"
+	MCPServerHeaderFmt               = "mcp server %s header %s: %w"
+	MCPServerCommandFmt              = "mcp server %s command: %w"
+	MCPServerArgFmt                  = "mcp server %s arg %s: %w"
+	MCPServerEnvFmt                  = "mcp server %s env %s: %w"
+	MCPServerUnsupportedTransportFmt = "mcp server %s: unsupported transport %s"
+)

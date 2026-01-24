@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // tomlStringState tracks the parser position relative to TOML string literals.
@@ -150,7 +152,7 @@ func formatTomlNoIndent(content string) (string, error) {
 	}
 
 	if IsTomlStateInMultiline(state) {
-		return "", fmt.Errorf("unterminated multiline string in TOML output")
+		return "", fmt.Errorf(messages.WizardTOMLUnterminatedMultiline)
 	}
 
 	return strings.Join(lines, "\n"), nil

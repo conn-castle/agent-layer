@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/dispatch"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var maybeExecFunc = dispatch.MaybeExec
@@ -27,7 +28,7 @@ func main() {
 func execute(args []string, stdout io.Writer, stderr io.Writer) error {
 	cmd := newRootCmd()
 	cmd.Version = versionString()
-	cmd.SetVersionTemplate("{{.Version}}\n")
+	cmd.SetVersionTemplate(messages.VersionTemplate)
 	if len(args) > 1 {
 		cmd.SetArgs(args[1:])
 	}
@@ -62,13 +63,13 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 func versionString() string {
 	meta := []string{}
 	if Commit != "" && Commit != "unknown" {
-		meta = append(meta, fmt.Sprintf("commit %s", Commit))
+		meta = append(meta, fmt.Sprintf(messages.VersionCommitFmt, Commit))
 	}
 	if BuildDate != "" && BuildDate != "unknown" {
-		meta = append(meta, fmt.Sprintf("built %s", BuildDate))
+		meta = append(meta, fmt.Sprintf(messages.VersionBuildFmt, BuildDate))
 	}
 	if len(meta) == 0 {
 		return Version
 	}
-	return fmt.Sprintf("%s (%s)", Version, strings.Join(meta, ", "))
+	return fmt.Sprintf(messages.VersionFullFmt, Version, strings.Join(meta, ", "))
 }

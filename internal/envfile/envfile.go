@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // Parse reads .env content into a key-value map.
@@ -20,7 +22,7 @@ func Parse(content string) (map[string]string, error) {
 		lineNo++
 		key, value, ok, err := parseLine(scanner.Text())
 		if err != nil {
-			return nil, fmt.Errorf("line %d: %w", lineNo, err)
+			return nil, fmt.Errorf(messages.EnvfileLineErrorFmt, lineNo, err)
 		}
 		if !ok {
 			continue
@@ -29,7 +31,7 @@ func Parse(content string) (map[string]string, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed reading env content: %w", err)
+		return nil, fmt.Errorf(messages.EnvfileReadFailedFmt, err)
 	}
 
 	return env, nil
@@ -101,11 +103,11 @@ func parseLine(line string) (string, string, bool, error) {
 	}
 	idx := strings.Index(trimmed, "=")
 	if idx <= 0 {
-		return "", "", false, fmt.Errorf("expected KEY=VALUE")
+		return "", "", false, fmt.Errorf(messages.EnvfileExpectedKeyValue)
 	}
 	key := strings.TrimSpace(trimmed[:idx])
 	if key == "" {
-		return "", "", false, fmt.Errorf("expected KEY=VALUE")
+		return "", "", false, fmt.Errorf(messages.EnvfileExpectedKeyValue)
 	}
 	value := strings.TrimSpace(trimmed[idx+1:])
 	if len(value) >= 2 {

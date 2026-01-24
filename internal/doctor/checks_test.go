@@ -1,11 +1,13 @@
 package doctor
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func TestCheckStructure(t *testing.T) {
@@ -88,11 +90,11 @@ func TestCheckSecretsUsesRequiredEnvVars(t *testing.T) {
 
 	results := CheckSecrets(cfg)
 	expected := map[string]Status{
-		"Missing secret: URL_TOKEN":                 StatusFail,
-		"Missing secret: CMD_TOKEN":                 StatusFail,
-		"Missing secret: ENV_TOKEN":                 StatusFail,
-		"Secret found in .env: ARG_TOKEN":           StatusOK,
-		"Secret found in environment: HEADER_TOKEN": StatusOK,
+		fmt.Sprintf(messages.DoctorMissingSecretFmt, "URL_TOKEN"):      StatusFail,
+		fmt.Sprintf(messages.DoctorMissingSecretFmt, "CMD_TOKEN"):      StatusFail,
+		fmt.Sprintf(messages.DoctorMissingSecretFmt, "ENV_TOKEN"):      StatusFail,
+		fmt.Sprintf(messages.DoctorSecretFoundEnvFileFmt, "ARG_TOKEN"): StatusOK,
+		fmt.Sprintf(messages.DoctorSecretFoundEnvFmt, "HEADER_TOKEN"):  StatusOK,
 	}
 
 	for msg, status := range expected {
@@ -204,7 +206,7 @@ func TestCheckSecretsNoRequired(t *testing.T) {
 	if results[0].Status != StatusOK {
 		t.Errorf("expected OK status, got %s", results[0].Status)
 	}
-	if results[0].Message != "No required secrets detected in configuration." {
+	if results[0].Message != messages.DoctorNoRequiredSecrets {
 		t.Errorf("unexpected message: %s", results[0].Message)
 	}
 }

@@ -3,6 +3,8 @@ package dispatch
 import (
 	"fmt"
 	"os"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 type fileLock struct {
@@ -28,11 +30,11 @@ func withFileLock(path string, fn func() error) error {
 func acquireFileLock(path string) (*fileLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("open lock %s: %w", path, err)
+		return nil, fmt.Errorf(messages.DispatchOpenLockFmt, path, err)
 	}
 	if err := lockFileFn(file); err != nil {
 		_ = file.Close()
-		return nil, fmt.Errorf("lock %s: %w", path, err)
+		return nil, fmt.Errorf(messages.DispatchLockFmt, path, err)
 	}
 	return &fileLock{file: file}, nil
 }

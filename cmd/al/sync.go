@@ -7,16 +7,17 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
 // ErrSyncCompletedWithWarnings is returned when sync completes but warnings were generated.
-var ErrSyncCompletedWithWarnings = errors.New("sync completed with warnings")
+var ErrSyncCompletedWithWarnings = errors.New(messages.SyncCompletedWithWarnings)
 
 func newSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "sync",
-		Short: "Regenerate client outputs from .agent-layer",
+		Use:   messages.SyncUse,
+		Short: messages.SyncShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

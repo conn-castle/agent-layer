@@ -6,6 +6,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -29,12 +30,12 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) 
 	configBackupPath := configPath + ".bak"
 	configBackupCreated, err := writeBackup(configBackupPath, rawConfig, configPerm)
 	if err != nil {
-		return fmt.Errorf("failed to backup config: %w", err)
+		return fmt.Errorf(messages.WizardBackupConfigFailedFmt, err)
 	}
 	// Patch
 	newConfig, err := PatchConfig(string(rawConfig), c)
 	if err != nil {
-		return fmt.Errorf("failed to patch config: %w", err)
+		return fmt.Errorf(messages.WizardPatchConfigFailedFmt, err)
 	}
 
 	// Env
@@ -53,7 +54,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) 
 			if configBackupCreated {
 				_ = os.Remove(configBackupPath)
 			}
-			return fmt.Errorf("failed to backup .env: %w", err)
+			return fmt.Errorf(messages.WizardBackupEnvFailedFmt, err)
 		}
 	} else if !os.IsNotExist(err) {
 		if configBackupCreated {
@@ -63,22 +64,22 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) 
 	}
 	// Patch
 	if err := writeFileAtomic(configPath, []byte(newConfig), configPerm); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
+		return fmt.Errorf(messages.WizardWriteConfigFailedFmt, err)
 	}
 	newEnv := envfile.Patch(string(rawEnv), c.Secrets)
 	if err := writeFileAtomic(envPath, []byte(newEnv), envPerm); err != nil {
-		return fmt.Errorf("failed to write .env: %w", err)
+		return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
 	}
 
 	// Sync
-	fmt.Println("Running sync...")
+	fmt.Println(messages.WizardRunningSync)
 	warnings, err := runSync(root)
 	if err != nil {
 		return err
 	}
 	// Print any warnings from sync
 	for _, w := range warnings {
-		fmt.Printf("Warning: %s\n", w.Message)
+		fmt.Printf(messages.WizardWarningFmt, w.Message)
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // CheckStructure verifies that the required project directories exist.
@@ -19,25 +20,25 @@ func CheckStructure(root string) []Result {
 		if err != nil {
 			results = append(results, Result{
 				Status:         StatusFail,
-				CheckName:      "Structure",
-				Message:        fmt.Sprintf("Missing required directory: %s", p),
-				Recommendation: "Run `al init` to initialize the repository.",
+				CheckName:      messages.DoctorCheckNameStructure,
+				Message:        fmt.Sprintf(messages.DoctorMissingRequiredDirFmt, p),
+				Recommendation: messages.DoctorMissingRequiredDirRecommend,
 			})
 			continue
 		}
 		if !info.IsDir() {
 			results = append(results, Result{
 				Status:         StatusFail,
-				CheckName:      "Structure",
-				Message:        fmt.Sprintf("%s exists but is not a directory", p),
-				Recommendation: "Ensure the path is a directory or re-run `al init`.",
+				CheckName:      messages.DoctorCheckNameStructure,
+				Message:        fmt.Sprintf(messages.DoctorPathNotDirFmt, p),
+				Recommendation: messages.DoctorPathNotDirRecommend,
 			})
 			continue
 		}
 		results = append(results, Result{
 			Status:    StatusOK,
-			CheckName: "Structure",
-			Message:   fmt.Sprintf("Directory exists: %s", p),
+			CheckName: messages.DoctorCheckNameStructure,
+			Message:   fmt.Sprintf(messages.DoctorDirExistsFmt, p),
 		})
 	}
 	return results
@@ -50,17 +51,17 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 	if err != nil {
 		results = append(results, Result{
 			Status:         StatusFail,
-			CheckName:      "Config",
-			Message:        fmt.Sprintf("Failed to load configuration: %v", err),
-			Recommendation: "Check .agent-layer/config.toml for syntax errors.",
+			CheckName:      messages.DoctorCheckNameConfig,
+			Message:        fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err),
+			Recommendation: messages.DoctorConfigLoadRecommend,
 		})
 		return results, nil
 	}
 
 	results = append(results, Result{
 		Status:    StatusOK,
-		CheckName: "Config",
-		Message:   "Configuration loaded successfully",
+		CheckName: messages.DoctorCheckNameConfig,
+		Message:   messages.DoctorConfigLoaded,
 	})
 	return results, cfg
 }
@@ -78,22 +79,22 @@ func CheckSecrets(cfg *config.ProjectConfig) []Result {
 			if os.Getenv(secret) == "" {
 				results = append(results, Result{
 					Status:         StatusFail,
-					CheckName:      "Secrets",
-					Message:        fmt.Sprintf("Missing secret: %s", secret),
-					Recommendation: fmt.Sprintf("Add %s to .agent-layer/.env or your environment.", secret),
+					CheckName:      messages.DoctorCheckNameSecrets,
+					Message:        fmt.Sprintf(messages.DoctorMissingSecretFmt, secret),
+					Recommendation: fmt.Sprintf(messages.DoctorMissingSecretRecommendFmt, secret),
 				})
 			} else {
 				results = append(results, Result{
 					Status:    StatusOK,
-					CheckName: "Secrets",
-					Message:   fmt.Sprintf("Secret found in environment: %s", secret),
+					CheckName: messages.DoctorCheckNameSecrets,
+					Message:   fmt.Sprintf(messages.DoctorSecretFoundEnvFmt, secret),
 				})
 			}
 		} else {
 			results = append(results, Result{
 				Status:    StatusOK,
-				CheckName: "Secrets",
-				Message:   fmt.Sprintf("Secret found in .env: %s", secret),
+				CheckName: messages.DoctorCheckNameSecrets,
+				Message:   fmt.Sprintf(messages.DoctorSecretFoundEnvFileFmt, secret),
 			})
 		}
 	}
@@ -101,8 +102,8 @@ func CheckSecrets(cfg *config.ProjectConfig) []Result {
 	if len(required) == 0 {
 		results = append(results, Result{
 			Status:    StatusOK,
-			CheckName: "Secrets",
-			Message:   "No required secrets detected in configuration.",
+			CheckName: messages.DoctorCheckNameSecrets,
+			Message:   messages.DoctorNoRequiredSecrets,
 		})
 	}
 
@@ -127,14 +128,14 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 		if a.Enabled != nil && *a.Enabled {
 			results = append(results, Result{
 				Status:    StatusOK,
-				CheckName: "Agents",
-				Message:   fmt.Sprintf("Agent enabled: %s", a.Name),
+				CheckName: messages.DoctorCheckNameAgents,
+				Message:   fmt.Sprintf(messages.DoctorAgentEnabledFmt, a.Name),
 			})
 		} else {
 			results = append(results, Result{
 				Status:    StatusWarn,
-				CheckName: "Agents",
-				Message:   fmt.Sprintf("Agent disabled: %s", a.Name),
+				CheckName: messages.DoctorCheckNameAgents,
+				Message:   fmt.Sprintf(messages.DoctorAgentDisabledFmt, a.Name),
 			})
 		}
 	}

@@ -26,26 +26,16 @@ Entry format:
     Next step: Review existing template synchronization logic and define the intended behavior for content preservation.
 
 - Issue 2026-01-18 l8m9n0: Limit exposed commands for GitHub MCP
-    Priority: Medium. Area: mcp configuration.
-    Description: The GitHub MCP server exposes many tools. We should explicitly list only the necessary commands in the configuration to reduce noise and potential security risks.
-    Next step: Research useful GitHub MCP commands and configure `args` or `commands` whitelist in the default config template.
+    Priority: Low. Area: mcp configuration.
+    Description: The GitHub MCP server (HTTP transport) exposes many tools. HTTP-based MCP servers do not support client-side tool filtering; the MCP protocol has no standard mechanism for this.
+    Next step: Evaluate alternatives: (1) request upstream tool filtering support, (2) implement an MCP proxy that filters tools, or (3) accept current behavior and document the limitation.
 
-- Issue 2026-01-21 f6g7h8: Centralized user-facing strings file
-    Priority: Low. Area: code organization.
-    Description: All user-facing language (messages, prompts, errors, help text) is scattered across the codebase. Centralizing it would make updates easier and ensure consistent tone.
-    Next step: Audit existing user-facing strings and design a centralized strings module.
+- Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
+    Priority: Low. Area: developer experience.
+    Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.
+    Next step: Profile VS Code startup to identify the bottleneck (extensions, language servers, MCP servers, or workspace indexing).
 
-- Issue 2026-01-21 r5s6t7: Audit instructions and slash commands for duplicate content
-    Priority: Low. Area: maintainability.
-    Description: Instruction templates and slash command definitions contain duplicate instructions (e.g., memory formatting rules appear multiple times). This creates maintenance burden and inconsistency risk.
-    Next step: Identify duplicate content across instruction and slash command files; consolidate into canonical locations.
-
-- Issue 2026-01-24 6cdd8ad: Extract inline Python from release workflow
-    Priority: Low. Area: CI/CD.
-    Description: Release workflow contains inline Python scripts for checksum extraction and formula patching. Inline scripts are harder to test, lint, and debug than standalone files.
-    Next step: Extract to standalone scripts (e.g., `scripts/extract-checksum.py`, `scripts/update-formula.py`) and add CI tests to validate script behavior.
-
-- Issue 2026-01-24 6cdd8ae: Harden regex-based Homebrew formula patching
-    Priority: Low. Area: CI/CD.
-    Description: The release workflow patches `Formula/agent-layer.rb` using regex substitution, which is fragile if the formula format changes (multiline strings, comments near target lines).
-    Next step: Add CI test with a sample formula to validate the regex patching logic; document expected formula structure in the workflow.
+- Issue 2026-01-24 9a8b7c: Refactor global function patching to DI
+    Priority: High. Area: architecture.
+    Description: Systemic pattern of patching global variables (e.g. `var lookPath = exec.LookPath`) prevents parallel testing and invites race conditions.
+    Next step: Refactor `internal/sync` to use interface-based dependency injection and enable `t.Parallel()`.

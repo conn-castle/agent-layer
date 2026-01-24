@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
@@ -29,18 +30,18 @@ func WriteClaudeSettings(root string, project *config.ProjectConfig) error {
 
 	claudeDir := filepath.Join(root, ".claude")
 	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", claudeDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, claudeDir, err)
 	}
 
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal claude settings: %w", err)
+		return fmt.Errorf(messages.SyncMarshalClaudeSettingsFailedFmt, err)
 	}
 	data = append(data, '\n')
 
 	path := filepath.Join(claudeDir, "settings.json")
 	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 
 	return nil

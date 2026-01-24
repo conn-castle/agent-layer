@@ -12,6 +12,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/install"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/version"
 	"github.com/conn-castle/agent-layer/internal/wizard"
@@ -30,8 +31,8 @@ func newInitCmd() *cobra.Command {
 	var pinVersion string
 
 	cmd := &cobra.Command{
-		Use:   "init",
-		Short: "Initialize Agent Layer in this repository",
+		Use:   messages.InitUse,
+		Short: messages.InitShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveInitRoot()
 			if err != nil {
@@ -39,7 +40,7 @@ func newInitCmd() *cobra.Command {
 			}
 			overwriteMode := overwrite || force
 			if overwriteMode && !force && !isTerminal() {
-				return fmt.Errorf("init overwrite prompts require an interactive terminal; re-run with --force to overwrite without prompts")
+				return fmt.Errorf(messages.InitOverwriteRequiresTerminal)
 			}
 			pinned, err := resolvePinVersion(pinVersion, Version)
 			if err != nil {
@@ -53,7 +54,7 @@ func newInitCmd() *cobra.Command {
 			}
 			if overwriteMode && !force {
 				opts.PromptOverwrite = func(path string) (bool, error) {
-					prompt := fmt.Sprintf("Overwrite %s with the template version?", path)
+					prompt := fmt.Sprintf(messages.InitOverwritePromptFmt, path)
 					return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
 				}
 			}
@@ -63,7 +64,7 @@ func newInitCmd() *cobra.Command {
 			if noWizard || !isTerminal() {
 				return nil
 			}
-			run, err := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), "Run setup wizard now? (recommended)", true)
+			run, err := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitRunWizardPrompt, true)
 			if err != nil {
 				return err
 			}
@@ -74,10 +75,10 @@ func newInitCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Prompt before overwriting existing template files")
-	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing template files without prompting (implies --overwrite)")
-	cmd.Flags().BoolVar(&noWizard, "no-wizard", false, "Skip prompting to run the setup wizard after init")
-	cmd.Flags().StringVar(&pinVersion, "version", "", "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z)")
+	cmd.Flags().BoolVar(&overwrite, "overwrite", false, messages.InitFlagOverwrite)
+	cmd.Flags().BoolVar(&force, "force", false, messages.InitFlagForce)
+	cmd.Flags().BoolVar(&noWizard, "no-wizard", false, messages.InitFlagNoWizard)
+	cmd.Flags().StringVar(&pinVersion, "version", "", messages.InitFlagVersion)
 
 	return cmd
 }
@@ -95,15 +96,15 @@ func warnInitUpdate(cmd *cobra.Command, flagVersion string) {
 	}
 	result, err := checkForUpdate(cmd.Context(), Version)
 	if err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to check for updates: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.InitWarnUpdateCheckFailedFmt, err)
 		return
 	}
 	if result.CurrentIsDev {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: running dev build; latest release is %s\n", result.Latest)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.InitWarnDevBuildFmt, result.Latest)
 		return
 	}
 	if result.Outdated {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Warning: update available: %s (current %s)\n", result.Latest, result.Current)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.InitWarnUpdateAvailableFmt, result.Latest, result.Current)
 	}
 }
 
@@ -132,11 +133,11 @@ func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (b
 	reader := bufio.NewReader(in)
 	for {
 		if defaultYes {
-			if _, err := fmt.Fprintf(out, "%s [Y/n]: ", prompt); err != nil {
+			if _, err := fmt.Fprintf(out, messages.PromptYesDefaultFmt, prompt); err != nil {
 				return false, err
 			}
 		} else {
-			if _, err := fmt.Fprintf(out, "%s [y/N]: ", prompt); err != nil {
+			if _, err := fmt.Fprintf(out, messages.PromptNoDefaultFmt, prompt); err != nil {
 				return false, err
 			}
 		}
@@ -160,9 +161,9 @@ func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (b
 			return false, nil
 		}
 		if errors.Is(err, io.EOF) {
-			return false, fmt.Errorf("invalid response %q", response)
+			return false, fmt.Errorf(messages.PromptInvalidResponse, response)
 		}
-		if _, err := fmt.Fprintln(out, "Please enter y or n."); err != nil {
+		if _, err := fmt.Fprintln(out, messages.PromptRetryYesNo); err != nil {
 			return false, err
 		}
 	}

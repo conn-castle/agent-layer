@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
@@ -16,7 +18,7 @@ var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 func LoadInstructions(dir string) ([]InstructionFile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("missing instructions directory %s: %w", dir, err)
+		return nil, fmt.Errorf(messages.ConfigMissingInstructionsDirFmt, dir, err)
 	}
 
 	var names []string
@@ -31,7 +33,7 @@ func LoadInstructions(dir string) ([]InstructionFile, error) {
 	}
 
 	if len(names) == 0 {
-		return nil, fmt.Errorf("no instruction files found in %s", dir)
+		return nil, fmt.Errorf(messages.ConfigNoInstructionFilesFmt, dir)
 	}
 
 	sort.Strings(names)
@@ -41,7 +43,7 @@ func LoadInstructions(dir string) ([]InstructionFile, error) {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("failed reading instruction %s: %w", path, err)
+			return nil, fmt.Errorf(messages.ConfigFailedReadInstructionFmt, path, err)
 		}
 		data = bytes.TrimPrefix(data, utf8BOM)
 		files = append(files, InstructionFile{

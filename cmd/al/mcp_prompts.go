@@ -7,14 +7,15 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/mcp"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var runPromptServer = mcp.RunPromptServer
 
 func newMcpPromptsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "mcp-prompts",
-		Short: "Run the internal MCP prompt server over stdio",
+		Use:   messages.McpPromptsUse,
+		Short: messages.McpPromptsShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

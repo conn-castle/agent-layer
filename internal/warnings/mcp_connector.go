@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // mcpSessionInterface wraps the MCP session for testing.
@@ -102,13 +104,13 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server ResolvedM
 		}
 		transport = t
 	default:
-		res.Error = fmt.Errorf("unsupported transport: %s", server.Transport)
+		res.Error = fmt.Errorf(messages.WarningsUnsupportedTransportFmt, server.Transport)
 		return res
 	}
 
 	session, err := mcpClient.Connect(ctx, transport, nil)
 	if err != nil {
-		res.Error = fmt.Errorf("connection failed: %w", err)
+		res.Error = fmt.Errorf(messages.WarningsConnectionFailedFmt, err)
 		return res
 	}
 	defer func() { _ = session.Close() }()
@@ -123,7 +125,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server ResolvedM
 		})
 
 		if err != nil {
-			res.Error = fmt.Errorf("list tools failed: %w", err)
+			res.Error = fmt.Errorf(messages.WarningsListToolsFailedFmt, err)
 			return res
 		}
 
@@ -136,7 +138,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server ResolvedM
 
 		// Guard against infinite loops
 		if len(allTools) > maxToolsToDiscover {
-			res.Error = fmt.Errorf("too many tools or infinite loop")
+			res.Error = fmt.Errorf(messages.WarningsTooManyTools)
 			return res
 		}
 	}

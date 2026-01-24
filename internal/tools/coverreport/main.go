@@ -12,6 +12,8 @@ import (
 	"text/tabwriter"
 
 	"golang.org/x/tools/cover"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 type fileStats struct {
@@ -23,30 +25,30 @@ type fileStats struct {
 }
 
 func main() {
-	profilePath := flag.String("profile", "", "path to coverage profile")
-	threshold := flag.Float64("threshold", -1, "required coverage threshold (optional)")
+	profilePath := flag.String("profile", "", messages.CoverReportProfileFlagUsage)
+	threshold := flag.Float64("threshold", -1, messages.CoverReportThresholdFlagUsage)
 	flag.Parse()
 
 	if *profilePath == "" {
-		fmt.Fprintln(os.Stderr, "missing required -profile flag")
+		fmt.Fprintln(os.Stderr, messages.CoverReportMissingProfileFlag)
 		flag.Usage()
 		os.Exit(2)
 	}
 
 	profiles, err := cover.ParseProfiles(*profilePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to parse coverage profile: %v\n", err)
+		fmt.Fprintf(os.Stderr, messages.CoverReportParseFailedFmt, err)
 		os.Exit(1)
 	}
 
 	stats := buildStats(profiles)
 	sortStats(stats)
 	if err := writeTable(os.Stdout, stats); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write summary table: %v\n", err)
+		fmt.Fprintf(os.Stderr, messages.CoverReportWriteTableFailedFmt, err)
 		os.Exit(1)
 	}
 	if err := writeSummary(os.Stdout, stats, *threshold); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to write coverage summary: %v\n", err)
+		fmt.Fprintf(os.Stderr, messages.CoverReportWriteSummaryFailedFmt, err)
 		os.Exit(1)
 	}
 }
@@ -123,11 +125,11 @@ func sortStats(stats []fileStats) {
 // out is the destination for the report; stats are the per-file coverage results.
 func writeTable(out io.Writer, stats []fileStats) error {
 	writer := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(writer, "file\tcover%\tlines_missed"); err != nil {
+	if _, err := fmt.Fprintln(writer, messages.CoverReportTableHeader); err != nil {
 		return err
 	}
 	for _, stat := range stats {
-		if _, err := fmt.Fprintf(writer, "%s\t%.2f\t%d\n", stat.file, stat.coveragePct, stat.linesMissed); err != nil {
+		if _, err := fmt.Fprintf(writer, messages.CoverReportTableRowFmt, stat.file, stat.coveragePct, stat.linesMissed); err != nil {
 			return err
 		}
 	}
@@ -168,14 +170,14 @@ func writeSummary(out io.Writer, stats []fileStats, threshold float64) error {
 	}
 
 	if threshold >= 0 {
-		status := "PASS"
+		status := messages.CoverReportStatusPass
 		if total < threshold {
-			status = "FAIL"
+			status = messages.CoverReportStatusFail
 		}
-		_, err := fmt.Fprintf(out, "total coverage: %.2f%% (threshold %.2f%%) %s\n", total, threshold, status)
+		_, err := fmt.Fprintf(out, messages.CoverReportTotalWithThresholdFmt, total, threshold, status)
 		return err
 	}
 
-	_, err := fmt.Fprintf(out, "total coverage: %.2f%%\n", total)
+	_, err := fmt.Fprintf(out, messages.CoverReportTotalFmt, total)
 	return err
 }

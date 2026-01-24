@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var lookPath = exec.LookPath
@@ -19,23 +21,23 @@ func resolvePromptServerCommand(root string) (string, []string, error) {
 	}
 
 	if root == "" {
-		return "", nil, fmt.Errorf("al not found on PATH and no repo root available for go run")
+		return "", nil, fmt.Errorf(messages.SyncMissingPromptServerNoRoot)
 	}
 
 	sourcePath := filepath.Join(root, "cmd", "al")
 	info, err := os.Stat(sourcePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return "", nil, fmt.Errorf("missing prompt server source at %s", sourcePath)
+			return "", nil, fmt.Errorf(messages.SyncMissingPromptServerSourceFmt, sourcePath)
 		}
-		return "", nil, fmt.Errorf("check %s: %w", sourcePath, err)
+		return "", nil, fmt.Errorf(messages.SyncCheckPathFmt, sourcePath, err)
 	}
 	if !info.IsDir() {
-		return "", nil, fmt.Errorf("prompt server source path %s is not a directory", sourcePath)
+		return "", nil, fmt.Errorf(messages.SyncPromptServerNotDirFmt, sourcePath)
 	}
 
 	if _, err := lookPath("go"); err != nil {
-		return "", nil, fmt.Errorf("missing go on PATH for prompt server: %w", err)
+		return "", nil, fmt.Errorf(messages.SyncMissingGoForPromptServerFmt, err)
 	}
 
 	return "go", []string{"run", sourcePath, "mcp-prompts"}, nil

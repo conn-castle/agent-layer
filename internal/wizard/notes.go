@@ -1,22 +1,27 @@
 package wizard
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
+)
 
 // approvalModeHelpText returns explanatory text for approval modes.
 func approvalModeHelpText() string {
 	lines := []string{
-		"Approval modes control what runs without prompts:",
+		messages.WizardApprovalModeHelpIntro,
 	}
 	for _, option := range ApprovalModeOptions {
-		lines = append(lines, "- "+option.Value+": "+option.Description)
+		lines = append(lines, fmt.Sprintf(messages.WizardApprovalModeHelpLineFmt, option.Value, option.Description))
 	}
-	lines = append(lines, "Support varies by client; Agent Layer applies the closest available behavior.")
+	lines = append(lines, messages.WizardApprovalModeHelpSupportNote)
 	return strings.Join(lines, "\n")
 }
 
 // previewModelWarningText returns the warning text shown before preview model selection.
 func previewModelWarningText() string {
-	return "Preview models are pre-release and can change or be removed without notice."
+	return messages.WizardPreviewModelWarningText
 }
 
 // hasPreviewModels reports whether any model option looks like a preview release.

@@ -7,6 +7,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/envfile"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -53,7 +54,7 @@ func LoadProjectConfig(root string) (*ProjectConfig, error) {
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("missing config file %s: %w", path, err)
+		return nil, fmt.Errorf(messages.ConfigMissingFileFmt, path, err)
 	}
 	return ParseConfig(data, path)
 }
@@ -62,7 +63,7 @@ func LoadConfig(path string) (*Config, error) {
 func LoadTemplateConfig() (*Config, error) {
 	data, err := templates.Read("config.toml")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read template config.toml: %w", err)
+		return nil, fmt.Errorf(messages.ConfigFailedReadTemplateFmt, err)
 	}
 	return ParseConfig(data, "template config.toml")
 }
@@ -71,12 +72,12 @@ func LoadTemplateConfig() (*Config, error) {
 func LoadEnv(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("missing env file %s: %w", path, err)
+		return nil, fmt.Errorf(messages.ConfigMissingEnvFileFmt, path, err)
 	}
 
 	env, err := envfile.Parse(string(data))
 	if err != nil {
-		return nil, fmt.Errorf("invalid env file %s: %w", path, err)
+		return nil, fmt.Errorf(messages.ConfigInvalidEnvFileFmt, path, err)
 	}
 	return env, nil
 }
@@ -86,7 +87,7 @@ func LoadEnv(path string) (map[string]string, error) {
 func ParseConfig(data []byte, source string) (*Config, error) {
 	var cfg Config
 	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("invalid config %s: %w", source, err)
+		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
 	}
 	if err := cfg.Validate(source); err != nil {
 		return nil, err

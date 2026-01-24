@@ -9,6 +9,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
@@ -28,12 +29,12 @@ func WriteCodexConfig(root string, project *config.ProjectConfig) error {
 
 	codexDir := filepath.Join(root, ".codex")
 	if err := os.MkdirAll(codexDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", codexDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
 	}
 
 	path := filepath.Join(codexDir, "config.toml")
 	if err := fsutil.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 
 	return nil
@@ -44,11 +45,11 @@ func WriteCodexRules(root string, project *config.ProjectConfig) error {
 	content := buildCodexRules(project)
 	rulesDir := filepath.Join(root, ".codex", "rules")
 	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", rulesDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, rulesDir, err)
 	}
 	path := filepath.Join(rulesDir, "default.rules")
 	if err := fsutil.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
 }
@@ -91,7 +92,7 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 				return "", err
 			}
 		default:
-			return "", fmt.Errorf("mcp server %s: unsupported transport %s", server.ID, server.Transport)
+			return "", fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 		}
 	}
 
@@ -102,7 +103,7 @@ func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMC
 	if len(server.Headers) > 0 {
 		bearerEnv, err := extractBearerEnvVar(server.Headers)
 		if err != nil {
-			return fmt.Errorf("mcp server %s: %w", server.ID, err)
+			return fmt.Errorf(messages.SyncMCPServerErrorFmt, server.ID, err)
 		}
 		if bearerEnv != "" {
 			builder.WriteString(fmt.Sprintf("bearer_token_env_var = %q\n", bearerEnv))
@@ -111,7 +112,7 @@ func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMC
 	// Resolve actual values in the URL (Codex doesn't support ${VAR} placeholders in URLs).
 	resolvedURL, err := config.SubstituteEnvVars(server.URL, env)
 	if err != nil {
-		return fmt.Errorf("mcp server %s url: %w", server.ID, err)
+		return fmt.Errorf(messages.MCPServerURLFmt, server.ID, err)
 	}
 	builder.WriteString(fmt.Sprintf("url = %q\n", resolvedURL))
 	return nil
@@ -121,7 +122,7 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 	// Resolve actual values in command (Codex doesn't support ${VAR} placeholders).
 	resolvedCommand, err := config.SubstituteEnvVars(server.Command, env)
 	if err != nil {
-		return fmt.Errorf("mcp server %s command: %w", server.ID, err)
+		return fmt.Errorf(messages.MCPServerCommandFmt, server.ID, err)
 	}
 	builder.WriteString(fmt.Sprintf("command = %q\n", resolvedCommand))
 
@@ -130,7 +131,7 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 		for _, arg := range server.Args {
 			resolvedArg, err := config.SubstituteEnvVars(arg, env)
 			if err != nil {
-				return fmt.Errorf("mcp server %s arg: %w", server.ID, err)
+				return fmt.Errorf(messages.SyncMCPServerArgFailedFmt, server.ID, err)
 			}
 			resolvedArgs = append(resolvedArgs, resolvedArg)
 		}
@@ -143,7 +144,7 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 		for key, value := range server.Env {
 			resolvedValue, err := config.SubstituteEnvVars(value, env)
 			if err != nil {
-				return fmt.Errorf("mcp server %s env %s: %w", server.ID, key, err)
+				return fmt.Errorf(messages.MCPServerEnvFmt, server.ID, key, err)
 			}
 			resolvedEnv[key] = resolvedValue
 		}
@@ -160,20 +161,20 @@ func extractBearerEnvVar(headers map[string]string) (string, error) {
 			bearerValue = value
 			continue
 		}
-		return "", fmt.Errorf("unsupported header %s for codex http server", key)
+		return "", fmt.Errorf(messages.SyncCodexUnsupportedHeaderFmt, key)
 	}
 	if bearerValue == "" {
 		return "", nil
 	}
 	const prefix = "Bearer "
 	if !strings.HasPrefix(bearerValue, prefix) {
-		return "", fmt.Errorf("authorization header must use Bearer token")
+		return "", fmt.Errorf(messages.SyncCodexAuthorizationBearerRequired)
 	}
 	token := strings.TrimPrefix(bearerValue, prefix)
 	if strings.HasPrefix(token, "${") && strings.HasSuffix(token, "}") {
 		return strings.TrimSuffix(strings.TrimPrefix(token, "${"), "}"), nil
 	}
-	return "", fmt.Errorf("authorization header must use env var placeholder")
+	return "", fmt.Errorf(messages.SyncCodexAuthorizationEnvPlaceholderRequired)
 }
 
 func tomlStringArray(values []string) string {

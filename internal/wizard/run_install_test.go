@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -18,7 +19,7 @@ func TestRun_NotInstalled_UserCancels(t *testing.T) {
 
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
-			if title == "Agent Layer is not installed in this repo. Run 'al init' now? (recommended)" {
+			if title == messages.WizardInstallPrompt {
 				*value = false
 				return nil
 			}
@@ -42,7 +43,7 @@ func TestRun_Install(t *testing.T) {
 
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
-			if title == "Agent Layer is not installed in this repo. Run 'al init' now? (recommended)" {
+			if title == messages.WizardInstallPrompt {
 				*value = true
 				return nil
 			}

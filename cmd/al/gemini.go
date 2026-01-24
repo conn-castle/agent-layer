@@ -6,12 +6,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/gemini"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func newGeminiCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "gemini",
-		Short: "Sync and launch Gemini CLI",
+		Use:   messages.GeminiUse,
+		Short: messages.GeminiShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -91,10 +92,10 @@ func runSteps(steps []func() error) error {
 // EnsureEnabled is a helper for command handlers.
 func EnsureEnabled(name string, enabled *bool) error {
 	if enabled == nil {
-		return fmt.Errorf("agent %s is missing enabled flag in config", name)
+		return fmt.Errorf(messages.SyncAgentEnabledFlagMissingFmt, name)
 	}
 	if !*enabled {
-		return fmt.Errorf("agent %s is disabled in config", name)
+		return fmt.Errorf(messages.SyncAgentDisabledFmt, name)
 	}
 	return nil
 }

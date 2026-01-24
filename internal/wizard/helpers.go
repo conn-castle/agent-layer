@@ -5,11 +5,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-)
 
-const (
-	leaveBlankOption = "Leave blank (use client default)"
-	customOption     = "Custom..."
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // buildSummary returns a formatted summary of wizard choices.
@@ -17,11 +14,11 @@ const (
 // Assumes c.DefaultMCPServers has been populated (see wizard.Run).
 func buildSummary(c *Choices) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Approvals Mode: %s\n", c.ApprovalMode))
+	sb.WriteString(fmt.Sprintf(messages.WizardSummaryApprovalsFmt, c.ApprovalMode))
 
 	agents := agentSummaryLines(c)
 	sort.Strings(agents)
-	sb.WriteString("\nEnabled Agents:\n")
+	sb.WriteString(messages.WizardSummaryEnabledAgentsHeader)
 	for _, a := range agents {
 		sb.WriteString(a + "\n")
 	}
@@ -32,57 +29,57 @@ func buildSummary(c *Choices) string {
 			mcp = append(mcp, s.ID)
 		}
 	}
-	sb.WriteString("\nEnabled MCP Servers:\n")
+	sb.WriteString(messages.WizardSummaryEnabledMCPServersHeader)
 	if len(c.DefaultMCPServers) == 0 {
-		sb.WriteString("(none loaded)\n")
+		sb.WriteString(messages.WizardSummaryNoneLoaded)
 	} else if len(mcp) > 0 {
 		for _, m := range mcp {
-			sb.WriteString(fmt.Sprintf("- %s\n", m))
+			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
 		}
 	} else {
-		sb.WriteString("(none)\n")
+		sb.WriteString(messages.WizardSummaryNone)
 	}
 
 	restoredMCP := restoredMCPServers(c)
 	if len(restoredMCP) > 0 {
-		sb.WriteString("\nRestored Default MCP Servers:\n")
+		sb.WriteString(messages.WizardSummaryRestoredMCPServersHeader)
 		for _, m := range restoredMCP {
-			sb.WriteString(fmt.Sprintf("- %s\n", m))
+			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
 		}
 	}
 
 	disabledMCP := disabledMCPServers(c)
-	sb.WriteString("\nDisabled MCP Servers (missing secrets):\n")
+	sb.WriteString(messages.WizardSummaryDisabledMCPServersHeader)
 	if len(c.DefaultMCPServers) == 0 {
-		sb.WriteString("(none loaded)\n")
+		sb.WriteString(messages.WizardSummaryNoneLoaded)
 	} else if len(disabledMCP) > 0 {
 		for _, m := range disabledMCP {
-			sb.WriteString(fmt.Sprintf("- %s\n", m))
+			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
 		}
 	} else {
-		sb.WriteString("(none)\n")
+		sb.WriteString(messages.WizardSummaryNone)
 	}
 
-	sb.WriteString("\nSecrets to Update:\n")
+	sb.WriteString(messages.WizardSummarySecretsHeader)
 	if len(c.Secrets) > 0 {
 		for k := range c.Secrets {
-			sb.WriteString(fmt.Sprintf("- %s\n", k))
+			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, k))
 		}
 	} else {
-		sb.WriteString("(none)\n")
+		sb.WriteString(messages.WizardSummaryNone)
 	}
 
-	sb.WriteString("\nWarnings:\n")
+	sb.WriteString(messages.WizardSummaryWarningsHeader)
 	if !c.WarningsEnabled {
-		sb.WriteString("(disabled)\n")
+		sb.WriteString(messages.WizardSummaryWarningsDisabled)
 		return sb.String()
 	}
-	sb.WriteString(fmt.Sprintf("- instruction_token_threshold = %d\n", c.InstructionTokenThreshold))
-	sb.WriteString(fmt.Sprintf("- mcp_server_threshold = %d\n", c.MCPServerThreshold))
-	sb.WriteString(fmt.Sprintf("- mcp_tools_total_threshold = %d\n", c.MCPToolsTotalThreshold))
-	sb.WriteString(fmt.Sprintf("- mcp_server_tools_threshold = %d\n", c.MCPServerToolsThreshold))
-	sb.WriteString(fmt.Sprintf("- mcp_schema_tokens_total_threshold = %d\n", c.MCPSchemaTokensTotalThreshold))
-	sb.WriteString(fmt.Sprintf("- mcp_schema_tokens_server_threshold = %d\n", c.MCPSchemaTokensServerThreshold))
+	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningInstructionTokenFmt, c.InstructionTokenThreshold))
+	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPServerFmt, c.MCPServerThreshold))
+	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPToolsTotalFmt, c.MCPToolsTotalThreshold))
+	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPServerToolsFmt, c.MCPServerToolsThreshold))
+	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPSchemaTokensTotalFmt, c.MCPSchemaTokensTotalThreshold))
+	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPSchemaTokensServerFmt, c.MCPSchemaTokensServerThreshold))
 
 	return sb.String()
 }
@@ -130,7 +127,7 @@ func agentIDSet(ids []string) map[string]bool {
 func selectOptionalValue(ui UI, title string, options []string, value *string) error {
 	selection := *value
 	if selection == "" {
-		selection = leaveBlankOption
+		selection = messages.WizardLeaveBlankOption
 	} else {
 		found := false
 		for _, option := range options {
@@ -140,28 +137,28 @@ func selectOptionalValue(ui UI, title string, options []string, value *string) e
 			}
 		}
 		if !found {
-			selection = customOption
+			selection = messages.WizardCustomOption
 		}
 	}
 	opts := make([]string, 0, len(options)+2)
-	opts = append(opts, leaveBlankOption)
+	opts = append(opts, messages.WizardLeaveBlankOption)
 	opts = append(opts, options...)
-	opts = append(opts, customOption)
+	opts = append(opts, messages.WizardCustomOption)
 	if err := ui.Select(title, opts, &selection); err != nil {
 		return err
 	}
-	if selection == leaveBlankOption {
+	if selection == messages.WizardLeaveBlankOption {
 		*value = ""
 		return nil
 	}
-	if selection == customOption {
+	if selection == messages.WizardCustomOption {
 		customValue := *value
-		if err := ui.Input(fmt.Sprintf("Custom %s", title), &customValue); err != nil {
+		if err := ui.Input(fmt.Sprintf(messages.WizardCustomPromptFmt, title), &customValue); err != nil {
 			return err
 		}
 		customValue = strings.TrimSpace(customValue)
 		if customValue == "" {
-			return fmt.Errorf("custom value required for %s", title)
+			return fmt.Errorf(messages.WizardCustomValueRequiredFmt, title)
 		}
 		*value = customValue
 		return nil
@@ -183,7 +180,7 @@ func promptPositiveInt(ui UI, title string, value *int) error {
 	}
 	parsed, err := strconv.Atoi(input)
 	if err != nil || parsed <= 0 {
-		return fmt.Errorf("%s must be a positive integer", title)
+		return fmt.Errorf(messages.WizardPositiveIntRequiredFmt, title)
 	}
 	*value = parsed
 	return nil
@@ -199,10 +196,10 @@ func agentSummaryLines(c *Choices) []string {
 		}
 		modelSummary := agentModelSummary(agent, c)
 		if modelSummary == "" {
-			agents = append(agents, fmt.Sprintf("- %s", agent))
+			agents = append(agents, fmt.Sprintf(messages.WizardSummaryAgentFmt, agent))
 			continue
 		}
-		agents = append(agents, fmt.Sprintf("- %s: %s", agent, modelSummary))
+		agents = append(agents, fmt.Sprintf(messages.WizardSummaryAgentModelFmt, agent, modelSummary))
 	}
 	return agents
 }
@@ -226,13 +223,13 @@ func agentModelSummary(agent string, c *Choices) string {
 // c holds wizard choices; returns the summary text.
 func codexModelSummary(c *Choices) string {
 	if c.CodexModel != "" && c.CodexReasoning != "" {
-		return fmt.Sprintf("%s (%s)", c.CodexModel, c.CodexReasoning)
+		return fmt.Sprintf(messages.WizardSummaryCodexModelReasoningFmt, c.CodexModel, c.CodexReasoning)
 	}
 	if c.CodexModel != "" {
 		return c.CodexModel
 	}
 	if c.CodexReasoning != "" {
-		return fmt.Sprintf("reasoning: %s", c.CodexReasoning)
+		return fmt.Sprintf(messages.WizardSummaryCodexReasoningFmt, c.CodexReasoning)
 	}
 	return ""
 }

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/update"
 )
 
@@ -35,28 +36,28 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 	if _, err := osStat(binPath); err == nil {
 		return binPath, nil
 	} else if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("check cached binary %s: %w", binPath, err)
+		return "", fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
 	}
 
 	if noNetwork() {
-		return "", fmt.Errorf("version %s is not cached (expected at %s); network access disabled via %s", version, binPath, EnvNoNetwork)
+		return "", fmt.Errorf(messages.DispatchVersionNotCachedFmt, version, binPath, EnvNoNetwork)
 	}
 
 	lockPath := binPath + ".lock"
 	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
-		return "", fmt.Errorf("create cache dir: %w", err)
+		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
 	}
 
 	if err := withFileLock(lockPath, func() error {
 		if _, err := osStat(binPath); err == nil {
 			return nil
 		} else if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("check cached binary %s: %w", binPath, err)
+			return fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
 		}
 
 		tmp, err := os.CreateTemp(filepath.Dir(binPath), asset+".tmp-*")
 		if err != nil {
-			return fmt.Errorf("create temp file: %w", err)
+			return fmt.Errorf(messages.DispatchCreateTempFileFmt, err)
 		}
 		tmpName := tmp.Name()
 		committed := false
@@ -73,10 +74,10 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 		}
 		if err := tmp.Sync(); err != nil {
 			_ = tmp.Close()
-			return fmt.Errorf("sync temp file: %w", err)
+			return fmt.Errorf(messages.DispatchSyncTempFileFmt, err)
 		}
 		if err := tmp.Close(); err != nil {
-			return fmt.Errorf("close temp file: %w", err)
+			return fmt.Errorf(messages.DispatchCloseTempFileFmt, err)
 		}
 
 		expected, err := fetchChecksum(version, asset)
@@ -88,12 +89,12 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 		}
 		if runtime.GOOS != "windows" {
 			if err := osChmod(tmpName, 0o755); err != nil {
-				return fmt.Errorf("chmod cached binary: %w", err)
+				return fmt.Errorf(messages.DispatchChmodCachedBinaryFmt, err)
 			}
 		}
 
 		if err := osRename(tmpName, binPath); err != nil {
-			return fmt.Errorf("move cached binary into place: %w", err)
+			return fmt.Errorf(messages.DispatchMoveCachedBinaryFmt, err)
 		}
 		committed = true
 		return nil
@@ -113,13 +114,13 @@ func checkPlatform(osName, arch string) (string, string, error) {
 	switch osName {
 	case "darwin", "linux", "windows":
 	default:
-		return "", "", fmt.Errorf("unsupported OS %q", osName)
+		return "", "", fmt.Errorf(messages.DispatchUnsupportedOSFmt, osName)
 	}
 
 	switch arch {
 	case "amd64", "arm64":
 	default:
-		return "", "", fmt.Errorf("unsupported architecture %q", arch)
+		return "", "", fmt.Errorf(messages.DispatchUnsupportedArchFmt, arch)
 	}
 
 	return osName, arch, nil
@@ -144,14 +145,14 @@ func downloadToFile(url string, dest *os.File) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
+		return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download %s: unexpected status %s", url, resp.Status)
+		return fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
 	}
 	if _, err := io.Copy(dest, resp.Body); err != nil {
-		return fmt.Errorf("download %s: %w", url, err)
+		return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 	}
 	return nil
 }
@@ -162,11 +163,11 @@ func fetchChecksum(version string, asset string) (string, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
-		return "", fmt.Errorf("download %s: %w", url, err)
+		return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download %s: unexpected status %s", url, resp.Status)
+		return "", fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
 	}
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -186,26 +187,26 @@ func fetchChecksum(version string, asset string) (string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("read %s: %w", url, err)
+		return "", fmt.Errorf(messages.DispatchReadFailedFmt, url, err)
 	}
-	return "", fmt.Errorf("checksum for %s not found in %s", asset, url)
+	return "", fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
 }
 
 // verifyChecksum computes the SHA-256 of path and compares it to expected.
 func verifyChecksum(path string, expected string) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", path, err)
+		return fmt.Errorf(messages.DispatchOpenFileFmt, path, err)
 	}
 	defer func() { _ = file.Close() }()
 
 	hasher := sha256.New()
 	if _, err := io.Copy(hasher, file); err != nil {
-		return fmt.Errorf("hash %s: %w", path, err)
+		return fmt.Errorf(messages.DispatchHashFileFmt, path, err)
 	}
 	actual := fmt.Sprintf("%x", hasher.Sum(nil))
 	if actual != expected {
-		return fmt.Errorf("checksum mismatch for %s (expected %s, got %s)", path, expected, actual)
+		return fmt.Errorf(messages.DispatchChecksumMismatchFmt, path, expected, actual)
 	}
 	return nil
 }

@@ -4,12 +4,14 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:           "al",
-		Short:         "Agent Layer",
+		Use:           messages.RootUse,
+		Short:         messages.RootShort,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -24,7 +26,7 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 
-	root.Flags().Bool("version", false, "Print version and exit")
+	root.Flags().Bool("version", false, messages.RootVersionFlag)
 
 	root.AddCommand(
 		newInitCmd(),

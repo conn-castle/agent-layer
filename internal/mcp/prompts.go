@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var runServer = func(ctx context.Context, server *mcp.Server) error {
@@ -30,7 +31,7 @@ func RunPromptServer(ctx context.Context, version string, commands []config.Slas
 	}
 
 	if err := runServer(ctx, server); err != nil {
-		return fmt.Errorf("failed to run MCP prompt server: %w", err)
+		return fmt.Errorf(messages.McpRunPromptServerFailedFmt, err)
 	}
 
 	return nil

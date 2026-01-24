@@ -11,6 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -21,15 +22,15 @@ var (
 
 func newDoctorCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "doctor",
-		Short: "Report missing secrets, disabled servers, and common misconfigurations",
+		Use:   messages.DoctorUse,
+		Short: messages.DoctorShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("🏥 Checking Agent Layer health in %s...\n\n", root)
+			fmt.Printf(messages.DoctorHealthCheckFmt, root)
 
 			var allResults []doctor.Result
 
@@ -40,28 +41,28 @@ func newDoctorCmd() *cobra.Command {
 			configResults, cfg := doctor.CheckConfig(root)
 			allResults = append(allResults, configResults...)
 
-			updateResult := doctor.Result{CheckName: "Update"}
+			updateResult := doctor.Result{CheckName: messages.DoctorCheckNameUpdate}
 			if strings.TrimSpace(os.Getenv(dispatch.EnvNoNetwork)) != "" {
 				updateResult.Status = doctor.StatusWarn
-				updateResult.Message = fmt.Sprintf("Update check skipped because %s is set", dispatch.EnvNoNetwork)
-				updateResult.Recommendation = fmt.Sprintf("Unset %s to check for updates.", dispatch.EnvNoNetwork)
+				updateResult.Message = fmt.Sprintf(messages.DoctorUpdateSkippedFmt, dispatch.EnvNoNetwork)
+				updateResult.Recommendation = fmt.Sprintf(messages.DoctorUpdateSkippedRecommendFmt, dispatch.EnvNoNetwork)
 			} else {
 				result, err := checkForUpdate(cmd.Context(), Version)
 				if err != nil {
 					updateResult.Status = doctor.StatusWarn
-					updateResult.Message = fmt.Sprintf("Failed to check for updates: %v", err)
-					updateResult.Recommendation = "Verify network access and try again."
+					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateFailedFmt, err)
+					updateResult.Recommendation = messages.DoctorUpdateFailedRecommend
 				} else if result.CurrentIsDev {
 					updateResult.Status = doctor.StatusWarn
-					updateResult.Message = fmt.Sprintf("Running dev build; latest release is %s", result.Latest)
-					updateResult.Recommendation = "Install a release build to use version pinning and dispatch."
+					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateDevBuildFmt, result.Latest)
+					updateResult.Recommendation = messages.DoctorUpdateDevBuildRecommend
 				} else if result.Outdated {
 					updateResult.Status = doctor.StatusWarn
-					updateResult.Message = fmt.Sprintf("Update available: %s (current %s)", result.Latest, result.Current)
-					updateResult.Recommendation = "Upgrade the global CLI or update your repo pin if needed."
+					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateAvailableFmt, result.Latest, result.Current)
+					updateResult.Recommendation = messages.DoctorUpdateAvailableRecommend
 				} else {
 					updateResult.Status = doctor.StatusOK
-					updateResult.Message = fmt.Sprintf("Agent Layer is up to date (%s)", result.Current)
+					updateResult.Message = fmt.Sprintf(messages.DoctorUpToDateFmt, result.Current)
 				}
 			}
 			allResults = append(allResults, updateResult)
@@ -86,12 +87,12 @@ func newDoctorCmd() *cobra.Command {
 			// Only run if basic config loaded successfully, otherwise we might crash or be useless.
 			var warningList []warnings.Warning
 			if cfg != nil {
-				fmt.Println("\n🔍 Running warning system checks...")
+				fmt.Println(messages.DoctorWarningSystemHeader)
 
 				// Instructions check
 				instWarnings, err := checkInstructions(root, cfg.Config.Warnings.InstructionTokenThreshold)
 				if err != nil {
-					color.Red("Failed to check instructions: %v", err)
+					color.Red(messages.DoctorInstructionsCheckFailedFmt, err)
 					hasFail = true
 				} else {
 					warningList = append(warningList, instWarnings...)
@@ -100,7 +101,7 @@ func newDoctorCmd() *cobra.Command {
 				// MCP check (Doctor runs discovery)
 				mcpWarnings, err := checkMCPServers(context.Background(), cfg, nil)
 				if err != nil {
-					color.Red("Failed to check MCP servers: %v", err)
+					color.Red(messages.DoctorMCPCheckFailedFmt, err)
 					hasFail = true
 				} else {
 					warningList = append(warningList, mcpWarnings...)
@@ -118,10 +119,10 @@ func newDoctorCmd() *cobra.Command {
 
 			fmt.Println()
 			if hasFail {
-				color.Red("❌ Some checks failed or triggered warnings. Please address the issues above.")
-				return fmt.Errorf("doctor checks failed")
+				color.Red(messages.DoctorFailureSummary)
+				return fmt.Errorf(messages.DoctorFailureError)
 			} else {
-				color.Green("✅ All systems go! Agent Layer is ready.")
+				color.Green(messages.DoctorSuccessSummary)
 			}
 
 			return nil
@@ -133,15 +134,15 @@ func printResult(r doctor.Result) {
 	var status string
 	switch r.Status {
 	case doctor.StatusOK:
-		status = color.GreenString("[OK]  ")
+		status = color.GreenString(messages.DoctorStatusOKLabel)
 	case doctor.StatusWarn:
-		status = color.YellowString("[WARN]")
+		status = color.YellowString(messages.DoctorStatusWarnLabel)
 	case doctor.StatusFail:
-		status = color.RedString("[FAIL]")
+		status = color.RedString(messages.DoctorStatusFailLabel)
 	}
 
-	fmt.Printf("%s %-10s %s\n", status, r.CheckName, r.Message)
+	fmt.Printf(messages.DoctorResultLineFmt, status, r.CheckName, r.Message)
 	if r.Recommendation != "" {
-		fmt.Printf("       💡 %s\n", r.Recommendation)
+		fmt.Printf(messages.DoctorRecommendationFmt, r.Recommendation)
 	}
 }

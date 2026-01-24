@@ -8,6 +8,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: al sync\n-->\n\n"
@@ -26,7 +27,7 @@ func WriteInstructionShims(root string, instructions []config.InstructionFile) e
 
 	githubDir := filepath.Join(root, ".github")
 	if err := os.MkdirAll(githubDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", githubDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, githubDir, err)
 	}
 	if err := writeInstructionFile(filepath.Join(githubDir, "copilot-instructions.md"), instructions); err != nil {
 		return err
@@ -39,7 +40,7 @@ func WriteInstructionShims(root string, instructions []config.InstructionFile) e
 func WriteCodexInstructions(root string, instructions []config.InstructionFile) error {
 	codexDir := filepath.Join(root, ".codex")
 	if err := os.MkdirAll(codexDir, 0o755); err != nil {
-		return fmt.Errorf("failed to create %s: %w", codexDir, err)
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
 	}
 	return writeInstructionFile(filepath.Join(codexDir, "AGENTS.md"), instructions)
 }
@@ -47,7 +48,7 @@ func WriteCodexInstructions(root string, instructions []config.InstructionFile) 
 func writeInstructionFile(path string, instructions []config.InstructionFile) error {
 	content := buildInstructionShim(instructions)
 	if err := fsutil.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-		return fmt.Errorf("failed to write %s: %w", path, err)
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
 }

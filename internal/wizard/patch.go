@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	toml "github.com/pelletier/go-toml"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // PatchConfig applies wizard choices to TOML config content.
@@ -12,7 +14,7 @@ import (
 func PatchConfig(content string, choices *Choices) (string, error) {
 	configTree, err := toml.LoadBytes([]byte(content))
 	if err != nil {
-		return "", fmt.Errorf("parse config: %w", err)
+		return "", fmt.Errorf(messages.WizardParseConfigFailedFmt, err)
 	}
 	lines := strings.Split(content, "\n")
 
@@ -53,7 +55,7 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 	}
 
 	if (choices.EnabledMCPServersTouched || choices.RestoreMissingMCPServers) && len(choices.DefaultMCPServers) == 0 {
-		return "", fmt.Errorf("default MCP servers are required to patch config")
+		return "", fmt.Errorf(messages.WizardDefaultMCPServersRequired)
 	}
 
 	restoredServers := map[string]bool{}
@@ -97,11 +99,11 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 
 	updated, err := configTree.ToTomlString()
 	if err != nil {
-		return "", fmt.Errorf("render config: %w", err)
+		return "", fmt.Errorf(messages.WizardRenderConfigFailedFmt, err)
 	}
 	formatted, err := formatTomlNoIndent(updated)
 	if err != nil {
-		return "", fmt.Errorf("format config: %w", err)
+		return "", fmt.Errorf(messages.WizardFormatConfigFailedFmt, err)
 	}
 	return formatted, nil
 }

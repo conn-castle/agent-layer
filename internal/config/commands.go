@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // LoadCommandsAllow reads .agent-layer/commands.allow into a slice of prefixes.
 func LoadCommandsAllow(path string) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("missing commands allowlist %s: %w", path, err)
+		return nil, fmt.Errorf(messages.ConfigMissingCommandsAllowlistFmt, path, err)
 	}
 
 	var commands []string
@@ -26,7 +28,7 @@ func LoadCommandsAllow(path string) ([]string, error) {
 		commands = append(commands, line)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("failed reading commands allowlist %s: %w", path, err)
+		return nil, fmt.Errorf(messages.ConfigFailedReadCommandsAllowlistFmt, path, err)
 	}
 
 	return commands, nil

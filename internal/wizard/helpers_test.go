@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func TestAgentHelpers(t *testing.T) {
@@ -104,7 +106,7 @@ func TestCodexModelSummary(t *testing.T) {
 func TestSelectOptionalValue_Custom(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
-			*current = customOption
+			*current = messages.WizardCustomOption
 			return nil
 		},
 		InputFunc: func(title string, value *string) error {
@@ -122,7 +124,7 @@ func TestSelectOptionalValue_Custom(t *testing.T) {
 func TestSelectOptionalValue_CustomBlank(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
-			*current = customOption
+			*current = messages.WizardCustomOption
 			return nil
 		},
 		InputFunc: func(title string, value *string) error {
@@ -134,13 +136,13 @@ func TestSelectOptionalValue_CustomBlank(t *testing.T) {
 	value := ""
 	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "custom value required")
+	assert.Contains(t, err.Error(), "Custom value required")
 }
 
 func TestSelectOptionalValue_CustomPrefill(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
-			assert.Equal(t, customOption, *current)
+			assert.Equal(t, messages.WizardCustomOption, *current)
 			return nil
 		},
 		InputFunc: func(title string, value *string) error {
@@ -186,7 +188,7 @@ func TestSelectOptionalValue_SelectError(t *testing.T) {
 func TestSelectOptionalValue_InputError(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
-			*current = customOption
+			*current = messages.WizardCustomOption
 			return nil
 		},
 		InputFunc: func(title string, value *string) error {
@@ -203,7 +205,7 @@ func TestSelectOptionalValue_InputError(t *testing.T) {
 func TestSelectOptionalValue_LeaveBlank(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
-			*current = leaveBlankOption
+			*current = messages.WizardLeaveBlankOption
 			return nil
 		},
 	}
@@ -308,7 +310,7 @@ func TestBuildSummary(t *testing.T) {
 		c.EnabledMCPServers["github"] = true
 
 		summary := buildSummary(c)
-		assert.Contains(t, summary, "Approvals Mode: all")
+		assert.Contains(t, summary, "Approval mode: all")
 		assert.Contains(t, summary, "Enabled Agents:")
 		assert.Contains(t, summary, "Enabled MCP Servers:")
 		assert.Contains(t, summary, "- github")
