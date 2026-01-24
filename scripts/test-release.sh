@@ -88,6 +88,25 @@ else
   warn "shellcheck not installed, skipping advanced shell linting"
 fi
 
+# Ensure required tools are available for release packaging.
+if command -v git >/dev/null 2>&1; then
+  pass "git is available"
+else
+  fail "git not found; required for source tarball generation"
+fi
+
+if command -v gzip >/dev/null 2>&1; then
+  pass "gzip is available"
+else
+  fail "gzip not found; required for source tarball generation"
+fi
+
+if command -v tar >/dev/null 2>&1; then
+  pass "tar is available"
+else
+  fail "tar not found; required for source tarball verification"
+fi
+
 # Ensure we can validate checksums before running the build.
 if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
   fail "sha256sum/shasum not found; refusing to run build-release.sh"
@@ -162,7 +181,8 @@ chmod +x "$mock_bin/go"
 
 # Run build-release.sh with mocked go
 dist_dir="$tmp_dir/dist"
-expected_version="test-v1.0.0"
+expected_version="v1.0.0"
+expected_version_no_v="${expected_version#v}"
 build_success=0
 echo "Running build-release.sh in test environment..."
 
@@ -288,6 +308,7 @@ section "Artifact Verification"
 if [[ $build_success -ne 1 ]]; then
   warn "Skipping artifact verification because build-release.sh failed"
 else
+  source_tarball="agent-layer-${expected_version_no_v}.tar.gz"
   # These match the targets defined in build-release.sh
   # We verify the OUTCOME, not the script text.
   expected_artifacts=(
@@ -298,6 +319,7 @@ else
     "al-windows-amd64.exe"
     "al-install.sh"
     "al-install.ps1"
+    "$source_tarball"
     "checksums.txt"
   )
 
@@ -321,6 +343,37 @@ else
     fail "al-install.ps1 copy does not match source"
   fi
 
+fi
+
+# -----------------------------------------------------------------------------
+# Verification: Source Tarball
+# -----------------------------------------------------------------------------
+section "Source Tarball Verification"
+
+if [[ $build_success -ne 1 ]]; then
+  warn "Skipping source tarball verification because build-release.sh failed"
+else
+  source_tarball="agent-layer-${expected_version_no_v}.tar.gz"
+  tar_list="$tmp_dir/source-tarball-contents.txt"
+  prefix="agent-layer-${expected_version_no_v}/"
+
+  if tar -tzf "$dist_dir/$source_tarball" > "$tar_list" 2>/dev/null; then
+    pass "Source tarball is readable: $source_tarball"
+  else
+    fail "Source tarball could not be read: $source_tarball"
+  fi
+
+  if awk -v prefix="$prefix" 'index($0, prefix) != 1 { exit 1 }' "$tar_list"; then
+    pass "Source tarball entries are prefixed with $prefix"
+  else
+    fail "Source tarball entries missing expected prefix $prefix"
+  fi
+
+  if grep -qx "${prefix}README.md" "$tar_list"; then
+    pass "Source tarball includes README.md"
+  else
+    fail "Source tarball missing README.md"
+  fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -369,6 +422,7 @@ elif [[ -f "$dist_dir/checksums.txt" ]]; then
     "al-windows-amd64.exe"
     "al-install.sh"
     "al-install.ps1"
+    "agent-layer-${expected_version_no_v}.tar.gz"
   )
 
   expected_checksum_list="$tmp_dir/expected-checksums-files.txt"

@@ -104,3 +104,8 @@ Entry format:
     Decision: Ship a single globally installed `al` CLI with per-repo version pinning via `.agent-layer/al.version` and cached binaries.
     Reason: A single entrypoint reduces support burden while pinning keeps multi-repo setups reproducible.
     Tradeoffs: Requires cache management, download verification, and dispatch logic.
+
+- Decision 2026-01-23 0d63d53: Release source tarball for Homebrew
+    Decision: Generate and publish a versioned source tarball (`agent-layer-<version>.tar.gz`, without a leading `v`) via `git archive` + `gzip -n`, and include it in `checksums.txt`.
+    Reason: GitHub auto-generated source archives can change checksums; Homebrew needs a stable tarball URL.
+    Tradeoffs: Release pipeline requires git/gzip and an additional release asset to maintain.

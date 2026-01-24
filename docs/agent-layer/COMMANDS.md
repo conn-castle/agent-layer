@@ -152,5 +152,5 @@ Notes: Includes `make tidy-check`, `make test-release`, and `make test-e2e`; req
 make release-dist AL_VERSION=dev DIST_DIR=dist
 ```
 Run from: repo root
-Prerequisites: Go 1.25.6+
+Prerequisites: Go 1.25.6+, git, gzip, tar, `sha256sum` or `shasum`
 Notes: Runs `test-release` first to validate release scripts.

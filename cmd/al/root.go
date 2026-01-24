@@ -9,7 +9,7 @@ import (
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "al",
-		Short:         "Agent Layer vNext (Go edition)",
+		Short:         "Agent Layer",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

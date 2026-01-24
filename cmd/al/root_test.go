@@ -59,7 +59,7 @@ func TestRootHelp(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute error: %v", err)
 	}
-	if !strings.Contains(out.String(), "Agent Layer vNext") {
+	if !strings.Contains(out.String(), "Agent Layer") {
 		t.Fatalf("expected help output, got %q", out.String())
 	}
 }
