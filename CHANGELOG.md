@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.5.3 - 2026-01-24
+
+### Changed
+- User-facing strings consolidated into `internal/messages/` package for consistency and maintainability.
+- Python release tools (`extract-checksum.py`, `update-formula.py`) replaced with Go implementations in `internal/tools/`.
+- Release test script reorganized into modular components (`scripts/test-release/release_tests.sh`, `scripts/test-release/tool_tests.sh`).
+- Slash command templates (`find-issues.md`, `finish-task.md`) simplified to reduce duplication with base instructions; formatting rules now delegate to individual memory file templates.
+
 ## v0.5.2 - 2026-01-24
 
 ### Added
