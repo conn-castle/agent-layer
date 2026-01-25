@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.5.4 - 2026-01-24
+
+### Changed
+- Memory file `FEATURES.md` renamed to `BACKLOG.md` to better reflect its purpose (unscheduled user-visible features and tasks vs deferred issues).
+- `al init --overwrite` now detects and prompts to delete unknown files under `.agent-layer` that are not tracked by Agent Layer templates.
+- `al init --force` now deletes unknown files under `.agent-layer` in addition to overwriting existing files without prompts.
+- Memory instruction templates improved with clearer formatting rules and entry layouts.
+- Slash command templates (`continue-roadmap.md`, `update-roadmap.md`) simplified and clarified.
+- VS Code launcher paths centralized in `internal/launchers` package, consumed by sync and install to prevent drift.
+- Sync package refactored with system abstraction layer for improved test isolation and reliability.
+
 ## v0.5.3 - 2026-01-24
 
 ### Changed

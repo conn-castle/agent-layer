@@ -6,10 +6,6 @@ Note: This is an agent-layer memory file. It is primarily for agent use.
 
 <!-- PHASES START -->
 
-## Phases
-
-<!-- PHASES START -->
-
 ## Phase 1 ✅ — Define the vNext contract (docs-first)
 - Defined the vNext product contract: repo-local CLI (later superseded by global CLI), config-first `.agent-layer/` with repo-local launchers, required `docs/agent-layer/` memory, always-sync-on-run.
 - Created simplified `README.md`, `DECISIONS.md`, and `ROADMAP.md` as the foundation for the Go rewrite.

@@ -34,3 +34,8 @@ Note: This is an agent-layer memory file. It is primarily for agent use.
     Decision: Added a `System` interface with a `RealSystem` implementation and threaded it through `internal/sync` writers and prompt resolution instead of patching globals.
     Reason: Removes test-only global state and enables parallel-safe unit tests.
     Tradeoffs: Adds `sys System` parameters and test stubs for filesystem/process operations.
+
+- Decision 2026-01-25 b4c5d6e: Centralize VS Code launcher paths
+    Decision: Centralize VS Code launcher paths in `internal/launchers` and consume them from sync and install.
+    Reason: Single source of truth prevents drift and accidental deletion of generated artifacts.
+    Tradeoffs: Adds a small shared package dependency for sync and install.

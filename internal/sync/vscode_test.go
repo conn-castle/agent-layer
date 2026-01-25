@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/launchers"
 )
 
 func TestBuildVSCodeSettings(t *testing.T) {
@@ -485,21 +486,20 @@ func TestWriteVSCodeLaunchersWriteError(t *testing.T) {
 func TestWriteVSCodeAppBundle(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	agentLayerDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+	paths := launchers.VSCodePaths(root)
+	if err := os.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	if err := writeVSCodeAppBundle(RealSystem{}, agentLayerDir); err != nil {
+	if err := writeVSCodeAppBundle(RealSystem{}, paths); err != nil {
 		t.Fatalf("writeVSCodeAppBundle error: %v", err)
 	}
 
 	// Verify structure
-	appDir := filepath.Join(agentLayerDir, "open-vscode.app")
-	if _, err := os.Stat(filepath.Join(appDir, "Contents", "Info.plist")); err != nil {
+	if _, err := os.Stat(paths.AppInfoPlist); err != nil {
 		t.Fatalf("missing Info.plist: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(appDir, "Contents", "MacOS", "open-vscode")); err != nil {
+	if _, err := os.Stat(paths.AppExec); err != nil {
 		t.Fatalf("missing executable: %v", err)
 	}
 }
@@ -507,18 +507,17 @@ func TestWriteVSCodeAppBundle(t *testing.T) {
 func TestWriteVSCodeAppBundleMkdirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	agentLayerDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+	paths := launchers.VSCodePaths(root)
+	if err := os.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create a file where the .app directory should be
-	appPath := filepath.Join(agentLayerDir, "open-vscode.app")
-	if err := os.WriteFile(appPath, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(paths.AppDir, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
-	if err := writeVSCodeAppBundle(RealSystem{}, agentLayerDir); err == nil {
+	if err := writeVSCodeAppBundle(RealSystem{}, paths); err == nil {
 		t.Fatalf("expected error when .app path is a file")
 	}
 }
@@ -638,7 +637,7 @@ func TestWriteVSCodeAppBundleInfoPlistWriteError(t *testing.T) {
 			return nil
 		},
 	}
-	if err := writeVSCodeAppBundle(sys, t.TempDir()); err == nil {
+	if err := writeVSCodeAppBundle(sys, launchers.VSCodePaths(t.TempDir())); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -654,7 +653,7 @@ func TestWriteVSCodeAppBundleExecWriteError(t *testing.T) {
 			return nil
 		},
 	}
-	if err := writeVSCodeAppBundle(sys, t.TempDir()); err == nil {
+	if err := writeVSCodeAppBundle(sys, launchers.VSCodePaths(t.TempDir())); err == nil {
 		t.Fatal("expected error")
 	}
 }

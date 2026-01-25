@@ -6,6 +6,7 @@ import (
 	"regexp"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
@@ -92,9 +93,9 @@ func WriteVSCodeMCPConfig(sys System, root string, project *config.ProjectConfig
 // - .agent-layer/open-vscode.bat (Windows batch file)
 // - .agent-layer/open-vscode.desktop (Linux desktop entry)
 func WriteVSCodeLaunchers(sys System, root string) error {
-	agentLayerDir := filepath.Join(root, ".agent-layer")
-	if err := sys.MkdirAll(agentLayerDir, 0o755); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, agentLayerDir, err)
+	paths := launchers.VSCodePaths(root)
+	if err := sys.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, paths.AgentLayerDir, err)
 	}
 
 	// macOS .command launcher (opens Terminal)
@@ -112,13 +113,13 @@ else
   exit 1
 fi
 `
-	shPath := filepath.Join(agentLayerDir, "open-vscode.command")
+	shPath := paths.Command
 	if err := sys.WriteFileAtomic(shPath, []byte(shContent), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, shPath, err)
 	}
 
 	// macOS .app bundle (no Terminal window)
-	if err := writeVSCodeAppBundle(sys, agentLayerDir); err != nil {
+	if err := writeVSCodeAppBundle(sys, paths); err != nil {
 		return err
 	}
 
@@ -136,7 +137,7 @@ if %ERRORLEVEL% equ 0 (
   pause
 )
 `
-	batPath := filepath.Join(agentLayerDir, "open-vscode.bat")
+	batPath := paths.Bat
 	if err := sys.WriteFileAtomic(batPath, []byte(batContent), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, batPath, err)
 	}
@@ -150,7 +151,7 @@ Exec=sh -c "PARENT_ROOT=\"$(cd \"$(dirname \"$0\")/..\" && pwd -P)\"; export COD
 Terminal=false
 Categories=Development;IDE;
 `
-	desktopPath := filepath.Join(agentLayerDir, "open-vscode.desktop")
+	desktopPath := paths.Desktop
 	if err := sys.WriteFileAtomic(desktopPath, []byte(desktopContent), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, desktopPath, err)
 	}
@@ -159,13 +160,9 @@ Categories=Development;IDE;
 }
 
 // writeVSCodeAppBundle creates a macOS .app bundle that launches VS Code without opening Terminal.
-func writeVSCodeAppBundle(sys System, agentLayerDir string) error {
-	appDir := filepath.Join(agentLayerDir, "open-vscode.app")
-	contentsDir := filepath.Join(appDir, "Contents")
-	macOSDir := filepath.Join(contentsDir, "MacOS")
-
-	if err := sys.MkdirAll(macOSDir, 0o755); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, macOSDir, err)
+func writeVSCodeAppBundle(sys System, paths launchers.VSCodeLauncherPaths) error {
+	if err := sys.MkdirAll(paths.AppMacOS, 0o755); err != nil {
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, paths.AppMacOS, err)
 	}
 
 	// Info.plist - macOS app metadata
@@ -190,9 +187,8 @@ func writeVSCodeAppBundle(sys System, agentLayerDir string) error {
 </dict>
 </plist>
 `
-	infoPlistPath := filepath.Join(contentsDir, "Info.plist")
-	if err := sys.WriteFileAtomic(infoPlistPath, []byte(infoPlist), 0o644); err != nil {
-		return fmt.Errorf(messages.SyncWriteFileFailedFmt, infoPlistPath, err)
+	if err := sys.WriteFileAtomic(paths.AppInfoPlist, []byte(infoPlist), 0o644); err != nil {
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, paths.AppInfoPlist, err)
 	}
 
 	// Executable script - navigates up from .app/Contents/MacOS/ to .agent-layer/ then to parent root
@@ -215,9 +211,8 @@ else
   osascript -e 'display alert "VS Code not found" message "Please install Visual Studio Code from https://code.visualstudio.com" as critical'
 fi
 `
-	execPath := filepath.Join(macOSDir, "open-vscode")
-	if err := sys.WriteFileAtomic(execPath, []byte(execContent), 0o755); err != nil {
-		return fmt.Errorf(messages.SyncWriteFileFailedFmt, execPath, err)
+	if err := sys.WriteFileAtomic(paths.AppExec, []byte(execContent), 0o755); err != nil {
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, paths.AppExec, err)
 	}
 
 	return nil
