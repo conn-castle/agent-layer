@@ -35,11 +35,34 @@ If the user provides extra direction, interpret it as:
 - Scope: default to uncommitted changes; the user may request the last commit, a specific git range, specific paths, or the full repository.
 - Depth: default to a full pass (narrow → deep → broad); the user may request narrow, deep, or broad only.
 - Risk level: default to medium; use higher risk to prioritize more severe findings.
-- Report path: default to `.agent-layer/tmp/quality_audit_report.<timestamp>-<short-commit-id>.md` unless the user specifies a different location.
+- Report path: always use the standard artifact naming rule (no overrides).
 - Maximum findings: default to 20.
 - Snippet length: default to short; omit snippets if the user requests none.
 - Write mode: default to report-only; provide proposals if requested; apply changes only if the user explicitly requests it.
 - Entry identifier: default to the git short SHA when available; use a user-provided token if given.
+
+---
+
+## Artifact naming (standard)
+Artifacts are agent-only and always live under `.agent-layer/tmp/`.
+
+Use the naming rule:
+- `.agent-layer/tmp/<workflow>.<run-id>.<type>.md`
+- `run-id = YYYYMMDD-HHMMSS-<short-rand>`
+- Reuse the same `run-id` for multi-file workflows.
+- Use `touch` to create the file before writing.
+- **No overrides**: do not accept custom paths.
+
+For this workflow:
+- Report path: `.agent-layer/tmp/find-issues.<run-id>.report.md`
+- Echo the report path in the chat output.
+
+Example (shell):
+```bash
+run_id="$(date +%Y%m%d-%H%M%S)-$RANDOM"
+report=".agent-layer/tmp/find-issues.$run_id.report.md"
+touch "$report"
+```
 
 ---
 
@@ -210,7 +233,7 @@ Pick a few representative areas and check:
 
 # Phase 6 — Report and review (Reporter)
 
-Create the report file at the chosen path with:
+Create the report file at `.agent-layer/tmp/find-issues.<run-id>.report.md` with:
 
 ## Required sections
 1. **Executive summary** (5–10 bullets)

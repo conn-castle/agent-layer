@@ -4,6 +4,7 @@
 .env
 config.toml.bak
 .env.bak
+tmp/
 open-vscode.app/
 open-vscode.bat
 open-vscode.command

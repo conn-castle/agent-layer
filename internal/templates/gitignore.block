@@ -27,6 +27,4 @@
 # Optional: keep uncommented to ignore VS Code settings.
 /.vscode/settings.json
 
-# Agent Layer temp runs
-/tmp/agent-layer/
 # <<< agent-layer

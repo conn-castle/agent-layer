@@ -8,7 +8,7 @@ description: Continue executing the roadmap by selecting the next actionable tas
 Pick up where the project left off by:
 1) finding the **active phase** in `ROADMAP.md`,  
 2) selecting the **next unchecked task(s)**,  
-3) creating an approval-gated `.agent-layer/tmp/implementation_plan.md`,  
+3) creating an approval-gated plan under `.agent-layer/tmp/continue-roadmap.<run-id>.plan.md`,  
 4) implementing + verifying, and  
 5) updating `ROADMAP.md` and project memory files.
 
@@ -22,7 +22,7 @@ If the user provides extra direction, interpret it as:
 - Whether they want planning only or to proceed to execution after approval (default: plan).
 - A specific roadmap phase number to use; otherwise select the first incomplete phase.
 - How many tasks to bundle (default: the smallest coherent set, usually one task).
-- Alternate path for the checklist file (default: `.agent-layer/tmp/task.md`). The plan file is always stored at `.agent-layer/tmp/implementation_plan.md`.
+- Plan/task files always use the standard artifact naming rule (no overrides).
 - Desired risk level and verification depth (defaults: medium risk and automatic verification).
 - Whether to update `COMMANDS.md` when new repeatable commands are discovered (default: yes).
 
@@ -31,9 +31,34 @@ If the user provides extra direction, interpret it as:
 
 ---
 
+## Artifact naming (standard)
+Artifacts are agent-only and always live under `.agent-layer/tmp/`.
+
+Use the naming rule:
+- `.agent-layer/tmp/<workflow>.<run-id>.<type>.md`
+- `run-id = YYYYMMDD-HHMMSS-<short-rand>`
+- Reuse the same `run-id` for multi-file workflows.
+- Use `touch` to create the file before writing.
+- **No overrides**: do not accept custom paths.
+
+For this workflow:
+- Plan path: `.agent-layer/tmp/continue-roadmap.<run-id>.plan.md`
+- Task path: `.agent-layer/tmp/continue-roadmap.<run-id>.task.md`
+- Echo both paths in the chat output.
+
+Example (shell):
+```bash
+run_id="$(date +%Y%m%d-%H%M%S)-$RANDOM"
+plan=".agent-layer/tmp/continue-roadmap.$run_id.plan.md"
+task=".agent-layer/tmp/continue-roadmap.$run_id.task.md"
+touch "$plan" "$task"
+```
+
+---
+
 ## Roles and handoffs (multi-agent)
 1. **Phase Scout**: identifies the active phase and next task(s); assembles required context.
-2. **Planner**: produces `.agent-layer/tmp/implementation_plan.md` + checklist; integrates relevant ISSUES; flags ambiguities.
+2. **Planner**: produces `.agent-layer/tmp/continue-roadmap.<run-id>.plan.md` + checklist; integrates relevant ISSUES; flags ambiguities.
 3. **Implementer**: executes the plan with tight scope and root-cause fixes.
 4. **Verifier**: runs the most credible verification commands for the touched areas.
 5. **Memory Curator**: updates ROADMAP/ISSUES/DECISIONS/COMMANDS; removes resolved entries.
@@ -137,7 +162,7 @@ If anything is ambiguous or contradictory (task definition, acceptance criteria,
 
 Create:
 
-## 3A) `.agent-layer/tmp/implementation_plan.md`
+## 3A) `.agent-layer/tmp/continue-roadmap.<run-id>.plan.md`
 Required sections:
 1. **Objective**
    - active phase + selected task(s)
@@ -156,7 +181,7 @@ Required sections:
 7. **Risks and rollback**
    - what could break and how to revert safely
 
-## 3B) `.agent-layer/tmp/task.md` checklist
+## 3B) `.agent-layer/tmp/continue-roadmap.<run-id>.task.md` checklist
 A granular, ordered checklist aligned to the plan and the roadmap task(s).
 - Keep steps small and verifiable.
 - Include checkpoints for tests and docs updates.

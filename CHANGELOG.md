@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.5.5 - 2026-01-25
+
+### Added
+- New `03_tools.md` instruction template with comprehensive tool usage guidelines: time-sensitive information handling, Context7 documentation lookups, MCP tool constraints, approval workflows, and error handling.
+- New `fix-tests` slash command runs repo-defined checks (lint/format/pre-commit/tests) in a loop, fixing failures until all checks pass or max iterations reached.
+
+### Changed
+- Temporary artifact location moved from `tmp/agent-layer/runs/` to `.agent-layer/tmp/runs/`, keeping all agent artifacts within `.agent-layer/`.
+- Slash command artifact naming standardized across workflows: `.agent-layer/tmp/<workflow>.<run-id>.<type>.md` with `run-id = YYYYMMDD-HHMMSS-<short-rand>`. User path overrides removed for consistency.
+- `finish-task` workflow now delegates to `fix-tests` when available before falling back to manual repo-defined commands.
+- README updated with new artifact naming convention and VS Code reauthentication note for new `CODEX_HOME` environments.
+
 ## v0.5.4 - 2026-01-24
 
 ### Changed

@@ -39,3 +39,18 @@ Note: This is an agent-layer memory file. It is primarily for agent use.
     Decision: Centralize VS Code launcher paths in `internal/launchers` and consume them from sync and install.
     Reason: Single source of truth prevents drift and accidental deletion of generated artifacts.
     Tradeoffs: Adds a small shared package dependency for sync and install.
+
+- Decision 2026-01-25 f3a9d1: Freeze repo-local .agent-layer updates
+    Decision: Do not manually update `.agent-layer/` in this repo; use a migration later.
+    Reason: Preserve the current `.agent-layer/` state for testing migration behavior in a future release.
+    Tradeoffs: Repo-local instructions may drift from templates until the migration is exercised.
+
+- Decision 2026-01-24 a1b2c3d: Ignore unexpected working tree changes
+    Decision: Agents will not pause, warn, or stop due to unexpected working tree changes (unstaged or staged files not created by the agent).
+    Reason: The user works in parallel with agents, making concurrent changes a normal operating condition.
+    Tradeoffs: Increases risk of edit conflicts if both user and agent modify the same file simultaneously; relies on git for resolution.
+
+- Decision 2026-01-25 7e2c9f4: Agent-only workflow artifacts live in `.agent-layer/tmp`
+    Decision: Workflow artifacts are written to `.agent-layer/tmp` using a unique per-invocation filename: `.agent-layer/tmp/<workflow>.<run-id>.<type>.md` with `run-id = YYYYMMDD-HHMMSS-<short-rand>`; no path overrides.
+    Reason: Keeps artifacts invisible to humans while avoiding collisions for concurrent agents without relying on env vars or per-chat IDs.
+    Tradeoffs: Files can accumulate until manually cleaned; agents must echo paths in chat to retain context.

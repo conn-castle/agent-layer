@@ -17,7 +17,7 @@ type Info struct {
 	Dir string
 }
 
-// Create creates a new run directory under tmp/agent-layer/runs.
+// Create creates a new run directory under .agent-layer/tmp/runs.
 func Create(root string) (*Info, error) {
 	if root == "" {
 		return nil, fmt.Errorf(messages.RunRootPathRequired)
@@ -29,7 +29,7 @@ func Create(root string) (*Info, error) {
 		return nil, fmt.Errorf(messages.RunGenerateIDFailedFmt, err)
 	}
 	runID := fmt.Sprintf("%s-%s", stamp, suffix)
-	dir := filepath.Join(root, "tmp", "agent-layer", "runs", runID)
+	dir := filepath.Join(root, ".agent-layer", "tmp", "runs", runID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf(messages.RunCreateDirFailedFmt, dir, err)
 	}

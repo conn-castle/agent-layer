@@ -31,10 +31,17 @@ Formatting: follow the entry formats defined in each file. If any required files
 If the user provides extra direction, interpret it as:
 
 - Scope: default to uncommitted changes; the user may request since last commit, a specific git range, or explicit paths.
-- Plan file path: use `.agent-layer/tmp/implementation_plan.md`.
+- Plan file path: use the plan/task path from the current run (printed earlier); no overrides.
 - Verification depth and risk level: default to automatic verification with medium risk.
 - Roadmap updates: default to automatic updates when the work maps to roadmap tasks; skip if the user asks to avoid updates.
 - Maximum new entries across memory files: default to 10.
+
+---
+
+## Artifact handling (standard)
+- Use the plan/task path from the current run (printed earlier in the workflow).
+- Do **not** create new artifacts or invent a path.
+- If no plan path is available, skip plan alignment and cleanup.
 
 ---
 
@@ -88,7 +95,7 @@ If the file list is empty:
 # Phase 1 — Reflect on recent work (Change Reviewer)
 
 ## 1A) Plan alignment (if a plan exists)
-If `.agent-layer/tmp/implementation_plan.md` exists:
+If a plan file path is available from the current run:
 - read it
 - compare planned tasks vs actual changes
 - list:
@@ -96,7 +103,7 @@ If `.agent-layer/tmp/implementation_plan.md` exists:
   - omissions
   - deviations (and why)
 
-If `.agent-layer/tmp/implementation_plan.md` does not exist:
+If no plan file exists:
 - state that no plan artifact was found and skip plan alignment.
 
 ## 1B) Passive best-practice check (no broad audit)
@@ -177,7 +184,11 @@ If more exist:
   - default to fast checks
   - escalate toward full checks when risk is high or changes touch core infrastructure, build pipelines, or public interfaces.
 
-## 3B) Prefer repo-defined commands
+## 3B) Prefer fix-tests when available
+- If a `fix-tests` workflow exists, run it to reach a commit-ready state.
+- If it does not exist, proceed with repo-defined commands below.
+
+## 3C) Prefer repo-defined commands
 Attempt, in order, depending on what exists in the repository:
 - `make test-fast` (preferred when available)
 - `task test-fast` / `just test-fast`
@@ -189,7 +200,7 @@ If no credible commands exist:
 - run the smallest applicable sanity check (compile/typecheck/syntax) only if the repo clearly supports it
 - otherwise record “No verification command available” in the report
 
-## 3C) If verification fails
+## 3D) If verification fails
 - Fix failures only if the fix is directly connected to the recent work and remains in-scope.
 - If the failure indicates a broader problem:
   - log it to `ISSUES.md`
@@ -222,11 +233,11 @@ List any out-of-scope items that were observed and where they were logged (ISSUE
 
 # Phase 5 — Cleanup (Reporter)
 
-- If `.agent-layer/tmp/implementation_plan.md` was used and the run completed successfully:
-  - delete `.agent-layer/tmp/implementation_plan.md` only if it exists
-  - delete any other workflow-generated files explicitly listed in the workflow that was just completed, only if they exist and are under `.agent-layer/tmp`
+- If a plan file was used and the run completed successfully:
+  - delete the plan file only if it exists
+  - delete any other workflow-generated files explicitly listed for that workflow **only** if they share the same run-id and live under `.agent-layer/tmp/`
   - do not delete any other files
-- If `.agent-layer/tmp/implementation_plan.md` does not exist, state that cleanup was not needed.
+- If no plan file exists, state that cleanup was not needed.
 
 ---
 
@@ -234,5 +245,5 @@ List any out-of-scope items that were observed and where they were logged (ISSUE
 - Recent work has been reviewed for plan alignment and passive best-practice concerns.
 - Project memory files are up to date, deduplicated, and compact.
 - Fixed issues/features have been removed from their ledgers.
-- Plan file cleanup is complete (`.agent-layer/tmp/implementation_plan.md` deleted if it existed).
+- Plan file cleanup is complete (deleted if it existed).
 - Fast verification has been run (or explicitly skipped with a clear limitation note).

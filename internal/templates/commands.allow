@@ -17,6 +17,7 @@ grep
 head
 tail
 mkdir
+touch
 
 make
 python

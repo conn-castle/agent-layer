@@ -118,8 +118,8 @@ func (inst *installer) createDirs() error {
 		filepath.Join(root, ".agent-layer", "instructions"),
 		filepath.Join(root, ".agent-layer", "slash-commands"),
 		filepath.Join(root, ".agent-layer", "templates", "docs"),
+		filepath.Join(root, ".agent-layer", "tmp", "runs"),
 		filepath.Join(root, "docs", "agent-layer"),
-		filepath.Join(root, "tmp", "agent-layer", "runs"),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -426,6 +426,8 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	add(filepath.Join(root, ".agent-layer", "slash-commands"))
 	add(filepath.Join(root, ".agent-layer", "templates"))
 	add(filepath.Join(root, ".agent-layer", "templates", "docs"))
+	add(filepath.Join(root, ".agent-layer", "tmp"))
+	add(filepath.Join(root, ".agent-layer", "tmp", "runs"))
 
 	// Root-level managed files.
 	add(filepath.Join(root, ".agent-layer", "config.toml"))

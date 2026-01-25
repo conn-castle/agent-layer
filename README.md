@@ -311,19 +311,22 @@ If you use the CLI-based launchers, install the `code` command from inside VS Co
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
+**Note:** When opening VS Code with a new `CODEX_HOME`, you will need to reauthenticate with your agent provider. This is expected behavior as each `CODEX_HOME` maintains its own secure storage.
+
 ---
 
-## Temporary run folders (concurrency-safe)
+## Temporary artifacts (agent-only)
 
-Some workflows produce artifacts (plans, task lists, reports). Agent Layer assigns each invocation a unique run directory:
+Some workflows write **agent-only** artifacts (plans, task lists, reports). These are not meant for humans to open.
 
-- `tmp/agent-layer/runs/<run-id>/`
+Artifacts always live under `.agent-layer/tmp/` and use a unique, concurrency-safe name:
 
-It exports:
-- `AL_RUN_DIR` — the run directory for this invocation
-- `AL_RUN_ID` — the run identifier for this invocation
+- `.agent-layer/tmp/<workflow>.<run-id>.<type>.md`
+- `run-id = YYYYMMDD-HHMMSS-<short-rand>`
+- Multi-file workflows reuse the same `run-id` for all files.
+- Common `type` values: `report`, `plan`, `task`.
 
-This avoids collisions when multiple agents run concurrently.
+Workflows echo the artifact path in the chat output. There are no path overrides or environment variables for this. Artifacts are agent-only and can be ignored; agents may clean up their own plan/task files when a workflow completes. If a run is interrupted, leftover files are harmless and optional to delete.
 
 ---
 

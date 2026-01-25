@@ -241,7 +241,11 @@ If none match, split using the project’s existing modularization conventions.
 
 # Phase 5 — Verify behavior (Verifier)
 
-## 5A) Choose the fastest credible verification
+## 5A) Prefer fix-tests when available
+- If a `fix-tests` workflow exists, run it to reach a commit-ready state.
+- If it does not exist, proceed with the verification guidance below.
+
+## 5B) Choose the fastest credible verification
 Prefer repo-defined “fast lane” commands:
 - `make test-fast` / `make test`
 - `task test` / `just test`
@@ -263,7 +267,7 @@ If no tests/build exist:
 - run at least a syntax/compile check if available
 - otherwise document the limitation clearly
 
-## 5B) Re-scan oversized files
+## 5C) Re-scan oversized files
 Confirm:
 - all files you modified are under the line limit
 - no new oversized files were created unintentionally

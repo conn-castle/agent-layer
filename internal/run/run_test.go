@@ -24,7 +24,7 @@ func TestCreateRunDir(t *testing.T) {
 	if _, err := os.Stat(info.Dir); err != nil {
 		t.Fatalf("expected run dir to exist: %v", err)
 	}
-	expectedRoot := filepath.Join(root, "tmp", "agent-layer", "runs")
+	expectedRoot := filepath.Join(root, ".agent-layer", "tmp", "runs")
 	if !strings.HasPrefix(info.Dir, expectedRoot) {
 		t.Fatalf("unexpected run dir: %s", info.Dir)
 	}

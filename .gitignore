@@ -14,7 +14,7 @@ coverage.out
 
 
 # >>> agent-layer
-# Template hash: a55fad2a29ee82202e63ad3d3742d72d064c6e00424b3718befec5a0726ab13d
+# Template hash: fc1b2872e3174f317c70c87c4d57ce7d1c4b0f7c17890ac8e7ade892bce4bba1
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al init` to apply changes.
 #
@@ -43,6 +43,4 @@ coverage.out
 # Optional: keep uncommented to ignore VS Code settings.
 /.vscode/settings.json
 
-# Agent Layer temp runs
-/tmp/agent-layer/
 # <<< agent-layer

@@ -19,7 +19,8 @@ Treat this as a starting point. Adjust scope limits and verification rigor based
 If the user provides extra direction, interpret it as:
 
 - Whether they want planning only or to proceed to execution after approval (default: plan).
-- Alternate paths for the issues ledger or README (defaults: `ISSUES.md`, `README.md`). The plan file is always stored at `.agent-layer/tmp/implementation_plan.md`.
+- Alternate paths for the issues ledger or README (defaults: `ISSUES.md`, `README.md`).
+- Plan/task files always use the standard artifact naming rule (no overrides).
 - Maximum number of issues to fix in one run (default: 3).
 - Maximum number of files to touch (default: 12).
 - Desired risk level and verification depth (default: medium risk and automatic verification; skip only if explicitly requested).
@@ -30,10 +31,35 @@ If the user provides extra direction, interpret it as:
 
 ---
 
+## Artifact naming (standard)
+Artifacts are agent-only and always live under `.agent-layer/tmp/`.
+
+Use the naming rule:
+- `.agent-layer/tmp/<workflow>.<run-id>.<type>.md`
+- `run-id = YYYYMMDD-HHMMSS-<short-rand>`
+- Reuse the same `run-id` for multi-file workflows.
+- Use `touch` to create the file before writing.
+- **No overrides**: do not accept custom paths.
+
+For this workflow:
+- Plan path: `.agent-layer/tmp/fix-issues.<run-id>.plan.md`
+- Task path: `.agent-layer/tmp/fix-issues.<run-id>.task.md`
+- Echo both paths in the chat output.
+
+Example (shell):
+```bash
+run_id="$(date +%Y%m%d-%H%M%S)-$RANDOM"
+plan=".agent-layer/tmp/fix-issues.$run_id.plan.md"
+task=".agent-layer/tmp/fix-issues.$run_id.task.md"
+touch "$plan" "$task"
+```
+
+---
+
 ## Roles and handoffs (multi-agent)
 1. **Issue Triage Lead**: parse ISSUES.md, cluster themes, select a coherent subset.
 2. **Architect / Standards Reviewer**: extract project standards from README and define acceptance criteria.
-3. **Planner**: write `.agent-layer/tmp/implementation_plan.md` (explicit steps, files, tests, risks).
+3. **Planner**: write `.agent-layer/tmp/fix-issues.<run-id>.plan.md` (explicit steps, files, tests, risks).
 4. **Implementer**: execute the plan, keeping diffs tight and behavior-preserving unless an issue explicitly requires behavior change.
 5. **Auditor**: review touched code for maintainability, standards alignment, and hidden regressions.
 6. **Verifier**: run the fastest credible checks available; escalate to broader checks if risk warrants.
@@ -72,7 +98,7 @@ If only one agent is available, execute phases in this order and clearly label e
   - populate it with any obvious issues discovered during triage (keep brief)
 
 **Deliverable**
-- Paths used (README, issues ledger, plan file at `.agent-layer/tmp/implementation_plan.md`)
+- Paths used (README, issues ledger, plan file at `.agent-layer/tmp/fix-issues.<run-id>.plan.md`)
 - Repo status summary (clean/dirty)
 - Any missing-docs remediation performed
 
@@ -116,36 +142,41 @@ Parse the issues ledger and build a structured shortlist:
 
 # Phase 2 — Write the plan and stop for approval (Planner)
 
-Create the plan file at `.agent-layer/tmp/implementation_plan.md` (create the directory if needed) with:
+Create the plan file at `.agent-layer/tmp/fix-issues.<run-id>.plan.md` (use `touch` before writing) with:
 
-## Required sections in `.agent-layer/tmp/implementation_plan.md`
+## Required sections in `.agent-layer/tmp/fix-issues.<run-id>.plan.md`
 1. **Objective**
    - what will be fixed and why (tie directly to issues)
 2. **Scope**
    - included issues (explicit)
    - excluded issues (explicit)
-3. **Standards to obey**
+3. **What the human needs to know**
+   - key risks, required human decisions, and anything that must not be missed
+4. **Standards to obey**
    - bullet list derived from README and existing patterns
-4. **Approach**
+5. **Approach**
    - design notes, constraints, and invariants
-5. **Step-by-step tasks**
+6. **Step-by-step tasks**
    - ordered checklist
    - name target files/modules
-6. **Verification plan**
+7. **Verification plan**
    - what commands will be run
    - what success looks like
-7. **Risk + rollback**
+8. **Risk + rollback**
    - risk areas, how to detect problems, how to revert safely
 
+## Task checklist
+Also create `.agent-layer/tmp/fix-issues.<run-id>.task.md` with a small, ordered checklist aligned to the plan.
+
 ## Approval gate (mandatory)
-After creating `.agent-layer/tmp/implementation_plan.md`:
+After creating `.agent-layer/tmp/fix-issues.<run-id>.plan.md`:
 - Summarize the plan in chat (brief, structured)
 - **Stop** and request explicit approval.
 
 **Do not execute** unless the human responds with approval.
 
 ### How the human approves
-The user must respond with a clear explicit message (for example: “Approved”, “Continue”, or “Agreed”).
+The user must respond with a clear affirmative message (any explicit “yes” or equivalent).
 
 If approval is not given, end after the plan.
 
@@ -241,8 +272,8 @@ If no commands exist:
 - Ensure the ledger remains clean and deduplicated.
 
 ## 6D) Handle the plan artifact
-- If repo conventions prefer deleting: delete `.agent-layer/tmp/implementation_plan.md`
-- Otherwise: mark it “Completed” with a short completion note and keep it in `.agent-layer/tmp/implementation_plan.md` for traceability
+- If repo conventions prefer deleting: delete `.agent-layer/tmp/fix-issues.<run-id>.plan.md` and `.agent-layer/tmp/fix-issues.<run-id>.task.md` (if they exist)
+- Otherwise: mark the plan “Completed” with a short completion note and keep it for traceability; keep the task file.
 
 ## 6E) Final report
 Return:
@@ -255,7 +286,8 @@ Return:
 ---
 
 ## Output expectations (what “done” looks like)
-- `.agent-layer/tmp/implementation_plan.md` exists (plan mode) OR is completed/removed (execute mode).
+- `.agent-layer/tmp/fix-issues.<run-id>.plan.md` exists (plan mode) OR is completed/removed (execute mode).
+- `.agent-layer/tmp/fix-issues.<run-id>.task.md` exists (plan mode) OR is removed when cleanup is requested.
 - Selected issues are fixed and removed/marked resolved in `ISSUES.md`.
 - Any discovered out-of-scope issues are captured in `ISSUES.md`.
 - Verification was performed at the appropriate level (or explicitly skipped with documented limitation).

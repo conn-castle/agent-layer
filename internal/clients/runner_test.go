@@ -97,7 +97,8 @@ func TestRunCreateError(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
-	if err := os.WriteFile(filepath.Join(root, "tmp"), []byte("block"), 0o644); err != nil {
+	blockPath := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.WriteFile(blockPath, []byte("block"), 0o644); err != nil {
 		t.Fatalf("write tmp file: %v", err)
 	}
 
