@@ -6,12 +6,6 @@ Note: This is an agent-layer memory file. It is primarily for agent use.
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-27 f9a81e9: VS Code sync overwrites entire settings.json destroying user configuration
-    Priority: Critical. Area: sync / VS Code.
-    Description: When `al sync` or `al vscode` runs, it overwrites the entire `.vscode/settings.json` file instead of managing only the agent-layer block. This destroys user settings, formatting, comments, and any customizations outside the managed section.
-    Next step: Implement block-based settings.json management similar to gitignore.block—read existing file, locate or insert a managed block with markers, preserve all content outside the block including formatting and comments.
-    Notes: JSON does not support comments natively, but VS Code settings.json allows JSONC (JSON with comments). Solution must preserve JSONC structure. Consider using a marker comment like `// BEGIN agent-layer managed` / `// END agent-layer managed`.
-
 - Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
     Priority: Low. Area: developer experience.
     Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.

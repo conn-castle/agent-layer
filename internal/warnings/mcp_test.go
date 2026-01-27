@@ -440,6 +440,158 @@ func TestRealConnector_HTTPWithHeaders(t *testing.T) {
 	assert.Contains(t, result.Error.Error(), "connection failed")
 }
 
+type transportAssertingClient struct {
+	t                *testing.T
+	expectStreamable bool
+	expectHeaders    bool
+	session          mcpSessionInterface
+}
+
+func (c *transportAssertingClient) Connect(ctx context.Context, transport mcp.Transport, opts *mcp.ClientSessionOptions) (mcpSessionInterface, error) {
+	c.t.Helper()
+	if c.expectStreamable {
+		streamable, ok := transport.(*mcp.StreamableClientTransport)
+		if !ok {
+			c.t.Fatalf("expected StreamableClientTransport, got %T", transport)
+		}
+		if streamable.Endpoint == "" {
+			c.t.Fatalf("expected streamable endpoint to be set")
+		}
+		if c.expectHeaders {
+			if streamable.HTTPClient == nil {
+				c.t.Fatalf("expected HTTP client for streamable transport")
+			}
+			ht, ok := streamable.HTTPClient.Transport.(*headerTransport)
+			if !ok {
+				c.t.Fatalf("expected headerTransport, got %T", streamable.HTTPClient.Transport)
+			}
+			if ht.headers["Authorization"] != "Bearer token" {
+				c.t.Fatalf("unexpected header value: %q", ht.headers["Authorization"])
+			}
+		} else if streamable.HTTPClient != nil {
+			c.t.Fatalf("expected nil HTTP client for streamable transport without headers")
+		}
+	} else {
+		sse, ok := transport.(*mcp.SSEClientTransport)
+		if !ok {
+			c.t.Fatalf("expected SSEClientTransport, got %T", transport)
+		}
+		if sse.Endpoint == "" {
+			c.t.Fatalf("expected SSE endpoint to be set")
+		}
+		if c.expectHeaders {
+			if sse.HTTPClient == nil {
+				c.t.Fatalf("expected HTTP client for SSE transport")
+			}
+			ht, ok := sse.HTTPClient.Transport.(*headerTransport)
+			if !ok {
+				c.t.Fatalf("expected headerTransport, got %T", sse.HTTPClient.Transport)
+			}
+			if ht.headers["Authorization"] != "Bearer token" {
+				c.t.Fatalf("unexpected header value: %q", ht.headers["Authorization"])
+			}
+		} else if sse.HTTPClient != nil {
+			c.t.Fatalf("expected nil HTTP client for SSE transport without headers")
+		}
+	}
+	return c.session, nil
+}
+
+func TestRealConnector_HTTPStreamableTransport(t *testing.T) {
+	mockSession := &mockMCPSession{
+		tools: []*mcp.Tool{{Name: "tool"}},
+	}
+	client := &transportAssertingClient{
+		t:                t,
+		expectStreamable: true,
+		expectHeaders:    true,
+		session:          mockSession,
+	}
+
+	original := NewMCPClientFunc
+	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
+		return client
+	}
+	t.Cleanup(func() { NewMCPClientFunc = original })
+
+	connector := &RealConnector{}
+	server := projection.ResolvedMCPServer{
+		ID:            "test-http-streamable",
+		Transport:     "http",
+		HTTPTransport: "streamable",
+		URL:           "http://example.com",
+		Headers:       map[string]string{"Authorization": "Bearer token"},
+	}
+
+	result := connector.ConnectAndDiscover(context.Background(), server)
+	assert.NoError(t, result.Error)
+	assert.Len(t, result.Tools, 1)
+}
+
+func TestRealConnector_HTTPTransportDefaultSSE(t *testing.T) {
+	mockSession := &mockMCPSession{
+		tools: []*mcp.Tool{{Name: "tool"}},
+	}
+	client := &transportAssertingClient{
+		t:                t,
+		expectStreamable: false,
+		expectHeaders:    false,
+		session:          mockSession,
+	}
+
+	original := NewMCPClientFunc
+	NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) mcpClientInterface {
+		return client
+	}
+	t.Cleanup(func() { NewMCPClientFunc = original })
+
+	connector := &RealConnector{}
+	server := projection.ResolvedMCPServer{
+		ID:        "test-http-sse",
+		Transport: "http",
+		URL:       "http://example.com",
+	}
+
+	result := connector.ConnectAndDiscover(context.Background(), server)
+	assert.NoError(t, result.Error)
+	assert.Len(t, result.Tools, 1)
+}
+
+func TestRealConnector_UnsupportedHTTPTransport(t *testing.T) {
+	connector := &RealConnector{}
+	server := projection.ResolvedMCPServer{
+		ID:            "test-http-unsupported",
+		Transport:     "http",
+		HTTPTransport: "grpc",
+		URL:           "http://example.com",
+	}
+
+	result := connector.ConnectAndDiscover(context.Background(), server)
+	assert.Error(t, result.Error)
+	assert.Contains(t, result.Error.Error(), "unsupported http transport")
+}
+
+func TestRealMCPClientAndSessionWrappers(t *testing.T) {
+	ctx := context.Background()
+	server := mcp.NewServer(&mcp.Implementation{Name: "server", Version: "v0.0.1"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "client", Version: "v0.0.1"}, nil)
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	require.NoError(t, err)
+	defer func() { _ = serverSession.Close() }()
+
+	realClient := &realMCPClient{client: client}
+	session, err := realClient.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+
+	result, err := session.ListTools(ctx, &mcp.ListToolsParams{})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.NoError(t, session.Close())
+}
+
 // mockMCPClient implements mcpClientInterface for testing.
 type mockMCPClient struct {
 	session mcpSessionInterface

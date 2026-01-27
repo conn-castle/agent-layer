@@ -39,7 +39,7 @@
    - tests are written or updated to cover the change,
    - code is documented with docstrings where appropriate,
    - the README is checked and updated if affected,
-   - the project memory files (features, issues, roadmap, decisions) are updated as appropriate,
+   - the project memory files (backlog, issues, roadmap, decisions) are updated as appropriate,
    - and Markdown documentation accuracy is verified using targeted repository-wide search (not manual review of every file):
      - search the repository for terms related to the change (feature name, endpoint names, module names, command names, environment variable names, configuration keys, and any user-facing terms),
      - review every documentation hit for accuracy,
