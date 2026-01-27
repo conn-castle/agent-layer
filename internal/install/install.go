@@ -283,7 +283,9 @@ func (inst *installer) warnDifferences() {
 		}
 		_, _ = fmt.Fprintf(os.Stderr, messages.InstallDiffLineFmt, rel)
 	}
+	_, _ = fmt.Fprintln(os.Stderr)
 	_, _ = fmt.Fprintln(os.Stderr, messages.InstallDiffFooter)
+	_, _ = fmt.Fprintln(os.Stderr)
 }
 
 func (inst *installer) warnUnknowns() {
@@ -297,7 +299,9 @@ func (inst *installer) warnUnknowns() {
 		rel := inst.relativePath(path)
 		_, _ = fmt.Fprintf(os.Stderr, messages.InstallDiffLineFmt, rel)
 	}
+	_, _ = fmt.Fprintln(os.Stderr)
 	_, _ = fmt.Fprintln(os.Stderr, messages.InstallUnknownFooter)
+	_, _ = fmt.Fprintln(os.Stderr)
 }
 
 func (inst *installer) scanUnknowns() error {

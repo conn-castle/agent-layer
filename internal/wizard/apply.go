@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fatih/color"
+
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -78,8 +80,13 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) 
 		return err
 	}
 	// Print any warnings from sync
-	for _, w := range warnings {
-		fmt.Printf(messages.WizardWarningFmt, w.Message)
+	if len(warnings) > 0 {
+		fmt.Println()
+		warnColor := color.New(color.FgYellow)
+		for _, w := range warnings {
+			_, _ = warnColor.Printf(messages.WizardWarningFmt, w.Message)
+		}
+		fmt.Println()
 	}
 	return nil
 }

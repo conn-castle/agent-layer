@@ -109,15 +109,14 @@ func newDoctorCmd() *cobra.Command {
 			}
 
 			if len(warningList) > 0 {
-				fmt.Println()
 				for _, w := range warningList {
 					fmt.Println(w.String())
 					fmt.Println() // Spacer
 				}
 				hasFail = true // Warnings cause exit 1 per spec
+				fmt.Println()
 			}
 
-			fmt.Println()
 			if hasFail {
 				color.Red(messages.DoctorFailureSummary)
 				return fmt.Errorf(messages.DoctorFailureError)
@@ -143,6 +142,22 @@ func printResult(r doctor.Result) {
 
 	fmt.Printf(messages.DoctorResultLineFmt, status, r.CheckName, r.Message)
 	if r.Recommendation != "" {
-		fmt.Printf(messages.DoctorRecommendationFmt, r.Recommendation)
+		printRecommendation(r.Recommendation)
+	}
+}
+
+// printRecommendation renders a multi-line recommendation with consistent indentation.
+func printRecommendation(recommendation string) {
+	lines := strings.Split(recommendation, "\n")
+	for i, line := range lines {
+		if i == 0 {
+			fmt.Printf("%s%s\n", messages.DoctorRecommendationPrefix, line)
+			continue
+		}
+		if line == "" {
+			fmt.Printf("%s\n", messages.DoctorRecommendationIndent)
+			continue
+		}
+		fmt.Printf("%s%s\n", messages.DoctorRecommendationIndent, line)
 	}
 }

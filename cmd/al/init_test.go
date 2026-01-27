@@ -409,8 +409,15 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("init failed: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "Warning: update available") {
-		t.Fatalf("expected update warning, got %q", stderr.String())
+	output := stderr.String()
+	if !strings.Contains(output, "Warning: update available") {
+		t.Fatalf("expected update warning, got %q", output)
+	}
+	if !strings.Contains(output, "Homebrew: brew upgrade conn-castle/tap/agent-layer") {
+		t.Fatalf("expected Homebrew upgrade command, got %q", output)
+	}
+	if !strings.Contains(output, "al init --force") {
+		t.Fatalf("expected --force safety note, got %q", output)
 	}
 }
 

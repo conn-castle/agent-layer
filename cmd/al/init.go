@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/dispatch"
@@ -114,17 +115,18 @@ func warnInitUpdate(cmd *cobra.Command, flagVersion string) {
 	if strings.TrimSpace(os.Getenv(dispatch.EnvNoNetwork)) != "" {
 		return
 	}
+	warnColor := color.New(color.FgYellow)
 	result, err := checkForUpdate(cmd.Context(), Version)
 	if err != nil {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.InitWarnUpdateCheckFailedFmt, err)
+		_, _ = warnColor.Fprintf(cmd.ErrOrStderr(), messages.InitWarnUpdateCheckFailedFmt, err)
 		return
 	}
 	if result.CurrentIsDev {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.InitWarnDevBuildFmt, result.Latest)
+		_, _ = warnColor.Fprintf(cmd.ErrOrStderr(), messages.InitWarnDevBuildFmt, result.Latest)
 		return
 	}
 	if result.Outdated {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), messages.InitWarnUpdateAvailableFmt, result.Latest, result.Current)
+		_, _ = warnColor.Fprintf(cmd.ErrOrStderr(), messages.InitWarnUpdateAvailableFmt, result.Latest, result.Current)
 	}
 }
 

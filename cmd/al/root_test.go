@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/doctor"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -471,6 +473,27 @@ func TestPrintResult_AllStatuses(t *testing.T) {
 	}
 }
 
+func TestPrintRecommendation_MultiLineIndent(t *testing.T) {
+	output := captureStdout(t, func() {
+		printRecommendation("Line one\nLine two\n\nLine four")
+	})
+	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	expected := []string{
+		messages.DoctorRecommendationPrefix + "Line one",
+		messages.DoctorRecommendationIndent + "Line two",
+		messages.DoctorRecommendationIndent,
+		messages.DoctorRecommendationIndent + "Line four",
+	}
+	if len(lines) != len(expected) {
+		t.Fatalf("unexpected line count: got %d, want %d\noutput:\n%s", len(lines), len(expected), output)
+	}
+	for i, want := range expected {
+		if lines[i] != want {
+			t.Fatalf("line %d mismatch: got %q, want %q", i, lines[i], want)
+		}
+	}
+}
+
 func TestSyncCommand_WithWarnings(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepoWithWarnings(t, root)
@@ -488,6 +511,31 @@ func TestSyncCommand_WithWarnings(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+
+	original := os.Stdout
+	os.Stdout = writer
+
+	fn()
+
+	_ = writer.Close()
+	os.Stdout = original
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, reader); err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	_ = reader.Close()
+
+	return buf.String()
 }
 
 func TestWizardCommand(t *testing.T) {
