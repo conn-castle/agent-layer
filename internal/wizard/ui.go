@@ -2,12 +2,11 @@ package wizard
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/charmbracelet/huh"
-	"golang.org/x/term"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/terminal"
 )
 
 // UI defines the interaction methods.
@@ -28,20 +27,16 @@ type HuhUI struct {
 var runFormFunc = func(form *huh.Form) error { return form.Run() }
 
 // NewHuhUI creates a new HuhUI using the default terminal check.
+// The default implementation uses terminal.IsInteractive().
 func NewHuhUI() *HuhUI {
-	return &HuhUI{isTerminal: defaultIsTerminal}
-}
-
-// defaultIsTerminal reports whether the current stdin/stdout are interactive terminals.
-func defaultIsTerminal() bool {
-	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
+	return &HuhUI{isTerminal: terminal.IsInteractive}
 }
 
 // ensureInteractive returns an error when the UI is invoked without a terminal.
 func (ui *HuhUI) ensureInteractive() error {
 	checker := ui.isTerminal
 	if checker == nil {
-		checker = defaultIsTerminal
+		checker = terminal.IsInteractive
 	}
 	if checker() {
 		return nil

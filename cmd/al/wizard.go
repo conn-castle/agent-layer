@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/terminal"
 )
 
 func newWizardCmd() *cobra.Command {
@@ -35,6 +34,5 @@ func newWizardCmd() *cobra.Command {
 }
 
 // isTerminal is a seam for tests to force non-interactive behavior.
-var isTerminal = func() bool {
-	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
-}
+// The default implementation uses terminal.IsInteractive().
+var isTerminal = terminal.IsInteractive

@@ -26,6 +26,14 @@ These instructions govern how you use any available tools (built-in client tools
   - describe the risk of being wrong
   - ask for confirmation before proceeding with any decision that depends on the uncertain fact
 
+## Documentation-first retrieval order
+- Prefer **documentation sources** before general web search:
+  - repo-local docs (README, `docs/`, or other project docs)
+  - documentation-oriented MCP tools if available (doc search, package docs, API references)
+  - web search only if doc tools are unavailable or insufficient and tool use is allowed
+- If documentation tools are unavailable or do not contain the needed information, **say so explicitly** and then proceed to the next allowed option.
+- If tool use is blocked (by user request or environment), state the limitation and ask for the smallest missing input.
+
 ## Use Context7 for technical documentation (before coding)
 - Use **Context7** to confirm API/library/framework documentation, CLI flags, configuration keys, and version-specific behavior—especially before coding against a dependency or recommending commands/flags.
 - Do not rely on memory for version-dependent details (breaking changes, deprecated functions, changed defaults). Verify in Context7 (and/or upstream docs) first.

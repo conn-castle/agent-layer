@@ -275,6 +275,9 @@ func (inst *installer) warnDifferences() {
 	}
 
 	sort.Strings(inst.diffs)
+	// NOTE: Errors from stderr writes are intentionally discarded. These are
+	// non-critical warning messages; failing to display a warning should not
+	// abort the operation or propagate an error to the caller.
 	_, _ = fmt.Fprintln(os.Stderr, messages.InstallDiffHeader)
 	for _, path := range inst.diffs {
 		rel, err := filepath.Rel(inst.root, path)

@@ -124,7 +124,7 @@ Capture:
   - Maintainability / technical debt
   - Reliability / security / performance
   - User-visible feature ideas (only if truly user-facing)
-  - Significant decisions made (architecture, interface boundaries, storage/data model, dependency choice)
+  - Decisions with long-term impact that are not obvious from code/config (deferrals, constraints, irreversible tradeoffs)
 
 ---
 
@@ -142,6 +142,8 @@ If missing:
 - Add to **`BACKLOG.md`** only if it is a **new user-visible capability** request.
 - Add to **`DECISIONS.md`** if the task required a significant decision:
   - record decision, reason, and tradeoffs
+  - consolidate or replace near-duplicate decisions instead of adding a new entry
+  - log only decisions future developers/agents would not infer from the code or config
   - keep it brief and add new entries at the bottom so the oldest decisions remain at the top
 - Update **`ROADMAP.md`** only if the user asks for roadmap updates, or if automatic updates are appropriate and:
   - the completed work clearly maps to existing roadmap tasks, or

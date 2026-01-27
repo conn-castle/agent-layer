@@ -1,5 +1,9 @@
 package main
 
+// NOTE: Tests in this file mutate package-level globals (getwd, isTerminal,
+// runWizard, checkForUpdate, checkInstructions, checkMCPServers, runPromptServer).
+// Do not use t.Parallel() at the top level. Each test must restore globals via t.Cleanup().
+
 import (
 	"bytes"
 	"context"
