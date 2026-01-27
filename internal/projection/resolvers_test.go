@@ -90,3 +90,33 @@ func TestResolveEnabledMCPServers(t *testing.T) {
 		t.Fatalf("expected resolved URL, got %s", resolved[1].URL)
 	}
 }
+
+func TestResolveEnabledMCPServers_DefaultHTTPTransport(t *testing.T) {
+	enabled := true
+	servers := []config.MCPServer{
+		{
+			ID:        "http-default",
+			Enabled:   &enabled,
+			Transport: "http",
+			URL:       "https://example.com",
+		},
+		{
+			ID:            "http-streamable",
+			Enabled:       &enabled,
+			Transport:     "http",
+			HTTPTransport: "streamable",
+			URL:           "https://example.com/streamable",
+		},
+	}
+
+	resolved, err := ResolveEnabledMCPServers(servers, map[string]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resolved[0].HTTPTransport != "sse" {
+		t.Fatalf("expected default http transport sse, got %s", resolved[0].HTTPTransport)
+	}
+	if resolved[1].HTTPTransport != "streamable" {
+		t.Fatalf("expected streamable http transport, got %s", resolved[1].HTTPTransport)
+	}
+}

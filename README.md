@@ -217,6 +217,7 @@ id = "github"
 enabled = true
 clients = ["gemini", "claude", "vscode", "codex"] # omit = all clients
 transport = "http"
+# http_transport = "sse" # optional: "sse" (default) or "streamable"
 url = "https://example.com/mcp"
 headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
 
@@ -262,6 +263,15 @@ Some default MCP servers exclude VS Code via the `clients` field:
 - **ripgrep** and **filesystem**: Excluded from VS Code because VS Code/Copilot Chat has native file search and access capabilities. Adding these servers would duplicate functionality and increase context window usage.
 
 You can override these exclusions by editing `clients` in your `config.toml`.
+
+#### HTTP transport (`http_transport`)
+
+For HTTP MCP servers, `http_transport` controls how `al doctor` connects:
+
+- `sse` (default)
+- `streamable`
+
+Omit `http_transport` to default to `sse`.
 
 #### Warning thresholds (`[warnings]`)
 

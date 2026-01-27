@@ -85,6 +85,13 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "env is not allowed",
 		},
 		{
+			name: "http invalid http_transport",
+			cfg: withServers(valid, []MCPServer{
+				{ID: "x", Enabled: &trueVal, Transport: "http", URL: "https://example.com", HTTPTransport: "grpc"},
+			}),
+			wantErr: "http_transport must be sse or streamable",
+		},
+		{
 			name: "stdio missing command",
 			cfg: withServers(valid, []MCPServer{
 				{ID: "x", Enabled: &trueVal, Transport: "stdio"},
@@ -104,6 +111,13 @@ func TestValidateConfigErrors(t *testing.T) {
 				{ID: "x", Enabled: &trueVal, Transport: "stdio", Command: "tool", Headers: map[string]string{"X": "1"}},
 			}),
 			wantErr: "headers are not allowed",
+		},
+		{
+			name: "stdio with http_transport",
+			cfg: withServers(valid, []MCPServer{
+				{ID: "x", Enabled: &trueVal, Transport: "stdio", Command: "tool", HTTPTransport: "sse"},
+			}),
+			wantErr: "http_transport is only valid for http transport",
 		},
 		{
 			name: "invalid client",

@@ -13,13 +13,14 @@ type EnvVarResolver = config.EnvVarReplacer
 
 // ResolvedMCPServer is a normalized MCP server with env substitution applied.
 type ResolvedMCPServer struct {
-	ID        string
-	Transport string
-	URL       string
-	Headers   map[string]string
-	Command   string
-	Args      []string
-	Env       map[string]string
+	ID            string
+	Transport     string
+	URL           string
+	Headers       map[string]string
+	HTTPTransport string
+	Command       string
+	Args          []string
+	Env           map[string]string
 }
 
 // EnabledServerIDs returns sorted MCP server ids enabled for the client.

@@ -71,6 +71,12 @@ func resolveSingleServer(server config.MCPServer, env map[string]string, resolve
 
 	switch server.Transport {
 	case "http":
+		httpTransport := server.HTTPTransport
+		if httpTransport == "" {
+			httpTransport = "sse"
+		}
+		entry.HTTPTransport = httpTransport
+
 		url, err := config.SubstituteEnvVarsWith(server.URL, env, resolver)
 		if err != nil {
 			return entry, fmt.Errorf("url: %w", err)

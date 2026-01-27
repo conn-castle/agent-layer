@@ -84,10 +84,11 @@ const (
 	WarningsInstructionsTooLargeFmt  = "estimated tokens of the combined instruction payload > %d (%d > %d)"
 	WarningsInstructionsTooLargeFix  = "reduce always-on instructions; move reference material into docs/ and link to it; remove repetition."
 
-	WarningsUnsupportedTransportFmt = "unsupported transport: %s"
-	WarningsConnectionFailedFmt     = "connection failed: %w"
-	WarningsListToolsFailedFmt      = "list tools failed: %w"
-	WarningsTooManyTools            = "too many tools or infinite loop"
+	WarningsUnsupportedTransportFmt     = "unsupported transport: %s"
+	WarningsUnsupportedHTTPTransportFmt = "unsupported http transport: %s"
+	WarningsConnectionFailedFmt         = "connection failed: %w"
+	WarningsListToolsFailedFmt          = "list tools failed: %w"
+	WarningsTooManyTools                = "too many tools or infinite loop"
 
 	// CoverReportProfileFlagUsage describes the profile flag.
 	CoverReportProfileFlagUsage      = "path to coverage profile"

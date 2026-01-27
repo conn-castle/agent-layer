@@ -92,18 +92,37 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 			Command: cmd,
 		}
 	case "http":
-		t := &mcp.SSEClientTransport{
-			Endpoint: server.URL,
-		}
-		if len(server.Headers) > 0 {
-			t.HTTPClient = &http.Client{
-				Transport: &headerTransport{
-					base:    http.DefaultTransport,
-					headers: server.Headers,
-				},
+		switch server.HTTPTransport {
+		case "", "sse":
+			t := &mcp.SSEClientTransport{
+				Endpoint: server.URL,
 			}
+			if len(server.Headers) > 0 {
+				t.HTTPClient = &http.Client{
+					Transport: &headerTransport{
+						base:    http.DefaultTransport,
+						headers: server.Headers,
+					},
+				}
+			}
+			transport = t
+		case "streamable":
+			t := &mcp.StreamableClientTransport{
+				Endpoint: server.URL,
+			}
+			if len(server.Headers) > 0 {
+				t.HTTPClient = &http.Client{
+					Transport: &headerTransport{
+						base:    http.DefaultTransport,
+						headers: server.Headers,
+					},
+				}
+			}
+			transport = t
+		default:
+			res.Error = fmt.Errorf(messages.WarningsUnsupportedHTTPTransportFmt, server.HTTPTransport)
+			return res
 		}
-		transport = t
 	default:
 		res.Error = fmt.Errorf(messages.WarningsUnsupportedTransportFmt, server.Transport)
 		return res

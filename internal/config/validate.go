@@ -21,6 +21,11 @@ var validClients = map[string]struct{}{
 	"antigravity": {},
 }
 
+var validHTTPTransports = map[string]struct{}{
+	"sse":        {},
+	"streamable": {},
+}
+
 // Validate ensures the config is complete and consistent.
 func (c *Config) Validate(path string) error {
 	if _, ok := validApprovals[c.Approvals.Mode]; !ok {
@@ -58,6 +63,11 @@ func (c *Config) Validate(path string) error {
 			if server.URL == "" {
 				return fmt.Errorf(messages.ConfigMcpServerURLRequiredFmt, path, i)
 			}
+			if server.HTTPTransport != "" {
+				if _, ok := validHTTPTransports[server.HTTPTransport]; !ok {
+					return fmt.Errorf(messages.ConfigMcpServerHTTPTransportInvalidFmt, path, i)
+				}
+			}
 			if server.Command != "" || len(server.Args) > 0 {
 				return fmt.Errorf(messages.ConfigMcpServerCommandNotAllowedFmt, path, i)
 			}
@@ -65,6 +75,9 @@ func (c *Config) Validate(path string) error {
 				return fmt.Errorf(messages.ConfigMcpServerEnvNotAllowedFmt, path, i)
 			}
 		case "stdio":
+			if server.HTTPTransport != "" {
+				return fmt.Errorf(messages.ConfigMcpServerHTTPTransportNotAllowedFmt, path, i)
+			}
 			if server.Command == "" {
 				return fmt.Errorf(messages.ConfigMcpServerCommandRequiredFmt, path, i)
 			}
