@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -618,6 +619,32 @@ func TestPrintRecommendation_MultiLineIndent(t *testing.T) {
 		if lines[i] != want {
 			t.Fatalf("line %d mismatch: got %q, want %q", i, lines[i], want)
 		}
+	}
+}
+
+func TestCountEnabledMCPServers(t *testing.T) {
+	enabled := true
+	disabled := false
+	servers := []config.MCPServer{
+		{ID: "a", Enabled: &enabled},
+		{ID: "b", Enabled: &disabled},
+		{ID: "c", Enabled: &enabled},
+		{ID: "d", Enabled: nil},
+	}
+
+	if got := countEnabledMCPServers(servers); got != 2 {
+		t.Fatalf("expected 2 enabled servers, got %d", got)
+	}
+}
+
+func TestStartMCPProgressZero(t *testing.T) {
+	output := captureStdout(t, func() {
+		stop := startMCPProgress(0)
+		stop()
+	})
+	expected := fmt.Sprintf(messages.DoctorMCPCheckStartFmt, 0) + messages.DoctorMCPCheckDone + "\n"
+	if output != expected {
+		t.Fatalf("unexpected output: got %q, want %q", output, expected)
 	}
 }
 

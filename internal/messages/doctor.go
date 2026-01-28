@@ -44,6 +44,8 @@ const (
 	DoctorUpToDateFmt               = "Agent Layer is up to date (%s)"
 
 	DoctorWarningSystemHeader        = "\n🔍 Running warning checks..."
+	DoctorMCPCheckStartFmt           = "⏳ Checking MCP servers (%d enabled)"
+	DoctorMCPCheckDone               = " done"
 	DoctorInstructionsCheckFailedFmt = "Failed to check instructions: %v"
 	DoctorMCPCheckFailedFmt          = "Failed to check MCP servers: %v"
 	DoctorFailureSummary             = "❌ Some checks failed or triggered warnings. Please address the items above."

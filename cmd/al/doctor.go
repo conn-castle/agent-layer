@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -99,7 +102,9 @@ func newDoctorCmd() *cobra.Command {
 				}
 
 				// MCP check (Doctor runs discovery)
+				stopProgress := startMCPProgress(countEnabledMCPServers(cfg.Config.MCP.Servers))
 				mcpWarnings, err := checkMCPServers(context.Background(), cfg, nil)
+				stopProgress()
 				if err != nil {
 					color.Red(messages.DoctorMCPCheckFailedFmt, err)
 					hasFail = true
@@ -159,5 +164,45 @@ func printRecommendation(recommendation string) {
 			continue
 		}
 		fmt.Printf("%s%s\n", messages.DoctorRecommendationIndent, line)
+	}
+}
+
+func countEnabledMCPServers(servers []config.MCPServer) int {
+	count := 0
+	for _, server := range servers {
+		if server.Enabled != nil && *server.Enabled {
+			count++
+		}
+	}
+	return count
+}
+
+func startMCPProgress(enabled int) func() {
+	fmt.Printf(messages.DoctorMCPCheckStartFmt, enabled)
+	if enabled == 0 {
+		fmt.Println(messages.DoctorMCPCheckDone)
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				fmt.Print(".")
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	return func() {
+		once.Do(func() {
+			close(done)
+			fmt.Println(messages.DoctorMCPCheckDone)
+		})
 	}
 }

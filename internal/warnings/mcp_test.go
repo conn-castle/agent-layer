@@ -28,6 +28,12 @@ func (m *MockConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	return DiscoveryResult{ServerID: server.ID, Error: fmt.Errorf("mock not found")}
 }
 
+func TestMCPDiscoveryTimeoutDefault(t *testing.T) {
+	if mcpDiscoveryTimeout != 30*time.Second {
+		t.Fatalf("expected mcp discovery timeout to be 30s, got %s", mcpDiscoveryTimeout)
+	}
+}
+
 func TestCheckMCPServers(t *testing.T) {
 	// Setup config
 	enabled := true

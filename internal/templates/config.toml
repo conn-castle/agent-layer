@@ -40,7 +40,7 @@ env = { CONTEXT7_API_KEY = "${CONTEXT7_API_KEY}" }
 id = "github"
 enabled = false
 transport = "http"
-# http_transport = "sse" # optional: "sse" (default) or "streamable"
+http_transport = "streamable"
 url = "https://api.githubcopilot.com/mcp/"
 headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
 
@@ -48,6 +48,7 @@ headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
 id = "tavily"
 enabled = false
 transport = "http"
+http_transport = "streamable"
 url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
 
 [[mcp.servers]]

@@ -84,6 +84,22 @@ Notes:
 
 ---
 
+## MCP server requirements (external tools)
+
+Some MCP servers require a specific runtime or launcher to be installed locally. Agent Layer does not install these dependencies; it only runs the command you configure.
+
+Examples:
+- **Node-based servers** often use `npx` in the `command` field (requires Node.js + npm).
+- **Python/uv-based servers** often use `uvx` in the `command` field (requires `uv`/`uvx` on your `PATH`).
+
+If a server fails to start with “No such file or directory,” verify the `command` exists and is on your `PATH`, or set `command` to the full path of the executable.
+
+### Doctor MCP checks
+
+`al doctor` connects to each enabled MCP server and lists tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
+
+---
+
 ## Version pinning (per repo, optional)
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.

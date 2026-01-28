@@ -89,3 +89,9 @@ Note: This is an agent-layer memory file. It is primarily for agent use.
     Description: Evaluate using a generic shell/command MCP server to enforce a unified allowlist for shell commands across all agents, rather than relying on agent-specific implementations.
     Acceptance criteria: Feasibility study and prototype of a unified shell MCP with granular allowlisting.
     Notes: Deep backlog item. Consider only after high-priority improvements are complete. Goal is centralized control.
+
+- Backlog 2026-01-27 2b3c4d5: Support Codex-as-MCP for multi-agent use
+    Priority: Medium. Area: agent collaboration
+    Description: Support running Codex as an MCP server to allow multi-agent collaboration. Investigate similar capabilities for Claude and Gemini.
+    Acceptance criteria: Codex can be exposed as an MCP server. Investigation into Claude/Gemini MCP agent support is complete.
+    Notes: Enables agents to call other agents as tools.

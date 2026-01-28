@@ -61,6 +61,9 @@ var NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) m
 // This guards against infinite pagination loops.
 const maxToolsToDiscover = 1000
 
+// mcpDiscoveryTimeout is the per-server timeout for doctor MCP discovery checks.
+const mcpDiscoveryTimeout = 30 * time.Second
+
 // RealConnector implements Connector using the SDK.
 type RealConnector struct{}
 
@@ -69,7 +72,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	res := DiscoveryResult{ServerID: server.ID}
 
 	// Create context with timeout for this server
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, mcpDiscoveryTimeout)
 	defer cancel()
 
 	// Create client
