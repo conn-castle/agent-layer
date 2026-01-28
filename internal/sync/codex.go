@@ -67,9 +67,7 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 		project.Config.MCP.Servers,
 		project.Env,
 		"codex",
-		func(name string, _ string) string {
-			return fmt.Sprintf("${%s}", name)
-		},
+		projection.ClientPlaceholderResolver("${%s}"),
 	)
 	if err != nil {
 		return "", err

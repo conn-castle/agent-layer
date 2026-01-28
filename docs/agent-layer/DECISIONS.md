@@ -2,6 +2,26 @@
 
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
+## Purpose
+A rolling log of important, non-obvious decisions that materially affect future work (constraints, deferrals, irreversible tradeoffs). Only record decisions that future developers/agents would not learn just by reading the code.
+
+## Format
+- Keep entries brief and durable (avoid restating obvious defaults).
+- Keep the oldest decisions near the top and add new entries at the bottom.
+- Insert entries under `<!-- ENTRIES START -->`.
+- Line 1 starts with `- Decision YYYY-MM-DD <id>:` and a short title.
+- Lines 2–4 are indented by **4 spaces** and use `Key: Value`.
+- Keep **exactly one blank line** between entries.
+- If a decision is superseded, add a new entry describing the change (do not delete history unless explicitly asked).
+
+### Entry template
+```text
+- Decision YYYY-MM-DD abcdef: Short title
+    Decision: <what was chosen>
+    Reason: <why it was chosen>
+    Tradeoffs: <what is gained and what is lost>
+```
+
 ## Decision Log
 
 <!-- ENTRIES START -->
@@ -54,3 +74,13 @@ Note: This is an agent-layer memory file. It is primarily for agent use.
     Decision: Workflow artifacts are written to `.agent-layer/tmp` using a unique per-invocation filename: `.agent-layer/tmp/<workflow>.<run-id>.<type>.md` with `run-id = YYYYMMDD-HHMMSS-<short-rand>`; no path overrides.
     Reason: Keeps artifacts invisible to humans while avoiding collisions for concurrent agents without relying on env vars or per-chat IDs.
     Tradeoffs: Files can accumulate until manually cleaned; agents must echo paths in chat to retain context.
+
+- Decision 2026-01-26 999bc79: Centralize MCP server resolution in projection package
+    Decision: MCP server resolution logic and the `ResolvedMCPServer` type now live in `internal/projection`. The warnings package imports projection for MCP resolution instead of maintaining duplicate code.
+    Reason: Eliminates DRY violation where identical resolution logic existed in both projection and warnings packages.
+    Tradeoffs: Warnings package now depends on projection; acceptable since projection is a lower-level utility.
+
+- Decision 2026-01-27 d4e7a1b: VS Code settings merge scoped to managed block
+    Decision: When the managed markers exist in `.vscode/settings.json`, update only the managed block and do not validate unrelated JSONC content; if markers are missing, parse the root object to insert the block.
+    Reason: Avoid partial JSONC parsing dependencies while still supporting first-time insertion.
+    Tradeoffs: Invalid JSONC outside the managed block is no longer detected once the markers are present.

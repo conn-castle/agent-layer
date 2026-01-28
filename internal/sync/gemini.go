@@ -89,9 +89,7 @@ func buildGeminiSettings(sys System, project *config.ProjectConfig) (*geminiSett
 		project.Config.MCP.Servers,
 		project.Env,
 		"gemini",
-		func(name string, _ string) string {
-			return fmt.Sprintf("${%s}", name)
-		},
+		projection.ClientPlaceholderResolver("${%s}"),
 	)
 	if err != nil {
 		return nil, err

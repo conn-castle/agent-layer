@@ -53,7 +53,7 @@ func TestResolveMCPServers_HeaderError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for missing env in header")
 	}
-	if !strings.Contains(err.Error(), "mcp server http header Authorization") {
+	if !strings.Contains(err.Error(), "missing environment variables: MISSING") {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
@@ -70,10 +70,7 @@ func TestResolveMCPServers_CommandError(t *testing.T) {
 		},
 	}
 	_, err := ResolveMCPServers(servers, map[string]string{}, "gemini", nil)
-	if err == nil {
-		t.Fatalf("expected error for missing env in command")
-	}
-	if !strings.Contains(err.Error(), "mcp server stdio command") {
+	if !strings.Contains(err.Error(), "missing environment variables: MISSING") {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
@@ -96,7 +93,7 @@ func TestResolveMCPServers_EnvError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for missing env in env map")
 	}
-	if !strings.Contains(err.Error(), "mcp server stdio env KEY") {
+	if !strings.Contains(err.Error(), "missing environment variables: MISSING") {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }

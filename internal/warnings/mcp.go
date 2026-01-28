@@ -2,12 +2,13 @@ package warnings
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"sync"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
 // CheckMCPServers performs discovery on enabled MCP servers and checks against warning thresholds.
@@ -18,20 +19,19 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	}
 
 	// 1. Identify enabled servers
-	var enabledServers []ResolvedMCPServer
-	for _, s := range cfg.Config.MCP.Servers {
-		if s.Enabled != nil && *s.Enabled {
-			resolved, err := resolveServer(s, cfg.Env)
-			if err != nil {
-				return []Warning{{
-					Code:    CodeMCPServerUnreachable,
-					Subject: s.ID,
-					Message: fmt.Sprintf(messages.WarningsResolveConfigFailedFmt, err),
-					Fix:     messages.WarningsResolveConfigFix,
-				}}, nil
-			}
-			enabledServers = append(enabledServers, resolved)
+	enabledServers, err := projection.ResolveEnabledMCPServers(cfg.Config.MCP.Servers, cfg.Env)
+	if err != nil {
+		subject := "mcp.servers"
+		var resolveErr *projection.MCPServerResolveError
+		if errors.As(err, &resolveErr) && resolveErr.ServerID != "" {
+			subject = resolveErr.ServerID
 		}
+		return []Warning{{
+			Code:    CodeMCPServerUnreachable,
+			Subject: subject,
+			Message: fmt.Sprintf(messages.WarningsResolveConfigFailedFmt, err),
+			Fix:     messages.WarningsResolveConfigFix,
+		}}, nil
 	}
 
 	var warnings []Warning
@@ -130,17 +130,6 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	return warnings, nil
 }
 
-// ResolvedMCPServer holds configuration for an MCP server with environment variables resolved.
-type ResolvedMCPServer struct {
-	ID        string
-	Transport string
-	URL       string // for http
-	Headers   map[string]string
-	Command   string // for stdio
-	Args      []string
-	Env       map[string]string
-}
-
 // ToolDef represents a discovered tool from an MCP server.
 type ToolDef struct {
 	Name string
@@ -156,62 +145,10 @@ type DiscoveryResult struct {
 
 // Connector interface for mocking.
 type Connector interface {
-	ConnectAndDiscover(ctx context.Context, server ResolvedMCPServer) DiscoveryResult
+	ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult
 }
 
-func resolveServer(s config.MCPServer, env map[string]string) (ResolvedMCPServer, error) {
-	// Simplified resolver relying on config.SubstituteEnvVarsWith
-	replacer := func(key string, val string) string {
-		if v, ok := env[key]; ok {
-			return v
-		}
-		return os.Getenv(key)
-	}
-
-	res := ResolvedMCPServer{ID: s.ID, Transport: s.Transport}
-	var err error
-
-	if s.Transport == "http" {
-		res.URL, err = config.SubstituteEnvVarsWith(s.URL, env, replacer)
-		if err != nil {
-			return res, err
-		}
-		if len(s.Headers) > 0 {
-			res.Headers = make(map[string]string)
-			for k, v := range s.Headers {
-				res.Headers[k], err = config.SubstituteEnvVarsWith(v, env, replacer)
-				if err != nil {
-					return res, err
-				}
-			}
-		}
-	} else if s.Transport == "stdio" {
-		res.Command, err = config.SubstituteEnvVarsWith(s.Command, env, replacer)
-		if err != nil {
-			return res, err
-		}
-		for _, arg := range s.Args {
-			resolvedArg, err := config.SubstituteEnvVarsWith(arg, env, replacer)
-			if err != nil {
-				return res, err
-			}
-			res.Args = append(res.Args, resolvedArg)
-		}
-		if len(s.Env) > 0 {
-			res.Env = make(map[string]string)
-			for k, v := range s.Env {
-				res.Env[k], err = config.SubstituteEnvVarsWith(v, env, replacer)
-				if err != nil {
-					return res, err
-				}
-			}
-		}
-	}
-
-	return res, nil
-}
-
-func discoverTools(ctx context.Context, servers []ResolvedMCPServer, connector Connector) []DiscoveryResult {
+func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, connector Connector) []DiscoveryResult {
 	results := make([]DiscoveryResult, len(servers))
 
 	// Semaphore for concurrency
@@ -220,7 +157,7 @@ func discoverTools(ctx context.Context, servers []ResolvedMCPServer, connector C
 
 	for i, server := range servers {
 		wg.Add(1)
-		go func(i int, s ResolvedMCPServer) {
+		go func(i int, s projection.ResolvedMCPServer) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()

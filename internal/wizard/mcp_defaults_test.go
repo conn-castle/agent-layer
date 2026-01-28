@@ -17,6 +17,9 @@ func TestMissingDefaultMCPServers(t *testing.T) {
 		{ID: "github"},
 		{ID: "context7"},
 		{ID: "tavily"},
+		{ID: "fetch"},
+		{ID: "ripgrep"},
+		{ID: "filesystem"},
 	}
 	servers := []config.MCPServer{
 		{ID: "github"},
@@ -25,7 +28,7 @@ func TestMissingDefaultMCPServers(t *testing.T) {
 
 	missing := missingDefaultMCPServers(defaults, servers)
 
-	assert.Equal(t, []string{"context7"}, missing)
+	assert.Equal(t, []string{"context7", "fetch", "ripgrep", "filesystem"}, missing)
 }
 
 func TestAppendMissingDefaultMCPServers(t *testing.T) {
@@ -56,6 +59,9 @@ func TestLoadDefaultMCPServers(t *testing.T) {
 		ids[s.ID] = true
 	}
 	assert.True(t, ids["github"])
+	assert.True(t, ids["fetch"])
+	assert.True(t, ids["ripgrep"])
+	assert.True(t, ids["filesystem"])
 }
 
 func TestAppendMissingDefaultMCPServers_Error(t *testing.T) {

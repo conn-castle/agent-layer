@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fatih/color"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/install"
@@ -329,6 +331,6 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 		return err
 	}
 
-	fmt.Println(messages.WizardCompleted)
+	_, _ = color.New(color.FgGreen).Println(messages.WizardCompleted)
 	return nil
 }

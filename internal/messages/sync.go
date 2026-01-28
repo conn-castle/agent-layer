@@ -15,6 +15,7 @@ const (
 	SyncMarshalGeminiSettingsFailedFmt           = "failed to marshal gemini settings: %w"
 	SyncMarshalVSCodeSettingsFailedFmt           = "failed to marshal vscode settings: %w"
 	SyncMarshalVSCodeMCPConfigFailedFmt          = "failed to marshal vscode mcp config: %w"
+	SyncInvalidVSCodeSettingsFmt                 = "invalid vscode settings %s: %w"
 	SyncMissingPromptServerNoRoot                = "al not found on PATH and no repo root available for go run"
 	SyncMissingPromptServerSourceFmt             = "missing prompt server source at %s"
 	SyncCheckPathFmt                             = "check %s: %w"
@@ -28,6 +29,7 @@ const (
 	SyncCodexAuthorizationBearerRequired         = "authorization header must use Bearer token"
 	SyncCodexAuthorizationEnvPlaceholderRequired = "authorization header must use env var placeholder"
 
+	MCPServerResolveFmt              = "mcp server %s: %w"
 	MCPServerURLFmt                  = "mcp server %s url: %w"
 	MCPServerHeaderFmt               = "mcp server %s header %s: %w"
 	MCPServerCommandFmt              = "mcp server %s command: %w"

@@ -6,7 +6,7 @@ const (
 	DoctorUse   = "doctor"
 	DoctorShort = "Check for missing secrets, disabled servers, and common misconfigurations"
 
-	DoctorHealthCheckFmt = "🏥 Checking Agent Layer health in %s...\n\n"
+	DoctorHealthCheckFmt = "🏥 Checking Agent Layer health in %s...\n"
 
 	DoctorCheckNameStructure = "Structure"
 	DoctorCheckNameConfig    = "Config"
@@ -40,19 +40,22 @@ const (
 	DoctorUpdateDevBuildFmt         = "Running dev build; latest release is %s"
 	DoctorUpdateDevBuildRecommend   = "Install a release build to use version pinning and dispatch."
 	DoctorUpdateAvailableFmt        = "Update available: %s (current %s)"
-	DoctorUpdateAvailableRecommend  = "Upgrade the global CLI or update your repo pin if needed."
+	DoctorUpdateAvailableRecommend  = UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock
 	DoctorUpToDateFmt               = "Agent Layer is up to date (%s)"
 
 	DoctorWarningSystemHeader        = "\n🔍 Running warning checks..."
+	DoctorMCPCheckStartFmt           = "⏳ Checking MCP servers (%d enabled)"
+	DoctorMCPCheckDone               = " done"
 	DoctorInstructionsCheckFailedFmt = "Failed to check instructions: %v"
 	DoctorMCPCheckFailedFmt          = "Failed to check MCP servers: %v"
 	DoctorFailureSummary             = "❌ Some checks failed or triggered warnings. Please address the items above."
 	DoctorFailureError               = "doctor checks failed"
 	DoctorSuccessSummary             = "✅ All systems go. Agent Layer is ready."
 
-	DoctorStatusOKLabel     = "[OK]  "
-	DoctorStatusWarnLabel   = "[WARN]"
-	DoctorStatusFailLabel   = "[FAIL]"
-	DoctorResultLineFmt     = "%s %-10s %s\n"
-	DoctorRecommendationFmt = "       💡 %s\n"
+	DoctorStatusOKLabel        = "[OK]  "
+	DoctorStatusWarnLabel      = "[WARN]"
+	DoctorStatusFailLabel      = "[FAIL]"
+	DoctorResultLineFmt        = "%s %-10s %s\n"
+	DoctorRecommendationPrefix = "       💡 "
+	DoctorRecommendationIndent = "         "
 )

@@ -1,6 +1,11 @@
 {
+  // >>> agent-layer
+  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml
+  // and .agent-layer/commands.allow, then re-run `al sync`.
+  //
   "chat.tools.terminal.autoApprove": {
     "/^git status(\\b.*)?$/": true,
     "/^ls(\\b.*)?$/": true
   }
+  // <<< agent-layer
 }

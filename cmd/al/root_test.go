@@ -1,9 +1,15 @@
 package main
 
+// NOTE: Tests in this file mutate package-level globals (getwd, isTerminal,
+// runWizard, checkForUpdate, checkInstructions, checkMCPServers, runPromptServer).
+// Do not use t.Parallel() at the top level. Each test must restore globals via t.Cleanup().
+
 import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +18,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -376,6 +384,128 @@ func TestDoctorCommand(t *testing.T) {
 	}
 }
 
+func TestDoctorCommand_UpdateSkippedNoNetwork(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepo(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil)
+
+	origInstructions := checkInstructions
+	origMCP := checkMCPServers
+	t.Cleanup(func() {
+		checkInstructions = origInstructions
+		checkMCPServers = origMCP
+	})
+	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+		return nil, nil
+	}
+
+	t.Setenv(dispatch.EnvNoNetwork, "1")
+	withWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("doctor failed when updates are skipped: %v", err)
+		}
+	})
+	if *calls != 0 {
+		t.Fatalf("expected update check to be skipped, got %d calls", *calls)
+	}
+}
+
+func TestDoctorCommand_UpdateCheckError(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepo(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{}, errors.New("update failed"))
+
+	origInstructions := checkInstructions
+	origMCP := checkMCPServers
+	t.Cleanup(func() {
+		checkInstructions = origInstructions
+		checkMCPServers = origMCP
+	})
+	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+		return nil, nil
+	}
+
+	withWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("doctor failed on update check error: %v", err)
+		}
+	})
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
+func TestDoctorCommand_UpdateCheckDevBuild(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepo(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{
+		Current:      "1.0.0-dev",
+		Latest:       "1.0.0",
+		CurrentIsDev: true,
+	}, nil)
+
+	origInstructions := checkInstructions
+	origMCP := checkMCPServers
+	t.Cleanup(func() {
+		checkInstructions = origInstructions
+		checkMCPServers = origMCP
+	})
+	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+		return nil, nil
+	}
+
+	withWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("doctor failed on dev build: %v", err)
+		}
+	})
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
+func TestDoctorCommand_ConfigErrorSkipsWarningSystem(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoInvalidConfig(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+
+	origInstructions := checkInstructions
+	origMCP := checkMCPServers
+	calledInstructions := false
+	calledMCP := false
+	t.Cleanup(func() {
+		checkInstructions = origInstructions
+		checkMCPServers = origMCP
+	})
+	checkInstructions = func(string, *int) ([]warnings.Warning, error) {
+		calledInstructions = true
+		return nil, nil
+	}
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+		calledMCP = true
+		return nil, nil
+	}
+
+	withWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		if err := cmd.RunE(cmd, nil); err == nil {
+			t.Fatal("expected doctor error for invalid config")
+		}
+	})
+	if calledInstructions || calledMCP {
+		t.Fatal("expected warning checks to be skipped when config is invalid")
+	}
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
 func TestDoctorCommand_WithWarnings(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepoWithWarnings(t, root)
@@ -471,6 +601,53 @@ func TestPrintResult_AllStatuses(t *testing.T) {
 	}
 }
 
+func TestPrintRecommendation_MultiLineIndent(t *testing.T) {
+	output := captureStdout(t, func() {
+		printRecommendation("Line one\nLine two\n\nLine four")
+	})
+	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	expected := []string{
+		messages.DoctorRecommendationPrefix + "Line one",
+		messages.DoctorRecommendationIndent + "Line two",
+		messages.DoctorRecommendationIndent,
+		messages.DoctorRecommendationIndent + "Line four",
+	}
+	if len(lines) != len(expected) {
+		t.Fatalf("unexpected line count: got %d, want %d\noutput:\n%s", len(lines), len(expected), output)
+	}
+	for i, want := range expected {
+		if lines[i] != want {
+			t.Fatalf("line %d mismatch: got %q, want %q", i, lines[i], want)
+		}
+	}
+}
+
+func TestCountEnabledMCPServers(t *testing.T) {
+	enabled := true
+	disabled := false
+	servers := []config.MCPServer{
+		{ID: "a", Enabled: &enabled},
+		{ID: "b", Enabled: &disabled},
+		{ID: "c", Enabled: &enabled},
+		{ID: "d", Enabled: nil},
+	}
+
+	if got := countEnabledMCPServers(servers); got != 2 {
+		t.Fatalf("expected 2 enabled servers, got %d", got)
+	}
+}
+
+func TestStartMCPProgressZero(t *testing.T) {
+	output := captureStdout(t, func() {
+		stop := startMCPProgress(0)
+		stop()
+	})
+	expected := fmt.Sprintf(messages.DoctorMCPCheckStartFmt, 0) + messages.DoctorMCPCheckDone + "\n"
+	if output != expected {
+		t.Fatalf("unexpected output: got %q, want %q", output, expected)
+	}
+}
+
 func TestSyncCommand_WithWarnings(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepoWithWarnings(t, root)
@@ -488,6 +665,31 @@ func TestSyncCommand_WithWarnings(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+
+	original := os.Stdout
+	os.Stdout = writer
+
+	fn()
+
+	_ = writer.Close()
+	os.Stdout = original
+
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, reader); err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	_ = reader.Close()
+
+	return buf.String()
 }
 
 func TestWizardCommand(t *testing.T) {
@@ -636,6 +838,20 @@ Do it.`
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
+	}
+}
+
+func writeTestRepoInvalidConfig(t *testing.T, root string) {
+	t.Helper()
+	agentLayerDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentLayerDir, "config.toml"), []byte("invalid = "), 0o644); err != nil {
+		t.Fatalf("write invalid config: %v", err)
 	}
 }
 

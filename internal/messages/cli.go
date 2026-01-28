@@ -35,7 +35,9 @@ const (
 
 	InitWarnUpdateCheckFailedFmt = "Warning: failed to check for updates: %v\n"
 	InitWarnDevBuildFmt          = "Warning: running dev build; latest release is %s\n"
-	InitWarnUpdateAvailableFmt   = "Warning: update available: %s (current %s)\n"
+	UpdateUpgradeBlock           = "Upgrade:\n  Homebrew: brew upgrade conn-castle/tap/agent-layer\n  macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  Windows (PowerShell): iwr -useb https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 | iex"
+	UpdateSafetyBlock            = "Safety:\n  - Back up local changes before upgrading.\n  - `al init --force` overwrites managed files and deletes unknown files under .agent-layer without prompts."
+	InitWarnUpdateAvailableFmt   = "Warning: update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
 
 	// CompletionUse is the completion command usage.
 	CompletionUse                 = "completion [bash|zsh|fish]"

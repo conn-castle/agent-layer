@@ -12,6 +12,14 @@ import (
 	"testing"
 )
 
+type failingRoundTripper struct {
+	err error
+}
+
+func (f failingRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) {
+	return nil, f.err
+}
+
 func TestEnsureCachedBinary(t *testing.T) {
 	// 1. Setup mock server
 	version := "1.0.0"
@@ -536,5 +544,252 @@ func TestFetchChecksum_NotFound(t *testing.T) {
 	_, err := fetchChecksum(version, asset)
 	if err == nil {
 		t.Fatal("expected error when checksum not found in file")
+	}
+}
+
+func TestDownloadToFile_ClientGetError(t *testing.T) {
+	origClient := httpClient
+	httpClient = &http.Client{
+		Transport: failingRoundTripper{err: fmt.Errorf("client get failed")},
+	}
+	t.Cleanup(func() { httpClient = origClient })
+
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	err = downloadToFile("https://example.invalid/file", f)
+	if err == nil {
+		t.Fatal("expected error from client.Get")
+	}
+}
+
+func TestFetchChecksum_ClientGetError(t *testing.T) {
+	origClient := httpClient
+	httpClient = &http.Client{
+		Transport: failingRoundTripper{err: fmt.Errorf("client get failed")},
+	}
+	t.Cleanup(func() { httpClient = origClient })
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = "http://invalid.test.invalid:99999"
+	defer func() { releaseBaseURL = oldURL }()
+
+	_, err := fetchChecksum("1.0.0", "some-asset")
+	if err == nil {
+		t.Fatal("expected error from client.Get")
+	}
+}
+
+func TestFetchChecksum_PathPrefixes(t *testing.T) {
+	// Test that paths with ./ and * prefixes are handled
+	version := "1.0.0"
+	asset := "test-asset"
+	checksum := "abcd1234"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Test with ./ prefix
+		_, _ = fmt.Fprintf(w, "%s ./%s\n", checksum, asset)
+	}))
+	defer server.Close()
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	got, err := fetchChecksum(version, asset)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != checksum {
+		t.Errorf("got %s, want %s", got, checksum)
+	}
+}
+
+func TestFetchChecksum_StarPrefix(t *testing.T) {
+	// Test that paths with * prefix (binary mode) are handled
+	version := "1.0.0"
+	asset := "test-asset"
+	checksum := "efgh5678"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Test with * prefix (binary mode indicator)
+		_, _ = fmt.Fprintf(w, "%s *%s\n", checksum, asset)
+	}))
+	defer server.Close()
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	got, err := fetchChecksum(version, asset)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != checksum {
+		t.Errorf("got %s, want %s", got, checksum)
+	}
+}
+
+func TestEnsureCachedBinary_CreateTempError(t *testing.T) {
+	origCreateTemp := osCreateTemp
+	defer func() { osCreateTemp = origCreateTemp }()
+	osCreateTemp = func(dir, pattern string) (*os.File, error) {
+		return nil, fmt.Errorf("create temp failed")
+	}
+
+	// Ensure stat returns NotExist so we proceed to download
+	origStat := osStat
+	defer func() { osStat = origStat }()
+	osStat = func(name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+
+	_, err := ensureCachedBinary(t.TempDir(), "1.0.0")
+	if err == nil {
+		t.Fatal("expected error from CreateTemp")
+	}
+	if !strings.Contains(err.Error(), "temp") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestVerifyChecksum_HashMismatch(t *testing.T) {
+	// Create a file with known content
+	tmp := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(tmp, []byte("test content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify with wrong checksum
+	err := verifyChecksum(tmp, "wrongchecksum")
+	if err == nil {
+		t.Fatal("expected error for checksum mismatch")
+	}
+	if !strings.Contains(err.Error(), "checksum") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestEnsureCachedBinary_SyncSuccess(t *testing.T) {
+	// Setup mock server
+	version := "1.0.0"
+	content := "binary-content"
+	checksum := sha256.Sum256([]byte(content))
+	checksumStr := fmt.Sprintf("%x", checksum)
+	osName, arch, _ := platformStrings()
+	asset := assetName(osName, arch)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == fmt.Sprintf("/download/v%s/%s", version, asset) {
+			_, _ = w.Write([]byte(content))
+		} else if r.URL.Path == fmt.Sprintf("/download/v%s/checksums.txt", version) {
+			_, _ = fmt.Fprintf(w, "%s %s\n", checksumStr, asset)
+		} else {
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	// Mock CreateTemp to ensure the override path is exercised.
+	origCreateTemp := osCreateTemp
+	defer func() { osCreateTemp = origCreateTemp }()
+	osCreateTemp = func(dir, pattern string) (*os.File, error) {
+		f, err := os.CreateTemp(dir, pattern)
+		if err != nil {
+			return nil, err
+		}
+		return f, nil
+	}
+
+	// This test verifies the happy path completes (Sync doesn't fail in normal case).
+	cacheRoot := t.TempDir()
+	_, err := ensureCachedBinary(cacheRoot, version)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestEnsureCachedBinary_DownloadError(t *testing.T) {
+	// Ensure stat returns NotExist so we proceed to download
+	origStat := osStat
+	defer func() { osStat = origStat }()
+	osStat = func(name string) (os.FileInfo, error) {
+		return nil, os.ErrNotExist
+	}
+
+	// Use a server that closes connection immediately to cause download error
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "hijack not supported", http.StatusInternalServerError)
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			return
+		}
+		// Close immediately to cause connection error
+		_ = conn.Close()
+	}))
+	defer server.Close()
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	_, err := ensureCachedBinary(t.TempDir(), "1.0.0")
+	if err == nil {
+		t.Fatal("expected error from download")
+	}
+}
+
+func TestEnsureCachedBinary_FetchChecksumError(t *testing.T) {
+	// Setup server that returns binary but fails on checksum
+	version := "1.0.0"
+	content := "binary-content"
+	osName, arch, _ := platformStrings()
+	asset := assetName(osName, arch)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == fmt.Sprintf("/download/v%s/%s", version, asset) {
+			_, _ = w.Write([]byte(content))
+		} else if r.URL.Path == fmt.Sprintf("/download/v%s/checksums.txt", version) {
+			// Return 500 for checksum file
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	_, err := ensureCachedBinary(t.TempDir(), version)
+	if err == nil {
+		t.Fatal("expected error from fetchChecksum")
+	}
+}
+
+func TestVerifyChecksum_ReadError(t *testing.T) {
+	// On Unix, opening a directory succeeds but reading from it fails
+	// This tests the io.Copy error path
+	if runtime.GOOS == "windows" {
+		t.Skip("directory read behavior differs on windows")
+	}
+
+	dir := t.TempDir()
+	err := verifyChecksum(dir, "somehash")
+	if err == nil {
+		t.Fatal("expected error reading directory")
 	}
 }

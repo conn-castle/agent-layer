@@ -9,33 +9,38 @@ import (
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
-type mcpConfig struct {
-	Servers OrderedMap[mcpServer] `json:"mcpServers,omitempty"`
+type vscodeMCPConfig struct {
+	Servers OrderedMap[vscodeMCPServer] `json:"servers"`
 }
 
-type mcpServer struct {
-	Type    string             `json:"type"`
+type vscodeMCPServer struct {
+	Type    string             `json:"type,omitempty"`
+	URL     string             `json:"url,omitempty"`
+	Headers OrderedMap[string] `json:"headers,omitempty"`
 	Command string             `json:"command,omitempty"`
 	Args    []string           `json:"args,omitempty"`
 	Env     OrderedMap[string] `json:"env,omitempty"`
-	URL     string             `json:"url,omitempty"`
-	Headers OrderedMap[string] `json:"headers,omitempty"`
 }
 
-// WriteMCPConfig generates .mcp.json for Claude Code.
-func WriteMCPConfig(sys System, root string, project *config.ProjectConfig) error {
-	cfg, err := buildMCPConfig(sys, project)
+// WriteVSCodeMCPConfig generates .vscode/mcp.json.
+func WriteVSCodeMCPConfig(sys System, root string, project *config.ProjectConfig) error {
+	cfg, err := buildVSCodeMCPConfig(project)
 	if err != nil {
 		return err
 	}
 
+	vscodeDir := filepath.Join(root, ".vscode")
+	if err := sys.MkdirAll(vscodeDir, 0o755); err != nil {
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, vscodeDir, err)
+	}
+
 	data, err := sys.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return fmt.Errorf(messages.SyncMarshalMCPConfigFailedFmt, err)
+		return fmt.Errorf(messages.SyncMarshalVSCodeMCPConfigFailedFmt, err)
 	}
 	data = append(data, '\n')
 
-	path := filepath.Join(root, ".mcp.json")
+	path := filepath.Join(vscodeDir, "mcp.json")
 	if err := sys.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
@@ -43,39 +48,33 @@ func WriteMCPConfig(sys System, root string, project *config.ProjectConfig) erro
 	return nil
 }
 
-func buildMCPConfig(sys System, project *config.ProjectConfig) (*mcpConfig, error) {
-	cfg := &mcpConfig{
-		Servers: make(OrderedMap[mcpServer]),
+func buildVSCodeMCPConfig(project *config.ProjectConfig) (*vscodeMCPConfig, error) {
+	cfg := &vscodeMCPConfig{
+		Servers: make(OrderedMap[vscodeMCPServer]),
 	}
 
-	// Internal prompt server for Claude.
-	promptCommand, promptArgs, err := resolvePromptServerCommand(sys, project.Root)
-	if err != nil {
-		return nil, err
-	}
-	cfg.Servers["agent-layer"] = mcpServer{
-		Type:    "stdio",
-		Command: promptCommand,
-		Args:    promptArgs,
-	}
-
+	// Transform to VS Code env syntax - VS Code resolves ${env:VAR} at runtime.
 	resolved, err := projection.ResolveMCPServers(
 		project.Config.MCP.Servers,
 		project.Env,
-		"claude",
-		projection.ClientPlaceholderResolver("${%s}"),
+		"vscode",
+		projection.ClientPlaceholderResolver("${env:%s}"),
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, server := range resolved {
-		entry := mcpServer{
-			Type:    server.Transport,
-			Command: server.Command,
-			Args:    server.Args,
-			URL:     server.URL,
+		entry := vscodeMCPServer{
+			Type: server.Transport,
+			URL:  server.URL,
 		}
+
+		if server.Transport == "stdio" {
+			entry.Command = server.Command
+			entry.Args = server.Args
+		}
+
 		if len(server.Headers) > 0 {
 			headers := make(OrderedMap[string], len(server.Headers))
 			for key, value := range server.Headers {
@@ -90,6 +89,7 @@ func buildMCPConfig(sys System, project *config.ProjectConfig) (*mcpConfig, erro
 			}
 			entry.Env = envMap
 		}
+
 		cfg.Servers[server.ID] = entry
 	}
 

@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
 // mcpSessionInterface wraps the MCP session for testing.
@@ -60,15 +61,18 @@ var NewMCPClientFunc = func(impl *mcp.Implementation, opts *mcp.ClientOptions) m
 // This guards against infinite pagination loops.
 const maxToolsToDiscover = 1000
 
+// mcpDiscoveryTimeout is the per-server timeout for doctor MCP discovery checks.
+const mcpDiscoveryTimeout = 30 * time.Second
+
 // RealConnector implements Connector using the SDK.
 type RealConnector struct{}
 
 // ConnectAndDiscover connects to an MCP server and discovers its tools.
-func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server ResolvedMCPServer) DiscoveryResult {
+func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
 	res := DiscoveryResult{ServerID: server.ID}
 
 	// Create context with timeout for this server
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, mcpDiscoveryTimeout)
 	defer cancel()
 
 	// Create client
@@ -91,18 +95,37 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server ResolvedM
 			Command: cmd,
 		}
 	case "http":
-		t := &mcp.SSEClientTransport{
-			Endpoint: server.URL,
-		}
-		if len(server.Headers) > 0 {
-			t.HTTPClient = &http.Client{
-				Transport: &headerTransport{
-					base:    http.DefaultTransport,
-					headers: server.Headers,
-				},
+		switch server.HTTPTransport {
+		case "", "sse":
+			t := &mcp.SSEClientTransport{
+				Endpoint: server.URL,
 			}
+			if len(server.Headers) > 0 {
+				t.HTTPClient = &http.Client{
+					Transport: &headerTransport{
+						base:    http.DefaultTransport,
+						headers: server.Headers,
+					},
+				}
+			}
+			transport = t
+		case "streamable":
+			t := &mcp.StreamableClientTransport{
+				Endpoint: server.URL,
+			}
+			if len(server.Headers) > 0 {
+				t.HTTPClient = &http.Client{
+					Transport: &headerTransport{
+						base:    http.DefaultTransport,
+						headers: server.Headers,
+					},
+				}
+			}
+			transport = t
+		default:
+			res.Error = fmt.Errorf(messages.WarningsUnsupportedHTTPTransportFmt, server.HTTPTransport)
+			return res
 		}
-		transport = t
 	default:
 		res.Error = fmt.Errorf(messages.WarningsUnsupportedTransportFmt, server.Transport)
 		return res

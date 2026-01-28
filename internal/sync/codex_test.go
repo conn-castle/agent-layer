@@ -369,7 +369,7 @@ func TestBuildCodexConfigStdioMissingCommandEnv(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for missing command env var")
 	}
-	if !strings.Contains(err.Error(), "command") {
+	if !strings.Contains(err.Error(), "mcp server local") || !strings.Contains(err.Error(), "MISSING_CMD") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -400,7 +400,7 @@ func TestBuildCodexConfigStdioMissingArgEnv(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for missing arg env var")
 	}
-	if !strings.Contains(err.Error(), "arg") {
+	if !strings.Contains(err.Error(), "mcp server local") || !strings.Contains(err.Error(), "MISSING_ARG") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -431,7 +431,7 @@ func TestBuildCodexConfigStdioMissingEnvVarEnv(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for missing env var env")
 	}
-	if !strings.Contains(err.Error(), "env") {
+	if !strings.Contains(err.Error(), "missing environment variables: MISSING_ENV") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

@@ -2,11 +2,91 @@
 
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
+## Purpose
+Deferred defects, maintainability refactors, technical debt, risks, and engineering concerns. Add an entry only when you are not fixing it now.
+
+## Format
+- Insert new entries immediately below `<!-- ENTRIES START -->` (most recent first).
+- Keep each entry **3–5 lines**.
+- Line 1 starts with `- Issue YYYY-MM-DD <id>:` and a short title.
+- Lines 2–5 are indented by **4 spaces** and use `Key: Value`.
+- Keep **exactly one blank line** between entries.
+- Prevent duplicates: search the file and merge/rewrite instead of adding near-duplicates.
+- When fixed, remove the entry from this file.
+
+### Entry template
+```text
+- Issue YYYY-MM-DD abcdef: Short title
+    Priority: Critical | High | Medium | Low. Area: <area>
+    Description: <observed problem or risk>
+    Next step: <smallest concrete next action>
+    Notes: <optional dependencies/constraints>
+```
+
 ## Open issues
 
 <!-- ENTRIES START -->
+
+- Issue 2026-01-27 j7k8l9: Sync engine bypasses System interface for config loading
+    Priority: High. Area: architecture / testability.
+    Description: `sync.Run` calls `config.LoadProjectConfig`, which uses direct `os` calls (ReadFile, ReadDir), bypassing the `System` interface. This prevents testing the sync engine with mock filesystems.
+    Next step: Refactor `internal/config` to accept `fs.FS` or a compatible interface.
+    Notes: Found during proactive audit.
+
+- Issue 2026-01-27 m0n1o2: Mutable global state in MCP prompt server
+    Priority: Low. Area: code quality.
+    Description: `internal/mcp/prompts.go` uses a package-level variable `runServer` for test mocking. This prevents parallel testing and risks state leakage.
+    Next step: Refactor `RunPromptServer` to use dependency injection.
+    Notes: Found during proactive audit.
+
+- Issue 2026-01-27 a8b9c0: Fake progress indicator in doctor command
+    Priority: Medium. Area: UX / correctness.
+    Description: The `al doctor` command uses a fake "ticker" (dots every second) that is decoupled from actual MCP discovery progress. Users see activity even if the underlying process is hung or blocked.
+    Next step: Refactor `CheckMCPServers` to accept a status callback and update `doctor` to report real events.
+    Notes: Found during proactive audit.
+
+- Issue 2026-01-27 d1e2f3: Inconsistent System interface adoption
+    Priority: Medium. Area: architecture / technical debt.
+    Description: `internal/install` and `internal/dispatch` still rely on direct `os` calls and global patching, ignoring the new `System` interface pattern used in `internal/sync`. This creates competing patterns and hampers testability.
+    Next step: Refactor `internal/install` and `internal/dispatch` to accept the `System` interface.
+    Notes: Violation of Decision 2026-01-25 (Sync dependency injection).
+
+- Issue 2026-01-27 g4h5i6: Hardcoded concurrency limit in MCP warnings
+    Priority: Low. Area: performance.
+    Description: `internal/warnings/mcp.go` uses a hardcoded semaphore of 4 for server discovery. This arbitrary limit can artificially slow down checks on capable machines with many configured servers.
+    Next step: Replace the hardcoded limit with a configurable value or `runtime.NumCPU()`.
+    Notes: Found during proactive audit.
 
 - Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
     Priority: Low. Area: developer experience.
     Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.
     Next step: Profile VS Code startup to identify the bottleneck (extensions, language servers, MCP servers, or workspace indexing).
+
+- Issue 2026-01-26 g2h3i4: Init overwrite should separate managed files from memory files
+    Priority: Medium. Area: install / UX.
+    Description: When `al init --overwrite` prompts to overwrite files, it groups managed template files (.agent-layer/) and memory files (docs/agent-layer/) together. Users typically want to overwrite managed files to get template updates but preserve memory files (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md) which contain project-specific data.
+    Next step: Modify the overwrite prompt flow to ask separately: "Overwrite all managed files?" then "Overwrite memory files?" so users can easily say yes/no to each category.
+    Notes: Memory files are in docs/agent-layer/; managed template files are in .agent-layer/.
+
+- Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
+    Priority: Medium. Area: install / UX.
+    Description: Users cannot easily determine whether differences in managed files are due to intentional local customizations they want to keep, or due to agent-layer version updates that should be accepted. This makes overwrite decisions difficult and error-prone.
+    Next step: Implement a diff or comparison view (e.g., `al diff` or during `al init --overwrite`) that shows what changed between local files and the new template versions, with annotations or categories for change types when possible.
+    Notes: Related to Issue g2h3i4 but distinct—that issue is about prompt flow, this is about visibility into what's actually different.
+
+- Issue 2026-01-27 m6n7o8: Instructions payload too large (>10k tokens)
+    Priority: High. Area: performance / instructions.
+    Description: The combined instruction payload is estimated at 10010 tokens, exceeding the 10000 token limit. This bloat reduces context window for actual tasks.
+    Next step: Condense always-on instructions, move reference material to documentation files, and remove repetitive content.
+    Notes: Triggered by WARNING INSTRUCTIONS_TOO_LARGE.
+
+- Issue 2026-01-27 p9q0r1: GitHub MCP server tool bloat
+    Priority: High. Area: MCP / performance.
+    Description: The GitHub MCP server exports 37 tools with a schema size >33k tokens, triggering multiple warnings (MCP_SERVER_TOO_MANY_TOOLS, MCP_TOOL_SCHEMA_BLOAT_SERVER). This contributes to total tool overload.
+    Next step: Configure tool filtering for the GitHub MCP server to expose only essential tools, or split the server by domain to reduce schema size.
+    Notes: Triggered by multiple MCP bloat warnings.
+
+- Issue 2026-01-27 q1w2e3: Update find-issues skill to prevent redundant reporting
+    Priority: Medium. Area: agent skills.
+    Description: The `find-issues` skill should not "refind" or report on issues that are already identified in the existing memory files (specifically ISSUES.md). Redundant reporting of known issues is not helpful.
+    Next step: Update the `find-issues` skill instructions in `.agent/skills/find-issues/SKILL.md` to explicitly forbid reporting existing issues.

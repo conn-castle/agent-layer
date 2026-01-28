@@ -31,7 +31,6 @@ enabled = true
 [[mcp.servers]]
 id = "context7"
 enabled = false
-clients = ["gemini", "claude", "vscode", "codex"]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@upstash/context7-mcp"]
@@ -40,17 +39,42 @@ env = { CONTEXT7_API_KEY = "${CONTEXT7_API_KEY}" }
 [[mcp.servers]]
 id = "github"
 enabled = false
-clients = ["gemini", "claude", "vscode", "codex"]
 transport = "http"
+http_transport = "streamable"
 url = "https://api.githubcopilot.com/mcp/"
 headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
 
 [[mcp.servers]]
 id = "tavily"
 enabled = false
-clients = ["gemini", "claude", "vscode", "codex"]
 transport = "http"
+http_transport = "streamable"
 url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
+
+[[mcp.servers]]
+id = "fetch"
+enabled = false
+transport = "stdio"
+command = "uvx"
+args = ["mcp-server-fetch"]
+
+[[mcp.servers]]
+id = "ripgrep"
+enabled = false
+clients = ["gemini", "claude", "codex"]
+transport = "stdio"
+command = "npx"
+args = ["-y", "mcp-ripgrep@latest"]
+
+[[mcp.servers]]
+id = "filesystem"
+enabled = false
+clients = ["gemini", "claude", "codex"]
+transport = "stdio"
+command = "npx"
+# Restrict access to the current repo; paths may be absolute or relative.
+# Use ${AL_REPO_ROOT} (or ~/...) to expand to an absolute path when run.
+args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.

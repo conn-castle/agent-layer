@@ -8,6 +8,9 @@ func RequiredEnvVarsForMCPServer(server MCPServer) []string {
 	seen := make(map[string]struct{})
 	add := func(value string) {
 		for _, name := range ExtractEnvVarNames(value) {
+			if IsBuiltInEnvVar(name) {
+				continue
+			}
 			seen[name] = struct{}{}
 		}
 	}

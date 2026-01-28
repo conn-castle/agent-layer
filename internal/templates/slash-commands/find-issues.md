@@ -261,7 +261,7 @@ Proceed only if the user explicitly asked to apply changes.
 2. For each approved finding:
    - Add to `ISSUES.md` if it is a defect, refactor, technical debt, reliability/security/performance risk, or test gap.
    - Add to `BACKLOG.md` only if it is a user-visible capability request.
-   - Add to `DECISIONS.md` only if it is a significant decision and the user wants it logged.
+   - Add to `DECISIONS.md` only if it is a non-obvious, long-term decision and the user wants it logged.
    - Consider `ROADMAP.md` updates only if the user explicitly wants roadmap edits.
 3. Deduplicate by merging into existing entries; keep entries compact.
 

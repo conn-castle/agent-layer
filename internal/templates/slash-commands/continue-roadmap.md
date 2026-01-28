@@ -266,7 +266,7 @@ Do not renumber completed phases. Only renumber incomplete phases if necessary f
 - Add any newly discovered out-of-scope issues (compact, deduplicated).
 
 ## 7C) Update `DECISIONS.md` (if needed)
-If a significant decision was made, log it (briefly).
+If a significant, non-obvious decision with long-term impact was made (not evident from code/config), log it (briefly) and consolidate any near-duplicate decisions instead of adding redundant entries.
 
 ## 7D) Update `BACKLOG.md` (if needed)
 If a backlog item was implemented as part of roadmap work and it still exists in BACKLOG:

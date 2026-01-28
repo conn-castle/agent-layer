@@ -52,15 +52,16 @@ type WarningsConfig struct {
 
 // MCPServer defines a single MCP server entry.
 type MCPServer struct {
-	ID        string            `toml:"id"`
-	Enabled   *bool             `toml:"enabled"`
-	Clients   []string          `toml:"clients"`
-	Transport string            `toml:"transport"`
-	URL       string            `toml:"url"`
-	Headers   map[string]string `toml:"headers"`
-	Command   string            `toml:"command"`
-	Args      []string          `toml:"args"`
-	Env       map[string]string `toml:"env"`
+	ID            string            `toml:"id"`
+	Enabled       *bool             `toml:"enabled"`
+	Clients       []string          `toml:"clients"`
+	Transport     string            `toml:"transport"`
+	HTTPTransport string            `toml:"http_transport"`
+	URL           string            `toml:"url"`
+	Headers       map[string]string `toml:"headers"`
+	Command       string            `toml:"command"`
+	Args          []string          `toml:"args"`
+	Env           map[string]string `toml:"env"`
 }
 
 // InstructionFile holds a single instruction fragment.

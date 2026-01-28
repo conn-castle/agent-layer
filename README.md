@@ -84,6 +84,22 @@ Notes:
 
 ---
 
+## MCP server requirements (external tools)
+
+Some MCP servers require a specific runtime or launcher to be installed locally. Agent Layer does not install these dependencies; it only runs the command you configure.
+
+Examples:
+- **Node-based servers** often use `npx` in the `command` field (requires Node.js + npm).
+- **Python/uv-based servers** often use `uvx` in the `command` field (requires `uv`/`uvx` on your `PATH`).
+
+If a server fails to start with “No such file or directory,” verify the `command` exists and is on your `PATH`, or set `command` to the full path of the executable.
+
+### Doctor MCP checks
+
+`al doctor` connects to each enabled MCP server and lists tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
+
+---
+
 ## Version pinning (per repo, optional)
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
@@ -217,6 +233,7 @@ id = "github"
 enabled = true
 clients = ["gemini", "claude", "vscode", "codex"] # omit = all clients
 transport = "http"
+# http_transport = "sse" # optional: "sse" (default) or "streamable"
 url = "https://example.com/mcp"
 headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
 
@@ -237,6 +254,40 @@ mcp_server_tools_threshold = 25
 mcp_schema_tokens_total_threshold = 10000
 mcp_schema_tokens_server_threshold = 7500
 ```
+
+#### Built-in placeholders
+
+Agent Layer provides a built-in `${AL_REPO_ROOT}` placeholder for file paths in MCP server configs.
+It expands to the absolute repo root during `al sync` and `al doctor`, and it does **not** need to be in `.env`.
+Paths that start with `${AL_REPO_ROOT}` or `~` are expanded and normalized; other relative paths are passed through as-is.
+
+Example:
+
+```toml
+[[mcp.servers]]
+id = "filesystem"
+enabled = false
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}/."]
+```
+
+#### Default MCP server client exclusions
+
+Some default MCP servers exclude VS Code via the `clients` field:
+
+- **ripgrep** and **filesystem**: Excluded from VS Code because VS Code/Copilot Chat has native file search and access capabilities. Adding these servers would duplicate functionality and increase context window usage.
+
+You can override these exclusions by editing `clients` in your `config.toml`.
+
+#### HTTP transport (`http_transport`)
+
+For HTTP MCP servers, `http_transport` controls how `al doctor` connects:
+
+- `sse` (default)
+- `streamable`
+
+Omit `http_transport` to default to `sse`.
 
 #### Warning thresholds (`[warnings]`)
 

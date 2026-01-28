@@ -24,6 +24,7 @@ func LoadProjectConfig(root string) (*ProjectConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	env = WithBuiltInEnv(env, root)
 
 	instructions, err := LoadInstructions(paths.InstructionsDir)
 	if err != nil {

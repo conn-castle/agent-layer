@@ -51,3 +51,12 @@ func TestRequiredEnvVarsForMCPServersEmpty(t *testing.T) {
 	result := RequiredEnvVarsForMCPServers(servers)
 	assert.Nil(t, result)
 }
+
+func TestRequiredEnvVarsForMCPServerIgnoresBuiltIns(t *testing.T) {
+	server := MCPServer{
+		Args: []string{"${" + BuiltinRepoRootEnvVar + "}", "${CUSTOM_PATH}"},
+	}
+
+	want := []string{"CUSTOM_PATH"}
+	assert.Equal(t, want, RequiredEnvVarsForMCPServer(server))
+}

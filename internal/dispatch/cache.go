@@ -23,6 +23,8 @@ var (
 	osChmod             = os.Chmod
 	osRename            = os.Rename
 	osStat              = os.Stat
+	osCreateTemp        = os.CreateTemp
+	httpClient          = &http.Client{Timeout: 30 * time.Second}
 )
 
 // ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
@@ -55,7 +57,7 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 			return fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
 		}
 
-		tmp, err := os.CreateTemp(filepath.Dir(binPath), asset+".tmp-*")
+		tmp, err := osCreateTemp(filepath.Dir(binPath), asset+".tmp-*")
 		if err != nil {
 			return fmt.Errorf(messages.DispatchCreateTempFileFmt, err)
 		}
@@ -142,8 +144,7 @@ func noNetwork() bool {
 
 // downloadToFile fetches url and writes it to dest.
 func downloadToFile(url string, dest *os.File) error {
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 	}
@@ -160,8 +161,7 @@ func downloadToFile(url string, dest *os.File) error {
 // fetchChecksum retrieves the expected checksum for the asset from checksums.txt.
 func fetchChecksum(version string, asset string) (string, error) {
 	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 	}

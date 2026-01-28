@@ -1,6 +1,8 @@
 package projection
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -103,5 +105,58 @@ func TestEnabledServerIDs(t *testing.T) {
 	ids := EnabledServerIDs(servers, "gemini")
 	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
 		t.Fatalf("unexpected ids: %v", ids)
+	}
+}
+
+func TestResolveMCPServersExpandsRepoRootArg(t *testing.T) {
+	enabled := true
+	repoRoot := filepath.Join(t.TempDir(), "repo")
+	servers := []config.MCPServer{
+		{
+			ID:        "fs",
+			Enabled:   &enabled,
+			Clients:   []string{"gemini"},
+			Transport: "stdio",
+			Command:   "tool",
+			Args:      []string{"${" + config.BuiltinRepoRootEnvVar + "}/../data"},
+		},
+	}
+	env := map[string]string{config.BuiltinRepoRootEnvVar: repoRoot}
+
+	resolved, err := ResolveMCPServers(servers, env, "gemini", nil)
+	if err != nil {
+		t.Fatalf("resolve mcp servers: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(resolved))
+	}
+	want := filepath.Clean(filepath.Join(repoRoot, "..", "data"))
+	if resolved[0].Args[0] != want {
+		t.Fatalf("unexpected path expansion: %s", resolved[0].Args[0])
+	}
+}
+
+func TestResolveMCPServersPathExpansionFailsWithoutRepoRoot(t *testing.T) {
+	enabled := true
+	servers := []config.MCPServer{
+		{
+			ID:        "fs",
+			Enabled:   &enabled,
+			Clients:   []string{"gemini"},
+			Transport: "stdio",
+			Command:   "tool",
+			// Args reference AL_REPO_ROOT but env doesn't provide it
+			Args: []string{"${" + config.BuiltinRepoRootEnvVar + "}/data"},
+		},
+	}
+	// Empty env - no AL_REPO_ROOT
+	env := map[string]string{}
+
+	_, err := ResolveMCPServers(servers, env, "gemini", nil)
+	if err == nil {
+		t.Fatal("expected error when AL_REPO_ROOT is missing for path expansion")
+	}
+	if !strings.Contains(err.Error(), "mcp server fs") || !strings.Contains(err.Error(), "AL_REPO_ROOT") {
+		t.Fatalf("unexpected error message: %v", err)
 	}
 }
