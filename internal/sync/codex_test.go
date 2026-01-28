@@ -9,32 +9,58 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
-func TestExtractBearerEnvVar(t *testing.T) {
+func TestSplitCodexHeaders(t *testing.T) {
 	headers := map[string]string{
 		"Authorization": "Bearer ${TOKEN}",
+		"X-Api-Key":     "${API_KEY}",
+		"X-Toolsets":    "actions,issues",
 	}
-	envVar, err := extractBearerEnvVar(headers)
+
+	spec, err := splitCodexHeaders(headers)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if envVar != "TOKEN" {
-		t.Fatalf("expected TOKEN, got %s", envVar)
+	if spec.BearerTokenEnvVar != "TOKEN" {
+		t.Fatalf("expected TOKEN, got %s", spec.BearerTokenEnvVar)
+	}
+	if spec.EnvHeaders["X-Api-Key"] != "API_KEY" {
+		t.Fatalf("expected API_KEY env header, got %q", spec.EnvHeaders["X-Api-Key"])
+	}
+	if spec.HTTPHeaders["X-Toolsets"] != "actions,issues" {
+		t.Fatalf("expected X-Toolsets header, got %q", spec.HTTPHeaders["X-Toolsets"])
 	}
 }
 
-func TestExtractBearerEnvVarErrors(t *testing.T) {
-	_, err := extractBearerEnvVar(map[string]string{"X-Test": "value"})
-	if err == nil {
-		t.Fatalf("expected error")
+func TestSplitCodexHeadersAuthorizationEnv(t *testing.T) {
+	headers := map[string]string{
+		"Authorization": "${TOKEN}",
 	}
-	_, err = extractBearerEnvVar(map[string]string{"Authorization": "Token abc"})
-	if err == nil {
-		t.Fatalf("expected error")
+
+	spec, err := splitCodexHeaders(headers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	_, err = extractBearerEnvVar(map[string]string{"Authorization": "Bearer abc"})
-	if err == nil {
-		t.Fatalf("expected error")
+	if spec.BearerTokenEnvVar != "" {
+		t.Fatalf("unexpected bearer token env var: %q", spec.BearerTokenEnvVar)
 	}
+	if spec.EnvHeaders["Authorization"] != "TOKEN" {
+		t.Fatalf("expected Authorization env header, got %q", spec.EnvHeaders["Authorization"])
+	}
+}
+
+func TestSplitCodexHeadersErrors(t *testing.T) {
+	t.Run("authorization with unsupported placeholder", func(t *testing.T) {
+		_, err := splitCodexHeaders(map[string]string{"Authorization": "Token ${TOKEN}"})
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+	})
+	t.Run("non-authorization with unsupported placeholder", func(t *testing.T) {
+		_, err := splitCodexHeaders(map[string]string{"X-Test": "Token ${TOKEN}"})
+		if err == nil {
+			t.Fatalf("expected error")
+		}
+	})
 }
 
 func TestBuildCodexConfigHTTP(t *testing.T) {
@@ -53,12 +79,14 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 						URL:       "https://example.com?token=${TOKEN}",
 						Headers: map[string]string{
 							"Authorization": "Bearer ${TOKEN}",
+							"X-Api-Key":     "${API_KEY}",
+							"X-Toolsets":    "actions,issues",
 						},
 					},
 				},
 			},
 		},
-		Env: map[string]string{"TOKEN": "abc"},
+		Env: map[string]string{"TOKEN": "abc", "API_KEY": "def"},
 	}
 
 	output, err := buildCodexConfig(project)
@@ -67,6 +95,12 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 	}
 	if !strings.Contains(output, "bearer_token_env_var = \"TOKEN\"") {
 		t.Fatalf("missing bearer_token_env_var in output:\n%s", output)
+	}
+	if !strings.Contains(output, "env_http_headers = { X-Api-Key = \"API_KEY\" }") {
+		t.Fatalf("missing env_http_headers in output:\n%s", output)
+	}
+	if !strings.Contains(output, "http_headers = { X-Toolsets = \"actions,issues\" }") {
+		t.Fatalf("missing http_headers in output:\n%s", output)
 	}
 	// URL should have resolved value (not placeholder) since Codex doesn't support ${VAR} in URLs.
 	if !strings.Contains(output, "url = \"https://example.com?token=abc\"") {
@@ -115,7 +149,7 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 	}
 }
 
-func TestBuildCodexConfigInvalidHeader(t *testing.T) {
+func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -129,7 +163,7 @@ func TestBuildCodexConfigInvalidHeader(t *testing.T) {
 						Clients:   []string{"codex"},
 						Transport: "http",
 						URL:       "https://example.com?token=${TOKEN}",
-						Headers:   map[string]string{"X-Test": "value"},
+						Headers:   map[string]string{"X-Test": "Token ${TOKEN}"},
 					},
 				},
 			},

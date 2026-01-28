@@ -48,15 +48,20 @@ func TestTomlHelpers_Empty(t *testing.T) {
 	}
 }
 
-func TestExtractBearerEnvVar_Empty(t *testing.T) {
+func TestSplitCodexHeaders_Empty(t *testing.T) {
 	t.Parallel()
-	// If no Authorization header, return empty string, nil error
-	val, err := extractBearerEnvVar(map[string]string{})
+	spec, err := splitCodexHeaders(map[string]string{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if val != "" {
-		t.Fatalf("expected empty, got %q", val)
+	if spec.BearerTokenEnvVar != "" {
+		t.Fatalf("expected empty bearer token env var, got %q", spec.BearerTokenEnvVar)
+	}
+	if spec.EnvHeaders != nil {
+		t.Fatalf("expected nil env headers, got %v", spec.EnvHeaders)
+	}
+	if spec.HTTPHeaders != nil {
+		t.Fatalf("expected nil http headers, got %v", spec.HTTPHeaders)
 	}
 }
 

@@ -84,3 +84,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: When the managed markers exist in `.vscode/settings.json`, update only the managed block and do not validate unrelated JSONC content; if markers are missing, parse the root object to insert the block.
     Reason: Avoid partial JSONC parsing dependencies while still supporting first-time insertion.
     Tradeoffs: Invalid JSONC outside the managed block is no longer detected once the markers are present.
+
+- Decision 2026-01-28 5c8e2a1: Codex custom MCP headers
+    Decision: Codex projects MCP headers using `bearer_token_env_var` for `Authorization: Bearer ${VAR}`, `env_http_headers` for exact `${VAR}` values, and `http_headers` for literals; other placeholder formats error.
+    Reason: Support custom headers across clients without embedding secrets or relying on placeholder expansion in Codex.
+    Tradeoffs: Headers with mixed literal + env placeholder (for example, `Token ${VAR}`) are rejected for Codex and must be restructured.

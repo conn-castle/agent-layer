@@ -97,12 +97,18 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 
 func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMCPServer, env map[string]string) error {
 	if len(server.Headers) > 0 {
-		bearerEnv, err := extractBearerEnvVar(server.Headers)
+		headerSpec, err := splitCodexHeaders(server.Headers)
 		if err != nil {
 			return fmt.Errorf(messages.SyncMCPServerErrorFmt, server.ID, err)
 		}
-		if bearerEnv != "" {
-			builder.WriteString(fmt.Sprintf("bearer_token_env_var = %q\n", bearerEnv))
+		if headerSpec.BearerTokenEnvVar != "" {
+			builder.WriteString(fmt.Sprintf("bearer_token_env_var = %q\n", headerSpec.BearerTokenEnvVar))
+		}
+		if len(headerSpec.EnvHeaders) > 0 {
+			builder.WriteString(fmt.Sprintf("env_http_headers = %s\n", tomlInlineTable(headerSpec.EnvHeaders)))
+		}
+		if len(headerSpec.HTTPHeaders) > 0 {
+			builder.WriteString(fmt.Sprintf("http_headers = %s\n", tomlInlineTable(headerSpec.HTTPHeaders)))
 		}
 	}
 	// Resolve actual values in the URL (Codex doesn't support ${VAR} placeholders in URLs).
@@ -150,27 +156,81 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 	return nil
 }
 
-func extractBearerEnvVar(headers map[string]string) (string, error) {
-	var bearerValue string
+type codexHeaderSpec struct {
+	BearerTokenEnvVar string
+	EnvHeaders        map[string]string
+	HTTPHeaders       map[string]string
+}
+
+// splitCodexHeaders classifies headers into Codex-supported groups.
+// headers are raw header values with ${VAR} placeholders preserved.
+func splitCodexHeaders(headers map[string]string) (codexHeaderSpec, error) {
+	spec := codexHeaderSpec{
+		EnvHeaders:  make(map[string]string),
+		HTTPHeaders: make(map[string]string),
+	}
 	for key, value := range headers {
 		if strings.EqualFold(key, "Authorization") {
-			bearerValue = value
+			if envVar, ok := extractBearerEnvPlaceholder(value); ok {
+				spec.BearerTokenEnvVar = envVar
+				continue
+			}
+			if envVar, ok := extractExactEnvPlaceholder(value); ok {
+				spec.EnvHeaders[key] = envVar
+				continue
+			}
+			if !hasEnvPlaceholders(value) {
+				spec.HTTPHeaders[key] = value
+				continue
+			}
+			return codexHeaderSpec{}, fmt.Errorf(messages.SyncCodexAuthorizationPlaceholderUnsupportedFmt)
+		}
+
+		if envVar, ok := extractExactEnvPlaceholder(value); ok {
+			spec.EnvHeaders[key] = envVar
 			continue
 		}
-		return "", fmt.Errorf(messages.SyncCodexUnsupportedHeaderFmt, key)
+		if !hasEnvPlaceholders(value) {
+			spec.HTTPHeaders[key] = value
+			continue
+		}
+		return codexHeaderSpec{}, fmt.Errorf(messages.SyncCodexHeaderPlaceholderUnsupportedFmt, key)
 	}
-	if bearerValue == "" {
-		return "", nil
+	if len(spec.EnvHeaders) == 0 {
+		spec.EnvHeaders = nil
 	}
+	if len(spec.HTTPHeaders) == 0 {
+		spec.HTTPHeaders = nil
+	}
+	return spec, nil
+}
+
+func extractExactEnvPlaceholder(value string) (string, bool) {
+	names := config.ExtractEnvVarNames(value)
+	if len(names) != 1 {
+		return "", false
+	}
+	placeholder := fmt.Sprintf("${%s}", names[0])
+	if value != placeholder {
+		return "", false
+	}
+	return names[0], true
+}
+
+func extractBearerEnvPlaceholder(value string) (string, bool) {
 	const prefix = "Bearer "
-	if !strings.HasPrefix(bearerValue, prefix) {
-		return "", fmt.Errorf(messages.SyncCodexAuthorizationBearerRequired)
+	if len(value) <= len(prefix) {
+		return "", false
 	}
-	token := strings.TrimPrefix(bearerValue, prefix)
-	if strings.HasPrefix(token, "${") && strings.HasSuffix(token, "}") {
-		return strings.TrimSuffix(strings.TrimPrefix(token, "${"), "}"), nil
+	if !strings.EqualFold(value[:len(prefix)], prefix) {
+		return "", false
 	}
-	return "", fmt.Errorf(messages.SyncCodexAuthorizationEnvPlaceholderRequired)
+	tokenPart := value[len(prefix):]
+	return extractExactEnvPlaceholder(tokenPart)
+}
+
+func hasEnvPlaceholders(value string) bool {
+	return len(config.ExtractEnvVarNames(value)) > 0
 }
 
 func tomlStringArray(values []string) string {
