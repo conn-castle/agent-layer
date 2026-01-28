@@ -296,6 +296,15 @@ func TestHasJSONCContentBetween(t *testing.T) {
 	if !hasJSONCContentBetween(lines, 0, 1, 2, 0) {
 		t.Fatalf("expected content between braces")
 	}
+
+	lines = []string{
+		"{",
+		"  \"editor.wordWrap\": \"before } after\"",
+		"}",
+	}
+	if !hasJSONCContentBetween(lines, 0, 1, 2, 0) {
+		t.Fatalf("expected string content to be ignored for closing brace detection")
+	}
 }
 
 func TestHasJSONCContentBetweenBlockComment(t *testing.T) {

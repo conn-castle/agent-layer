@@ -379,6 +379,8 @@ func hasJSONCContentBetween(lines []string, startLine, startCol, endLine, endCol
 	}
 
 	inBlockComment := false
+	inString := false
+	escaped := false
 	for lineIdx := startLine; lineIdx <= endLine; lineIdx++ {
 		line := lines[lineIdx]
 		lineStart := 0
@@ -402,6 +404,21 @@ func hasJSONCContentBetween(lines []string, startLine, startCol, endLine, endCol
 				next = line[i+1]
 			}
 
+			if inString {
+				if escaped {
+					escaped = false
+					continue
+				}
+				if ch == '\\' {
+					escaped = true
+					continue
+				}
+				if ch == '"' {
+					inString = false
+				}
+				continue
+			}
+
 			if inBlockComment {
 				if ch == '*' && next == '/' {
 					inBlockComment = false
@@ -417,6 +434,10 @@ func hasJSONCContentBetween(lines []string, startLine, startCol, endLine, endCol
 			}
 			if ch == '/' && next == '/' {
 				break
+			}
+			if ch == '"' {
+				inString = true
+				continue
 			}
 			if ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' {
 				continue
