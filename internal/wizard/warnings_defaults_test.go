@@ -16,8 +16,8 @@ func TestLoadWarningDefaults(t *testing.T) {
 	require.Equal(t, 15, defaults.MCPServerThreshold)
 	require.Equal(t, 60, defaults.MCPToolsTotalThreshold)
 	require.Equal(t, 25, defaults.MCPServerToolsThreshold)
-	require.Equal(t, 10000, defaults.MCPSchemaTokensTotalThreshold)
-	require.Equal(t, 7500, defaults.MCPSchemaTokensServerThreshold)
+	require.Equal(t, 30000, defaults.MCPSchemaTokensTotalThreshold)
+	require.Equal(t, 20000, defaults.MCPSchemaTokensServerThreshold)
 }
 
 func TestLoadWarningDefaultsReadError(t *testing.T) {

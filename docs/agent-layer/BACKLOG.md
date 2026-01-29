@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-01-28 7e9f3a1: Add support for Claude extension in VSCode
+    Priority: Medium. Area: client integration
+    Description: Add support for configuring and launching the Claude extension within VSCode, similar to the existing VSCode agent support.
+    Acceptance criteria: Users can enable and configure the Claude extension through `al vscode` or a dedicated command.
+    Notes: Currently, `al vscode` handles VSCode configuration; this would extend it to specifically support the Claude extension.
+
 - Backlog 2026-01-25 8b9c2d1: Define migration strategy for renamed/deleted template files
     Priority: High. Area: lifecycle management
     Description: Define how to handle template files that are renamed or deleted in future versions so they do not remain as stale orphans in user repos.

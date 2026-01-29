@@ -51,12 +51,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Refactor `internal/install` and `internal/dispatch` to accept the `System` interface.
     Notes: Violation of Decision 2026-01-25 (Sync dependency injection).
 
-- Issue 2026-01-27 g4h5i6: Hardcoded concurrency limit in MCP warnings
-    Priority: Low. Area: performance.
-    Description: `internal/warnings/mcp.go` uses a hardcoded semaphore of 4 for server discovery. This arbitrary limit can artificially slow down checks on capable machines with many configured servers.
-    Next step: Replace the hardcoded limit with a configurable value or `runtime.NumCPU()`.
-    Notes: Found during proactive audit.
-
 - Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
     Priority: Low. Area: developer experience.
     Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.
@@ -73,18 +67,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Users cannot easily determine whether differences in managed files are due to intentional local customizations they want to keep, or due to agent-layer version updates that should be accepted. This makes overwrite decisions difficult and error-prone.
     Next step: Implement a diff or comparison view (e.g., `al diff` or during `al init --overwrite`) that shows what changed between local files and the new template versions, with annotations or categories for change types when possible.
     Notes: Related to Issue g2h3i4 but distinct—that issue is about prompt flow, this is about visibility into what's actually different.
-
-- Issue 2026-01-27 m6n7o8: Instructions payload too large (>10k tokens)
-    Priority: High. Area: performance / instructions.
-    Description: The combined instruction payload is estimated at 10010 tokens, exceeding the 10000 token limit. This bloat reduces context window for actual tasks.
-    Next step: Condense always-on instructions, move reference material to documentation files, and remove repetitive content.
-    Notes: Triggered by WARNING INSTRUCTIONS_TOO_LARGE.
-
-- Issue 2026-01-27 p9q0r1: GitHub MCP server tool bloat
-    Priority: High. Area: MCP / performance.
-    Description: The GitHub MCP server exports 37 tools with a schema size >33k tokens, triggering multiple warnings (MCP_SERVER_TOO_MANY_TOOLS, MCP_TOOL_SCHEMA_BLOAT_SERVER). This contributes to total tool overload.
-    Next step: Configure tool filtering for the GitHub MCP server to expose only essential tools, or split the server by domain to reduce schema size.
-    Notes: Triggered by multiple MCP bloat warnings.
 
 - Issue 2026-01-27 q1w2e3: Update find-issues skill to prevent redundant reporting
     Priority: Medium. Area: agent skills.

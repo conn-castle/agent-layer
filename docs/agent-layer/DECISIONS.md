@@ -89,3 +89,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Codex projects MCP headers using `bearer_token_env_var` for `Authorization: Bearer ${VAR}`, `env_http_headers` for exact `${VAR}` values, and `http_headers` for literals; other placeholder formats error.
     Reason: Support custom headers across clients without embedding secrets or relying on placeholder expansion in Codex.
     Tradeoffs: Headers with mixed literal + env placeholder (for example, `Token ${VAR}`) are rejected for Codex and must be restructured.
+
+- Decision 2026-01-28 2f8a4e1: Breakdown MCP tool token counts in doctor warnings
+    Decision: Provide a breakdown of the top tools by token count in `MCP_TOOL_SCHEMA_BLOAT_SERVER` warnings.
+    Reason: Better visibility into which tools contribute to schema bloat allows targeted optimization.
+    Tradeoffs: Adds per-tool JSON marshaling during discovery, slightly increasing check latency.

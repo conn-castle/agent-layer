@@ -169,7 +169,15 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	// Process tools
 	var toolsJSON []any
 	for _, t := range allTools {
-		res.Tools = append(res.Tools, ToolDef{Name: t.Name})
+		toolDef := ToolDef{Name: t.Name}
+
+		// Estimate tokens per tool
+		toolBytes, err := json.Marshal(t)
+		if err == nil {
+			toolDef.Tokens = EstimateTokens(string(toolBytes))
+		}
+
+		res.Tools = append(res.Tools, toolDef)
 		toolsJSON = append(toolsJSON, t)
 	}
 

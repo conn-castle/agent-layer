@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
+	"sort"
 	"sync"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -79,11 +81,30 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 
 		// Check: MCP_TOOL_SCHEMA_BLOAT_SERVER
 		if thresholds.MCPSchemaTokensServerThreshold != nil && res.SchemaTokens > *thresholds.MCPSchemaTokensServerThreshold {
+			// Sort tools by tokens (descending)
+			sortedTools := make([]ToolDef, len(res.Tools))
+			copy(sortedTools, res.Tools)
+			sort.Slice(sortedTools, func(i, j int) bool {
+				return sortedTools[i].Tokens > sortedTools[j].Tokens
+			})
+
+			var details []string
+			details = append(details, "Top contributors by token count:")
+			limit := 10
+			for i, t := range sortedTools {
+				if i >= limit {
+					details = append(details, fmt.Sprintf("...and %d more", len(sortedTools)-limit))
+					break
+				}
+				details = append(details, fmt.Sprintf("- %s: %d tokens", t.Name, t.Tokens))
+			}
+
 			warnings = append(warnings, Warning{
 				Code:    CodeMCPToolSchemaBloatServer,
 				Subject: res.ServerID,
 				Message: fmt.Sprintf(messages.WarningsMCPSchemaBloatServerFmt, *thresholds.MCPSchemaTokensServerThreshold, res.SchemaTokens, *thresholds.MCPSchemaTokensServerThreshold),
 				Fix:     messages.WarningsMCPSchemaBloatFix,
+				Details: details,
 			})
 		}
 
@@ -132,7 +153,8 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 
 // ToolDef represents a discovered tool from an MCP server.
 type ToolDef struct {
-	Name string
+	Name   string
+	Tokens int
 }
 
 // DiscoveryResult contains the results of discovering tools from an MCP server.
@@ -152,7 +174,7 @@ func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, 
 	results := make([]DiscoveryResult, len(servers))
 
 	// Semaphore for concurrency
-	sem := make(chan struct{}, 4) // Max 4 concurrent
+	sem := make(chan struct{}, mcpDiscoveryConcurrency(len(servers)))
 	var wg sync.WaitGroup
 
 	for i, server := range servers {
@@ -168,4 +190,27 @@ func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, 
 
 	wg.Wait()
 	return results
+}
+
+// mcpDiscoveryConcurrency returns the max number of concurrent MCP discovery calls.
+// serverCount is the number of enabled servers; returns 0 when no servers are provided.
+func mcpDiscoveryConcurrency(serverCount int) int {
+	if serverCount <= 0 {
+		return 0
+	}
+
+	gomax := runtime.GOMAXPROCS(0)
+	if gomax < 1 {
+		gomax = 1
+	}
+
+	// Use ~2/3 of GOMAXPROCS to leave headroom for other work.
+	limit := (gomax * 2) / 3
+	if limit < 1 {
+		limit = 1
+	}
+	if serverCount < limit {
+		return serverCount
+	}
+	return limit
 }
