@@ -33,18 +33,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Refactor `internal/config` to accept `fs.FS` or a compatible interface.
     Notes: Found during proactive audit.
 
-- Issue 2026-01-27 m0n1o2: Mutable global state in MCP prompt server
-    Priority: Low. Area: code quality.
-    Description: `internal/mcp/prompts.go` uses a package-level variable `runServer` for test mocking. This prevents parallel testing and risks state leakage.
-    Next step: Refactor `RunPromptServer` to use dependency injection.
-    Notes: Found during proactive audit.
-
-- Issue 2026-01-27 a8b9c0: Fake progress indicator in doctor command
-    Priority: Medium. Area: UX / correctness.
-    Description: The `al doctor` command uses a fake "ticker" (dots every second) that is decoupled from actual MCP discovery progress. Users see activity even if the underlying process is hung or blocked.
-    Next step: Refactor `CheckMCPServers` to accept a status callback and update `doctor` to report real events.
-    Notes: Found during proactive audit.
-
 - Issue 2026-01-27 d1e2f3: Inconsistent System interface adoption
     Priority: Medium. Area: architecture / technical debt.
     Description: `internal/install` and `internal/dispatch` still rely on direct `os` calls and global patching, ignoring the new `System` interface pattern used in `internal/sync`. This creates competing patterns and hampers testability.
@@ -67,8 +55,3 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Users cannot easily determine whether differences in managed files are due to intentional local customizations they want to keep, or due to agent-layer version updates that should be accepted. This makes overwrite decisions difficult and error-prone.
     Next step: Implement a diff or comparison view (e.g., `al diff` or during `al init --overwrite`) that shows what changed between local files and the new template versions, with annotations or categories for change types when possible.
     Notes: Related to Issue g2h3i4 but distinct—that issue is about prompt flow, this is about visibility into what's actually different.
-
-- Issue 2026-01-27 q1w2e3: Update find-issues skill to prevent redundant reporting
-    Priority: Medium. Area: agent skills.
-    Description: The `find-issues` skill should not "refind" or report on issues that are already identified in the existing memory files (specifically ISSUES.md). Redundant reporting of known issues is not helpful.
-    Next step: Update the `find-issues` skill instructions in `.agent/skills/find-issues/SKILL.md` to explicitly forbid reporting existing issues.

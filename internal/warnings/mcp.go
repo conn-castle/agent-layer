@@ -15,7 +15,8 @@ import (
 
 // CheckMCPServers performs discovery on enabled MCP servers and checks against warning thresholds.
 // cfg supplies the configured thresholds; nil thresholds disable the corresponding warnings.
-func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector Connector) ([]Warning, error) {
+// statusFn is an optional callback invoked with discovery events; it is safe to pass nil.
+func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector Connector, statusFn MCPDiscoveryStatusFunc) ([]Warning, error) {
 	if connector == nil {
 		connector = &RealConnector{}
 	}
@@ -51,7 +52,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	}
 
 	// 2. Discovery (Parallel)
-	results := discoverTools(ctx, enabledServers, connector)
+	results := discoverTools(ctx, enabledServers, connector, statusFn)
 
 	// 3. Process results
 	var totalTools int
@@ -165,12 +166,35 @@ type DiscoveryResult struct {
 	Error        error
 }
 
+// MCPDiscoveryStatus is the status of a discovery event for an MCP server.
+type MCPDiscoveryStatus string
+
+const (
+	// MCPDiscoveryStatusStart indicates a server discovery has started.
+	MCPDiscoveryStatusStart MCPDiscoveryStatus = "start"
+	// MCPDiscoveryStatusDone indicates a server discovery completed successfully.
+	MCPDiscoveryStatusDone MCPDiscoveryStatus = "done"
+	// MCPDiscoveryStatusError indicates a server discovery completed with an error.
+	MCPDiscoveryStatusError MCPDiscoveryStatus = "error"
+)
+
+// MCPDiscoveryEvent describes a discovery event for a single MCP server.
+type MCPDiscoveryEvent struct {
+	ServerID string
+	Status   MCPDiscoveryStatus
+	Err      error
+}
+
+// MCPDiscoveryStatusFunc handles a discovery event emitted during MCP server discovery.
+// The function may be invoked concurrently from multiple goroutines.
+type MCPDiscoveryStatusFunc func(event MCPDiscoveryEvent)
+
 // Connector interface for mocking.
 type Connector interface {
 	ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult
 }
 
-func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, connector Connector) []DiscoveryResult {
+func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, connector Connector, statusFn MCPDiscoveryStatusFunc) []DiscoveryResult {
 	results := make([]DiscoveryResult, len(servers))
 
 	// Semaphore for concurrency
@@ -184,7 +208,20 @@ func discoverTools(ctx context.Context, servers []projection.ResolvedMCPServer, 
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			results[i] = connector.ConnectAndDiscover(ctx, s)
+			if statusFn != nil {
+				statusFn(MCPDiscoveryEvent{ServerID: s.ID, Status: MCPDiscoveryStatusStart})
+			}
+
+			res := connector.ConnectAndDiscover(ctx, s)
+			results[i] = res
+
+			if statusFn != nil {
+				status := MCPDiscoveryStatusDone
+				if res.Error != nil {
+					status = MCPDiscoveryStatusError
+				}
+				statusFn(MCPDiscoveryEvent{ServerID: s.ID, Status: status, Err: res.Error})
+			}
 		}(i, server)
 	}
 

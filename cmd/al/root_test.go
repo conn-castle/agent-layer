@@ -396,7 +396,7 @@ func TestDoctorCommand_UpdateSkippedNoNetwork(t *testing.T) {
 		checkMCPServers = origMCP
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
 		return nil, nil
 	}
 
@@ -424,7 +424,7 @@ func TestDoctorCommand_UpdateCheckError(t *testing.T) {
 		checkMCPServers = origMCP
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
 		return nil, nil
 	}
 
@@ -455,7 +455,7 @@ func TestDoctorCommand_UpdateCheckDevBuild(t *testing.T) {
 		checkMCPServers = origMCP
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
 		return nil, nil
 	}
 
@@ -487,7 +487,7 @@ func TestDoctorCommand_ConfigErrorSkipsWarningSystem(t *testing.T) {
 		calledInstructions = true
 		return nil, nil
 	}
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
 		calledMCP = true
 		return nil, nil
 	}
@@ -541,7 +541,7 @@ func TestDoctorCommand_InstructionsError(t *testing.T) {
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) {
 		return nil, errors.New("instructions failed")
 	}
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
 		return nil, nil
 	}
 
@@ -572,7 +572,7 @@ func TestDoctorCommand_MCPError(t *testing.T) {
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) {
 		return nil, nil
 	}
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector) ([]warnings.Warning, error) {
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
 		return nil, errors.New("mcp failed")
 	}
 
@@ -637,9 +637,12 @@ func TestCountEnabledMCPServers(t *testing.T) {
 	}
 }
 
-func TestStartMCPProgressZero(t *testing.T) {
+func TestStartMCPDiscoveryReporterZero(t *testing.T) {
 	output := captureStdout(t, func() {
-		stop := startMCPProgress(0)
+		reporter, stop := startMCPDiscoveryReporter(nil)
+		if reporter != nil {
+			t.Fatalf("expected nil reporter when no MCP servers are enabled")
+		}
 		stop()
 	})
 	expected := fmt.Sprintf(messages.DoctorMCPCheckStartFmt, 0) + messages.DoctorMCPCheckDone + "\n"

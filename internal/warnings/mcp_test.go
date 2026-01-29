@@ -71,7 +71,7 @@ func TestCheckMCPServers(t *testing.T) {
 		},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 }
@@ -132,7 +132,7 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 		mock.Results[id] = DiscoveryResult{ServerID: id}
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 
 	// We expect multiple warnings.
@@ -200,7 +200,7 @@ func TestCheckMCPServers_ThresholdsDisabled(t *testing.T) {
 		},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 
 	codes := make(map[string]bool)
@@ -233,7 +233,7 @@ func TestCheckMCPServers_NilConnector(t *testing.T) {
 
 	// Pass a mock to avoid actual network calls
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 }
@@ -252,7 +252,7 @@ func TestCheckMCPServers_ResolveServerError(t *testing.T) {
 	}
 
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	require.Len(t, warnings, 1)
 	assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)
@@ -275,7 +275,7 @@ func TestDiscoverTools(t *testing.T) {
 		},
 	}
 
-	results := discoverTools(context.Background(), servers, mock)
+	results := discoverTools(context.Background(), servers, mock, nil)
 	require.Len(t, results, 3)
 
 	// Results should be in order
@@ -289,8 +289,61 @@ func TestDiscoverTools(t *testing.T) {
 
 func TestDiscoverTools_Empty(t *testing.T) {
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	results := discoverTools(context.Background(), nil, mock)
+	results := discoverTools(context.Background(), nil, mock, nil)
 	assert.Empty(t, results)
+}
+
+func TestDiscoverTools_EmitsDiscoveryEvents(t *testing.T) {
+	servers := []projection.ResolvedMCPServer{
+		{ID: "s1"},
+		{ID: "s2"},
+	}
+
+	mock := &MockConnector{
+		Results: map[string]DiscoveryResult{
+			"s1": {ServerID: "s1"},
+			"s2": {ServerID: "s2", Error: fmt.Errorf("boom")},
+		},
+	}
+
+	var mu sync.Mutex
+	events := make([]MCPDiscoveryEvent, 0, 4)
+	statusFn := func(event MCPDiscoveryEvent) {
+		mu.Lock()
+		events = append(events, event)
+		mu.Unlock()
+	}
+
+	_ = discoverTools(context.Background(), servers, mock, statusFn)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(events))
+	}
+
+	counts := make(map[string]map[MCPDiscoveryStatus]int)
+	for _, event := range events {
+		if counts[event.ServerID] == nil {
+			counts[event.ServerID] = make(map[MCPDiscoveryStatus]int)
+		}
+		counts[event.ServerID][event.Status]++
+
+		if event.Status == MCPDiscoveryStatusError && event.Err == nil {
+			t.Fatalf("expected error event to include error for server %s", event.ServerID)
+		}
+		if event.Status == MCPDiscoveryStatusDone && event.Err != nil {
+			t.Fatalf("did not expect error on done event for server %s", event.ServerID)
+		}
+	}
+
+	if counts["s1"][MCPDiscoveryStatusStart] != 1 || counts["s1"][MCPDiscoveryStatusDone] != 1 {
+		t.Fatalf("expected start+done for s1, got %#v", counts["s1"])
+	}
+	if counts["s2"][MCPDiscoveryStatusStart] != 1 || counts["s2"][MCPDiscoveryStatusError] != 1 {
+		t.Fatalf("expected start+error for s2, got %#v", counts["s2"])
+	}
 }
 
 type blockingConnector struct {
@@ -345,7 +398,7 @@ func TestDiscoverTools_ConcurrencyLimit(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_ = discoverTools(context.Background(), servers, connector)
+		_ = discoverTools(context.Background(), servers, connector, nil)
 		close(done)
 	}()
 
