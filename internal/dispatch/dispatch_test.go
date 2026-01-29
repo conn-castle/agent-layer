@@ -22,7 +22,7 @@ func TestReadPinnedVersion(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	got, ok, err := readPinnedVersion(root)
+	got, ok, err := readPinnedVersion(RealSystem{}, root)
 	if err != nil {
 		t.Fatalf("readPinnedVersion error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestReadPinnedVersionEmptyFile(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, _, err := readPinnedVersion(root)
+	_, _, err := readPinnedVersion(RealSystem{}, root)
 	if err == nil {
 		t.Fatalf("expected error for empty pin")
 	}
@@ -55,7 +55,7 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "v1.2.3")
 	t.Setenv(EnvNoNetwork, "")
 
-	got, source, err := resolveRequestedVersion(t.TempDir(), false, "0.5.0")
+	got, source, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	got, source, err := resolveRequestedVersion(root, true, "0.5.0")
+	got, source, err := resolveRequestedVersion(RealSystem{}, root, true, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 }
 
 func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
-	got, source, err := resolveRequestedVersion(t.TempDir(), false, "0.5.0")
+	got, source, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
 
 func TestCacheRootDir(t *testing.T) {
 	t.Setenv(EnvCacheDir, "/custom/cache")
-	got, err := cacheRootDir()
+	got, err := cacheRootDir(RealSystem{})
 	if err != nil {
 		t.Fatalf("cacheRootDir error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCacheRootDir(t *testing.T) {
 
 	t.Setenv(EnvCacheDir, "")
 	// Just check it doesn't error and looks like a path
-	got, err = cacheRootDir()
+	got, err = cacheRootDir(RealSystem{})
 	if err != nil {
 		t.Fatalf("cacheRootDir error: %v", err)
 	}
@@ -196,16 +196,15 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	// Override execBinary
-	originalExec := execBinaryFunc
 	var execCalled bool
 	var execPath string
-	execBinaryFunc = func(path string, args []string, env []string, exit func(int)) error {
-		execCalled = true
-		execPath = path
-		return nil // Simulate success (process replaced)
+	sys := &testSystem{
+		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+			execCalled = true
+			execPath = path
+			return nil // Simulate success (process replaced)
+		},
 	}
-	defer func() { execBinaryFunc = originalExec }()
 
 	// Setup env
 	t.Setenv(EnvVersionOverride, version)
@@ -213,7 +212,7 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 	t.Setenv(EnvCacheDir, cacheDir)
 
 	// Call MaybeExec
-	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}
@@ -231,7 +230,7 @@ func TestMaybeExec_DispatchSuccess(t *testing.T) {
 func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "1.0.0")
 	// If requested == current, it returns nil (no dispatch)
-	err := MaybeExec([]string{"cmd"}, "1.0.0", ".", func(int) {})
+	err := MaybeExecWithSystem(RealSystem{}, []string{"cmd"}, "1.0.0", ".", func(int) {})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -239,7 +238,7 @@ func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
 
 func TestMaybeExec_InvalidOverride(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "invalid-version")
-	err := MaybeExec([]string{"cmd"}, "1.0.0", ".", func(int) {})
+	err := MaybeExecWithSystem(RealSystem{}, []string{"cmd"}, "1.0.0", ".", func(int) {})
 	if err == nil {
 		t.Fatal("expected error for invalid override")
 	}
@@ -263,7 +262,7 @@ func TestMaybeExec_ReadPinnedVersionError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := MaybeExec([]string{"cmd"}, "0.9.0", root, func(int) {})
+	err := MaybeExecWithSystem(RealSystem{}, []string{"cmd"}, "0.9.0", root, func(int) {})
 	if err == nil {
 		t.Fatal("expected error reading pinned version")
 	}
@@ -271,7 +270,7 @@ func TestMaybeExec_ReadPinnedVersionError(t *testing.T) {
 
 func TestMaybeExec_DevTarget(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "dev")
-	err := MaybeExec([]string{"cmd"}, "1.0.0", t.TempDir(), func(int) {})
+	err := MaybeExecWithSystem(RealSystem{}, []string{"cmd"}, "1.0.0", t.TempDir(), func(int) {})
 	if err == nil {
 		t.Fatal("expected error when dispatching to dev")
 	}
@@ -305,16 +304,15 @@ func TestMaybeExec_ExecBinaryError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	// Override execBinary to fail
-	originalExec := execBinaryFunc
-	execBinaryFunc = func(path string, args []string, env []string, exit func(int)) error {
-		return errors.New("exec failed")
+	sys := &testSystem{
+		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+			return errors.New("exec failed")
+		},
 	}
-	defer func() { execBinaryFunc = originalExec }()
 
 	t.Setenv(EnvCacheDir, t.TempDir())
 
-	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err == nil || err.Error() != "exec failed" {
 		t.Fatalf("expected exec failed, got %v", err)
 	}
@@ -326,40 +324,38 @@ func TestMaybeExec_EnsureCachedBinaryError(t *testing.T) {
 
 	// No mock server -> download fails
 
-	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := MaybeExecWithSystem(RealSystem{}, []string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err == nil {
 		t.Fatal("expected error from ensureCachedBinary")
 	}
 }
 
 func TestCacheRootDir_Error(t *testing.T) {
-	// Mock userCacheDir failure
-	orig := userCacheDir
-	defer func() { userCacheDir = orig }()
-	userCacheDir = func() (string, error) {
-		return "", errors.New("user cache dir failed")
+	sys := &testSystem{
+		UserCacheDirFunc: func() (string, error) {
+			return "", errors.New("user cache dir failed")
+		},
 	}
 
 	t.Setenv(EnvCacheDir, "") // Ensure we use userCacheDir
 
-	_, err := cacheRootDir()
+	_, err := cacheRootDir(sys)
 	if err == nil {
 		t.Fatal("expected error from cacheRootDir")
 	}
 }
 
 func TestMaybeExec_CacheRootDirError(t *testing.T) {
-	// Mock userCacheDir failure
-	orig := userCacheDir
-	defer func() { userCacheDir = orig }()
-	userCacheDir = func() (string, error) {
-		return "", errors.New("user cache dir failed")
+	sys := &testSystem{
+		UserCacheDirFunc: func() (string, error) {
+			return "", errors.New("user cache dir failed")
+		},
 	}
 
 	t.Setenv(EnvCacheDir, "")
 	t.Setenv(EnvVersionOverride, "1.0.0")
 
-	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err == nil {
 		t.Fatal("expected error from MaybeExec when cacheRootDir fails")
 	}
@@ -406,14 +402,13 @@ func TestMaybeExec_ExecReturnsDispatched(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	// Override execBinary to return ErrDispatched
-	originalExec := execBinaryFunc
-	execBinaryFunc = func(path string, args []string, env []string, exit func(int)) error {
-		return ErrDispatched
+	sys := &testSystem{
+		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+			return ErrDispatched
+		},
 	}
-	defer func() { execBinaryFunc = originalExec }()
 
-	err := MaybeExec([]string{"cmd"}, "0.9.0", ".", func(int) {})
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
 	}

@@ -1,6 +1,11 @@
 package messages
 
 // Config messages for configuration loading and validation.
+//
+// Naming convention: Config* messages validate configuration inputs (filesystem,
+// root path, file contents) rather than a unified System interface, so they use
+// descriptive names like ConfigFSRequired and ConfigRootRequired instead of
+// ConfigSystemRequired.
 const (
 	// ConfigMissingFileFmt formats missing config file errors.
 	ConfigMissingFileFmt        = "missing config file %s: %w"
@@ -8,6 +13,9 @@ const (
 	ConfigMissingEnvFileFmt     = "missing env file %s: %w"
 	ConfigInvalidEnvFileFmt     = "invalid env file %s: %w"
 	ConfigInvalidConfigFmt      = "invalid config %s: %w"
+	ConfigFSRequired            = "config filesystem is required"
+	ConfigRootRequired          = "config root path is required"
+	ConfigPathOutsideRootFmt    = "path %s is outside repo root %s"
 
 	ConfigMissingCommandsAllowlistFmt    = "missing commands allowlist %s: %w"
 	ConfigFailedReadCommandsAllowlistFmt = "failed to read commands allowlist %s: %w"

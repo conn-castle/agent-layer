@@ -52,72 +52,75 @@ func newInitCmd() *cobra.Command {
 				Overwrite:  overwriteMode,
 				Force:      force,
 				PinVersion: pinned,
+				System:     install.RealSystem{},
 			}
 			if overwriteMode && !force {
-				opts.PromptOverwriteAll = func(paths []string) (bool, error) {
-					if len(paths) > 0 {
-						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-							return false, err
-						}
-						if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InitOverwriteManagedHeader); err != nil {
-							return false, err
-						}
-						for _, path := range paths {
-							if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
+				opts.Prompter = install.PromptFuncs{
+					OverwriteAllFunc: func(paths []string) (bool, error) {
+						if len(paths) > 0 {
+							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+								return false, err
+							}
+							if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InitOverwriteManagedHeader); err != nil {
+								return false, err
+							}
+							for _, path := range paths {
+								if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
+									return false, err
+								}
+							}
+							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
 								return false, err
 							}
 						}
-						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-							return false, err
-						}
-					}
-					return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteAllPrompt, true)
-				}
-				opts.PromptOverwriteMemoryAll = func(paths []string) (bool, error) {
-					if len(paths) > 0 {
-						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-							return false, err
-						}
-						if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InitOverwriteMemoryHeader); err != nil {
-							return false, err
-						}
-						for _, path := range paths {
-							if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteAllPrompt, true)
+					},
+					OverwriteAllMemoryFunc: func(paths []string) (bool, error) {
+						if len(paths) > 0 {
+							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+								return false, err
+							}
+							if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InitOverwriteMemoryHeader); err != nil {
+								return false, err
+							}
+							for _, path := range paths {
+								if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
+									return false, err
+								}
+							}
+							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
 								return false, err
 							}
 						}
-						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-							return false, err
-						}
-					}
-					return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteMemoryAllPrompt, false)
-				}
-				opts.PromptOverwrite = func(path string) (bool, error) {
-					prompt := fmt.Sprintf(messages.InitOverwritePromptFmt, path)
-					return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
-				}
-				opts.PromptDeleteUnknownAll = func(paths []string) (bool, error) {
-					if len(paths) > 0 {
-						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-							return false, err
-						}
-						if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InstallUnknownHeader); err != nil {
-							return false, err
-						}
-						for _, path := range paths {
-							if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteMemoryAllPrompt, false)
+					},
+					OverwriteFunc: func(path string) (bool, error) {
+						prompt := fmt.Sprintf(messages.InitOverwritePromptFmt, path)
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
+					},
+					DeleteUnknownAllFunc: func(paths []string) (bool, error) {
+						if len(paths) > 0 {
+							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+								return false, err
+							}
+							if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InstallUnknownHeader); err != nil {
+								return false, err
+							}
+							for _, path := range paths {
+								if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
+									return false, err
+								}
+							}
+							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
 								return false, err
 							}
 						}
-						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-							return false, err
-						}
-					}
-					return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitDeleteUnknownAllPrompt, false)
-				}
-				opts.PromptDeleteUnknown = func(path string) (bool, error) {
-					prompt := fmt.Sprintf(messages.InitDeleteUnknownPromptFmt, path)
-					return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitDeleteUnknownAllPrompt, false)
+					},
+					DeleteUnknownFunc: func(path string) (bool, error) {
+						prompt := fmt.Sprintf(messages.InitDeleteUnknownPromptFmt, path)
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
+					},
 				}
 			}
 			if err := installRun(root, opts); err != nil {

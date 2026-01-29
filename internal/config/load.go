@@ -13,42 +13,7 @@ import (
 
 // LoadProjectConfig reads and validates the full Agent Layer config from disk.
 func LoadProjectConfig(root string) (*ProjectConfig, error) {
-	paths := DefaultPaths(root)
-
-	cfg, err := LoadConfig(paths.ConfigPath)
-	if err != nil {
-		return nil, err
-	}
-
-	env, err := LoadEnv(paths.EnvPath)
-	if err != nil {
-		return nil, err
-	}
-	env = WithBuiltInEnv(env, root)
-
-	instructions, err := LoadInstructions(paths.InstructionsDir)
-	if err != nil {
-		return nil, err
-	}
-
-	slashCommands, err := LoadSlashCommands(paths.SlashCommandsDir)
-	if err != nil {
-		return nil, err
-	}
-
-	commandsAllow, err := LoadCommandsAllow(paths.CommandsAllow)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ProjectConfig{
-		Config:        *cfg,
-		Env:           env,
-		Instructions:  instructions,
-		SlashCommands: slashCommands,
-		CommandsAllow: commandsAllow,
-		Root:          root,
-	}, nil
+	return LoadProjectConfigFS(os.DirFS(root), root)
 }
 
 // LoadConfig reads .agent-layer/config.toml and validates it.
