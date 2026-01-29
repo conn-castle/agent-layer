@@ -23,7 +23,10 @@ const (
 
 	InitOverwriteRequiresTerminal = "init overwrite prompts require an interactive terminal; re-run with --force to overwrite without prompts"
 	InitOverwritePromptFmt        = "Overwrite %s with the template version?"
-	InitOverwriteAllPrompt        = "Overwrite all existing managed files with template versions?"
+	InitOverwriteAllPrompt        = "Overwrite all existing managed files with template versions and update the pin if needed?"
+	InitOverwriteManagedHeader    = "Existing managed files (and pin) that differ from templates:"
+	InitOverwriteMemoryHeader     = "Existing memory files in docs/agent-layer that differ from templates:"
+	InitOverwriteMemoryAllPrompt  = "Overwrite all existing memory files in docs/agent-layer with template versions?"
 	InitDeleteUnknownAllPrompt    = "Delete all unknown files under .agent-layer?"
 	InitDeleteUnknownPromptFmt    = "Delete %s?"
 	InitRunWizardPrompt           = "Run the setup wizard now? (recommended)"

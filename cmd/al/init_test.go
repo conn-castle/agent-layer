@@ -52,22 +52,23 @@ func TestInitCmd(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                   string
-		args                   []string
-		isTerminal             bool
-		mockInstallErr         error
-		mockWizardErr          error
-		userInput              string // for stdin
-		wantErr                bool
-		wantInstall            bool
-		wantWizard             bool
-		wantOverwrite          bool // Expect install options overwrite
-		wantForce              bool // Expect install options force
-		wantPromptOverwriteAll bool
-		wantPromptOverwrite    bool
-		wantPromptDeleteAll    bool
-		wantPromptDelete       bool
-		checkErr               func(error) bool
+		name                         string
+		args                         []string
+		isTerminal                   bool
+		mockInstallErr               error
+		mockWizardErr                error
+		userInput                    string // for stdin
+		wantErr                      bool
+		wantInstall                  bool
+		wantWizard                   bool
+		wantOverwrite                bool // Expect install options overwrite
+		wantForce                    bool // Expect install options force
+		wantPromptOverwriteAll       bool
+		wantPromptOverwriteMemoryAll bool
+		wantPromptOverwrite          bool
+		wantPromptDeleteAll          bool
+		wantPromptDelete             bool
+		checkErr                     func(error) bool
 	}{
 		{
 			name:        "Happy path non-interactive",
@@ -110,18 +111,19 @@ func TestInitCmd(t *testing.T) {
 			wantForce:     true,
 		},
 		{
-			name:                   "Overwrite interactive",
-			args:                   []string{"--overwrite"},
-			isTerminal:             true,
-			userInput:              "y\ny\nn\n", // OverwriteAll (y), DeleteAll (y), Wizard (n)
-			wantInstall:            true,
-			wantOverwrite:          true,
-			wantForce:              false,
-			wantWizard:             false,
-			wantPromptOverwriteAll: true,
-			wantPromptOverwrite:    true,
-			wantPromptDeleteAll:    true,
-			wantPromptDelete:       true,
+			name:                         "Overwrite interactive",
+			args:                         []string{"--overwrite"},
+			isTerminal:                   true,
+			userInput:                    "y\nn\ny\nn\n", // OverwriteAll managed (y), OverwriteAll memory (n), DeleteAll (y), Wizard (n)
+			wantInstall:                  true,
+			wantOverwrite:                true,
+			wantForce:                    false,
+			wantWizard:                   false,
+			wantPromptOverwriteAll:       true,
+			wantPromptOverwriteMemoryAll: false,
+			wantPromptOverwrite:          true,
+			wantPromptDeleteAll:          true,
+			wantPromptDelete:             true,
 		},
 		{
 			name:           "Install fails",
@@ -155,18 +157,19 @@ func TestInitCmd(t *testing.T) {
 			},
 		},
 		{
-			name:                   "Prompt Overwrite Callback Yes",
-			args:                   []string{"--overwrite"},
-			isTerminal:             true,
-			userInput:              "n\ny\ny\nn\n", // OverwriteAll (n), Overwrite (y), DeleteAll (y), Wizard (n)
-			wantInstall:            true,
-			wantOverwrite:          true,
-			wantForce:              false,
-			wantWizard:             false,
-			wantPromptOverwriteAll: false,
-			wantPromptOverwrite:    true,
-			wantPromptDeleteAll:    true,
-			wantPromptDelete:       true,
+			name:                         "Prompt Overwrite Callback Yes",
+			args:                         []string{"--overwrite"},
+			isTerminal:                   true,
+			userInput:                    "n\nn\ny\ny\nn\n", // OverwriteAll managed (n), OverwriteAll memory (n), Overwrite (y), DeleteAll (y), Wizard (n)
+			wantInstall:                  true,
+			wantOverwrite:                true,
+			wantForce:                    false,
+			wantWizard:                   false,
+			wantPromptOverwriteAll:       false,
+			wantPromptOverwriteMemoryAll: false,
+			wantPromptOverwrite:          true,
+			wantPromptDeleteAll:          true,
+			wantPromptDelete:             true,
 		}}
 
 	for _, tt := range tests {
@@ -213,24 +216,35 @@ func TestInitCmd(t *testing.T) {
 					if opts.PromptOverwriteAll == nil {
 						t.Error("Expected PromptOverwriteAll to be set")
 					} else {
-						yes, err := opts.PromptOverwriteAll()
+						yes, err := opts.PromptOverwriteAll([]string{"managed"})
 						if err != nil {
 							t.Errorf("PromptOverwriteAll error: %v", err)
 						}
 						if yes != tt.wantPromptOverwriteAll {
 							t.Errorf("PromptOverwriteAll returned %v, want %v", yes, tt.wantPromptOverwriteAll)
 						}
-						if !yes {
-							if opts.PromptOverwrite == nil {
-								t.Error("Expected PromptOverwrite to be set")
-							} else {
-								overwrite, err := opts.PromptOverwrite("testfile")
-								if err != nil {
-									t.Errorf("PromptOverwrite error: %v", err)
-								}
-								if overwrite != tt.wantPromptOverwrite {
-									t.Errorf("PromptOverwrite returned %v, want %v", overwrite, tt.wantPromptOverwrite)
-								}
+					}
+					if opts.PromptOverwriteMemoryAll == nil {
+						t.Error("Expected PromptOverwriteMemoryAll to be set")
+					} else {
+						yes, err := opts.PromptOverwriteMemoryAll([]string{"docs/agent-layer/ISSUES.md"})
+						if err != nil {
+							t.Errorf("PromptOverwriteMemoryAll error: %v", err)
+						}
+						if yes != tt.wantPromptOverwriteMemoryAll {
+							t.Errorf("PromptOverwriteMemoryAll returned %v, want %v", yes, tt.wantPromptOverwriteMemoryAll)
+						}
+					}
+					if !tt.wantPromptOverwriteAll {
+						if opts.PromptOverwrite == nil {
+							t.Error("Expected PromptOverwrite to be set")
+						} else {
+							overwrite, err := opts.PromptOverwrite("testfile")
+							if err != nil {
+								t.Errorf("PromptOverwrite error: %v", err)
+							}
+							if overwrite != tt.wantPromptOverwrite {
+								t.Errorf("PromptOverwrite returned %v, want %v", overwrite, tt.wantPromptOverwrite)
 							}
 						}
 					}

@@ -616,10 +616,11 @@ func TestRunWithOverwritePromptsUnknownDeletion(t *testing.T) {
 	}
 
 	if err := Run(root, Options{
-		Overwrite:              true,
-		PromptOverwriteAll:     func() (bool, error) { return true, nil },
-		PromptDeleteUnknownAll: promptDeleteAll,
-		PromptDeleteUnknown:    promptDelete,
+		Overwrite:                true,
+		PromptOverwriteAll:       func([]string) (bool, error) { return true, nil },
+		PromptOverwriteMemoryAll: func([]string) (bool, error) { return true, nil },
+		PromptDeleteUnknownAll:   promptDeleteAll,
+		PromptDeleteUnknown:      promptDelete,
 	}); err != nil {
 		t.Fatalf("overwrite Run error: %v", err)
 	}
@@ -647,8 +648,9 @@ func TestRunWithOverwriteMissingDeletePrompt(t *testing.T) {
 	root := t.TempDir()
 
 	if err := Run(root, Options{
-		Overwrite:          true,
-		PromptOverwriteAll: func() (bool, error) { return true, nil },
+		Overwrite:                true,
+		PromptOverwriteAll:       func([]string) (bool, error) { return true, nil },
+		PromptOverwriteMemoryAll: func([]string) (bool, error) { return true, nil },
 	}); err == nil {
 		t.Fatalf("expected error when delete prompt handler is missing")
 	}
@@ -675,10 +677,11 @@ func TestRunWithOverwritePromptDecline(t *testing.T) {
 	}
 
 	if err := Run(root, Options{
-		Overwrite:              true,
-		PromptOverwriteAll:     func() (bool, error) { return false, nil },
-		PromptOverwrite:        prompt,
-		PromptDeleteUnknownAll: func([]string) (bool, error) { return true, nil },
+		Overwrite:                true,
+		PromptOverwriteAll:       func([]string) (bool, error) { return false, nil },
+		PromptOverwriteMemoryAll: func([]string) (bool, error) { return false, nil },
+		PromptOverwrite:          prompt,
+		PromptDeleteUnknownAll:   func([]string) (bool, error) { return true, nil },
 	}); err != nil {
 		t.Fatalf("overwrite Run error: %v", err)
 	}
@@ -692,6 +695,94 @@ func TestRunWithOverwritePromptDecline(t *testing.T) {
 	}
 	if len(prompted) != 1 || prompted[0] != filepath.Join(".agent-layer", "config.toml") {
 		t.Fatalf("unexpected prompt paths: %v", prompted)
+	}
+}
+
+func TestShouldOverwrite_UsesMemoryPrompt(t *testing.T) {
+	root := t.TempDir()
+	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
+
+	managedCalled := false
+	memoryCalled := false
+	inst := &installer{
+		root:                     root,
+		overwrite:                true,
+		promptOverwriteAll:       func([]string) (bool, error) { managedCalled = true; return false, nil },
+		promptOverwriteMemoryAll: func([]string) (bool, error) { memoryCalled = true; return false, nil },
+		promptOverwrite:          func(string) (bool, error) { return false, nil },
+	}
+
+	_, err := inst.shouldOverwrite(memoryPath)
+	if err != nil {
+		t.Fatalf("shouldOverwrite error: %v", err)
+	}
+	if managedCalled {
+		t.Fatalf("expected managed prompt not to be called for memory paths")
+	}
+	if !memoryCalled {
+		t.Fatalf("expected memory prompt to be called for memory paths")
+	}
+}
+
+func TestListManagedDiffs_IgnoresGitignoreBlockHash(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	rendered := renderGitignoreBlock(normalizeGitignoreBlock(string(templateBytes)))
+	gitignorePath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.WriteFile(gitignorePath, []byte(rendered), 0o644); err != nil {
+		t.Fatalf("write gitignore.block: %v", err)
+	}
+
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	if err := os.WriteFile(configPath, []byte("# custom config"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	inst := &installer{root: root}
+	diffs, err := inst.listManagedDiffs()
+	if err != nil {
+		t.Fatalf("listManagedDiffs: %v", err)
+	}
+	if len(diffs) != 1 || diffs[0] != filepath.Join(".agent-layer", "config.toml") {
+		t.Fatalf("unexpected diffs: %v", diffs)
+	}
+}
+
+func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.toml")
+	templateBytes, err := templates.Read("config.toml")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	if err := os.WriteFile(path, templateBytes, 0o644); err != nil {
+		t.Fatalf("write config.toml: %v", err)
+	}
+
+	inst := &installer{}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat config.toml: %v", err)
+	}
+	if _, err := inst.matchTemplate(path, "config.toml", info); err != nil {
+		t.Fatalf("prime cache: %v", err)
+	}
+
+	original := templates.ReadFunc
+	templates.ReadFunc = func(string) ([]byte, error) {
+		return nil, errors.New("unexpected template read")
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	if err := writeTemplateFileWithMatch(path, "config.toml", 0o644, nil, nil, inst.matchTemplate); err != nil {
+		t.Fatalf("expected cached match to skip template read: %v", err)
 	}
 }
 

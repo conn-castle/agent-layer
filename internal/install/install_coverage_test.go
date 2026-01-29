@@ -494,7 +494,7 @@ func TestShouldOverwrite_OverwriteAll(t *testing.T) {
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		promptOverwriteAll: func() (bool, error) {
+		promptOverwriteAll: func([]string) (bool, error) {
 			return true, nil
 		},
 	}
@@ -513,7 +513,7 @@ func TestShouldOverwrite_OverwriteAllError(t *testing.T) {
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		promptOverwriteAll: func() (bool, error) {
+		promptOverwriteAll: func([]string) (bool, error) {
 			return false, errors.New("boom")
 		},
 	}
@@ -529,7 +529,7 @@ func TestShouldOverwrite_IndividualPrompt(t *testing.T) {
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		promptOverwriteAll: func() (bool, error) {
+		promptOverwriteAll: func([]string) (bool, error) {
 			return false, nil // Not all
 		},
 		promptOverwrite: func(path string) (bool, error) {
@@ -551,7 +551,7 @@ func TestShouldOverwrite_MissingIndividualPrompt(t *testing.T) {
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		promptOverwriteAll: func() (bool, error) {
+		promptOverwriteAll: func([]string) (bool, error) {
 			return false, nil
 		},
 		promptOverwrite: nil, // Missing
@@ -675,8 +675,9 @@ func TestWriteTemplateDir_PathError(t *testing.T) {
 func TestRun_DeleteUnknownPromptRequired(t *testing.T) {
 	root := t.TempDir()
 	err := Run(root, Options{
-		Overwrite:          true,
-		PromptOverwriteAll: func() (bool, error) { return true, nil },
+		Overwrite:                true,
+		PromptOverwriteAll:       func([]string) (bool, error) { return true, nil },
+		PromptOverwriteMemoryAll: func([]string) (bool, error) { return true, nil },
 		// Missing PromptDeleteUnknownAll
 	})
 	if err == nil {
@@ -1044,7 +1045,7 @@ func TestRun_SuccessfulWithAllOptions(t *testing.T) {
 	err := Run(root, Options{
 		Overwrite:              true,
 		Force:                  true,
-		PromptOverwriteAll:     func() (bool, error) { return true, nil },
+		PromptOverwriteAll:     func([]string) (bool, error) { return true, nil },
 		PromptDeleteUnknownAll: func(paths []string) (bool, error) { return true, nil },
 		PinVersion:             "1.0.0",
 	})
@@ -1066,7 +1067,7 @@ func TestRun_OverwriteExisting(t *testing.T) {
 	err = Run(root, Options{
 		Overwrite:              true,
 		Force:                  true,
-		PromptOverwriteAll:     func() (bool, error) { return true, nil },
+		PromptOverwriteAll:     func([]string) (bool, error) { return true, nil },
 		PromptDeleteUnknownAll: func(paths []string) (bool, error) { return true, nil },
 	})
 	if err != nil {
