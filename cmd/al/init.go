@@ -57,40 +57,14 @@ func newInitCmd() *cobra.Command {
 			if overwriteMode && !force {
 				opts.Prompter = install.PromptFuncs{
 					OverwriteAllFunc: func(paths []string) (bool, error) {
-						if len(paths) > 0 {
-							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-								return false, err
-							}
-							if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InitOverwriteManagedHeader); err != nil {
-								return false, err
-							}
-							for _, path := range paths {
-								if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
-									return false, err
-								}
-							}
-							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-								return false, err
-							}
+						if err := printFilePaths(cmd.OutOrStdout(), messages.InitOverwriteManagedHeader, paths); err != nil {
+							return false, err
 						}
 						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteAllPrompt, true)
 					},
 					OverwriteAllMemoryFunc: func(paths []string) (bool, error) {
-						if len(paths) > 0 {
-							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-								return false, err
-							}
-							if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InitOverwriteMemoryHeader); err != nil {
-								return false, err
-							}
-							for _, path := range paths {
-								if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
-									return false, err
-								}
-							}
-							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-								return false, err
-							}
+						if err := printFilePaths(cmd.OutOrStdout(), messages.InitOverwriteMemoryHeader, paths); err != nil {
+							return false, err
 						}
 						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteMemoryAllPrompt, false)
 					},
@@ -99,21 +73,8 @@ func newInitCmd() *cobra.Command {
 						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
 					},
 					DeleteUnknownAllFunc: func(paths []string) (bool, error) {
-						if len(paths) > 0 {
-							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-								return false, err
-							}
-							if _, err := fmt.Fprintln(cmd.OutOrStdout(), messages.InstallUnknownHeader); err != nil {
-								return false, err
-							}
-							for _, path := range paths {
-								if _, err := fmt.Fprintf(cmd.OutOrStdout(), messages.InstallDiffLineFmt, path); err != nil {
-									return false, err
-								}
-							}
-							if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
-								return false, err
-							}
+						if err := printFilePaths(cmd.OutOrStdout(), messages.InstallUnknownHeader, paths); err != nil {
+							return false, err
 						}
 						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitDeleteUnknownAllPrompt, false)
 					},
@@ -233,4 +194,26 @@ func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (b
 			return false, err
 		}
 	}
+}
+
+// printFilePaths prints a list of file paths with a header.
+func printFilePaths(out io.Writer, header string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out, header); err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if _, err := fmt.Fprintf(out, messages.InstallDiffLineFmt, path); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return err
+	}
+	return nil
 }

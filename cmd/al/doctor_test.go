@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -103,14 +105,11 @@ func TestMCPDiscoveryReporter_Report(t *testing.T) {
 
 	// Wait for events to be processed
 	var s1, s2 warnings.MCPDiscoveryStatus
-	for i := 0; i < 100; i++ {
+	require.Eventually(t, func() bool {
 		s1 = reporter.statusFor("server1")
 		s2 = reporter.statusFor("server2")
-		if s1 == warnings.MCPDiscoveryStatusDone && s2 == warnings.MCPDiscoveryStatusError {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return s1 == warnings.MCPDiscoveryStatusDone && s2 == warnings.MCPDiscoveryStatusError
+	}, time.Second, 10*time.Millisecond)
 
 	reporter.stop()
 
@@ -142,12 +141,9 @@ func TestMCPDiscoveryReporter_Spinner(t *testing.T) {
 	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server1", Status: warnings.MCPDiscoveryStatusDone})
 
 	// Wait for event to be processed
-	for i := 0; i < 100; i++ {
-		if reporter.statusFor("server1") == warnings.MCPDiscoveryStatusDone {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	require.Eventually(t, func() bool {
+		return reporter.statusFor("server1") == warnings.MCPDiscoveryStatusDone
+	}, time.Second, 10*time.Millisecond)
 
 	reporter.stop()
 }
