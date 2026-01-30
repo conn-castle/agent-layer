@@ -101,16 +101,25 @@ func TestMCPDiscoveryReporter_Report(t *testing.T) {
 	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server1", Status: warnings.MCPDiscoveryStatusDone})
 	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server2", Status: warnings.MCPDiscoveryStatusError, Err: &testError{"failed"}})
 
-	// Allow some time for events to be processed
-	time.Sleep(50 * time.Millisecond)
+	// Wait for events to be processed
+	var s1, s2 warnings.MCPDiscoveryStatus
+	for i := 0; i < 100; i++ {
+		s1 = reporter.statusFor("server1")
+		s2 = reporter.statusFor("server2")
+		if s1 == warnings.MCPDiscoveryStatusDone && s2 == warnings.MCPDiscoveryStatusError {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	reporter.stop()
 
 	// Check final statuses
-	if reporter.statuses["server1"] != warnings.MCPDiscoveryStatusDone {
-		t.Errorf("server1 status = %v, want done", reporter.statuses["server1"])
+	if s1 != warnings.MCPDiscoveryStatusDone {
+		t.Errorf("server1 status = %v, want done", s1)
 	}
-	if reporter.statuses["server2"] != warnings.MCPDiscoveryStatusError {
-		t.Errorf("server2 status = %v, want error", reporter.statuses["server2"])
+	if s2 != warnings.MCPDiscoveryStatusError {
+		t.Errorf("server2 status = %v, want error", s2)
 	}
 }
 
@@ -131,7 +140,15 @@ func TestMCPDiscoveryReporter_Spinner(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server1", Status: warnings.MCPDiscoveryStatusDone})
-	time.Sleep(50 * time.Millisecond)
+
+	// Wait for event to be processed
+	for i := 0; i < 100; i++ {
+		if reporter.statusFor("server1") == warnings.MCPDiscoveryStatusDone {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	reporter.stop()
 }
 
@@ -145,21 +162,27 @@ func TestMCPDiscoveryReporter_FormatLine(t *testing.T) {
 	}
 
 	// Done status
+	reporter.mu.Lock()
 	reporter.statuses["srv"] = warnings.MCPDiscoveryStatusDone
+	reporter.mu.Unlock()
 	line = reporter.formatLine("srv")
 	if line != "  - srv: done" {
 		t.Errorf("formatLine() = %q, want done", line)
 	}
 
 	// Error status without error
+	reporter.mu.Lock()
 	reporter.statuses["srv"] = warnings.MCPDiscoveryStatusError
+	reporter.mu.Unlock()
 	line = reporter.formatLine("srv")
 	if line != "  - srv: error" {
 		t.Errorf("formatLine() = %q, want error", line)
 	}
 
 	// Error status with error
+	reporter.mu.Lock()
 	reporter.errors["srv"] = &testError{"boom"}
+	reporter.mu.Unlock()
 	line = reporter.formatLine("srv")
 	if line != "  - srv: error (boom)" {
 		t.Errorf("formatLine() = %q, want error (boom)", line)
@@ -176,7 +199,9 @@ func TestMCPDiscoveryReporter_StatusFor(t *testing.T) {
 	}
 
 	// Known server returns its status
+	reporter.mu.Lock()
 	reporter.statuses["srv"] = warnings.MCPDiscoveryStatusDone
+	reporter.mu.Unlock()
 	status = reporter.statusFor("srv")
 	if status != warnings.MCPDiscoveryStatusDone {
 		t.Errorf("statusFor(srv) = %v, want done", status)
@@ -203,15 +228,17 @@ func TestMCPDiscoveryReporter_FinalizePending(t *testing.T) {
 	reporter := newMCPDiscoveryReporter([]string{"srv1", "srv2"}, false)
 
 	// srv1 has no status, srv2 is still starting
+	reporter.mu.Lock()
 	reporter.statuses["srv2"] = warnings.MCPDiscoveryStatusStart
+	reporter.mu.Unlock()
 
 	reporter.finalizePending()
 
 	// Both should now be done
-	if reporter.statuses["srv1"] != warnings.MCPDiscoveryStatusDone {
-		t.Errorf("srv1 not finalized to done")
+	if s := reporter.statusFor("srv1"); s != warnings.MCPDiscoveryStatusDone {
+		t.Errorf("srv1 status = %v, want done", s)
 	}
-	if reporter.statuses["srv2"] != warnings.MCPDiscoveryStatusDone {
-		t.Errorf("srv2 not finalized to done")
+	if s := reporter.statusFor("srv2"); s != warnings.MCPDiscoveryStatusDone {
+		t.Errorf("srv2 status = %v, want done", s)
 	}
 }

@@ -209,6 +209,7 @@ func startMCPDiscoveryReporter(serverIDs []string) (warnings.MCPDiscoveryStatusF
 
 // mcpDiscoveryReporter serializes and renders MCP discovery progress updates.
 type mcpDiscoveryReporter struct {
+	mu            sync.RWMutex
 	ids           []string
 	useSpinner    bool
 	events        chan warnings.MCPDiscoveryEvent
@@ -304,6 +305,8 @@ func (r *mcpDiscoveryReporter) run() {
 }
 
 func (r *mcpDiscoveryReporter) applyEvent(event warnings.MCPDiscoveryEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.statuses[event.ServerID] = event.Status
 	if event.Err != nil {
 		r.errors[event.ServerID] = event.Err
@@ -327,6 +330,8 @@ func (r *mcpDiscoveryReporter) drainEvents() {
 }
 
 func (r *mcpDiscoveryReporter) finalizePending() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, id := range r.ids {
 		status, ok := r.statuses[id]
 		if !ok || status == warnings.MCPDiscoveryStatusStart {
@@ -336,6 +341,8 @@ func (r *mcpDiscoveryReporter) finalizePending() {
 }
 
 func (r *mcpDiscoveryReporter) advanceSpinner() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if len(r.spinnerFrames) == 0 {
 		return
 	}
@@ -343,6 +350,8 @@ func (r *mcpDiscoveryReporter) advanceSpinner() {
 }
 
 func (r *mcpDiscoveryReporter) render(moveCursor bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if !r.useSpinner || len(r.ids) == 0 {
 		return
 	}
@@ -351,13 +360,19 @@ func (r *mcpDiscoveryReporter) render(moveCursor bool) {
 	}
 	for _, id := range r.ids {
 		fmt.Print("\r\x1b[2K")
-		fmt.Println(r.formatLine(id))
+		fmt.Println(r.formatLineLocked(id))
 	}
 	r.rendered = true
 }
 
 func (r *mcpDiscoveryReporter) formatLine(serverID string) string {
-	switch r.statusFor(serverID) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.formatLineLocked(serverID)
+}
+
+func (r *mcpDiscoveryReporter) formatLineLocked(serverID string) string {
+	switch r.statusForLocked(serverID) {
 	case warnings.MCPDiscoveryStatusDone:
 		return fmt.Sprintf("  - %s: done", serverID)
 	case warnings.MCPDiscoveryStatusError:
@@ -374,6 +389,12 @@ func (r *mcpDiscoveryReporter) formatLine(serverID string) string {
 }
 
 func (r *mcpDiscoveryReporter) statusFor(serverID string) warnings.MCPDiscoveryStatus {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.statusForLocked(serverID)
+}
+
+func (r *mcpDiscoveryReporter) statusForLocked(serverID string) warnings.MCPDiscoveryStatus {
 	if status, ok := r.statuses[serverID]; ok {
 		return status
 	}
