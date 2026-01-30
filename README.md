@@ -235,7 +235,7 @@ clients = ["gemini", "claude", "vscode", "codex"] # omit = all clients
 transport = "http"
 # http_transport = "sse" # optional: "sse" (default) or "streamable"
 url = "https://example.com/mcp"
-headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
+headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}" }
 
 [[mcp.servers]]
 id = "local-mcp"
@@ -243,7 +243,7 @@ enabled = false
 transport = "stdio"
 command = "my-mcp-server"
 args = ["--flag", "value"]
-env = { MY_TOKEN = "${MY_TOKEN}" }
+env = { MY_TOKEN = "${AL_MY_TOKEN}" }
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.
@@ -307,12 +307,18 @@ Client notes:
 
 ### Secrets: `.agent-layer/.env`
 
-API tokens and other secrets live in `.agent-layer/.env` (always gitignored). Example keys:
-- `GITHUB_PERSONAL_ACCESS_TOKEN`
-- `CONTEXT7_API_KEY`
-- `TAVILY_API_KEY`
+API tokens and other secrets live in `.agent-layer/.env` (always gitignored).
+
+**Important:** All environment variables used by Agent Layer must use the `AL_` prefix to avoid conflicts with your shell environment. This ensures Agent Layer's variables don't override existing environment variables when VS Code terminals inherit the process environment.
+
+Example keys:
+- `AL_GITHUB_PERSONAL_ACCESS_TOKEN`
+- `AL_CONTEXT7_API_KEY`
+- `AL_TAVILY_API_KEY`
 
 When launching via `al`, your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens).
+
+When launching VS Code via the `open-vscode.app` launcher, variables from `.agent-layer/.env` are exported into VS Code's process so MCP servers can access API keys. The `AL_` prefix ensures these don't conflict with any existing environment variables you may have set in your shell profile.
 
 ### Instructions: `.agent-layer/instructions/`
 

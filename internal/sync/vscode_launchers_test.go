@@ -130,14 +130,14 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	if !strings.Contains(execStr, "CODEX_HOME") {
 		t.Fatal("app executable missing CODEX_HOME")
 	}
-	if !strings.Contains(execStr, "Contents/Resources/app/bin/code") {
-		t.Fatal("app executable missing full path to VS Code CLI")
-	}
-	if !strings.Contains(execStr, "/Applications/Visual Studio Code.app") {
-		t.Fatal("app executable missing VS Code app path")
-	}
 	if !strings.Contains(execStr, "osascript") {
-		t.Fatal("app executable missing osascript error dialog")
+		t.Fatal("app executable missing osascript for launching VS Code")
+	}
+	if !strings.Contains(execStr, "zsh -l") {
+		t.Fatal("app executable missing login shell invocation")
+	}
+	if !strings.Contains(execStr, "code .") {
+		t.Fatal("app executable missing 'code .' command")
 	}
 
 	// Verify Windows launcher content

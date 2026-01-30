@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.5.8 - 2026-01-30
+
+### Changed
+- **Breaking:** Environment variables now require `AL_` prefix to avoid conflicts with shell environment (e.g., `GITHUB_PERSONAL_ACCESS_TOKEN` → `AL_GITHUB_PERSONAL_ACCESS_TOKEN`). This ensures Agent Layer variables don't override existing environment variables when VS Code terminals inherit the process environment.
+
+### Fixed
+- VS Code `open-vscode.app` launcher now uses `osascript` with a login shell (`zsh -l`) instead of hardcoded VS Code CLI paths, fixing launch failures when VS Code is installed via Homebrew, in `~/Applications`, or other non-standard locations. This also fixes MCP server failures where VS Code couldn't find `node` because Finder-launched apps have a minimal PATH.
+- VS Code launcher now sources `.agent-layer/.env` before launching, so MCP servers can access API keys (e.g., `AL_GITHUB_PERSONAL_ACCESS_TOKEN`) when VS Code is opened via the app bundle.
+
 ## v0.5.7 - 2026-01-29
 
 ### Added

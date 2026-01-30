@@ -112,24 +112,24 @@ func writeVSCodeAppBundle(sys System, paths launchers.VSCodeLauncherPaths) error
 	}
 
 	// Executable script - navigates up from .app/Contents/MacOS/ to .agent-layer/ then to parent root
-	// Uses full path to VS Code CLI since Finder-launched apps have minimal PATH
-	// The CLI binary inherits environment variables (unlike 'open -a')
+	// Uses osascript with a login shell to ensure full PATH is available for 'code' command
+	// Sources .agent-layer/.env so MCP servers can access API keys
 	execContent := `#!/usr/bin/env bash
+set -euo pipefail
+
 # Navigate from .app/Contents/MacOS/ up to the parent root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PARENT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
+
+# Ensure VS Code sees the right Codex config location
 export CODEX_HOME="$PARENT_ROOT/.codex"
-cd "$PARENT_ROOT"
-# Use full path to VS Code CLI - it inherits env vars (unlike 'open -a')
-VSCODE_CLI="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-VSCODE_CLI_USER="$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-if [ -x "$VSCODE_CLI" ]; then
-  "$VSCODE_CLI" .
-elif [ -x "$VSCODE_CLI_USER" ]; then
-  "$VSCODE_CLI_USER" .
-else
-  osascript -e 'display alert "VS Code not found" message "Please install Visual Studio Code from https://code.visualstudio.com" as critical'
-fi
+
+# Run in a login shell so PATH is correct for VS Code MCP subprocesses
+# Source .agent-layer/.env to export API keys for MCP servers
+# Do not open Terminal; just start VS Code.
+exec /usr/bin/osascript <<EOF
+do shell script "/bin/zsh -l -c " & quoted form of ("cd " & quoted form of "$PARENT_ROOT" & " && export CODEX_HOME=" & quoted form of "$PARENT_ROOT/.codex" & " && [ -f .agent-layer/.env ] && set -a && source .agent-layer/.env && set +a; code .") & " >/dev/null 2>&1 &"
+EOF
 `
 	if err := sys.WriteFileAtomic(paths.AppExec, []byte(execContent), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, paths.AppExec, err)

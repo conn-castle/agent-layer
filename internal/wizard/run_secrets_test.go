@@ -13,7 +13,7 @@ import (
 )
 
 func TestRun_WithSecrets(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -48,7 +48,7 @@ enabled = false
 			return nil
 		},
 		SecretInputFunc: func(title string, value *string) error {
-			if title == "Enter GITHUB_PERSONAL_ACCESS_TOKEN (leave blank to skip)" {
+			if title == "Enter AL_GITHUB_PERSONAL_ACCESS_TOKEN (leave blank to skip)" {
 				*value = "my-token"
 			}
 			return nil
@@ -73,11 +73,11 @@ enabled = false
 
 	// Verify .env
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
-	assert.Contains(t, string(envData), `GITHUB_PERSONAL_ACCESS_TOKEN=my-token`)
+	assert.Contains(t, string(envData), `AL_GITHUB_PERSONAL_ACCESS_TOKEN=my-token`)
 }
 
 func TestRun_SecretsExisting(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -97,7 +97,7 @@ enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
 	// Pre-existing secret
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("GITHUB_PERSONAL_ACCESS_TOKEN=old-token"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_GITHUB_PERSONAL_ACCESS_TOKEN=old-token"), 0600))
 
 	// Case 1: Do NOT override
 	t.Run("no override", func(t *testing.T) {
@@ -112,7 +112,7 @@ enabled = false
 			},
 			ConfirmFunc: func(title string, value *bool) error {
 				switch title {
-				case "Secret GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
+				case "Secret AL_GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
 					*value = false // No
 				case "Apply these changes?":
 					*value = true
@@ -127,7 +127,7 @@ enabled = false
 		require.NoError(t, err)
 
 		envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
-		assert.Contains(t, string(envData), `GITHUB_PERSONAL_ACCESS_TOKEN=old-token`)
+		assert.Contains(t, string(envData), `AL_GITHUB_PERSONAL_ACCESS_TOKEN=old-token`)
 	})
 
 	// Case 2: Override
@@ -143,7 +143,7 @@ enabled = false
 			},
 			ConfirmFunc: func(title string, value *bool) error {
 				switch title {
-				case "Secret GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
+				case "Secret AL_GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
 					*value = true // Yes
 				case "Apply these changes?":
 					*value = true
@@ -162,12 +162,12 @@ enabled = false
 		require.NoError(t, err)
 
 		envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
-		assert.Contains(t, string(envData), `GITHUB_PERSONAL_ACCESS_TOKEN=new-token`)
+		assert.Contains(t, string(envData), `AL_GITHUB_PERSONAL_ACCESS_TOKEN=new-token`)
 	})
 }
 
 func TestRun_SecretFromEnv(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "env-token")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "env-token")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -194,11 +194,11 @@ func TestRun_SecretFromEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
-	assert.Contains(t, string(envData), `GITHUB_PERSONAL_ACCESS_TOKEN=env-token`)
+	assert.Contains(t, string(envData), `AL_GITHUB_PERSONAL_ACCESS_TOKEN=env-token`)
 }
 
 func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "env-token")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "env-token")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -233,7 +233,7 @@ func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
 }
 
 func TestRun_SecretFromEnv_Declined(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "env-token")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "env-token")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -271,11 +271,11 @@ func TestRun_SecretFromEnv_Declined(t *testing.T) {
 	require.NoError(t, err)
 
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
-	assert.Contains(t, string(envData), `GITHUB_PERSONAL_ACCESS_TOKEN=manual-token`)
+	assert.Contains(t, string(envData), `AL_GITHUB_PERSONAL_ACCESS_TOKEN=manual-token`)
 }
 
 func TestRun_SecretInputError(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -307,7 +307,7 @@ func TestRun_SecretInputError(t *testing.T) {
 }
 
 func TestRun_SecretBlank_DisableMCP(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -342,7 +342,7 @@ func TestRun_SecretBlank_DisableMCP(t *testing.T) {
 }
 
 func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -381,7 +381,7 @@ func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
 }
 
 func TestRun_SecretBlank_Retry(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -426,17 +426,17 @@ func TestRun_SecretBlank_Retry(t *testing.T) {
 	assert.Equal(t, 2, secretInputCalls)
 
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
-	assert.Contains(t, string(envData), `GITHUB_PERSONAL_ACCESS_TOKEN=retry-token`)
+	assert.Contains(t, string(envData), `AL_GITHUB_PERSONAL_ACCESS_TOKEN=retry-token`)
 }
 
 func TestRun_ExistingSecret_OverrideConfirmError(t *testing.T) {
-	t.Setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("GITHUB_PERSONAL_ACCESS_TOKEN=existing"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_GITHUB_PERSONAL_ACCESS_TOKEN=existing"), 0600))
 
 	confirmCalls := 0
 	ui := &MockUI{

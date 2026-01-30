@@ -34,7 +34,7 @@ enabled = false
 transport = "stdio"
 command = "npx"
 args = ["-y", "@upstash/context7-mcp"]
-env = { CONTEXT7_API_KEY = "${CONTEXT7_API_KEY}" }
+env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 
 [[mcp.servers]]
 id = "github"
@@ -42,13 +42,13 @@ enabled = false
 transport = "http"
 http_transport = "streamable"
 url = "https://api.githubcopilot.com/mcp/"
-headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
+headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
 [[mcp.servers]]
 id = "tavily"
 enabled = false
 transport = "http"
 http_transport = "streamable"
-url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
+url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${AL_TAVILY_API_KEY}"
 
 [[mcp.servers]]
 id = "fetch"
