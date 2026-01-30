@@ -70,7 +70,7 @@ func buildVSCodeMCPConfig(project *config.ProjectConfig) (*vscodeMCPConfig, erro
 			URL:  server.URL,
 		}
 
-		if server.Transport == "stdio" {
+		if server.Transport == config.TransportStdio {
 			entry.Command = server.Command
 			entry.Args = server.Args
 		}

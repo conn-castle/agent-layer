@@ -509,7 +509,7 @@ func buildVSCodeManagedBlock(sys System, settings *vscodeSettings, indentBase, i
 			lastIdx := len(managed) - 1
 			trimmed := strings.TrimRight(managed[lastIdx], " \t")
 			if trimmed != "" && !strings.HasSuffix(trimmed, ",") {
-				managed[lastIdx] = managed[lastIdx] + ","
+				managed[lastIdx] += ","
 			}
 		}
 		block = append(block, managed...)

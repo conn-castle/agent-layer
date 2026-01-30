@@ -13,7 +13,7 @@ import (
 
 func (inst *installer) updateGitignore() error {
 	root := inst.root
-	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	blockPath := filepath.Join(root, ".agent-layer", templateGitignoreBlock)
 	sys := inst.sys
 	blockBytes, err := sys.ReadFile(blockPath)
 	if err != nil {

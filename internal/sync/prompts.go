@@ -82,9 +82,11 @@ func removeStalePromptFiles(sys System, promptDir string, wanted map[string]stru
 	return nil
 }
 
-// WriteCodexSkills generates Codex skill files for slash commands.
-func WriteCodexSkills(sys System, root string, commands []config.SlashCommand) error {
-	skillsDir := filepath.Join(root, ".codex", "skills")
+// skillContentBuilder builds skill file content for a slash command.
+type skillContentBuilder func(cmd config.SlashCommand) string
+
+// writeSkillFiles generates skill files in the specified directory using the provided content builder.
+func writeSkillFiles(sys System, skillsDir string, commands []config.SlashCommand, buildContent skillContentBuilder) error {
 	if err := sys.MkdirAll(skillsDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillsDir, err)
 	}
@@ -97,7 +99,7 @@ func WriteCodexSkills(sys System, root string, commands []config.SlashCommand) e
 			return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillDir, err)
 		}
 		path := filepath.Join(skillDir, "SKILL.md")
-		content := buildCodexSkill(cmd)
+		content := buildContent(cmd)
 		if err := sys.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
 			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 		}
@@ -106,28 +108,16 @@ func WriteCodexSkills(sys System, root string, commands []config.SlashCommand) e
 	return removeStaleSkillDirs(sys, skillsDir, wanted)
 }
 
+// WriteCodexSkills generates Codex skill files for slash commands.
+func WriteCodexSkills(sys System, root string, commands []config.SlashCommand) error {
+	skillsDir := filepath.Join(root, ".codex", "skills")
+	return writeSkillFiles(sys, skillsDir, commands, buildCodexSkill)
+}
+
 // WriteAntigravitySkills generates Antigravity skill files for slash commands.
 func WriteAntigravitySkills(sys System, root string, commands []config.SlashCommand) error {
 	skillsDir := filepath.Join(root, ".agent", "skills")
-	if err := sys.MkdirAll(skillsDir, 0o755); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillsDir, err)
-	}
-
-	wanted := make(map[string]struct{}, len(commands))
-	for _, cmd := range commands {
-		wanted[cmd.Name] = struct{}{}
-		skillDir := filepath.Join(skillsDir, cmd.Name)
-		if err := sys.MkdirAll(skillDir, 0o755); err != nil {
-			return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillDir, err)
-		}
-		path := filepath.Join(skillDir, "SKILL.md")
-		content := buildAntigravitySkill(cmd)
-		if err := sys.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
-		}
-	}
-
-	return removeStaleSkillDirs(sys, skillsDir, wanted)
+	return writeSkillFiles(sys, skillsDir, commands, buildAntigravitySkill)
 }
 
 func buildCodexSkill(cmd config.SlashCommand) string {

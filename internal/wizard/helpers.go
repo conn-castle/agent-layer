@@ -30,13 +30,14 @@ func buildSummary(c *Choices) string {
 		}
 	}
 	sb.WriteString(messages.WizardSummaryEnabledMCPServersHeader)
-	if len(c.DefaultMCPServers) == 0 {
+	switch {
+	case len(c.DefaultMCPServers) == 0:
 		sb.WriteString(messages.WizardSummaryNoneLoaded)
-	} else if len(mcp) > 0 {
+	case len(mcp) > 0:
 		for _, m := range mcp {
 			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
 		}
-	} else {
+	default:
 		sb.WriteString(messages.WizardSummaryNone)
 	}
 
@@ -50,13 +51,14 @@ func buildSummary(c *Choices) string {
 
 	disabledMCP := disabledMCPServers(c)
 	sb.WriteString(messages.WizardSummaryDisabledMCPServersHeader)
-	if len(c.DefaultMCPServers) == 0 {
+	switch {
+	case len(c.DefaultMCPServers) == 0:
 		sb.WriteString(messages.WizardSummaryNoneLoaded)
-	} else if len(disabledMCP) > 0 {
+	case len(disabledMCP) > 0:
 		for _, m := range disabledMCP {
 			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
 		}
-	} else {
+	default:
 		sb.WriteString(messages.WizardSummaryNone)
 	}
 

@@ -51,19 +51,20 @@ func newDoctorCmd() *cobra.Command {
 				updateResult.Recommendation = fmt.Sprintf(messages.DoctorUpdateSkippedRecommendFmt, dispatch.EnvNoNetwork)
 			} else {
 				result, err := checkForUpdate(cmd.Context(), Version)
-				if err != nil {
+				switch {
+				case err != nil:
 					updateResult.Status = doctor.StatusWarn
 					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateFailedFmt, err)
 					updateResult.Recommendation = messages.DoctorUpdateFailedRecommend
-				} else if result.CurrentIsDev {
+				case result.CurrentIsDev:
 					updateResult.Status = doctor.StatusWarn
 					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateDevBuildFmt, result.Latest)
 					updateResult.Recommendation = messages.DoctorUpdateDevBuildRecommend
-				} else if result.Outdated {
+				case result.Outdated:
 					updateResult.Status = doctor.StatusWarn
 					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateAvailableFmt, result.Latest, result.Current)
 					updateResult.Recommendation = messages.DoctorUpdateAvailableRecommend
-				} else {
+				default:
 					updateResult.Status = doctor.StatusOK
 					updateResult.Message = fmt.Sprintf(messages.DoctorUpToDateFmt, result.Current)
 				}

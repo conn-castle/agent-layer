@@ -9,9 +9,8 @@ import (
 
 // approvalModeHelpText returns explanatory text for approval modes.
 func approvalModeHelpText() string {
-	lines := []string{
-		messages.WizardApprovalModeHelpIntro,
-	}
+	lines := make([]string, 0, len(ApprovalModeOptions)+2)
+	lines = append(lines, messages.WizardApprovalModeHelpIntro)
 	for _, option := range ApprovalModeOptions {
 		lines = append(lines, fmt.Sprintf(messages.WizardApprovalModeHelpLineFmt, option.Value, option.Description))
 	}

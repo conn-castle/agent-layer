@@ -57,7 +57,7 @@ func SubstituteEnvVarsWith(input string, env map[string]string, replacer EnvVarR
 	})
 
 	if len(missing) > 0 {
-		var names []string
+		names := make([]string, 0, len(missing))
 		for name := range missing {
 			names = append(names, name)
 		}

@@ -227,6 +227,7 @@ func TestFindVSCodeManagedBlockErrors(t *testing.T) {
 func TestFindVSCodeManagedBlockNotFound(t *testing.T) {
 	t.Parallel()
 	lines := []string{"{", "  \"editor.tabSize\": 2", "}"}
+	//nolint:dogsled // we only need found and err in this test
 	_, _, _, found, err := findVSCodeManagedBlock(lines, 0, len(lines)-1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

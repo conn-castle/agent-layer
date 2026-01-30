@@ -187,7 +187,7 @@ func (inst *installer) createDirs() error {
 
 func (inst *installer) writeTemplateFiles() error {
 	for _, file := range inst.managedTemplateFiles() {
-		if file.template == "gitignore.block" {
+		if file.template == templateGitignoreBlock {
 			if err := writeGitignoreBlock(inst.sys, file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff); err != nil {
 				return err
 			}

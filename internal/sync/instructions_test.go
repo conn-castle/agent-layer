@@ -127,7 +127,6 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
 			if err := tc.setup(root); err != nil {

@@ -17,6 +17,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+const (
+	shellBash = "bash"
+	shellZsh  = "zsh"
+	shellFish = "fish"
+)
+
 var (
 	userHomeDir = os.UserHomeDir
 	lookPath    = exec.LookPath
@@ -30,7 +36,7 @@ func newCompletionCmd() *cobra.Command {
 		Use:       messages.CompletionUse,
 		Short:     messages.CompletionShort,
 		Args:      cobra.ExactArgs(1),
-		ValidArgs: []string{"bash", "zsh", "fish"},
+		ValidArgs: []string{shellBash, shellZsh, shellFish},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			shell := args[0]
 			script, err := generateCompletion(cmd.Root(), shell)
@@ -52,15 +58,15 @@ func newCompletionCmd() *cobra.Command {
 func generateCompletion(root *cobra.Command, shell string) (string, error) {
 	var buf bytes.Buffer
 	switch shell {
-	case "bash":
+	case shellBash:
 		if err := root.GenBashCompletion(&buf); err != nil {
 			return "", err
 		}
-	case "zsh":
+	case shellZsh:
 		if err := root.GenZshCompletion(&buf); err != nil {
 			return "", err
 		}
-	case "fish":
+	case shellFish:
 		if err := root.GenFishCompletion(&buf, true); err != nil {
 			return "", err
 		}
@@ -97,7 +103,7 @@ func installCompletion(shell string, script string, out io.Writer) error {
 // completionInstallPath returns the destination path and any follow-up note to display.
 func completionInstallPath(shell string) (string, string, error) {
 	switch shell {
-	case "bash":
+	case shellBash:
 		xdgData, err := xdgDataHome()
 		if err != nil {
 			return "", "", err
@@ -105,7 +111,7 @@ func completionInstallPath(shell string) (string, string, error) {
 		path := filepath.Join(xdgData, "bash-completion", "completions", "al")
 		note := messages.CompletionBashNote
 		return path, note, nil
-	case "fish":
+	case shellFish:
 		xdgConfig, err := xdgConfigHome()
 		if err != nil {
 			return "", "", err
@@ -113,7 +119,7 @@ func completionInstallPath(shell string) (string, string, error) {
 		path := filepath.Join(xdgConfig, "fish", "completions", "al.fish")
 		note := messages.CompletionFishNote
 		return path, note, nil
-	case "zsh":
+	case shellZsh:
 		dir, ok := firstWritableFpath()
 		if ok {
 			return filepath.Join(dir, "_al"), "", nil

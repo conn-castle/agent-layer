@@ -79,11 +79,11 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 		}
 		builder.WriteString(fmt.Sprintf("[mcp_servers.%s]\n", server.ID))
 		switch server.Transport {
-		case "http":
+		case config.TransportHTTP:
 			if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
 				return "", err
 			}
-		case "stdio":
+		case config.TransportStdio:
 			if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
 				return "", err
 			}

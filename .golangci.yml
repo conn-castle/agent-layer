@@ -3,19 +3,137 @@ run:
   tests: true
 linters:
   enable:
+    - bodyclose
+    - copyloopvar
+    - dogsled
+    - dupl
+    - errcheck
+    - gocognit
+    - goconst
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
     - misspell
+    - nakedret
+    - nilerr
+    - noctx
+    - prealloc
     - revive
+    - rowserrcheck
+    - staticcheck
     - unconvert
+    - unparam
+    - unused
   settings:
     revive:
       rules:
         - name: exported
+    dupl:
+      threshold: 150
+    gocognit:
+      min-complexity: 150
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    gosec:
+      excludes:
+        - G301  # Expect directory permissions to be 0750 or less
+        - G302  # Expect file permissions to be 0600 or less
+        - G304  # Potential file inclusion via variable
+        - G306  # Expect WriteFile permissions to be 0600 or less
   exclusions:
     generated: lax
     paths:
       - third_party$
       - builtin$
       - examples$
+    rules:
+      # Duplicate code in tests is acceptable for clarity
+      - path: _test\.go$
+        linters:
+          - dupl
+      # Test functions may not use t parameter but need it for signature
+      - path: _test\.go$
+        linters:
+          - unparam
+      # Prealloc in tests is not critical
+      - path: _test\.go$
+        linters:
+          - prealloc
+      # Constants in tests are often intentionally inline
+      - path: _test\.go$
+        linters:
+          - goconst
+      # Complex test functions are acceptable
+      - path: _test\.go$
+        linters:
+          - gocognit
+      # Test helpers may use exec.Command without context
+      - path: _test\.go$
+        linters:
+          - noctx
+      # gosec G204 (command injection) false positives in tests
+      - path: _test\.go$
+        linters:
+          - gosec
+        text: G204
+      # gocritic if-else chains in tests
+      - path: _test\.go$
+        linters:
+          - gocritic
+        text: ifElseChain
+      # gocritic duplicate branch bodies in tests
+      - path: _test\.go$
+        linters:
+          - gocritic
+        text: dupBranchBody
+      # Interactive CLI launchers intentionally use exec.Command without context
+      - path: internal/clients/.*/launch\.go$
+        linters:
+          - noctx
+      # CLI launchers use exec.Command with config-provided arguments (not tainted)
+      - path: internal/clients/.*/launch\.go$
+        linters:
+          - gosec
+        text: G204
+      # MCP server connector starts servers with config-provided commands
+      - path: internal/warnings/mcp_connector\.go$
+        linters:
+          - gosec
+        text: G204
+      # G101 false positives on variable names containing "Secret" or "credential"
+      - path: internal/messages/
+        linters:
+          - gosec
+        text: G101
+      # G602 false positives on well-bounded line iteration
+      - path: internal/config/slash_commands\.go$
+        linters:
+          - gosec
+        text: G602
+      - path: internal/wizard/tomlutil\.go$
+        linters:
+          - gosec
+        text: G602
+      # Binary download uses HTTP without context (appropriate for non-cancellable downloads)
+      - path: internal/dispatch/cache\.go$
+        linters:
+          - noctx
+      # MCP connector starts external processes without context (appropriate for MCP discovery)
+      - path: internal/warnings/mcp_connector\.go$
+        linters:
+          - noctx
+      # sys parameter kept for interface compatibility with other template operations
+      - path: internal/install/install_templates\.go$
+        linters:
+          - unparam
+        text: writeTemplateDir
+      # buildClaudeSettings returns error for consistency with other build* functions
+      - path: internal/sync/claude\.go$
+        linters:
+          - unparam
+        text: buildClaudeSettings
 formatters:
   enable:
     - gofmt

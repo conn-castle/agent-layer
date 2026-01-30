@@ -14,6 +14,9 @@ import (
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
+// templateGitignoreBlock is the template name for the gitignore managed block.
+const templateGitignoreBlock = "gitignore.block"
+
 // managedTemplateFiles lists template-managed files under .agent-layer.
 func (inst *installer) managedTemplateFiles() []templateFile {
 	root := inst.root
@@ -22,7 +25,7 @@ func (inst *installer) managedTemplateFiles() []templateFile {
 		{filepath.Join(root, ".agent-layer", "commands.allow"), "commands.allow", 0o644},
 		{filepath.Join(root, ".agent-layer", ".env"), "env", 0o600},
 		{filepath.Join(root, ".agent-layer", ".gitignore"), "agent-layer.gitignore", 0o644},
-		{filepath.Join(root, ".agent-layer", "gitignore.block"), "gitignore.block", 0o644},
+		{filepath.Join(root, ".agent-layer", templateGitignoreBlock), templateGitignoreBlock, 0o644},
 	}
 }
 
@@ -107,7 +110,7 @@ func (inst *installer) appendTemplateFileDiffs(diffs map[string]struct{}, files 
 // templateFileMatches reports whether a template file should be considered unchanged.
 func (inst *installer) templateFileMatches(file templateFile, info fs.FileInfo) (bool, error) {
 	sys := inst.sys
-	if file.template != "gitignore.block" {
+	if file.template != templateGitignoreBlock {
 		return inst.matchTemplate(sys, file.path, file.template, info)
 	}
 	existingBytes, err := sys.ReadFile(file.path)

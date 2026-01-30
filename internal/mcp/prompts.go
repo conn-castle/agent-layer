@@ -29,7 +29,6 @@ func runPromptServer(ctx context.Context, version string, commands []config.Slas
 	}, nil)
 
 	for _, cmd := range commands {
-		cmd := cmd
 		prompt := &mcp.Prompt{
 			Name:        cmd.Name,
 			Description: cmd.Description,

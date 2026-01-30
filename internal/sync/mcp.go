@@ -54,7 +54,7 @@ func buildMCPConfig(sys System, project *config.ProjectConfig) (*mcpConfig, erro
 		return nil, err
 	}
 	cfg.Servers["agent-layer"] = mcpServer{
-		Type:    "stdio",
+		Type:    config.TransportStdio,
 		Command: promptCommand,
 		Args:    promptArgs,
 	}

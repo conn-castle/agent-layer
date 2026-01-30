@@ -32,7 +32,7 @@ Agent Layer can project custom HTTP headers (e.g., `Authorization`, `X-API-Key`)
     }
   }
 }
-````
+```
 
 Notes:
 

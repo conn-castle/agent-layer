@@ -6,6 +6,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+// MCP transport type constants.
+const (
+	TransportHTTP  = "http"
+	TransportStdio = "stdio"
+)
+
 var validApprovals = map[string]struct{}{
 	"all":      {},
 	"mcp":      {},
@@ -59,7 +65,7 @@ func (c *Config) Validate(path string) error {
 			return fmt.Errorf(messages.ConfigMcpServerEnabledRequiredFmt, path, i)
 		}
 		switch server.Transport {
-		case "http":
+		case TransportHTTP:
 			if server.URL == "" {
 				return fmt.Errorf(messages.ConfigMcpServerURLRequiredFmt, path, i)
 			}
@@ -74,7 +80,7 @@ func (c *Config) Validate(path string) error {
 			if len(server.Env) > 0 {
 				return fmt.Errorf(messages.ConfigMcpServerEnvNotAllowedFmt, path, i)
 			}
-		case "stdio":
+		case TransportStdio:
 			if server.HTTPTransport != "" {
 				return fmt.Errorf(messages.ConfigMcpServerHTTPTransportNotAllowedFmt, path, i)
 			}

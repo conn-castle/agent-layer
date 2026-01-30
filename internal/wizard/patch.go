@@ -111,8 +111,7 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 // setPathPreservingComment sets a value while retaining existing inline/leading comments when possible.
 // tree is the parsed config; lines is the original content split by line; keys is the TOML path; value is the new value.
 func setPathPreservingComment(tree *toml.Tree, lines []string, keys []string, value interface{}) {
-	switch v := value.(type) {
-	case int:
+	if v, ok := value.(int); ok {
 		value = int64(v)
 	}
 	comment := commentForPath(tree, lines, keys)

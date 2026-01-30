@@ -60,7 +60,7 @@ func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client
 		if err != nil {
 			return nil, &MCPServerResolveError{ServerID: server.ID, Err: err}
 		}
-		if server.Transport != "http" && server.Transport != "stdio" {
+		if server.Transport != config.TransportHTTP && server.Transport != config.TransportStdio {
 			return nil, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 		}
 
