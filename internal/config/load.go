@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -45,7 +46,21 @@ func LoadEnv(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf(messages.ConfigInvalidEnvFileFmt, path, err)
 	}
-	return env, nil
+	return filterAgentLayerEnv(env), nil
+}
+
+// filterAgentLayerEnv restricts .env values to the AL_ namespace.
+func filterAgentLayerEnv(env map[string]string) map[string]string {
+	if len(env) == 0 {
+		return env
+	}
+	filtered := make(map[string]string, len(env))
+	for key, value := range env {
+		if strings.HasPrefix(key, "AL_") {
+			filtered[key] = value
+		}
+	}
+	return filtered
 }
 
 // ParseConfig parses and validates config TOML data from a source identifier.

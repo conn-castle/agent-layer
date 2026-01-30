@@ -2,9 +2,9 @@
   "servers": {
     "example": {
       "type": "http",
-      "url": "https://mcp.example.com?token=${env:EXAMPLE_TOKEN}",
+      "url": "https://mcp.example.com?token=${env:AL_EXAMPLE_TOKEN}",
       "headers": {
-        "Authorization": "Bearer ${env:EXAMPLE_TOKEN}"
+        "Authorization": "Bearer ${env:AL_EXAMPLE_TOKEN}"
       }
     }
   }

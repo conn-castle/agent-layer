@@ -4,5 +4,5 @@
 # Regenerate: al sync
 
 [mcp_servers.example]
-bearer_token_env_var = "EXAMPLE_TOKEN"
+bearer_token_env_var = "AL_EXAMPLE_TOKEN"
 url = "https://mcp.example.com?token=token123"

@@ -83,7 +83,7 @@ func LoadEnvFS(fsys fs.FS, root string, path string) (map[string]string, error) 
 	if err != nil {
 		return nil, fmt.Errorf(messages.ConfigInvalidEnvFileFmt, path, err)
 	}
-	return env, nil
+	return filterAgentLayerEnv(env), nil
 }
 
 // LoadInstructionsFS reads .agent-layer/instructions/*.md from fsys in lexicographic order.
