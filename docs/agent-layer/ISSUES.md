@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-01-30 launch01: VS Code .app launcher only written by sync, not init
+    Priority: Low. Area: install
+    Description: The `open-vscode.app` launcher is written by `al sync` but not by `al init`. Users must run `al sync` (or `al vscode`) after init before the launcher exists.
+    Next step: Move launcher creation to init so it's available immediately after setup.
+
 - Issue 2026-01-30 codex01: Document per-repo Codex authentication requirement
     Priority: Low. Area: documentation
     Description: README should document that Codex requires per-repo authentication due to CODEX_HOME isolation. This is expected but may surprise users.

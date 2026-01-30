@@ -121,10 +121,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PARENT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
 
-# Ensure VS Code sees the right Codex config location
-export CODEX_HOME="$PARENT_ROOT/.codex"
-
 # Run in a login shell so PATH is correct for VS Code MCP subprocesses
+# Ensure VS Code sees the right Codex config location
 # Source .agent-layer/.env to export API keys for MCP servers
 # Do not open Terminal; just start VS Code.
 exec /usr/bin/osascript <<EOF
