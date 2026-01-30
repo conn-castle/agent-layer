@@ -111,11 +111,12 @@ enabled = false
 				return nil
 			},
 			ConfirmFunc: func(title string, value *bool) error {
-				if title == "Secret GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?" {
+				switch title {
+				case "Secret GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
 					*value = false // No
-				} else if title == "Apply these changes?" {
+				case "Apply these changes?":
 					*value = true
-				} else {
+				default:
 					*value = true // restore
 				}
 				return nil
@@ -141,11 +142,12 @@ enabled = false
 				return nil
 			},
 			ConfirmFunc: func(title string, value *bool) error {
-				if title == "Secret GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?" {
+				switch title {
+				case "Secret GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
 					*value = true // Yes
-				} else if title == "Apply these changes?" {
+				case "Apply these changes?":
 					*value = true
-				} else {
+				default:
 					*value = true
 				}
 				return nil

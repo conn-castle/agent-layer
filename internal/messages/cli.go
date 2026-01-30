@@ -7,7 +7,7 @@ const (
 	// RootShort is the short description for the root command.
 	RootShort             = "Agent Layer CLI"
 	RootVersionFlag       = "Print version and exit"
-	RootMissingAgentLayer = "Agent Layer isn't initialized in this repository (missing .agent-layer). Run `al init` to initialize."
+	RootMissingAgentLayer = "agent layer isn't initialized in this repository (missing .agent-layer); run 'al init' to initialize"
 
 	// VersionCommitFmt formats the commit hash for version display.
 	VersionCommitFmt  = "commit %s"
@@ -66,7 +66,7 @@ const (
 	WizardUse              = "wizard"
 	WizardShort            = "Interactive setup wizard"
 	WizardLong             = "Run the interactive setup wizard for this repository."
-	WizardRequiresTerminal = "Wizard requires an interactive terminal."
+	WizardRequiresTerminal = "wizard requires an interactive terminal"
 
 	// GeminiUse is the gemini command name.
 	GeminiUse   = "gemini"
