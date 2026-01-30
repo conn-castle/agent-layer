@@ -61,7 +61,7 @@ func buildGeminiSettings(sys System, project *config.ProjectConfig) (*geminiSett
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	allowCommands := approvals.AllowCommands
 	if allowCommands {
-		var allowed []string
+		allowed := make([]string, 0, len(approvals.Commands))
 		for _, cmd := range approvals.Commands {
 			allowed = append(allowed, fmt.Sprintf("run_shell_command(%s)", cmd))
 		}

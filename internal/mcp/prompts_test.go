@@ -12,11 +12,8 @@ import (
 )
 
 func TestRunPromptServerInvokesRunner(t *testing.T) {
-	original := runServer
-	t.Cleanup(func() { runServer = original })
-
 	called := false
-	runServer = func(ctx context.Context, server *mcp.Server) error {
+	runner := func(ctx context.Context, server *mcp.Server) error {
 		called = true
 		return nil
 	}
@@ -24,7 +21,7 @@ func TestRunPromptServerInvokesRunner(t *testing.T) {
 	commands := []config.SlashCommand{
 		{Name: "alpha", Description: "desc", Body: "body"},
 	}
-	if err := RunPromptServer(context.Background(), "v1", commands); err != nil {
+	if err := runPromptServer(context.Background(), "v1", commands, runner); err != nil {
 		t.Fatalf("RunPromptServer error: %v", err)
 	}
 	if !called {
@@ -33,14 +30,11 @@ func TestRunPromptServerInvokesRunner(t *testing.T) {
 }
 
 func TestRunPromptServerPropagatesError(t *testing.T) {
-	original := runServer
-	t.Cleanup(func() { runServer = original })
-
-	runServer = func(ctx context.Context, server *mcp.Server) error {
+	runner := func(ctx context.Context, server *mcp.Server) error {
 		return errors.New("boom")
 	}
 
-	err := RunPromptServer(context.Background(), "v1", nil)
+	err := runPromptServer(context.Background(), "v1", nil, runner)
 	if err == nil || !strings.Contains(err.Error(), "failed to run MCP prompt server") {
 		t.Fatalf("expected wrapped error, got %v", err)
 	}

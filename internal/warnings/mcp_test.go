@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -69,7 +71,7 @@ func TestCheckMCPServers(t *testing.T) {
 		},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 }
@@ -118,7 +120,7 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 	mock.Results["s1"] = DiscoveryResult{ServerID: "s1", Tools: toolsS1, SchemaTokens: 100}
 
 	// Server 2: Schema bloat
-	mock.Results["s2"] = DiscoveryResult{ServerID: "s2", Tools: []ToolDef{{Name: "t"}}, SchemaTokens: 8000}
+	mock.Results["s2"] = DiscoveryResult{ServerID: "s2", Tools: []ToolDef{{Name: "t", Tokens: 7501}}, SchemaTokens: 8000}
 
 	// Server 3 & 4: Name collision
 	mock.Results["s3"] = DiscoveryResult{ServerID: "s3", Tools: []ToolDef{{Name: "collision"}}}
@@ -130,7 +132,7 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 		mock.Results[id] = DiscoveryResult{ServerID: id}
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 
 	// We expect multiple warnings.
@@ -143,8 +145,12 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 	// 7. TOOL_SCHEMA_BLOAT_TOTAL (8100 > 8000)
 
 	codes := make(map[string]bool)
+	var bloatWarning Warning
 	for _, w := range warnings {
 		codes[w.Code] = true
+		if w.Code == CodeMCPToolSchemaBloatServer {
+			bloatWarning = w
+		}
 	}
 
 	assert.True(t, codes[CodeMCPTooManyServers], "Expected TOO_MANY_SERVERS")
@@ -154,6 +160,11 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 	assert.True(t, codes[CodeMCPToolNameCollision], "Expected TOOL_NAME_COLLISION")
 	assert.True(t, codes[CodeMCPTooManyToolsTotal], "Expected TOO_MANY_TOOLS_TOTAL")
 	assert.True(t, codes[CodeMCPToolSchemaBloatTotal], "Expected TOOL_SCHEMA_BLOAT_TOTAL")
+
+	// Verify bloat details
+	assert.NotEmpty(t, bloatWarning.Details)
+	assert.Contains(t, bloatWarning.Details[0], "Top contributors")
+	assert.Contains(t, bloatWarning.Details[1], "t: 7501 tokens")
 }
 
 func TestCheckMCPServers_ThresholdsDisabled(t *testing.T) {
@@ -189,7 +200,7 @@ func TestCheckMCPServers_ThresholdsDisabled(t *testing.T) {
 		},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 
 	codes := make(map[string]bool)
@@ -222,7 +233,7 @@ func TestCheckMCPServers_NilConnector(t *testing.T) {
 
 	// Pass a mock to avoid actual network calls
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 }
@@ -241,7 +252,7 @@ func TestCheckMCPServers_ResolveServerError(t *testing.T) {
 	}
 
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock)
+	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	require.Len(t, warnings, 1)
 	assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)
@@ -264,7 +275,7 @@ func TestDiscoverTools(t *testing.T) {
 		},
 	}
 
-	results := discoverTools(context.Background(), servers, mock)
+	results := discoverTools(context.Background(), servers, mock, nil)
 	require.Len(t, results, 3)
 
 	// Results should be in order
@@ -278,8 +289,134 @@ func TestDiscoverTools(t *testing.T) {
 
 func TestDiscoverTools_Empty(t *testing.T) {
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	results := discoverTools(context.Background(), nil, mock)
+	results := discoverTools(context.Background(), nil, mock, nil)
 	assert.Empty(t, results)
+}
+
+func TestDiscoverTools_EmitsDiscoveryEvents(t *testing.T) {
+	servers := []projection.ResolvedMCPServer{
+		{ID: "s1"},
+		{ID: "s2"},
+	}
+
+	mock := &MockConnector{
+		Results: map[string]DiscoveryResult{
+			"s1": {ServerID: "s1"},
+			"s2": {ServerID: "s2", Error: fmt.Errorf("boom")},
+		},
+	}
+
+	var mu sync.Mutex
+	events := make([]MCPDiscoveryEvent, 0, 4)
+	statusFn := func(event MCPDiscoveryEvent) {
+		mu.Lock()
+		events = append(events, event)
+		mu.Unlock()
+	}
+
+	_ = discoverTools(context.Background(), servers, mock, statusFn)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(events))
+	}
+
+	counts := make(map[string]map[MCPDiscoveryStatus]int)
+	for _, event := range events {
+		if counts[event.ServerID] == nil {
+			counts[event.ServerID] = make(map[MCPDiscoveryStatus]int)
+		}
+		counts[event.ServerID][event.Status]++
+
+		if event.Status == MCPDiscoveryStatusError && event.Err == nil {
+			t.Fatalf("expected error event to include error for server %s", event.ServerID)
+		}
+		if event.Status == MCPDiscoveryStatusDone && event.Err != nil {
+			t.Fatalf("did not expect error on done event for server %s", event.ServerID)
+		}
+	}
+
+	if counts["s1"][MCPDiscoveryStatusStart] != 1 || counts["s1"][MCPDiscoveryStatusDone] != 1 {
+		t.Fatalf("expected start+done for s1, got %#v", counts["s1"])
+	}
+	if counts["s2"][MCPDiscoveryStatusStart] != 1 || counts["s2"][MCPDiscoveryStatusError] != 1 {
+		t.Fatalf("expected start+error for s2, got %#v", counts["s2"])
+	}
+}
+
+type blockingConnector struct {
+	started chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	active  int
+	max     int
+}
+
+func (b *blockingConnector) ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
+	b.mu.Lock()
+	b.active++
+	if b.active > b.max {
+		b.max = b.active
+	}
+	b.mu.Unlock()
+
+	b.started <- struct{}{}
+	<-b.release
+
+	b.mu.Lock()
+	b.active--
+	b.mu.Unlock()
+
+	return DiscoveryResult{ServerID: server.ID}
+}
+
+func (b *blockingConnector) MaxActive() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.max
+}
+
+func TestDiscoverTools_ConcurrencyLimit(t *testing.T) {
+	original := runtime.GOMAXPROCS(0)
+	runtime.GOMAXPROCS(6)
+	t.Cleanup(func() { runtime.GOMAXPROCS(original) })
+
+	servers := make([]projection.ResolvedMCPServer, 10)
+	for i := range servers {
+		servers[i] = projection.ResolvedMCPServer{ID: fmt.Sprintf("s%d", i)}
+	}
+
+	expected := mcpDiscoveryConcurrency(len(servers))
+	require.Greater(t, expected, 0, "expected positive concurrency limit")
+
+	connector := &blockingConnector{
+		started: make(chan struct{}, len(servers)),
+		release: make(chan struct{}),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		_ = discoverTools(context.Background(), servers, connector, nil)
+		close(done)
+	}()
+
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+
+	for i := 0; i < expected; i++ {
+		select {
+		case <-connector.started:
+		case <-timer.C:
+			t.Fatalf("timed out waiting for %d workers to start, got %d", expected, i)
+		}
+	}
+
+	close(connector.release)
+	<-done
+
+	assert.Equal(t, expected, connector.MaxActive(), "unexpected max concurrency")
 }
 
 func TestHeaderTransport_RoundTrip(t *testing.T) {

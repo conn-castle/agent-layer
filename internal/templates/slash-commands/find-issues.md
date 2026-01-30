@@ -81,6 +81,7 @@ If only one agent is available, execute phases in this order with explicit headi
 ## Guardrails
 - Avoid speculation: each finding must include **evidence** (file + symbol/section + reasoning; optional short snippet).
 - Avoid nitpicks: focus on issues that impact correctness, delivery speed, operability, or extensibility.
+- Avoid duplicate reporting: do **not** report issues already listed in project memory files (especially `ISSUES.md`). Check the memory files first and skip anything that matches or is a near-duplicate.
 - No broad rewrites: this is an audit, not a refactor plan.
 - Use the repo’s terminology. Avoid abbreviations in memory entries.
 

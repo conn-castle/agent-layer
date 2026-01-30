@@ -70,7 +70,7 @@ func resolveSingleServer(server config.MCPServer, env map[string]string, resolve
 	repoRoot := env[config.BuiltinRepoRootEnvVar]
 
 	switch server.Transport {
-	case "http":
+	case config.TransportHTTP:
 		httpTransport := server.HTTPTransport
 		if httpTransport == "" {
 			httpTransport = "sse"
@@ -94,7 +94,7 @@ func resolveSingleServer(server config.MCPServer, env map[string]string, resolve
 			}
 			entry.Headers = headers
 		}
-	case "stdio":
+	case config.TransportStdio:
 		command, err := config.SubstituteEnvVarsWith(server.Command, env, resolver)
 		if err != nil {
 			return entry, fmt.Errorf("command: %w", err)

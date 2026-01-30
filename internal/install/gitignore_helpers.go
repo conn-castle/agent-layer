@@ -90,7 +90,8 @@ func updateGitignoreContent(content string, block string) string {
 	post := append([]string{}, lines[end+1:]...)
 	post = trimLeadingBlankLines(post)
 
-	updated := append(pre, blockLines...)
+	pre = append(pre, blockLines...)
+	updated := pre
 	if len(post) > 0 {
 		updated = append(updated, "")
 		updated = append(updated, post...)

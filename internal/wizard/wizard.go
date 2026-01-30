@@ -37,7 +37,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 		}
 
 		// Run install
-		if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion}); err != nil {
+		if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
 			return fmt.Errorf(messages.WizardInstallFailedFmt, err)
 		}
 		fmt.Println(messages.WizardInstallComplete)

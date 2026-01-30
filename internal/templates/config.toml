@@ -42,8 +42,7 @@ enabled = false
 transport = "http"
 http_transport = "streamable"
 url = "https://api.githubcopilot.com/mcp/"
-headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
-
+headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
 [[mcp.servers]]
 id = "tavily"
 enabled = false
@@ -82,5 +81,5 @@ instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60
 mcp_server_tools_threshold = 25
-mcp_schema_tokens_total_threshold = 10000
-mcp_schema_tokens_server_threshold = 7500
+mcp_schema_tokens_total_threshold = 30000
+mcp_schema_tokens_server_threshold = 20000

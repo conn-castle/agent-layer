@@ -54,9 +54,9 @@ $(TOOL_BIN)/goimports: go.mod go.sum
 
 $(TOOL_BIN)/golangci-lint: go.mod go.sum
 	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@version="$$(go list -m -f '{{.Version}}' github.com/golangci/golangci-lint)"; \
+	@version="$$(go list -m -f '{{.Version}}' github.com/golangci/golangci-lint/v2)"; \
 	  if [[ -z "$$version" ]]; then echo "Failed to resolve golangci-lint version from go.mod" >&2; exit 1; fi; \
-	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "github.com/golangci/golangci-lint/cmd/golangci-lint@$$version"
+	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$$version"
 
 $(TOOL_BIN)/gotestsum: go.mod go.sum
 	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"

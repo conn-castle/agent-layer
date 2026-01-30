@@ -11,6 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
@@ -84,7 +85,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	var transport mcp.Transport
 
 	switch server.Transport {
-	case "stdio":
+	case config.TransportStdio:
 		cmd := exec.Command(server.Command, server.Args...)
 		cmd.Env = os.Environ() // Start with current env
 		for k, v := range server.Env {
@@ -94,7 +95,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 		transport = &mcp.CommandTransport{
 			Command: cmd,
 		}
-	case "http":
+	case config.TransportHTTP:
 		switch server.HTTPTransport {
 		case "", "sse":
 			t := &mcp.SSEClientTransport{
@@ -169,7 +170,15 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	// Process tools
 	var toolsJSON []any
 	for _, t := range allTools {
-		res.Tools = append(res.Tools, ToolDef{Name: t.Name})
+		toolDef := ToolDef{Name: t.Name}
+
+		// Estimate tokens per tool
+		toolBytes, err := json.Marshal(t)
+		if err == nil {
+			toolDef.Tokens = EstimateTokens(string(toolBytes))
+		}
+
+		res.Tools = append(res.Tools, toolDef)
 		toolsJSON = append(toolsJSON, t)
 	}
 

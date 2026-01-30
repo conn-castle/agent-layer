@@ -2,6 +2,8 @@ package sync
 
 import (
 	"fmt"
+	"io/fs"
+	"os"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -11,12 +13,28 @@ import (
 // Run regenerates all configured outputs for the repo.
 // Returns any sync-time warnings and an error if sync failed.
 func Run(root string) ([]warnings.Warning, error) {
-	project, err := config.LoadProjectConfig(root)
+	project, err := config.LoadProjectConfigFS(os.DirFS(root), root)
 	if err != nil {
 		return nil, err
 	}
 
 	return RunWithProject(RealSystem{}, root, project)
+}
+
+// RunWithSystemFS loads project config from fsys and runs sync with the provided System.
+// sys provides OS operations for sync writers; fsys must be rooted at repo root.
+func RunWithSystemFS(sys System, fsys fs.FS, root string) ([]warnings.Warning, error) {
+	if sys == nil {
+		return nil, fmt.Errorf(messages.SyncSystemRequired)
+	}
+	if fsys == nil {
+		return nil, fmt.Errorf(messages.SyncConfigFSRequired)
+	}
+	project, err := config.LoadProjectConfigFS(fsys, root)
+	if err != nil {
+		return nil, err
+	}
+	return RunWithProject(sys, root, project)
 }
 
 // RunWithProject regenerates outputs using an already loaded project config.

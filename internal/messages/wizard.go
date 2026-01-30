@@ -70,7 +70,7 @@ const (
 	WizardSummaryCodexReasoningFmt               = "reasoning: %s"
 
 	WizardCustomPromptFmt        = "Custom %s"
-	WizardCustomValueRequiredFmt = "Custom value required for %s"
+	WizardCustomValueRequiredFmt = "custom value required for %s"
 	WizardPositiveIntRequiredFmt = "%s must be a positive integer"
 
 	WizardApprovalModeHelpIntro       = "Approval modes control what runs without prompts:"

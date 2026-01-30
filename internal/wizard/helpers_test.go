@@ -136,7 +136,7 @@ func TestSelectOptionalValue_CustomBlank(t *testing.T) {
 	value := ""
 	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Custom value required")
+	assert.Contains(t, err.Error(), "custom value required")
 }
 
 func TestSelectOptionalValue_CustomPrefill(t *testing.T) {

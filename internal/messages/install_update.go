@@ -4,6 +4,8 @@ package messages
 const (
 	// InstallRootRequired indicates root path is required for install.
 	InstallRootRequired = "root path is required"
+	// InstallSystemRequired indicates system is required for install.
+	InstallSystemRequired = "install system is required"
 	// InstallOverwritePromptRequired indicates overwrite prompts need a handler.
 	InstallOverwritePromptRequired     = "overwrite prompts require a prompt handler; re-run with --force to overwrite without prompts"
 	InstallInvalidPinVersionFmt        = "invalid pin version: %w"

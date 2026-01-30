@@ -3,12 +3,10 @@ package dispatch
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/root"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -23,14 +21,18 @@ const (
 // ErrDispatched signals that execution has been handed off to another binary.
 var ErrDispatched = errors.New(messages.DispatchErrDispatched)
 
-var (
-	execBinaryFunc = execBinary
-	userCacheDir   = os.UserCacheDir
-)
-
 // MaybeExec checks for a pinned version and dispatches to it when needed.
 // It returns ErrDispatched if execution was handed off.
 func MaybeExec(args []string, currentVersion string, cwd string, exit func(int)) error {
+	return MaybeExecWithSystem(RealSystem{}, args, currentVersion, cwd, exit)
+}
+
+// MaybeExecWithSystem checks for a pinned version and dispatches to it when needed.
+// It returns ErrDispatched if execution was handed off.
+func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd string, exit func(int)) error {
+	if sys == nil {
+		return fmt.Errorf(messages.DispatchSystemRequired)
+	}
 	if len(args) == 0 {
 		return fmt.Errorf(messages.DispatchMissingArgv0)
 	}
@@ -46,26 +48,26 @@ func MaybeExec(args []string, currentVersion string, cwd string, exit func(int))
 		return err
 	}
 
-	rootDir, found, err := root.FindAgentLayerRoot(cwd)
+	rootDir, found, err := sys.FindAgentLayerRoot(cwd)
 	if err != nil {
 		return err
 	}
 
-	requested, _, err := resolveRequestedVersion(rootDir, found, current)
+	requested, _, err := resolveRequestedVersion(sys, rootDir, found, current)
 	if err != nil {
 		return err
 	}
 	if requested == current {
 		return nil
 	}
-	if os.Getenv(EnvShimActive) != "" {
+	if sys.Getenv(EnvShimActive) != "" {
 		return fmt.Errorf(messages.DispatchAlreadyActiveFmt, current, requested)
 	}
 	if version.IsDev(requested) {
 		return fmt.Errorf(messages.DispatchDevVersionNotAllowedFmt, EnvVersionOverride)
 	}
 
-	cacheRoot, err := cacheRootDir()
+	cacheRoot, err := cacheRootDir(sys)
 	if err != nil {
 		return err
 	}
@@ -74,12 +76,9 @@ func MaybeExec(args []string, currentVersion string, cwd string, exit func(int))
 		return err
 	}
 
-	env := append(os.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
+	env := append(sys.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
 	execArgs := append([]string{path}, args[1:]...)
-	if err := execBinaryFunc(path, execArgs, env, exit); err != nil {
-		if errors.Is(err, ErrDispatched) {
-			return err
-		}
+	if err := sys.ExecBinary(path, execArgs, env, exit); err != nil {
 		return err
 	}
 	return ErrDispatched
@@ -98,8 +97,8 @@ func normalizeCurrentVersion(raw string) (string, error) {
 }
 
 // resolveRequestedVersion determines the target version and its source (env override, pin, or current).
-func resolveRequestedVersion(rootDir string, hasRoot bool, current string) (string, string, error) {
-	override := strings.TrimSpace(os.Getenv(EnvVersionOverride))
+func resolveRequestedVersion(sys System, rootDir string, hasRoot bool, current string) (string, string, error) {
+	override := strings.TrimSpace(sys.Getenv(EnvVersionOverride))
 	if override != "" {
 		normalized, err := version.Normalize(override)
 		if err != nil {
@@ -109,7 +108,7 @@ func resolveRequestedVersion(rootDir string, hasRoot bool, current string) (stri
 	}
 
 	if hasRoot {
-		pinned, ok, err := readPinnedVersion(rootDir)
+		pinned, ok, err := readPinnedVersion(sys, rootDir)
 		if err != nil {
 			return "", "", err
 		}
@@ -122,11 +121,11 @@ func resolveRequestedVersion(rootDir string, hasRoot bool, current string) (stri
 }
 
 // cacheRootDir resolves the cache root directory, honoring AL_CACHE_DIR when set.
-func cacheRootDir() (string, error) {
-	if override := strings.TrimSpace(os.Getenv(EnvCacheDir)); override != "" {
+func cacheRootDir(sys System) (string, error) {
+	if override := strings.TrimSpace(sys.Getenv(EnvCacheDir)); override != "" {
 		return override, nil
 	}
-	base, err := userCacheDir()
+	base, err := sys.UserCacheDir()
 	if err != nil {
 		return "", fmt.Errorf(messages.DispatchResolveUserCacheDirFmt, err)
 	}

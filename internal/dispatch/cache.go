@@ -16,6 +16,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/update"
 )
 
+const osWindows = "windows"
+
 var releaseBaseURL = update.ReleasesBaseURL
 
 var (
@@ -89,7 +91,7 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 		if err := verifyChecksum(tmpName, expected); err != nil {
 			return err
 		}
-		if runtime.GOOS != "windows" {
+		if runtime.GOOS != osWindows {
 			if err := osChmod(tmpName, 0o755); err != nil {
 				return fmt.Errorf(messages.DispatchChmodCachedBinaryFmt, err)
 			}
@@ -114,7 +116,7 @@ func platformStrings() (string, string, error) {
 
 func checkPlatform(osName, arch string) (string, string, error) {
 	switch osName {
-	case "darwin", "linux", "windows":
+	case "darwin", "linux", osWindows:
 	default:
 		return "", "", fmt.Errorf(messages.DispatchUnsupportedOSFmt, osName)
 	}
@@ -131,7 +133,7 @@ func checkPlatform(osName, arch string) (string, string, error) {
 // assetName returns the release asset filename for the OS/arch pair.
 func assetName(osName string, arch string) string {
 	name := fmt.Sprintf("al-%s-%s", osName, arch)
-	if osName == "windows" {
+	if osName == osWindows {
 		return name + ".exe"
 	}
 	return name
