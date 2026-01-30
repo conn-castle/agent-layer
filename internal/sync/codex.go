@@ -102,13 +102,13 @@ func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMC
 			return fmt.Errorf(messages.SyncMCPServerErrorFmt, server.ID, err)
 		}
 		if headerSpec.BearerTokenEnvVar != "" {
-			builder.WriteString(fmt.Sprintf("bearer_token_env_var = %q\n", headerSpec.BearerTokenEnvVar))
+			fmt.Fprintf(builder, "bearer_token_env_var = %q\n", headerSpec.BearerTokenEnvVar)
 		}
 		if len(headerSpec.EnvHeaders) > 0 {
-			builder.WriteString(fmt.Sprintf("env_http_headers = %s\n", tomlInlineTable(headerSpec.EnvHeaders)))
+			fmt.Fprintf(builder, "env_http_headers = %s\n", tomlInlineTable(headerSpec.EnvHeaders))
 		}
 		if len(headerSpec.HTTPHeaders) > 0 {
-			builder.WriteString(fmt.Sprintf("http_headers = %s\n", tomlInlineTable(headerSpec.HTTPHeaders)))
+			fmt.Fprintf(builder, "http_headers = %s\n", tomlInlineTable(headerSpec.HTTPHeaders))
 		}
 	}
 	// Resolve actual values in the URL (Codex doesn't support ${VAR} placeholders in URLs).
@@ -116,7 +116,7 @@ func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMC
 	if err != nil {
 		return fmt.Errorf(messages.MCPServerURLFmt, server.ID, err)
 	}
-	builder.WriteString(fmt.Sprintf("url = %q\n", resolvedURL))
+	fmt.Fprintf(builder, "url = %q\n", resolvedURL)
 	return nil
 }
 
@@ -126,7 +126,7 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 	if err != nil {
 		return fmt.Errorf(messages.MCPServerCommandFmt, server.ID, err)
 	}
-	builder.WriteString(fmt.Sprintf("command = %q\n", resolvedCommand))
+	fmt.Fprintf(builder, "command = %q\n", resolvedCommand)
 
 	if len(server.Args) > 0 {
 		resolvedArgs := make([]string, 0, len(server.Args))
@@ -137,7 +137,7 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 			}
 			resolvedArgs = append(resolvedArgs, resolvedArg)
 		}
-		builder.WriteString(fmt.Sprintf("args = %s\n", tomlStringArray(resolvedArgs)))
+		fmt.Fprintf(builder, "args = %s\n", tomlStringArray(resolvedArgs))
 	}
 
 	if len(server.Env) > 0 {
@@ -150,7 +150,7 @@ func writeCodexStdioServer(builder *strings.Builder, server projection.ResolvedM
 			}
 			resolvedEnv[key] = resolvedValue
 		}
-		builder.WriteString(fmt.Sprintf("env = %s\n", tomlInlineTable(resolvedEnv)))
+		fmt.Fprintf(builder, "env = %s\n", tomlInlineTable(resolvedEnv))
 	}
 
 	return nil

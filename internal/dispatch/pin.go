@@ -12,9 +12,9 @@ import (
 )
 
 // readPinnedVersion reads and normalizes the pinned version from .agent-layer/al.version.
-func readPinnedVersion(rootDir string) (string, bool, error) {
+func readPinnedVersion(sys System, rootDir string) (string, bool, error) {
 	path := filepath.Join(rootDir, ".agent-layer", "al.version")
-	data, err := os.ReadFile(path)
+	data, err := sys.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", false, nil

@@ -27,18 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-01-27 j7k8l9: Sync engine bypasses System interface for config loading
-    Priority: High. Area: architecture / testability.
-    Description: `sync.Run` calls `config.LoadProjectConfig`, which uses direct `os` calls (ReadFile, ReadDir), bypassing the `System` interface. This prevents testing the sync engine with mock filesystems.
-    Next step: Refactor `internal/config` to accept `fs.FS` or a compatible interface.
-    Notes: Found during proactive audit.
-
-- Issue 2026-01-27 d1e2f3: Inconsistent System interface adoption
-    Priority: Medium. Area: architecture / technical debt.
-    Description: `internal/install` and `internal/dispatch` still rely on direct `os` calls and global patching, ignoring the new `System` interface pattern used in `internal/sync`. This creates competing patterns and hampers testability.
-    Next step: Refactor `internal/install` and `internal/dispatch` to accept the `System` interface.
-    Notes: Violation of Decision 2026-01-25 (Sync dependency injection).
-
 - Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
     Priority: Low. Area: developer experience.
     Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.

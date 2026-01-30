@@ -27,6 +27,8 @@ const (
 	SyncMCPServerArgFailedFmt                       = "mcp server %s arg: %w"
 	SyncCodexHeaderPlaceholderUnsupportedFmt        = "codex header %s must be literal or use ${VAR}"
 	SyncCodexAuthorizationPlaceholderUnsupportedFmt = "authorization header must be literal, ${VAR}, or Bearer ${VAR}"
+	SyncSystemRequired                              = "sync system is required"
+	SyncConfigFSRequired                            = "sync config filesystem is required"
 
 	MCPServerResolveFmt              = "mcp server %s: %w"
 	MCPServerURLFmt                  = "mcp server %s url: %w"

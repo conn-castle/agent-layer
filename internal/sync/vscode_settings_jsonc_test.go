@@ -451,3 +451,324 @@ func TestInsertVSCodeManagedBlockEmptyLine(t *testing.T) {
 		t.Fatalf("expected unchanged lines for empty start line")
 	}
 }
+
+func TestRenderVSCodeSettingsContentUnexpectedContentBefore(t *testing.T) {
+	t.Parallel()
+	existing := "garbage { \"editor.tabSize\": 2 }"
+	settings := &vscodeSettings{}
+	_, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+	if err == nil {
+		t.Fatalf("expected error for content before root object")
+	}
+	if !strings.Contains(err.Error(), "before root object") {
+		t.Fatalf("expected 'before root object' error, got: %v", err)
+	}
+}
+
+func TestRenderVSCodeSettingsContentUnexpectedContentAfter(t *testing.T) {
+	t.Parallel()
+	existing := "{ \"editor.tabSize\": 2 } garbage"
+	settings := &vscodeSettings{}
+	_, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+	if err == nil {
+		t.Fatalf("expected error for content after root object")
+	}
+	if !strings.Contains(err.Error(), "after root object") {
+		t.Fatalf("expected 'after root object' error, got: %v", err)
+	}
+}
+
+func TestRenderVSCodeSettingsContentBuildBlockError(t *testing.T) {
+	t.Parallel()
+	existing := "{ \"editor.tabSize\": 2 }"
+	settings := &vscodeSettings{}
+	sys := &MockSystem{
+		MarshalIndentFunc: func(_ any, _ string, _ string) ([]byte, error) {
+			return nil, errors.New("marshal error")
+		},
+	}
+	_, err := renderVSCodeSettingsContent(sys, existing, settings)
+	if err == nil {
+		t.Fatalf("expected error from marshal failure")
+	}
+}
+
+func TestRenderVSCodeSettingsContentExistingBlockBuildError(t *testing.T) {
+	t.Parallel()
+	existing := "{\n  // >>> agent-layer\n  // <<< agent-layer\n}"
+	settings := &vscodeSettings{}
+	sys := &MockSystem{
+		MarshalIndentFunc: func(_ any, _ string, _ string) ([]byte, error) {
+			return nil, errors.New("marshal error")
+		},
+	}
+	_, err := renderVSCodeSettingsContent(sys, existing, settings)
+	if err == nil {
+		t.Fatalf("expected error from marshal failure when replacing block")
+	}
+}
+
+func TestFindJSONCRootBoundsUnexpectedClosingBrace(t *testing.T) {
+	t.Parallel()
+	content := "}}}"
+	_, _, err := findJSONCRootBounds(content)
+	// Isolated closing braces without a start are ignored until we find an opening
+	// This tests behavior where we get depth < 0
+	if err == nil {
+		t.Fatalf("expected error for missing root object")
+	}
+}
+
+func TestHasJSONCContentBetweenEmptyLines(t *testing.T) {
+	t.Parallel()
+	if hasJSONCContentBetween(nil, 0, 0, 0, 0) {
+		t.Fatalf("expected false for empty lines slice")
+	}
+	if hasJSONCContentBetween([]string{}, 0, 0, 0, 0) {
+		t.Fatalf("expected false for empty lines slice")
+	}
+}
+
+func TestHasJSONCContentBetweenStartColTruncation(t *testing.T) {
+	t.Parallel()
+	// When startCol is past line end on the only line being scanned, it continues
+	// to the next line. If all lines are skipped this way, expect false.
+	lines := []string{
+		"{",
+	}
+	// Start at column past line end on the only line
+	if hasJSONCContentBetween(lines, 0, 100, 0, 0) {
+		t.Fatalf("expected false when startCol is past line end on single line")
+	}
+}
+
+func TestHasJSONCContentBetweenEscapedString(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{",
+		"  \"key\": \"val\\\"ue}\"",
+		"}",
+	}
+	// String with escaped quote and closing brace inside
+	if !hasJSONCContentBetween(lines, 0, 1, 2, 0) {
+		t.Fatalf("expected content to be detected")
+	}
+}
+
+func TestHasJSONCContentBetweenLineComment(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{",
+		"  // this is content }",
+		"}",
+	}
+	// Line comment should be ignored
+	if hasJSONCContentBetween(lines, 0, 1, 2, 0) {
+		t.Fatalf("expected line comment to be ignored")
+	}
+}
+
+func TestHasJSONCContentBetweenCommaAndBrace(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{ ,",
+		"  }",
+	}
+	// Just comma and closing brace
+	if hasJSONCContentBetween(lines, 0, 1, 1, 2) {
+		t.Fatalf("expected comma and brace to be ignored")
+	}
+}
+
+func TestDetectVSCodeIndentBlockComment(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{",
+		"  /* block comment",
+		"   * continuation",
+		"   */",
+		"  \"key\": \"value\"",
+		"}",
+	}
+	indent := detectVSCodeIndent(lines, 0, len(lines)-1)
+	if indent != "  " {
+		t.Fatalf("expected two-space indent, got %q", indent)
+	}
+}
+
+func TestDetectVSCodeIndentAllComments(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{",
+		"  //",
+		"  /*",
+		"  *",
+		"}",
+	}
+	indent := detectVSCodeIndent(lines, 0, len(lines)-1)
+	if indent != "" {
+		t.Fatalf("expected empty indent when all lines are comments, got %q", indent)
+	}
+}
+
+func TestBuildVSCodeManagedBlockMarshalError(t *testing.T) {
+	t.Parallel()
+	sys := &MockSystem{
+		MarshalIndentFunc: func(_ any, _ string, _ string) ([]byte, error) {
+			return nil, errors.New("marshal failed")
+		},
+	}
+	_, err := buildVSCodeManagedBlock(sys, &vscodeSettings{}, "  ", "  ", false)
+	if err == nil {
+		t.Fatalf("expected error from marshal failure")
+	}
+}
+
+func TestBuildVSCodeManagedBlockSingleLineJSON(t *testing.T) {
+	t.Parallel()
+	sys := &MockSystem{
+		MarshalIndentFunc: func(_ any, _ string, _ string) ([]byte, error) {
+			// Return single-line JSON
+			return []byte(`{"key": "value"}`), nil
+		},
+	}
+	_, err := buildVSCodeManagedBlock(sys, &vscodeSettings{}, "  ", "  ", false)
+	if err == nil {
+		t.Fatalf("expected error for single-line JSON shape")
+	}
+}
+
+func TestBuildVSCodeManagedBlockNoOpeningBrace(t *testing.T) {
+	t.Parallel()
+	sys := &MockSystem{
+		MarshalIndentFunc: func(_ any, _ string, _ string) ([]byte, error) {
+			// Return multi-line but no proper opening brace
+			return []byte("x\n{\n}\n"), nil
+		},
+	}
+	_, err := buildVSCodeManagedBlock(sys, &vscodeSettings{}, "  ", "  ", false)
+	if err == nil {
+		t.Fatalf("expected error for unexpected JSON shape")
+	}
+}
+
+func TestRenderVSCodeSettingsTrailingCommaNeeded(t *testing.T) {
+	t.Parallel()
+	existing := "{\n  \"editor.tabSize\": 2\n}\n"
+	settings := &vscodeSettings{
+		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+	}
+	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Managed block should have trailing comma since there's content after it
+	if !strings.Contains(updated, "},") {
+		t.Fatalf("expected trailing comma in managed block when content follows")
+	}
+}
+
+func TestHasJSONCContentBetweenMultiLine(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{",
+		"  /* block",
+		"     comment */",
+		"  \"key\": \"value\"",
+		"}",
+	}
+	// Should find content starting from inside the block comment
+	if !hasJSONCContentBetween(lines, 1, 5, 4, 0) {
+		t.Fatalf("expected content to be found after block comment")
+	}
+}
+
+func TestHasJSONCContentBetweenEndColPastLine(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{",
+		"  \"key\": \"value\"",
+		"}",
+	}
+	// endCol past line end should be handled
+	if !hasJSONCContentBetween(lines, 0, 1, 2, 100) {
+		t.Fatalf("expected content when endCol is past line end")
+	}
+}
+
+func TestDetectVSCodeIndentEmptyFile(t *testing.T) {
+	t.Parallel()
+	lines := []string{""}
+	indent := detectVSCodeIndent(lines, 0, 0)
+	if indent != "" {
+		t.Fatalf("expected empty indent for empty file, got %q", indent)
+	}
+}
+
+func TestDetectVSCodeIndentEmptyLines(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		"{",
+		"",
+		"",
+		"}",
+	}
+	indent := detectVSCodeIndent(lines, 0, len(lines)-1)
+	if indent != "" {
+		t.Fatalf("expected empty indent for empty lines, got %q", indent)
+	}
+}
+
+func TestFindJSONCRootBoundsNestedBraces(t *testing.T) {
+	t.Parallel()
+	content := "{\n  \"nested\": {\n    \"inner\": {}\n  }\n}\n"
+	start, end, err := findJSONCRootBounds(content)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if start != 0 {
+		t.Fatalf("expected start at 0, got %d", start)
+	}
+	if content[end] != '}' {
+		t.Fatalf("expected end to be closing brace")
+	}
+}
+
+func TestRenderVSCodeSettingsNoTrailingNewline(t *testing.T) {
+	t.Parallel()
+	// Input without trailing newline
+	existing := "{}"
+	settings := &vscodeSettings{}
+	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasSuffix(updated, "\n") {
+		t.Fatalf("expected trailing newline")
+	}
+}
+
+func TestRenderVSCodeSettingsExistingBlockNoIndent(t *testing.T) {
+	t.Parallel()
+	existing := "{\n// >>> agent-layer\n// <<< agent-layer\n}\n"
+	settings := &vscodeSettings{
+		ChatToolsTerminalAutoApprove: OrderedMap[bool]{"/^git(\\b.*)?$/": true},
+	}
+	updated, err := renderVSCodeSettingsContent(RealSystem{}, existing, settings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(updated, "// >>> agent-layer") {
+		t.Fatalf("expected managed block markers")
+	}
+}
+
+func TestHasJSONCContentBetweenStringEscapeBackslash(t *testing.T) {
+	t.Parallel()
+	lines := []string{
+		`{"key": "val\\ue"}`,
+	}
+	if !hasJSONCContentBetween(lines, 0, 0, 0, len(lines[0])-1) {
+		t.Fatalf("expected content with escaped backslash in string")
+	}
+}
