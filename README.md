@@ -309,16 +309,14 @@ Client notes:
 
 API tokens and other secrets live in `.agent-layer/.env` (always gitignored).
 
-**Important:** All environment variables used by Agent Layer must use the `AL_` prefix to avoid conflicts with your shell environment. This ensures Agent Layer's variables don't override existing environment variables when VS Code terminals inherit the process environment.
+**Important:** Only environment variables that start with the `AL_` prefix are sourced from `.env` (others are ignored). This convention avoids conflicts with your shell environment and ensures Agent Layer's variables don't override existing environment variables when VS Code terminals inherit the process environment.
 
 Example keys:
 - `AL_GITHUB_PERSONAL_ACCESS_TOKEN`
 - `AL_CONTEXT7_API_KEY`
 - `AL_TAVILY_API_KEY`
 
-When launching via `al`, your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens).
-
-When launching VS Code via the `open-vscode.app` launcher, variables from `.agent-layer/.env` are exported into VS Code's process so MCP servers can access API keys. The `AL_` prefix ensures these don't conflict with any existing environment variables you may have set in your shell profile.
+Your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or the `open-vscode.app` launcher.
 
 ### Instructions: `.agent-layer/instructions/`
 
@@ -363,6 +361,8 @@ Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
 - Windows: `open-vscode.bat` (uses `code` CLI)
 - Linux: `open-vscode.desktop` (uses `code` CLI; shows a dialog if missing)
+
+These launchers invoke `al vscode`, so the `al` CLI must be available on your PATH.
 
 If you use the CLI-based launchers, install the `code` command from inside VS Code:
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"

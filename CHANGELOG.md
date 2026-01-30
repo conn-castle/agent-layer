@@ -8,7 +8,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - VS Code `open-vscode.app` launcher now uses `osascript` with a login shell (`zsh -l`) instead of hardcoded VS Code CLI paths, fixing launch failures when VS Code is installed via Homebrew, in `~/Applications`, or other non-standard locations. This also fixes MCP server failures where VS Code couldn't find `node` because Finder-launched apps have a minimal PATH.
-- VS Code launcher now sources `.agent-layer/.env` before launching, so MCP servers can access API keys (e.g., `AL_GITHUB_PERSONAL_ACCESS_TOKEN`) when VS Code is opened via the app bundle.
+- All VS Code launchers (`.app`, `.command`, `.bat`, `.desktop`) now delegate to `al vscode` for loading `.agent-layer/.env`, ensuring consistent parsing (KEY=VALUE data, not sourced) across platforms. Only `AL_*` variables with non-empty values are loaded, and existing environment variables take precedence—matching the documented behavior for `al` commands.
+- VS Code `.app` launcher now shows a descriptive alert when the `code` command is not found, instead of silently failing.
+- Linux `.desktop` launcher simplified to delegate to `.command` script for consistent behavior and maintainability.
 
 ## v0.5.7 - 2026-01-29
 
