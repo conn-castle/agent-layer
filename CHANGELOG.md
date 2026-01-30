@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.5.7 - 2026-01-29
+
+### Added
+- Custom HTTP header support for Codex MCP servers: `bearer_token_env_var` for `Authorization: Bearer ${VAR}`, `env_http_headers` for other env-var-sourced headers, and `http_headers` for static literals.
+- `X-MCP-Tools` header in default GitHub MCP server template for server-side tool filtering, reducing projected tool count.
+- Detailed per-tool token breakdown in `al doctor` MCP schema bloat warnings, showing top contributors by token count.
+- Documentation for MCP HTTP header projection across all supported clients (`docs/MCP_HEADERS_SUPPORT.md`).
+
+### Changed
+- Default MCP schema token thresholds increased to accommodate larger MCP servers (server: 7500→20000 tokens, total: 10000→30000 tokens).
+- Doctor command now shows real-time discovery progress when checking MCP servers.
+- Large internal modules (`install`, `dispatch`, `config`) split into smaller, focused files for maintainability.
+- golangci-lint upgraded to v2.8.0 with additional linting rules enabled.
+
 ## v0.5.6 - 2026-01-27
 
 ### Added
