@@ -12,9 +12,9 @@ func TestLoadEnv(t *testing.T) {
 	path := filepath.Join(dir, ".env")
 	content := `
 # comment
-export API_KEY="abc123"
+export AL_API_KEY="abc123"
 NAME=plain
-QUOTED='value with spaces'
+AL_QUOTED='value with spaces'
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write env: %v", err)
@@ -25,14 +25,14 @@ QUOTED='value with spaces'
 		t.Fatalf("LoadEnv error: %v", err)
 	}
 
-	if env["API_KEY"] != "abc123" {
-		t.Fatalf("expected API_KEY to be abc123, got %q", env["API_KEY"])
+	if env["AL_API_KEY"] != "abc123" {
+		t.Fatalf("expected AL_API_KEY to be abc123, got %q", env["AL_API_KEY"])
 	}
-	if env["NAME"] != "plain" {
-		t.Fatalf("expected NAME to be plain, got %q", env["NAME"])
+	if _, ok := env["NAME"]; ok {
+		t.Fatalf("expected NAME to be ignored")
 	}
-	if env["QUOTED"] != "value with spaces" {
-		t.Fatalf("unexpected QUOTED value: %q", env["QUOTED"])
+	if env["AL_QUOTED"] != "value with spaces" {
+		t.Fatalf("unexpected AL_QUOTED value: %q", env["AL_QUOTED"])
 	}
 }
 

@@ -21,17 +21,22 @@ func WriteVSCodeLaunchers(sys System, root string) error {
 	// macOS .command launcher (opens Terminal)
 	shContent := `#!/usr/bin/env bash
 set -e
-# Navigate to the parent root
 PARENT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-export CODEX_HOME="$PARENT_ROOT/.codex"
 cd "$PARENT_ROOT"
-if command -v code >/dev/null 2>&1; then
-  code .
-else
+
+if ! command -v al >/dev/null 2>&1; then
+  echo "Error: 'al' command not found."
+  echo "Install Agent Layer and ensure 'al' is on your PATH."
+  exit 1
+fi
+
+if ! command -v code >/dev/null 2>&1; then
   echo "Error: 'code' command not found."
   echo "To install: Open VS Code, press Cmd+Shift+P, type 'Shell Command: Install code command in PATH', and run it."
   exit 1
 fi
+
+al vscode --no-sync
 `
 	shPath := paths.Command
 	if err := sys.WriteFileAtomic(shPath, []byte(shContent), 0o755); err != nil {
@@ -45,12 +50,21 @@ fi
 
 	// Windows launcher
 	batContent := `@echo off
+setlocal EnableExtensions
 set "PARENT_ROOT=%~dp0.."
-set "CODEX_HOME=%PARENT_ROOT%\.codex"
 cd /d "%PARENT_ROOT%"
+
+where al >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+  echo Error: 'al' command not found.
+  echo Install Agent Layer and ensure 'al' is on your PATH.
+  pause
+  exit /b 1
+)
+
 where code >nul 2>&1
 if %ERRORLEVEL% equ 0 (
-  code .
+  al vscode --no-sync
 ) else (
   echo Error: 'code' command not found.
   echo To install: Open VS Code, press Ctrl+Shift+P, type 'Shell Command: Install code command in PATH', and run it.
@@ -62,13 +76,13 @@ if %ERRORLEVEL% equ 0 (
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, batPath, err)
 	}
 
-	// Linux launcher (.desktop)
+	// Linux launcher (.desktop) - delegates to open-vscode.command for launch and error handling
 	desktopContent := `[Desktop Entry]
 Type=Application
 Name=Open VS Code
-Comment=Open this repo in VS Code with CODEX_HOME set
-Exec=sh -c "PARENT_ROOT=\"$(cd \"$(dirname \"$0\")/..\" && pwd -P)\"; export CODEX_HOME=\"$PARENT_ROOT/.codex\"; cd \"$PARENT_ROOT\"; if command -v code >/dev/null 2>&1; then exec code .; else MSG1=\"Error: code command not found.\"; MSG2=\"To install: Open VS Code, press Ctrl+Shift+P, run Shell Command: Install code command in PATH.\"; if command -v zenity >/dev/null 2>&1; then zenity --error --title=\"VS Code\" --text=\"$MSG1\n\n$MSG2\"; elif command -v kdialog >/dev/null 2>&1; then kdialog --error \"$MSG1\n\n$MSG2\" --title \"VS Code\"; elif command -v notify-send >/dev/null 2>&1; then notify-send \"VS Code\" \"$MSG1 $MSG2\"; elif command -v x-terminal-emulator >/dev/null 2>&1; then exec x-terminal-emulator -e sh -c \"echo \\\"$MSG1\\\"; echo \\\"$MSG2\\\"; printf 'Press Enter to exit.'; read -r _\"; elif command -v gnome-terminal >/dev/null 2>&1; then exec gnome-terminal -- sh -c \"echo \\\"$MSG1\\\"; echo \\\"$MSG2\\\"; printf 'Press Enter to exit.'; read -r _\"; elif command -v konsole >/dev/null 2>&1; then exec konsole -e sh -c \"echo \\\"$MSG1\\\"; echo \\\"$MSG2\\\"; printf 'Press Enter to exit.'; read -r _\"; elif command -v xterm >/dev/null 2>&1; then exec xterm -e sh -c \"echo \\\"$MSG1\\\"; echo \\\"$MSG2\\\"; printf 'Press Enter to exit.'; read -r _\"; else echo \"$MSG1\"; echo \"$MSG2\"; fi; exit 1; fi" "%k"
-Terminal=false
+Comment=Open this repo in VS Code with CODEX_HOME and AL_* environment variables
+Exec=sh -c 'exec "$(dirname "$1")/open-vscode.command"' _ "%k"
+Terminal=true
 Categories=Development;IDE;
 `
 	desktopPath := paths.Desktop
@@ -112,24 +126,32 @@ func writeVSCodeAppBundle(sys System, paths launchers.VSCodeLauncherPaths) error
 	}
 
 	// Executable script - navigates up from .app/Contents/MacOS/ to .agent-layer/ then to parent root
-	// Uses full path to VS Code CLI since Finder-launched apps have minimal PATH
-	// The CLI binary inherits environment variables (unlike 'open -a')
+	// Uses osascript with a login shell to ensure full PATH is available for 'al' and 'code'
 	execContent := `#!/usr/bin/env bash
-# Navigate from .app/Contents/MacOS/ up to the parent root
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PARENT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
-export CODEX_HOME="$PARENT_ROOT/.codex"
-cd "$PARENT_ROOT"
-# Use full path to VS Code CLI - it inherits env vars (unlike 'open -a')
-VSCODE_CLI="/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-VSCODE_CLI_USER="$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-if [ -x "$VSCODE_CLI" ]; then
-  "$VSCODE_CLI" .
-elif [ -x "$VSCODE_CLI_USER" ]; then
-  "$VSCODE_CLI_USER" .
-else
-  osascript -e 'display alert "VS Code not found" message "Please install Visual Studio Code from https://code.visualstudio.com" as critical'
-fi
+
+# Build zsh command and pass to osascript (uses 'quoted form of' for safe quoting)
+ZSH_CMD="cd '${PARENT_ROOT}' && command -v al >/dev/null 2>&1 || exit 126; command -v code >/dev/null 2>&1 || exit 127; al vscode --no-sync"
+
+exec /usr/bin/osascript - "$ZSH_CMD" <<'APPLESCRIPT'
+on run argv
+  set zshCmd to item 1 of argv
+  try
+    do shell script "/bin/zsh -l -c " & quoted form of zshCmd
+  on error errMsg number errNum
+    if errNum is 126 then
+      display alert "Unable to launch VS Code" message "The 'al' command could not be found in your PATH. Install Agent Layer and ensure 'al' is on your PATH." as critical
+    else if errNum is 127 then
+      display alert "Unable to launch VS Code" message "The 'code' command could not be found in your PATH. Install it from VS Code via Command Palette → 'Shell Command: Install code command in PATH'." as critical
+    else
+      display alert "Launch Failed" message errMsg as critical
+    end if
+  end try
+end run
+APPLESCRIPT
 `
 	if err := sys.WriteFileAtomic(paths.AppExec, []byte(execContent), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, paths.AppExec, err)

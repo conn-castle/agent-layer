@@ -14,7 +14,7 @@ func TestRunGolden(t *testing.T) {
 		t.Fatalf("copy fixture: %v", err)
 	}
 	envPath := filepath.Join(root, ".agent-layer", ".env")
-	if err := os.WriteFile(envPath, []byte("EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 	writePromptServerBinary(t, root)

@@ -10,6 +10,7 @@ import (
 )
 
 func newVSCodeCmd() *cobra.Command {
+	var noSync bool
 	cmd := &cobra.Command{
 		Use:   messages.VSCodeUse,
 		Short: messages.VSCodeShort,
@@ -18,11 +19,24 @@ func newVSCodeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if noSync {
+				return runVSCodeNoSync(root)
+			}
 			return clients.Run(root, "vscode", func(cfg *config.Config) *bool {
 				return cfg.Agents.VSCode.Enabled
 			}, vscode.Launch)
 		},
 	}
 
+	cmd.Flags().BoolVar(&noSync, "no-sync", false, "Skip sync before launching VS Code")
+
 	return cmd
+}
+
+// runVSCodeNoSync loads project config and launches VS Code without running sync.
+// root is the repo root; returns any load, validation, or launch error.
+func runVSCodeNoSync(root string) error {
+	return clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+		return cfg.Agents.VSCode.Enabled
+	}, vscode.Launch)
 }

@@ -108,7 +108,7 @@ mkdir -p "$repo_dir/.git"
   fi
 
   AL_NO_NETWORK=1 PATH="$install_prefix/bin:$PATH" "$install_prefix/bin/al" sync
-  CONTEXT7_API_KEY="e2e-test" GITHUB_PERSONAL_ACCESS_TOKEN="e2e-test" TAVILY_API_KEY="e2e-test" \
+  AL_CONTEXT7_API_KEY="e2e-test" AL_GITHUB_PERSONAL_ACCESS_TOKEN="e2e-test" AL_TAVILY_API_KEY="e2e-test" \
     AL_NO_NETWORK=1 "$install_prefix/bin/al" doctor
 )
 

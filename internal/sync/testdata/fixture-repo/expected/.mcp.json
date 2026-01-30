@@ -9,9 +9,9 @@
     },
     "example": {
       "type": "http",
-      "url": "https://mcp.example.com?token=${EXAMPLE_TOKEN}",
+      "url": "https://mcp.example.com?token=${AL_EXAMPLE_TOKEN}",
       "headers": {
-        "Authorization": "Bearer ${EXAMPLE_TOKEN}"
+        "Authorization": "Bearer ${AL_EXAMPLE_TOKEN}"
       }
     }
   }

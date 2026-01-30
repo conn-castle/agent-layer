@@ -27,6 +27,17 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-01-30 launch01: VS Code .app launcher only written by sync, not init
+    Priority: Low. Area: install
+    Description: The `open-vscode.app` launcher is written by `al sync` but not by `al init`. Users must run `al sync` (or `al vscode`) after init before the launcher exists.
+    Next step: Move launcher creation to init so it's available immediately after setup.
+
+- Issue 2026-01-30 codex01: Document per-repo Codex authentication requirement
+    Priority: Low. Area: documentation
+    Description: README should document that Codex requires per-repo authentication due to CODEX_HOME isolation. This is expected but may surprise users.
+    Next step: Add note to README section on "VS Code + Codex extension (CODEX_HOME)" explaining that users must re-authenticate when opening a new repo with a different CODEX_HOME.
+    Notes: This is by design to keep agent credentials isolated per repo; users should be aware of this upfront.
+
 - Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
     Priority: Low. Area: developer experience.
     Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.
@@ -37,3 +48,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Users cannot easily determine whether differences in managed files are due to intentional local customizations they want to keep, or due to agent-layer version updates that should be accepted. This makes overwrite decisions difficult and error-prone.
     Next step: Implement a diff or comparison view (e.g., `al diff` or during `al init --overwrite`) that shows what changed between local files and the new template versions, with annotations or categories for change types when possible.
     Notes: Related to Issue g2h3i4 but distinct—that issue is about prompt flow, this is about visibility into what's actually different.
+
+- Issue 2026-01-30 wiz001: Codex model/reasoning defaults should be empty in wizard
+    Priority: Low. Area: wizard
+    Description: Codex defaults for model and reasoning are pre-filled unlike other agents during wizard setup.
+    Next step: Update default toml template to use empty strings for codex model/reasoning fields.
+
+- Issue 2026-01-30 wiz002: Final save config question in wizard lacks visible text
+    Priority: Medium. Area: wizard
+    Description: The final save config prompt in the wizard is confusing because no text is displayed on screen.
+    Next step: Add descriptive text to the save config confirmation prompt.
+
+- Issue 2026-01-30 doc001: Add MCP server troubleshooting note to README FAQ
+    Priority: Low. Area: documentation
+    Description: Users need guidance when MCP servers fail in VSCode due to node installation location.
+    Next step: Add FAQ entry explaining that node should be installed via Homebrew, not to a user directory.

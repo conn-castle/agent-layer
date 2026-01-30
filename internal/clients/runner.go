@@ -22,16 +22,22 @@ func Run(root string, name string, enabled EnabledSelector, launch LaunchFunc) e
 	return RunWithStderr(root, name, enabled, launch, os.Stderr)
 }
 
-// RunWithStderr is like Run but allows specifying a custom stderr writer for testing.
-func RunWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, stderr io.Writer) error {
-	project, err := config.LoadProjectConfig(root)
+// RunNoSync performs the standard client launch pipeline without running sync.
+func RunNoSync(root string, name string, enabled EnabledSelector, launch LaunchFunc) error {
+	project, err := loadProject(root, name, enabled)
 	if err != nil {
 		return err
 	}
-	if err := sync.EnsureEnabled(name, enabled(&project.Config)); err != nil {
+
+	return launchWithRunInfo(root, project, launch)
+}
+
+// RunWithStderr is like Run but allows specifying a custom stderr writer for testing.
+func RunWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, stderr io.Writer) error {
+	project, err := loadProject(root, name, enabled)
+	if err != nil {
 		return err
 	}
-
 	warnings, err := sync.RunWithProject(sync.RealSystem{}, root, project)
 	if err != nil {
 		return err
@@ -42,6 +48,23 @@ func RunWithStderr(root string, name string, enabled EnabledSelector, launch Lau
 		_, _ = fmt.Fprintln(stderr, w.String())
 	}
 
+	return launchWithRunInfo(root, project, launch)
+}
+
+// loadProject loads the project config and verifies the client is enabled.
+func loadProject(root string, name string, enabled EnabledSelector) (*config.ProjectConfig, error) {
+	project, err := config.LoadProjectConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := sync.EnsureEnabled(name, enabled(&project.Config)); err != nil {
+		return nil, err
+	}
+	return project, nil
+}
+
+// launchWithRunInfo prepares the run info and environment before launching.
+func launchWithRunInfo(root string, project *config.ProjectConfig, launch LaunchFunc) error {
 	runInfo, err := run.Create(root)
 	if err != nil {
 		return err

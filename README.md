@@ -235,7 +235,7 @@ clients = ["gemini", "claude", "vscode", "codex"] # omit = all clients
 transport = "http"
 # http_transport = "sse" # optional: "sse" (default) or "streamable"
 url = "https://example.com/mcp"
-headers = { Authorization = "Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}" }
+headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}" }
 
 [[mcp.servers]]
 id = "local-mcp"
@@ -243,7 +243,7 @@ enabled = false
 transport = "stdio"
 command = "my-mcp-server"
 args = ["--flag", "value"]
-env = { MY_TOKEN = "${MY_TOKEN}" }
+env = { MY_TOKEN = "${AL_MY_TOKEN}" }
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.
@@ -307,12 +307,16 @@ Client notes:
 
 ### Secrets: `.agent-layer/.env`
 
-API tokens and other secrets live in `.agent-layer/.env` (always gitignored). Example keys:
-- `GITHUB_PERSONAL_ACCESS_TOKEN`
-- `CONTEXT7_API_KEY`
-- `TAVILY_API_KEY`
+API tokens and other secrets live in `.agent-layer/.env` (always gitignored).
 
-When launching via `al`, your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens).
+**Important:** Only environment variables that start with the `AL_` prefix are sourced from `.env` (others are ignored). This convention avoids conflicts with your shell environment and ensures Agent Layer's variables don't override existing environment variables when VS Code terminals inherit the process environment.
+
+Example keys:
+- `AL_GITHUB_PERSONAL_ACCESS_TOKEN`
+- `AL_CONTEXT7_API_KEY`
+- `AL_TAVILY_API_KEY`
+
+Your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or the `open-vscode.app` launcher.
 
 ### Instructions: `.agent-layer/instructions/`
 
@@ -357,6 +361,8 @@ Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
 - Windows: `open-vscode.bat` (uses `code` CLI)
 - Linux: `open-vscode.desktop` (uses `code` CLI; shows a dialog if missing)
+
+These launchers invoke `al vscode`, so the `al` CLI must be available on your PATH.
 
 If you use the CLI-based launchers, install the `code` command from inside VS Code:
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"

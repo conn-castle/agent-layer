@@ -91,14 +91,20 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	if shStr[:2] != "#!" {
 		t.Fatal("macOS launcher missing shebang")
 	}
-	if !strings.Contains(shStr, "CODEX_HOME") {
-		t.Fatal("macOS launcher missing CODEX_HOME")
+	if !strings.Contains(shStr, "al vscode --no-sync") {
+		t.Fatal("macOS launcher must invoke al vscode --no-sync")
 	}
-	if !strings.Contains(shStr, "code .") {
-		t.Fatal("macOS launcher missing 'code .' command")
+	if !strings.Contains(shStr, "command -v al") {
+		t.Fatal("macOS launcher must check for al command")
+	}
+	if !strings.Contains(shStr, "command -v code") {
+		t.Fatal("macOS launcher must check for code command")
 	}
 	if !strings.Contains(shStr, "Shell Command: Install") {
 		t.Fatal("macOS launcher missing install instructions")
+	}
+	if strings.Contains(shStr, ".env") {
+		t.Fatal("macOS launcher must not parse .env directly (use al)")
 	}
 
 	// Verify macOS .app bundle content
@@ -127,17 +133,32 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	if execStr[:2] != "#!" {
 		t.Fatal("app executable missing shebang")
 	}
-	if !strings.Contains(execStr, "CODEX_HOME") {
-		t.Fatal("app executable missing CODEX_HOME")
-	}
-	if !strings.Contains(execStr, "Contents/Resources/app/bin/code") {
-		t.Fatal("app executable missing full path to VS Code CLI")
-	}
-	if !strings.Contains(execStr, "/Applications/Visual Studio Code.app") {
-		t.Fatal("app executable missing VS Code app path")
-	}
 	if !strings.Contains(execStr, "osascript") {
-		t.Fatal("app executable missing osascript error dialog")
+		t.Fatal("app executable missing osascript for launching VS Code")
+	}
+	if !strings.Contains(execStr, "zsh -l") {
+		t.Fatal("app executable missing login shell invocation")
+	}
+	if !strings.Contains(execStr, "al vscode --no-sync") {
+		t.Fatal("app executable must invoke al vscode --no-sync")
+	}
+	if !strings.Contains(execStr, "command -v al") {
+		t.Fatal("app executable must check for al command")
+	}
+	if !strings.Contains(execStr, "command -v code") {
+		t.Fatal("app executable must check for code command")
+	}
+	if !strings.Contains(execStr, "exit 126") {
+		t.Fatal("app executable missing exit 126 for missing al command")
+	}
+	if !strings.Contains(execStr, "exit 127") {
+		t.Fatal("app executable missing exit 127 for missing code command")
+	}
+	if !strings.Contains(execStr, "display alert") {
+		t.Fatal("app executable missing error alert handling")
+	}
+	if strings.Contains(execStr, ".env") {
+		t.Fatal("app executable must not parse .env directly (use al)")
 	}
 
 	// Verify Windows launcher content
@@ -154,17 +175,23 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	if !strings.Contains(batStr, "@echo off") {
 		t.Fatal("Windows launcher missing @echo off")
 	}
-	if !strings.Contains(batStr, "CODEX_HOME") {
-		t.Fatal("Windows launcher missing CODEX_HOME")
+	if !strings.Contains(batStr, "al vscode --no-sync") {
+		t.Fatal("Windows launcher must invoke al vscode --no-sync")
 	}
-	if !strings.Contains(batStr, "code .") {
-		t.Fatal("Windows launcher missing 'code .' command")
+	if !strings.Contains(batStr, "where al") {
+		t.Fatal("Windows launcher must check for al command")
+	}
+	if !strings.Contains(batStr, "where code") {
+		t.Fatal("Windows launcher must check for code command")
 	}
 	if !strings.Contains(batStr, "Shell Command: Install") {
 		t.Fatal("Windows launcher missing install instructions")
 	}
+	if strings.Contains(batStr, ".env") {
+		t.Fatal("Windows launcher must not parse .env directly (use al)")
+	}
 
-	// Verify Linux launcher content
+	// Verify Linux launcher content - delegates to .command script
 	desktopPath := filepath.Join(root, ".agent-layer", "open-vscode.desktop")
 	desktopContent, err := os.ReadFile(desktopPath)
 	if err != nil {
@@ -177,29 +204,14 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	if !strings.Contains(desktopStr, "[Desktop Entry]") {
 		t.Fatal("Linux launcher missing Desktop Entry header")
 	}
-	if !strings.Contains(desktopStr, "CODEX_HOME") {
-		t.Fatal("Linux launcher missing CODEX_HOME")
-	}
-	if !strings.Contains(desktopStr, "code .") {
-		t.Fatal("Linux launcher missing 'code .' command")
-	}
-	if !strings.Contains(desktopStr, "Shell Command: Install") {
-		t.Fatal("Linux launcher missing install instructions")
-	}
-	if !strings.Contains(desktopStr, "zenity") {
-		t.Fatal("Linux launcher missing zenity fallback")
-	}
-	if !strings.Contains(desktopStr, "kdialog") {
-		t.Fatal("Linux launcher missing kdialog fallback")
-	}
-	if !strings.Contains(desktopStr, "Terminal=false") {
-		t.Fatal("Linux launcher should not request a terminal by default")
-	}
-	if strings.Contains(desktopStr, "Terminal=true") {
-		t.Fatal("Linux launcher should not request a terminal")
+	if !strings.Contains(desktopStr, "open-vscode.command") {
+		t.Fatal("Linux launcher must delegate to open-vscode.command")
 	}
 	if !strings.Contains(desktopStr, "%k") {
 		t.Fatal("Linux launcher missing desktop entry path (%k)")
+	}
+	if !strings.Contains(desktopStr, "Terminal=true") {
+		t.Fatal("Linux launcher should use terminal for .command script output")
 	}
 }
 
