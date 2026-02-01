@@ -1,0 +1,60 @@
+---
+title: FAQ
+description: Common questions about Agent Layer.
+---
+
+# FAQ
+
+## What problem does Agent Layer solve?
+It keeps instructions, slash commands, MCP servers, and approvals consistent across multiple agents by generating every client config from one repo-local source of truth.
+
+If you run more than one client, Agent Layer prevents drift and gives you a single place to review or audit changes.
+
+## Does Agent Layer install Claude/Codex/Gemini/VS Code?
+No. Install client CLIs separately and ensure they are on your `PATH`.
+
+## What do I edit vs what gets generated?
+You edit `.agent-layer/`. Agent Layer generates client-specific outputs in each client's native format when you run `al sync` or `al <client>`.
+
+Rule of thumb: if it is under `.gemini/`, `.claude/`, `.codex/`, `.vscode/`, or `.mcp.json`, it is generated and will be overwritten.
+
+## Should we commit `.agent-layer/`?
+By default it is gitignored, but teams can choose to commit it (except `.agent-layer/.env`).
+
+- Commit when you want shared, stable behavior across the team.
+- Keep it ignored for local-only experiments.
+
+If you commit it, keep `.agent-layer/.gitignore` so launchers and backups stay untracked.
+
+## Where do secrets go?
+Secrets go in `.agent-layer/.env` and are always gitignored. Only variables with the `AL_` prefix are loaded from `.env`.
+
+Your existing environment variables take precedence over `.env` entries.
+
+## Does Agent Layer use the network?
+Only for update checks and pinned-version downloads, unless `AL_NO_NETWORK=1` is set. Normal sync and launch are local.
+
+## How do MCP servers work?
+You define servers in `.agent-layer/config.toml`. Agent Layer runs exactly the command or URL you configure; it does not install runtimes for you.
+
+If a server uses `npx` or `uvx`, you must have those tools installed.
+
+## Can I pin a repo to a specific version?
+Yes. Set `.agent-layer/al.version` to `X.Y.Z` or `vX.Y.Z`, or pass `--version` to `al init`. You can temporarily override the pin with `AL_VERSION`.
+
+## What happens if I edit a generated file?
+It will be overwritten the next time you run `al sync` or `al <client>`. Always edit the source files in `.agent-layer/` instead.
+
+## Can I disable the wizard?
+Yes. Use `al init --no-wizard` to skip the prompt or run `al wizard` later if you change your mind.
+
+## Is this safe for teams with strict security requirements?
+Yes, if you configure it accordingly. Set `approvals.mode` to limit automatic approvals, keep command allowlists tight, and enable only trusted MCP servers.
+
+Agent Layer does not install or sandbox MCP servers. It runs exactly what you configure, which makes review and auditing straightforward.
+
+<details>
+<summary>Does Agent Layer ever delete files?</summary>
+
+Only if you explicitly run `al init --force`. That mode overwrites managed files and deletes unknown files under `.agent-layer` without prompts. Normal `al init` will prompt before changes when overwrite is enabled.
+</details>

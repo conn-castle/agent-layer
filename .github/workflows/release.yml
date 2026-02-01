@@ -71,20 +71,84 @@ jobs:
           files: |
             dist/*
 
-  update-homebrew-tap:
+  publish-website:
     needs: build-release
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    concurrency:
+      group: agent-layer-web-publish
+      cancel-in-progress: false
     permissions:
       contents: read
     steps:
-      - name: Checkout agent-layer (for scripts)
+      - name: Checkout agent-layer at tag
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
-          path: agent-layer
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Ensure website publisher exists
+        run: |
+          set -euo pipefail
+          if [ ! -f cmd/publish-site/main.go ] || [ ! -d site ]; then
+            echo "::error::Website publish is mandatory, but cmd/publish-site/main.go or site/ is missing."
+            exit 1
+          fi
+
       - uses: actions/setup-go@v5
         with:
-          go-version-file: agent-layer/go.mod
+          go-version-file: go.mod
+          cache: false
+
+      - name: Create GitHub App token for website repo
+        id: web-app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.AGENT_LAYER_WEB_APP_ID }}
+          private-key: ${{ secrets.AGENT_LAYER_WEB_APP_PRIVATE_KEY }}
+          owner: conn-castle
+          repositories: agent-layer-web
+
+      - name: Checkout agent-layer-web
+        uses: actions/checkout@v4
+        with:
+          repository: conn-castle/agent-layer-web
+          ref: main
+          token: ${{ steps.web-app-token.outputs.token }}
+          path: agent-layer-web
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install website dependencies
+        working-directory: agent-layer-web
+        run: npm ci
+
+      - name: Publish website content into Repo B checkout
+        env:
+          AL_NO_NETWORK: "1"
+        run: |
+          set -euo pipefail
+          go run ./cmd/publish-site \
+            --tag "${GITHUB_REF_NAME}" \
+            --repo-b-dir "agent-layer-web"
+
+      - name: Commit and push
+        working-directory: agent-layer-web
+        run: |
+          set -euo pipefail
+          git config user.name "agent-layer-bot"
+          git config user.email "agent-layer-bot@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Publish site for ${GITHUB_REF_NAME}"
+          git pull --rebase origin main
+          git push origin main
 
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -94,7 +158,7 @@ jobs:
 
       - name: Create GitHub App token for tap repo
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_PRIVATE_KEY }}
@@ -128,7 +192,6 @@ jobs:
           exit 1
 
       - name: Update formula url + sha256
-        working-directory: agent-layer
         run: |
           set -euo pipefail
 
@@ -137,19 +200,19 @@ jobs:
           TARBALL="agent-layer-${SEMVER}.tar.gz"
           URL="https://github.com/conn-castle/agent-layer/releases/download/${TAG}/${TARBALL}"
 
-          if [ ! -f "../dist/checksums.txt" ]; then
+          if [ ! -f "dist/checksums.txt" ]; then
             echo "::error::dist/checksums.txt not found in workflow artifacts"
             exit 1
           fi
 
-          SHA="$(go run -tags tools ./internal/tools/extractchecksum ../dist/checksums.txt "${TARBALL}")"
+          SHA="$(go run -tags tools ./internal/tools/extractchecksum dist/checksums.txt "${TARBALL}")"
 
           if [ -z "${SHA}" ]; then
             echo "::error::Failed to locate sha256 for ${TARBALL} in dist/checksums.txt"
             exit 1
           fi
 
-          FORMULA="../homebrew-tap/Formula/agent-layer.rb"
+          FORMULA="homebrew-tap/Formula/agent-layer.rb"
           if [ ! -f "${FORMULA}" ]; then
             echo "::error::${FORMULA} not found in tap repo"
             exit 1
@@ -157,8 +220,8 @@ jobs:
 
           go run -tags tools ./internal/tools/updateformula "${FORMULA}" "${URL}" "${SHA}"
 
-          git -C ../homebrew-tap status --porcelain
-          git -C ../homebrew-tap diff -- Formula/agent-layer.rb
+          git -C homebrew-tap status --porcelain
+          git -C homebrew-tap diff -- Formula/agent-layer.rb
 
       - name: Create PR in tap repo
         uses: peter-evans/create-pull-request@v6

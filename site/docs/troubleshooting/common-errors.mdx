@@ -1,0 +1,43 @@
+---
+title: Common errors
+---
+
+Below are common failure modes and how to resolve them.
+
+## "agent layer isn't initialized"
+
+Run `al init` in the repo to create `.agent-layer/` and `docs/agent-layer/`.
+
+## "invalid pinned version" or version format errors
+
+`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or re-run `al init --version X.Y.Z`.
+
+## "config.toml" validation failures
+
+Common causes:
+
+- missing `enabled` fields for agents or MCP servers
+- invalid `approvals.mode` value
+- `transport` not set to `http` or `stdio`
+- mixing `url` with `command` in the same MCP server
+
+Run `al doctor` to see structured config errors.
+
+## MCP server fails to start
+
+- Check that the command exists on your `PATH` (for example `npx` or `uvx`).
+- Verify any required secrets in `.agent-layer/.env`.
+- For HTTP servers, confirm the URL and headers are correct.
+- Use `al doctor` to confirm discovery and tool listing.
+
+## Client CLI not found
+
+Install the target client CLI (Gemini, Claude, Codex, VS Code, Antigravity) and ensure it is available on your `PATH`.
+
+## "version is not cached" when offline
+
+If `AL_NO_NETWORK=1` is set and the pinned version is not cached, `al` cannot download the version. Temporarily unset `AL_NO_NETWORK` or pre-populate the cache.
+
+:::tip
+Most errors are configuration issues. Start by validating `.agent-layer/config.toml` and `.agent-layer/.env`.
+:::

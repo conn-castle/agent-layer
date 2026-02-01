@@ -43,6 +43,7 @@ transport = "http"
 http_transport = "streamable"
 url = "https://api.githubcopilot.com/mcp/"
 headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
+
 [[mcp.servers]]
 id = "tavily"
 enabled = false
@@ -56,6 +57,13 @@ enabled = false
 transport = "stdio"
 command = "uvx"
 args = ["mcp-server-fetch"]
+
+[[mcp.servers]]
+id = "playwright"
+enabled = false
+transport = "stdio"
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
 
 [[mcp.servers]]
 id = "ripgrep"

@@ -1,0 +1,140 @@
+---
+title: Configuration
+---
+
+`.agent-layer/config.toml` is the primary structured configuration file. It is the single source of truth for approvals, agents, MCP servers, and warning thresholds.
+
+`al wizard` updates `config.toml` and `.agent-layer/.env`. Everything else is edited by hand.
+
+:::caution
+Never put secrets in `config.toml`. Secrets belong in `.agent-layer/.env`.
+:::
+
+## Example
+
+```toml
+[approvals]
+# one of: "all", "mcp", "commands", "none"
+mode = "all"
+
+[agents.gemini]
+enabled = true
+# model is optional; when omitted, the client uses its default.
+# model = "..."
+
+[agents.claude]
+enabled = true
+# model = "..."
+
+[agents.codex]
+enabled = true
+model = "gpt-5.2-codex"
+reasoning_effort = "high" # codex only
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = true
+
+[mcp]
+# MCP servers are external tool servers projected into client configs.
+
+[[mcp.servers]]
+id = "filesystem"
+enabled = false
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+
+[warnings]
+# Optional thresholds for warning checks. Omit or comment out to disable.
+instruction_token_threshold = 10000
+mcp_server_threshold = 15
+mcp_tools_total_threshold = 60
+mcp_server_tools_threshold = 25
+mcp_schema_tokens_total_threshold = 30000
+mcp_schema_tokens_server_threshold = 20000
+```
+
+## Sections at a glance
+
+| Section | Purpose |
+| --- | --- |
+| `[approvals]` | auto-approval policy for commands and MCP tools |
+| `[agents.*]` | enablement and model selection per client |
+| `[[mcp.servers]]` | external MCP server definitions |
+| `[warnings]` | optional thresholds for token and server limits |
+
+## Approvals
+
+`[approvals]` controls auto-approval behavior. See [Approvals and safety](../concepts/approvals-and-safety) for details.
+
+## Agents
+
+Each agent has an `enabled` flag and optional `model` value. Codex also supports `reasoning_effort`.
+
+Supported agents:
+
+- `gemini`
+- `claude`
+- `codex`
+- `vscode`
+- `antigravity`
+
+## MCP servers
+
+Each `[[mcp.servers]]` entry must include:
+
+- `id`
+- `enabled`
+- `transport` (`http` or `stdio`)
+
+Optional fields:
+
+- `clients` to restrict which clients receive a server
+- `http_transport` (`sse` or `streamable`) for HTTP servers
+- `headers` for HTTP auth and metadata
+- `command`, `args`, `env` for stdio servers
+
+### HTTP example
+
+```toml
+[[mcp.servers]]
+id = "example-api"
+enabled = true
+transport = "http"
+url = "https://example.com/mcp"
+headers = { Authorization = "Bearer ${AL_EXAMPLE_TOKEN}" }
+```
+
+### Stdio example
+
+```toml
+[[mcp.servers]]
+id = "ripgrep"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "mcp-ripgrep@latest"]
+```
+
+## Warnings
+
+Warning thresholds are optional. When a threshold is omitted, its warning is disabled. All values must be positive integers.
+
+Warnings are used by:
+
+- `al sync` for instruction token thresholds
+- `al doctor` for MCP server and schema thresholds
+
+## Validation rules
+
+Agent Layer validates `config.toml` on every run. Common validation rules:
+
+- `approvals.mode` must be one of `all`, `mcp`, `commands`, `none`
+- `enabled` flags must be set for all agents and MCP servers
+- MCP transport must be `http` or `stdio`
+- `http_transport` (when set) must be `sse` or `streamable`
+- HTTP servers cannot set `command` or `args`
+- Stdio servers cannot set `url` or `headers`

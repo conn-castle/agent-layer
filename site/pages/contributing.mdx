@@ -1,0 +1,38 @@
+---
+title: Contributing
+description: How to contribute to Agent Layer.
+---
+
+# Contributing
+
+Agent Layer is open source and contributions are welcome. The fastest way to help is to open an issue with a clear problem statement and an example.
+
+## Where to start
+
+- Bugs and feature requests: GitHub Issues
+- Changes and fixes: open a PR against `main`
+- Development workflow: https://github.com/conn-castle/agent-layer/blob/main/docs/DEVELOPMENT.md
+
+## What makes a great PR
+
+- Scope is small and focused
+- Behavior changes are covered by tests
+- Docs are updated when user-facing behavior changes
+- Commit messages explain the intent of the change
+
+## Local workflow
+
+The repo ships a repeatable workflow in `docs/agent-layer/COMMANDS.md`. Prefer those commands over ad-hoc local setups so CI behaves the same as your machine.
+
+If you change templates under `internal/templates/`, re-run `al init` in a scratch repo to verify the seeded output.
+
+## Design principles
+
+- Keep the repo-local source of truth explicit
+- Avoid introducing hidden defaults
+- Fail fast when required inputs are missing
+- Keep generated outputs deterministic
+
+:::tip
+If you improve the docs, include a before/after example. It helps reviewers validate impact quickly.
+:::

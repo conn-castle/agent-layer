@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-01-30 argpass: Command-line arguments not passed to underlying agents
+    Priority: High. Area: CLI / agent integration
+    Description: Arguments passed to `al <agent>` (e.g., `al claude --dangerously-skip-permissions`) are not forwarded to the underlying agent process, causing errors or ignored flags.
+    Next step: Update agent command handlers to capture and forward trailing arguments to the underlying executable.
+
 - Issue 2026-01-30 launch01: VS Code .app launcher only written by sync, not init
     Priority: Low. Area: install
     Description: The `open-vscode.app` launcher is written by `al sync` but not by `al init`. Users must run `al sync` (or `al vscode`) after init before the launcher exists.
@@ -63,3 +68,13 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: documentation
     Description: Users need guidance when MCP servers fail in VSCode due to node installation location.
     Next step: Add FAQ entry explaining that node should be installed via Homebrew, not to a user directory.
+
+- Issue 2026-01-30 qd4k2m: Codex VSCode fetch configuration clarification
+    Priority: Medium. Area: Documentation / Tooling
+    Description: Fetch via the Codex VSCode extension currently fails unless `uvx` is referenced by an absolute path and both the PATH environment variable and the fetch command are explicitly supplied inside the Codex-specific `config.toml`.
+    Next Step: Experiment with the Codex VSCode fetch flow, confirm the absolute `uvx` path requirement, document the explicit PATH and command entries in `config.toml`, and update the extension instructions once the workflow is verified.
+
+- Issue 2026-01-30 4f5a2b1: Improve version outdated message text
+    Priority: Medium. Area: CLI / DX
+    Description: The message shown to users when the agent-layer version is outdated is not clear enough. It should provide specific instructions on how to update.
+    Next step: Update the outdated version message to include instructions to update `al` with Homebrew and then update the repository version (e.g., `al init --version latest`).

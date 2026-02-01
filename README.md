@@ -1,13 +1,24 @@
 # Agent Layer
 
-Agent Layer keeps AI-assisted development consistent across tools by generating each client’s required config from **one repo-local source of truth**.
+One repo-local source of truth for instructions, slash commands, MCP servers, and approvals across coding agents.
 
-Install once per machine. `al` is a globally installed CLI on your `PATH`. In each repo, run `al init` to seed `.agent-layer/` and `docs/agent-layer/`. You edit `.agent-layer/`; `al` regenerates the right files for each client and launches it.
+Agent Layer keeps AI-assisted development consistent across tools by generating each client’s required config from a single `.agent-layer/` folder. Install `al` once per machine, run `al init` per repo, then run `al <client>` (e.g., `al claude`) to sync and launch.
 
-Running `al <client>` always:
-1) reads `.agent-layer/` config
-2) regenerates (syncs) client files
-3) launches the client
+Key properties:
+- Local-first, no telemetry
+- Deterministic outputs from canonical inputs
+- Explicit approvals and command allowlists
+
+Comparison:
+
+| Manual per-client setup | Agent Layer |
+| --- | --- |
+| duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
+| inconsistent approvals and command policies | consistent approvals and allowlists |
+| MCP servers added in one client and forgotten in another | generated MCP config for every supported client |
+| no single place to review or audit changes | audit in version control |
+
+If this saves you time, please star the repo. Stars help new users find the project.
 
 ---
 
@@ -19,6 +30,7 @@ MCP = Model Context Protocol (tool/data servers).
 |---|---:|---:|---:|---:|
 | Gemini CLI | ✅ | ✅ | ✅ | ✅ |
 | Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
+| Claude Code VS Code Extension | ✅ | ✅ | ✅ | ✅ |
 | VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
 | Codex CLI | ✅ | ✅ | ✅ | ✅ |
 | Codex VS Code extension | ✅ | ✅ | ✅ | ✅ |
@@ -77,8 +89,15 @@ Then run an agent:
 al gemini
 ```
 
+Optional health check:
+
+```bash
+al doctor
+```
+
 Notes:
 - `al init` prompts to run `al wizard` after seeding files. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
+- `al init` is safe to run multiple times; use `--overwrite` to review template diffs or `--force` to overwrite without prompts.
 - To refresh template-managed files, use `al init --overwrite` to review each file or `al init --force` to **overwrite and delete** unknown files under `.agent-layer` without prompts.
 - Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, VS Code, etc.).
 
@@ -229,13 +248,12 @@ enabled = true
 # Installer seeds a small library of defaults you can edit, disable, or delete.
 
 [[mcp.servers]]
-id = "github"
+id = "example-api"
 enabled = true
-clients = ["gemini", "claude", "vscode", "codex"] # omit = all clients
 transport = "http"
 # http_transport = "sse" # optional: "sse" (default) or "streamable"
 url = "https://example.com/mcp"
-headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}" }
+headers = { Authorization = "Bearer ${AL_EXAMPLE_TOKEN}" }
 
 [[mcp.servers]]
 id = "local-mcp"
@@ -251,8 +269,8 @@ instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60
 mcp_server_tools_threshold = 25
-mcp_schema_tokens_total_threshold = 10000
-mcp_schema_tokens_server_threshold = 7500
+mcp_schema_tokens_total_threshold = 30000
+mcp_schema_tokens_server_threshold = 20000
 ```
 
 #### Built-in placeholders

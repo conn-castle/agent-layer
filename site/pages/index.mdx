@@ -1,0 +1,90 @@
+---
+title: Agent Layer
+description: One repo-local source of truth for instructions, slash commands, and MCP servers across coding agents.
+---
+
+# Agent Layer
+
+One repo-local source of truth for every agent you use.
+
+Agent Layer keeps AI-assisted development consistent across tools by generating each client's required config from a single `.agent-layer/` folder. No more copying instructions, approvals, or MCP servers across Claude, Gemini, Codex, and VS Code.
+
+:::note
+Local-first, no telemetry, and designed to fail fast when configuration is inconsistent.
+:::
+
+## The problem
+
+Modern teams run multiple agents. Each client expects its own file formats and conventions, which creates drift:
+
+- instructions diverge across clients
+- slash commands get duplicated or forgotten
+- MCP servers are configured once and missing elsewhere
+- approvals and safety rules get applied inconsistently
+
+That drift shows up as unpredictable behavior, wasted time, and broken trust in the agent.
+
+## The solution
+
+Agent Layer flips the model: edit one repo-local source of truth and generate everything else.
+
+- `.agent-layer/` is canonical
+- client configs are generated on demand
+- sync happens every time you run an agent
+
+## What you get out of the box
+
+- a clean, repo-local configuration layout
+- default instruction templates and curated slash commands
+- MCP server templates (disabled by default)
+- version pinning so teams stay aligned
+- a setup wizard for approvals, agents, models, MCP, and warnings
+- sync-on-run so every client stays consistent
+
+## Comparison: manual configs vs Agent Layer
+
+| Manual per-client setup | Agent Layer |
+| --- | --- |
+| duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
+| inconsistent approvals and command policies | consistent approvals and allowlists |
+| MCP servers added in one client and forgotten in another | generated MCP config for every supported client |
+| no single place to review or audit changes | audit in version control |
+
+## How it works
+
+1. Install `al` once on your machine
+2. Run `al init` in a repo to seed `.agent-layer/` and `docs/agent-layer/`
+3. Edit `.agent-layer/` to define your rules and tools
+4. Run `al <client>` to sync configs and launch the client
+
+Everything you edit lives in `.agent-layer/`. Everything else is generated.
+
+## A quick look
+
+```bash
+# Initialize the repo
+al init
+
+# Launch your agent (sync happens automatically)
+al codex
+```
+
+Customize behavior by editing:
+
+- `.agent-layer/instructions/` for global rules and guidance
+- `.agent-layer/slash-commands/` for repeatable workflows
+- `.agent-layer/config.toml` for MCP servers, models, approvals, and warnings
+
+## Supported clients
+
+Gemini CLI, Claude Code CLI, Codex CLI, VS Code / Copilot Chat, and Antigravity. Each client receives its native config format.
+
+## Get started
+
+- Install: [/install](/install)
+- Docs: [/docs](/docs)
+- GitHub: https://github.com/conn-castle/agent-layer
+
+:::tip
+If this solves a real problem for you, please star the repo. Stars help the project grow and signal trust to new users.
+:::

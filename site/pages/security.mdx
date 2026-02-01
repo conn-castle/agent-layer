@@ -1,0 +1,38 @@
+---
+title: Security
+description: Telemetry, network behavior, and release integrity.
+---
+
+# Security
+
+Agent Layer is designed to run locally, keep configuration explicit, and fail fast when something is misconfigured.
+
+## Telemetry
+Agent Layer does not collect telemetry.
+
+## Network behavior
+Network access is only needed for:
+
+- checking for updates (for example `al doctor` and `al init` warnings)
+- downloading pinned versions when a repo sets `.agent-layer/al.version`
+
+To disable downloads, set `AL_NO_NETWORK=1`. If the pinned version is not already cached, `al` will fail fast and explain why.
+
+:::note
+Normal sync and launch are local. Network use is only for update checks and pinned downloads.
+:::
+
+## Secrets
+Secrets belong in `.agent-layer/.env`, which is always gitignored. Only variables prefixed with `AL_` are loaded from `.env`, and your existing process environment takes precedence.
+
+## MCP server safety
+Agent Layer runs the exact MCP server command or URL you configure. It does not install, sandbox, or proxy servers for you. Review your MCP server definitions and keep them under version control if you want auditability.
+
+## Local execution model
+Agent Layer only writes files into the repo you run it in and the user cache directory for pinned versions. There is no background daemon and no service account.
+
+## Release integrity
+GitHub Releases include a `checksums.txt` artifact. Verify downloads by checking your file hash against that manifest.
+
+## Reporting vulnerabilities
+Use GitHub Security Advisories if enabled. Otherwise, open a GitHub issue without sensitive details.

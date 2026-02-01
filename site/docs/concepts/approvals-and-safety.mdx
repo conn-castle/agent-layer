@@ -1,0 +1,52 @@
+---
+title: Approvals and safety
+---
+
+Approvals control whether an agent can execute shell commands and MCP tools without prompting. This is a safety layer that lets teams choose how much autonomy they want per repo.
+
+## Approvals modes
+
+Set the mode in `.agent-layer/config.toml`:
+
+```toml
+[approvals]
+mode = "all" # one of: all, mcp, commands, none
+```
+
+| Mode | Shell commands | MCP tools |
+| --- | --- | --- |
+| `all` | auto-approve | auto-approve |
+| `mcp` | prompt/deny | auto-approve |
+| `commands` | auto-approve | prompt/deny |
+| `none` | prompt/deny | prompt/deny |
+
+The default template sets `mode = "all"`. Change it to match your team's security posture.
+
+## Approved commands
+
+`.agent-layer/commands.allow` defines which shell command prefixes are allowed. This list is projected into each client that supports command approvals.
+
+Example:
+
+```text
+go test
+make test
+rg
+```
+
+Keep the list short and explicit. Prefer command prefixes over full commands so tools can add safe arguments.
+
+## Client support (best effort)
+
+Not every client supports every approval type. Agent Layer generates the closest supported behavior for each client and applies `approvals.mode` on a best-effort basis.
+
+:::note
+If a client does not support approvals at all, Agent Layer cannot enforce them. Use instructions and allowlists to compensate.
+:::
+
+## Recommendations
+
+- Start with `commands` or `none` in sensitive repos.
+- Explicitly whitelist safe command prefixes.
+- Use MCP servers only when you control or trust their runtime.
+- Review `.agent-layer/` changes as you would any other config.

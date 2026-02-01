@@ -1,0 +1,33 @@
+---
+title: Install troubleshooting
+---
+
+If `al` does not work after install, try the checks below.
+
+## `al` not on PATH
+
+- Verify install location:
+  - Homebrew: `brew --prefix conn-castle/tap/agent-layer`
+  - Script installs to a standard location for your OS
+- Open a new terminal after install so your PATH refreshes.
+- Run `which al` or `command -v al` to confirm it resolves.
+
+## Missing client CLI
+
+Agent Layer does not install Gemini, Claude, Codex, or VS Code. Install the target client CLI and ensure it is on your `PATH`.
+
+## Pinned version cannot download
+
+If `AL_NO_NETWORK=1` is set and the pinned version is not cached, `al` will fail. Either unset `AL_NO_NETWORK` temporarily or pre-populate the cache.
+
+## Update checks fail in locked-down environments
+
+`al init` and `al doctor` may warn if update checks are blocked by your network. This does not prevent normal use. Set `AL_NO_NETWORK=1` to disable update checks and downloads.
+
+## Still stuck
+
+Run `al doctor` and read the warnings. It will surface missing secrets, invalid config, and MCP connectivity issues.
+
+:::note
+If you run `al doctor` with no MCP servers enabled, it will still validate config and instructions.
+:::
