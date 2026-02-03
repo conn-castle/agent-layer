@@ -1,0 +1,78 @@
+---
+title: Security
+description: Telemetry, network behavior, and release integrity.
+---
+
+Agent Layer is local-first: it generates deterministic config files into your repository and launches the client you choose. It avoids hidden defaults and prefers failing loudly over "best guess" behavior.
+
+## Telemetry
+Agent Layer does not collect telemetry.
+
+## Network behavior
+Agent Layer itself may make outbound network requests for:
+
+- **Update checks** (GitHub API). `al doctor` checks for newer releases and warns if you're behind. `al init` may warn when your installed CLI is out of date.
+- **Pinned version downloads** (GitHub Releases). If a repo pins `.agent-layer/al.version`, `al` may download that version into your local cache and dispatch to it.
+
+To disable update checks and pinned downloads, set `AL_NO_NETWORK=1` (see [/docs/reference#environment-variables](/docs/reference#environment-variables)). If the pinned version is not already cached, `al` will fail fast and explain why.
+
+:::note
+`AL_NO_NETWORK` only affects update checks and pinned-version downloads. It does not disable MCP server networking.
+:::
+
+If you enable MCP servers, additional network use is expected:
+
+- `al doctor` connects to enabled MCP servers to discover tools.
+- Your agent clients connect to enabled MCP servers at runtime.
+
+If you need to run fully offline, disable networked MCP servers (or use local stdio servers only) and set `AL_NO_NETWORK=1`.
+
+### Network destinations (for allowlists)
+
+If you are configuring outbound allowlists, these are the common destinations used by Agent Layer itself:
+
+- Update checks: `api.github.com` (for example `GET /repos/conn-castle/agent-layer/releases/latest`)
+- Release downloads: `github.com/conn-castle/agent-layer/releases` (for example `GET /conn-castle/agent-layer/releases/download/vX.Y.Z/al-<os>-<arch>` and `GET /conn-castle/agent-layer/releases/download/vX.Y.Z/checksums.txt`)
+- GitHub may redirect release downloads to `objects.githubusercontent.com` (install scripts and pinned downloads follow redirects)
+
+Additional destinations depend on what you enable:
+
+- MCP servers: whatever hostnames you configure under `[[mcp.servers]]`
+- Stdio MCP servers launched via package runners (for example `npx` or `uvx`) may download packages from their registries
+
+## Secrets
+Secrets belong in `.agent-layer/.env`, which is always gitignored. Only variables prefixed with `AL_` are loaded from `.env`, and your existing process environment takes precedence.
+
+## Generated outputs and secret safety
+Agent Layer keeps `.agent-layer/config.toml` free of secret values and uses placeholders like `${AL_TOKEN}`. Some clients support placeholders directly, while others require resolved values in their own generated config files.
+
+Treat generated client outputs as build artifacts and keep them gitignored. In particular, `.codex/config.toml` may contain resolved values for MCP server URLs, commands, or environment variables.
+
+For a full list of generated outputs, see [/docs/reference#sync](/docs/reference#sync).
+
+## MCP server safety
+MCP servers are external tool servers that your agent can call. Agent Layer runs the exact MCP server command or URL you configure; it does not install, sandbox, proxy, or inspect servers for you.
+
+Some MCP servers require you to sign up for an account and provide an API key (for example, Tavily). Treat enabled MCP servers as part of your supply chain and enable them deliberately.
+
+To learn how MCP servers are configured and projected into different clients, see [/docs/concepts#mcp-servers](/docs/concepts#mcp-servers).
+
+## Local execution model
+Agent Layer writes files into:
+
+- the repo you run it in (generated configs, instruction shims, and editor integration files)
+- your OS user cache directory for pinned versions (override with `AL_CACHE_DIR`; see [/docs/reference#environment-variables](/docs/reference#environment-variables))
+
+There is no background daemon and no service account.
+
+## Release integrity
+GitHub Releases include a `checksums.txt` artifact. The install scripts and pinned-version downloads verify SHA-256 checksums against this manifest.
+
+If you download binaries manually, verify the file hash against `checksums.txt` before running it.
+
+## Reporting vulnerabilities
+Open a GitHub issue without sensitive details:
+
+- [GitHub Issues](https://github.com/conn-castle/agent-layer/issues)
+
+If you need private disclosure and Security Advisories are not enabled for the repo, open an issue that states you have a security report and ask for a private channel.

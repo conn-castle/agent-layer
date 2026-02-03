@@ -24,9 +24,18 @@ const (
 )
 
 var (
-	userHomeDir = os.UserHomeDir
-	lookPath    = exec.LookPath
-	execCommand = exec.Command
+	userHomeDir       = os.UserHomeDir
+	lookPath          = exec.LookPath
+	execCommand       = exec.Command
+	genBashCompletion = func(cmd *cobra.Command, out io.Writer) error {
+		return cmd.GenBashCompletion(out)
+	}
+	genZshCompletion = func(cmd *cobra.Command, out io.Writer) error {
+		return cmd.GenZshCompletion(out)
+	}
+	genFishCompletion = func(cmd *cobra.Command, out io.Writer) error {
+		return cmd.GenFishCompletion(out, true)
+	}
 )
 
 // newCompletionCmd builds the completion subcommand with optional install behavior.
@@ -59,15 +68,15 @@ func generateCompletion(root *cobra.Command, shell string) (string, error) {
 	var buf bytes.Buffer
 	switch shell {
 	case shellBash:
-		if err := root.GenBashCompletion(&buf); err != nil {
+		if err := genBashCompletion(root, &buf); err != nil {
 			return "", err
 		}
 	case shellZsh:
-		if err := root.GenZshCompletion(&buf); err != nil {
+		if err := genZshCompletion(root, &buf); err != nil {
 			return "", err
 		}
 	case shellFish:
-		if err := root.GenFishCompletion(&buf, true); err != nil {
+		if err := genFishCompletion(root, &buf); err != nil {
 			return "", err
 		}
 	default:

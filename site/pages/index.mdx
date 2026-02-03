@@ -1,0 +1,104 @@
+---
+title: Agent Layer
+description: One repo-local source of truth for instructions, slash commands, and MCP servers across coding agents.
+---
+
+<div className="hero-container">
+  <img src="/img/branding/header_wordmark.svg" alt="Agent Layer" className="hero-logo hero-logo--light" />
+  <img src="/img/branding/header_wordmark_dark.svg" alt="Agent Layer" className="hero-logo hero-logo--dark" />
+  <p className="hero-tagline">
+    One repo-local source of truth for every agent you use.
+  </p>
+  <div className="hero-buttons">
+    <a href="/docs" className="hero-button hero-button--primary">
+      Get Started
+    </a>
+    <a href="https://github.com/conn-castle/agent-layer" className="hero-button hero-button--secondary">
+      GitHub
+    </a>
+  </div>
+
+  <div className="terminal-window">
+    <div className="terminal-header">
+      <span className="terminal-dot terminal-dot--red"></span>
+      <span className="terminal-dot terminal-dot--yellow"></span>
+      <span className="terminal-dot terminal-dot--green"></span>
+      <span className="terminal-title">terminal</span>
+    </div>
+    <div className="terminal-body">
+      <p className="terminal-line"><span className="terminal-comment"># Install agent-layer</span></p>
+      <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">brew install conn-castle/tap/agent-layer</span></p>
+      <p className="terminal-line"><span className="terminal-comment"># Initialize the repo</span></p>
+      <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">al init</span></p>
+      <p className="terminal-line"><span className="terminal-comment"># Launch your agent (sync happens automatically)</span></p>
+      <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">al claude</span></p>
+    </div>
+  </div>
+</div>
+
+<div className="clients-section">
+  <p className="clients-title">Works with your favorite agents</p>
+  <div className="clients-grid">
+    <img src="/img/logos/claude.svg" alt="Claude Code" className="client-logo-full client-logo--claude" />
+    <img src="/img/logos/gemini.svg" alt="Gemini CLI" className="client-logo-full client-logo--gemini" />
+    <img src="/img/logos/openai.svg" alt="OpenAI Codex CLI" className="client-logo-full client-logo--openai" />
+    <img src="/img/logos/copilot.svg" alt="GitHub Copilot" className="client-logo-full client-logo--copilot" />
+    <img src="/img/logos/antigravity.svg" alt="Antigravity" className="client-logo-full client-logo--antigravity" />
+  </div>
+</div>
+
+<div className="features-section">
+  <h2 className="features-title">Why Agent Layer?</h2>
+  <p className="features-subtitle">Stop copying configs. Start shipping.</p>
+
+  <div className="features-list">
+    <div className="feature-item">
+      <h3 className="feature-title">Single Source of Truth</h3>
+      <p className="feature-description">Edit <code>.agent-layer/</code> once. Every client gets its native config.</p>
+    </div>
+
+    <div className="feature-item">
+      <h3 className="feature-title">Sync on Run</h3>
+      <p className="feature-description">Configs regenerate every launch. No manual steps, no drift.</p>
+    </div>
+
+    <div className="feature-item">
+      <h3 className="feature-title">Consistent Approvals</h3>
+      <p className="feature-description">Define safety rules once. Every agent respects the same boundaries.</p>
+    </div>
+
+    <div className="feature-item">
+      <h3 className="feature-title">MCP Everywhere</h3>
+      <p className="feature-description">Configure MCP servers in one place. They appear in every client.</p>
+    </div>
+
+    <div className="feature-item">
+      <h3 className="feature-title">Version Pinning</h3>
+      <p className="feature-description">Lock your team to specific versions. Everyone stays aligned.</p>
+    </div>
+
+    <div className="feature-item">
+      <h3 className="feature-title">Local & Fast</h3>
+      <p className="feature-description">No telemetry. Network is used only for update checks, version downloads (pinning), and MCP servers you enable. See <a href="/security">Security</a> for details.</p>
+    </div>
+  </div>
+</div>
+
+<div className="cta-section">
+  <h2 className="cta-title">Ready to simplify your agent setup?</h2>
+  <p className="cta-description">
+    Install Agent Layer in under a minute. Works on macOS and Linux, with best-effort Windows support.
+  </p>
+  <div className="hero-buttons">
+    <a href="/install" className="hero-button hero-button--primary">
+      Install Now
+    </a>
+    <a href="/docs" className="hero-button hero-button--secondary">
+      Read the Docs
+    </a>
+  </div>
+</div>
+
+:::tip[Like what you see?]
+If Agent Layer solves a real problem for you, please [star the repo](https://github.com/conn-castle/agent-layer). Stars help the project grow and signal trust to new users.
+:::

@@ -2,6 +2,8 @@
 
 Agent Layer can project custom HTTP headers (e.g., `Authorization`, `X-API-Key`) into each supported MCP client configuration so HTTP-based MCP servers authenticate consistently across tools.
 
+The intent is consistency without leakage: define headers once in `.agent-layer/config.toml`, keep secrets in `.agent-layer/.env`, and let Agent Layer translate those headers into each client’s native format without hardcoding credentials.
+
 > Scope note: `headers` apply to **HTTP-based MCP transports** (Streamable HTTP and/or SSE). For **stdio** MCP servers, credentials are typically handled via environment variables passed to the server process (`env`).
 
 ## Client support matrix

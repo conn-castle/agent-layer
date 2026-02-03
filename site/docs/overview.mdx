@@ -1,0 +1,64 @@
+---
+title: Overview
+sidebar_label: Overview
+description: "Start here: what Agent Layer is, how to use it, and where to go next."
+slug: /
+sidebar_position: 0
+---
+
+Agent Layer is a small CLI that keeps AI-assisted development consistent across tools. You define agent instructions, approvals, and MCP servers once in a repo-local `.agent-layer/` folder, and `al` generates each client's native config on demand.
+
+The payoff is fewer surprises: the same repo behaves the same whether you launch Gemini, Claude, Codex, VS Code, or Antigravity. No copying configuration between clients. No gradual drift. Just one place to review and refine how your agents work.
+
+Start with [Getting started](./getting-started), then use [Concepts](./concepts) and [Reference](./reference) as you customize. [Troubleshooting](./troubleshooting) is a fast path when something breaks.
+
+## What you get
+
+- A single source of truth you can treat like code (reviewable, shareable, easy to audit).
+- Deterministic generated outputs that are safe to delete and recreate.
+- Guardrails for autonomy: choose what can run automatically and what must be approved.
+- Optional version pinning so a team stays on the same behavior across machines and CI.
+
+## Who this is for
+
+- You use more than one agent client and want them to behave consistently.
+- You want repo-specific safety rules instead of one global configuration for every project.
+- You want to add tools (MCP servers) once and have them available everywhere.
+- You want agent setup to be explicit and reviewable, not a collection of local tweaks.
+
+## Recommended path
+
+1. [Getting started](./getting-started) - run your first agent
+2. [Concepts](./concepts) - learn the mental model and safety boundaries
+3. [Reference](./reference) - config, environment variables, and CLI behavior
+4. [Troubleshooting](./troubleshooting) - common errors and fixes
+
+## Documentation map
+
+### [Getting started](./getting-started)
+
+Install Agent Layer, initialize your first repo, and understand what gets generated. Includes: [Quick start](./getting-started#quick-start), [Repo layout](./getting-started#repo-layout), and [CLI command map](./getting-started#cli-command-map).
+
+### [Concepts](./concepts)
+
+The mental model and safety boundaries that keep agents consistent. Includes: [Single source of truth](./concepts#single-source-of-truth), [Approvals and safety](./concepts#approvals-and-safety), [MCP servers](./concepts#mcp-servers), [Project memory](./concepts#project-memory), and [Version pinning](./concepts#version-pinning).
+
+### [Reference](./reference)
+
+Authoritative configuration, environment variables, and CLI behavior. Includes: [Configuration](./reference#configuration), [Environment variables](./reference#environment-variables), and the [CLI guide](./reference#cli-guide).
+
+### [Troubleshooting](./troubleshooting)
+
+Fast fixes for install, config, and MCP issues. Includes: [Install issues](./troubleshooting#install-issues), [Configuration errors](./troubleshooting#configuration-errors), [MCP server issues](./troubleshooting#mcp-server-issues), and [Offline/pinning](./troubleshooting#pinning-and-offline-mode).
+
+## Other resources
+
+- [Install](/install)
+- [FAQ](/faq)
+- [Security](/security)
+- [Changelog](/changelog)
+- [Contributing](/contributing)
+
+:::note
+If Agent Layer earns a place in your workflow, consider starring the repo. It helps new users find the project.
+:::

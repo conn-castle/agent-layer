@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -112,7 +114,7 @@ enabled = false
 			},
 			ConfirmFunc: func(title string, value *bool) error {
 				switch title {
-				case "Secret AL_GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
+				case fmt.Sprintf(messages.WizardSecretAlreadySetPromptFmt, "AL_GITHUB_PERSONAL_ACCESS_TOKEN"):
 					*value = false // No
 				case "Apply these changes?":
 					*value = true
@@ -143,7 +145,7 @@ enabled = false
 			},
 			ConfirmFunc: func(title string, value *bool) error {
 				switch title {
-				case "Secret AL_GITHUB_PERSONAL_ACCESS_TOKEN is already set. Override?":
+				case fmt.Sprintf(messages.WizardSecretAlreadySetPromptFmt, "AL_GITHUB_PERSONAL_ACCESS_TOKEN"):
 					*value = true // Yes
 				case "Apply these changes?":
 					*value = true

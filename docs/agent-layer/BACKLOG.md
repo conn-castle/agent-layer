@@ -28,6 +28,24 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-03 b4c5d6e: Support custom Git repositories for templates
+    Priority: Medium. Area: lifecycle management
+    Description: Allow users to specify a custom Git repository as the source for templates during `al init`, enabling teams and organizations to maintain their own standardized agent-layer configurations.
+    Acceptance criteria: `al init` (or a new command) accepts a Git URL for templates, and these templates are correctly instantiated in the target repository.
+    Notes: Requires a mechanism to securely fetch and cache external templates.
+
+- Backlog 2026-02-03 f1a2b3c: Transform roadmap into public-facing documentation
+    Priority: Medium. Area: documentation
+    Description: Convert the internal `ROADMAP.md` into actual documentation that clearly communicates the project's direction and upcoming features to users.
+    Acceptance criteria: `ROADMAP.md` is formatted and positioned as a user-facing document, providing clarity on what is coming and what is speculative.
+    Notes: Ensure it remains easy for agents to update while being readable for humans.
+
+- Backlog 2026-01-30 e5f4d3c: Enable full-auto mode for Claude and Codex
+    Priority: Low. Area: agent permissions
+    Description: Provide a way to give Claude and Codex full access to the CLI to avoid repetitive permission prompts, specifically for Claude's custom Python execution.
+    Acceptance criteria: Claude and Codex can be configured to run in "full-auto" mode, bypassing manual approval for CLI commands and Python scripts.
+    Notes: Merges and elevates Backlog 2026-01-25 d0e1f2a; requires strong security warnings.
+
 - Backlog 2026-01-28 7e9f3a1: Add support for Claude extension in VSCode
     Priority: Medium. Area: client integration
     Description: Add support for configuring and launching the Claude extension within VSCode, similar to the existing VSCode agent support.
@@ -93,12 +111,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Description: Persist conversation history in model-specific local folders (e.g., `.agent-layer/gemini/`, `.agent-layer/openai/`).
     Acceptance criteria: Conversation history is saved locally per model and can be restored across sessions.
     Notes: Consider storage format, retention policy, and privacy implications.
-
-- Backlog 2026-01-25 d0e1f2a: Implement full access mode for all agents
-    Priority: Low. Area: agent permissions
-    Description: Implement "full access" mode for all agents with security warnings (similar to Codex full-auto).
-    Acceptance criteria: Users can opt-in to full access mode with clear warnings about security implications.
-    Notes: Requires prominent warnings and easy way to revert to restricted mode.
 
 - Backlog 2026-01-25 0a1b2c3: Add Git MCP server with tool filtering
     Priority: Medium. Area: MCP ecosystem

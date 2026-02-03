@@ -1,6 +1,20 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.6.0 - 2026-02-03
+
+### Added
+- Documentation website with comprehensive guides covering getting started, concepts (approvals, MCP servers, project memory, version pinning), reference (CLI, configuration, environment variables), and troubleshooting.
+- Website publishing pipeline (`cmd/publish-site`) with automated deployment in the release workflow.
+- Playwright MCP server template in default `config.toml` for browser automation workflows.
+- Descriptive comments for all default MCP server templates explaining purpose and required credentials.
+- Claude Code VS Code Extension added to supported clients table in README.
+
+### Changed
+- README rewritten with clearer value proposition, comparison table (manual vs Agent Layer), and improved quick start flow.
+- Default MCP server examples in README now use generic `example-api` instead of GitHub-specific config for clarity.
+- Documentation structure consolidated from nested pages to flat MDX files for better navigation.
+
 ## v0.5.8 - 2026-01-30
 
 ### Changed

@@ -29,6 +29,8 @@ enabled = true
 # The installer seeds a small library of defaults you can edit, disable, or delete.
 
 [[mcp.servers]]
+# Context7: current library docs + code examples. Great first server to enable when integrating SDKs.
+# Requires an API key in .agent-layer/.env: AL_CONTEXT7_API_KEY (sign up).
 id = "context7"
 enabled = false
 transport = "stdio"
@@ -37,13 +39,18 @@ args = ["-y", "@upstash/context7-mcp"]
 env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 
 [[mcp.servers]]
+# GitHub: issues/PRs/actions workflows. Enable when you want the agent to operate on GitHub, not just local code.
+# Requires a token in .agent-layer/.env: AL_GITHUB_PERSONAL_ACCESS_TOKEN (and access to the configured endpoint).
 id = "github"
 enabled = false
 transport = "http"
 http_transport = "streamable"
 url = "https://api.githubcopilot.com/mcp/"
 headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
+
 [[mcp.servers]]
+# Tavily: web search/research for up-to-date information (beyond training data).
+# Requires an API key in .agent-layer/.env: AL_TAVILY_API_KEY (sign up).
 id = "tavily"
 enabled = false
 transport = "http"
@@ -51,6 +58,8 @@ http_transport = "streamable"
 url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${AL_TAVILY_API_KEY}"
 
 [[mcp.servers]]
+# Fetch: retrieve a URL's contents for the agent to read. Useful alongside search.
+# Requires `uvx` (from `uv`) to be installed.
 id = "fetch"
 enabled = false
 transport = "stdio"
@@ -58,6 +67,17 @@ command = "uvx"
 args = ["mcp-server-fetch"]
 
 [[mcp.servers]]
+# Playwright: browser automation for web flows and complex pages. High leverage, not needed in every repo.
+# Requires Node (npx) and downloads browser dependencies on first use.
+id = "playwright"
+enabled = false
+transport = "stdio"
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+
+[[mcp.servers]]
+# Ripgrep: fast repo search (often the difference between "guessing" and finding the right file quickly).
+# Requires Node (npx).
 id = "ripgrep"
 enabled = false
 clients = ["gemini", "claude", "codex"]
@@ -66,6 +86,8 @@ command = "npx"
 args = ["-y", "mcp-ripgrep@latest"]
 
 [[mcp.servers]]
+# Filesystem: controlled filesystem access. The template restricts access to the current repo root.
+# Requires Node (npx).
 id = "filesystem"
 enabled = false
 clients = ["gemini", "claude", "codex"]

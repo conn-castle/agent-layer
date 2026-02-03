@@ -94,3 +94,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Provide a breakdown of the top tools by token count in `MCP_TOOL_SCHEMA_BLOAT_SERVER` warnings.
     Reason: Better visibility into which tools contribute to schema bloat allows targeted optimization.
     Tradeoffs: Adds per-tool JSON marshaling during discovery, slightly increasing check latency.
+
+- Decision 2026-02-03 c7d2a1f: Curated CLI docs in site/
+    Decision: Stop generating CLI docs during website publish; use the curated `site/docs/reference.mdx` section as the source of truth.
+    Reason: Help-output dumps duplicated content and reduced usability compared to a curated guide.
+    Tradeoffs: The guide can drift from exact flags; users should rely on `al --help` for authoritative flag output.
+
+- Decision 2026-02-03 d9e3a7b: Consolidate docs into single-page sections
+    Decision: Merge Concepts, Getting started, Reference, and Troubleshooting into single pages under `site/docs/`.
+    Reason: Reduce fragmentation and make the docs feel cohesive and professional, with fewer small pages.
+    Tradeoffs: Breaking URLs for old per-topic pages; cross-links must use anchors on the consolidated pages.

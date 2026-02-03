@@ -12,6 +12,7 @@ ls
 pwd
 echo
 cat
+rg
 find
 grep
 head

@@ -1,0 +1,67 @@
+---
+title: Contributing
+description: How to contribute to Agent Layer.
+---
+
+Agent Layer is open source and contributions are welcome. If you're unsure where to start, open an issue with a clear problem statement and a small reproduction.
+
+## Where to start
+
+- Bugs, questions, and feature requests: [GitHub Issues](https://github.com/conn-castle/agent-layer/issues)
+- Code changes: open a PR against `main`
+- Development workflow (setup, tooling, and commands): [docs/DEVELOPMENT.md](https://github.com/conn-castle/agent-layer/blob/main/docs/DEVELOPMENT.md)
+
+## What makes a great PR
+
+- Scope is small and focused
+- Behavior changes are covered by tests
+- Docs are updated when user-facing behavior changes
+- Commit messages explain the intent (not just the mechanics)
+
+## Local workflow
+
+The repo is set up for deterministic outputs and CI-aligned tooling. For most changes:
+
+```bash
+./scripts/setup.sh
+make dev
+```
+
+Run from: repo root
+
+If you want a faster loop, use `make test` while you iterate and `make dev` before you open a PR.
+
+## Template and sync changes
+
+If you change anything under `internal/templates/` (or sync behavior), validate the seeded output by running `init` and `sync` against a scratch repo:
+
+```bash
+mkdir -p tmp/dev-repo
+cd tmp/dev-repo
+go run ../../cmd/al init
+go run ../../cmd/al sync
+```
+
+Run from: repo root
+
+This catches accidental drift in generated outputs before CI does.
+
+## Documentation
+
+The website content lives under:
+
+- `site/docs/` (documentation pages)
+- `site/pages/` (marketing and utility pages like Install, FAQ, Security)
+
+Documentation-only PRs are welcome. If you're changing copy and structure only, you usually do not need any Go tooling beyond opening a PR.
+
+## Design principles
+
+- Keep the repo-local source of truth explicit
+- Avoid introducing hidden defaults
+- Fail fast when required inputs are missing
+- Keep generated outputs deterministic
+
+:::tip
+If you improve the docs, include a before/after example. It helps reviewers validate impact quickly.
+:::

@@ -91,7 +91,7 @@ Prerequisites: `make tools` has been run
 make test
 ```
 Run from: repo root
-Prerequisites: `make tools` has been run  
+Prerequisites: `make tools` has been run
 Notes: Uses `gotestsum` for nicer output.
 
 - Run end-to-end build/install smoke tests

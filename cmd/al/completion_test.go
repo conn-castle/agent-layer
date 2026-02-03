@@ -4,7 +4,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func TestCompletionInstallPathBash(t *testing.T) {
@@ -258,6 +262,61 @@ func TestGenerateCompletion(t *testing.T) {
 	}
 }
 
+func TestGenerateCompletion_Error(t *testing.T) {
+	origBash := genBashCompletion
+	origZsh := genZshCompletion
+	origFish := genFishCompletion
+	t.Cleanup(func() {
+		genBashCompletion = origBash
+		genZshCompletion = origZsh
+		genFishCompletion = origFish
+	})
+
+	errBoom := errors.New("boom")
+	tests := []struct {
+		name  string
+		shell string
+		setup func()
+	}{
+		{
+			name:  "bash",
+			shell: shellBash,
+			setup: func() {
+				genBashCompletion = func(_ *cobra.Command, _ io.Writer) error { return errBoom }
+			},
+		},
+		{
+			name:  "zsh",
+			shell: shellZsh,
+			setup: func() {
+				genZshCompletion = func(_ *cobra.Command, _ io.Writer) error { return errBoom }
+			},
+		},
+		{
+			name:  "fish",
+			shell: shellFish,
+			setup: func() {
+				genFishCompletion = func(_ *cobra.Command, _ io.Writer) error { return errBoom }
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			genBashCompletion = origBash
+			genZshCompletion = origZsh
+			genFishCompletion = origFish
+			tt.setup()
+
+			cmd := newCompletionCmd()
+			_, err := generateCompletion(cmd.Root(), tt.shell)
+			if !errors.Is(err, errBoom) {
+				t.Fatalf("expected error %q, got %v", errBoom, err)
+			}
+		})
+	}
+}
+
 func TestInstallCompletion(t *testing.T) {
 	xdg := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", xdg)
@@ -275,6 +334,57 @@ func TestInstallCompletion(t *testing.T) {
 	expectedPath := filepath.Join(xdg, "bash-completion", "completions", "al")
 	if !strings.Contains(buf.String(), expectedPath) {
 		t.Errorf("output missing path: %s", buf.String())
+	}
+}
+
+type alwaysFailWriter struct{}
+
+func (alwaysFailWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+type failOnStringWriter struct {
+	failOn string
+}
+
+func (w *failOnStringWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), w.failOn) {
+		return 0, errors.New("write failed")
+	}
+	return len(p), nil
+}
+
+func (w *failOnStringWriter) WriteString(s string) (int, error) {
+	if strings.Contains(s, w.failOn) {
+		return 0, errors.New("write failed")
+	}
+	return len(s), nil
+}
+
+func TestInstallCompletion_OutputWriteError(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", xdg)
+
+	err := installCompletion("bash", "script content", alwaysFailWriter{})
+	if err == nil {
+		t.Fatal("expected error when output write fails")
+	}
+	if !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInstallCompletion_NoteWriteError(t *testing.T) {
+	xdg := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", xdg)
+
+	writer := &failOnStringWriter{failOn: messages.CompletionBashNote}
+	err := installCompletion("bash", "script content", writer)
+	if err == nil {
+		t.Fatal("expected error when note write fails")
+	}
+	if !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -299,6 +409,24 @@ func TestXdgConfigHomeFallback(t *testing.T) {
 	}
 	if !strings.Contains(got, ".config") {
 		t.Errorf("expected fallback path to contain .config, got %s", got)
+	}
+}
+
+func TestCompletionInstallPath_HomeError(t *testing.T) {
+	orig := userHomeDir
+	t.Cleanup(func() { userHomeDir = orig })
+	userHomeDir = func() (string, error) {
+		return "", errors.New("home error")
+	}
+
+	t.Setenv("XDG_DATA_HOME", "")
+	if _, _, err := completionInstallPath(shellBash); err == nil {
+		t.Fatal("expected error for bash when home resolution fails")
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if _, _, err := completionInstallPath(shellFish); err == nil {
+		t.Fatal("expected error for fish when home resolution fails")
 	}
 }
 
@@ -396,6 +524,37 @@ func TestFirstWritableFpath_ExecFail(t *testing.T) {
 	_, ok = firstWritableFpath()
 	if ok {
 		t.Error("expected failure when exec fails")
+	}
+}
+
+func TestFirstWritableFpath_ExecZshSkipsEmpty(t *testing.T) {
+	origLookPath := lookPath
+	origExecCommand := execCommand
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		execCommand = origExecCommand
+	})
+
+	lookPath = func(string) (string, error) {
+		return "zsh", nil
+	}
+
+	tempDir := t.TempDir()
+	output := fmt.Sprintf("\n\n%s\n", tempDir)
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestHelperProcess", "--", name}
+		cs = append(cs, arg...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("FAKE_FPATH_OUTPUT=%s", output))
+		return cmd
+	}
+
+	got, ok := firstWritableFpath()
+	if !ok {
+		t.Fatal("expected success via zsh exec")
+	}
+	if got != tempDir {
+		t.Fatalf("got %s, want %s", got, tempDir)
 	}
 }
 
