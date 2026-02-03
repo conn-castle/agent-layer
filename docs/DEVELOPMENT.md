@@ -1,5 +1,7 @@
 # Development
 
+This repo is built around determinism: the same inputs should produce the same client outputs locally and in CI. These steps keep tooling pinned, workflows repeatable, and changes reviewable so you can trust what ships.
+
 ## Prerequisites
 - Go 1.25.6+
 - Git
@@ -27,12 +29,12 @@
 
 ## Daily workflow
 - Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage, and release builds.
-- Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH.
+- Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH. This avoids “works on my machine” drift and keeps local output aligned with CI.
 - Use `make dev` for a quick local pass (format + fmt-check + lint + coverage + release tests). Run `./scripts/setup.sh` or `make tools` first.
 - If you change installer templates (anything under `internal/templates/`), re-run `go run ./cmd/al init` in a target repo to re-seed files. See the README Quick start for overwrite/force flag guidance.
 
 ## Go Tooling & Environment
-Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions).
+Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions). It also keeps tool versions explicit, which makes regressions easier to trace.
 
 ### Common Issues
 - **`go mod tidy` or `go run` fails with network errors**: If your environment restricts access to `proxy.golang.org`, you can try setting `GOPROXY=direct` or ensure you have a working internet connection.

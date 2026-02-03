@@ -3,14 +3,12 @@ title: Install
 description: Install Agent Layer and get started.
 ---
 
-# Install
-
-Install once per machine. `al` is a global CLI on your `PATH`.
+Install Agent Layer once per machine, then initialize each repo you want to use. The CLI is named `al`.
 
 ## Requirements
 
 - A supported client installed separately (Gemini, Claude, Codex, VS Code, Antigravity)
-- A shell with `al` available on `PATH`
+- `al` available on your `PATH`
 
 Agent Layer does not install client CLIs for you.
 
@@ -30,11 +28,38 @@ brew install conn-castle/tap/agent-layer
 curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
 ```
 
+The script installs to `~/.local/bin` by default and verifies checksums. If `~/.local/bin` is not on your `PATH`, it prints an exact line to add.
+
+If you prefer not to pipe a script into your shell, download it first and inspect it:
+
+```bash
+curl -fsSL -o al-install.sh https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh
+less al-install.sh
+bash al-install.sh
+```
+
+By default, the script also installs shell completions for your current interactive shell. You can manage completions manually with `al completion <bash|zsh|fish> --install`.
+
 ## Windows (PowerShell)
 
 ```powershell
 iwr -useb https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 | iex
 ```
+
+If `al` is not found after install, add the printed install directory to your `PATH` and open a new terminal.
+
+If you prefer to inspect the installer before running it, download it to a file first:
+
+```powershell
+$path = Join-Path $env:TEMP "al-install.ps1"
+Invoke-WebRequest https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 -OutFile $path
+notepad $path
+& powershell -ExecutionPolicy Bypass -File $path
+```
+
+:::note
+Windows support is currently best-effort. If you hit issues, please file a report on [GitHub Issues](https://github.com/conn-castle/agent-layer/issues) with your `al --version` and the command output (redact secrets).
+:::
 
 ## Verify
 
@@ -47,7 +72,7 @@ al --version
 ```bash
 cd /path/to/repo
 al init
-al gemini
+al <client> # e.g., al claude
 ```
 
 `al init` seeds:
@@ -58,15 +83,20 @@ al gemini
 
 By default, `al init` prompts to run the setup wizard. Skip it with `--no-wizard` if you prefer to configure manually.
 
+You can also run `al wizard` later to revisit approvals, enabled clients, MCP servers, and warnings.
+
 :::tip
 If you want to test safely, run `al init` in a scratch repo first.
 :::
 
 ## Recommended next steps
 
-- Edit `.agent-layer/instructions/` to set your team rules
+- Read the docs: [/docs/getting-started](/docs/getting-started)
+- Run `al doctor` to validate config and MCP connectivity
+- Edit `.agent-layer/instructions/` to set team rules
 - Review `.agent-layer/commands.allow` to keep approvals tight
-- Enable only the MCP servers you trust
+- Enable only MCP servers you trust (see [/docs/concepts#mcp-servers](/docs/concepts#mcp-servers))
+- Skim [/security](/security) for network behavior and secret handling
 
 ## Update
 

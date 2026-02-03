@@ -1,27 +1,22 @@
 ---
 title: Changelog
 description: Release history for Agent Layer.
+hide_title: true
 ---
 
-# Changelog
+import Changelog from '@site/CHANGELOG.md';
 
-Agent Layer publishes full release notes and artifacts on GitHub Releases.
+Agent Layer publishes full release notes and artifacts on GitHub Releases. The canonical history lives in `CHANGELOG.md` and is embedded below.
 
-## Where to read release notes
+Where to read release notes:
 
-- Releases and binaries: https://github.com/conn-castle/agent-layer/releases
-- Canonical changelog file: https://github.com/conn-castle/agent-layer/blob/main/CHANGELOG.md
-
-## What to expect in each release
-
-Each release includes:
-
-- a tagged version with notes
-- prebuilt binaries for supported platforms
-- `checksums.txt` for verification
+- [Releases and binaries](https://github.com/conn-castle/agent-layer/releases)
+- [Canonical changelog file](https://github.com/conn-castle/agent-layer/blob/main/CHANGELOG.md)
 
 :::note
-If you pin versions in a repo, read the release notes before updating `.agent-layer/al.version`.
+If you pin versions in a repo, read the release notes before updating `.agent-layer/al.version` (see [/docs/concepts#version-pinning](/docs/concepts#version-pinning)).
 :::
 
-If you are looking for a specific change, search the changelog by version tag (for example `v0.5.0`).
+If you are looking for a specific change, search the changelog by version tag (for example `v0.6.0`).
+
+<Changelog />

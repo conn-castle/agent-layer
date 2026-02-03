@@ -28,6 +28,18 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-03 b4c5d6e: Support custom Git repositories for templates
+    Priority: Medium. Area: lifecycle management
+    Description: Allow users to specify a custom Git repository as the source for templates during `al init`, enabling teams and organizations to maintain their own standardized agent-layer configurations.
+    Acceptance criteria: `al init` (or a new command) accepts a Git URL for templates, and these templates are correctly instantiated in the target repository.
+    Notes: Requires a mechanism to securely fetch and cache external templates.
+
+- Backlog 2026-02-03 f1a2b3c: Transform roadmap into public-facing documentation
+    Priority: Medium. Area: documentation
+    Description: Convert the internal `ROADMAP.md` into actual documentation that clearly communicates the project's direction and upcoming features to users.
+    Acceptance criteria: `ROADMAP.md` is formatted and positioned as a user-facing document, providing clarity on what is coming and what is speculative.
+    Notes: Ensure it remains easy for agents to update while being readable for humans.
+
 - Backlog 2026-01-30 e5f4d3c: Enable full-auto mode for Claude and Codex
     Priority: Low. Area: agent permissions
     Description: Provide a way to give Claude and Codex full access to the CLI to avoid repetitive permission prompts, specifically for Claude's custom Python execution.

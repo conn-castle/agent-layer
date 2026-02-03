@@ -3,9 +3,8 @@
 // This tool is run from Repo A (conn-castle/agent-layer) during the release
 // workflow on tag pushes `v*` (starting at the first website-capable release).
 //
-// It copies content from Repo A `site/` into Repo B, generates a CLI reference
-// page from the source, snapshots the docs version via Docusaurus versioning,
-// and normalizes `versions.json` ordering.
+// It copies content from Repo A `site/` into Repo B, snapshots the docs version
+// via Docusaurus versioning, and normalizes `versions.json` ordering.
 package main
 
 import (
@@ -18,7 +17,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -31,6 +32,7 @@ func main() {
 func run() error {
 	tag := flag.String("tag", "", "Git tag to publish, e.g. v0.6.0 (required)")
 	repoBDir := flag.String("repo-b-dir", "", "Path to local checkout of agent-layer-web (required)")
+	docusaurusTimeout := flag.Duration("docusaurus-timeout", 5*time.Minute, "Timeout for docusaurus docs:version (e.g. 5m, 30s)")
 	flag.Parse()
 
 	if *tag == "" {
@@ -38,6 +40,9 @@ func run() error {
 	}
 	if *repoBDir == "" {
 		return fmt.Errorf("--repo-b-dir is required")
+	}
+	if *docusaurusTimeout <= 0 {
+		return fmt.Errorf("--docusaurus-timeout must be a positive duration")
 	}
 
 	if err := validateTagFormat(*tag); err != nil {
@@ -68,6 +73,14 @@ func run() error {
 	if _, err := os.Stat(siteDocs); os.IsNotExist(err) {
 		return fmt.Errorf("missing Repo A site docs dir: %s", siteDocs)
 	}
+	changelogSrc := filepath.Join(repoA, "CHANGELOG.md")
+	changelogInfo, err := os.Stat(changelogSrc)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("missing Repo A changelog: %s", changelogSrc)
+		}
+		return fmt.Errorf("failed to stat Repo A changelog: %w", err)
+	}
 
 	// Publish unversioned pages by replacing Repo B src/pages.
 	dstPages := filepath.Join(repoB, "src", "pages")
@@ -86,20 +99,14 @@ func run() error {
 		return fmt.Errorf("failed to copy docs: %w", err)
 	}
 
-	// Generate CLI reference into docs staging.
-	fmt.Println("Generating CLI reference...")
-	cliBody, err := generateCLIReferenceMDX(repoA, *tag)
+	// Sync canonical changelog into Repo B root for website rendering.
+	changelogData, err := os.ReadFile(changelogSrc)
 	if err != nil {
-		return fmt.Errorf("failed to generate CLI reference: %w", err)
+		return fmt.Errorf("failed to read Repo A changelog: %w", err)
 	}
-
-	cliDocPath := filepath.Join(dstDocs, "reference", "cli.mdx")
-	if err := os.MkdirAll(filepath.Dir(cliDocPath), 0755); err != nil {
-		return fmt.Errorf("failed to create reference dir: %w", err)
-	}
-	cliContent := "---\ntitle: CLI reference\n---\n\n" + cliBody + "\n"
-	if err := os.WriteFile(cliDocPath, []byte(cliContent), 0644); err != nil {
-		return fmt.Errorf("failed to write CLI reference: %w", err)
+	changelogDst := filepath.Join(repoB, "CHANGELOG.md")
+	if err := os.WriteFile(changelogDst, changelogData, changelogInfo.Mode()); err != nil {
+		return fmt.Errorf("failed to write Repo B changelog: %w", err)
 	}
 
 	// Ensure reruns are safe for the same version.
@@ -110,12 +117,18 @@ func run() error {
 
 	// Snapshot docs version.
 	fmt.Printf("Running docusaurus docs:version %s...\n", docsVersion)
+	ctx, cancel := context.WithTimeout(context.Background(), *docusaurusTimeout)
+	defer cancel()
+
 	// #nosec G204 -- docsVersion is validated and only used to run a trusted local command.
-	cmd := execCommandContext(context.Background(), "npx", "docusaurus", "docs:version", docsVersion)
+	cmd := execCommandContext(ctx, "npx", "docusaurus", "docs:version", docsVersion)
 	cmd.Dir = repoB
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("docusaurus docs:version exceeded timeout (%s): %w", docusaurusTimeout.String(), err)
+		}
 		return fmt.Errorf("docusaurus docs:version failed: %w", err)
 	}
 
@@ -129,7 +142,7 @@ func run() error {
 	return nil
 }
 
-// repoRoot returns Repo A root assuming binary/source is at cmd/publish-site/.
+// repoRoot returns Repo A root by searching upwards for go.mod.
 func repoRoot() (string, error) {
 	// Try to find repo root by looking for go.mod
 	dir, err := os.Getwd()
@@ -154,7 +167,6 @@ func repoRoot() (string, error) {
 var tagRegexp = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
 
 var execCommandContext = exec.CommandContext
-var runGoCmdFunc = runGoCmd
 
 func validateTagFormat(tag string) error {
 	if !tagRegexp.MatchString(tag) {
@@ -219,79 +231,6 @@ func copyTree(src, dst string) error {
 		}
 		return os.WriteFile(dstPath, data, info.Mode())
 	})
-}
-
-func generateCLIReferenceMDX(repoA, tag string) (string, error) {
-	version := tag
-	ldflags := fmt.Sprintf("-X main.Version=%s", version)
-
-	// Get top-level help.
-	topHelp, err := runGoCmdFunc(repoA, ldflags, "--help")
-	if err != nil {
-		return "", fmt.Errorf("failed to get top-level help: %w", err)
-	}
-
-	// Parse available commands from help output.
-	cmds := parseAvailableCommands(topHelp)
-
-	var parts []string
-	parts = append(parts, fmt.Sprintf("## `al --help`\n\n```text\n%s\n```\n", topHelp))
-
-	for _, cmd := range cmds {
-		cmdHelp, err := runGoCmdFunc(repoA, ldflags, cmd, "--help")
-		if err != nil {
-			// Some commands might not have --help, skip them.
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("## `al %s --help`\n\n```text\n%s\n```\n", cmd, cmdHelp))
-	}
-
-	return strings.Join(parts, "\n"), nil
-}
-
-func runGoCmd(repoA, ldflags string, args ...string) (string, error) {
-	cmdArgs := make([]string, 0, 4+len(args))
-	cmdArgs = append(cmdArgs, "run", "-ldflags", ldflags, "./cmd/al")
-	cmdArgs = append(cmdArgs, args...)
-
-	// #nosec G204 -- cmdArgs is constructed from trusted inputs and runs the local Go toolchain.
-	cmd := execCommandContext(context.Background(), "go", cmdArgs...)
-	cmd.Dir = repoA
-	if len(cmd.Env) == 0 {
-		cmd.Env = append(os.Environ(), "AL_NO_NETWORK=1")
-	} else {
-		cmd.Env = append(cmd.Env, "AL_NO_NETWORK=1")
-	}
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("command failed: %w\noutput: %s", err, string(output))
-	}
-	return strings.TrimSpace(string(output)), nil
-}
-
-var cmdRegexp = regexp.MustCompile(`^\s{2,}([a-z0-9-]+)\s+.*$`)
-
-func parseAvailableCommands(helpOutput string) []string {
-	var cmds []string
-	inCmds := false
-
-	for _, line := range strings.Split(helpOutput, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "Available Commands:" {
-			inCmds = true
-			continue
-		}
-		if inCmds {
-			if trimmed == "" || strings.HasPrefix(trimmed, "Flags:") {
-				break
-			}
-			if matches := cmdRegexp.FindStringSubmatch(line); matches != nil {
-				cmds = append(cmds, matches[1])
-			}
-		}
-	}
-	return cmds
 }
 
 func ensureIdempotentVersion(repoB, docsVersion string) error {
@@ -375,6 +314,74 @@ func parseVersion(s string) (version, error) {
 	return v, nil
 }
 
+// comparePrerelease compares two prerelease strings according to SemVer precedence rules.
+// It assumes a and b are non-empty strings (stable releases are handled separately).
+// It returns -1 if a < b, 0 if a == b, and 1 if a > b.
+func comparePrerelease(a string, b string) int {
+	aIDs := strings.Split(a, ".")
+	bIDs := strings.Split(b, ".")
+
+	for i := 0; i < len(aIDs) && i < len(bIDs); i++ {
+		aRaw := aIDs[i]
+		bRaw := bIDs[i]
+
+		aNum, aIsNum := parseNumericIdentifier(aRaw)
+		bNum, bIsNum := parseNumericIdentifier(bRaw)
+
+		switch {
+		case aIsNum && bIsNum:
+			if aNum < bNum {
+				return -1
+			}
+			if aNum > bNum {
+				return 1
+			}
+		case aIsNum && !bIsNum:
+			// Numeric identifiers have lower precedence than non-numeric.
+			return -1
+		case !aIsNum && bIsNum:
+			return 1
+		default:
+			if aRaw < bRaw {
+				return -1
+			}
+			if aRaw > bRaw {
+				return 1
+			}
+		}
+	}
+
+	// If all compared identifiers are equal, the longer list has higher precedence.
+	if len(aIDs) < len(bIDs) {
+		return -1
+	}
+	if len(aIDs) > len(bIDs) {
+		return 1
+	}
+	return 0
+}
+
+// parseNumericIdentifier reports whether s is a valid SemVer numeric identifier:
+// it must be all digits with no leading zeros (except the string "0").
+func parseNumericIdentifier(s string) (int, bool) {
+	if s == "0" {
+		return 0, true
+	}
+	if s == "" || s[0] == '0' {
+		return 0, false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, false
+		}
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 func normalizeVersionsJSON(repoB string) error {
 	versionsPath := filepath.Join(repoB, "versions.json")
 	if _, err := os.Stat(versionsPath); os.IsNotExist(err) {
@@ -430,8 +437,8 @@ func normalizeVersionsJSON(repoB string) error {
 			return false
 		}
 
-		// Both have prereleases, compare lexicographically.
-		return vi.prerelease > vj.prerelease
+		// Both have prereleases, compare by SemVer precedence.
+		return comparePrerelease(vi.prerelease, vj.prerelease) > 0
 	})
 
 	newData, err := json.MarshalIndent(unique, "", "  ")

@@ -1,0 +1,353 @@
+---
+title: Concepts
+description: The mental model and safety boundaries for Agent Layer.
+sidebar_position: 2
+---
+
+Agent Layer keeps agent behavior consistent across tools by centralizing instructions and projecting them into each client. These concepts explain how the system is designed and why it behaves the way it does. If you only read one section, start with [Single source of truth](#single-source-of-truth).
+
+The through-line is trust: when configuration lives in one place, you can reason about what an agent will do. Each concept below exists to make that reasoning explicit and repeatable.
+
+If you have ever thought “it worked in Claude but not in Codex” or “why does VS Code have different tools than my CLI,” you have run into drift. Drift is rarely malicious; it is usually just the natural result of multiple clients, multiple config formats, and multiple places to forget to update. Agent Layer exists to remove the forgetting.
+
+One important design choice follows from that: Agent Layer is repo-local. Different repositories have different safety constraints, different tool needs, and different levels of autonomy you want to grant. Keeping the contract in the repo keeps those decisions explicit and close to the code they affect.
+
+## In this page
+
+- [Single source of truth](#single-source-of-truth)
+- [Approvals and safety](#approvals-and-safety)
+- [MCP servers](#mcp-servers)
+- [Project memory](#project-memory)
+- [Version pinning](#version-pinning)
+
+## Single source of truth
+
+Agent Layer centralizes instructions, slash commands, approvals, and MCP server configuration under `.agent-layer/`, then projects them into each client's native format. This is the anchor idea behind everything else in the system. It replaces “copy this config everywhere” with “define it once and regenerate.”
+
+Every client expects different config files and conventions. If you edit those files directly, they drift and you lose consistency across tools. With Agent Layer, you edit the canonical inputs once and let the outputs be disposable.
+
+That sounds simple, but it changes the day-to-day experience: rules become portable across tools, changes become reviewable, and debugging becomes “check the source of truth” instead of “hunt across five config formats.”
+
+Agent Layer also pushes you toward explicit intent. If something matters, it is usually spelled out (for example `enabled = true/false`), not left to implicit defaults. That extra clarity is what lets teams trust that “same repo + same version” produces the same behavior.
+
+### What is canonical
+
+The canonical inputs live in `.agent-layer/`:
+
+- `config.toml` for structured configuration
+- `instructions/` for agent rules and guidance
+- `slash-commands/` for repeatable workflows
+- `commands.allow` for approved shell command prefixes
+- `.env` for secrets
+
+Everything else is derived output and can be overwritten at any time.
+
+Treat `.agent-layer/` like a contract: keep it explicit, keep it small, and review changes the same way you would review application configuration.
+
+Some teams keep `.agent-layer/` local while experimenting; others commit it so everyone shares the same agent behavior. In either mode, secrets stay out of git: `.agent-layer/.env` is always gitignored and loaded at runtime.
+
+### What gets generated
+
+When you run `al sync` or `al <client>`, Agent Layer generates client-specific config files and launchers, such as:
+
+- `.agent/skills/`
+- `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`
+- `.codex/` (generated config, rules, and skills)
+- `.vscode/mcp.json`, `.vscode/prompts/`, and a managed block in `.vscode/settings.json`
+- `AGENTS.md`
+- `CLAUDE.md`
+- `GEMINI.md`
+- `.github/copilot-instructions.md`
+- repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command` and `open-vscode.app/`)
+
+The generated files are always safe to delete and regenerate.
+
+This separation is deliberate. It gives you the confidence to wipe outputs and rebuild when something feels off, without losing the source of truth that you actually maintain.
+
+### Why this prevents drift
+
+In a manual setup, every client becomes a separate source of truth. You change a rule in one place and forget to update another. That is how approvals diverge, MCP servers go missing, and agents behave inconsistently.
+
+Agent Layer avoids that by forcing everything through a single canonical input. The outputs are always derived and always disposable.
+
+### Anti-patterns to avoid
+
+- Editing generated files under `.gemini/`, `.claude/`, `.codex/`, `.agent/skills/`, or `.mcp.json`
+- Editing Agent Layer-managed files under `.vscode/` (`mcp.json`, `prompts/`, and the managed block in `settings.json`)
+- Copying instructions manually between clients
+- Maintaining separate MCP configs for each agent
+- Treating generated files as source of truth
+
+If you see drift, move the change into `.agent-layer/` and regenerate.
+
+## Approvals and safety
+
+Approvals control whether an agent can execute shell commands and MCP tools without prompting. This is a safety layer that lets teams choose how much autonomy they want per repo. Think of approvals as the guardrails that let you scale trust without losing control: generous enough for speed, explicit enough for safety.
+
+This is where “power” becomes “professional.” The point is not to slow you down; it is to make speed safe. A personal scratch repo can be permissive, while a production repo can require explicit confirmation. The same CLI supports both.
+
+The best approvals setup is the one you do not have to think about: tight enough to prevent accidents, permissive enough that safe work stays fast.
+
+Approvals are about capability, not intention. A prompt can say “I will be careful,” but approvals are what enforce what the agent can actually do.
+
+### Approvals modes
+
+Set the mode in `.agent-layer/config.toml` (see [Configuration](./reference#configuration)):
+
+```toml
+[approvals]
+mode = "all" # one of: all, mcp, commands, none
+```
+
+| Mode | Shell commands | MCP tools |
+| --- | --- | --- |
+| `all` | auto-approve | auto-approve |
+| `mcp` | prompt/deny | auto-approve |
+| `commands` | auto-approve | prompt/deny |
+| `none` | prompt/deny | prompt/deny |
+
+The default template sets `mode = "all"`. Change it to match your team's security posture.
+
+### Approved commands
+
+`.agent-layer/commands.allow` defines which shell command prefixes are allowed. This list is projected into each client that supports command approvals.
+
+Example:
+
+```text
+go test
+make test
+rg
+```
+
+Keep the list short and explicit. Prefer command prefixes over full commands so tools can add safe arguments.
+
+### Client support (best effort)
+
+Not every client supports every approval type. Agent Layer generates the closest supported behavior for each client and applies `approvals.mode` on a best-effort basis.
+
+:::note
+If a client does not support approvals at all, Agent Layer cannot enforce them. Use instructions and allowlists to compensate.
+:::
+
+### Recommendations
+
+- Start with `commands` or `none` in sensitive repos.
+- Explicitly whitelist safe command prefixes.
+- Use MCP servers only when you control or trust their runtime.
+- Review `.agent-layer/` changes as you would any other config.
+
+## MCP servers
+
+Agent Layer projects MCP server configuration into each supported client's native format so tools are available everywhere your agents run. MCP (Model Context Protocol) servers are how agents gain real capabilities, so explicit configuration keeps scope intentional and predictable across clients.
+
+If approvals are the guardrails, MCP servers are the engine. They let an agent do real work: search code, fetch URLs, call APIs, and integrate with your tooling. Because they can do a lot, you want them configured deliberately.
+
+Another benefit of centralizing MCP servers is translation. Each client has its own configuration shape and its own conventions for secrets and headers. Agent Layer lets you think in one format and projects the safest supported representation into each client.
+
+In practice, this means you can keep credentials in one place (`.agent-layer/.env`), reference them in `config.toml`, and trust that generated outputs will either preserve safe placeholders or be written to gitignored files when a client requires concrete values.
+
+### When MCP servers change the experience
+
+Instructions and approvals make agents consistent. MCP servers are what make them capable.
+
+Without tools, a model is limited to its training and whatever you paste into context. With tools, it can pull the right information at the moment it is needed: search your repo, read a web page, query an API, or fetch up-to-date documentation. This is where agent output typically gets dramatically more reliable.
+
+Two high-leverage examples:
+
+- **Context7**: gives agents access to current library documentation and code examples, which reduces “reasonable sounding” but incorrect API usage. It shines when you are integrating SDKs or frameworks that change quickly.
+- **Tavily**: provides web search/research so agents can answer “what is the latest” or “what changed recently” questions with real sources instead of guessing from training data.
+
+### Why the template includes a default MCP library
+
+`al init` seeds `.agent-layer/config.toml` with a small set of MCP servers (all `enabled = false` by default). They are included because they cover the most common high-value agent workflows across repos: up-to-date docs, web research, fast code search, controlled filesystem access, and GitHub operations.
+
+You do not need all of them. Most repos get the best results by enabling a small, intentional set and expanding only when a real use case shows up.
+
+They are disabled by default because some require sign-ups and secrets, and because tool access is a real capability decision. Enable the minimum set that gives you leverage.
+
+**Seeded servers (disabled by default)**
+
+- `context7` - current library docs and examples; requires `AL_CONTEXT7_API_KEY` (sign up) and `npx`.
+- `tavily` - web search/research for recency; requires `AL_TAVILY_API_KEY` (sign up).
+- `github` - GitHub PR/issue/actions workflows; requires `AL_GITHUB_PERSONAL_ACCESS_TOKEN` and access to the configured endpoint. The default template also restricts tool exposure via `X-MCP-Tools` to keep the tool surface deliberate.
+- `ripgrep` - fast repo search; requires `npx`. Included because “find the right file/identifier” is one of the most common agent tasks.
+- `filesystem` - controlled file access (restricted to the current repo root in the template); requires `npx`. Included because it lets clients that rely on MCP tooling inspect the repo safely.
+- `fetch` - fetch a URL and return its contents; requires `uvx` (from `uv`). Useful alongside search when you want the agent to read the primary source.
+- `playwright` - browser automation (logins, complex pages, UI flows); requires `npx` and downloads browser dependencies. High leverage for web-focused repos, unnecessary overhead for many others.
+
+### Where servers are defined
+
+Servers live in `.agent-layer/config.toml` under `[mcp]`:
+
+```toml
+[[mcp.servers]]
+id = "example-api"
+enabled = true
+transport = "http"
+url = "https://example.com/mcp"
+headers = { Authorization = "Bearer ${AL_EXAMPLE_TOKEN}" }
+```
+
+Each server requires:
+
+- `id` (unique, non-empty)
+- `enabled` (true or false)
+- `transport` (`http` or `stdio`)
+
+### HTTP servers
+
+HTTP servers use `url` and optional `headers`. You can also set `http_transport`:
+
+- `sse` (default)
+- `streamable`
+
+If `transport = "http"`, do not set `command`, `args`, or `env`.
+
+### Stdio servers
+
+Stdio servers run a local command:
+
+```toml
+[[mcp.servers]]
+id = "filesystem"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+```
+
+If `transport = "stdio"`, do not set `url` or `headers`.
+
+### Secrets and environment variables
+
+Secrets live in `.agent-layer/.env` and should be referenced using `AL_`-prefixed placeholders:
+
+```env
+AL_EXAMPLE_TOKEN=your-token-here
+```
+
+Only variables prefixed with `AL_` are loaded from `.env`.
+See [Environment variables](./reference#environment-variables) for how `.env` is loaded and when `AL_NO_NETWORK` applies.
+
+### Client targeting
+
+Use `clients = ["gemini", "claude", "codex", "vscode", "antigravity"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
+
+### Built-in path placeholder
+
+`${AL_REPO_ROOT}` expands to the absolute repo root during sync and doctor checks. Use it when a server needs filesystem access scoped to the current repo.
+
+### Doctor checks
+
+`al doctor` connects to each enabled MCP server, lists available tools, and warns about common issues. It waits up to 30 seconds per server before timing out.
+For the full checklist, see [Doctor](./reference#doctor).
+
+### Internal MCP prompt server
+
+Agent Layer includes an internal MCP prompt server for slash commands. It is always generated and wired into client configs and does not appear in `config.toml`.
+
+### Common pitfalls
+
+- `npx` or `uvx` not installed when using stdio servers
+- missing `AL_` secrets in `.agent-layer/.env`
+- mixing `url` with `command` in the same server block
+- enabling too many servers and overloading context
+
+:::tip
+Start with one or two servers, verify with `al doctor`, then expand. It is easier to trust your agents when the tool surface is deliberate and scoped.
+:::
+
+## Project memory
+
+Agent Layer seeds `docs/agent-layer/` as a place for repo-specific memory files. These files are meant to be long-lived, human-readable context that agents can reference. Treat them as the team's shared recall, not as transient notes, so future changes have context instead of guesswork.
+
+This is less about documentation and more about continuity. Agents work best when you can answer “what are we building,” “what are the constraints,” and “what did we decide last time.” Memory files make that context durable.
+
+They are also for humans. When a new teammate joins or you return to a repo after months, clear, up-to-date memory is the difference between confidence and archaeology.
+
+### Default memory files
+
+`al init` creates:
+
+- `docs/agent-layer/ISSUES.md`
+- `docs/agent-layer/BACKLOG.md`
+- `docs/agent-layer/ROADMAP.md`
+- `docs/agent-layer/DECISIONS.md`
+- `docs/agent-layer/COMMANDS.md`
+
+The default instructions reference these files, so agents know where to look for project context and workflow commands.
+
+### What to commit
+
+Teams can choose to commit these files or keep them local:
+
+- Commit when you want shared, stable context across the team
+- Ignore when you want per-developer notes only
+
+:::note
+If you commit them, treat these files as part of your project contract. Keep entries short and current.
+:::
+
+### How memory is used
+
+Agent Layer does not enforce how you use memory files. Instead, the instruction templates guide agents to read them before planning work, running commands, or making changes.
+
+If you add your own memory files, update your instructions to point to them.
+
+### Suggested patterns
+
+- Keep entries short and actionable
+- Record decisions once and link them from tasks
+- Clear resolved issues so the memory stays trustworthy
+
+## Version pinning
+
+Version pinning keeps a repo locked to a specific Agent Layer release so every developer runs the same behavior. It is the simplest way to avoid surprises across laptops, CI, and time, especially when configuration changes have real behavioral impact.
+
+In practice, pinning acts like a compatibility boundary. When you upgrade, you do it intentionally, you read the release notes, and the whole team moves together.
+
+If you have used lockfiles in other ecosystems, pinning will feel familiar: it keeps “what version am I actually running” from becoming an invisible source of drift.
+
+### How pinning works
+
+When `.agent-layer/al.version` exists, `al` will:
+
+1. read the pinned version
+2. download it if missing from the local cache
+3. dispatch to that version automatically
+
+Pin formats:
+
+- `X.Y.Z`
+- `vX.Y.Z`
+
+### How to set a pin
+
+- `al init` writes a pin when you are running a release build
+- or pass `--version X.Y.Z` to `al init`
+- or edit `.agent-layer/al.version` directly
+
+### Upgrading a pinned repo
+
+1. Update `.agent-layer/al.version` to the new release
+2. Run `al` in the repo to download the pinned version
+3. Re-run `al init --overwrite` if you want to review template updates
+
+### Overrides and offline mode
+
+| Variable | Purpose |
+| --- | --- |
+| `AL_VERSION` | force a version (overrides the repo pin) |
+| `AL_NO_NETWORK` | disable downloads (fails if the pinned version is not cached) |
+| `AL_CACHE_DIR` | override the cache location |
+
+### When to use pinning
+
+- Teams that want deterministic behavior across laptops and CI
+- Repos that require reproducible agent behavior
+- Any project where a breaking config change should be coordinated
+
+:::tip
+Pinning is most valuable once multiple developers are running `al` in the same repo.
+:::

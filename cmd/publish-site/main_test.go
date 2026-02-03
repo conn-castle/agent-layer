@@ -45,26 +45,6 @@ func TestStripV(t *testing.T) {
 	}
 }
 
-func TestParseAvailableCommands(t *testing.T) {
-	help := strings.Join([]string{
-		"Agent Layer CLI",
-		"",
-		"Available Commands:",
-		"  init        Initialize Agent Layer",
-		"  sync        Regenerate configs",
-		"",
-		"Flags:",
-		"  -h, --help   help",
-	}, "\n")
-	cmds := parseAvailableCommands(help)
-	if len(cmds) != 2 {
-		t.Fatalf("expected 2 commands, got %d", len(cmds))
-	}
-	if cmds[0] != "init" || cmds[1] != "sync" {
-		t.Fatalf("unexpected commands: %v", cmds)
-	}
-}
-
 func TestParseVersion(t *testing.T) {
 	v, err := parseVersion("1.2.3-rc.1")
 	if err != nil {
@@ -83,10 +63,45 @@ func TestParseVersion(t *testing.T) {
 	}
 }
 
+func TestComparePrerelease(t *testing.T) {
+	cases := []struct {
+		name string
+		a    string
+		b    string
+		want int
+	}{
+		{"numeric identifier ordering", "rc.10", "rc.2", 1},
+		{"shorter is lower precedence", "alpha", "alpha.1", -1},
+		{"numeric < non-numeric", "alpha.1", "alpha.beta", -1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := comparePrerelease(tc.a, tc.b)
+			switch tc.want {
+			case -1:
+				if got >= 0 {
+					t.Fatalf("expected %q < %q, got %d", tc.a, tc.b, got)
+				}
+			case 0:
+				if got != 0 {
+					t.Fatalf("expected %q == %q, got %d", tc.a, tc.b, got)
+				}
+			case 1:
+				if got <= 0 {
+					t.Fatalf("expected %q > %q, got %d", tc.a, tc.b, got)
+				}
+			default:
+				t.Fatalf("invalid want: %d", tc.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeVersionsJSON(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
-	data := []string{"0.2.0", "0.1.0", "0.2.0", "0.2.0-rc.1", "0.10.0"}
+	data := []string{"0.2.0", "0.1.0", "0.2.0", "0.2.0-rc.1", "0.2.0-rc.10", "0.2.0-rc.2", "0.10.0"}
 	payload, err := json.Marshal(data)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -107,7 +122,7 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	want := []string{"0.10.0", "0.2.0", "0.2.0-rc.1", "0.1.0"}
+	want := []string{"0.10.0", "0.2.0", "0.2.0-rc.10", "0.2.0-rc.2", "0.2.0-rc.1", "0.1.0"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unexpected order: %v", got)
 	}
@@ -296,32 +311,15 @@ func TestNormalizeVersionsJSON_Missing(t *testing.T) {
 	}
 }
 
-func TestRunGoCmd(t *testing.T) {
-	origExec := execCommandContext
-	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=TestHelperProcess", "--"}, append([]string{name}, args...)...)...)
-		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
-		return cmd
-	}
-	defer func() {
-		execCommandContext = origExec
-	}()
-
-	out, err := runGoCmd(t.TempDir(), "ldflags", "--help")
-	if err != nil {
-		t.Fatalf("runGoCmd: %v", err)
-	}
-	if out != "ok" {
-		t.Fatalf("unexpected output: %q", out)
-	}
-}
-
 func TestRun(t *testing.T) {
 	repoA := t.TempDir()
 	repoB := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(repoA, "go.mod"), []byte("module example.com/test"), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoA, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644); err != nil {
+		t.Fatalf("write changelog: %v", err)
 	}
 
 	sitePages := filepath.Join(repoA, "site", "pages")
@@ -335,10 +333,7 @@ func TestRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(sitePages, "index.mdx"), []byte("# Home"), 0o644); err != nil {
 		t.Fatalf("write page: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(siteDocs, "reference"), 0o755); err != nil {
-		t.Fatalf("mkdir docs reference: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(siteDocs, "reference", "stub.mdx"), []byte("stub"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o644); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
 
@@ -360,23 +355,8 @@ func TestRun(t *testing.T) {
 		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
 		return cmd
 	}
-	runGoCmdFunc = func(repoA, ldflags string, args ...string) (string, error) {
-		if len(args) == 1 && args[0] == "--help" {
-			return strings.Join([]string{
-				"Agent Layer CLI",
-				"",
-				"Available Commands:",
-				"  init        Initialize Agent Layer",
-				"  doctor      Run health checks",
-				"",
-				"Flags:",
-			}, "\n"), nil
-		}
-		return "usage", nil
-	}
 	defer func() {
 		execCommandContext = exec.CommandContext
-		runGoCmdFunc = runGoCmd
 		os.Args = origArgs
 	}()
 
@@ -401,8 +381,11 @@ func TestRun(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repoB, "src", "pages", "index.mdx")); err != nil {
 		t.Fatalf("expected pages copied: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(repoB, "docs", "reference", "cli.mdx")); err != nil {
-		t.Fatalf("expected cli reference: %v", err)
+	if _, err := os.Stat(filepath.Join(repoB, "CHANGELOG.md")); err != nil {
+		t.Fatalf("expected changelog copied: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoB, "docs", "reference.mdx")); err != nil {
+		t.Fatalf("expected reference doc: %v", err)
 	}
 }
 

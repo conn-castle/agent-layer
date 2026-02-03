@@ -1,0 +1,118 @@
+---
+title: Troubleshooting
+description: Fix common install, configuration, and MCP server issues.
+sidebar_position: 4
+---
+
+Use this page when installs fail, configs do not validate, or MCP servers do not connect. Most issues are configuration or PATH-related, so start with a quick triage before diving deeper. The goal is to get you back to a predictable state without guessing.
+
+Quick triage:
+
+- Run [`al doctor`](./reference#doctor) and read the warnings.
+- Confirm `al --version` works in the repo.
+- If you recently edited `.agent-layer/`, run [`al sync`](./reference#sync) to refresh generated client outputs.
+- If you are offline or locked down, set [`AL_NO_NETWORK=1`](./reference#environment-variables) to silence update checks.
+
+## In this page
+
+- [Install issues](#install-issues)
+- [Configuration errors](#configuration-errors)
+- [MCP server issues](#mcp-server-issues)
+- [Pinning and offline mode](#pinning-and-offline-mode)
+- [Still stuck](#still-stuck)
+
+If the triage does not resolve it, use the sections below.
+
+## Install issues
+
+If you have not installed `al` yet, start with [/install](/install).
+
+### `al` not on PATH
+
+- Verify install location:
+  - Homebrew: `brew --prefix conn-castle/tap/agent-layer`
+  - Script installs to a standard location for your OS
+- Open a new terminal after install so your PATH refreshes.
+- Run `which al` or `command -v al` to confirm it resolves.
+
+### Missing client CLI
+
+Agent Layer does not install Gemini, Claude, Codex, VS Code, or Antigravity. Install the target client and ensure it is on your `PATH`.
+
+### Update checks fail in locked-down environments
+
+`al init` and `al doctor` may warn if update checks are blocked by your network. This does not prevent normal use. Set `AL_NO_NETWORK=1` to disable update checks and downloads.
+
+## Configuration errors
+
+### "agent layer isn't initialized"
+
+Run [`al init`](./reference#init) in the repo to create `.agent-layer/` and `docs/agent-layer/`.
+
+### Generated files showing up in git
+
+Generated client outputs are meant to be disposable. If you see generated files like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` showing up in `git status`, it usually means one of:
+
+- the repo has not been initialized with Agent Layer's managed `.gitignore` block,
+- the ignore rules were customized,
+- or the generated files were committed previously.
+
+Re-run `al init` to reinstall the managed ignore rules. If the files were already committed, you will also need to stop tracking them in git (and ensure `.agent-layer/.env` stays untracked, since it contains secrets).
+
+:::caution
+`.codex/config.toml` may contain resolved values for MCP server URLs, commands, or environment variables. Treat it as private and keep it gitignored.
+:::
+
+### "invalid pinned version" or version format errors
+
+`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or re-run `al init --version X.Y.Z`. See [Version pinning](./concepts#version-pinning).
+
+### `config.toml` validation failures
+
+Common causes:
+
+- missing `enabled` fields for agents or MCP servers
+- invalid `approvals.mode` value
+- `transport` not set to `http` or `stdio`
+- mixing `url` with `command` in the same MCP server
+
+Run `al doctor` to see structured config errors.
+
+## MCP server issues
+
+### MCP server fails to start
+
+- Check that the command exists on your `PATH` (for example `npx` or `uvx`).
+- Verify any required secrets in `.agent-layer/.env`.
+- For HTTP servers, confirm the URL and headers are correct.
+- Use `al doctor` to confirm discovery and tool listing.
+
+### Client CLI not found
+
+Install the target client CLI (Gemini, Claude, Codex, VS Code, Antigravity) and ensure it is available on your `PATH`.
+
+## Pinning and offline mode
+
+### "version is not cached" when offline
+
+If `AL_NO_NETWORK=1` is set and the pinned version is not cached, `al` cannot download the version. Temporarily unset `AL_NO_NETWORK` or pre-populate the cache.
+
+## Still stuck
+
+Run [`al doctor`](./reference#doctor) and read the warnings. It will surface missing secrets, invalid config, and MCP connectivity issues.
+
+If you still cannot get unstuck, open a GitHub issue and include the details below:
+
+- [GitHub Issues](https://github.com/conn-castle/agent-layer/issues)
+
+If you are not sure whether it is a bug or “just usage,” it is still fine to file an issue. Clear reproduction details are more valuable than perfect categorization.
+
+Include:
+
+- your `al --version`
+- the output of `al doctor` (redact secrets)
+- your `.agent-layer/config.toml` (redact secrets and private URLs as needed)
+
+:::note
+If you run `al doctor` with no MCP servers enabled, it will still validate config and instructions.
+:::

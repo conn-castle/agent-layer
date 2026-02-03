@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-01-31 wiz003: Wizard scrambles config.toml order
+    Priority: Critical. Area: wizard
+    Description: The wizard screws up the order of the config.toml during updates, making the file almost unusable and difficult to maintain manually.
+    Next step: Fix the configuration writing logic in the wizard to preserve key order or follow a canonical schema-based order.
+
 - Issue 2026-01-30 argpass: Command-line arguments not passed to underlying agents
     Priority: High. Area: CLI / agent integration
     Description: Arguments passed to `al <agent>` (e.g., `al claude --dangerously-skip-permissions`) are not forwarded to the underlying agent process, causing errors or ignored flags.

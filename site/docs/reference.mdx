@@ -1,0 +1,415 @@
+---
+title: Reference
+description: Configuration, environment variables, and CLI behavior.
+sidebar_position: 3
+---
+
+This page is the authoritative reference for configuration, environment variables, and the `al` CLI. It is written for the moments when you want certainty: configuring a repo, debugging a launch, or reviewing what `al` will change.
+
+If you are setting up Agent Layer for the first time, start with [Getting started](./getting-started).
+
+Agent Layer is explicit by design. It prefers failing fast over guessing, and it treats generated files as disposable outputs rather than hand-maintained sources. When you need to know exactly what will change on disk, this is the contract.
+
+## In this page
+
+- [Configuration](#configuration)
+- [Environment variables](#environment-variables)
+- [CLI guide](#cli-guide)
+
+## Configuration
+
+`.agent-layer/config.toml` is the primary structured configuration file. It is the single source of truth for approvals, agents, MCP servers, and warning thresholds. If you treat one file as the contract, make it this one—everything else is derived from it.
+
+`al wizard` updates `config.toml` and `.agent-layer/.env`. Everything else is edited by hand.
+
+Most repos only need a few deliberate choices: pick an approvals mode, enable the agents you actually use, and add MCP servers one at a time. The file is validated on every run, so mistakes surface immediately instead of becoming “mystery behavior” later.
+
+:::caution
+Never put secrets in `config.toml`. Secrets belong in `.agent-layer/.env`.
+:::
+
+### Example
+
+```toml
+[approvals]
+# one of: "all", "mcp", "commands", "none"
+mode = "all"
+
+[agents.gemini]
+enabled = true
+# model is optional; when omitted, the client uses its default.
+# model = "..."
+
+[agents.claude]
+enabled = true
+# model = "..."
+
+[agents.codex]
+enabled = true
+model = "gpt-5.2-codex"
+reasoning_effort = "high" # codex only
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = true
+
+[mcp]
+# MCP servers are external tool servers projected into client configs.
+
+[[mcp.servers]]
+id = "filesystem"
+enabled = false
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+
+[warnings]
+# Optional thresholds for warning checks. Omit or comment out to disable.
+instruction_token_threshold = 10000
+mcp_server_threshold = 15
+mcp_tools_total_threshold = 60
+mcp_server_tools_threshold = 25
+mcp_schema_tokens_total_threshold = 30000
+mcp_schema_tokens_server_threshold = 20000
+```
+
+### Sections at a glance
+
+| Section | Purpose |
+| --- | --- |
+| `[approvals]` | auto-approval policy for commands and MCP tools |
+| `[agents.*]` | enablement and model selection per client |
+| `[[mcp.servers]]` | external MCP server definitions |
+| `[warnings]` | optional thresholds for token and server limits |
+
+### Approvals
+
+`[approvals]` controls auto-approval behavior.
+
+### Agents
+
+Each agent has an `enabled` flag and optional `model` value. Codex also supports `reasoning_effort`.
+
+Supported agents:
+
+- `gemini`
+- `claude`
+- `codex`
+- `vscode`
+- `antigravity`
+
+### MCP servers
+
+Each `[[mcp.servers]]` entry must include:
+
+- `id`
+- `enabled`
+- `transport` (`http` or `stdio`)
+
+Optional fields:
+
+- `clients` to restrict which clients receive a server
+- `http_transport` (`sse` or `streamable`) for HTTP servers
+- `headers` for HTTP auth and metadata
+- `command`, `args`, `env` for stdio servers
+
+#### Secrets, placeholders, and client projection
+
+Agent Layer is designed to keep secrets out of your canonical config and out of any files you might commit:
+
+- Put secrets in `.agent-layer/.env` (only `AL_`-prefixed variables are loaded).
+- Reference secrets in `config.toml` using placeholders like `${AL_GITHUB_TOKEN}`.
+- Let `al sync` project those placeholders into each client's supported format.
+
+Agent Layer never writes resolved secret values back into `config.toml`. Generated client outputs are treated as build artifacts, and some clients require concrete values in their own config formats. When that happens, those outputs are gitignored by default.
+
+Here is how placeholder projection works for MCP servers:
+
+| Client | Placeholder syntax in generated config |
+| --- | --- |
+| Claude Code (`.mcp.json`) | `${AL_TOKEN}` |
+| Gemini (`.gemini/settings.json`) | `${AL_TOKEN}` |
+| VS Code (`.vscode/mcp.json`) | `${env:AL_TOKEN}` |
+| Codex (`.codex/config.toml`) | headers become env-var references; URLs/commands/args/env values are resolved because Codex does not support placeholders |
+
+Practical guidance:
+
+- Prefer secrets in headers (`headers = { Authorization = "Bearer ${AL_TOKEN}" }`) over secrets in URLs.
+- For maximum portability, keep non-Authorization secret headers as exact placeholders (for example `"X-Api-Key" = "${AL_API_KEY}"`), not mixed into longer strings.
+- Some services use API keys in URLs (for example the seeded Tavily template). In that case, remember clients like Codex may require a fully resolved URL and will write it only into gitignored outputs.
+
+#### HTTP example
+
+```toml
+[[mcp.servers]]
+id = "example-api"
+enabled = true
+transport = "http"
+url = "https://example.com/mcp"
+headers = { Authorization = "Bearer ${AL_EXAMPLE_TOKEN}" }
+```
+
+#### Stdio example
+
+```toml
+[[mcp.servers]]
+id = "ripgrep"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "mcp-ripgrep@latest"]
+```
+
+### Warnings
+
+Warning thresholds are optional. When a threshold is omitted, its warning is disabled. All values must be positive integers.
+
+Warnings are used by:
+
+- `al sync` for instruction token thresholds
+- `al doctor` for MCP server and schema thresholds
+
+### Validation rules
+
+Agent Layer validates `config.toml` on every run. Common validation rules:
+
+- `approvals.mode` must be one of `all`, `mcp`, `commands`, `none`
+- `enabled` flags must be set for all agents and MCP servers
+- MCP transport must be `http` or `stdio`
+- `http_transport` (when set) must be `sse` or `streamable`
+- HTTP servers cannot set `command` or `args`
+- Stdio servers cannot set `url` or `headers`
+
+## Environment variables
+
+Agent Layer uses a small set of environment variables for versioning and offline behavior. It also loads secrets from `.agent-layer/.env`.
+
+This surface area is intentionally small. Configuration should live in the repo where it can be reviewed, while environment variables act as escape hatches for CI, offline work, and temporary overrides.
+
+### Versioning and cache
+
+| Variable | Purpose |
+| --- | --- |
+| `AL_VERSION` | force a version (overrides the repo pin) |
+| `AL_NO_NETWORK` | disable update checks and downloads |
+| `AL_CACHE_DIR` | override the pinned-version cache directory |
+
+These variables only affect version dispatch, update checks, and downloads. They do not disable MCP server networking.
+
+### Secrets from `.agent-layer/.env`
+
+Only variables prefixed with `AL_` are loaded from `.agent-layer/.env`.
+
+Rules:
+
+- Your existing process environment takes precedence
+- Empty values in `.env` are ignored
+- `.env` is always gitignored
+
+Example:
+
+```env
+AL_GITHUB_PERSONAL_ACCESS_TOKEN=your-token-here
+AL_CONTEXT7_API_KEY=your-key-here
+```
+
+### Built-in placeholder
+
+`${AL_REPO_ROOT}` is a built-in placeholder for the absolute repo root. Use it in MCP server command arguments or paths when you want runtime expansion.
+
+Example:
+
+```toml
+[[mcp.servers]]
+id = "filesystem"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+```
+
+## CLI guide
+
+The `al` CLI syncs repo-local configuration and launches your chosen client. This section focuses on behavior, safety, and the files each command touches. Use it as a runbook when you want to know exactly what a command will change. For exact flags, run `al --help` or `al <command> --help`.
+
+The command surface is intentionally small. Most of the time you only need one rhythm: `al init` once, `al <client>` every day, `al doctor` when something feels off.
+
+### Command map
+
+| Command | Purpose |
+| --- | --- |
+| `al init` | Initialize a repo with Agent Layer templates and memory files. |
+| `al wizard` | Interactive configuration for approvals, agents, MCP servers, and warnings. |
+| `al sync` | Regenerate client configs without launching a client. |
+| `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
+| `al doctor` | Validate configuration and probe enabled MCP servers. |
+| `al completion` | Print or install shell completions (bash/zsh/fish). |
+| `al mcp-prompts` | Run the internal MCP prompt server over stdio. |
+| `al --version` | Print the installed Agent Layer version. |
+| `al help` | Show help for any command. |
+
+### Init
+
+`al init` sets up Agent Layer in a repository.
+
+It is scaffolding: it creates the files that make behavior explicit and repeatable, so day-to-day work becomes “edit the source of truth, regenerate outputs,” not “hunt for the right config format.”
+
+**What it does**
+
+- Creates or updates `.agent-layer/` (configuration, instructions, approvals, MCP servers)
+- Creates `docs/agent-layer/` (project memory files)
+- Installs a managed `.gitignore` block
+
+**Steps (high level)**
+
+1. Reads existing managed files to determine whether it should prompt or overwrite.
+2. Writes or updates template-managed files under `.agent-layer/` and `docs/agent-layer/`.
+3. Adds or updates the managed `.gitignore` block.
+4. If running interactively, prompts to run the wizard unless `--no-wizard` is set.
+
+**Files and directories it touches**
+
+Typical `.agent-layer/` files include:
+
+- `config.toml`, `commands.allow`, `instructions/`, `slash-commands/`
+- `al.version` (optional repo pin)
+- `.env` (secrets, always gitignored)
+- `.gitignore` and `gitignore.block`
+
+Typical project memory files under `docs/agent-layer/`:
+
+- `ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`
+
+**Overwrite behavior**
+
+- Default behavior is safe and idempotent.
+- `--overwrite` prompts before replacing managed template files.
+- `--force` overwrites managed files and deletes unknown files under `.agent-layer`.
+
+**Wizard prompt**
+
+By default, `al init` prompts to run the setup wizard after seeding files. Use `--no-wizard` to skip it.
+In non-interactive environments, the wizard is skipped.
+
+**Version pinning and network**
+
+- If you are running a release build, `al init` writes `.agent-layer/al.version`.
+- You can pin a version explicitly with `--version X.Y.Z`.
+- Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
+
+### Wizard
+
+`al wizard` guides you through approvals, enabled agents, model selection, MCP servers, and warning thresholds.
+
+Use it when you want to get to a safe, working configuration quickly, or when you would rather answer questions than hand-edit TOML.
+
+**What it edits**
+
+- `.agent-layer/config.toml`
+- `.agent-layer/.env`
+
+It is safe to re-run when you want to revisit settings.
+
+### Sync
+
+`al sync` regenerates client configs from `.agent-layer/` without launching a client.
+
+Think of sync as a build step. You can run it any time you want to refresh generated outputs without starting a client.
+
+**What it does**
+
+- Validates `.agent-layer/config.toml`
+- Reads `.agent-layer/instructions/`, `.agent-layer/slash-commands/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
+- Regenerates client outputs and launchers
+
+**Steps (high level)**
+
+1. Load and validate `config.toml`, then resolve secrets from `.agent-layer/.env`.
+2. Parse instructions and slash commands to build client-specific outputs.
+3. Write generated configs and launchers for enabled clients.
+4. Emit warnings if any thresholds in `[warnings]` are exceeded.
+
+**Generated outputs**
+
+Common outputs include:
+
+- `.agent/skills/`
+- `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`
+- `.codex/` (generated config, rules, and skills)
+- `.vscode/mcp.json`, `.vscode/prompts/`, and a managed block in `.vscode/settings.json`
+- `.github/copilot-instructions.md`
+- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
+- repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command` and `open-vscode.app/`)
+
+These files are derived outputs and safe to delete. Running `al sync` will recreate them.
+
+**Warnings**
+
+`al sync` evaluates instruction token thresholds from `[warnings]` and emits warnings if they are exceeded.
+
+### Launch a client
+
+`al <client>` always syncs before launch. Supported clients:
+
+- `al gemini`
+- `al claude`
+- `al codex`
+- `al vscode`
+- `al antigravity`
+
+These commands read `.agent-layer/`, regenerate client outputs, and then launch the selected client.
+
+This is the default workflow for day-to-day use: you get a clean regenerate and a launch in one command, which keeps behavior consistent even when you switch tools.
+
+### Doctor
+
+`al doctor` validates configuration, checks for missing secrets, and probes enabled MCP servers.
+
+Use it as your early warning system. It is the fastest way to answer “is my config valid,” “are my secrets present,” and “are my tools reachable.”
+
+**What it does**
+
+- Validates `.agent-layer/config.toml`
+- Reports missing `AL_` secrets referenced by your config
+- Connects to each enabled MCP server and lists tools
+- Evaluates MCP warning thresholds from `[warnings]`
+- Checks for newer releases and warns if you are behind
+
+**Steps (high level)**
+
+1. Validate configuration and resolve secrets from `.agent-layer/.env`.
+2. Probe each enabled MCP server and collect tool metadata.
+3. Compute warning thresholds and report any overages.
+4. Check for release updates (unless networking is disabled).
+
+**Timeouts and network**
+
+- `al doctor` waits up to 30 seconds per enabled MCP server before timing out.
+- It uses network access for MCP servers and update checks. Set `AL_NO_NETWORK=1` to disable update checks and pinned downloads.
+
+### Completion
+
+`al completion` prints shell completion scripts to stdout or installs them in the standard user location.
+
+```bash
+al completion zsh
+al completion zsh --install
+```
+
+Supported shells: `bash`, `zsh`, `fish`. Windows completions are not supported.
+
+### MCP prompt server
+
+`al mcp-prompts` runs the internal MCP prompt server over stdio. This is normally launched automatically by the client, so you rarely need to run it directly.
+
+### Help and version
+
+```bash
+al --help
+al help <command>
+al --version
+```
+
+Use these to confirm available commands, flags, and the installed version.

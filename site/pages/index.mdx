@@ -3,88 +3,100 @@ title: Agent Layer
 description: One repo-local source of truth for instructions, slash commands, and MCP servers across coding agents.
 ---
 
-# Agent Layer
+<div className="hero-container">
+  <img src="/img/branding/header_wordmark.svg" alt="Agent Layer" className="hero-logo hero-logo--light" />
+  <img src="/img/branding/header_wordmark_dark.svg" alt="Agent Layer" className="hero-logo hero-logo--dark" />
+  <p className="hero-tagline">
+    One repo-local source of truth for every agent you use.
+  </p>
+  <div className="hero-buttons">
+    <a href="/docs" className="hero-button hero-button--primary">
+      Get Started
+    </a>
+    <a href="https://github.com/conn-castle/agent-layer" className="hero-button hero-button--secondary">
+      GitHub
+    </a>
+  </div>
 
-One repo-local source of truth for every agent you use.
+  <div className="terminal-window">
+    <div className="terminal-header">
+      <span className="terminal-dot terminal-dot--red"></span>
+      <span className="terminal-dot terminal-dot--yellow"></span>
+      <span className="terminal-dot terminal-dot--green"></span>
+      <span className="terminal-title">terminal</span>
+    </div>
+    <div className="terminal-body">
+      <p className="terminal-line"><span className="terminal-comment"># Initialize the repo</span></p>
+      <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">al init</span></p>
+      <p className="terminal-line"><span className="terminal-comment"># Launch your agent (sync happens automatically)</span></p>
+      <p className="terminal-line"><span className="terminal-prompt">$ </span><span className="terminal-command">al claude</span></p>
+    </div>
+  </div>
+</div>
 
-Agent Layer keeps AI-assisted development consistent across tools by generating each client's required config from a single `.agent-layer/` folder. No more copying instructions, approvals, or MCP servers across Claude, Gemini, Codex, and VS Code.
+<div className="clients-section">
+  <p className="clients-title">Works with your favorite agents</p>
+  <div className="clients-grid">
+    <img src="/img/logos/claude.svg" alt="Claude Code" className="client-logo-full client-logo--claude" />
+    <img src="/img/logos/gemini.svg" alt="Gemini CLI" className="client-logo-full client-logo--gemini" />
+    <img src="/img/logos/openai.svg" alt="OpenAI Codex CLI" className="client-logo-full client-logo--openai" />
+    <img src="/img/logos/copilot.svg" alt="GitHub Copilot" className="client-logo-full client-logo--copilot" />
+    <img src="/img/logos/antigravity.svg" alt="Antigravity" className="client-logo-full client-logo--antigravity" />
+  </div>
+</div>
 
-:::note
-Local-first, no telemetry, and designed to fail fast when configuration is inconsistent.
-:::
+<div className="features-section">
+  <h2 className="features-title">Why Agent Layer?</h2>
+  <p className="features-subtitle">Stop copying configs. Start shipping.</p>
 
-## The problem
+  <div className="features-list">
+    <div className="feature-item">
+      <h3 className="feature-title">Single Source of Truth</h3>
+      <p className="feature-description">Edit <code>.agent-layer/</code> once. Every client gets its native config.</p>
+    </div>
 
-Modern teams run multiple agents. Each client expects its own file formats and conventions, which creates drift:
+    <div className="feature-item">
+      <h3 className="feature-title">Sync on Run</h3>
+      <p className="feature-description">Configs regenerate every launch. No manual steps, no drift.</p>
+    </div>
 
-- instructions diverge across clients
-- slash commands get duplicated or forgotten
-- MCP servers are configured once and missing elsewhere
-- approvals and safety rules get applied inconsistently
+    <div className="feature-item">
+      <h3 className="feature-title">Consistent Approvals</h3>
+      <p className="feature-description">Define safety rules once. Every agent respects the same boundaries.</p>
+    </div>
 
-That drift shows up as unpredictable behavior, wasted time, and broken trust in the agent.
+    <div className="feature-item">
+      <h3 className="feature-title">MCP Everywhere</h3>
+      <p className="feature-description">Configure MCP servers in one place. They appear in every client.</p>
+    </div>
 
-## The solution
+    <div className="feature-item">
+      <h3 className="feature-title">Version Pinning</h3>
+      <p className="feature-description">Lock your team to specific versions. Everyone stays aligned.</p>
+    </div>
 
-Agent Layer flips the model: edit one repo-local source of truth and generate everything else.
+    <div className="feature-item">
+      <h3 className="feature-title">Local & Fast</h3>
+      <p className="feature-description">No telemetry. Network is used only for update checks, version downloads (pinning), and MCP servers you enable. See <a href="/security">Security</a> for details.</p>
+    </div>
+  </div>
+</div>
 
-- `.agent-layer/` is canonical
-- client configs are generated on demand
-- sync happens every time you run an agent
+<div className="cta-section">
+  <h2 className="cta-title">Ready to simplify your agent setup?</h2>
+  <p className="cta-description">
+    Install Agent Layer in under a minute. Works on macOS and Linux, with best-effort Windows support.
+  </p>
+  <div className="hero-buttons">
+    <a href="/install" className="hero-button hero-button--primary">
+      Install Now
+    </a>
+    <a href="/docs" className="hero-button hero-button--secondary">
+      Read the Docs
+    </a>
+  </div>
+</div>
 
-## What you get out of the box
-
-- a clean, repo-local configuration layout
-- default instruction templates and curated slash commands
-- MCP server templates (disabled by default)
-- version pinning so teams stay aligned
-- a setup wizard for approvals, agents, models, MCP, and warnings
-- sync-on-run so every client stays consistent
-
-## Comparison: manual configs vs Agent Layer
-
-| Manual per-client setup | Agent Layer |
-| --- | --- |
-| duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
-| inconsistent approvals and command policies | consistent approvals and allowlists |
-| MCP servers added in one client and forgotten in another | generated MCP config for every supported client |
-| no single place to review or audit changes | audit in version control |
-
-## How it works
-
-1. Install `al` once on your machine
-2. Run `al init` in a repo to seed `.agent-layer/` and `docs/agent-layer/`
-3. Edit `.agent-layer/` to define your rules and tools
-4. Run `al <client>` to sync configs and launch the client
-
-Everything you edit lives in `.agent-layer/`. Everything else is generated.
-
-## A quick look
-
-```bash
-# Initialize the repo
-al init
-
-# Launch your agent (sync happens automatically)
-al codex
-```
-
-Customize behavior by editing:
-
-- `.agent-layer/instructions/` for global rules and guidance
-- `.agent-layer/slash-commands/` for repeatable workflows
-- `.agent-layer/config.toml` for MCP servers, models, approvals, and warnings
-
-## Supported clients
-
-Gemini CLI, Claude Code CLI, Codex CLI, VS Code / Copilot Chat, and Antigravity. Each client receives its native config format.
-
-## Get started
-
-- Install: [/install](/install)
-- Docs: [/docs](/docs)
-- GitHub: https://github.com/conn-castle/agent-layer
-
-:::tip
-If this solves a real problem for you, please star the repo. Stars help the project grow and signal trust to new users.
+:::tip[Like what you see?]
+If Agent Layer solves a real problem for you, please [star the repo](https://github.com/conn-castle/agent-layer). Stars help the project grow and signal trust to new users.
 :::

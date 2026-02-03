@@ -1,0 +1,268 @@
+---
+title: Getting started
+description: Install Agent Layer and run your first agent.
+sidebar_position: 1
+---
+
+Agent Layer gives every agent the same instructions, approvals, and MCP servers by generating each client configuration from a single repo-local source of truth. Think of `al` as the single doorway into consistent agent behavior: set it once, and every client stays aligned.
+
+Most teams start here because drift is expensive. You fix a prompt in one client and forget another, or an MCP server is enabled in one place and missing everywhere else. This flow gets you to consistency first, then lets you refine safely.
+
+After you complete this page, you will have:
+
+- A `.agent-layer/` folder you edit (the contract).
+- A small set of generated client outputs you do not edit (build artifacts).
+- A simple habit: run `al <client>` to sync and launch with the same rules every time.
+
+Agent Layer does not replace your client, and it does not run as a hosted service. It runs locally, writes files into your repo, and lets you keep the “source of truth” close to the code it governs.
+
+This is enough to be productive immediately. The refinements (custom slash commands, additional MCP servers, version pinning) can be layered in as your needs grow.
+
+## In this page
+
+- [Quick start](#quick-start)
+- [Repo layout](#repo-layout)
+- [CLI command map](#cli-command-map)
+- [Next steps](#next-steps)
+
+Quick start is the shortest path to a working agent. You can always refine configuration once the basics are running, and each step builds on the last so you do not have to backtrack.
+
+## Quick start
+
+### Prerequisites
+
+- Install the Agent Layer CLI (`al`)
+- Install the target client (Gemini, Claude, Codex, VS Code, Antigravity)
+
+Agent Layer does not install client CLIs for you. If you already have `al` installed, skip to step 2.
+
+One mental model helps: install `al` once per machine, then run `al init` once per repo.
+
+### 1) Install `al`
+
+Pick one install method from [/install](/install), then verify:
+
+```bash
+al --version
+```
+
+### 2) Initialize a repo
+
+Run `al init` from inside the repo:
+
+```bash
+cd /path/to/repo
+al init
+```
+
+This seeds:
+
+- `.agent-layer/` (your configuration)
+- `docs/agent-layer/` (project memory)
+- a managed `.gitignore` block
+
+By default, `al init` prompts to run the setup wizard. Skip it with `--no-wizard` if you prefer to configure manually.
+
+`al init` is designed to be safe to re-run. It is scaffolding: it does not touch your application code, it just creates the files Agent Layer needs.
+
+For the detailed behavior and overwrite rules, see [Init](./reference#init) and [Wizard](./reference#wizard).
+
+### 3) Launch an agent
+
+```bash
+al gemini
+```
+
+Any client command (gemini/claude/codex/vscode/antigravity) will:
+
+1. read `.agent-layer/`
+2. sync client configs
+3. launch the client
+
+From here on, treat `al <client>` as your entry point. Syncing happens first so you never have to remember which config file goes with which tool.
+
+### 4) Customize behavior
+
+Edit these files to make the agent behave the way you want:
+
+- `.agent-layer/instructions/` for global rules and preferences
+- `.agent-layer/slash-commands/` for reusable workflows
+- `.agent-layer/commands.allow` to define approved shell command prefixes
+- `.agent-layer/config.toml` for approvals, agent enablement, models, MCP servers, and warnings
+
+Everything is plain text and local to the repo, which makes it easy to review changes and share them with a team when you are ready.
+
+### 5) Enable an MCP server (optional)
+
+This is where agents usually start to feel dramatically more capable. MCP servers let them retrieve fresh information, search your repo quickly, and integrate with real systems instead of relying only on training data and whatever context you pasted into the prompt.
+
+`al init` seeds a small library of high-value MCP servers in `.agent-layer/config.toml`, all disabled by default. Two great first picks are:
+
+- `context7` for up-to-date library docs and examples (requires an API key)
+- `tavily` for web search/research and recency (requires an API key)
+
+See [MCP servers](./concepts#mcp-servers) for the mental model and [MCP servers (configuration)](./reference#mcp-servers) for the exact config fields.
+
+To enable a server, set `enabled = true` and add any required secrets in `.agent-layer/.env`:
+
+```toml
+[[mcp.servers]]
+id = "context7"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
+```
+
+```env
+AL_CONTEXT7_API_KEY=your-key-here
+```
+
+If a server uses `npx` or `uvx`, make sure those runtimes are installed first. Then run `al sync` or launch a client again.
+
+You do not need to enable MCP servers to get value from Agent Layer. Many teams start with instructions and approvals, then add tools once the basics feel stable.
+
+### 6) Run a health check
+
+Once you have a client working, run:
+
+```bash
+al doctor
+```
+
+This validates configuration, checks for missing secrets, and probes enabled MCP servers.
+See [Doctor](./reference#doctor) for exactly what it checks.
+
+## Repo layout
+
+After `al init`, your repo gains a few new directories and generated files. Understanding what is canonical vs generated makes it easier to trust changes and avoid drift. The mental model is simple: edit the canonical files, regenerate everything else.
+
+`al init` creates three buckets: configuration, project memory, and generated client files.
+
+### Configuration (`.agent-layer/`)
+
+`.agent-layer/` is your single source of truth. Edit these files directly.
+
+Typical layout:
+
+```text
+.agent-layer/
+  config.toml          # approvals, agents, models, MCP servers, warnings
+  instructions/        # numbered instruction fragments
+  slash-commands/      # one file per command
+  commands.allow       # approved shell command prefixes
+  al.version           # optional repo pin
+  .env                 # secrets (always gitignored)
+  .gitignore           # ignores repo-local launchers, backups, templates
+  gitignore.block      # managed .gitignore block template
+  tmp/                 # agent-only artifacts
+```
+
+### Project memory (`docs/agent-layer/`)
+
+These files are referenced by default instructions and act as long-lived memory for the repo:
+
+```text
+docs/agent-layer/
+  ISSUES.md
+  BACKLOG.md
+  ROADMAP.md
+  DECISIONS.md
+  COMMANDS.md
+```
+
+Teams can choose to commit these files or keep them local.
+
+### Generated client outputs
+
+Generated files live in the repo and are gitignored by default:
+
+Different clients require different file formats and conventions. Agent Layer generates what each client expects so you do not have to maintain separate config by hand.
+
+```text
+# Instruction shims (generated from .agent-layer/instructions/*.md)
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.github/copilot-instructions.md
+
+# Client configs and artifacts (generated based on enabled clients)
+.agent/skills/
+.gemini/settings.json
+.claude/settings.json
+.mcp.json
+.codex/
+.vscode/mcp.json
+.vscode/prompts/
+.vscode/settings.json
+
+# Repo-local launchers (VS Code, when enabled)
+.agent-layer/open-vscode.command
+.agent-layer/open-vscode.bat
+.agent-layer/open-vscode.desktop
+.agent-layer/open-vscode.app/
+```
+
+These are derived outputs. Do not edit them directly.
+
+:::caution
+If you change generated files, those edits will be overwritten the next time you run `al sync` or `al <client>`.
+:::
+
+### Safe to delete
+
+You can delete generated outputs at any time. Running `al sync` or `al <client>` will recreate them from `.agent-layer/`.
+
+If you keep your own files under `.vscode/`, delete only the Agent Layer-managed files (`.vscode/mcp.json` and `.vscode/prompts/`). Agent Layer also inserts/updates a managed block in `.vscode/settings.json`.
+
+### Git ignore defaults
+
+`al init` installs a managed `.gitignore` block that ignores `.agent-layer/` and generated client configs. If your team decides to commit `.agent-layer/`, edit `.agent-layer/gitignore.block` and re-run `al init`.
+
+When you are adopting Agent Layer as a team, this is the main choice to make: keep `.agent-layer/` local for experimentation, or commit it so every developer gets the same behavior by default. Secrets still live in `.agent-layer/.env`, which remains gitignored.
+
+### What to commit (recommended)
+
+The default `.gitignore` block is conservative so you can try Agent Layer without changing what your repo tracks. Once you want shared behavior across a team, most repos choose to commit the canonical inputs and keep all generated outputs ignored.
+
+Commit:
+
+- `.agent-layer/` (except `.agent-layer/.env`)
+- `docs/agent-layer/` (project memory), if you want shared context across the team
+
+Do not commit:
+
+- `.agent-layer/.env` (secrets)
+- `.agent-layer/tmp/` (agent-only artifacts)
+- generated client outputs like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
+
+## CLI command map
+
+Use this as a quick refresher when you are trying to remember the entry points or decide which command to run.
+
+This is a complete map of the CLI entry points. For details, see the [Reference](./reference).
+
+If you only remember one pattern: `al <client>` is the “do the right thing” command because it syncs first, then launches.
+
+| Command | Purpose | Details |
+| --- | --- | --- |
+| `al init` | Seed `.agent-layer/` and project memory. | [Init](./reference#init) |
+| `al wizard` | Interactive configuration. | [Wizard](./reference#wizard) |
+| `al sync` | Regenerate configs without launching. | [Sync](./reference#sync) |
+| `al doctor` | Validate config and probe MCP servers. | [Doctor](./reference#doctor) |
+| `al completion` | Print or install shell completions. | [Completion](./reference#completion) |
+| `al mcp-prompts` | Run internal MCP prompt server. | [MCP prompt server](./reference#mcp-prompt-server) |
+| `al gemini` | Sync and launch Gemini. | [Launch a client](./reference#launch-a-client) |
+| `al claude` | Sync and launch Claude Code. | [Launch a client](./reference#launch-a-client) |
+| `al codex` | Sync and launch Codex. | [Launch a client](./reference#launch-a-client) |
+| `al vscode` | Sync and launch VS Code. | [Launch a client](./reference#launch-a-client) |
+| `al antigravity` | Sync and launch Antigravity. | [Launch a client](./reference#launch-a-client) |
+| `al --version` | Print the installed version. | [Help and version](./reference#help-and-version) |
+| `al help` | Show help for a command. | [Help and version](./reference#help-and-version) |
+
+## Next steps
+
+- Read [Concepts](./concepts) to understand the mental model, safety boundaries, and how MCP servers fit into the system.
+- Use [Reference](./reference) when you are ready to tune configuration, wire secrets, or understand exactly what a CLI command touches.
+- Visit [Troubleshooting](./troubleshooting) when something does not work; start with `al doctor`.

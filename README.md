@@ -200,9 +200,12 @@ Common memory files include:
 - `docs/agent-layer/DECISIONS.md`
 
 ### Generated client files (gitignored by default)
-Generated outputs are written to the repo root in client-specific formats (examples):
-- `.agent/`, `.gemini/`, `.claude/`, `.vscode/`, `.codex/`
-- `.mcp.json`, `AGENTS.md`, etc.
+Generated outputs are written into the repo in client-specific formats (examples):
+
+- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
+- MCP + client configs: `.mcp.json`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`
+- Antigravity skills: `.agent/skills/`
+- VS Code integration: `.vscode/mcp.json`, `.vscode/prompts/`, and an Agent Layer-managed block in `.vscode/settings.json`
 
 ---
 
@@ -454,7 +457,7 @@ Notes:
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
 - `.agent-layer/.env`
-- generated client config directories/files (`.gemini/`, `.claude/`, `.vscode/`, `.codex/`, `.mcp.json`, etc.)
+- generated client config files/directories (for example `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.agent/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, and `.github/copilot-instructions.md`)
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 
