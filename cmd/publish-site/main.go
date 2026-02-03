@@ -301,14 +301,18 @@ func parseVersion(s string) (version, error) {
 		return v, fmt.Errorf("expected X.Y.Z, got: %s", s)
 	}
 
-	if _, err := fmt.Sscanf(coreParts[0], "%d", &v.major); err != nil {
-		return v, err
+	var err error
+	v.major, err = strconv.Atoi(coreParts[0])
+	if err != nil {
+		return v, fmt.Errorf("invalid major version %q: %w", coreParts[0], err)
 	}
-	if _, err := fmt.Sscanf(coreParts[1], "%d", &v.minor); err != nil {
-		return v, err
+	v.minor, err = strconv.Atoi(coreParts[1])
+	if err != nil {
+		return v, fmt.Errorf("invalid minor version %q: %w", coreParts[1], err)
 	}
-	if _, err := fmt.Sscanf(coreParts[2], "%d", &v.patch); err != nil {
-		return v, err
+	v.patch, err = strconv.Atoi(coreParts[2])
+	if err != nil {
+		return v, fmt.Errorf("invalid patch version %q: %w", coreParts[2], err)
 	}
 
 	return v, nil

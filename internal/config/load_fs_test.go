@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -120,5 +121,100 @@ func TestFSPathFromRoot_RelError(t *testing.T) {
 	_, err := fsPathFromRoot(root, other)
 	if err == nil {
 		t.Fatalf("expected error for path outside root")
+	}
+}
+
+type errorFS struct {
+	fs.FS
+	errPath string
+	err     error
+}
+
+func (e errorFS) Open(name string) (fs.File, error) {
+	if name == e.errPath {
+		return nil, e.err
+	}
+	return e.FS.Open(name)
+}
+
+func TestLoadEnvFS_Invalid(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/.env": {Data: []byte("INVALID LINE")},
+	}
+
+	_, err := LoadEnvFS(fsys, "root", ".agent-layer/.env")
+	if err == nil {
+		t.Fatalf("expected error for invalid env file")
+	}
+}
+
+func TestLoadInstructionsFS_NoMarkdown(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/instructions":            {Mode: fs.ModeDir},
+		".agent-layer/instructions/readme":     {Data: []byte("no markdown")},
+		".agent-layer/instructions/readme.txt": {Data: []byte("no markdown")},
+	}
+
+	_, err := LoadInstructionsFS(fsys, "root", ".agent-layer/instructions")
+	if err == nil {
+		t.Fatalf("expected error when no markdown files exist")
+	}
+}
+
+func TestLoadInstructionsFS_ReadError(t *testing.T) {
+	base := fstest.MapFS{
+		".agent-layer/instructions":       {Mode: fs.ModeDir},
+		".agent-layer/instructions/00.md": {Data: []byte("content")},
+	}
+	fsys := errorFS{
+		FS:      base,
+		errPath: ".agent-layer/instructions/00.md",
+		err:     fs.ErrPermission,
+	}
+
+	_, err := LoadInstructionsFS(fsys, "root", ".agent-layer/instructions")
+	if err == nil {
+		t.Fatalf("expected error when instruction file cannot be read")
+	}
+}
+
+func TestLoadSlashCommandsFS_InvalidCommand(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/slash-commands":        {Mode: fs.ModeDir},
+		".agent-layer/slash-commands/bad.md": {Data: []byte("no front matter")},
+	}
+
+	_, err := LoadSlashCommandsFS(fsys, "root", ".agent-layer/slash-commands")
+	if err == nil {
+		t.Fatalf("expected error for invalid slash command")
+	}
+}
+
+func TestLoadSlashCommandsFS_ReadError(t *testing.T) {
+	base := fstest.MapFS{
+		".agent-layer/slash-commands":        {Mode: fs.ModeDir},
+		".agent-layer/slash-commands/cmd.md": {Data: []byte("---\ndescription: test\n---\n")},
+	}
+	fsys := errorFS{
+		FS:      base,
+		errPath: ".agent-layer/slash-commands/cmd.md",
+		err:     fs.ErrPermission,
+	}
+
+	_, err := LoadSlashCommandsFS(fsys, "root", ".agent-layer/slash-commands")
+	if err == nil {
+		t.Fatalf("expected error when slash command file cannot be read")
+	}
+}
+
+func TestLoadCommandsAllowFS_ScannerError(t *testing.T) {
+	longLine := strings.Repeat("a", 70000)
+	fsys := fstest.MapFS{
+		".agent-layer/commands.allow": {Data: []byte(longLine)},
+	}
+
+	_, err := LoadCommandsAllowFS(fsys, "root", ".agent-layer/commands.allow")
+	if err == nil {
+		t.Fatalf("expected error for scanner overflow")
 	}
 }

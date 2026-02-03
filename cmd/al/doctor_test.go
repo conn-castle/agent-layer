@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -237,4 +238,50 @@ func TestMCPDiscoveryReporter_FinalizePending(t *testing.T) {
 	if s := reporter.statusFor("srv2"); s != warnings.MCPDiscoveryStatusDone {
 		t.Errorf("srv2 status = %v, want done", s)
 	}
+}
+
+func TestStartMCPDiscoveryReporter_NonZero(t *testing.T) {
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	output := captureStdout(t, func() {
+		reporter, stop := startMCPDiscoveryReporter([]string{"srv1"})
+		if reporter == nil {
+			t.Fatal("expected reporter")
+		}
+		reporter(warnings.MCPDiscoveryEvent{ServerID: "srv1", Status: warnings.MCPDiscoveryStatusDone})
+		stop()
+	})
+
+	if !strings.Contains(output, "srv1") {
+		t.Fatalf("expected output to mention server, got %q", output)
+	}
+	if !strings.Contains(output, "done") {
+		t.Fatalf("expected output to include done, got %q", output)
+	}
+}
+
+func TestMCPDiscoveryReporter_DrainEvents(t *testing.T) {
+	reporter := newMCPDiscoveryReporter([]string{"srv"}, false)
+	reporter.events <- warnings.MCPDiscoveryEvent{ServerID: "srv", Status: warnings.MCPDiscoveryStatusDone}
+
+	output := captureStdout(t, func() {
+		reporter.drainEvents()
+	})
+
+	if reporter.statusFor("srv") != warnings.MCPDiscoveryStatusDone {
+		t.Fatalf("expected status done")
+	}
+	if !strings.Contains(output, "srv: done") {
+		t.Fatalf("expected drain output, got %q", output)
+	}
+}
+
+func TestMCPDiscoveryReporter_RenderMoveCursor(t *testing.T) {
+	reporter := newMCPDiscoveryReporter([]string{"srv"}, true)
+	reporter.rendered = true
+	captureStdout(t, func() {
+		reporter.render(true)
+	})
 }

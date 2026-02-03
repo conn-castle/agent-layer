@@ -33,7 +33,7 @@ git push origin "$VERSION"
 5. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
 
 ## Website publish details (agent-layer-web)
-The `publish-website` job runs `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`.
+The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`.
 That command:
 1. Copies `site/pages/` into `agent-layer-web/src/pages/`, deleting the destination first.
 2. Copies `site/docs/` into `agent-layer-web/docs/`, deleting the destination first.
