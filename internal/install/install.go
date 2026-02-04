@@ -322,7 +322,7 @@ type systemAdapter struct {
 
 func (a *systemAdapter) LookPath(file string) (string, error) {
 	// Not needed for WriteVSCodeLaunchers, but required by sync.System interface
-	return "", fmt.Errorf("LookPath not implemented in install systemAdapter")
+	return "", fmt.Errorf("LookPath is not supported during installation")
 }
 
 func (a *systemAdapter) Stat(name string) (os.FileInfo, error) {
@@ -339,7 +339,7 @@ func (a *systemAdapter) WriteFileAtomic(filename string, data []byte, perm os.Fi
 
 func (a *systemAdapter) MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 	// Not needed for WriteVSCodeLaunchers, but required by sync.System interface
-	return nil, fmt.Errorf("MarshalIndent not implemented in install systemAdapter")
+	return nil, fmt.Errorf("MarshalIndent is not supported during installation")
 }
 
 func (a *systemAdapter) ReadFile(name string) ([]byte, error) {
