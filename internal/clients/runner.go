@@ -11,29 +11,29 @@ import (
 )
 
 // LaunchFunc launches a client after sync and run setup.
-type LaunchFunc func(project *config.ProjectConfig, runInfo *run.Info, env []string) error
+type LaunchFunc func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error
 
 // EnabledSelector returns the enabled flag for a client.
 type EnabledSelector func(cfg *config.Config) *bool
 
 // Run performs the standard client launch pipeline: load config, sync, create run dir, launch.
 // Warnings from sync are printed to stderr before launching.
-func Run(root string, name string, enabled EnabledSelector, launch LaunchFunc) error {
-	return RunWithStderr(root, name, enabled, launch, os.Stderr)
+func Run(root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string) error {
+	return RunWithStderr(root, name, enabled, launch, os.Stderr, args)
 }
 
 // RunNoSync performs the standard client launch pipeline without running sync.
-func RunNoSync(root string, name string, enabled EnabledSelector, launch LaunchFunc) error {
+func RunNoSync(root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string) error {
 	project, err := loadProject(root, name, enabled)
 	if err != nil {
 		return err
 	}
 
-	return launchWithRunInfo(root, project, launch)
+	return launchWithRunInfo(root, project, launch, args)
 }
 
 // RunWithStderr is like Run but allows specifying a custom stderr writer for testing.
-func RunWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, stderr io.Writer) error {
+func RunWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, stderr io.Writer, args []string) error {
 	project, err := loadProject(root, name, enabled)
 	if err != nil {
 		return err
@@ -48,7 +48,7 @@ func RunWithStderr(root string, name string, enabled EnabledSelector, launch Lau
 		_, _ = fmt.Fprintln(stderr, w.String())
 	}
 
-	return launchWithRunInfo(root, project, launch)
+	return launchWithRunInfo(root, project, launch, args)
 }
 
 // loadProject loads the project config and verifies the client is enabled.
@@ -64,7 +64,7 @@ func loadProject(root string, name string, enabled EnabledSelector) (*config.Pro
 }
 
 // launchWithRunInfo prepares the run info and environment before launching.
-func launchWithRunInfo(root string, project *config.ProjectConfig, launch LaunchFunc) error {
+func launchWithRunInfo(root string, project *config.ProjectConfig, launch LaunchFunc, args []string) error {
 	runInfo, err := run.Create(root)
 	if err != nil {
 		return err
@@ -72,5 +72,5 @@ func launchWithRunInfo(root string, project *config.ProjectConfig, launch Launch
 
 	env := BuildEnv(os.Environ(), project.Env, runInfo)
 
-	return launch(project, runInfo, env)
+	return launch(project, runInfo, env, args)
 }

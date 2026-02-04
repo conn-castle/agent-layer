@@ -28,7 +28,7 @@ func TestLaunch_NoArgs(t *testing.T) {
 	t.Setenv("PATH", binDir)
 	env := os.Environ()
 
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env); err != nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, []string{}); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
 }

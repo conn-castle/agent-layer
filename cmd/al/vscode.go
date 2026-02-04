@@ -20,11 +20,11 @@ func newVSCodeCmd() *cobra.Command {
 				return err
 			}
 			if noSync {
-				return runVSCodeNoSync(root)
+				return runVSCodeNoSync(root, args)
 			}
 			return clients.Run(root, "vscode", func(cfg *config.Config) *bool {
 				return cfg.Agents.VSCode.Enabled
-			}, vscode.Launch)
+			}, vscode.Launch, args)
 		},
 	}
 
@@ -35,8 +35,8 @@ func newVSCodeCmd() *cobra.Command {
 
 // runVSCodeNoSync loads project config and launches VS Code without running sync.
 // root is the repo root; returns any load, validation, or launch error.
-func runVSCodeNoSync(root string) error {
+func runVSCodeNoSync(root string, args []string) error {
 	return clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
 		return cfg.Agents.VSCode.Enabled
-	}, vscode.Launch)
+	}, vscode.Launch, args)
 }

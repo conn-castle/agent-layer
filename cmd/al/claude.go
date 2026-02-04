@@ -11,8 +11,9 @@ import (
 
 func newClaudeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   messages.ClaudeUse,
-		Short: messages.ClaudeShort,
+		Use:                messages.ClaudeUse,
+		Short:              messages.ClaudeShort,
+		DisableFlagParsing: true, // Pass all flags through to the underlying agent
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
@@ -20,7 +21,7 @@ func newClaudeCmd() *cobra.Command {
 			}
 			return clients.Run(root, "claude", func(cfg *config.Config) *bool {
 				return cfg.Agents.Claude.Enabled
-			}, claude.Launch)
+			}, claude.Launch, args)
 		},
 	}
 

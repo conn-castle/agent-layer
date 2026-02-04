@@ -13,12 +13,14 @@ import (
 )
 
 // Launch starts the Codex CLI with the configured options.
-func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
-	args := []string{}
+func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+	cmdArgs := []string{}
+	// Append any additional arguments passed from the CLI
+	cmdArgs = append(cmdArgs, args...)
 
 	env = ensureCodexHome(cfg.Root, env)
 
-	cmd := exec.Command("codex", args...)
+	cmd := exec.Command("codex", cmdArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

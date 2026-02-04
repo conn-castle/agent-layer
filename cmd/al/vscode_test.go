@@ -14,7 +14,7 @@ func TestRunVSCodeNoSync(t *testing.T) {
 	writeStub(t, binDir, "code")
 
 	t.Setenv("PATH", binDir)
-	if err := runVSCodeNoSync(root); err != nil {
+	if err := runVSCodeNoSync(root, []string{}); err != nil {
 		t.Fatalf("runVSCodeNoSync error: %v", err)
 	}
 }
@@ -47,7 +47,7 @@ enabled = true
 		t.Fatalf("write config: %v", err)
 	}
 
-	if err := runVSCodeNoSync(root); err == nil {
+	if err := runVSCodeNoSync(root, []string{}); err == nil {
 		t.Fatal("expected error when VS Code is disabled")
 	}
 }

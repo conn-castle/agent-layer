@@ -11,8 +11,9 @@ import (
 
 func newAntigravityCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   messages.AntigravityUse,
-		Short: messages.AntigravityShort,
+		Use:                messages.AntigravityUse,
+		Short:              messages.AntigravityShort,
+		DisableFlagParsing: true, // Pass all flags through to the underlying agent
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
@@ -20,7 +21,7 @@ func newAntigravityCmd() *cobra.Command {
 			}
 			return clients.Run(root, "antigravity", func(cfg *config.Config) *bool {
 				return cfg.Agents.Antigravity.Enabled
-			}, antigravity.Launch)
+			}, antigravity.Launch, args)
 		},
 	}
 

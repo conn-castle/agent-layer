@@ -11,8 +11,8 @@ import (
 )
 
 // Launch starts the Antigravity client.
-func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
-	cmd := exec.Command("antigravity")
+func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+	cmd := exec.Command("antigravity", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

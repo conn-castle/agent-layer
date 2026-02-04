@@ -11,8 +11,9 @@ import (
 
 func newGeminiCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   messages.GeminiUse,
-		Short: messages.GeminiShort,
+		Use:                messages.GeminiUse,
+		Short:              messages.GeminiShort,
+		DisableFlagParsing: true, // Pass all flags through to the underlying agent
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
@@ -20,7 +21,7 @@ func newGeminiCmd() *cobra.Command {
 			}
 			return clients.Run(root, "gemini", func(cfg *config.Config) *bool {
 				return cfg.Agents.Gemini.Enabled
-			}, gemini.Launch)
+			}, gemini.Launch, args)
 		},
 	}
 

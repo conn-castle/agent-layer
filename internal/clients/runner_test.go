@@ -17,7 +17,7 @@ func TestRunPipeline(t *testing.T) {
 
 	var gotRun *run.Info
 	var gotEnv []string
-	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		gotRun = runInfo
 		gotEnv = env
 		return nil
@@ -25,7 +25,7 @@ func TestRunPipeline(t *testing.T) {
 
 	err := Run(root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, launch)
+	}, launch, []string{})
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -53,9 +53,9 @@ func TestRunDisabled(t *testing.T) {
 	disabled := false
 	err := Run(root, "gemini", func(cfg *config.Config) *bool {
 		return &disabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, []string{})
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("expected disabled error, got %v", err)
 	}
@@ -64,9 +64,9 @@ func TestRunDisabled(t *testing.T) {
 func TestRunMissingConfig(t *testing.T) {
 	err := Run(t.TempDir(), "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, []string{})
 	if err == nil || !strings.Contains(err.Error(), "missing config file") {
 		t.Fatalf("expected missing config error, got %v", err)
 	}
@@ -85,9 +85,9 @@ func TestRunSyncError(t *testing.T) {
 
 	err := Run(root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, []string{})
 	if err == nil {
 		t.Fatalf("expected sync error")
 	}
@@ -104,9 +104,9 @@ func TestRunCreateError(t *testing.T) {
 
 	err := Run(root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, []string{})
 	if err == nil {
 		t.Fatalf("expected run create error")
 	}
@@ -118,9 +118,9 @@ func TestRunLaunchError(t *testing.T) {
 
 	err := Run(root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return fmt.Errorf("launch failed")
-	})
+	}, []string{})
 	if err == nil || !strings.Contains(err.Error(), "launch failed") {
 		t.Fatalf("expected launch error, got %v", err)
 	}
