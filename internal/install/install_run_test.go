@@ -42,6 +42,27 @@ func TestRunCreatesStructure(t *testing.T) {
 	}
 }
 
+func TestRunCreatesVSCodeLaunchers(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	// Verify VS Code launchers are created during init
+	expectLaunchers := []string{
+		filepath.Join(root, ".agent-layer", "open-vscode.command"),
+		filepath.Join(root, ".agent-layer", "open-vscode.bat"),
+		filepath.Join(root, ".agent-layer", "open-vscode.desktop"),
+		filepath.Join(root, ".agent-layer", "open-vscode.app", "Contents", "Info.plist"),
+		filepath.Join(root, ".agent-layer", "open-vscode.app", "Contents", "MacOS", "open-vscode"),
+	}
+	for _, path := range expectLaunchers {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected VS Code launcher %s to exist: %v", path, err)
+		}
+	}
+}
+
 func TestRunWritesPinVersion(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{PinVersion: "0.5.0", System: RealSystem{}}); err != nil {

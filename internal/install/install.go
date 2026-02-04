@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
@@ -120,6 +121,7 @@ func Run(root string, opts Options) error {
 		inst.updateGitignore,
 		inst.scanUnknowns,
 		inst.handleUnknowns,
+		inst.writeVSCodeLaunchers,
 	}
 
 	if err := runSteps(steps); err != nil {
@@ -304,4 +306,42 @@ func (inst *installer) warnUnknowns() {
 	_, _ = fmt.Fprintln(out)
 	_, _ = fmt.Fprintln(out, messages.InstallUnknownFooter)
 	_, _ = fmt.Fprintln(out)
+}
+
+// writeVSCodeLaunchers generates VS Code launcher files during installation.
+// These launchers are always created because VS Code is enabled by default in the config template.
+func (inst *installer) writeVSCodeLaunchers() error {
+	adapter := &systemAdapter{sys: inst.sys}
+	return sync.WriteVSCodeLaunchers(adapter, inst.root)
+}
+
+// systemAdapter adapts install.System to sync.System interface.
+type systemAdapter struct {
+	sys System
+}
+
+func (a *systemAdapter) LookPath(file string) (string, error) {
+	// Not needed for WriteVSCodeLaunchers, but required by sync.System interface
+	return "", fmt.Errorf("LookPath not implemented in install systemAdapter")
+}
+
+func (a *systemAdapter) Stat(name string) (os.FileInfo, error) {
+	return a.sys.Stat(name)
+}
+
+func (a *systemAdapter) MkdirAll(path string, perm os.FileMode) error {
+	return a.sys.MkdirAll(path, perm)
+}
+
+func (a *systemAdapter) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
+	return a.sys.WriteFileAtomic(filename, data, perm)
+}
+
+func (a *systemAdapter) MarshalIndent(v any, prefix, indent string) ([]byte, error) {
+	// Not needed for WriteVSCodeLaunchers, but required by sync.System interface
+	return nil, fmt.Errorf("MarshalIndent not implemented in install systemAdapter")
+}
+
+func (a *systemAdapter) ReadFile(name string) ([]byte, error) {
+	return a.sys.ReadFile(name)
 }
