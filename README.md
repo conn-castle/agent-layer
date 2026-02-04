@@ -119,6 +119,14 @@ If a server fails to start with “No such file or directory,” verify the `com
 
 ---
 
+## FAQ
+
+### Why do MCP servers fail to start in VS Code on macOS?
+
+If MCP servers that use `npx` are failing in VS Code, your GUI environment may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so VS Code can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
+
+---
+
 ## Version pinning (per repo, optional)
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
@@ -236,8 +244,10 @@ enabled = true
 
 [agents.codex]
 enabled = true
-model = "gpt-5.2-codex"
-reasoning_effort = "high" # codex only
+# model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
+# model = "gpt-5.2-codex"
+# reasoning_effort is optional; when omitted, the client uses its default.
+# reasoning_effort = "xhigh" # codex only
 
 [agents.vscode]
 enabled = true
@@ -389,7 +399,7 @@ If you use the CLI-based launchers, install the `code` command from inside VS Co
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
-**Note:** When opening VS Code with a new `CODEX_HOME`, you will need to reauthenticate with your agent provider. This is expected behavior as each `CODEX_HOME` maintains its own secure storage.
+**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected behavior and keeps credentials isolated per repo. It also enables you to use different Codex accounts across repositories, such as one for personal projects and one for work, without credential overlap.
 
 ---
 

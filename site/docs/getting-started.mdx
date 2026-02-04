@@ -210,6 +210,10 @@ These are derived outputs. Do not edit them directly.
 If you change generated files, those edits will be overwritten the next time you run `al sync` or `al <client>`.
 :::
 
+:::note
+The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo `CODEX_HOME`, so you will need to reauthenticate when opening a different repo. This is expected and keeps credentials isolated. A practical benefit is that you can use different Codex accounts across repositories, such as one for personal projects and one for work, without mixing credentials.
+:::
+
 ### Safe to delete
 
 You can delete generated outputs at any time. Running `al sync` or `al <client>` will recreate them from `.agent-layer/`.

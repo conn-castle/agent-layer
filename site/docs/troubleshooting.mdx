@@ -83,6 +83,7 @@ Run `al doctor` to see structured config errors.
 ### MCP server fails to start
 
 - Check that the command exists on your `PATH` (for example `npx` or `uvx`).
+- On macOS, install Node via Homebrew (`brew install node`) so VS Code can find `node` and `npx`. Avoid per-user installs that only exist in shell profiles.
 - Verify any required secrets in `.agent-layer/.env`.
 - For HTTP servers, confirm the URL and headers are correct.
 - Use `al doctor` to confirm discovery and tool listing.

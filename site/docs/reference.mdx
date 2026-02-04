@@ -46,8 +46,10 @@ enabled = true
 
 [agents.codex]
 enabled = true
-model = "gpt-5.2-codex"
-reasoning_effort = "high" # codex only
+# model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
+# model = "gpt-5.2-codex"
+# reasoning_effort is optional; when omitted, the client uses its default.
+# reasoning_effort = "xhigh" # codex only
 
 [agents.vscode]
 enabled = true
@@ -90,7 +92,7 @@ mcp_schema_tokens_server_threshold = 20000
 
 ### Agents
 
-Each agent has an `enabled` flag and optional `model` value. Codex also supports `reasoning_effort`.
+Each agent has an `enabled` flag and optional `model` value. Codex also supports `reasoning_effort`, which is optional; omit it (and `model`) to use the client defaults.
 
 Supported agents:
 

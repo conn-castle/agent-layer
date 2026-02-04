@@ -3,10 +3,11 @@
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
 ## Purpose
-A rolling log of important, non-obvious decisions that materially affect future work (constraints, deferrals, irreversible tradeoffs). Only record decisions that future developers/agents would not learn just by reading the code.
+A rolling log of important, non-obvious decisions that materially affect future work (constraints, deferrals, irreversible tradeoffs). Only record decisions that future developers/agents would not learn just by reading the code. Do not log routine choices or standard best-practice decisions; if it is obvious from the code, leave it out.
 
 ## Format
 - Keep entries brief and durable (avoid restating obvious defaults).
+- Do not log routine choices or best-practice adherence; if the decision is obvious from the code or docs, skip it.
 - Keep the oldest decisions near the top and add new entries at the bottom.
 - Insert entries under `<!-- ENTRIES START -->`.
 - Line 1 starts with `- Decision YYYY-MM-DD <id>:` and a short title.
