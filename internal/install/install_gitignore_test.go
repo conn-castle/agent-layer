@@ -15,8 +15,8 @@ func TestEnsureGitignoreCreatesFile(t *testing.T) {
 	path := filepath.Join(root, ".gitignore")
 	block := "# >>> agent-layer\nal\n# <<< agent-layer\n"
 
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -36,8 +36,8 @@ func TestEnsureGitignoreReplacesBlock(t *testing.T) {
 	}
 
 	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -57,8 +57,8 @@ func TestEnsureGitignoreAppendsBlock(t *testing.T) {
 	}
 
 	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -78,8 +78,8 @@ func TestEnsureGitignorePartialBlock(t *testing.T) {
 	}
 
 	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -99,8 +99,8 @@ func TestEnsureGitignoreSingleBlankLineAfterBlock(t *testing.T) {
 	}
 
 	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -111,8 +111,8 @@ func TestEnsureGitignoreSingleBlankLineAfterBlock(t *testing.T) {
 		t.Fatalf("unexpected gitignore content: %q", string(data))
 	}
 
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore second run error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore second run error: %v", err)
 	}
 	data, err = os.ReadFile(path)
 	if err != nil {
@@ -130,7 +130,7 @@ func TestEnsureGitignoreReadError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	err := ensureGitignore(RealSystem{}, path, "# >>> agent-layer\n# <<< agent-layer\n")
+	err := EnsureGitignore(RealSystem{}, path, "# >>> agent-layer\n# <<< agent-layer\n")
 	if err == nil {
 		t.Fatalf("expected error for directory path")
 	}
@@ -398,7 +398,7 @@ func TestEnsureGitignore_ReadError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	err := ensureGitignore(RealSystem{}, path, "block")
+	err := EnsureGitignore(RealSystem{}, path, "block")
 	if err == nil {
 		t.Fatalf("expected error for read failure")
 	}
@@ -415,7 +415,7 @@ func TestEnsureGitignore_WriteNewError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
 
-	err := ensureGitignore(RealSystem{}, path, "block")
+	err := EnsureGitignore(RealSystem{}, path, "block")
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}
@@ -435,7 +435,7 @@ func TestEnsureGitignore_WriteUpdateError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
 
-	err := ensureGitignore(RealSystem{}, path, "new block")
+	err := EnsureGitignore(RealSystem{}, path, "new block")
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}

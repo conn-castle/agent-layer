@@ -32,12 +32,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: internal/messages/wizard.go contains over 100 constants for a single CLI command, making it difficult to maintain and navigate.
     Next step: Group related messages into structs or sub-packages to improve categorization and readability.
 
-- Issue 2026-02-04 gitign: Update .gitignore during sync
-    Priority: Medium. Area: CLI / sync
-    GitHub: https://github.com/conn-castle/agent-layer/issues/35
-    Description: Currently, .gitignore is only updated during `init`. It should also be updated during `sync` to ensure new agent-layer files are correctly ignored as they are introduced or updated.
-    Next step: Move the .gitignore update logic into the sync workflow.
-
 - Issue 2026-02-04 ver002: Opt-in version update warnings for sync
     Priority: Medium. Area: CLI / sync
     GitHub: https://github.com/conn-castle/agent-layer/issues/37
@@ -55,12 +49,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     GitHub: https://github.com/conn-castle/agent-layer/issues/28
     Description: Arguments passed to `al <agent>` (e.g., `al claude --dangerously-skip-permissions`) are not forwarded to the underlying agent process, causing errors or ignored flags.
     Next step: Update agent command handlers to capture and forward trailing arguments to the underlying executable.
-
-- Issue 2026-01-30 launch01: VS Code .app launcher only written by sync, not init
-    Priority: Low. Area: install
-    GitHub: https://github.com/conn-castle/agent-layer/issues/29
-    Description: The `open-vscode.app` launcher is written by `al sync` but not by `al init`. Users must run `al sync` (or `al vscode`) after init before the launcher exists.
-    Next step: Move launcher creation to init so it's available immediately after setup.
 
 - Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
     Priority: Medium. Area: install / UX.

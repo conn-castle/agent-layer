@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -118,6 +119,7 @@ func Run(root string, opts Options) error {
 		inst.writeTemplateFiles,
 		inst.writeTemplateDirs,
 		inst.updateGitignore,
+		inst.writeVSCodeLaunchers,
 		inst.scanUnknowns,
 		inst.handleUnknowns,
 	}
@@ -183,6 +185,10 @@ func (inst *installer) createDirs() error {
 		}
 	}
 	return nil
+}
+
+func (inst *installer) writeVSCodeLaunchers() error {
+	return launchers.WriteVSCodeLaunchers(inst.sys, inst.root)
 }
 
 func (inst *installer) writeTemplateFiles() error {

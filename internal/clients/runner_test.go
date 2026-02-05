@@ -165,6 +165,10 @@ mcp_server_threshold = 5
 	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
+	gitignoreBlock := "# >>> agent-layer\n# <<< agent-layer\n"
+	if err := os.WriteFile(filepath.Join(paths.Root, ".agent-layer", "gitignore.block"), []byte(gitignoreBlock), 0o644); err != nil {
+		t.Fatalf("write gitignore.block: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}

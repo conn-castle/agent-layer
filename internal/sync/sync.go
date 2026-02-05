@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/install"
+	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -41,6 +44,7 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) ([]warnings.Warning, e
 // Returns any sync-time warnings and an error if sync failed.
 func RunWithProject(sys System, root string, project *config.ProjectConfig) ([]warnings.Warning, error) {
 	steps := []func() error{
+		func() error { return updateGitignore(sys, root) },
 		func() error {
 			return WriteInstructionShims(sys, root, project.Instructions)
 		},
@@ -58,7 +62,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) ([]w
 			func() error { return WriteVSCodePrompts(sys, root, project.SlashCommands) },
 			func() error { return WriteVSCodeSettings(sys, root, project) },
 			func() error { return WriteVSCodeMCPConfig(sys, root, project) },
-			func() error { return WriteVSCodeLaunchers(sys, root) },
+			func() error { return launchers.WriteVSCodeLaunchers(sys, root) },
 		)
 	}
 
@@ -116,4 +120,14 @@ func EnsureEnabled(name string, enabled *bool) error {
 		return fmt.Errorf(messages.SyncAgentDisabledFmt, name)
 	}
 	return nil
+}
+
+// updateGitignore reads the gitignore block and ensures .gitignore is updated.
+func updateGitignore(sys System, root string) error {
+	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	blockBytes, err := sys.ReadFile(blockPath)
+	if err != nil {
+		return fmt.Errorf(messages.InstallFailedReadGitignoreBlockFmt, blockPath, err)
+	}
+	return install.EnsureGitignore(sys, filepath.Join(root, ".gitignore"), string(blockBytes))
 }

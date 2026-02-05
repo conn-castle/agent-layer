@@ -1,4 +1,4 @@
-package sync
+package launchers
 
 import (
 	"errors"
@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/conn-castle/agent-layer/internal/launchers"
 )
 
 func TestWriteVSCodeLaunchers(t *testing.T) {
@@ -245,7 +243,7 @@ func TestWriteVSCodeLaunchersWriteError(t *testing.T) {
 func TestWriteVSCodeAppBundle(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	paths := launchers.VSCodePaths(root)
+	paths := VSCodePaths(root)
 	if err := os.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -266,7 +264,7 @@ func TestWriteVSCodeAppBundle(t *testing.T) {
 func TestWriteVSCodeAppBundleMkdirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	paths := launchers.VSCodePaths(root)
+	paths := VSCodePaths(root)
 	if err := os.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -281,9 +279,29 @@ func TestWriteVSCodeAppBundleMkdirError(t *testing.T) {
 	}
 }
 
+// mockSystem implements System for testing.
+type mockSystem struct {
+	MkdirAllFunc        func(path string, perm os.FileMode) error
+	WriteFileAtomicFunc func(path string, data []byte, perm os.FileMode) error
+}
+
+func (m *mockSystem) MkdirAll(path string, perm os.FileMode) error {
+	if m.MkdirAllFunc != nil {
+		return m.MkdirAllFunc(path, perm)
+	}
+	return nil
+}
+
+func (m *mockSystem) WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	if m.WriteFileAtomicFunc != nil {
+		return m.WriteFileAtomicFunc(path, data, perm)
+	}
+	return nil
+}
+
 func TestWriteVSCodeLaunchersAppBundleError(t *testing.T) {
 	t.Parallel()
-	sys := &MockSystem{
+	sys := &mockSystem{
 		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
 		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
 			if filepath.Base(path) == "Info.plist" {
@@ -299,7 +317,7 @@ func TestWriteVSCodeLaunchersAppBundleError(t *testing.T) {
 
 func TestWriteVSCodeLaunchersBatWriteError(t *testing.T) {
 	t.Parallel()
-	sys := &MockSystem{
+	sys := &mockSystem{
 		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
 		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
 			if filepath.Base(path) == "open-vscode.bat" {
@@ -315,7 +333,7 @@ func TestWriteVSCodeLaunchersBatWriteError(t *testing.T) {
 
 func TestWriteVSCodeLaunchersDesktopWriteError(t *testing.T) {
 	t.Parallel()
-	sys := &MockSystem{
+	sys := &mockSystem{
 		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
 		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
 			if filepath.Base(path) == "open-vscode.desktop" {
@@ -331,7 +349,7 @@ func TestWriteVSCodeLaunchersDesktopWriteError(t *testing.T) {
 
 func TestWriteVSCodeAppBundleInfoPlistWriteError(t *testing.T) {
 	t.Parallel()
-	sys := &MockSystem{
+	sys := &mockSystem{
 		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
 		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
 			if filepath.Base(path) == "Info.plist" {
@@ -340,14 +358,14 @@ func TestWriteVSCodeAppBundleInfoPlistWriteError(t *testing.T) {
 			return nil
 		},
 	}
-	if err := writeVSCodeAppBundle(sys, launchers.VSCodePaths(t.TempDir())); err == nil {
+	if err := writeVSCodeAppBundle(sys, VSCodePaths(t.TempDir())); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
 func TestWriteVSCodeAppBundleExecWriteError(t *testing.T) {
 	t.Parallel()
-	sys := &MockSystem{
+	sys := &mockSystem{
 		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
 		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
 			if filepath.Base(path) == "open-vscode" {
@@ -356,7 +374,7 @@ func TestWriteVSCodeAppBundleExecWriteError(t *testing.T) {
 			return nil
 		},
 	}
-	if err := writeVSCodeAppBundle(sys, launchers.VSCodePaths(t.TempDir())); err == nil {
+	if err := writeVSCodeAppBundle(sys, VSCodePaths(t.TempDir())); err == nil {
 		t.Fatal("expected error")
 	}
 }

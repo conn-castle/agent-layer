@@ -1,11 +1,31 @@
-package sync
+package launchers
 
 import (
 	"fmt"
+	"os"
 
-	"github.com/conn-castle/agent-layer/internal/launchers"
+	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
+
+// System is the minimal interface needed for launcher operations.
+type System interface {
+	MkdirAll(path string, perm os.FileMode) error
+	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
+}
+
+// RealSystem implements System using actual system calls.
+type RealSystem struct{}
+
+// MkdirAll creates a directory and all parent directories.
+func (RealSystem) MkdirAll(path string, perm os.FileMode) error {
+	return os.MkdirAll(path, perm)
+}
+
+// WriteFileAtomic writes data to path atomically.
+func (RealSystem) WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
+	return fsutil.WriteFileAtomic(path, data, perm)
+}
 
 // WriteVSCodeLaunchers generates VS Code launchers for macOS, Windows, and Linux:
 // - .agent-layer/open-vscode.command (macOS Terminal script)
@@ -13,7 +33,7 @@ import (
 // - .agent-layer/open-vscode.bat (Windows batch file)
 // - .agent-layer/open-vscode.desktop (Linux desktop entry)
 func WriteVSCodeLaunchers(sys System, root string) error {
-	paths := launchers.VSCodePaths(root)
+	paths := VSCodePaths(root)
 	if err := sys.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, paths.AgentLayerDir, err)
 	}
@@ -94,7 +114,7 @@ Categories=Development;IDE;
 }
 
 // writeVSCodeAppBundle creates a macOS .app bundle that launches VS Code without opening Terminal.
-func writeVSCodeAppBundle(sys System, paths launchers.VSCodeLauncherPaths) error {
+func writeVSCodeAppBundle(sys System, paths VSCodeLauncherPaths) error {
 	if err := sys.MkdirAll(paths.AppMacOS, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, paths.AppMacOS, err)
 	}
@@ -145,7 +165,7 @@ on run argv
     if errNum is 126 then
       display alert "Unable to launch VS Code" message "The 'al' command could not be found in your PATH. Install Agent Layer and ensure 'al' is on your PATH." as critical
     else if errNum is 127 then
-      display alert "Unable to launch VS Code" message "The 'code' command could not be found in your PATH. Install it from VS Code via Command Palette → 'Shell Command: Install code command in PATH'." as critical
+      display alert "Unable to launch VS Code" message "The 'code' command could not be found in your PATH. Install it from VS Code via Command Palette -> 'Shell Command: Install code command in PATH'." as critical
     else
       display alert "Launch Failed" message errMsg as critical
     end if

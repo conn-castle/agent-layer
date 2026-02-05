@@ -11,6 +11,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
+// GitignoreSystem is the minimal interface needed for gitignore operations.
+type GitignoreSystem interface {
+	ReadFile(name string) ([]byte, error)
+	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
+}
+
 func (inst *installer) updateGitignore() error {
 	root := inst.root
 	blockPath := filepath.Join(root, ".agent-layer", templateGitignoreBlock)
@@ -19,10 +25,12 @@ func (inst *installer) updateGitignore() error {
 	if err != nil {
 		return fmt.Errorf(messages.InstallFailedReadGitignoreBlockFmt, blockPath, err)
 	}
-	return ensureGitignore(sys, filepath.Join(root, ".gitignore"), string(blockBytes))
+	return EnsureGitignore(sys, filepath.Join(root, ".gitignore"), string(blockBytes))
 }
 
-func ensureGitignore(sys System, path string, block string) error {
+// EnsureGitignore updates or creates a .gitignore file with the given block.
+// It merges the block into existing content, replacing any previous agent-layer block.
+func EnsureGitignore(sys GitignoreSystem, path string, block string) error {
 	block = normalizeGitignoreBlock(block)
 	contentBytes, err := sys.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
