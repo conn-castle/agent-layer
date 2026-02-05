@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -58,7 +59,7 @@ enabled = false
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			if title == "Apply these changes?" {
+			if title == messages.WizardApplyChangesPrompt {
 				*value = true
 			}
 			return nil
@@ -108,7 +109,7 @@ enabled = false
 		SelectFunc:      func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
 		ConfirmFunc: func(title string, value *bool) error {
-			if title == "Apply these changes?" {
+			if title == messages.WizardApplyChangesPrompt {
 				*value = false
 			}
 			return nil

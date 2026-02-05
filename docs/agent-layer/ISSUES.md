@@ -27,11 +27,10 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-02-04 gitign02: Ignore .agent-layer/templates in .gitignore
-    Priority: Low. Area: install / templates
-    GitHub: https://github.com/conn-castle/agent-layer/issues/36
-    Description: The `templates` folder inside `.agent-layer` is duplicative with documentation and other sources. When users commit their agent-layer configuration, this folder adds unnecessary noise.
-    Next step: Add `.agent-layer/templates/` to the `.gitignore` file (or create one inside `.agent-layer`) to prevent it from being tracked.
+- Issue 2026-02-04 wiz004: Message constant bloat in wizard
+    Priority: Low. Area: wizard / internal
+    Description: internal/messages/wizard.go contains over 100 constants for a single CLI command, making it difficult to maintain and navigate.
+    Next step: Group related messages into structs or sub-packages to improve categorization and readability.
 
 - Issue 2026-02-04 gitign: Update .gitignore during sync
     Priority: Medium. Area: CLI / sync
@@ -62,12 +61,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     GitHub: https://github.com/conn-castle/agent-layer/issues/29
     Description: The `open-vscode.app` launcher is written by `al sync` but not by `al init`. Users must run `al sync` (or `al vscode`) after init before the launcher exists.
     Next step: Move launcher creation to init so it's available immediately after setup.
-
-- Issue 2026-01-30 wiz002: Final save config question in wizard lacks visible text
-    Priority: Medium. Area: wizard
-    GitHub: https://github.com/conn-castle/agent-layer/issues/31
-    Description: The final save config prompt in the wizard is confusing because no text is displayed on screen.
-    Next step: Add descriptive text to the save config confirmation prompt.
 
 - Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
     Priority: Medium. Area: install / UX.

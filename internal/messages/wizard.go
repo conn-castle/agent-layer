@@ -34,7 +34,7 @@ const (
 	WizardMCPSchemaTokensTotalThresholdTitle  = "MCP schema tokens total threshold"
 	WizardMCPSchemaTokensServerThresholdTitle = "MCP schema tokens server threshold"
 	WizardSummaryTitle                        = "Summary of Changes"
-	WizardApplyChangesPrompt                  = "Apply these changes?"
+	WizardApplyChangesPrompt                  = "Save changes to .agent-layer/config.toml and .agent-layer/.env?"
 	WizardCompleted                           = "Wizard completed."
 
 	WizardBackupConfigFailedFmt = "failed to backup config: %w"

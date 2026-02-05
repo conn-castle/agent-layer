@@ -14,12 +14,10 @@ coverage.out
 
 
 # >>> agent-layer
-# Template hash: fc1b2872e3174f317c70c87c4d57ce7d1c4b0f7c17890ac8e7ade892bce4bba1
+# Template hash: 22b9ce12c5a05519212bbfd99d3fdb10524c5b38f8e8b8ad124fdf8f98123a56
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al init` to apply changes.
 #
-# Agent Layer config (always ignore .env)
-/.agent-layer/.env
 # Optional: keep uncommented to ignore .agent-layer/ config.
 /.agent-layer/
 # Optional: uncomment to ignore docs/agent-layer/ project memory.

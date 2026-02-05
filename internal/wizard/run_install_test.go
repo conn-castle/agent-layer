@@ -48,7 +48,7 @@ func TestRun_Install(t *testing.T) {
 				return nil
 			}
 			// Fallback for apply
-			if title == "Apply these changes?" {
+			if title == messages.WizardApplyChangesPrompt {
 				*value = false // Stop after install for this test
 				return nil
 			}
