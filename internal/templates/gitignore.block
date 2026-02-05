@@ -1,7 +1,3 @@
-# >>> agent-layer
-# Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
-# and re-run `al init` to apply changes.
-#
 # Optional: keep uncommented to ignore .agent-layer/ config.
 /.agent-layer/
 # Optional: uncomment to ignore docs/agent-layer/ project memory.
@@ -24,5 +20,3 @@
 /.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.
 /.vscode/settings.json
-
-# <<< agent-layer

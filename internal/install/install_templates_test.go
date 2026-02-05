@@ -674,7 +674,7 @@ func TestAppendPinnedVersionDiff_InvalidVersion(t *testing.T) {
 	}
 }
 
-func TestTemplateFileMatches_GitignoreBlockMatchesHash(t *testing.T) {
+func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
 	if err := os.Mkdir(alDir, 0o755); err != nil {
@@ -682,7 +682,7 @@ func TestTemplateFileMatches_GitignoreBlockMatchesHash(t *testing.T) {
 	}
 
 	blockPath := filepath.Join(alDir, "gitignore.block")
-	// Write content with a valid hash that matches the computed hash
+	// Write content that matches the template exactly.
 	templateBytes, err := templates.Read("gitignore.block")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
@@ -693,13 +693,9 @@ func TestTemplateFileMatches_GitignoreBlockMatchesHash(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	matches, err := inst.templateFileMatches(templateFile{
-		path:     blockPath,
-		template: "gitignore.block",
-		perm:     0o644,
-	}, info)
+	matches, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err != nil {
-		t.Fatalf("templateFileMatches error: %v", err)
+		t.Fatalf("matchTemplate error: %v", err)
 	}
 	if !matches {
 		t.Fatalf("expected gitignore.block to match")
@@ -721,13 +717,9 @@ func TestTemplateFileMatches_GitignoreBlockNoMatch(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	matches, err := inst.templateFileMatches(templateFile{
-		path:     blockPath,
-		template: "gitignore.block",
-		perm:     0o644,
-	}, info)
+	matches, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err != nil {
-		t.Fatalf("templateFileMatches error: %v", err)
+		t.Fatalf("matchTemplate error: %v", err)
 	}
 	if matches {
 		t.Fatalf("expected gitignore.block NOT to match custom content")
@@ -958,11 +950,7 @@ func TestTemplateFileMatches_ReadError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templateFileMatches(templateFile{
-		path:     blockPath,
-		template: "gitignore.block",
-		perm:     0o644,
-	}, info)
+	_, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from read failure")
 	}
@@ -991,11 +979,7 @@ func TestTemplateFileMatches_TemplateReadError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.templateFileMatches(templateFile{
-		path:     blockPath,
-		template: "gitignore.block",
-		perm:     0o644,
-	}, info)
+	_, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from template read failure")
 	}

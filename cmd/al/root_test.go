@@ -21,6 +21,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -842,6 +843,7 @@ Do it.`
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
+	writeGitignoreBlock(t, root)
 }
 
 func writeTestRepoInvalidConfig(t *testing.T, root string) {
@@ -907,6 +909,19 @@ instruction_token_threshold = 1
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
+	}
+	writeGitignoreBlock(t, root)
+}
+
+func writeGitignoreBlock(t *testing.T, root string) {
+	t.Helper()
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read gitignore.block template: %v", err)
+	}
+	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.WriteFile(blockPath, templateBytes, 0o644); err != nil {
+		t.Fatalf("write gitignore.block: %v", err)
 	}
 }
 

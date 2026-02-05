@@ -68,6 +68,31 @@ al vscode --no-sync
 		return err
 	}
 
+	// Linux shell script (with Linux-specific instructions)
+	shLinuxContent := `#!/usr/bin/env bash
+set -e
+PARENT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$PARENT_ROOT"
+
+if ! command -v al >/dev/null 2>&1; then
+  echo "Error: 'al' command not found."
+  echo "Install Agent Layer and ensure 'al' is on your PATH."
+  exit 1
+fi
+
+if ! command -v code >/dev/null 2>&1; then
+  echo "Error: 'code' command not found."
+  echo "To install: Open VS Code, press Ctrl+Shift+P, type 'Shell Command: Install code command in PATH', and run it."
+  exit 1
+fi
+
+al vscode --no-sync
+`
+	shLinuxPath := paths.Shell
+	if err := sys.WriteFileAtomic(shLinuxPath, []byte(shLinuxContent), 0o755); err != nil {
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, shLinuxPath, err)
+	}
+
 	// Windows launcher
 	batContent := `@echo off
 setlocal EnableExtensions
@@ -96,12 +121,12 @@ if %ERRORLEVEL% equ 0 (
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, batPath, err)
 	}
 
-	// Linux launcher (.desktop) - delegates to open-vscode.command for launch and error handling
+	// Linux launcher (.desktop) - delegates to open-vscode.sh for launch and error handling
 	desktopContent := `[Desktop Entry]
 Type=Application
 Name=Open VS Code
 Comment=Open this repo in VS Code with CODEX_HOME and AL_* environment variables
-Exec=sh -c 'exec "$(dirname "$1")/open-vscode.command"' _ "%k"
+Exec=sh -c 'exec "$(dirname "$1")/open-vscode.sh"' _ "%k"
 Terminal=true
 Categories=Development;IDE;
 `

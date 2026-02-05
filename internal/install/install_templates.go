@@ -96,7 +96,7 @@ func (inst *installer) appendTemplateFileDiffs(diffs map[string]struct{}, files 
 			}
 			return fmt.Errorf(messages.InstallFailedStatFmt, file.path, err)
 		}
-		matches, err := inst.templateFileMatches(file, info)
+		matches, err := inst.matchTemplate(sys, file.path, file.template, info)
 		if err != nil {
 			return err
 		}
@@ -105,28 +105,6 @@ func (inst *installer) appendTemplateFileDiffs(diffs map[string]struct{}, files 
 		}
 	}
 	return nil
-}
-
-// templateFileMatches reports whether a template file should be considered unchanged.
-func (inst *installer) templateFileMatches(file templateFile, info fs.FileInfo) (bool, error) {
-	sys := inst.sys
-	if file.template != templateGitignoreBlock {
-		return inst.matchTemplate(sys, file.path, file.template, info)
-	}
-	existingBytes, err := sys.ReadFile(file.path)
-	if err != nil {
-		return false, fmt.Errorf(messages.InstallFailedReadFmt, file.path, err)
-	}
-	templateBytes, err := templates.Read(file.template)
-	if err != nil {
-		return false, fmt.Errorf(messages.InstallFailedReadTemplateFmt, file.template, err)
-	}
-	templateBlock := normalizeGitignoreBlock(string(templateBytes))
-	existing := normalizeGitignoreBlock(string(existingBytes))
-	if existing == templateBlock || gitignoreBlockMatchesHash(existing) {
-		return true, nil
-	}
-	return false, nil
 }
 
 // appendTemplateDirDiffs adds relative paths for directory template diffs.

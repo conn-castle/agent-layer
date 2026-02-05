@@ -104,3 +104,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Merge Concepts, Getting started, Reference, and Troubleshooting into single pages under `site/docs/`.
     Reason: Reduce fragmentation and make the docs feel cohesive and professional, with fewer small pages.
     Tradeoffs: Breaking URLs for old per-topic pages; cross-links must use anchors on the consolidated pages.
+
+- Decision 2026-02-05 b6c1d2e: Gitignore block templating and validation
+    Decision: Store `.agent-layer/gitignore.block` as the verbatim template content; inject managed markers, hash, and header only when writing the root `.gitignore`, and error if the block contains managed markers or a hash line.
+    Reason: Keep the template file clean and user-editable while ensuring the root `.gitignore` stays managed and consistent.
+    Tradeoffs: Legacy blocks with markers/hash now require `al init --overwrite` to regenerate before `al sync` will succeed.

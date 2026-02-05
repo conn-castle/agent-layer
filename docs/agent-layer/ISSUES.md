@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-05 launch01: Launcher scripts embedded as literals
+    Priority: Low. Area: launchers / templates
+    Description: Launcher shell/bat/desktop scripts live as large string literals in internal/launchers/write.go, which increases maintenance burden.
+    Next step: Move launcher scripts into internal/templates/launchers and load them via the templates package.
+
 - Issue 2026-02-04 wiz004: Message constant bloat in wizard
     Priority: Low. Area: wizard / internal
     Description: internal/messages/wizard.go contains over 100 constants for a single CLI command, making it difficult to maintain and navigate.

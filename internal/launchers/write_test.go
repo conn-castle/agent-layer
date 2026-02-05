@@ -46,6 +46,16 @@ func TestWriteVSCodeLaunchers(t *testing.T) {
 		t.Fatalf("expected 0755 permissions on app executable, got %o", execInfo.Mode().Perm())
 	}
 
+	// Verify Linux shell script
+	shLinuxPath := filepath.Join(root, ".agent-layer", "open-vscode.sh")
+	shLinuxInfo, err := os.Stat(shLinuxPath)
+	if err != nil {
+		t.Fatalf("expected open-vscode.sh: %v", err)
+	}
+	if shLinuxInfo.Mode().Perm() != 0o755 {
+		t.Fatalf("expected 0755 permissions on .sh file, got %o", shLinuxInfo.Mode().Perm())
+	}
+
 	// Verify Windows launcher
 	batPath := filepath.Join(root, ".agent-layer", "open-vscode.bat")
 	batInfo, err := os.Stat(batPath)
@@ -56,7 +66,7 @@ func TestWriteVSCodeLaunchers(t *testing.T) {
 		t.Fatalf("expected 0755 permissions on .bat file, got %o", batInfo.Mode().Perm())
 	}
 
-	// Verify Linux launcher
+	// Verify Linux desktop entry
 	desktopPath := filepath.Join(root, ".agent-layer", "open-vscode.desktop")
 	desktopInfo, err := os.Stat(desktopPath)
 	if err != nil {
@@ -189,7 +199,40 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 		t.Fatal("Windows launcher must not parse .env directly (use al)")
 	}
 
-	// Verify Linux launcher content - delegates to .command script
+	// Verify Linux shell script content
+	shLinuxPath := filepath.Join(root, ".agent-layer", "open-vscode.sh")
+	shLinuxContent, err := os.ReadFile(shLinuxPath)
+	if err != nil {
+		t.Fatalf("read .sh file: %v", err)
+	}
+	shLinuxStr := string(shLinuxContent)
+
+	if len(shLinuxStr) == 0 {
+		t.Fatal("Linux shell script is empty")
+	}
+	if shLinuxStr[:2] != "#!" {
+		t.Fatal("Linux shell script missing shebang")
+	}
+	if !strings.Contains(shLinuxStr, "al vscode --no-sync") {
+		t.Fatal("Linux shell script must invoke al vscode --no-sync")
+	}
+	if !strings.Contains(shLinuxStr, "command -v al") {
+		t.Fatal("Linux shell script must check for al command")
+	}
+	if !strings.Contains(shLinuxStr, "command -v code") {
+		t.Fatal("Linux shell script must check for code command")
+	}
+	if !strings.Contains(shLinuxStr, "Ctrl+Shift+P") {
+		t.Fatal("Linux shell script must use Ctrl+Shift+P (not Cmd+Shift+P)")
+	}
+	if strings.Contains(shLinuxStr, "Cmd+Shift+P") {
+		t.Fatal("Linux shell script must not use macOS shortcut Cmd+Shift+P")
+	}
+	if strings.Contains(shLinuxStr, ".env") {
+		t.Fatal("Linux shell script must not parse .env directly (use al)")
+	}
+
+	// Verify Linux desktop entry content - delegates to .sh script
 	desktopPath := filepath.Join(root, ".agent-layer", "open-vscode.desktop")
 	desktopContent, err := os.ReadFile(desktopPath)
 	if err != nil {
@@ -197,19 +240,19 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	}
 	desktopStr := string(desktopContent)
 	if len(desktopStr) == 0 {
-		t.Fatal("Linux launcher is empty")
+		t.Fatal("Linux desktop entry is empty")
 	}
 	if !strings.Contains(desktopStr, "[Desktop Entry]") {
-		t.Fatal("Linux launcher missing Desktop Entry header")
+		t.Fatal("Linux desktop entry missing Desktop Entry header")
 	}
-	if !strings.Contains(desktopStr, "open-vscode.command") {
-		t.Fatal("Linux launcher must delegate to open-vscode.command")
+	if !strings.Contains(desktopStr, "open-vscode.sh") {
+		t.Fatal("Linux desktop entry must delegate to open-vscode.sh")
 	}
 	if !strings.Contains(desktopStr, "%k") {
-		t.Fatal("Linux launcher missing desktop entry path (%k)")
+		t.Fatal("Linux desktop entry missing path (%k)")
 	}
 	if !strings.Contains(desktopStr, "Terminal=true") {
-		t.Fatal("Linux launcher should use terminal for .command script output")
+		t.Fatal("Linux desktop entry should use terminal for script output")
 	}
 }
 

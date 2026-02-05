@@ -201,6 +201,7 @@ GEMINI.md
 .agent-layer/open-vscode.command
 .agent-layer/open-vscode.bat
 .agent-layer/open-vscode.desktop
+.agent-layer/open-vscode.sh
 .agent-layer/open-vscode.app/
 ```
 
@@ -224,7 +225,9 @@ If you keep your own files under `.vscode/`, delete only the Agent Layer-managed
 
 `al init` installs a managed `.gitignore` block that ignores `.agent-layer/` and generated client configs. If your team decides to commit `.agent-layer/`, edit `.agent-layer/gitignore.block` and re-run `al init`.
 
-When you are adopting Agent Layer as a team, this is the main choice to make: keep `.agent-layer/` local for experimentation, or commit it so every developer gets the same behavior by default. Secrets still live in `.agent-layer/.env`, which remains gitignored.
+`.agent-layer/gitignore.block` is the template. It should contain only ignore patterns and comments. Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If you see managed markers or a template hash inside `.agent-layer/gitignore.block`, re-run `al init --overwrite` to regenerate the template file.
+
+When you are adopting Agent Layer as a team, this is the main choice to make: keep `.agent-layer/` local for experimentation, or commit it so every developer gets the same behavior by default. Secrets still live in `.agent-layer/.env`, which remains gitignored by `.agent-layer/.gitignore`.
 
 ### What to commit (recommended)
 

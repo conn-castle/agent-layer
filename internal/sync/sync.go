@@ -127,7 +127,11 @@ func updateGitignore(sys System, root string) error {
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
 	blockBytes, err := sys.ReadFile(blockPath)
 	if err != nil {
-		return fmt.Errorf(messages.InstallFailedReadGitignoreBlockFmt, blockPath, err)
+		return fmt.Errorf(messages.SyncFailedReadGitignoreBlockFmt, blockPath, err)
 	}
-	return install.EnsureGitignore(sys, filepath.Join(root, ".gitignore"), string(blockBytes))
+	block, err := install.ValidateGitignoreBlock(string(blockBytes), blockPath)
+	if err != nil {
+		return err
+	}
+	return install.EnsureGitignore(sys, filepath.Join(root, ".gitignore"), block)
 }

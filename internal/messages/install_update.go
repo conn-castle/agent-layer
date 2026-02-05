@@ -17,6 +17,7 @@ const (
 	InstallFailedWriteFmt              = "failed to write %s: %w"
 	InstallFailedStatFmt               = "failed to stat %s: %w"
 	InstallFailedReadGitignoreBlockFmt = "failed to read gitignore block %s: %w"
+	InstallInvalidGitignoreBlockFmt    = "gitignore block %s must not include managed markers or template hash; re-run `al init --overwrite` to regenerate it"
 	InstallUnexpectedTemplatePathFmt   = "unexpected template path %s"
 	InstallDiffHeader                  = "Found existing files that differ from the templates:"
 	InstallDiffLineFmt                 = "  - %s\n"

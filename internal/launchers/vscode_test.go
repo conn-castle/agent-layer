@@ -15,6 +15,9 @@ func TestVSCodePaths(t *testing.T) {
 	if paths.Command != filepath.Join(root, ".agent-layer", "open-vscode.command") {
 		t.Fatalf("Command mismatch: %s", paths.Command)
 	}
+	if paths.Shell != filepath.Join(root, ".agent-layer", "open-vscode.sh") {
+		t.Fatalf("Shell mismatch: %s", paths.Shell)
+	}
 	if paths.Bat != filepath.Join(root, ".agent-layer", "open-vscode.bat") {
 		t.Fatalf("Bat mismatch: %s", paths.Bat)
 	}
@@ -38,7 +41,7 @@ func TestVSCodePaths(t *testing.T) {
 	}
 
 	all := paths.All()
-	if len(all) != 8 {
-		t.Fatalf("expected 8 paths, got %d", len(all))
+	if len(all) != 9 {
+		t.Fatalf("expected 9 paths, got %d", len(all))
 	}
 }
