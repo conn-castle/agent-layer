@@ -7,7 +7,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
 
 ## Format
 - Keep entries brief and durable (avoid restating obvious defaults).
-- Do not log routine choices or best-practice adherence; if the decision is obvious from the code or docs, skip it.
 - Keep the oldest decisions near the top and add new entries at the bottom.
 - Insert entries under `<!-- ENTRIES START -->`.
 - Line 1 starts with `- Decision YYYY-MM-DD <id>:` and a short title.
