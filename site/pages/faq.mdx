@@ -26,6 +26,9 @@ If VS Code is enabled, Agent Layer also generates repo-local launchers under `.a
 
 For full detail, see [/docs/reference#sync](/docs/reference#sync).
 
+## Why does Codex ask me to sign in again per repo?
+The Codex VS Code extension reads `CODEX_HOME` at startup, and Agent Layer sets a repo-specific `CODEX_HOME` via its launchers. That means authentication is stored per repo. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected and keeps credentials isolated. A practical benefit is that you can use different Codex accounts across repositories, such as one for personal projects and one for work, without mixing credentials.
+
 ## Should we commit `.agent-layer/`?
 By default it is gitignored, but teams can choose to commit it (except `.agent-layer/.env`).
 
@@ -59,6 +62,9 @@ See [/docs/troubleshooting](/docs/troubleshooting) for common fixes first.
 You define servers in `.agent-layer/config.toml`. Agent Layer runs exactly the command or URL you configure; it does not install runtimes for you.
 
 If a server uses `npx` or `uvx`, you must have those tools installed.
+
+## Why do MCP servers fail to start in VS Code on macOS?
+If MCP servers that use `npx` fail to start, VS Code may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so GUI apps can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
 ## Can I pin a repo to a specific version?
 Yes. Set `.agent-layer/al.version` to `X.Y.Z` or `vX.Y.Z`, or pass `--version` to `al init`. You can temporarily override the pin with `AL_VERSION`.

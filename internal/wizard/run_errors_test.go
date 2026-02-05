@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -328,7 +329,7 @@ func TestRun_ConfirmError_Apply(t *testing.T) {
 		SelectFunc:      func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
 		ConfirmFunc: func(title string, value *bool) error {
-			if title == "Apply these changes?" {
+			if title == messages.WizardApplyChangesPrompt {
 				return errors.New("apply confirm error")
 			}
 			*value = true

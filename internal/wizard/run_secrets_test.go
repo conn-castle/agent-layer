@@ -57,7 +57,7 @@ enabled = false
 		},
 		ConfirmFunc: func(title string, value *bool) error {
 			// "Default MCP server entries are missing..." -> Yes
-			if title == "Apply these changes?" {
+			if title == messages.WizardApplyChangesPrompt {
 				*value = true
 			}
 			// Confirm restore?
@@ -116,7 +116,7 @@ enabled = false
 				switch title {
 				case fmt.Sprintf(messages.WizardSecretAlreadySetPromptFmt, "AL_GITHUB_PERSONAL_ACCESS_TOKEN"):
 					*value = false // No
-				case "Apply these changes?":
+				case messages.WizardApplyChangesPrompt:
 					*value = true
 				default:
 					*value = true // restore
@@ -147,7 +147,7 @@ enabled = false
 				switch title {
 				case fmt.Sprintf(messages.WizardSecretAlreadySetPromptFmt, "AL_GITHUB_PERSONAL_ACCESS_TOKEN"):
 					*value = true // Yes
-				case "Apply these changes?":
+				case messages.WizardApplyChangesPrompt:
 					*value = true
 				default:
 					*value = true

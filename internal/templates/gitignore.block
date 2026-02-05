@@ -2,8 +2,6 @@
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al init` to apply changes.
 #
-# Agent Layer config (always ignore .env)
-/.agent-layer/.env
 # Optional: keep uncommented to ignore .agent-layer/ config.
 /.agent-layer/
 # Optional: uncomment to ignore docs/agent-layer/ project memory.

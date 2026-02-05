@@ -16,6 +16,7 @@ After this list, refer to memory files by filename only (ISSUES.md, BACKLOG.md, 
 - **Read before running commands:** Before running or recommending project workflow commands (tests, coverage, build, lint, start services), consult COMMANDS.md first.
 - **Initialize if missing:** If any memory file does not exist, ask the user before creating it. If approved and templates exist, copy `.agent-layer/templates/docs/<NAME>.md` into `<NAME>.md` and preserve headings and markers.
 - **Preserve & deduplicate:** Treat existing entries as canonical; do not overwrite/reset memory files unless the user explicitly asks (warn about data loss). Search the target file before adding; merge or rewrite existing entries instead of adding near-duplicates.
+- **Decision hygiene:** Only log non-obvious decisions that are not apparent from code or docs. Do not log routine choices or best-practice adherence; when in doubt, skip logging.
 - **Write down deferred work:** If you discover something worth doing and you are not doing it now:
   - add it to ISSUES.md if it is a bug, maintainability refactor, technical debt, reliability/security concern, test coverage gap, performance concern, or other engineering risk;
   - add it to BACKLOG.md only if it is a new user-visible capability.
