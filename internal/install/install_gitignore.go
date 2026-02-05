@@ -8,8 +8,13 @@ import (
 	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
+
+// GitignoreSystem is the minimal interface needed for gitignore operations.
+type GitignoreSystem interface {
+	ReadFile(name string) ([]byte, error)
+	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
+}
 
 func (inst *installer) updateGitignore() error {
 	root := inst.root
@@ -19,11 +24,21 @@ func (inst *installer) updateGitignore() error {
 	if err != nil {
 		return fmt.Errorf(messages.InstallFailedReadGitignoreBlockFmt, blockPath, err)
 	}
-	return ensureGitignore(sys, filepath.Join(root, ".gitignore"), string(blockBytes))
+	block, err := ValidateGitignoreBlock(string(blockBytes), blockPath)
+	if err != nil {
+		return err
+	}
+	return EnsureGitignore(sys, filepath.Join(root, ".gitignore"), block)
 }
 
-func ensureGitignore(sys System, path string, block string) error {
+// EnsureGitignore updates or creates a .gitignore file with the given block.
+// It merges the block into existing content, replacing any previous agent-layer block.
+// The block should contain only the template content (ignore patterns and comments);
+// managed markers and headers are added automatically.
+func EnsureGitignore(sys GitignoreSystem, path string, block string) error {
 	block = normalizeGitignoreBlock(block)
+	// Render and wrap the managed block with markers.
+	block = wrapGitignoreBlock(renderGitignoreBlock(block))
 	contentBytes, err := sys.ReadFile(path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf(messages.InstallFailedReadFmt, path, err)
@@ -45,50 +60,5 @@ func ensureGitignore(sys System, path string, block string) error {
 }
 
 func writeGitignoreBlock(sys System, path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc, recordDiff func(string)) error {
-	templateBytes, err := templates.Read(templatePath)
-	if err != nil {
-		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, err)
-	}
-	templateBlock := normalizeGitignoreBlock(string(templateBytes))
-	rendered := renderGitignoreBlock(templateBlock)
-
-	existingBytes, err := sys.ReadFile(path)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf(messages.InstallFailedReadFmt, path, err)
-		}
-		if err := sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, path, err)
-		}
-		if err := sys.WriteFileAtomic(path, []byte(rendered), perm); err != nil {
-			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
-		}
-		return nil
-	}
-
-	existing := normalizeGitignoreBlock(string(existingBytes))
-	if existing == templateBlock || gitignoreBlockMatchesHash(existing) {
-		if err := sys.WriteFileAtomic(path, []byte(rendered), perm); err != nil {
-			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
-		}
-		return nil
-	}
-
-	if shouldOverwrite != nil {
-		overwrite, err := shouldOverwrite(path)
-		if err != nil {
-			return err
-		}
-		if overwrite {
-			if err := sys.WriteFileAtomic(path, []byte(rendered), perm); err != nil {
-				return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
-			}
-			return nil
-		}
-	}
-
-	if recordDiff != nil {
-		recordDiff(path)
-	}
-	return nil
+	return writeTemplateFileWithMatch(sys, path, templatePath, perm, shouldOverwrite, recordDiff, fileMatchesTemplateWithInfo)
 }

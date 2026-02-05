@@ -347,7 +347,7 @@ Example keys:
 - `AL_CONTEXT7_API_KEY`
 - `AL_TAVILY_API_KEY`
 
-Your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or the `open-vscode.app` launcher.
+Your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or repo-local launchers like `open-vscode.app`, `open-vscode.sh`, or `open-vscode.command`.
 
 ### Instructions: `.agent-layer/instructions/`
 
@@ -391,7 +391,7 @@ Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_
 Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
 - Windows: `open-vscode.bat` (uses `code` CLI)
-- Linux: `open-vscode.desktop` (uses `code` CLI; shows a dialog if missing)
+- Linux: `open-vscode.desktop` or `open-vscode.sh` (uses `code` CLI; shows a dialog if missing)
 
 These launchers invoke `al vscode`, so the `al` CLI must be available on your PATH.
 
@@ -466,7 +466,6 @@ Notes:
 
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
-- `.agent-layer/.env`
 - generated client config files/directories (for example `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.agent/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, and `.github/copilot-instructions.md`)
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
@@ -474,6 +473,8 @@ If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-
 To commit `.agent-layer/`, remove the `/agent-layer/` line in `.agent-layer/gitignore.block` and re-run `al init`.
 
 To customize the managed block, edit `.agent-layer/gitignore.block` and re-run `al init`.
+
+`.agent-layer/.env` is ignored by `.agent-layer/.gitignore`, not the parent repo `.gitignore`.
 
 `docs/agent-layer/` is created by default; teams may choose to commit it or ignore it.
 

@@ -29,6 +29,7 @@ const (
 	SyncCodexAuthorizationPlaceholderUnsupportedFmt = "authorization header must be literal, ${VAR}, or Bearer ${VAR}"
 	SyncSystemRequired                              = "sync system is required"
 	SyncConfigFSRequired                            = "sync config filesystem is required"
+	SyncFailedReadGitignoreBlockFmt                 = "failed to read gitignore block %s: %w"
 
 	MCPServerResolveFmt              = "mcp server %s: %w"
 	MCPServerURLFmt                  = "mcp server %s url: %w"

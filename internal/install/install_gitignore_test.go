@@ -10,19 +10,25 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
+func managedBlock(block string) string {
+	return wrapGitignoreBlock(renderGitignoreBlock(block))
+}
+
 func TestEnsureGitignoreCreatesFile(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".gitignore")
-	block := "# >>> agent-layer\nal\n# <<< agent-layer\n"
+	block := "al\n"
 
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read gitignore: %v", err)
 	}
-	if string(data) != block {
+	// EnsureGitignore wraps with markers and managed header.
+	expected := managedBlock(block)
+	if string(data) != expected {
 		t.Fatalf("unexpected gitignore content: %q", string(data))
 	}
 }
@@ -35,9 +41,9 @@ func TestEnsureGitignoreReplacesBlock(t *testing.T) {
 		t.Fatalf("write gitignore: %v", err)
 	}
 
-	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	block := "new\n" // No markers - EnsureGitignore adds them
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -56,9 +62,9 @@ func TestEnsureGitignoreAppendsBlock(t *testing.T) {
 		t.Fatalf("write gitignore: %v", err)
 	}
 
-	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	block := "new\n" // No markers - EnsureGitignore adds them
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -77,9 +83,9 @@ func TestEnsureGitignorePartialBlock(t *testing.T) {
 		t.Fatalf("write gitignore: %v", err)
 	}
 
-	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	block := "new\n" // No markers - EnsureGitignore adds them
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -98,21 +104,21 @@ func TestEnsureGitignoreSingleBlankLineAfterBlock(t *testing.T) {
 		t.Fatalf("write gitignore: %v", err)
 	}
 
-	block := "# >>> agent-layer\nnew\n# <<< agent-layer\n"
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore error: %v", err)
+	block := "new\n" // No markers - EnsureGitignore adds them
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore error: %v", err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read gitignore: %v", err)
 	}
-	expected := "keep\n# >>> agent-layer\nnew\n# <<< agent-layer\n\nnext\n"
+	expected := updateGitignoreContent(original, managedBlock(block))
 	if string(data) != expected {
 		t.Fatalf("unexpected gitignore content: %q", string(data))
 	}
 
-	if err := ensureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("ensureGitignore second run error: %v", err)
+	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
+		t.Fatalf("EnsureGitignore second run error: %v", err)
 	}
 	data, err = os.ReadFile(path)
 	if err != nil {
@@ -130,7 +136,7 @@ func TestEnsureGitignoreReadError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	err := ensureGitignore(RealSystem{}, path, "# >>> agent-layer\n# <<< agent-layer\n")
+	err := EnsureGitignore(RealSystem{}, path, "content\n")
 	if err == nil {
 		t.Fatalf("expected error for directory path")
 	}
@@ -147,7 +153,29 @@ func TestUpdateGitignoreMissingBlock(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlockUpdatesLegacyTemplate(t *testing.T) {
+func TestUpdateGitignoreRejectsManagedMarkers(t *testing.T) {
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	blockPath := filepath.Join(alDir, "gitignore.block")
+	block := "# >>> agent-layer\n# Template hash: abc\ncontent\n# <<< agent-layer\n"
+	if err := os.WriteFile(blockPath, []byte(block), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	err := inst.updateGitignore()
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "gitignore block") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWriteGitignoreBlockKeepsTemplateVerbatim(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -158,9 +186,9 @@ func TestWriteGitignoreBlockUpdatesLegacyTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	legacy := normalizeGitignoreBlock(string(templateBytes))
-	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
-		t.Fatalf("write legacy: %v", err)
+	templateBlock := normalizeGitignoreBlock(string(templateBytes))
+	if err := os.WriteFile(path, []byte(templateBlock), 0o644); err != nil {
+		t.Fatalf("write template: %v", err)
 	}
 
 	if err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil); err != nil {
@@ -170,8 +198,8 @@ func TestWriteGitignoreBlockUpdatesLegacyTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read updated: %v", err)
 	}
-	if !strings.Contains(string(data), gitignoreHashPrefix) {
-		t.Fatalf("expected hash line to be added")
+	if string(data) != templateBlock {
+		t.Fatalf("expected template to remain verbatim")
 	}
 }
 
@@ -182,7 +210,7 @@ func TestWriteGitignoreBlockPreservesCustom(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	custom := "# >>> agent-layer\ncustom\n# <<< agent-layer\n"
+	custom := "# custom content\n/my-custom-path/\n"
 	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
 		t.Fatalf("write custom: %v", err)
 	}
@@ -207,7 +235,7 @@ func TestWriteGitignoreBlockRecordsDiff(t *testing.T) {
 	}
 
 	// Write a custom block that differs from template.
-	custom := "# >>> agent-layer\ncustom content\n# <<< agent-layer\n"
+	custom := "# custom content\n"
 	if err := os.WriteFile(path, []byte(custom), 0o644); err != nil {
 		t.Fatalf("write custom: %v", err)
 	}
@@ -265,9 +293,9 @@ func TestWriteGitignoreBlockTemplateReadError(t *testing.T) {
 
 func TestGitignoreBlockMatchesHashValid(t *testing.T) {
 	// Create a block with valid hash.
-	block := "# >>> agent-layer\ntest content\n# <<< agent-layer\n"
+	block := "# comment\ntest content\n"
 	hash := gitignoreBlockHash(block)
-	blockWithHash := "# >>> agent-layer\n" + gitignoreHashPrefix + hash + "\ntest content\n# <<< agent-layer\n"
+	blockWithHash := "# comment\n" + gitignoreHashPrefix + hash + "\ntest content\n"
 
 	if !gitignoreBlockMatchesHash(blockWithHash) {
 		t.Fatalf("expected hash to match")
@@ -276,7 +304,7 @@ func TestGitignoreBlockMatchesHashValid(t *testing.T) {
 
 func TestGitignoreBlockMatchesHashInvalid(t *testing.T) {
 	// Block with wrong hash.
-	blockWithBadHash := "# >>> agent-layer\n" + gitignoreHashPrefix + "badhash\ntest content\n# <<< agent-layer\n"
+	blockWithBadHash := "# comment\n" + gitignoreHashPrefix + "badhash\ntest content\n"
 
 	if gitignoreBlockMatchesHash(blockWithBadHash) {
 		t.Fatalf("expected hash to not match")
@@ -285,7 +313,7 @@ func TestGitignoreBlockMatchesHashInvalid(t *testing.T) {
 
 func TestGitignoreBlockMatchesHashNoHash(t *testing.T) {
 	// Block without any hash line.
-	block := "# >>> agent-layer\ntest content\n# <<< agent-layer\n"
+	block := "# comment\ntest content\n"
 
 	if gitignoreBlockMatchesHash(block) {
 		t.Fatalf("expected no match when hash is missing")
@@ -293,7 +321,7 @@ func TestGitignoreBlockMatchesHashNoHash(t *testing.T) {
 }
 
 func TestStripGitignoreHashNoHash(t *testing.T) {
-	block := "# >>> agent-layer\ntest content\n# <<< agent-layer\n"
+	block := "# comment\ntest content\n"
 	hash, stripped := stripGitignoreHash(block)
 
 	if hash != "" {
@@ -368,29 +396,6 @@ func TestWriteGitignoreBlock_OverwritePromptError(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlock_OverwriteWriteError(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("skipping permissions test on windows")
-	}
-	root := t.TempDir()
-	path := filepath.Join(root, "gitignore.block")
-	if err := os.WriteFile(path, []byte("custom"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	if err := os.Chmod(root, 0o500); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
-
-	prompt := func(path string) (bool, error) {
-		return true, nil
-	}
-	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, prompt, nil)
-	if err == nil {
-		t.Fatalf("expected error for write failure")
-	}
-}
-
 func TestEnsureGitignore_ReadError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".gitignore")
@@ -398,7 +403,7 @@ func TestEnsureGitignore_ReadError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	err := ensureGitignore(RealSystem{}, path, "block")
+	err := EnsureGitignore(RealSystem{}, path, "block")
 	if err == nil {
 		t.Fatalf("expected error for read failure")
 	}
@@ -415,7 +420,7 @@ func TestEnsureGitignore_WriteNewError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
 
-	err := ensureGitignore(RealSystem{}, path, "block")
+	err := EnsureGitignore(RealSystem{}, path, "block")
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}
@@ -435,13 +440,13 @@ func TestEnsureGitignore_WriteUpdateError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
 
-	err := ensureGitignore(RealSystem{}, path, "new block")
+	err := EnsureGitignore(RealSystem{}, path, "new block")
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}
 }
 
-func TestWriteGitignoreBlock_MatchingHash(t *testing.T) {
+func TestWriteGitignoreBlock_MatchingTemplate(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "gitignore.block")
 	// Write content that matches the template exactly
@@ -472,18 +477,14 @@ func TestWriteGitignoreBlock_ReadExistingError(t *testing.T) {
 	}
 }
 
-func TestWriteGitignoreBlock_MatchingHashWriteError(t *testing.T) {
+func TestWriteGitignoreBlock_OverwriteWriteError(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
 	path := filepath.Join(root, "gitignore.block")
-	// Write content that matches the template
-	templateBytes, err := templates.Read("gitignore.block")
-	if err != nil {
-		t.Fatalf("read template: %v", err)
-	}
-	if err := os.WriteFile(path, templateBytes, 0o644); err != nil {
+	// Write custom content to force overwrite.
+	if err := os.WriteFile(path, []byte("custom\n"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// Make dir read-only to cause write error
@@ -492,7 +493,10 @@ func TestWriteGitignoreBlock_MatchingHashWriteError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
 
-	err = writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, nil, nil)
+	prompt := func(path string) (bool, error) {
+		return true, nil
+	}
+	err := writeGitignoreBlock(RealSystem{}, path, "gitignore.block", 0o644, prompt, nil)
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}

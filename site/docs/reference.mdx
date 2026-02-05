@@ -280,6 +280,10 @@ Typical `.agent-layer/` files include:
 - `.env` (secrets, always gitignored)
 - `.gitignore` and `gitignore.block`
 
+**Gitignore template**
+
+`.agent-layer/gitignore.block` is the template file. It must contain only ignore patterns and comments (no managed markers and no template hash). Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If the template file contains managed markers or a hash line, `al init`/`al sync` will error; re-run `al init --overwrite` to regenerate it.
+
 Typical project memory files under `docs/agent-layer/`:
 
 - `ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`
@@ -343,7 +347,7 @@ Common outputs include:
 - `.vscode/mcp.json`, `.vscode/prompts/`, and a managed block in `.vscode/settings.json`
 - `.github/copilot-instructions.md`
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
-- repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command` and `open-vscode.app/`)
+- repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
 These files are derived outputs and safe to delete. Running `al sync` will recreate them.
 

@@ -356,7 +356,7 @@ func TestShouldOverwrite_UsesMemoryPrompt(t *testing.T) {
 	}
 }
 
-func TestListManagedDiffs_IgnoresGitignoreBlockHash(t *testing.T) {
+func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -382,8 +382,17 @@ func TestListManagedDiffs_IgnoresGitignoreBlockHash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listManagedDiffs: %v", err)
 	}
-	if len(diffs) != 1 || diffs[0] != filepath.Join(".agent-layer", "config.toml") {
+	if len(diffs) != 2 {
 		t.Fatalf("unexpected diffs: %v", diffs)
+	}
+	expected := []string{
+		filepath.Join(".agent-layer", "config.toml"),
+		filepath.Join(".agent-layer", "gitignore.block"),
+	}
+	for i, diff := range diffs {
+		if diff != expected[i] {
+			t.Fatalf("unexpected diffs: %v", diffs)
+		}
 	}
 }
 

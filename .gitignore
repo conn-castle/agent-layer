@@ -14,10 +14,10 @@ coverage.out
 
 
 # >>> agent-layer
-# Template hash: 22b9ce12c5a05519212bbfd99d3fdb10524c5b38f8e8b8ad124fdf8f98123a56
+# Template hash: e72a1fa3fc2fff50ceb68a817afd97b9c49075036eca3126dd19bbd58ff741f9
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al init` to apply changes.
-#
+
 # Optional: keep uncommented to ignore .agent-layer/ config.
 /.agent-layer/
 # Optional: uncomment to ignore docs/agent-layer/ project memory.
@@ -40,5 +40,4 @@ coverage.out
 /.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.
 /.vscode/settings.json
-
 # <<< agent-layer

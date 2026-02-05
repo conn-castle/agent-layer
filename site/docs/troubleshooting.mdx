@@ -63,6 +63,10 @@ Re-run `al init` to reinstall the managed ignore rules. If the files were alread
 `.codex/config.toml` may contain resolved values for MCP server URLs, commands, or environment variables. Treat it as private and keep it gitignored.
 :::
 
+### "gitignore block must not include managed markers or template hash"
+
+`.agent-layer/gitignore.block` should contain only ignore patterns and comments. Agent Layer injects the managed header and template hash only when updating the root `.gitignore`. If your template file contains `# >>> agent-layer`, `# <<< agent-layer`, or `# Template hash: ...`, re-run `al init --overwrite` to regenerate it.
+
 ### "invalid pinned version" or version format errors
 
 `.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or re-run `al init --version X.Y.Z`. See [Version pinning](./concepts#version-pinning).
