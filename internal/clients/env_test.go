@@ -121,6 +121,20 @@ func TestUnsetEnvMissingKey(t *testing.T) {
 	}
 }
 
+func TestUnsetEnvEmptyKey(t *testing.T) {
+	env := []string{"PATH=/bin", "KEY=value"}
+	result := UnsetEnv(env, "")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(result))
+	}
+	if value, ok := GetEnv(result, "PATH"); !ok || value != "/bin" {
+		t.Fatalf("expected PATH to remain, got %v", value)
+	}
+	if value, ok := GetEnv(result, "KEY"); !ok || value != "value" {
+		t.Fatalf("expected KEY to remain, got %v", value)
+	}
+}
+
 func TestUnsetEnvEmptySlice(t *testing.T) {
 	result := UnsetEnv([]string{}, "KEY")
 	if len(result) != 0 {

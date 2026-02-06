@@ -49,7 +49,11 @@ func SetEnv(env []string, key string, value string) []string {
 }
 
 // UnsetEnv removes all entries for the given key from an env slice.
+// If key is empty, it returns env unchanged.
 func UnsetEnv(env []string, key string) []string {
+	if key == "" {
+		return env
+	}
 	prefix := key + "="
 	result := make([]string, 0, len(env))
 	for _, entry := range env {
