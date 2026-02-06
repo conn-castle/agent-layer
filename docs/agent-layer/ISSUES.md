@@ -32,22 +32,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Launcher shell/bat/desktop scripts live as large string literals in internal/launchers/write.go, which increases maintenance burden.
     Next step: Move launcher scripts into internal/templates/launchers and load them via the templates package.
 
-- Issue 2026-02-04 wiz004: Message constant bloat in wizard
-    Priority: Low. Area: wizard / internal
-    Description: internal/messages/wizard.go contains over 100 constants for a single CLI command, making it difficult to maintain and navigate.
-    Next step: Group related messages into structs or sub-packages to improve categorization and readability.
-
 - Issue 2026-02-04 ver002: Opt-in version update warnings for sync
     Priority: Medium. Area: CLI / sync
     GitHub: https://github.com/conn-castle/agent-layer/issues/37
     Description: Outdated version warnings should be opt-in for sync runs. By default (missing config), only warn during `init`, `doctor`, or `wizard`. If opted-in via config (should be enabled in the default template), warn on every `sync` (agent start) as well.
     Next step: Update the configuration schema to include a version warning toggle and modify the version check logic to respect this flag during sync operations.
-
-- Issue 2026-01-31 wiz003: Wizard scrambles config.toml order
-    Priority: Critical. Area: wizard
-    GitHub: https://github.com/conn-castle/agent-layer/issues/27
-    Description: The wizard screws up the order of the config.toml during updates, making the file almost unusable and difficult to maintain manually.
-    Next step: Fix the configuration writing logic in the wizard to preserve key order or follow a canonical schema-based order.
 
 - Issue 2026-01-30 argpass: Command-line arguments not passed to underlying agents
     Priority: High. Area: CLI / agent integration
