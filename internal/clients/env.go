@@ -4,12 +4,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
 // BuildEnv merges base env with project env and run metadata.
+// It strips AL_SHIM_ACTIVE from the environment because child processes
+// are new execution contexts that should be free to dispatch independently.
+// The dispatch guard is only meaningful for the exec replacement chain,
+// not for spawned subprocesses.
 func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []string {
-	env := mergeEnvFillMissing(base, projectEnv)
+	env := UnsetEnv(base, dispatch.EnvShimActive)
+	env = mergeEnvFillMissing(env, projectEnv)
 	if runInfo != nil {
 		env = mergeEnv(env, map[string]string{
 			"AL_RUN_DIR": runInfo.Dir,
@@ -40,6 +46,18 @@ func SetEnv(env []string, key string, value string) []string {
 		}
 	}
 	return append(env, entry)
+}
+
+// UnsetEnv removes all entries for the given key from an env slice.
+func UnsetEnv(env []string, key string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(env))
+	for _, entry := range env {
+		if !strings.HasPrefix(entry, prefix) {
+			result = append(result, entry)
+		}
+	}
+	return result
 }
 
 func mergeEnv(base []string, overrides map[string]string) []string {

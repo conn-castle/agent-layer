@@ -204,6 +204,18 @@ This surface area is intentionally small. Configuration should live in the repo 
 
 These variables only affect version dispatch, update checks, and downloads. They do not disable MCP server networking.
 
+:::caution Known issue in v0.6.0 and earlier
+In versions 0.6.0 and earlier, the internal `AL_SHIM_ACTIVE` environment variable can leak into VS Code's integrated terminal when launching via `al vscode`. This causes subsequent `al` commands in that terminal to fail with:
+
+```
+version dispatch already active (current X.Y.Z, requested A.B.C)
+```
+
+**Workaround:** Run `unset AL_SHIM_ACTIVE` in the affected terminal before running `al` commands.
+
+This issue is fixed in v0.7.0 and later, where `AL_SHIM_ACTIVE` is automatically stripped from child process environments.
+:::
+
 ### Secrets from `.agent-layer/.env`
 
 Only variables prefixed with `AL_` are loaded from `.agent-layer/.env`.

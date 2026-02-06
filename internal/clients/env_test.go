@@ -3,6 +3,7 @@ package clients
 import (
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
@@ -92,5 +93,52 @@ func TestMergeEnvNilOverrides(t *testing.T) {
 	result := mergeEnv(base, nil)
 	if len(result) != 1 || result[0] != "PATH=/bin" {
 		t.Fatalf("expected unchanged base, got %v", result)
+	}
+}
+
+func TestUnsetEnv(t *testing.T) {
+	env := []string{"PATH=/bin", "KEY=value", "OTHER=data"}
+	result := UnsetEnv(env, "KEY")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(result))
+	}
+	if _, ok := GetEnv(result, "KEY"); ok {
+		t.Fatalf("expected KEY to be removed")
+	}
+	if value, ok := GetEnv(result, "PATH"); !ok || value != "/bin" {
+		t.Fatalf("expected PATH to remain, got %v", value)
+	}
+	if value, ok := GetEnv(result, "OTHER"); !ok || value != "data" {
+		t.Fatalf("expected OTHER to remain, got %v", value)
+	}
+}
+
+func TestUnsetEnvMissingKey(t *testing.T) {
+	env := []string{"PATH=/bin", "OTHER=data"}
+	result := UnsetEnv(env, "MISSING")
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(result))
+	}
+}
+
+func TestUnsetEnvEmptySlice(t *testing.T) {
+	result := UnsetEnv([]string{}, "KEY")
+	if len(result) != 0 {
+		t.Fatalf("expected empty slice, got %v", result)
+	}
+}
+
+func TestBuildEnvStripsShimActive(t *testing.T) {
+	base := []string{"PATH=/bin", dispatch.EnvShimActive + "=1", "OTHER=data"}
+	env := BuildEnv(base, nil, nil)
+
+	if _, ok := GetEnv(env, dispatch.EnvShimActive); ok {
+		t.Fatalf("expected %s to be stripped from environment", dispatch.EnvShimActive)
+	}
+	if value, ok := GetEnv(env, "PATH"); !ok || value != "/bin" {
+		t.Fatalf("expected PATH to remain, got %v", value)
+	}
+	if value, ok := GetEnv(env, "OTHER"); !ok || value != "data" {
+		t.Fatalf("expected OTHER to remain, got %v", value)
 	}
 }
