@@ -1,6 +1,8 @@
 package clients
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +11,8 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/update"
+	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
 
 func TestRunPipeline(t *testing.T) {
@@ -17,15 +21,18 @@ func TestRunPipeline(t *testing.T) {
 
 	var gotRun *run.Info
 	var gotEnv []string
-	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	var gotArgs []string
+	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		gotRun = runInfo
 		gotEnv = env
+		gotArgs = args
 		return nil
 	}
 
-	err := Run(root, "gemini", func(cfg *config.Config) *bool {
+	passArgs := []string{"--debug", "true"}
+	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, launch)
+	}, launch, passArgs, "v1.0.0")
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -41,6 +48,9 @@ func TestRunPipeline(t *testing.T) {
 	if value, ok := GetEnv(gotEnv, "AL_RUN_ID"); !ok || value == "" {
 		t.Fatalf("expected AL_RUN_ID to be set")
 	}
+	if strings.Join(gotArgs, ",") != strings.Join(passArgs, ",") {
+		t.Fatalf("expected args %v, got %v", passArgs, gotArgs)
+	}
 	if _, err := os.Stat(filepath.Join(root, ".gemini", "settings.json")); err != nil {
 		t.Fatalf("expected gemini settings: %v", err)
 	}
@@ -51,22 +61,22 @@ func TestRunDisabled(t *testing.T) {
 	writeMinimalRepo(t, root)
 
 	disabled := false
-	err := Run(root, "gemini", func(cfg *config.Config) *bool {
+	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
 		return &disabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, nil, "v1.0.0")
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("expected disabled error, got %v", err)
 	}
 }
 
 func TestRunMissingConfig(t *testing.T) {
-	err := Run(t.TempDir(), "gemini", func(cfg *config.Config) *bool {
+	err := Run(context.Background(), t.TempDir(), "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, nil, "v1.0.0")
 	if err == nil || !strings.Contains(err.Error(), "missing config file") {
 		t.Fatalf("expected missing config error, got %v", err)
 	}
@@ -83,11 +93,11 @@ func TestRunSyncError(t *testing.T) {
 		_ = os.Chmod(root, 0o700)
 	})
 
-	err := Run(root, "gemini", func(cfg *config.Config) *bool {
+	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, nil, "v1.0.0")
 	if err == nil {
 		t.Fatalf("expected sync error")
 	}
@@ -102,11 +112,11 @@ func TestRunCreateError(t *testing.T) {
 		t.Fatalf("write tmp file: %v", err)
 	}
 
-	err := Run(root, "gemini", func(cfg *config.Config) *bool {
+	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
-	})
+	}, nil, "v1.0.0")
 	if err == nil {
 		t.Fatalf("expected run create error")
 	}
@@ -116,13 +126,73 @@ func TestRunLaunchError(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
-	err := Run(root, "gemini", func(cfg *config.Config) *bool {
+	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
 		return cfg.Agents.Gemini.Enabled
-	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string) error {
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return fmt.Errorf("launch failed")
-	})
+	}, nil, "v1.0.0")
 	if err == nil || !strings.Contains(err.Error(), "launch failed") {
 		t.Fatalf("expected launch error, got %v", err)
+	}
+}
+
+func TestRunWarnsOnUpdateWhenEnabled(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepo(t, root)
+
+	paths := config.DefaultPaths(root)
+	configToml := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = false
+
+[agents.codex]
+enabled = false
+
+[agents.vscode]
+enabled = false
+
+[agents.antigravity]
+enabled = false
+
+[warnings]
+version_update_on_sync = true
+instruction_token_threshold = 50000
+mcp_server_threshold = 5
+`
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	origCheck := updatewarn.CheckForUpdate
+	calls := 0
+	updatewarn.CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		calls++
+		return update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil
+	}
+	t.Cleanup(func() { updatewarn.CheckForUpdate = origCheck })
+
+	var stderr bytes.Buffer
+	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		return nil
+	}
+
+	err := RunWithStderr(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
+		return cfg.Agents.Gemini.Enabled
+	}, launch, nil, "v1.0.0", &stderr)
+	if err != nil {
+		t.Fatalf("RunWithStderr error: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected update check to run once, got %d", calls)
+	}
+	if !strings.Contains(stderr.String(), "update available") {
+		t.Fatalf("expected update warning, got %q", stderr.String())
 	}
 }
 

@@ -13,8 +13,8 @@ import (
 )
 
 // Launch starts the Codex CLI with the configured options.
-func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
-	args := []string{}
+func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
+	args := append([]string{}, passArgs...)
 
 	env = ensureCodexHome(cfg.Root, env)
 

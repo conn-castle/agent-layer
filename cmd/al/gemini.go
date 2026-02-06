@@ -11,16 +11,18 @@ import (
 
 func newGeminiCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   messages.GeminiUse,
-		Short: messages.GeminiShort,
+		Use:                messages.GeminiUse,
+		Short:              messages.GeminiShort,
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
 			}
-			return clients.Run(root, "gemini", func(cfg *config.Config) *bool {
+			passArgs := stripArgsSeparator(args)
+			return clients.Run(cmd.Context(), root, "gemini", func(cfg *config.Config) *bool {
 				return cfg.Agents.Gemini.Enabled
-			}, gemini.Launch)
+			}, gemini.Launch, passArgs, Version)
 		},
 	}
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/terminal"
+	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
 
 func newWizardCmd() *cobra.Command {
@@ -19,6 +20,8 @@ func newWizardCmd() *cobra.Command {
 			if !isTerminal() {
 				return fmt.Errorf(messages.WizardRequiresTerminal)
 			}
+
+			updatewarn.WarnIfOutdated(cmd.Context(), Version, cmd.ErrOrStderr())
 
 			root, err := resolveInitRoot()
 			if err != nil {

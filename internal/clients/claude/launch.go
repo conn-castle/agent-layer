@@ -11,12 +11,13 @@ import (
 )
 
 // Launch starts the Claude Code CLI with the configured options.
-func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
+func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := []string{}
 	model := cfg.Config.Agents.Claude.Model
 	if model != "" {
 		args = append(args, "--model", model)
 	}
+	args = append(args, passArgs...)
 
 	cmd := exec.Command("claude", args...)
 	cmd.Stdin = os.Stdin

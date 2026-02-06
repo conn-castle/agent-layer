@@ -7,8 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/sync"
+	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
 
 // ErrSyncCompletedWithWarnings is returned when sync completes but warnings were generated.
@@ -23,7 +25,14 @@ func newSyncCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			warnings, err := sync.Run(root)
+			project, err := config.LoadProjectConfig(root)
+			if err != nil {
+				return err
+			}
+			if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
+				updatewarn.WarnIfOutdated(cmd.Context(), Version, cmd.ErrOrStderr())
+			}
+			warnings, err := sync.RunWithProject(sync.RealSystem{}, root, project)
 			if err != nil {
 				return err
 			}

@@ -13,11 +13,13 @@ import (
 )
 
 // Launch starts VS Code with CODEX_HOME set for the repo.
-func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string) error {
+func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	codexHome := filepath.Join(cfg.Root, ".codex")
 	env = clients.SetEnv(env, "CODEX_HOME", codexHome)
 
-	cmd := exec.Command("code", ".")
+	args := append([]string{}, passArgs...)
+	args = append(args, ".")
+	cmd := exec.Command("code", args...)
 	cmd.Dir = cfg.Root
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

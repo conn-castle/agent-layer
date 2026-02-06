@@ -130,7 +130,7 @@ Prerequisites: Go 1.25.6+
 
 ### Dev
 
-- Fast local checks (format + fmt-check + lint + coverage + release tests)
+- Primary local test command (format + fmt-check + lint + coverage + release tests)
 ```bash
 make dev
 ```

@@ -117,8 +117,10 @@ func TestInitAndSyncCommands(t *testing.T) {
 		binDir := t.TempDir()
 		writeStub(t, binDir, "al")
 		t.Setenv("PATH", binDir)
+		t.Setenv(dispatch.EnvNoNetwork, "1")
 
-		err := newSyncCmd().RunE(nil, nil)
+		syncCmd := newSyncCmd()
+		err := syncCmd.RunE(syncCmd, nil)
 		// Sync might fail with warnings if templates are large, which is expected behavior now.
 		if err != nil && !errors.Is(err, ErrSyncCompletedWithWarnings) {
 			t.Fatalf("sync error: %v", err)

@@ -11,16 +11,18 @@ import (
 
 func newAntigravityCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   messages.AntigravityUse,
-		Short: messages.AntigravityShort,
+		Use:                messages.AntigravityUse,
+		Short:              messages.AntigravityShort,
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
 			}
-			return clients.Run(root, "antigravity", func(cfg *config.Config) *bool {
+			passArgs := stripArgsSeparator(args)
+			return clients.Run(cmd.Context(), root, "antigravity", func(cfg *config.Config) *bool {
 				return cfg.Agents.Antigravity.Enabled
-			}, antigravity.Launch)
+			}, antigravity.Launch, passArgs, Version)
 		},
 	}
 
