@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.6.1 - 2026-02-06
+
+### Added
+- CLI argument forwarding: `al <client>` now forwards extra arguments to the underlying client. Use `--` to separate Agent Layer flags from client arguments (e.g., `al claude -- --help` or `al vscode --no-sync -- --reuse-window`).
+- VS Code launchers are now created during `al init` in addition to `al sync`, so launchers are available immediately after initialization.
+- `.gitignore` managed block is now updated during both `al init` and `al sync` operations for consistency.
+
+### Fixed
+- `AL_SHIM_ACTIVE` environment variable no longer leaks into VS Code's integrated terminal when launching via `al vscode`. Previously, this caused subsequent `al` commands in the terminal to fail with "version dispatch already active" errors. (#46)
+- Wizard now rewrites `config.toml` sections in the template-defined canonical order, preventing section ordering drift after multiple wizard runs.
+
+### Changed
+- Launcher code moved to `internal/launchers` package with exported `EnsureGitignore` for cross-package use.
+- Documentation updated with clearer guidance on gitignore template format, wizard behavior, and troubleshooting MCP server startup on macOS.
+
 ## v0.6.0 - 2026-02-03
 
 ### Added
