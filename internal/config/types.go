@@ -40,7 +40,7 @@ type MCPConfig struct {
 	Servers []MCPServer `toml:"servers"`
 }
 
-// WarningsConfig configures optional warning thresholds. Nil disables warnings.
+// WarningsConfig configures optional warning thresholds. Nil fields disable their warnings.
 type WarningsConfig struct {
 	VersionUpdateOnSync            *bool `toml:"version_update_on_sync"`
 	InstructionTokenThreshold      *int  `toml:"instruction_token_threshold"`

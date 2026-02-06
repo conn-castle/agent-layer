@@ -445,7 +445,7 @@ al claude -- --help
 al vscode --no-sync -- --reuse-window
 ```
 
-`--no-sync` is an Agent Layer flag and must appear before `--`; anything after `--` is passed directly to the client.
+`--no-sync` is an Agent Layer flag and must appear before `--`; anything after `--` is passed directly to the client. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
 
 Other commands:
 
