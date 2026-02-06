@@ -278,6 +278,8 @@ env = { MY_TOKEN = "${AL_MY_TOKEN}" }
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.
+# Warn when a newer Agent Layer version is available during sync runs.
+version_update_on_sync = true
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60
@@ -322,7 +324,9 @@ Omit `http_transport` to default to `sse`.
 
 #### Warning thresholds (`[warnings]`)
 
-Warning thresholds are optional. When a threshold is omitted, its warning is disabled. Values must be positive integers (zero/negative are rejected by config validation). `al sync` uses `instruction_token_threshold`, while `al doctor` evaluates all configured MCP warning thresholds.
+Warning thresholds are optional. When a threshold is omitted, its warning is disabled. Values must be positive integers (zero/negative are rejected by config validation). `al sync` uses `instruction_token_threshold` and, when `version_update_on_sync = true`, warns if a newer Agent Layer release is available. `al doctor` evaluates all configured MCP warning thresholds.
+
+Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
 
 #### Approvals modes (`approvals.mode`)
 
@@ -429,6 +433,19 @@ al codex
 al vscode
 al antigravity
 ```
+
+### Passing flags to clients
+
+`al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments.
+
+Examples:
+
+```bash
+al claude -- --help
+al vscode --no-sync -- --reuse-window
+```
+
+`--no-sync` is an Agent Layer flag and must appear before `--`; anything after `--` is passed directly to the client.
 
 Other commands:
 

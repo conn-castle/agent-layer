@@ -32,18 +32,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Launcher shell/bat/desktop scripts live as large string literals in internal/launchers/write.go, which increases maintenance burden.
     Next step: Move launcher scripts into internal/templates/launchers and load them via the templates package.
 
-- Issue 2026-02-04 ver002: Opt-in version update warnings for sync
-    Priority: Medium. Area: CLI / sync
-    GitHub: https://github.com/conn-castle/agent-layer/issues/37
-    Description: Outdated version warnings should be opt-in for sync runs. By default (missing config), only warn during `init`, `doctor`, or `wizard`. If opted-in via config (should be enabled in the default template), warn on every `sync` (agent start) as well.
-    Next step: Update the configuration schema to include a version warning toggle and modify the version check logic to respect this flag during sync operations.
-
-- Issue 2026-01-30 argpass: Command-line arguments not passed to underlying agents
-    Priority: High. Area: CLI / agent integration
-    GitHub: https://github.com/conn-castle/agent-layer/issues/28
-    Description: Arguments passed to `al <agent>` (e.g., `al claude --dangerously-skip-permissions`) are not forwarded to the underlying agent process, causing errors or ignored flags.
-    Next step: Update agent command handlers to capture and forward trailing arguments to the underlying executable.
-
 - Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
     Priority: Medium. Area: install / UX.
     GitHub: https://github.com/conn-castle/agent-layer/issues/30

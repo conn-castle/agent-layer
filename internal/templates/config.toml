@@ -101,6 +101,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.
+# Warn when a newer Agent Layer version is available during sync runs.
+version_update_on_sync = true
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60

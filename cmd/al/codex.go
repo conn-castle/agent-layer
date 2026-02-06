@@ -11,16 +11,18 @@ import (
 
 func newCodexCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   messages.CodexUse,
-		Short: messages.CodexShort,
+		Use:                messages.CodexUse,
+		Short:              messages.CodexShort,
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
 			}
-			return clients.Run(root, "codex", func(cfg *config.Config) *bool {
+			passArgs := stripArgsSeparator(args)
+			return clients.Run(cmd.Context(), root, "codex", func(cfg *config.Config) *bool {
 				return cfg.Agents.Codex.Enabled
-			}, codex.Launch)
+			}, codex.Launch, passArgs, Version)
 		},
 	}
 

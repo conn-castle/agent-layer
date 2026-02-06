@@ -78,8 +78,9 @@ const (
 	CodexUse   = "codex"
 	CodexShort = "Sync and launch Codex CLI"
 
-	VSCodeUse   = "vscode"
-	VSCodeShort = "Sync and launch VS Code with CODEX_HOME configured"
+	VSCodeUse              = "vscode"
+	VSCodeShort            = "Sync and launch VS Code with CODEX_HOME configured"
+	VSCodeNoSyncInvalidFmt = "invalid value for --no-sync: %q"
 
 	AntigravityUse   = "antigravity"
 	AntigravityShort = "Sync and launch Antigravity"

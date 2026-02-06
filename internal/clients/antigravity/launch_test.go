@@ -22,7 +22,7 @@ func TestLaunchAntigravity(t *testing.T) {
 
 	t.Setenv("PATH", binDir)
 	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env); err != nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
 }
@@ -39,7 +39,7 @@ func TestLaunchAntigravityError(t *testing.T) {
 
 	t.Setenv("PATH", binDir)
 	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env); err == nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err == nil {
 		t.Fatalf("expected error")
 	}
 }

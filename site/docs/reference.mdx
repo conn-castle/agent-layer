@@ -69,6 +69,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.
+# Warn when a newer Agent Layer version is available during sync runs.
+version_update_on_sync = true
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60
@@ -84,7 +86,7 @@ mcp_schema_tokens_server_threshold = 20000
 | `[approvals]` | auto-approval policy for commands and MCP tools |
 | `[agents.*]` | enablement and model selection per client |
 | `[[mcp.servers]]` | external MCP server definitions |
-| `[warnings]` | optional thresholds for token and server limits |
+| `[warnings]` | optional thresholds for token and server limits, plus sync update warnings |
 
 ### Approvals
 
@@ -170,8 +172,10 @@ Warning thresholds are optional. When a threshold is omitted, its warning is dis
 
 Warnings are used by:
 
-- `al sync` for instruction token thresholds
+- `al sync` for instruction token thresholds (and optional update warnings)
 - `al doctor` for MCP server and schema thresholds
+
+Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
 
 ### Validation rules
 
@@ -355,7 +359,7 @@ These files are derived outputs and safe to delete. Running `al sync` will recre
 
 **Warnings**
 
-`al sync` evaluates instruction token thresholds from `[warnings]` and emits warnings if they are exceeded.
+`al sync` evaluates instruction token thresholds from `[warnings]` and emits warnings if they are exceeded. If `version_update_on_sync = true`, it also checks for a newer Agent Layer release.
 
 ### Launch a client
 
@@ -370,6 +374,15 @@ These files are derived outputs and safe to delete. Running `al sync` will recre
 These commands read `.agent-layer/`, regenerate client outputs, and then launch the selected client.
 
 This is the default workflow for day-to-day use: you get a clean regenerate and a launch in one command, which keeps behavior consistent even when you switch tools.
+
+`al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is an Agent Layer flag and must appear before `--`.
+
+Examples:
+
+```bash
+al claude -- --help
+al vscode --no-sync -- --reuse-window
+```
 
 ### Doctor
 
