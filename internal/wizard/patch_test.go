@@ -519,6 +519,47 @@ func TestExtractMCPServerID(t *testing.T) {
 		id := extractMCPServerID(lines)
 		assert.Equal(t, "", id)
 	})
+
+	t.Run("ignores id inside multiline string", func(t *testing.T) {
+		// This test verifies that content inside multiline strings is not
+		// incorrectly parsed as a key-value pair.
+		lines := []string{
+			"[[mcp.servers]]",
+			`description = """`,
+			`id = "fake-id"`,
+			`"""`,
+			`id = "real-id"`,
+		}
+		id := extractMCPServerID(lines)
+		assert.Equal(t, "real-id", id)
+	})
+
+	t.Run("ignores id inside multiline literal string", func(t *testing.T) {
+		lines := []string{
+			"[[mcp.servers]]",
+			`description = '''`,
+			`id = "fake-id"`,
+			`'''`,
+			`id = "real-id"`,
+		}
+		id := extractMCPServerID(lines)
+		assert.Equal(t, "real-id", id)
+	})
+}
+
+func TestFindKeyLine_IgnoresMultilineContent(t *testing.T) {
+	lines := []string{
+		"[section]",
+		`description = """`,
+		`key = "fake"`,
+		`"""`,
+		`key = "real"`,
+	}
+
+	result, ok := findKeyLine(lines, "key")
+	require.True(t, ok)
+	assert.Contains(t, result.raw, `key = "real"`)
+	assert.NotContains(t, result.raw, "fake")
 }
 
 func TestFormatTomlValue(t *testing.T) {

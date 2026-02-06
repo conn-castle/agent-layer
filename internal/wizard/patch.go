@@ -300,14 +300,23 @@ func parseMCPBlocks(blocks []*tomlBlock) []mcpBlock {
 
 // extractMCPServerID returns the first non-commented id value in a server block.
 // lines are the raw block lines; returns empty string when no id is found.
+// Tracks multiline string state to avoid parsing content inside multiline strings.
 func extractMCPServerID(lines []string) string {
+	state := tomlStateNone
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		// Skip lines inside multiline strings.
+		if IsTomlStateInMultiline(state) {
+			_, state = ScanTomlLineForComment(line, state)
 			continue
 		}
-		key, value, ok := parseKeyValue(trimmed, "id")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			_, state = ScanTomlLineForComment(line, state)
+			continue
+		}
+		key, value, ok := parseKeyValueWithState(trimmed, "id", state)
 		if !ok || key != "id" {
+			_, state = ScanTomlLineForComment(line, state)
 			continue
 		}
 		return strings.Trim(value, "\"'")
@@ -315,10 +324,10 @@ func extractMCPServerID(lines []string) string {
 	return ""
 }
 
-// parseKeyValue extracts a simple key/value pair from a TOML line.
-// line is the raw line; key is the expected key name; returns key, value, and a match flag.
-func parseKeyValue(line string, key string) (string, string, bool) {
-	commentPos, _ := ScanTomlLineForComment(line, tomlStateNone)
+// parseKeyValueWithState extracts a simple key/value pair from a TOML line with explicit state.
+// line is the raw line; key is the expected key name; state tracks multiline strings.
+func parseKeyValueWithState(line string, key string, state tomlStringState) (string, string, bool) {
+	commentPos, _ := ScanTomlLineForComment(line, state)
 	clean := line
 	if commentPos >= 0 {
 		clean = strings.TrimSpace(line[:commentPos])
@@ -394,19 +403,27 @@ type keyLine struct {
 
 // findKeyLine searches lines for a key/value assignment and returns the parsed line.
 // Returns false if the key is not present.
+// Tracks multiline string state to avoid parsing content inside multiline strings.
 func findKeyLine(lines []string, key string) (keyLine, bool) {
+	state := tomlStateNone
 	for _, line := range lines {
-		parsed, ok := parseKeyLine(line, key)
+		// Skip lines inside multiline strings.
+		if IsTomlStateInMultiline(state) {
+			_, state = ScanTomlLineForComment(line, state)
+			continue
+		}
+		parsed, ok := parseKeyLineWithState(line, key, state)
 		if ok {
 			return parsed, true
 		}
+		_, state = ScanTomlLineForComment(line, state)
 	}
 	return keyLine{}, false
 }
 
-// parseKeyLine parses a key/value assignment line, tracking indentation and inline comments.
+// parseKeyLineWithState parses a key/value assignment line with explicit state tracking.
 // Returns false when the line does not define the requested key.
-func parseKeyLine(line string, key string) (keyLine, bool) {
+func parseKeyLineWithState(line string, key string, state tomlStringState) (keyLine, bool) {
 	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
 	indent := line[:indentLen]
 	trimmed := strings.TrimLeft(line[indentLen:], " \t")
@@ -422,13 +439,13 @@ func parseKeyLine(line string, key string) (keyLine, bool) {
 	if !strings.HasPrefix(rest, "=") {
 		return keyLine{}, false
 	}
-	inlineComment := extractInlineComment(trimmed)
+	inlineComment := extractInlineCommentWithState(trimmed, state)
 	return keyLine{raw: line, indent: indent, commented: commented, inlineComment: inlineComment}, true
 }
 
-// extractInlineComment returns the inline comment portion of a TOML line, if present.
-func extractInlineComment(line string) string {
-	commentPos, _ := ScanTomlLineForComment(line, tomlStateNone)
+// extractInlineCommentWithState returns the inline comment portion with explicit state tracking.
+func extractInlineCommentWithState(line string, state tomlStringState) string {
+	commentPos, _ := ScanTomlLineForComment(line, state)
 	if commentPos < 0 {
 		return ""
 	}
@@ -462,11 +479,19 @@ func ensureCommented(line string) string {
 
 // replaceOrInsertLine replaces an existing key line or inserts a new line after afterKey.
 // block is updated in place; duplicates are removed to keep a single key occurrence.
+// Tracks multiline string state to avoid matching content inside multiline strings.
 func replaceOrInsertLine(block *tomlBlock, key string, newLine string, afterKey string) {
 	var matches []int
 	uncommentedIndex := -1
+	state := tomlStateNone
 	for i, line := range block.lines {
-		parsed, ok := parseKeyLine(line, key)
+		// Skip lines inside multiline strings.
+		if IsTomlStateInMultiline(state) {
+			_, state = ScanTomlLineForComment(line, state)
+			continue
+		}
+		parsed, ok := parseKeyLineWithState(line, key, state)
+		_, state = ScanTomlLineForComment(line, state)
 		if !ok {
 			continue
 		}
@@ -496,15 +521,23 @@ func replaceOrInsertLine(block *tomlBlock, key string, newLine string, afterKey 
 
 // findInsertIndex returns the line index to insert a new key line after afterKey.
 // lines should include the section header as the first entry.
+// Tracks multiline string state to avoid matching content inside multiline strings.
 func findInsertIndex(lines []string, afterKey string) int {
 	if len(lines) == 0 {
 		return 0
 	}
 	if afterKey != "" {
+		state := tomlStateNone
 		for i, line := range lines {
-			if _, ok := parseKeyLine(line, afterKey); ok {
+			// Skip lines inside multiline strings.
+			if IsTomlStateInMultiline(state) {
+				_, state = ScanTomlLineForComment(line, state)
+				continue
+			}
+			if _, ok := parseKeyLineWithState(line, afterKey, state); ok {
 				return i + 1
 			}
+			_, state = ScanTomlLineForComment(line, state)
 		}
 	}
 	if len(lines) > 0 {
