@@ -1,11 +1,7 @@
 package wizard
 
 import (
-	"fmt"
 	"strings"
-	"unicode"
-
-	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // tomlStringState tracks the parser position relative to TOML string literals.
@@ -134,26 +130,4 @@ func commentForLine(lines []string, lineIndex int) string {
 		return ""
 	}
 	return strings.Join(commentLines, "\n")
-}
-
-// formatTomlNoIndent removes leading indentation from TOML output while preserving multiline strings.
-// content is the TOML text to format; returns the formatted TOML or an error if multiline strings are unterminated.
-func formatTomlNoIndent(content string) (string, error) {
-	lines := strings.Split(content, "\n")
-	state := tomlStateNone
-
-	for i, line := range lines {
-		if !IsTomlStateInMultiline(state) {
-			lines[i] = strings.TrimLeftFunc(line, unicode.IsSpace)
-		}
-
-		_, nextState := ScanTomlLineForComment(line, state)
-		state = nextState
-	}
-
-	if IsTomlStateInMultiline(state) {
-		return "", fmt.Errorf(messages.WizardTOMLUnterminatedMultiline)
-	}
-
-	return strings.Join(lines, "\n"), nil
 }

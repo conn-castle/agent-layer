@@ -109,3 +109,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Store `.agent-layer/gitignore.block` as the verbatim template content; inject managed markers, hash, and header only when writing the root `.gitignore`, and error if the block contains managed markers or a hash line.
     Reason: Keep the template file clean and user-editable while ensuring the root `.gitignore` stays managed and consistent.
     Tradeoffs: Legacy blocks with markers/hash now require `al init --overwrite` to regenerate before `al sync` will succeed.
+
+- Decision 2026-02-05 f7a3c9d: Wizard config output uses canonical template order
+    Decision: The wizard always rewrites `config.toml` in the template-defined order, rather than preserving the existing file layout.
+    Reason: Produces deterministic output and reinforces that the wizard is the authoritative manager of config structure.
+    Tradeoffs: Manual layout tweaks and some inline comment placement may be reordered on each wizard run.

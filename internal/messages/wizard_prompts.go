@@ -1,0 +1,38 @@
+package messages
+
+// Wizard prompt and UI text.
+const (
+	// WizardInstallPrompt prompts to install Agent Layer.
+	WizardInstallPrompt                       = "Agent Layer isn't installed in this repository. Run `al init` now? (recommended)"
+	WizardExitWithoutChanges                  = "No changes made."
+	WizardInstallComplete                     = "Installation complete. Continuing the wizard..."
+	WizardApprovalModeTitle                   = "Approval Mode"
+	WizardEnableAgentsTitle                   = "Enable Agents"
+	WizardPreviewModelWarningTitle            = "Preview Model Warning"
+	WizardGeminiModelTitle                    = "Gemini Model"
+	WizardClaudeModelTitle                    = "Claude Model"
+	WizardCodexModelTitle                     = "Codex Model"
+	WizardCodexReasoningEffortTitle           = "Codex Reasoning Effort"
+	WizardMissingDefaultMCPServersPromptFmt   = "Default MCP server entries are missing from config.toml: %s. Restore them before continuing?"
+	WizardEnableDefaultMCPServersTitle        = "Enable Default MCP Servers"
+	WizardSecretAlreadySetPromptFmt           = "Secret %s is already set. Overwrite?"
+	WizardEnvSecretFoundPromptFmt             = "Found %s in your environment. Write it to .agent-layer/.env?"
+	WizardSecretInputPromptFmt                = "Enter %s (leave blank to skip)"
+	WizardSecretMissingDisablePromptFmt       = "No value provided for %s. Disable MCP server %s?"
+	WizardEnableWarningsPrompt                = "Enable warnings for performance and usage issues?"
+	WizardInstructionTokenThresholdTitle      = "Instruction token threshold"
+	WizardMCPServerThresholdTitle             = "MCP server threshold"
+	WizardMCPToolsTotalThresholdTitle         = "MCP tools total threshold"
+	WizardMCPServerToolsThresholdTitle        = "MCP server tools threshold"
+	WizardMCPSchemaTokensTotalThresholdTitle  = "MCP schema tokens total threshold"
+	WizardMCPSchemaTokensServerThresholdTitle = "MCP schema tokens server threshold"
+	WizardSummaryTitle                        = "Summary of Changes"
+	WizardApplyChangesPrompt                  = "Save changes to .agent-layer/config.toml and .agent-layer/.env?"
+	WizardCompleted                           = "Wizard completed."
+	WizardRunningSync                         = "Running sync..."
+	WizardWarningFmt                          = "Warning: %s\n"
+	WizardLeaveBlankOption                    = "Leave blank (use client default)"
+	WizardCustomOption                        = "Custom..."
+	WizardCustomPromptFmt                     = "Custom %s"
+	WizardMultiSelectDescription              = "Arrow keys to navigate, Space to toggle, Enter to continue, Esc to cancel."
+)
