@@ -39,27 +39,6 @@ bash al-install.sh
 
 By default, the script also installs shell completions for your current interactive shell. You can manage completions manually with `al completion <bash|zsh|fish> --install`.
 
-## Windows (PowerShell)
-
-```powershell
-iwr -useb https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 | iex
-```
-
-If `al` is not found after install, add the printed install directory to your `PATH` and open a new terminal.
-
-If you prefer to inspect the installer before running it, download it to a file first:
-
-```powershell
-$path = Join-Path $env:TEMP "al-install.ps1"
-Invoke-WebRequest https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 -OutFile $path
-notepad $path
-& powershell -ExecutionPolicy Bypass -File $path
-```
-
-:::note
-Windows support is currently best-effort. If you hit issues, please file a report on [GitHub Issues](https://github.com/conn-castle/agent-layer/issues) with your `al --version` and the command output (redact secrets).
-:::
-
 ## Verify
 
 ```bash
@@ -103,7 +82,6 @@ Update the global CLI:
 
 - Homebrew: `brew upgrade conn-castle/tap/agent-layer`
 - macOS/Linux script: re-run the install script above
-- Windows: re-run the PowerShell install script above
 
 If a repo is pinned, update `.agent-layer/al.version` to the new release and run `al` to download it.
 

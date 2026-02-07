@@ -60,12 +60,6 @@ brew install conn-castle/tap/agent-layer
 curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
 ```
 
-### Windows (PowerShell)
-
-```powershell
-iwr -useb https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 | iex
-```
-
 Verify:
 
 ```bash
@@ -131,9 +125,9 @@ If MCP servers that use `npx` are failing in VS Code, your GUI environment may n
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
 
-When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.5.0`). You can also edit it manually or pass `--version` to pin a specific release.
+When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.5.0`). You can also edit it manually or pass `--version` to pin a specific release (`X.Y.Z` / `vX.Y.Z`) or `latest`.
 
-When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically.
+When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` is the exception: it runs on the invoking CLI version so pin updates and upgrades are not blocked by an older repo pin.
 
 Pin format:
 - `0.5.0` or `v0.5.0` (both are accepted)
@@ -153,9 +147,8 @@ Overrides:
 Update the global CLI:
 - Homebrew: `brew upgrade conn-castle/tap/agent-layer` (updates the installed formula)
 - Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
-- Windows: re-run the PowerShell install script (downloads and replaces `al`)
 
-If a repo is pinned, edit `.agent-layer/al.version` to the new release (`vX.Y.Z` or `X.Y.Z`) and run `al` to download it.
+If a repo is pinned, run `al init --version latest` to move to the newest release. You can also pin an explicit release with `al init --version vX.Y.Z` (or `X.Y.Z`), or edit `.agent-layer/al.version` manually.
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
 
@@ -394,7 +387,6 @@ Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_
 
 Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
-- Windows: `open-vscode.bat` (uses `code` CLI)
 - Linux: `open-vscode.desktop` or `open-vscode.sh` (uses `code` CLI; shows a dialog if missing)
 
 These launchers invoke `al vscode`, so the `al` CLI must be available on your PATH.
@@ -460,7 +452,7 @@ Other commands:
 
 ## Shell completion (macOS/Linux)
 
-*The completion command is available on macOS and Linux only; Windows completions are not supported.*
+*The completion command is available on macOS and Linux only.*
 
 “Shell completion output” is a snippet of shell script that enables tab-completion for `al` in your shell.
 

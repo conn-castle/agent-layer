@@ -7,6 +7,5 @@ config.toml.bak
 templates/
 tmp/
 open-vscode.app/
-open-vscode.bat
 open-vscode.command
 open-vscode.desktop

@@ -21,7 +21,6 @@ type RealSystem struct{}
 const (
 	openVSCodeCommandTemplatePath = "launchers/open-vscode.command"
 	openVSCodeShellTemplatePath   = "launchers/open-vscode.sh"
-	openVSCodeBatTemplatePath     = "launchers/open-vscode.bat"
 	openVSCodeDesktopTemplatePath = "launchers/open-vscode.desktop"
 	openVSCodeAppInfoTemplatePath = "launchers/open-vscode.app/Contents/Info.plist"
 	openVSCodeAppExecTemplatePath = "launchers/open-vscode.app/Contents/MacOS/open-vscode"
@@ -39,10 +38,9 @@ func (RealSystem) WriteFileAtomic(path string, data []byte, perm os.FileMode) er
 	return fsutil.WriteFileAtomic(path, data, perm)
 }
 
-// WriteVSCodeLaunchers generates VS Code launchers for macOS, Windows, and Linux:
+// WriteVSCodeLaunchers generates VS Code launchers for macOS and Linux:
 // - .agent-layer/open-vscode.command (macOS Terminal script)
 // - .agent-layer/open-vscode.app (macOS app bundle - no Terminal window)
-// - .agent-layer/open-vscode.bat (Windows batch file)
 // - .agent-layer/open-vscode.desktop (Linux desktop entry)
 func WriteVSCodeLaunchers(sys System, root string) error {
 	paths := VSCodePaths(root)
@@ -64,7 +62,6 @@ func WriteVSCodeLaunchers(sys System, root string) error {
 		perm         os.FileMode
 	}{
 		{paths.Shell, openVSCodeShellTemplatePath, 0o755},
-		{paths.Bat, openVSCodeBatTemplatePath, 0o755},
 		{paths.Desktop, openVSCodeDesktopTemplatePath, 0o755},
 	}
 

@@ -2,11 +2,14 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -15,6 +18,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
+	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/version"
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
@@ -24,6 +28,22 @@ var runWizard = func(root string, pinVersion string) error {
 }
 
 var installRun = install.Run
+
+var resolveLatestPinVersion = func(ctx context.Context, currentVersion string) (string, error) {
+	result, err := checkForUpdate(ctx, currentVersion)
+	if err != nil {
+		return "", err
+	}
+	latest := strings.TrimSpace(result.Latest)
+	if latest == "" {
+		return "", fmt.Errorf(messages.InitLatestVersionMissing)
+	}
+	return latest, nil
+}
+
+var releaseValidationHTTPClient = &http.Client{Timeout: 10 * time.Second}
+var releaseValidationBaseURL = update.ReleasesBaseURL
+var validatePinnedReleaseVersionFunc = validatePinnedReleaseVersion
 
 func newInitCmd() *cobra.Command {
 	var overwrite bool
@@ -43,9 +63,14 @@ func newInitCmd() *cobra.Command {
 			if overwriteMode && !force && !isTerminal() {
 				return fmt.Errorf(messages.InitOverwriteRequiresTerminal)
 			}
-			pinned, err := resolvePinVersion(pinVersion, Version)
+			pinned, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
 			if err != nil {
 				return err
+			}
+			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
+				if err := validatePinnedReleaseVersionFunc(cmd.Context(), pinned); err != nil {
+					return err
+				}
 			}
 			warnInitUpdate(cmd, pinVersion)
 			opts := install.Options{
@@ -152,6 +177,45 @@ func resolvePinVersion(flagValue string, buildVersion string) (string, error) {
 		return "", err
 	}
 	return normalized, nil
+}
+
+// resolvePinVersionForInit resolves the init pin target, including --version latest.
+func resolvePinVersionForInit(ctx context.Context, flagValue string, buildVersion string) (string, error) {
+	flag := strings.TrimSpace(flagValue)
+	if strings.EqualFold(flag, "latest") {
+		latest, err := resolveLatestPinVersion(ctx, buildVersion)
+		if err != nil {
+			return "", fmt.Errorf(messages.InitResolveLatestVersionFmt, err)
+		}
+		return latest, nil
+	}
+	return resolvePinVersion(flag, buildVersion)
+}
+
+// validatePinnedReleaseVersion checks that a requested pin version exists upstream.
+func validatePinnedReleaseVersion(ctx context.Context, pinVersion string) error {
+	normalized, err := version.Normalize(pinVersion)
+	if err != nil {
+		return err
+	}
+	releaseURL := fmt.Sprintf("%s/tag/v%s", releaseValidationBaseURL, normalized)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, releaseURL, nil)
+	if err != nil {
+		return fmt.Errorf(messages.InitCreateReleaseValidationRequestFmt, err)
+	}
+	req.Header.Set("User-Agent", "agent-layer")
+	resp, err := releaseValidationHTTPClient.Do(req)
+	if err != nil {
+		return fmt.Errorf(messages.InitValidateReleaseVersionRequestFmt, normalized, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf(messages.InitReleaseVersionNotFoundFmt, normalized, releaseValidationBaseURL)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf(messages.InitValidateReleaseVersionStatusFmt, normalized, resp.Status)
+	}
+	return nil
 }
 
 // promptYesNo asks a yes/no question and returns the user's choice or an error.

@@ -84,8 +84,8 @@ run_build_invocation_details() {
     fail "No go build invocations recorded by the mock"
   else
     invocation_count=$(wc -l < "$go_log" | tr -d ' ')
-    if [[ "$invocation_count" -eq 5 ]]; then
-      pass "Expected number of go build invocations (5)"
+    if [[ "$invocation_count" -eq 4 ]]; then
+      pass "Expected number of go build invocations (4)"
     else
       fail "Unexpected go build invocation count: $invocation_count"
     fi
@@ -94,7 +94,6 @@ run_build_invocation_details() {
     seen_darwin_amd64=0
     seen_linux_arm64=0
     seen_linux_amd64=0
-    seen_windows_amd64=0
 
     while IFS='|' read -r goos goarch cgo output ldflags pkg; do
       if [[ -z "$goos" || -z "$goarch" ]]; then
@@ -130,9 +129,6 @@ run_build_invocation_details() {
         "linux/amd64/$dist_dir/al-linux-amd64")
           seen_linux_amd64=1
           ;;
-        "windows/amd64/$dist_dir/al-windows-amd64.exe")
-          seen_windows_amd64=1
-          ;;
         *)
           fail "Unexpected build target: GOOS=$goos GOARCH=$goarch output=$output"
           ;;
@@ -163,11 +159,6 @@ run_build_invocation_details() {
       fail "Missing build target: linux/amd64"
     fi
 
-    if [[ "$seen_windows_amd64" -eq 1 ]]; then
-      pass "Build target present: windows/amd64"
-    else
-      fail "Missing build target: windows/amd64"
-    fi
   fi
 }
 
@@ -185,9 +176,7 @@ run_artifact_verification() {
       "al-darwin-amd64"
       "al-linux-arm64"
       "al-linux-amd64"
-      "al-windows-amd64.exe"
       "al-install.sh"
-      "al-install.ps1"
       "$source_tarball"
       "checksums.txt"
     )
@@ -206,11 +195,6 @@ run_artifact_verification() {
       fail "al-install.sh copy does not match source"
     fi
 
-    if cmp -s "$ROOT_DIR/al-install.ps1" "$dist_dir/al-install.ps1"; then
-      pass "al-install.ps1 copied without changes"
-    else
-      fail "al-install.ps1 copy does not match source"
-    fi
   fi
 }
 
@@ -285,9 +269,7 @@ run_checksum_integrity() {
       "al-darwin-amd64"
       "al-linux-arm64"
       "al-linux-amd64"
-      "al-windows-amd64.exe"
       "al-install.sh"
-      "al-install.ps1"
       "agent-layer-${expected_version_no_v}.tar.gz"
     )
 

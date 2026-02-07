@@ -34,13 +34,21 @@ const (
 	InitFlagOverwrite = "Prompt before overwriting existing template files"
 	InitFlagForce     = "Overwrite existing template files and delete unknown files under .agent-layer without prompting (implies --overwrite)"
 	InitFlagNoWizard  = "Skip prompting to run the setup wizard after init"
-	InitFlagVersion   = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z)"
+	InitFlagVersion   = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
 
 	InitWarnUpdateCheckFailedFmt = "Warning: failed to check for updates: %v\n"
 	InitWarnDevBuildFmt          = "Warning: running dev build; latest release is %s\n"
-	UpdateUpgradeBlock           = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n     Windows (PowerShell): iwr -useb https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 | iex\n  2) Update the repo pin:\n     al init --version latest"
-	UpdateSafetyBlock            = "Safety:\n  - Back up local changes before upgrading.\n  - `al init --force` overwrites managed files and deletes unknown files under .agent-layer without prompts."
-	InitWarnUpdateAvailableFmt   = "Warning: update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
+	InitResolveLatestVersionFmt  = "resolve latest version: %w"
+	InitLatestVersionMissing     = "latest release check returned an empty version"
+
+	InitCreateReleaseValidationRequestFmt = "create release validation request: %w"
+	InitValidateReleaseVersionRequestFmt  = "validate requested release v%s: %w"
+	InitValidateReleaseVersionStatusFmt   = "validate requested release v%s: unexpected status %s"
+	InitReleaseVersionNotFoundFmt         = "requested release v%s not found; check available versions at %s"
+
+	UpdateUpgradeBlock         = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  2) Update the repo pin:\n     al init --version latest"
+	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al init --force` overwrites managed files and deletes unknown files under .agent-layer without prompts."
+	InitWarnUpdateAvailableFmt = "Warning: update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
 
 	// CompletionUse is the completion command usage.
 	CompletionUse                 = "completion [bash|zsh|fish]"

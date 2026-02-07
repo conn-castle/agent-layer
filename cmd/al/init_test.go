@@ -7,8 +7,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -374,6 +377,188 @@ func TestResolvePinVersion(t *testing.T) {
 				t.Errorf("resolvePinVersion() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolvePinVersionForInit(t *testing.T) {
+	origResolveLatestPinVersion := resolveLatestPinVersion
+	t.Cleanup(func() {
+		resolveLatestPinVersion = origResolveLatestPinVersion
+	})
+
+	resolveLatestPinVersion = func(context.Context, string) (string, error) {
+		return "3.4.5", nil
+	}
+	got, err := resolvePinVersionForInit(context.Background(), "latest", "1.0.0")
+	if err != nil {
+		t.Fatalf("resolvePinVersionForInit(latest) error: %v", err)
+	}
+	if got != "3.4.5" {
+		t.Fatalf("resolvePinVersionForInit(latest) = %q, want 3.4.5", got)
+	}
+
+	resolveLatestPinVersion = func(context.Context, string) (string, error) {
+		return "", errors.New("network failed")
+	}
+	_, err = resolvePinVersionForInit(context.Background(), "LATEST", "1.0.0")
+	if err == nil {
+		t.Fatal("expected error resolving latest pin")
+	}
+	if !strings.Contains(err.Error(), "resolve latest version") {
+		t.Fatalf("expected latest-resolution error, got %v", err)
+	}
+
+	got, err = resolvePinVersionForInit(context.Background(), "v2.0.1", "1.0.0")
+	if err != nil {
+		t.Fatalf("resolvePinVersionForInit(explicit) error: %v", err)
+	}
+	if got != "2.0.1" {
+		t.Fatalf("resolvePinVersionForInit(explicit) = %q, want 2.0.1", got)
+	}
+}
+
+func TestValidatePinnedReleaseVersion(t *testing.T) {
+	origReleaseValidationHTTPClient := releaseValidationHTTPClient
+	origReleaseValidationBaseURL := releaseValidationBaseURL
+	t.Cleanup(func() {
+		releaseValidationHTTPClient = origReleaseValidationHTTPClient
+		releaseValidationBaseURL = origReleaseValidationBaseURL
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/tag/v1.2.3":
+			w.WriteHeader(http.StatusOK)
+		case "/tag/v9.9.9":
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	releaseValidationHTTPClient = server.Client()
+	releaseValidationBaseURL = server.URL
+
+	if err := validatePinnedReleaseVersion(context.Background(), "1.2.3"); err != nil {
+		t.Fatalf("validatePinnedReleaseVersion success error: %v", err)
+	}
+
+	err := validatePinnedReleaseVersion(context.Background(), "9.9.9")
+	if err == nil {
+		t.Fatal("expected not-found error for missing release")
+	}
+	if !strings.Contains(err.Error(), "requested release v9.9.9 not found") {
+		t.Fatalf("expected not-found message, got %v", err)
+	}
+}
+
+func TestInitCmd_VersionLatestPinsResolvedRelease(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origRunWizard := runWizard
+	origResolveLatestPinVersion := resolveLatestPinVersion
+	origReleaseValidationHTTPClient := releaseValidationHTTPClient
+	origReleaseValidationBaseURL := releaseValidationBaseURL
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		runWizard = origRunWizard
+		resolveLatestPinVersion = origResolveLatestPinVersion
+		releaseValidationHTTPClient = origReleaseValidationHTTPClient
+		releaseValidationBaseURL = origReleaseValidationBaseURL
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/tag/v2.1.0" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return false }
+	resolveLatestPinVersion = func(context.Context, string) (string, error) {
+		return "2.1.0", nil
+	}
+	releaseValidationHTTPClient = server.Client()
+	releaseValidationBaseURL = server.URL
+	runWizard = func(string, string) error { return nil }
+
+	var pinned string
+	installRun = func(root string, opts install.Options) error {
+		pinned = opts.PinVersion
+		return nil
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--version", "latest"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init --version latest failed: %v", err)
+	}
+	if pinned != "2.1.0" {
+		t.Fatalf("expected pinned version 2.1.0, got %q", pinned)
+	}
+}
+
+func TestInitCmd_VersionValidationFailureBlocksInstall(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origRunWizard := runWizard
+	origReleaseValidationHTTPClient := releaseValidationHTTPClient
+	origReleaseValidationBaseURL := releaseValidationBaseURL
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		runWizard = origRunWizard
+		releaseValidationHTTPClient = origReleaseValidationHTTPClient
+		releaseValidationBaseURL = origReleaseValidationBaseURL
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(server.Close)
+
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return false }
+	releaseValidationHTTPClient = server.Client()
+	releaseValidationBaseURL = server.URL
+	runWizard = func(string, string) error { return nil }
+
+	installCalled := false
+	installRun = func(string, install.Options) error {
+		installCalled = true
+		return nil
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--version", "9.9.9"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected init to fail when requested release does not exist")
+	}
+	if !strings.Contains(err.Error(), "requested release v9.9.9 not found") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if installCalled {
+		t.Fatal("install should not run when release validation fails")
 	}
 }
 
@@ -1122,12 +1307,14 @@ func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 			origInstallRun := installRun
 			origRunWizard := runWizard
 			origCheckForUpdate := checkForUpdate
+			origValidatePinnedReleaseVersionFunc := validatePinnedReleaseVersionFunc
 			t.Cleanup(func() {
 				getwd = origGetwd
 				isTerminal = origIsTerminal
 				installRun = origInstallRun
 				runWizard = origRunWizard
 				checkForUpdate = origCheckForUpdate
+				validatePinnedReleaseVersionFunc = origValidatePinnedReleaseVersionFunc
 			})
 
 			tmpDir := t.TempDir()
@@ -1138,6 +1325,7 @@ func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 			isTerminal = func() bool { return false }
 			installRun = func(string, install.Options) error { return nil }
 			runWizard = func(string, string) error { return nil }
+			validatePinnedReleaseVersionFunc = func(context.Context, string) error { return nil }
 
 			calls := 0
 			checkForUpdate = func(context.Context, string) (update.CheckResult, error) {

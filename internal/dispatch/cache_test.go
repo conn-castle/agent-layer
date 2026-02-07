@@ -312,7 +312,6 @@ func TestAssetName(t *testing.T) {
 	}{
 		{"linux", "amd64", "al-linux-amd64"},
 		{"darwin", "arm64", "al-darwin-arm64"},
-		{"windows", "amd64", "al-windows-amd64.exe"},
 	}
 	for _, tt := range tests {
 		if got := assetName(tt.os, tt.arch); got != tt.want {
@@ -512,7 +511,6 @@ func TestCheckPlatform(t *testing.T) {
 	}{
 		{"darwin", "amd64", false},
 		{"linux", "arm64", false},
-		{"windows", "amd64", false},
 		{"unknown", "amd64", true},
 		{"darwin", "unknown", true},
 	}

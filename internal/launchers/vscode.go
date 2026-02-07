@@ -7,7 +7,6 @@ type VSCodeLauncherPaths struct {
 	AgentLayerDir string
 	Command       string // macOS Terminal script (.command)
 	Shell         string // Linux shell script (.sh)
-	Bat           string // Windows batch file (.bat)
 	Desktop       string // Linux desktop entry (.desktop)
 	AppDir        string
 	AppContents   string
@@ -29,7 +28,6 @@ func VSCodePaths(root string) VSCodeLauncherPaths {
 		AgentLayerDir: agentLayerDir,
 		Command:       filepath.Join(agentLayerDir, "open-vscode.command"),
 		Shell:         filepath.Join(agentLayerDir, "open-vscode.sh"),
-		Bat:           filepath.Join(agentLayerDir, "open-vscode.bat"),
 		Desktop:       filepath.Join(agentLayerDir, "open-vscode.desktop"),
 		AppDir:        appDir,
 		AppContents:   appContents,
@@ -44,7 +42,6 @@ func (p VSCodeLauncherPaths) All() []string {
 	return []string{
 		p.Command,
 		p.Shell,
-		p.Bat,
 		p.Desktop,
 		p.AppDir,
 		p.AppContents,

@@ -99,7 +99,33 @@ Incomplete:
 - Updated upgrade warnings to include concrete commands and safety notes about overwrites.
 - Resolved documentation/instruction issues regarding search fallback, uncommitted changes, and decision hygiene.
 
-## Phase 10 — Upgrade lifecycle and notification clarity
+## Phase 10 — Upgrade Phase 0 stabilization (immediate)
+
+### Goal
+- Ship the immediate upgrade fixes from `UPGRADE_PLAN.md` Phase 0a and Phase 0b before broader upgrade lifecycle work.
+- Eliminate known broken upgrade guidance and make `al init`-based upgrades reliable in pinned repos.
+- Define and publish a stable upgrade contract so future lifecycle work has explicit boundaries.
+
+### Tasks
+- [x] Remove Windows support from releases/installers/launchers/docs (`al-install.ps1`, Windows release target in `scripts/build-release.sh`, Windows dispatch path in cache/download handling, and Windows launcher/docs references).
+- [x] Implement real `al init --version latest` by resolving latest GitHub release semver before writing `.agent-layer/al.version`.
+- [x] Ensure `al init` upgrade operations execute with the invoking CLI version (bootstrap binary), not the repo-pinned older version being replaced.
+- [ ] Make `al init` recover from empty/corrupt `.agent-layer/al.version` without manual file deletion.
+- [x] Validate `al init --version X.Y.Z` release existence before writing a pin; fail with a clear not-found message when invalid.
+- [ ] Improve dispatch download error messages for 404 and timeout cases with actionable remediation text.
+- [ ] Add a visible download progress line for version dispatch downloads.
+- [ ] Publish an upgrade event model with categories (`safe auto`, `needs review`, `breaking/manual`).
+- [ ] Define and document compatibility guarantees for upgrade/migration support windows.
+- [ ] Publish release-versioned migration rules and an OS/shell capability matrix in one canonical doc location.
+
+### Exit criteria
+- `al init --version latest` works end-to-end and pins a valid semver release.
+- Running `al init` to upgrade in a repo pinned to an older version does not route upgrade execution through the pinned binary.
+- Empty/corrupt pin-file states are recoverable via `al init` with no manual pin-file deletion.
+- Invalid pinned target versions fail before writing `.agent-layer/al.version` and provide clear remediation.
+- Upgrade contract docs (event model, compatibility policy, migration rules, OS/shell matrix) are published and linked from contributor/user upgrade docs.
+
+## Phase 11 — Upgrade lifecycle and notification clarity
 
 ### Goal
 - Make upgrade behavior predictable when template files are renamed, deleted, or sourced from non-default template repositories.
