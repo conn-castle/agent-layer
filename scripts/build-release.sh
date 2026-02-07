@@ -40,7 +40,6 @@ build darwin arm64 al-darwin-arm64
 build darwin amd64 al-darwin-amd64
 build linux arm64 al-linux-arm64
 build linux amd64 al-linux-amd64
-build windows amd64 al-windows-amd64.exe
 
 git archive --format=tar --prefix="${source_name}/" HEAD > "$source_tar"
 gzip -n -f "$source_tar"
@@ -51,7 +50,6 @@ if [[ ! -f "$source_tgz" ]]; then
 fi
 
 cp al-install.sh "$dist_dir/"
-cp al-install.ps1 "$dist_dir/"
 
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$dist_dir" && rm -f checksums.txt && sha256sum ./* > checksums.txt)

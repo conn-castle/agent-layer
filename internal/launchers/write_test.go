@@ -56,16 +56,6 @@ func TestWriteVSCodeLaunchers(t *testing.T) {
 		t.Fatalf("expected 0755 permissions on .sh file, got %o", shLinuxInfo.Mode().Perm())
 	}
 
-	// Verify Windows launcher
-	batPath := filepath.Join(root, ".agent-layer", "open-vscode.bat")
-	batInfo, err := os.Stat(batPath)
-	if err != nil {
-		t.Fatalf("expected open-vscode.bat: %v", err)
-	}
-	if batInfo.Mode().Perm() != 0o755 {
-		t.Fatalf("expected 0755 permissions on .bat file, got %o", batInfo.Mode().Perm())
-	}
-
 	// Verify Linux desktop entry
 	desktopPath := filepath.Join(root, ".agent-layer", "open-vscode.desktop")
 	desktopInfo, err := os.Stat(desktopPath)
@@ -167,36 +157,6 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	}
 	if strings.Contains(execStr, ".env") {
 		t.Fatal("app executable must not parse .env directly (use al)")
-	}
-
-	// Verify Windows launcher content
-	batPath := filepath.Join(root, ".agent-layer", "open-vscode.bat")
-	batContent, err := os.ReadFile(batPath)
-	if err != nil {
-		t.Fatalf("read .bat file: %v", err)
-	}
-	batStr := string(batContent)
-
-	if len(batStr) == 0 {
-		t.Fatal("Windows launcher is empty")
-	}
-	if !strings.Contains(batStr, "@echo off") {
-		t.Fatal("Windows launcher missing @echo off")
-	}
-	if !strings.Contains(batStr, "al vscode --no-sync") {
-		t.Fatal("Windows launcher must invoke al vscode --no-sync")
-	}
-	if !strings.Contains(batStr, "where al") {
-		t.Fatal("Windows launcher must check for al command")
-	}
-	if !strings.Contains(batStr, "where code") {
-		t.Fatal("Windows launcher must check for code command")
-	}
-	if !strings.Contains(batStr, "Shell Command: Install") {
-		t.Fatal("Windows launcher missing install instructions")
-	}
-	if strings.Contains(batStr, ".env") {
-		t.Fatal("Windows launcher must not parse .env directly (use al)")
 	}
 
 	// Verify Linux shell script content
@@ -349,22 +309,6 @@ func TestWriteVSCodeLaunchersAppBundleError(t *testing.T) {
 		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
 			if filepath.Base(path) == "Info.plist" {
 				return errors.New("bundle fail")
-			}
-			return nil
-		},
-	}
-	if err := WriteVSCodeLaunchers(sys, t.TempDir()); err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-func TestWriteVSCodeLaunchersBatWriteError(t *testing.T) {
-	t.Parallel()
-	sys := &mockSystem{
-		MkdirAllFunc: func(path string, perm os.FileMode) error { return nil },
-		WriteFileAtomicFunc: func(path string, data []byte, perm os.FileMode) error {
-			if filepath.Base(path) == "open-vscode.bat" {
-				return errors.New("write fail")
 			}
 			return nil
 		},

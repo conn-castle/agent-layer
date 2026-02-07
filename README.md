@@ -60,12 +60,6 @@ brew install conn-castle/tap/agent-layer
 curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
 ```
 
-### Windows (PowerShell)
-
-```powershell
-iwr -useb https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.ps1 | iex
-```
-
 Verify:
 
 ```bash
@@ -153,7 +147,6 @@ Overrides:
 Update the global CLI:
 - Homebrew: `brew upgrade conn-castle/tap/agent-layer` (updates the installed formula)
 - Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
-- Windows: re-run the PowerShell install script (downloads and replaces `al`)
 
 If a repo is pinned, run `al init --version latest` to move to the newest release. You can also pin an explicit release with `al init --version vX.Y.Z` (or `X.Y.Z`), or edit `.agent-layer/al.version` manually.
 
@@ -394,7 +387,6 @@ Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_
 
 Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
-- Windows: `open-vscode.bat` (uses `code` CLI)
 - Linux: `open-vscode.desktop` or `open-vscode.sh` (uses `code` CLI; shows a dialog if missing)
 
 These launchers invoke `al vscode`, so the `al` CLI must be available on your PATH.
@@ -460,7 +452,7 @@ Other commands:
 
 ## Shell completion (macOS/Linux)
 
-*The completion command is available on macOS and Linux only; Windows completions are not supported.*
+*The completion command is available on macOS and Linux only.*
 
 “Shell completion output” is a snippet of shell script that enables tab-completion for `al` in your shell.
 

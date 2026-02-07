@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
@@ -49,4 +51,14 @@ func (l *fileLock) release() error {
 		return err
 	}
 	return l.file.Close()
+}
+
+// lockFile acquires an exclusive advisory lock on the file.
+func lockFile(file *os.File) error {
+	return unix.Flock(int(file.Fd()), unix.LOCK_EX)
+}
+
+// unlockFile releases the advisory lock on the file.
+func unlockFile(file *os.File) error {
+	return unix.Flock(int(file.Fd()), unix.LOCK_UN)
 }

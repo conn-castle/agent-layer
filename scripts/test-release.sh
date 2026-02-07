@@ -52,7 +52,6 @@ section "Static Analysis & Setup"
 required_files=(
   "scripts/build-release.sh"
   "al-install.sh"
-  "al-install.ps1"
 )
 
 for file in "${required_files[@]}"; do

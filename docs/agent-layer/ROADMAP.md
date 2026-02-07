@@ -107,7 +107,7 @@ Incomplete:
 - Define and publish a stable upgrade contract so future lifecycle work has explicit boundaries.
 
 ### Tasks
-- [ ] Remove Windows support from releases/installers/launchers/docs (`al-install.ps1`, Windows release target in `scripts/build-release.sh`, Windows dispatch path in cache/download handling, and Windows launcher/docs references).
+- [x] Remove Windows support from releases/installers/launchers/docs (`al-install.ps1`, Windows release target in `scripts/build-release.sh`, Windows dispatch path in cache/download handling, and Windows launcher/docs references).
 - [x] Implement real `al init --version latest` by resolving latest GitHub release semver before writing `.agent-layer/al.version`.
 - [x] Ensure `al init` upgrade operations execute with the invoking CLI version (bootstrap binary), not the repo-pinned older version being replaced.
 - [ ] Make `al init` recover from empty/corrupt `.agent-layer/al.version` without manual file deletion.

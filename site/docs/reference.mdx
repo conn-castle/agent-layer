@@ -213,8 +213,6 @@ version dispatch already active (current X.Y.Z, requested A.B.C)
 
 **Workaround:** Clear the `AL_SHIM_ACTIVE` environment variable in the affected terminal before running `al` commands:
 - `bash`/`zsh`: `unset AL_SHIM_ACTIVE`
-- `PowerShell`: `Remove-Item Env:AL_SHIM_ACTIVE`
-- `cmd.exe`: `set AL_SHIM_ACTIVE=`
 
 This issue is fixed in v0.6.1 and later, where `AL_SHIM_ACTIVE` is automatically stripped from child process environments.
 :::
@@ -434,7 +432,7 @@ al completion zsh
 al completion zsh --install
 ```
 
-Supported shells: `bash`, `zsh`, `fish`. Windows completions are not supported.
+Supported shells: `bash`, `zsh`, `fish`.
 
 ### MCP prompt server
 

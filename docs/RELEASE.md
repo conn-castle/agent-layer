@@ -27,7 +27,7 @@ git push origin "$VERSION"
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
-2. The workflow publishes `al-install.sh`, `al-install.ps1`, platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
+2. The workflow publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
 3. The workflow opens a PR against `conn-castle/homebrew-tap` to update `Formula/agent-layer.rb` with the new tarball URL + SHA256.
 4. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing.
 5. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
