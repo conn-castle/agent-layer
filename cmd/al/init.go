@@ -198,9 +198,6 @@ func validatePinnedReleaseVersion(ctx context.Context, pinVersion string) error 
 	if err != nil {
 		return err
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	releaseURL := fmt.Sprintf("%s/tag/v%s", releaseValidationBaseURL, normalized)
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, releaseURL, nil)
 	if err != nil {

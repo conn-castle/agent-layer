@@ -68,7 +68,7 @@ It is intentionally independent from `ROADMAP.md` sequencing and issue triage de
 8. Invalid `gitignore.block` format (managed markers/hash present) hard-fails sync/init.
 9. Users can customize `.gitignore` but may not realize re-running `init` is required to apply template edits.
 10. There is no first-class template source/pinning workflow for alternate template repositories, so teams can struggle to keep forked templates deterministic across upgrades.
-11. `al init --version X` does not validate the release exists on GitHub before writing the pin. Users can pin a typo or future version, discover the error only on the next `al` invocation, then must debug the 404.
+11. **[Resolved in Phase 10 work]** `al init --version X.Y.Z` now validates the release exists on GitHub before writing the pin, returning a clear not-found message instead of silently writing a bad pin.
 
 ### 4. Config and env compatibility over time
 
