@@ -45,18 +45,51 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 		exit(1)
 		return
 	}
-	if err := maybeExecFunc(args, Version, cwd, exit); err != nil {
-		if errors.Is(err, dispatch.ErrDispatched) {
+	if !shouldBypassDispatch(args) {
+		if err := maybeExecFunc(args, Version, cwd, exit); err != nil {
+			if errors.Is(err, dispatch.ErrDispatched) {
+				return
+			}
+			_, _ = fmt.Fprintln(stderr, err)
+			exit(1)
 			return
 		}
-		_, _ = fmt.Fprintln(stderr, err)
-		exit(1)
-		return
 	}
 	if err := execute(args, stdout, stderr); err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		exit(1)
 	}
+}
+
+// shouldBypassDispatch reports whether dispatch should be skipped for this invocation.
+// `al init` must run through the invoking CLI so repos pinned to older versions can upgrade.
+func shouldBypassDispatch(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	command := firstCommandArg(args[1:])
+	return command == "init"
+}
+
+// firstCommandArg extracts the first non-flag token from root command arguments.
+func firstCommandArg(args []string) string {
+	for idx, arg := range args {
+		trimmed := strings.TrimSpace(arg)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "--" {
+			if idx+1 >= len(args) {
+				return ""
+			}
+			return strings.TrimSpace(args[idx+1])
+		}
+		if strings.HasPrefix(trimmed, "-") {
+			continue
+		}
+		return trimmed
+	}
+	return ""
 }
 
 // versionString formats Version with optional commit and build date metadata.

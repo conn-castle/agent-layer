@@ -131,9 +131,9 @@ If MCP servers that use `npx` are failing in VS Code, your GUI environment may n
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
 
-When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.5.0`). You can also edit it manually or pass `--version` to pin a specific release.
+When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.5.0`). You can also edit it manually or pass `--version` to pin a specific release (`X.Y.Z` / `vX.Y.Z`) or `latest`.
 
-When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically.
+When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` is the exception: it runs on the invoking CLI version so pin updates and upgrades are not blocked by an older repo pin.
 
 Pin format:
 - `0.5.0` or `v0.5.0` (both are accepted)
@@ -155,7 +155,7 @@ Update the global CLI:
 - Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
 - Windows: re-run the PowerShell install script (downloads and replaces `al`)
 
-If a repo is pinned, edit `.agent-layer/al.version` to the new release (`vX.Y.Z` or `X.Y.Z`) and run `al` to download it.
+If a repo is pinned, run `al init --version latest` to move to the newest release. You can also pin an explicit release with `al init --version vX.Y.Z` (or `X.Y.Z`), or edit `.agent-layer/al.version` manually.
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
 

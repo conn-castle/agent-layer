@@ -114,3 +114,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: The wizard always rewrites `config.toml` in the template-defined order, rather than preserving the existing file layout.
     Reason: Produces deterministic output and reinforces that the wizard is the authoritative manager of config structure.
     Tradeoffs: Manual layout tweaks and some inline comment placement may be reordered on each wizard run.
+
+- Decision 2026-02-07 p0a-init-dispatch: Bypass repo-pin dispatch for `al init`
+    Decision: `al init` now bypasses repo-pin binary dispatch and always executes on the invoking CLI binary.
+    Reason: Upgrade operations must not be executed by an older repo-pinned version that is being replaced.
+    Tradeoffs: `al init` behavior can differ from other subcommands in pinned repos when global and pinned versions diverge.
+
+- Decision 2026-02-07 p0a-pin-validation: Resolve and validate explicit init pin targets
+    Decision: `al init --version latest` resolves via the latest release API to a normalized semver pin, and explicit `--version` targets are validated against upstream release tags before writing `.agent-layer/al.version`.
+    Reason: Upgrade guidance must be executable as written, and typo/nonexistent versions should fail before mutating repo pin state.
+    Tradeoffs: Explicit pinning now depends on network access to validate release existence and can fail in fully offline workflows.
