@@ -38,8 +38,3 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     GitHub: https://github.com/conn-castle/agent-layer/issues/39
     Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.
     Next step: Profile VS Code startup to identify the bottleneck (extensions, language servers, MCP servers, or workspace indexing).
-
-- Issue 2026-02-06 gha01: GitHub Action tool installation performance
-    Priority: Medium. Area: CI / tooling
-    Description: GitHub Action takes around 2 minutes to install pinned tools, which slows down the CI feedback loop.
-    Next step: Investigate caching mechanisms or alternative installation methods to reduce tool setup time.
