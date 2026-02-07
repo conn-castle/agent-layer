@@ -27,6 +27,8 @@ const (
 	openVSCodeAppExecTemplatePath = "launchers/open-vscode.app/Contents/MacOS/open-vscode"
 )
 
+var readTemplate = templates.Read
+
 // MkdirAll creates a directory and all parent directories.
 func (RealSystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
@@ -56,16 +58,20 @@ func WriteVSCodeLaunchers(sys System, root string) error {
 		return err
 	}
 
-	if err := writeTemplateFile(sys, paths.Shell, openVSCodeShellTemplatePath, 0o755); err != nil {
-		return err
+	writes := []struct {
+		destPath     string
+		templatePath string
+		perm         os.FileMode
+	}{
+		{paths.Shell, openVSCodeShellTemplatePath, 0o755},
+		{paths.Bat, openVSCodeBatTemplatePath, 0o755},
+		{paths.Desktop, openVSCodeDesktopTemplatePath, 0o755},
 	}
 
-	if err := writeTemplateFile(sys, paths.Bat, openVSCodeBatTemplatePath, 0o755); err != nil {
-		return err
-	}
-
-	if err := writeTemplateFile(sys, paths.Desktop, openVSCodeDesktopTemplatePath, 0o755); err != nil {
-		return err
+	for _, w := range writes {
+		if err := writeTemplateFile(sys, w.destPath, w.templatePath, w.perm); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -77,19 +83,26 @@ func writeVSCodeAppBundle(sys System, paths VSCodeLauncherPaths) error {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, paths.AppMacOS, err)
 	}
 
-	if err := writeTemplateFile(sys, paths.AppInfoPlist, openVSCodeAppInfoTemplatePath, 0o644); err != nil {
-		return err
+	writes := []struct {
+		destPath     string
+		templatePath string
+		perm         os.FileMode
+	}{
+		{paths.AppInfoPlist, openVSCodeAppInfoTemplatePath, 0o644},
+		{paths.AppExec, openVSCodeAppExecTemplatePath, 0o755},
 	}
 
-	if err := writeTemplateFile(sys, paths.AppExec, openVSCodeAppExecTemplatePath, 0o755); err != nil {
-		return err
+	for _, w := range writes {
+		if err := writeTemplateFile(sys, w.destPath, w.templatePath, w.perm); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 func writeTemplateFile(sys System, destinationPath string, templatePath string, perm os.FileMode) error {
-	data, err := templates.Read(templatePath)
+	data, err := readTemplate(templatePath)
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadTemplateFailedFmt, templatePath, err)
 	}

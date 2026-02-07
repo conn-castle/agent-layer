@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 PARENT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
 
-# Build zsh command and pass to osascript (uses 'quoted form of' for safe quoting)
-ZSH_CMD="cd '${PARENT_ROOT}' && command -v al >/dev/null 2>&1 || exit 126; command -v code >/dev/null 2>&1 || exit 127; al vscode --no-sync"
+# Build zsh command and pass to osascript (uses printf %q for safe quoting of paths with special chars)
+ZSH_CMD="cd $(printf %q "${PARENT_ROOT}") && command -v al >/dev/null 2>&1 || exit 126; command -v code >/dev/null 2>&1 || exit 127; al vscode --no-sync"
 
 exec /usr/bin/osascript - "$ZSH_CMD" <<'APPLESCRIPT'
 on run argv

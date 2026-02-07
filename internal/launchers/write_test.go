@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 func TestWriteVSCodeLaunchers(t *testing.T) {
@@ -425,12 +423,12 @@ func TestWriteVSCodeAppBundleExecWriteError(t *testing.T) {
 }
 
 func TestWriteVSCodeLaunchersTemplateReadError(t *testing.T) {
-	originalRead := templates.ReadFunc
+	originalRead := readTemplate
 	t.Cleanup(func() {
-		templates.ReadFunc = originalRead
+		readTemplate = originalRead
 	})
 
-	templates.ReadFunc = func(path string) ([]byte, error) {
+	readTemplate = func(path string) ([]byte, error) {
 		if path == openVSCodeCommandTemplatePath {
 			return nil, errors.New("read fail")
 		}
@@ -447,12 +445,12 @@ func TestWriteVSCodeLaunchersTemplateReadError(t *testing.T) {
 }
 
 func TestWriteVSCodeAppBundleTemplateReadError(t *testing.T) {
-	originalRead := templates.ReadFunc
+	originalRead := readTemplate
 	t.Cleanup(func() {
-		templates.ReadFunc = originalRead
+		readTemplate = originalRead
 	})
 
-	templates.ReadFunc = func(path string) ([]byte, error) {
+	readTemplate = func(path string) ([]byte, error) {
 		if path == openVSCodeAppInfoTemplatePath {
 			return nil, errors.New("read fail")
 		}

@@ -98,3 +98,43 @@ Incomplete:
 - Enhanced CLI output readability with semantic coloring and distinct success/warning/error formatting.
 - Updated upgrade warnings to include concrete commands and safety notes about overwrites.
 - Resolved documentation/instruction issues regarding search fallback, uncommitted changes, and decision hygiene.
+
+## Phase 10 — Upgrade lifecycle and notification clarity
+
+### Goal
+- Make upgrade behavior predictable when template files are renamed, deleted, or sourced from non-default template repositories.
+- Make upgrade notifications and overwrite prompts explain exactly what changed and what action the user should take.
+- Reduce upgrade risk by separating user customizations from template-version changes in surfaced diffs.
+- Improve upgrade-related discoverability by documenting VS Code launcher architecture and adding website search.
+
+### Tasks
+- [ ] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Define and implement migration handling for renamed/deleted template files so obsolete managed files are safely detected and handled during upgrades; document the design and behavior.
+- [ ] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add categorized upgrade diff/notification UX for `al init --overwrite` and related flows so users can distinguish intentional local customizations from upstream template updates.
+- [ ] Backlog 2026-02-03 b4c5d6e (Priority: Medium, Area: lifecycle management): Add support for custom Git repositories as template sources with explicit pinning, caching, and deterministic upgrade behavior.
+- [ ] Backlog 2026-02-06 vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
+- [ ] Backlog 2026-02-06 websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
+
+### Task details
+- Backlog 2026-01-25 8b9c2d1
+  Description: Define how to handle renamed/deleted template files so stale orphans are not left behind in user repos.
+  Acceptance criteria: A clear migration design/decision is documented and implemented for detecting/cleaning obsolete managed files during upgrades.
+  Notes: Current behavior adds/updates files but does not remove files that vanished from templates.
+- Backlog 2026-02-03 b4c5d6e
+  Description: Allow teams to specify a custom Git repository as template source during `al init`.
+  Acceptance criteria: `al init` (or a dedicated command) accepts a Git URL and instantiates templates correctly with repeatable upgrade behavior.
+  Notes: Requires secure fetch + cache strategy and compatibility with pinning/update notifications.
+- Backlog 2026-02-06 vsc-launch
+  Description: Document how VS Code is launched by the CLI, especially the unique/odd path that is currently undocumented.
+  Acceptance criteria: Docs are added or updated (for example `docs/DEVELOPMENT.md` or a new architecture doc) and clearly explain launch flow/design choices.
+  Notes: User identified this as the least documented and most non-obvious part of the system.
+- Backlog 2026-02-06 websearch
+  Description: Add global docs search on the website to improve navigation and discovery of guides/features/reference content.
+  Acceptance criteria: Search bar is integrated in site header and returns relevant results from documentation pages.
+  Notes: Consider client-side indexing (for example FlexSearch) versus managed services (for example Algolia).
+
+### Exit criteria
+- Upgrade flows detect and handle renamed/deleted managed templates without leaving ambiguous orphaned files.
+- Upgrade notifications present actionable, categorized change information for overwrite decisions.
+- Custom template repository sourcing is documented and validated with deterministic, repeatable upgrade behavior.
+- VS Code launch architecture documentation exists and is linked from contributor-facing docs.
+- Website search is available in the header and returns relevant documentation results.
