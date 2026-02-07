@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PARENT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd -P)"
+
+# Build zsh command and pass to osascript (uses 'quoted form of' for safe quoting)
+ZSH_CMD="cd '${PARENT_ROOT}' && command -v al >/dev/null 2>&1 || exit 126; command -v code >/dev/null 2>&1 || exit 127; al vscode --no-sync"
+
+exec /usr/bin/osascript - "$ZSH_CMD" <<'APPLESCRIPT'
+on run argv
+  set zshCmd to item 1 of argv
+  try
+    do shell script "/bin/zsh -l -c " & quoted form of zshCmd
+  on error errMsg number errNum
+    if errNum is 126 then
+      display alert "Unable to launch VS Code" message "The 'al' command could not be found in your PATH. Install Agent Layer and ensure 'al' is on your PATH." as critical
+    else if errNum is 127 then
+      display alert "Unable to launch VS Code" message "The 'code' command could not be found in your PATH. Install it from VS Code via Command Palette -> 'Shell Command: Install code command in PATH'." as critical
+    else
+      display alert "Launch Failed" message errMsg as critical
+    end if
+  end try
+end run
+APPLESCRIPT

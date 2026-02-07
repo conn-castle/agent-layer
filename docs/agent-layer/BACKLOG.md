@@ -28,6 +28,18 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-06 vsc-launch: Document VS Code launch mechanism
+    Priority: High. Area: documentation / launchers
+    Description: Provide a detailed architectural description of how VS Code is launched by the CLI, explaining the unique and non-obvious aspects of this process.
+    Acceptance criteria: Documentation is created or updated (e.g., in docs/DEVELOPMENT.md or a new docs/ARCHITECTURE.md) that clearly explains the launch flow and design decisions.
+    Notes: The user noted this is the "oddest part" of the project and currently completely undocumented.
+
+- Backlog 2026-02-06 websearch: Add search bar to the website
+    Priority: Medium. Area: website / documentation
+    Description: Implement a global search bar on the project website to allow users to quickly find relevant documentation, guides, and feature details.
+    Acceptance criteria: A functional search bar is integrated into the website header, providing relevant results from the documentation and pages.
+    Notes: Consider using a client-side search engine like FlexSearch or a service like Algolia for better performance.
+
 - Backlog 2026-02-03 b4c5d6e: Support custom Git repositories for templates
     Priority: Medium. Area: lifecycle management
     Description: Allow users to specify a custom Git repository as the source for templates during `al init`, enabling teams and organizations to maintain their own standardized agent-layer configurations.

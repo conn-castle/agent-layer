@@ -21,6 +21,7 @@ const (
 	SyncCheckPathFmt                                = "check %s: %w"
 	SyncPromptServerNotDirFmt                       = "prompt server source path %s is not a directory"
 	SyncMissingGoForPromptServerFmt                 = "missing go on PATH for prompt server: %w"
+	SyncReadTemplateFailedFmt                       = "failed to read template %s: %w"
 	SyncReadFailedFmt                               = "failed to read %s: %w"
 	SyncRemoveFailedFmt                             = "failed to remove %s: %w"
 	SyncMCPServerErrorFmt                           = "mcp server %s: %w"

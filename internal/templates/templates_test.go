@@ -23,6 +23,16 @@ func TestReadTemplateMissing(t *testing.T) {
 	}
 }
 
+func TestReadLauncherTemplate(t *testing.T) {
+	data, err := Read("launchers/open-vscode.command")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	if !strings.Contains(string(data), "al vscode --no-sync") {
+		t.Fatalf("expected launcher command in template")
+	}
+}
+
 func TestWalkTemplates(t *testing.T) {
 	var seen bool
 	err := Walk("instructions", func(path string, d fs.DirEntry, err error) error {

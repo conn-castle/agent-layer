@@ -27,11 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-02-05 launch01: Launcher scripts embedded as literals
-    Priority: Low. Area: launchers / templates
-    Description: Launcher shell/bat/desktop scripts live as large string literals in internal/launchers/write.go, which increases maintenance burden.
-    Next step: Move launcher scripts into internal/templates/launchers and load them via the templates package.
-
 - Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
     Priority: Medium. Area: install / UX.
     GitHub: https://github.com/conn-castle/agent-layer/issues/30
@@ -43,3 +38,8 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     GitHub: https://github.com/conn-castle/agent-layer/issues/39
     Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.
     Next step: Profile VS Code startup to identify the bottleneck (extensions, language servers, MCP servers, or workspace indexing).
+
+- Issue 2026-02-06 gha01: GitHub Action tool installation performance
+    Priority: Medium. Area: CI / tooling
+    Description: GitHub Action takes around 2 minutes to install pinned tools, which slows down the CI feedback loop.
+    Next step: Investigate caching mechanisms or alternative installation methods to reduce tool setup time.

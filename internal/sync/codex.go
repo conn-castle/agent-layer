@@ -54,13 +54,14 @@ func WriteCodexRules(sys System, root string, project *config.ProjectConfig) err
 
 func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	var builder strings.Builder
+	builder.WriteString(codexHeader)
+
 	if project.Config.Agents.Codex.Model != "" {
 		builder.WriteString(fmt.Sprintf("model = %q\n", project.Config.Agents.Codex.Model))
 	}
 	if project.Config.Agents.Codex.ReasoningEffort != "" {
 		builder.WriteString(fmt.Sprintf("model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort))
 	}
-	builder.WriteString(codexHeader)
 
 	// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
 	resolved, err := projection.ResolveMCPServers(

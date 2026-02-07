@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 func TestWriteVSCodeLaunchers(t *testing.T) {
@@ -419,5 +421,49 @@ func TestWriteVSCodeAppBundleExecWriteError(t *testing.T) {
 	}
 	if err := writeVSCodeAppBundle(sys, VSCodePaths(t.TempDir())); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestWriteVSCodeLaunchersTemplateReadError(t *testing.T) {
+	originalRead := templates.ReadFunc
+	t.Cleanup(func() {
+		templates.ReadFunc = originalRead
+	})
+
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		if path == openVSCodeCommandTemplatePath {
+			return nil, errors.New("read fail")
+		}
+		return originalRead(path)
+	}
+
+	err := WriteVSCodeLaunchers(RealSystem{}, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to read template "+openVSCodeCommandTemplatePath) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWriteVSCodeAppBundleTemplateReadError(t *testing.T) {
+	originalRead := templates.ReadFunc
+	t.Cleanup(func() {
+		templates.ReadFunc = originalRead
+	})
+
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		if path == openVSCodeAppInfoTemplatePath {
+			return nil, errors.New("read fail")
+		}
+		return originalRead(path)
+	}
+
+	err := writeVSCodeAppBundle(RealSystem{}, VSCodePaths(t.TempDir()))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to read template "+openVSCodeAppInfoTemplatePath) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
