@@ -15,9 +15,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
+        id: setup-go
         with:
           go-version-file: go.mod
           cache: true
+      - name: Cache pinned tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tools/bin
+            .cache/go-mod
+          key: ${{ runner.os }}-go-tools-${{ steps.setup-go.outputs.go-version }}-${{ hashFiles('go.mod', 'go.sum', 'Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-go-tools-${{ steps.setup-go.outputs.go-version }}-
+            ${{ runner.os }}-go-tools-
       - name: Install pinned tools
         run: make tools
       - name: CI checks

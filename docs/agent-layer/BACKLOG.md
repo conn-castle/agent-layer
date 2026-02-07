@@ -28,12 +28,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
-- Backlog 2026-02-03 b4c5d6e: Support custom Git repositories for templates
-    Priority: Medium. Area: lifecycle management
-    Description: Allow users to specify a custom Git repository as the source for templates during `al init`, enabling teams and organizations to maintain their own standardized agent-layer configurations.
-    Acceptance criteria: `al init` (or a new command) accepts a Git URL for templates, and these templates are correctly instantiated in the target repository.
-    Notes: Requires a mechanism to securely fetch and cache external templates.
-
 - Backlog 2026-02-03 f1a2b3c: Transform roadmap into public-facing documentation
     Priority: Medium. Area: documentation
     Description: Convert the internal `ROADMAP.md` into actual documentation that clearly communicates the project's direction and upcoming features to users.
@@ -51,12 +45,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Description: Add support for configuring and launching the Claude extension within VSCode, similar to the existing VSCode agent support.
     Acceptance criteria: Users can enable and configure the Claude extension through `al vscode` or a dedicated command.
     Notes: Currently, `al vscode` handles VSCode configuration; this would extend it to specifically support the Claude extension.
-
-- Backlog 2026-01-25 8b9c2d1: Define migration strategy for renamed/deleted template files
-    Priority: High. Area: lifecycle management
-    Description: Define how to handle template files that are renamed or deleted in future versions so they do not remain as stale orphans in user repos.
-    Acceptance criteria: A clear design/decision is documented for how to detect and clean up obsolete template files during upgrades.
-    Notes: Currently, al init only adds/updates; it does not remove files that vanished from the binary.
 
 - Backlog 2026-01-25 a1b2c3d: Add interaction monitoring for prompt self-improvement
     Priority: Low. Area: agent intelligence
@@ -111,12 +99,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Description: Persist conversation history in model-specific local folders (e.g., `.agent-layer/gemini/`, `.agent-layer/openai/`).
     Acceptance criteria: Conversation history is saved locally per model and can be restored across sessions.
     Notes: Consider storage format, retention policy, and privacy implications.
-
-- Backlog 2026-01-25 0a1b2c3: Add Git MCP server with tool filtering
-    Priority: Medium. Area: MCP ecosystem
-    Description: Add the Git MCP server to defaults with mandatory tool filtering. This correctly requires an additional MCP server to act as a filtering proxy to restrict which tools are exposed (allowlist/blocklist).
-    Acceptance criteria: Users can configure `[mcp.servers.tools]` to include or exclude specific tools from the Git server. Specifically block `git add`, `git commit`, `git reset`, `git init`, `git checkout`, and `git create branch`.
-    Notes: Essential for safety; raw Git access is powerful and risky without restrictions. Correct implementation necessitates a secondary MCP server for tool-level filtering.
 
 - Backlog 2026-01-25 1b2c3d4: Investigate support for Claude Code Desktop (GUI)
     Priority: Low. Area: client integration

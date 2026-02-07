@@ -421,3 +421,47 @@ func TestWriteVSCodeAppBundleExecWriteError(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestWriteVSCodeLaunchersTemplateReadError(t *testing.T) {
+	originalRead := readTemplate
+	t.Cleanup(func() {
+		readTemplate = originalRead
+	})
+
+	readTemplate = func(path string) ([]byte, error) {
+		if path == openVSCodeCommandTemplatePath {
+			return nil, errors.New("read fail")
+		}
+		return originalRead(path)
+	}
+
+	err := WriteVSCodeLaunchers(RealSystem{}, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to read template "+openVSCodeCommandTemplatePath) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestWriteVSCodeAppBundleTemplateReadError(t *testing.T) {
+	originalRead := readTemplate
+	t.Cleanup(func() {
+		readTemplate = originalRead
+	})
+
+	readTemplate = func(path string) ([]byte, error) {
+		if path == openVSCodeAppInfoTemplatePath {
+			return nil, errors.New("read fail")
+		}
+		return originalRead(path)
+	}
+
+	err := writeVSCodeAppBundle(RealSystem{}, VSCodePaths(t.TempDir()))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to read template "+openVSCodeAppInfoTemplatePath) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -149,6 +149,45 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 	}
 }
 
+func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Enabled:         &enabled,
+					Model:           "gpt-5.2-codex",
+					ReasoningEffort: "high",
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.HasPrefix(output, codexHeader) {
+		t.Fatalf("expected codex header at top of file, got:\n%s", output)
+	}
+
+	headerIndex := strings.Index(output, "# GENERATED FILE")
+	modelIndex := strings.Index(output, "model = \"gpt-5.2-codex\"")
+	reasoningIndex := strings.Index(output, "model_reasoning_effort = \"high\"")
+	if modelIndex == -1 || reasoningIndex == -1 {
+		t.Fatalf("missing model settings in output:\n%s", output)
+	}
+	if headerIndex == -1 {
+		t.Fatalf("missing header in output:\n%s", output)
+	}
+	if modelIndex < headerIndex || reasoningIndex < headerIndex {
+		t.Fatalf("expected model settings after header, got:\n%s", output)
+	}
+}
+
 func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
