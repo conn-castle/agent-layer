@@ -124,3 +124,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al init --version latest` resolves via the latest release API to a normalized semver pin, and explicit `--version` targets are validated against upstream release tags before writing `.agent-layer/al.version`.
     Reason: Upgrade guidance must be executable as written, and typo/nonexistent versions should fail before mutating repo pin state.
     Tradeoffs: Explicit pinning now depends on network access to validate release existence and can fail in fully offline workflows.
+
+- Decision 2026-02-07 p0a-pin-recovery: Empty/corrupt pin files produce warnings, not errors
+    Decision: `readPinnedVersion()` treats empty and non-semver pin files as "no pin" (returns a warning string instead of an error). `writeVersionFile()` auto-repairs empty/corrupt pins without requiring `--overwrite`.
+    Reason: A broken pin file should never make the CLI completely unusable. `al init` must always be able to self-heal the pin state.
+    Tradeoffs: Corrupt pins silently fall through to the current binary version; users see a warning but may not notice it in noisy terminal output.

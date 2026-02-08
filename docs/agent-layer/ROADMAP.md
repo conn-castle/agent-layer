@@ -110,10 +110,10 @@ Incomplete:
 - [x] Remove Windows support from releases/installers/launchers/docs (`al-install.ps1`, Windows release target in `scripts/build-release.sh`, Windows dispatch path in cache/download handling, and Windows launcher/docs references).
 - [x] Implement real `al init --version latest` by resolving latest GitHub release semver before writing `.agent-layer/al.version`.
 - [x] Ensure `al init` upgrade operations execute with the invoking CLI version (bootstrap binary), not the repo-pinned older version being replaced.
-- [ ] Make `al init` recover from empty/corrupt `.agent-layer/al.version` without manual file deletion.
+- [x] Make `al init` recover from empty/corrupt `.agent-layer/al.version` without manual file deletion.
 - [x] Validate `al init --version X.Y.Z` release existence before writing a pin; fail with a clear not-found message when invalid.
-- [ ] Improve dispatch download error messages for 404 and timeout cases with actionable remediation text.
-- [ ] Add a visible download progress line for version dispatch downloads.
+- [x] Improve dispatch download error messages for 404 and timeout cases with actionable remediation text.
+- [x] Add a visible download progress line for version dispatch downloads.
 - [ ] Publish an upgrade event model with categories (`safe auto`, `needs review`, `breaking/manual`).
 - [ ] Define and document compatibility guarantees for upgrade/migration support windows.
 - [ ] Publish release-versioned migration rules and an OS/shell capability matrix in one canonical doc location.

@@ -1,13 +1,16 @@
 package dispatch
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -22,7 +25,7 @@ func TestReadPinnedVersion(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	got, ok, err := readPinnedVersion(RealSystem{}, root)
+	got, ok, warning, err := readPinnedVersion(RealSystem{}, root)
 	if err != nil {
 		t.Fatalf("readPinnedVersion error: %v", err)
 	}
@@ -31,6 +34,9 @@ func TestReadPinnedVersion(t *testing.T) {
 	}
 	if got != "0.5.0" {
 		t.Fatalf("expected 0.5.0, got %q", got)
+	}
+	if warning != "" {
+		t.Fatalf("unexpected warning: %q", warning)
 	}
 }
 
@@ -45,9 +51,73 @@ func TestReadPinnedVersionEmptyFile(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, _, err := readPinnedVersion(RealSystem{}, root)
+	ver, ok, warning, err := readPinnedVersion(RealSystem{}, root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected found=false for empty pin")
+	}
+	if ver != "" {
+		t.Fatalf("expected empty version, got %q", ver)
+	}
+	if warning == "" {
+		t.Fatalf("expected warning for empty pin file")
+	}
+	if !strings.Contains(warning, "is empty") {
+		t.Fatalf("expected warning to contain 'is empty', got %q", warning)
+	}
+}
+
+func TestReadPinnedVersion_InvalidContent_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "al.version")
+	if err := os.WriteFile(path, []byte("not-a-version\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	ver, ok, warning, err := readPinnedVersion(RealSystem{}, root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected found=false for invalid pin")
+	}
+	if ver != "" {
+		t.Fatalf("expected empty version, got %q", ver)
+	}
+	if warning == "" {
+		t.Fatalf("expected warning for invalid pin")
+	}
+	if !strings.Contains(warning, "invalid pinned version") {
+		t.Fatalf("expected warning to contain 'invalid pinned version', got %q", warning)
+	}
+}
+
+func TestReadPinnedVersion_PermissionDenied_ReturnsError(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("skipping permissions test on windows")
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "al.version")
+	if err := os.WriteFile(path, []byte("1.0.0"), 0o000); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	_, _, warning, err := readPinnedVersion(RealSystem{}, root)
 	if err == nil {
-		t.Fatalf("expected error for empty pin")
+		t.Fatalf("expected hard error for permission denied")
+	}
+	if warning != "" {
+		t.Fatalf("expected no warning on permission error, got: %s", warning)
 	}
 }
 
@@ -55,7 +125,7 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "v1.2.3")
 	t.Setenv(EnvNoNetwork, "")
 
-	got, source, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
+	got, source, warning, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -64,6 +134,9 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	}
 	if source != EnvVersionOverride {
 		t.Fatalf("expected source %s, got %s", EnvVersionOverride, source)
+	}
+	if warning != "" {
+		t.Fatalf("unexpected warning: %q", warning)
 	}
 }
 
@@ -77,7 +150,7 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	got, source, err := resolveRequestedVersion(RealSystem{}, root, true, "0.5.0")
+	got, source, warning, err := resolveRequestedVersion(RealSystem{}, root, true, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -87,10 +160,13 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 	if source != "pin" {
 		t.Fatalf("expected source pin, got %s", source)
 	}
+	if warning != "" {
+		t.Fatalf("unexpected warning: %q", warning)
+	}
 }
 
 func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
-	got, source, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
+	got, source, warning, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -99,6 +175,9 @@ func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
 	}
 	if source != "current" {
 		t.Fatalf("expected source current, got %s", source)
+	}
+	if warning != "" {
+		t.Fatalf("unexpected warning: %q", warning)
 	}
 }
 
@@ -370,6 +449,38 @@ func TestMaybeExec_CurrentIsDev(t *testing.T) {
 	err := MaybeExec([]string{"cmd"}, "dev", ".", func(int) {})
 	if err != nil {
 		t.Fatalf("expected nil error for dev current version, got %v", err)
+	}
+}
+
+func TestMaybeExec_CorruptPinFallsThroughToCurrentVersion(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Write config.toml so root is found
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(""), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	// Write corrupt pin
+	if err := os.WriteFile(filepath.Join(dir, "al.version"), []byte("garbage\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var stderrBuf bytes.Buffer
+	sys := &testSystem{
+		StderrFunc: func() io.Writer { return &stderrBuf },
+	}
+
+	// Current version is 1.0.0, corrupt pin falls through → requested == current → no dispatch
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Verify warning was printed
+	if !strings.Contains(stderrBuf.String(), "invalid pinned version") {
+		t.Fatalf("expected warning about invalid pin, got %q", stderrBuf.String())
 	}
 }
 
