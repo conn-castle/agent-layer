@@ -13,6 +13,7 @@ This document is a standalone plan for reducing upgrade risk and making upgrade 
 4. phased mitigation work ordered by user impact.
 
 It is intentionally independent from `ROADMAP.md` sequencing and issue triage details.
+The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`; this file remains the internal implementation-planning document.
 
 ## Current Upgrade Behavior (Code Truth)
 
@@ -54,14 +55,14 @@ It is intentionally independent from `ROADMAP.md` sequencing and issue triage de
 11. **[Resolved in Phase 10 work]** `al init --version X.Y.Z` now validates the release exists before writing the pin file, returning a clear not-found message instead of a cryptic 404 on the next invocation. Keep regression coverage to prevent re-introduction.
 12. No mechanism to unpin. Users must manually delete `.agent-layer/al.version`; there is no `al init --unpin` or equivalent.
 13. Pin file format does not support comments. Users accustomed to `.gitignore`-style files may add `# comments`, which causes the entire file to fail semver validation.
-14. Binary download uses a fixed 30-second HTTP timeout (`cache.go:29`). Large binaries on slow connections can time out with no retry.
+14. Binary download uses a fixed 30-second HTTP timeout (`cache.go`). Large binaries on slow connections can time out with no retry.
 
 ### 3. `al init` template upgrade experience
 
 1. No built-in migration engine for renamed/deleted managed templates (stale orphans risk).
 2. Diff prompts do not clearly separate "my customization" vs "upstream template change" (known issue).
-3. Non-interactive `--overwrite` is disallowed (`init.go:43`); users must choose destructive `--force` or do manual interaction. There is no CI-safe middle ground (for example `--yes --apply-managed-updates` without `--apply-deletions`).
-4. `--force` can delete unknown files under `.agent-layer` (`install_unknowns.go:63`), which is high-risk in mixed/manual setups. The flag name does not communicate the deletion behavior.
+3. Non-interactive `--overwrite` is disallowed (`init.go`); users must choose destructive `--force` or do manual interaction. There is no CI-safe middle ground (for example `--yes --apply-managed-updates` without `--apply-deletions`).
+4. `--force` can delete unknown files under `.agent-layer` (`install_unknowns.go`), which is high-risk in mixed/manual setups. The flag name does not communicate the deletion behavior.
 5. Large prompt sets are cognitively heavy when many files differ.
 6. Memory files (`docs/agent-layer/*`) prompt separately with a distinct "overwrite all memory?" question; users who said "yes" to managed files may not understand why they're prompted again or may assume it was already covered.
 7. Unknown-file cleanup only applies under `.agent-layer`; stale docs/memory files can still drift.
@@ -112,8 +113,8 @@ It is intentionally independent from `ROADMAP.md` sequencing and issue triage de
 
 ### 8. Sync/doctor behavior during upgrade cycles
 
-1. `al sync` returns non-zero (`ErrSyncCompletedWithWarnings` in `sync.go:43`) when any warnings exist, breaking CI/automation that expects "warnings != failure." There is no `--warn-only` or exit-code override.
-2. `al doctor` treats warnings as failure exit (`doctor.go:123`: `hasFail = true`), which is strict but can surprise CI users who want doctor as a soft health check.
+1. `al sync` returns non-zero (`ErrSyncCompletedWithWarnings` in `sync.go`) when any warnings exist, breaking CI/automation that expects "warnings != failure." There is no `--warn-only` or exit-code override.
+2. `al doctor` treats warnings as failure exit (`doctor.go`: `hasFail = true`), which is strict but can surprise CI users who want doctor as a soft health check.
 3. MCP discovery can take up to 30s per server; big setups feel slow.
 4. Token-size warnings are heuristic-based and can produce noisy/non-actionable alerts in edge cases.
 5. External MCP connectivity/auth failures surface during doctor and can look like "agent-layer broke," though root cause is external.

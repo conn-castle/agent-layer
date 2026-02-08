@@ -27,10 +27,11 @@ git push origin "$VERSION"
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
-2. The workflow publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
-3. The workflow opens a PR against `conn-castle/homebrew-tap` to update `Formula/agent-layer.rb` with the new tarball URL + SHA256.
-4. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing.
-5. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
+2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists and blocking placeholder migration text when changelog notes breaking/manual migration impact.
+3. The workflow publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
+4. The workflow opens a PR against `conn-castle/homebrew-tap` to update `Formula/agent-layer.rb` with the new tarball URL + SHA256.
+5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing.
+6. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
 
 ## Website publish details (agent-layer-web)
 The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`.
@@ -50,6 +51,11 @@ Required secrets for the tap PR:
 Required secrets for the website publish:
 - `AGENT_LAYER_WEB_APP_ID`
 - `AGENT_LAYER_WEB_APP_PRIVATE_KEY`
+
+## Upgrade contract maintenance
+- `site/docs/upgrades.mdx` is the canonical upgrade contract for event categories, compatibility guarantees, migration rules, and OS/shell support.
+- For every release, update the migration-rules table in `site/docs/upgrades.mdx` for the target version (`vX.Y.Z`).
+- If a release cannot fully satisfy the stated guarantees, document the limitation explicitly in the migration-rules row and in release notes.
 
 ## Post-release verification (fresh repo)
 ```bash

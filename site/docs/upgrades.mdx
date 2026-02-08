@@ -1,0 +1,94 @@
+---
+title: Upgrades
+description: Upgrade contract, compatibility guarantees, migration rules, and platform support.
+sidebar_position: 5
+---
+
+This page is the canonical upgrade contract for Agent Layer.
+
+It defines:
+- upgrade event categories,
+- compatibility guarantees,
+- release-versioned migration rules,
+- and the supported OS/shell capability matrix.
+
+If guidance in other docs is shorter or summarized, this page is the source of truth.
+
+## In this page
+
+- [Upgrade event model](#upgrade-event-model)
+- [Compatibility guarantees](#compatibility-guarantees)
+- [Migration rules by release](#migration-rules-by-release)
+- [OS and shell capability matrix](#os-and-shell-capability-matrix)
+- [Commitment level and limitations](#commitment-level-and-limitations)
+
+## Upgrade event model
+
+Agent Layer classifies upgrade-impact changes into three categories:
+
+| Category | Meaning | Expected user action |
+| --- | --- | --- |
+| `safe auto` | Low-risk change that can be applied automatically without manual migration steps. | Usually none beyond normal verification (`al doctor`, test/lint workflow). |
+| `needs review` | Change is likely safe but may interact with local customizations. | Review prompts/diffs and choose whether to apply updates. |
+| `breaking/manual` | Change cannot be safely auto-migrated or may require explicit user decisions. | Follow release migration notes before proceeding. |
+
+Qualification guidance:
+- `safe auto`: formatting-only docs changes, additive defaults, or internal behavior fixes that do not require user input.
+- `needs review`: template updates where local edits may conflict, workflow/instruction rewrites, generated file ownership boundary changes.
+- `breaking/manual`: command/flag deprecations, required config schema moves, or behavior changes that require an explicit user-controlled migration step.
+
+Current enforcement status:
+- In Phase 10, this model is a published contract and release-labeling policy.
+- Automated enforcement in CLI flows is planned for later upgrade-lifecycle phases.
+
+## Compatibility guarantees
+
+Agent Layer follows a sequential release-line guarantee:
+
+- Guaranteed path: upgrade from `N-1` to `N` release lines only.
+- Example: `0.6.x` to `0.7.x` is guaranteed.
+- Non-guaranteed path: skipping release lines (for example `0.5.x` to `0.7.x`).
+
+What "guaranteed" means:
+- We provide documented migration guidance for the guaranteed path.
+- We classify known upgrade-impact changes using the event model on this page.
+- We aim to keep `al init`-based upgrade workflows predictable for that one-step path.
+
+What it does not mean:
+- It is not a guarantee that every repo custom state can be auto-migrated.
+- It does not guarantee one-step upgrades for skipped release lines.
+
+## Migration rules by release
+
+Migration rules are published per release and versioned with docs/release notes.
+
+| Target release | Supported source release lines | Event summary | Required manual actions | Notes |
+| --- | --- | --- | --- | --- |
+| `v0.7.0` | `0.6.x` | No additional migration rules yet beyond standard `al init` upgrade flow. | None currently. | Update this row when release-specific rules are defined. |
+
+How this table is maintained:
+- Add or update a row for every release.
+- If a release includes `breaking/manual` items, list exact required actions.
+- If no special migration is needed, keep the row explicit to avoid ambiguity.
+
+## OS and shell capability matrix
+
+Windows is not supported.
+
+| Surface | macOS | Linux | Notes |
+| --- | --- | --- | --- |
+| Install via Homebrew | Supported | Supported | Requires Homebrew setup for platform. |
+| Install via `al-install.sh` | Supported | Supported | Requires `curl` and `sha256sum` or `shasum`. |
+| `al` CLI core commands | Supported | Supported | Includes `init`, `sync`, `doctor`, client launch commands. |
+| VS Code launchers | Supported | Supported | macOS: `.app`/`.command`; Linux: `.desktop`/`.sh`. |
+| Shell completion: `bash` | Supported | Supported | `al completion bash --install`. |
+| Shell completion: `zsh` | Supported | Supported | `al completion zsh --install`; may require `fpath` setup. |
+| Shell completion: `fish` | Supported | Supported | `al completion fish --install`. |
+
+## Commitment level and limitations
+
+This contract is intended to be explicit without over-promising:
+
+- We commit to best-effort adherence to this model and guarantee scope.
+- If we cannot fully meet a guarantee in a specific release, we will document the limitation clearly in release notes and migration guidance.
+- When in doubt, prefer explicit communication over silent assumptions.

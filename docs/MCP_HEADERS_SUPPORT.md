@@ -142,7 +142,7 @@ id = "my-server"
 enabled = true
 transport = "http"
 url = "https://api.example.com/mcp"
-headers = { Authorization = "Bearer ${MY_API_TOKEN}", "X-Api-Key" = "${MY_OTHER_SECRET}" }
+headers = { Authorization = "Bearer ${AL_MY_API_TOKEN}", "X-Api-Key" = "${AL_MY_OTHER_SECRET}" }
 ```
 
 ### 2) Normalize without leaking secrets

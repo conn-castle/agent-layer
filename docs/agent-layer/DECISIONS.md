@@ -3,7 +3,7 @@
 Note: This is an agent-layer memory file. It is primarily for agent use.
 
 ## Purpose
-A rolling log of important, non-obvious decisions that materially affect future work (constraints, deferrals, irreversible tradeoffs). Only record decisions that future developers/agents would not learn just by reading the code.
+A rolling log of important, non-obvious decisions that materially affect future work (constraints, deferrals, irreversible tradeoffs). Only record decisions that future developers/agents would not learn just by reading the code. Do not log routine choices or standard best-practice decisions; if it is obvious from the code, leave it out.
 
 ## Format
 - Keep entries brief and durable (avoid restating obvious defaults).
@@ -129,3 +129,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `readPinnedVersion()` treats empty and non-semver pin files as "no pin" (returns a warning string instead of an error). `writeVersionFile()` auto-repairs empty/corrupt pins without requiring `--overwrite`.
     Reason: A broken pin file should never make the CLI completely unusable. `al init` must always be able to self-heal the pin state.
     Tradeoffs: Corrupt pins silently fall through to the current binary version; users see a warning but may not notice it in noisy terminal output.
+
+- Decision 2026-02-08 p0b-upgrade-contract: Sequential guarantee + three-tier upgrade taxonomy
+    Decision: Publish upgrade policy with three event categories (`safe auto`, `needs review`, `breaking/manual`) and a sequential compatibility guarantee (`N-1` to `N` release-line upgrades only, for example `0.6.x` -> `0.7.x`).
+    Reason: Provides a clear, enforceable public contract without overpromising broad multi-line migration support before lifecycle tooling lands.
+    Tradeoffs: Skipped-line upgrades remain best effort and may require additional manual migration guidance per release.
