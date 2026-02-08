@@ -105,30 +105,75 @@ Incomplete:
 - Published the canonical upgrade contract in `site/docs/upgrades.mdx` with event categories, sequential compatibility guarantees (`N-1` to `N`), release-versioned migration rules, and macOS/Linux shell capability matrix.
 - Linked the upgrade contract from user and contributor docs (`README.md`, site docs, `docs/DEVELOPMENT.md`, `docs/RELEASE.md`, and `docs/agent-layer/UPGRADE_PLAN.md`).
 
-## Phase 11 — Upgrade lifecycle and notification clarity
+## Phase 11 — Upgrade lifecycle (explainability, safety, and migration engine)
+
+Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 
 ### Goal
-- Make upgrade behavior predictable when template files are renamed, deleted, or sourced from non-default template repositories.
-- Make upgrade notifications and overwrite prompts explain exactly what changed and what action the user should take.
-- Reduce upgrade risk by separating user customizations from template-version changes in surfaced diffs.
-- Improve upgrade-related discoverability by documenting VS Code launcher architecture and adding website search.
+- Users can preview all upgrade changes before any file is written, with clear ownership labels (upstream vs local).
+- Upgrades are reversible via automatic snapshots, and destructive operations require explicit, granular opt-in.
+- Each release ships a migration manifest that handles file renames, deletions, and config transitions idempotently.
+- CI and automation can consume upgrade plans as machine-readable JSON and run non-interactive upgrades safely.
 
 ### Tasks
-- [ ] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Define and implement migration handling for renamed/deleted template files so obsolete managed files are safely detected and handled during upgrades; document the design and behavior.
-- [ ] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add categorized upgrade diff/notification UX for `al init --overwrite` and related flows so users can distinguish intentional local customizations from upstream template updates.
-- [ ] Backlog 2026-02-03 b4c5d6e (Priority: Medium, Area: lifecycle management): Add support for custom Git repositories as template sources with explicit pinning, caching, and deterministic upgrade behavior.
-- [ ] Backlog 2026-02-06 vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
-- [ ] Backlog 2026-02-06 websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
+
+**Explainability (Upgrade Plan Phase 1)**
+- [ ] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
+- [ ] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff (`upstream template delta` vs `local customization`) in upgrade and overwrite flows.
+- [ ] Add machine-readable output (`--json`) to `al upgrade plan` for CI/repo automation.
+- [ ] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
+- [ ] Add `al init --unpin` to remove `.agent-layer/al.version` cleanly; document manual unpinning as an alternative.
+- [ ] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
+- [ ] Add launch-impact preview (`al launch-plan <client>` or equivalent) showing whether launching will modify files before executing sync.
+
+**Safety and reversibility (Upgrade Plan Phase 2)**
+- [ ] Add automatic snapshot/rollback for managed files during upgrade operations.
+- [ ] Replace binary `--force` semantics with explicit flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`.
+- [ ] Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
+- [ ] Add `al upgrade rollback <snapshot-id>` command to restore a previous managed-file snapshot.
+- [ ] Add CI-safe non-interactive `--overwrite --yes` mode that applies managed template updates without deleting unknowns, bridging the gap between interactive `--overwrite` and destructive `--force`.
+- [ ] Add explicit sync modes for launch commands across clients (`apply`, `check`, `off`) with default mode `check` (locked decision 3B); users opt into mutation or no-sync explicitly.
+
+**Migration engine (Upgrade Plan Phase 3)**
+- [ ] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Implement migration manifests per release for file rename/delete mapping, config key rename/default transform, and generated artifact transitions.
+- [ ] Execute migrations idempotently before template write; emit deterministic migration report with before/after rationale.
+- [ ] Add compatibility shims plus deprecation periods for renamed commands/flags.
+- [ ] Add migration manifest entry for launch-sync default change (locked decision 3B): deprecate implicit `apply` mode, warn for N releases, then switch default to `check`.
+- [ ] Add migration guidance/rules for env key transitions (e.g., non-`AL_` to `AL_`).
+- [ ] Backlog 2026-02-03 b4c5d6e (Priority: Medium, Area: lifecycle management): Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
 
 ### Task details
 - Backlog 2026-01-25 8b9c2d1
-  Description: Define how to handle renamed/deleted template files so stale orphans are not left behind in user repos.
-  Acceptance criteria: A clear migration design/decision is documented and implemented for detecting/cleaning obsolete managed files during upgrades.
+  Description: Define how to handle renamed/deleted template files so stale orphans are not left behind in user repos. Migration manifests codify the mapping per release.
+  Acceptance criteria: Each release includes a manifest; `al init` executes manifest migrations idempotently before template write; stale managed files are detected and handled.
   Notes: Current behavior adds/updates files but does not remove files that vanished from templates.
 - Backlog 2026-02-03 b4c5d6e
   Description: Allow teams to specify a custom Git repository as template source during `al init`.
   Acceptance criteria: `al init` (or a dedicated command) accepts a Git URL and instantiates templates correctly with repeatable upgrade behavior.
   Notes: Requires secure fetch + cache strategy and compatibility with pinning/update notifications.
+
+### Exit criteria
+- `al upgrade plan` exists and shows categorized, ownership-labeled changes without writing files.
+- `al upgrade plan --json` produces machine-readable output consumable by CI.
+- Every upgrade operation creates a snapshot that can be rolled back via `al upgrade rollback`.
+- `--force` is replaced by granular flags; no single flag can silently delete unknowns.
+- `al init --overwrite --yes` is CI-safe and does not delete unknown files.
+- Launch commands default to `check` mode (no implicit file mutation).
+- Migration manifests ship with each release and handle renames, deletions, and config transitions.
+- Breaking changes follow a documented deprecation period with compatibility shims.
+- Custom template repositories upgrade deterministically with pinning rules.
+
+## Phase 12 — Documentation and website improvements
+
+### Goal
+- VS Code launch architecture is documented for contributors.
+- Website documentation is searchable from a global header search bar.
+
+### Tasks
+- [ ] Backlog 2026-02-06 vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
+- [ ] Backlog 2026-02-06 websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
+
+### Task details
 - Backlog 2026-02-06 vsc-launch
   Description: Document how VS Code is launched by the CLI, especially the unique/odd path that is currently undocumented.
   Acceptance criteria: Docs are added or updated (for example `docs/DEVELOPMENT.md` or a new architecture doc) and clearly explain launch flow/design choices.
@@ -139,8 +184,5 @@ Incomplete:
   Notes: Consider client-side indexing (for example FlexSearch) versus managed services (for example Algolia).
 
 ### Exit criteria
-- Upgrade flows detect and handle renamed/deleted managed templates without leaving ambiguous orphaned files.
-- Upgrade notifications present actionable, categorized change information for overwrite decisions.
-- Custom template repository sourcing is documented and validated with deterministic, repeatable upgrade behavior.
 - VS Code launch architecture documentation exists and is linked from contributor-facing docs.
 - Website search is available in the header and returns relevant documentation results.

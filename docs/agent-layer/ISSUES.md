@@ -32,12 +32,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `finish-task.md`, `fix-issues.md`, and `cleanup-code.md` templates reference `make test-fast` and `make dead-code` which do not exist in the Makefile. Templates note these as optional/conditional, but they may confuse agents in repos that do not provide them.
     Next step: Either add `test-fast` and `dead-code` Makefile targets, or clarify the template language to make the conditional nature more explicit.
 
-- Issue 2026-02-08 u7v0migr: Ensure v0.7.0 migration row is release-ready
-    Priority: Medium. Area: documentation / release process.
-    Description: `site/docs/upgrades.mdx` includes a `v0.7.0` migration row that is intentionally placeholder-level before release; this must be validated and populated if any real migration steps are required.
-    Next step: During v0.7.0 release prep, verify actual upgrade-impact changes and update the migration row (and release notes) with explicit manual steps or confirm none are required.
-    Notes: Keep row explicit even when no additional migration is needed, and align with sequential `N-1 -> N` compatibility policy.
-
 - Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
     Priority: Medium. Area: install / UX.
     GitHub: https://github.com/conn-castle/agent-layer/issues/30
