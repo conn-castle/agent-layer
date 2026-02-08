@@ -1,6 +1,31 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.7.0 - 2026-02-07
+
+### Added
+- Upgrade contract published at `site/docs/upgrades.mdx`: defines upgrade event categories (`safe auto`, `needs review`, `breaking/manual`), sequential compatibility guarantees (`N-1` to `N`), release-versioned migration rules, and OS/shell capability matrix.
+- Release gate validates upgrade documentation for each release tag (`make docs-upgrade-check`), ensuring migration table rows exist and placeholder text is replaced when changelog notes breaking changes.
+- `al init --version latest` resolves the latest GitHub release to a semver pin before writing `.agent-layer/al.version`.
+- `al init --version X.Y.Z` validates the release exists on GitHub before writing the pin file, failing with a clear "release not found" message instead of writing a pin that 404s on next use.
+- `al init` auto-recovers from empty or corrupt `.agent-layer/al.version` pin files with a warning instead of blocking all commands.
+- Binary download progress indicator: `ensureCachedBinary` emits "Downloading al vX.Y.Z..." / "Downloaded al vX.Y.Z" to stderr.
+- Actionable error messages for binary download failures (404 not-found and timeout scenarios).
+
+### Changed
+- **Breaking:** Windows support removed. Deleted `al-install.ps1` installer, Windows release target, `open-vscode.bat` launcher, and all Windows-specific code paths in dispatch, cache, exec, and lock packages. Windows was never tested and best-effort support eroded trust. macOS and Linux remain fully supported.
+- `al init` now bypasses repo-pin binary dispatch and always executes on the invoking CLI binary, preventing older pinned versions from running upgrade operations.
+- Launcher template writes refactored for reliability with proper macOS path escaping.
+- Codex MCP header projection order corrected.
+- CI workflow caches pinned tools in GitHub Actions for faster builds.
+- Upgrade contract linked from README, site docs, DEVELOPMENT.md, RELEASE.md, and UPGRADE_PLAN.md.
+
+### Removed
+- `al-install.ps1` (Windows PowerShell installer).
+- `open-vscode.bat` (Windows VS Code launcher).
+- Windows release targets (`windows/amd64`) from build scripts.
+- Windows-specific dispatch, cache, exec, and lock code paths.
+
 ## v0.6.1 - 2026-02-06
 
 ### Added

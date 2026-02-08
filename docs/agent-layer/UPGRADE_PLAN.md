@@ -13,6 +13,7 @@ This document is a standalone plan for reducing upgrade risk and making upgrade 
 4. phased mitigation work ordered by user impact.
 
 It is intentionally independent from `ROADMAP.md` sequencing and issue triage details.
+The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`; this file remains the internal implementation-planning document.
 
 ## Current Upgrade Behavior (Code Truth)
 
@@ -41,7 +42,7 @@ It is intentionally independent from `ROADMAP.md` sequencing and issue triage de
 
 ### 2. Version pinning and dispatch lifecycle
 
-1. Empty/invalid `.agent-layer/al.version` blocks command execution, including `al init` itself. Because `writeVersionFile()` hard-errors on empty pin files (`install.go:219`), `al init` cannot self-heal a corrupt pin; users must manually delete the file to recover.
+1. **[Resolved in Phase 10 work]** Empty/invalid `.agent-layer/al.version` no longer blocks command execution. Dispatch treats empty/corrupt pins as "no pin" (falls through to the current binary with a warning), and `al init` auto-repairs empty/corrupt pin files without `--overwrite`. Keep regression coverage to prevent re-introduction.
 2. `AL_NO_NETWORK=1` + uncached pinned version causes hard failure with a message that names the cache path and env var, but does not suggest how to resolve it (for example pre-populating the cache or unsetting the variable).
 3. Cache path permission problems (`AL_CACHE_DIR` or user cache dir) block dispatch.
 4. Override precedence (`AL_VERSION` > repo pin) can surprise teams expecting repo lockstep. A developer with `AL_VERSION` in their shell profile will silently bypass the repo pin on every command with no visible indication.
@@ -50,18 +51,18 @@ It is intentionally independent from `ROADMAP.md` sequencing and issue triage de
 7. Old versions can leak `AL_SHIM_ACTIVE` into child shells (documented historical regression).
 8. Historical command renames across versions (for example legacy `install` vs current `init`) can break old scripts.
 9. **[Resolved in Phase 10 work]** Update warnings suggest `al init --version latest`, and this path is now supported by resolving latest release semver before writing the pin. Keep regression coverage to prevent guidance drift.
-10. No download progress indicator during version dispatch. `ensureCachedBinary` (`cache.go`) downloads silently; on slow connections the CLI appears hung with no output.
+10. **[Resolved in Phase 10 work]** `ensureCachedBinary` now emits "Downloading al vX.Y.Z..." / "Downloaded al vX.Y.Z" progress lines to stderr. Keep regression coverage to prevent re-introduction.
 11. **[Resolved in Phase 10 work]** `al init --version X.Y.Z` now validates the release exists before writing the pin file, returning a clear not-found message instead of a cryptic 404 on the next invocation. Keep regression coverage to prevent re-introduction.
 12. No mechanism to unpin. Users must manually delete `.agent-layer/al.version`; there is no `al init --unpin` or equivalent.
 13. Pin file format does not support comments. Users accustomed to `.gitignore`-style files may add `# comments`, which causes the entire file to fail semver validation.
-14. Binary download uses a fixed 30-second HTTP timeout (`cache.go:29`). Large binaries on slow connections can time out with no retry.
+14. Binary download uses a fixed 30-second HTTP timeout (`cache.go`). Large binaries on slow connections can time out with no retry.
 
 ### 3. `al init` template upgrade experience
 
 1. No built-in migration engine for renamed/deleted managed templates (stale orphans risk).
 2. Diff prompts do not clearly separate "my customization" vs "upstream template change" (known issue).
-3. Non-interactive `--overwrite` is disallowed (`init.go:43`); users must choose destructive `--force` or do manual interaction. There is no CI-safe middle ground (for example `--yes --apply-managed-updates` without `--apply-deletions`).
-4. `--force` can delete unknown files under `.agent-layer` (`install_unknowns.go:63`), which is high-risk in mixed/manual setups. The flag name does not communicate the deletion behavior.
+3. Non-interactive `--overwrite` is disallowed (`init.go`); users must choose destructive `--force` or do manual interaction. There is no CI-safe middle ground (for example `--yes --apply-managed-updates` without `--apply-deletions`).
+4. `--force` can delete unknown files under `.agent-layer` (`install_unknowns.go`), which is high-risk in mixed/manual setups. The flag name does not communicate the deletion behavior.
 5. Large prompt sets are cognitively heavy when many files differ.
 6. Memory files (`docs/agent-layer/*`) prompt separately with a distinct "overwrite all memory?" question; users who said "yes" to managed files may not understand why they're prompted again or may assume it was already covered.
 7. Unknown-file cleanup only applies under `.agent-layer`; stale docs/memory files can still drift.
@@ -112,8 +113,8 @@ It is intentionally independent from `ROADMAP.md` sequencing and issue triage de
 
 ### 8. Sync/doctor behavior during upgrade cycles
 
-1. `al sync` returns non-zero (`ErrSyncCompletedWithWarnings` in `sync.go:43`) when any warnings exist, breaking CI/automation that expects "warnings != failure." There is no `--warn-only` or exit-code override.
-2. `al doctor` treats warnings as failure exit (`doctor.go:123`: `hasFail = true`), which is strict but can surprise CI users who want doctor as a soft health check.
+1. `al sync` returns non-zero (`ErrSyncCompletedWithWarnings` in `sync.go`) when any warnings exist, breaking CI/automation that expects "warnings != failure." There is no `--warn-only` or exit-code override.
+2. `al doctor` treats warnings as failure exit (`doctor.go`: `hasFail = true`), which is strict but can surprise CI users who want doctor as a soft health check.
 3. MCP discovery can take up to 30s per server; big setups feel slow.
 4. Token-size warnings are heuristic-based and can produce noisy/non-actionable alerts in edge cases.
 5. External MCP connectivity/auth failures surface during doctor and can look like "agent-layer broke," though root cause is external.
@@ -152,10 +153,10 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 
 1. **Drop Windows support.** Remove `al-install.ps1`, the Windows release target from `scripts/build-release.sh`, the `osWindows` code path in `cache.go`, `open-vscode.bat` launcher, and all Windows-specific documentation. Windows was never tested and "best-effort" support erodes trust.
 2. **Fix and implement `al init --version latest`.** Replace `messages.UpdateUpgradeBlock` step 2 with this supported command path and resolve latest release to semver before writing the pin.
-3. **Let `al init` recover from empty/corrupt pin files.** Two fixes required: (a) Change `readPinnedVersion()` in `pin.go` to treat empty/invalid pins as "no pin" (`return "", false, nil`) so dispatch falls through to the current binary instead of hard-erroring — without this, dispatch kills the process at `main.go:52` before the cobra command tree runs, making `al init` unreachable. (b) Change `writeVersionFile()` in `install.go` to overwrite an empty `al.version` instead of hard-erroring.
+3. **[Done] Let `al init` recover from empty/corrupt pin files.** Two fixes applied: (a) `readPinnedVersion()` in `pin.go` treats empty/invalid pins as "no pin" with a warning, so dispatch falls through to the current binary. (b) `writeVersionFile()` in `install.go` auto-repairs empty/corrupt pins without requiring `--overwrite`.
 4. **Add `al init --version X` release validation.** Before writing the pin, HEAD the GitHub release URL to confirm the version exists. Fail with a clear "release X.Y.Z not found" message instead of writing a pin that will 404 on next use.
-5. **Improve dispatch error messages.** When `ensureCachedBinary` gets a 404, include the version number and a hint: "release vX.Y.Z not found; check available versions at <releases URL>." When download times out, suggest retrying or checking connectivity.
-6. **Add download progress indicator.** Emit a brief "Downloading al vX.Y.Z..." line to stderr before the HTTP request in `ensureCachedBinary`, so users on slow connections know the CLI is working.
+5. **[Done] Improve dispatch error messages.** `downloadToFile()` and `fetchChecksum()` now produce actionable 404 and timeout messages with remediation steps.
+6. **[Done] Add download progress indicator.** `ensureCachedBinary` emits "Downloading al vX.Y.Z..." / "Downloaded al vX.Y.Z" to a `progressOut io.Writer` (wired to `sys.Stderr()` in production).
 
 ### Phase 0b: Define the upgrade contract
 

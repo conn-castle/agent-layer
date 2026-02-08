@@ -43,6 +43,7 @@ section() {
 
 source "$SCRIPT_DIR/test-release/release_tests.sh"
 source "$SCRIPT_DIR/test-release/tool_tests.sh"
+source "$SCRIPT_DIR/test-release/upgrade_docs_tests.sh"
 
 # -----------------------------------------------------------------------------
 # Static Analysis & Setup
@@ -51,6 +52,7 @@ section "Static Analysis & Setup"
 
 required_files=(
   "scripts/build-release.sh"
+  "scripts/check-upgrade-docs.sh"
   "al-install.sh"
 )
 
@@ -69,7 +71,7 @@ else
 fi
 
 # Shell syntax validation
-for script in "scripts/build-release.sh" "al-install.sh"; do
+for script in "scripts/build-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
   if bash -n "$ROOT_DIR/$script" 2>/dev/null; then
     pass "$script has valid bash syntax"
   else
@@ -79,7 +81,7 @@ done
 
 # Optional: shellcheck
 if command -v shellcheck >/dev/null 2>&1; then
-  for script in "scripts/build-release.sh" "al-install.sh"; do
+  for script in "scripts/build-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
     if shellcheck -S error "$ROOT_DIR/$script" 2>/dev/null; then
       pass "$script passes shellcheck"
     else
@@ -139,6 +141,7 @@ run_build_invocation_details
 run_artifact_verification
 run_source_tarball_verification
 run_checksum_integrity
+run_upgrade_docs_script_tests
 run_go_tool_tests_extractchecksum
 run_go_tool_tests_updateformula
 

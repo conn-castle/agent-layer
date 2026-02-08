@@ -71,6 +71,11 @@ Yes. Set `.agent-layer/al.version` to `X.Y.Z` or `vX.Y.Z`, or pass `--version` t
 
 See [/docs/concepts#version-pinning](/docs/concepts#version-pinning) for the full model and tradeoffs.
 
+## How do I upgrade a pinned repo?
+Upgrade the global CLI first, then upgrade the repo pin using `al init --version latest` (or an explicit version) and run `al` in the repo to dispatch to that pinned version.
+
+For the full upgrade contract, compatibility guarantees, and release migration rules, see [/docs/upgrades](/docs/upgrades).
+
 ## What happens if I edit a generated file?
 It will be overwritten the next time you run `al sync` or `al <client>`. Always edit the source files in `.agent-layer/` instead.
 
