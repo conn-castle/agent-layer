@@ -82,7 +82,7 @@ changelog_section="$(awk -v tag_re="$tag_re" '
 [[ -n "$changelog_section" ]] || die "no changelog section found for $release_tag in $changelog_file"
 
 has_breaking_or_manual="0"
-if printf '%s\n' "$changelog_section" | grep -Eqi 'breaking/manual|breaking[[:space:]-]+changes?|breaking:[[:space:]]|manual (step|steps|action|actions|required)'; then
+if printf '%s\n' "$changelog_section" | grep -Eqi 'breaking/manual|breaking[[:space:]-]+changes?|breaking:[[:space:]]*|manual (step|steps|action|actions|required)'; then
   has_breaking_or_manual="1"
 fi
 
