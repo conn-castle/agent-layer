@@ -396,7 +396,7 @@ func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 	}
 }
 
-func TestWriteVersionFile_ExistingEmpty(t *testing.T) {
+func TestWriteVersionFile_ExistingEmpty_AutoRepairs(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -409,11 +409,72 @@ func TestWriteVersionFile_ExistingEmpty(t *testing.T) {
 
 	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
 	err := inst.writeVersionFile()
-	if err == nil {
-		t.Fatalf("expected error for empty existing pin file")
+	if err != nil {
+		t.Fatalf("expected auto-repair success, got error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "is empty") {
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pin: %v", err)
+	}
+	if string(data) != "1.0.0\n" {
+		t.Fatalf("expected 1.0.0, got %q", string(data))
+	}
+}
+
+func TestWriteVersionFile_ExistingCorrupt_AutoRepairs(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Write corrupt (non-semver) content
+	if err := os.WriteFile(path, []byte("not-a-version\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
+	err := inst.writeVersionFile()
+	if err != nil {
+		t.Fatalf("expected auto-repair success, got error: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pin: %v", err)
+	}
+	if string(data) != "1.0.0\n" {
+		t.Fatalf("expected 1.0.0, got %q", string(data))
+	}
+}
+
+func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Write a valid but different version
+	if err := os.WriteFile(path, []byte("0.9.0\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
+	err := inst.writeVersionFile()
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Without overwrite, pin should NOT be changed; should record diff instead
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read pin: %v", err)
+	}
+	if string(data) != "0.9.0\n" {
+		t.Fatalf("expected pin to remain unchanged, got %q", string(data))
+	}
+	if len(inst.diffs) != 1 {
+		t.Fatalf("expected 1 diff recorded, got %d", len(inst.diffs))
 	}
 }
 

@@ -149,6 +149,14 @@ Notes: Includes `make tidy-check`, `make test-release`, and `make test-e2e`; req
 
 ### Release
 
+- Validate upgrade-contract docs for a target release tag
+```bash
+make docs-upgrade-check RELEASE_TAG=vX.Y.Z
+```
+Run from: repo root
+Prerequisites: `site/docs/upgrades.mdx` and `CHANGELOG.md` include the target release tag
+Notes: Fails when the migration table row is missing for the tag, or when placeholder migration text is used while changelog indicates breaking/manual migration impact.
+
 - Build release artifacts locally (cross-compile)
 ```bash
 make release-dist AL_VERSION=dev DIST_DIR=dist

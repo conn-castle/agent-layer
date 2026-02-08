@@ -125,19 +125,21 @@ If MCP servers that use `npx` are failing in VS Code, your GUI environment may n
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
 
-When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.5.0`). You can also edit it manually or pass `--version` to pin a specific release (`X.Y.Z` / `vX.Y.Z`) or `latest`.
+Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: `/docs/upgrades`.
+
+When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually or pass `--version` to pin a specific release (`X.Y.Z` / `vX.Y.Z`) or `latest`.
 
 When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` is the exception: it runs on the invoking CLI version so pin updates and upgrades are not blocked by an older repo pin.
 
 Pin format:
-- `0.5.0` or `v0.5.0` (both are accepted)
+- `0.6.0` or `v0.6.0` (both are accepted)
 
 Cache location (per user):
 - default: user cache dir (for example `~/.cache/agent-layer/versions/<version>/<os>-<arch>/al-<os>-<arch>` on Linux)
 - override: `AL_CACHE_DIR=/path/to/cache`
 
 Overrides:
-- `AL_VERSION=0.5.0` forces a version (overrides the repo pin)
+- `AL_VERSION=0.6.0` forces a version (overrides the repo pin)
 - `AL_NO_NETWORK=1` disables downloads (fails if the pinned version is missing)
 
 ---
@@ -151,6 +153,11 @@ Update the global CLI:
 If a repo is pinned, run `al init --version latest` to move to the newest release. You can also pin an explicit release with `al init --version vX.Y.Z` (or `X.Y.Z`), or edit `.agent-layer/al.version` manually.
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
+
+Compatibility guarantee:
+- Guaranteed upgrade path is sequential release lines only (`N-1` to `N`; example: `0.6.x` to `0.7.x`).
+- Skipping release lines is best effort and may require additional manual migration.
+- See `/docs/upgrades` for event categories and release-versioned migration rules.
 
 ---
 

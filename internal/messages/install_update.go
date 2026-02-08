@@ -10,7 +10,7 @@ const (
 	InstallOverwritePromptRequired     = "overwrite prompts require a prompt handler; re-run with --force to overwrite without prompts"
 	InstallInvalidPinVersionFmt        = "invalid pin version: %w"
 	InstallCreateDirFailedFmt          = "failed to create directory %s: %w"
-	InstallExistingPinFileEmptyFmt     = "existing pin file %s is empty"
+	InstallAutoRepairPinWarningFmt     = "Auto-repairing invalid pin file %s (was %q, now %s)\n"
 	InstallFailedReadFmt               = "failed to read %s: %w"
 	InstallFailedReadTemplateFmt       = "failed to read template %s: %w"
 	InstallFailedCreateDirForFmt       = "failed to create directory for %s: %w"

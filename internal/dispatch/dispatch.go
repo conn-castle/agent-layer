@@ -16,6 +16,10 @@ const (
 	EnvNoNetwork       = "AL_NO_NETWORK"
 	EnvVersionOverride = "AL_VERSION"
 	EnvShimActive      = "AL_SHIM_ACTIVE"
+
+	// sourceCurrent and sourcePin label the origin of the resolved version.
+	sourceCurrent = "current"
+	sourcePin     = "pin"
 )
 
 // ErrDispatched signals that execution has been handed off to another binary.
@@ -53,9 +57,12 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 		return err
 	}
 
-	requested, _, err := resolveRequestedVersion(sys, rootDir, found, current)
+	requested, _, warning, err := resolveRequestedVersion(sys, rootDir, found, current)
 	if err != nil {
 		return err
+	}
+	if warning != "" {
+		_, _ = fmt.Fprint(sys.Stderr(), warning)
 	}
 	if requested == current {
 		return nil
@@ -71,7 +78,7 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 	if err != nil {
 		return err
 	}
-	path, err := ensureCachedBinary(cacheRoot, requested)
+	path, err := ensureCachedBinary(cacheRoot, requested, sys.Stderr())
 	if err != nil {
 		return err
 	}
@@ -97,27 +104,31 @@ func normalizeCurrentVersion(raw string) (string, error) {
 }
 
 // resolveRequestedVersion determines the target version and its source (env override, pin, or current).
-func resolveRequestedVersion(sys System, rootDir string, hasRoot bool, current string) (string, string, error) {
+// The warning return value is non-empty when a pin file exists but is empty or corrupt.
+func resolveRequestedVersion(sys System, rootDir string, hasRoot bool, current string) (string, string, string, error) {
 	override := strings.TrimSpace(sys.Getenv(EnvVersionOverride))
 	if override != "" {
 		normalized, err := version.Normalize(override)
 		if err != nil {
-			return "", "", fmt.Errorf(messages.DispatchInvalidEnvVersionFmt, EnvVersionOverride, err)
+			return "", "", "", fmt.Errorf(messages.DispatchInvalidEnvVersionFmt, EnvVersionOverride, err)
 		}
-		return normalized, EnvVersionOverride, nil
+		return normalized, EnvVersionOverride, "", nil
 	}
 
 	if hasRoot {
-		pinned, ok, err := readPinnedVersion(sys, rootDir)
+		pinned, ok, warning, err := readPinnedVersion(sys, rootDir)
 		if err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 		if ok {
-			return pinned, "pin", nil
+			return pinned, sourcePin, "", nil
+		}
+		if warning != "" {
+			return current, sourceCurrent, warning, nil
 		}
 	}
 
-	return current, "current", nil
+	return current, sourceCurrent, "", nil
 }
 
 // cacheRootDir resolves the cache root directory, honoring AL_CACHE_DIR when set.

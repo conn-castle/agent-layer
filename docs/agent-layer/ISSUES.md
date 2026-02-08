@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-08 tmpl-mk: Slash-command templates reference non-existent Makefile targets
+    Priority: Low. Area: templates / developer experience.
+    Description: `finish-task.md`, `fix-issues.md`, and `cleanup-code.md` templates reference `make test-fast` and `make dead-code` which do not exist in the Makefile. Templates note these as optional/conditional, but they may confuse agents in repos that do not provide them.
+    Next step: Either add `test-fast` and `dead-code` Makefile targets, or clarify the template language to make the conditional nature more explicit.
+
 - Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
     Priority: Medium. Area: install / UX.
     GitHub: https://github.com/conn-castle/agent-layer/issues/30

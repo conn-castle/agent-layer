@@ -207,6 +207,8 @@ func (inst *installer) writeTemplateFiles() error {
 }
 
 // writeVersionFile writes .agent-layer/al.version when pinning is enabled.
+// Empty or corrupt (non-semver) pin files are auto-repaired without requiring --overwrite.
+// Valid semver pins that differ from the target still require --overwrite.
 func (inst *installer) writeVersionFile() error {
 	if inst.pinVersion == "" {
 		return nil
@@ -216,23 +218,23 @@ func (inst *installer) writeVersionFile() error {
 	existingBytes, err := sys.ReadFile(path)
 	if err == nil {
 		existing := strings.TrimSpace(string(existingBytes))
-		if existing == "" {
-			return fmt.Errorf(messages.InstallExistingPinFileEmptyFmt, path)
-		}
-		normalized, err := version.Normalize(existing)
-		if err != nil {
-			normalized = ""
-		}
-		if normalized == inst.pinVersion {
+		normalized, normErr := version.Normalize(existing)
+		switch {
+		case existing == "" || normErr != nil:
+			// Empty or corrupt pin file: auto-repair by falling through to write.
+			_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallAutoRepairPinWarningFmt, path, existing, inst.pinVersion)
+		case normalized == inst.pinVersion:
 			return nil
-		}
-		overwrite, err := inst.shouldOverwrite(path)
-		if err != nil {
-			return err
-		}
-		if !overwrite {
-			inst.recordDiff(path)
-			return nil
+		default:
+			// Valid semver that differs: preserve current overwrite semantics.
+			overwrite, err := inst.shouldOverwrite(path)
+			if err != nil {
+				return err
+			}
+			if !overwrite {
+				inst.recordDiff(path)
+				return nil
+			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf(messages.InstallFailedReadFmt, path, err)

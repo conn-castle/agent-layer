@@ -120,6 +120,14 @@ test-release: ## Run release artifact tests
 test-e2e: ## Run end-to-end build/install smoke tests
 	@./scripts/test-e2e.sh
 
+.PHONY: docs-upgrade-check
+docs-upgrade-check: ## Validate upgrade contract docs for a release tag (set RELEASE_TAG=vX.Y.Z)
+	@if [[ -z "$${RELEASE_TAG:-}" ]]; then \
+	  echo "RELEASE_TAG is required (example: make docs-upgrade-check RELEASE_TAG=v0.7.0)" >&2; \
+	  exit 1; \
+	fi
+	@./scripts/check-upgrade-docs.sh --tag "$${RELEASE_TAG}"
+
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh

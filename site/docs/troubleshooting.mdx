@@ -69,7 +69,7 @@ Re-run `al init` to reinstall the managed ignore rules. If the files were alread
 
 ### "invalid pinned version" or version format errors
 
-`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or re-run `al init --version X.Y.Z`. See [Version pinning](./concepts#version-pinning).
+`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or re-run `al init --version X.Y.Z`. See [Version pinning](./concepts#version-pinning) and [Upgrades](./upgrades).
 
 ### `config.toml` validation failures
 
@@ -97,6 +97,8 @@ Run `al doctor` to see structured config errors.
 Install the target client CLI (Gemini, Claude, Codex, VS Code, Antigravity) and ensure it is available on your `PATH`.
 
 ## Pinning and offline mode
+
+For upgrade-policy guarantees and migration expectations, see [Upgrades](./upgrades).
 
 ### "version is not cached" when offline
 

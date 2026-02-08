@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"io"
 	"os"
 
 	"github.com/conn-castle/agent-layer/internal/root"
@@ -17,6 +18,7 @@ type System interface {
 	Environ() []string
 	ExecBinary(path string, args []string, env []string, exit func(int)) error
 	FindAgentLayerRoot(start string) (string, bool, error)
+	Stderr() io.Writer
 }
 
 // RealSystem implements System using the OS and root finder.
@@ -50,4 +52,9 @@ func (RealSystem) ExecBinary(path string, args []string, env []string, exit func
 // FindAgentLayerRoot searches upwards from start for an .agent-layer directory.
 func (RealSystem) FindAgentLayerRoot(start string) (string, bool, error) {
 	return root.FindAgentLayerRoot(start)
+}
+
+// Stderr returns the standard error writer.
+func (RealSystem) Stderr() io.Writer {
+	return os.Stderr
 }

@@ -33,11 +33,18 @@ const (
 	DispatchHashFileFmt                 = "hash %s: %w"
 	DispatchChecksumMismatchFmt         = "checksum mismatch for %s (expected %s, got %s)"
 
-	DispatchOpenLockFmt             = "open lock %s: %w"
-	DispatchLockFmt                 = "lock %s: %w"
-	DispatchReadPinFailedFmt        = "read %s: %w"
-	DispatchPinFileEmptyFmt         = "pin file %s is empty"
-	DispatchInvalidPinnedVersionFmt = "invalid pinned version in %s: %w"
+	DispatchDownload404Fmt     = "download %s: release not found (HTTP 404)\n\nThe requested version may not exist or may have been removed.\nRemediation:\n  - Verify the version exists at %s\n  - Update the pin: al init --version latest\n  - Or set a valid version: al init --version X.Y.Z"
+	DispatchDownloadTimeoutFmt = "download %s: request timed out\n\nRemediation:\n  - Check your internet connection\n  - If behind a proxy, ensure HTTP_PROXY/HTTPS_PROXY are set\n  - Retry the command\n  - To work offline with a previously cached version, set AL_NO_NETWORK=1"
+
+	DispatchDownloadingFmt = "Downloading al v%s...\n"
+	DispatchDownloadedFmt  = "Downloaded al v%s\n"
+
+	DispatchOpenLockFmt      = "open lock %s: %w"
+	DispatchLockFmt          = "lock %s: %w"
+	DispatchReadPinFailedFmt = "read %s: %w"
+
+	DispatchPinFileEmptyWarningFmt         = "warning: pin file %s is empty; ignoring (run al init to fix)\n"
+	DispatchInvalidPinnedVersionWarningFmt = "warning: invalid pinned version in %s: %v; ignoring (run al init to fix)\n"
 
 	// RootStartPathRequired indicates start path is required for root resolution.
 	RootStartPathRequired   = "start path is required"

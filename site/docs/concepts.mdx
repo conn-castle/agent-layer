@@ -330,9 +330,11 @@ Pin formats:
 
 ### Upgrading a pinned repo
 
-1. Update `.agent-layer/al.version` to the new release
-2. Run `al` in the repo to download the pinned version
+1. Upgrade the repo pin: `al init --version latest` (or `al init --version X.Y.Z`)
+2. Run `al` in the repo to dispatch to the pinned version
 3. Re-run `al init --overwrite` if you want to review template updates
+
+For compatibility guarantees, upgrade event categories, and release-versioned migration guidance, see [Upgrades](./upgrades).
 
 ### Overrides and offline mode
 

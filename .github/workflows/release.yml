@@ -17,6 +17,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Validate upgrade contract docs
+        run: |
+          set -euo pipefail
+          make docs-upgrade-check RELEASE_TAG="${GITHUB_REF_NAME}"
       - name: Build release artifacts
         run: |
           set -euo pipefail

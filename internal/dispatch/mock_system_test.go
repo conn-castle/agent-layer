@@ -3,6 +3,7 @@ package dispatch
 import (
 	"errors"
 	"fmt"
+	"io"
 )
 
 // errNotMocked is returned when a testSystem method is called without a mock function set.
@@ -32,6 +33,7 @@ type testSystem struct {
 	EnvironFunc            func() []string
 	ExecBinaryFunc         func(path string, args []string, env []string, exit func(int)) error
 	FindAgentLayerRootFunc func(start string) (string, bool, error)
+	StderrFunc             func() io.Writer
 }
 
 func (s *testSystem) UserCacheDir() (string, error) {
@@ -74,4 +76,11 @@ func (s *testSystem) FindAgentLayerRoot(start string) (string, bool, error) {
 		return s.FindAgentLayerRootFunc(start)
 	}
 	return s.RealSystem.FindAgentLayerRoot(start)
+}
+
+func (s *testSystem) Stderr() io.Writer {
+	if s.StderrFunc != nil {
+		return s.StderrFunc()
+	}
+	return io.Discard
 }

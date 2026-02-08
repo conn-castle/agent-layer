@@ -3,8 +3,10 @@ package dispatch
 import (
 	"bufio"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,7 +30,8 @@ var (
 )
 
 // ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
-func ensureCachedBinary(cacheRoot string, version string) (string, error) {
+// Progress lines are written to progressOut when a download is required.
+func ensureCachedBinary(cacheRoot string, version string, progressOut io.Writer) (string, error) {
 	osName, arch, err := platformStringsFunc()
 	if err != nil {
 		return "", err
@@ -69,6 +72,7 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 			}
 		}()
 
+		_, _ = fmt.Fprintf(progressOut, messages.DispatchDownloadingFmt, version)
 		url := fmt.Sprintf("%s/download/v%s/%s", releaseBaseURL, version, asset)
 		if err := downloadToFile(url, tmp); err != nil {
 			_ = tmp.Close()
@@ -97,6 +101,7 @@ func ensureCachedBinary(cacheRoot string, version string) (string, error) {
 			return fmt.Errorf(messages.DispatchMoveCachedBinaryFmt, err)
 		}
 		committed = true
+		_, _ = fmt.Fprintf(progressOut, messages.DispatchDownloadedFmt, version)
 		return nil
 	}); err != nil {
 		return "", err
@@ -140,9 +145,15 @@ func noNetwork() bool {
 func downloadToFile(url string, dest *os.File) error {
 	resp, err := httpClient.Get(url)
 	if err != nil {
+		if isTimeoutError(err) {
+			return fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+		}
 		return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
 	}
@@ -157,9 +168,15 @@ func fetchChecksum(version string, asset string) (string, error) {
 	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
 	resp, err := httpClient.Get(url)
 	if err != nil {
+		if isTimeoutError(err) {
+			return "", fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+		}
 		return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
 	}
@@ -184,6 +201,15 @@ func fetchChecksum(version string, asset string) (string, error) {
 		return "", fmt.Errorf(messages.DispatchReadFailedFmt, url, err)
 	}
 	return "", fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
+}
+
+// isTimeoutError reports whether err is a network timeout.
+func isTimeoutError(err error) bool {
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+	return false
 }
 
 // verifyChecksum computes the SHA-256 of path and compares it to expected.
