@@ -140,6 +140,29 @@ func TestRunMain_InitBypassesDispatch(t *testing.T) {
 	}
 }
 
+func TestRunMain_UpgradeBypassesDispatch(t *testing.T) {
+	orig := maybeExecFunc
+	defer func() { maybeExecFunc = orig }()
+	dispatchCalled := false
+	maybeExecFunc = func(args []string, currentVersion string, cwd string, exit func(int)) error {
+		dispatchCalled = true
+		return errors.New("dispatch should be bypassed for upgrade")
+	}
+
+	var out bytes.Buffer
+	exitCode := -1
+	runMain([]string{"al", "upgrade", "--help"}, &out, &out, func(code int) {
+		exitCode = code
+	})
+
+	if dispatchCalled {
+		t.Fatal("expected dispatch to be bypassed for upgrade")
+	}
+	if exitCode != -1 {
+		t.Fatalf("expected no exit call, got %d", exitCode)
+	}
+}
+
 func TestShouldBypassDispatch(t *testing.T) {
 	tests := []struct {
 		name string
@@ -148,6 +171,7 @@ func TestShouldBypassDispatch(t *testing.T) {
 	}{
 		{name: "No subcommand", args: []string{"al"}, want: false},
 		{name: "Init command", args: []string{"al", "init"}, want: true},
+		{name: "Upgrade command", args: []string{"al", "upgrade"}, want: true},
 		{name: "Non-init command", args: []string{"al", "doctor"}, want: false},
 		{name: "Global version flag only", args: []string{"al", "--version"}, want: false},
 		{name: "Double-dash init", args: []string{"al", "--", "init"}, want: true},

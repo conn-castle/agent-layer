@@ -263,6 +263,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | Command | Purpose |
 | --- | --- |
 | `al init` | Initialize a repo with Agent Layer templates and memory files. |
+| `al upgrade plan` | Show a dry-run, categorized upgrade plan with ownership labels (`--json` for machine-readable output). |
 | `al wizard` | Interactive configuration for approvals, agents, MCP servers, and warnings. |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
@@ -326,6 +327,28 @@ In non-interactive environments, the wizard is skipped.
 - Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
 - For upgrade contract details and release-versioned migration notes, see [Upgrades](./upgrades).
 
+### Upgrade plan
+
+`al upgrade plan` is a read-only upgrade preview. It does not write files.
+
+It compares your repository state against templates embedded in the currently running `al` binary (not an older repo-pinned binary).
+
+Use it before `al init --overwrite` to understand what would change:
+
+- Template additions
+- Template updates
+- Template renames (heuristic, confidence-annotated)
+- Template removals/orphans
+- Config key migrations (when migration manifests are present)
+- Pin version change (`current -> target`)
+
+Each diff entry includes an ownership label:
+
+- `upstream template delta`
+- `local customization`
+
+For CI and automation, use `al upgrade plan --json`.
+
 ### Wizard
 
 `al wizard` guides you through approvals, enabled agents, model selection, MCP servers, and warning thresholds.
@@ -380,7 +403,7 @@ These files are derived outputs and safe to delete. Running `al sync` will recre
 
 ### Launch a client
 
-`al <client>` always syncs before launch. Supported clients:
+`al <client>` syncs before launch by default. Supported clients:
 
 - `al gemini`
 - `al claude`
@@ -392,7 +415,7 @@ These commands read `.agent-layer/`, regenerate client outputs, and then launch 
 
 This is the default workflow for day-to-day use: you get a clean regenerate and a launch in one command, which keeps behavior consistent even when you switch tools.
 
-`al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is an Agent Layer flag and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
+`al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is supported only by `al vscode` and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
 
 Examples:
 

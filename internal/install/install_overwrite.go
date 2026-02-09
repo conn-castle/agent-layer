@@ -55,11 +55,11 @@ func (inst *installer) shouldOverwriteAllManaged() (bool, error) {
 	if inst.prompter == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
-	diffs, err := inst.listManagedDiffs()
+	diffs, err := inst.listManagedLabeledDiffs()
 	if err != nil {
 		return false, err
 	}
-	overwriteAll, err := inst.prompter.OverwriteAll(diffs)
+	overwriteAll, err := inst.prompter.OverwriteAll(formatLabeledPaths(diffs))
 	if err != nil {
 		return false, err
 	}
@@ -76,11 +76,11 @@ func (inst *installer) shouldOverwriteAllMemory() (bool, error) {
 	if inst.prompter == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
-	diffs, err := inst.listMemoryDiffs()
+	diffs, err := inst.listMemoryLabeledDiffs()
 	if err != nil {
 		return false, err
 	}
-	overwriteAll, err := inst.prompter.OverwriteAllMemory(diffs)
+	overwriteAll, err := inst.prompter.OverwriteAllMemory(formatLabeledPaths(diffs))
 	if err != nil {
 		return false, err
 	}

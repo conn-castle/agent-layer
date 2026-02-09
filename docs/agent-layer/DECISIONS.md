@@ -134,3 +134,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Publish upgrade policy with three event categories (`safe auto`, `needs review`, `breaking/manual`) and a sequential compatibility guarantee (`N-1` to `N` release-line upgrades only, for example `0.6.x` -> `0.7.x`).
     Reason: Provides a clear, enforceable public contract without overpromising broad multi-line migration support before lifecycle tooling lands.
     Tradeoffs: Skipped-line upgrades remain best effort and may require additional manual migration guidance per release.
+
+- Decision 2026-02-09 p1-upgrade-plan-heuristics: Upgrade planning compares invoking binary templates with conservative labels
+    Decision: `al upgrade` bypasses repo pin dispatch, `al upgrade plan` compares repo state to the invoking binary's embedded templates, rename detection uses unique exact normalized-content hash matches, and ownership labels are best-effort without a managed-file hash manifest.
+    Reason: Upgrade previews must reflect the version the user is actively running while still surfacing useful diffs now, before migration manifests and stronger ownership baselines land.
+    Tradeoffs: Ambiguous rename/ownership cases fall back to non-rename + `local customization`, so some true upstream deltas may be under-labeled until manifest/baseline infrastructure is added.

@@ -59,6 +59,22 @@ func (inst *installer) allTemplateDirs() []templateDir {
 
 // listManagedDiffs returns relative paths for managed files that differ from templates.
 func (inst *installer) listManagedDiffs() ([]string, error) {
+	labeled, err := inst.listManagedLabeledDiffs()
+	if err != nil {
+		return nil, err
+	}
+	if len(labeled) == 0 {
+		return nil, nil
+	}
+	paths := make([]string, 0, len(labeled))
+	for _, entry := range labeled {
+		paths = append(paths, entry.Path)
+	}
+	return paths, nil
+}
+
+// listManagedLabeledDiffs returns managed diffs with ownership labels.
+func (inst *installer) listManagedLabeledDiffs() ([]LabeledPath, error) {
 	diffs := make(map[string]struct{})
 	if err := inst.appendTemplateFileDiffs(diffs, inst.managedTemplateFiles()); err != nil {
 		return nil, err
@@ -71,18 +87,42 @@ func (inst *installer) listManagedDiffs() ([]string, error) {
 	if err := inst.appendPinnedVersionDiff(diffs); err != nil {
 		return nil, err
 	}
-	return sortedKeys(diffs), nil
+	templatePathByRel, err := inst.managedTemplatePathByRel()
+	if err != nil {
+		return nil, err
+	}
+	return inst.buildLabeledDiffs(sortedKeys(diffs), templatePathByRel)
 }
 
 // listMemoryDiffs returns relative paths for memory files that differ from templates.
 func (inst *installer) listMemoryDiffs() ([]string, error) {
+	labeled, err := inst.listMemoryLabeledDiffs()
+	if err != nil {
+		return nil, err
+	}
+	if len(labeled) == 0 {
+		return nil, nil
+	}
+	paths := make([]string, 0, len(labeled))
+	for _, entry := range labeled {
+		paths = append(paths, entry.Path)
+	}
+	return paths, nil
+}
+
+// listMemoryLabeledDiffs returns memory diffs with ownership labels.
+func (inst *installer) listMemoryLabeledDiffs() ([]LabeledPath, error) {
 	diffs := make(map[string]struct{})
 	for _, dir := range inst.memoryTemplateDirs() {
 		if err := inst.appendTemplateDirDiffs(diffs, dir); err != nil {
 			return nil, err
 		}
 	}
-	return sortedKeys(diffs), nil
+	templatePathByRel, err := inst.memoryTemplatePathByRel()
+	if err != nil {
+		return nil, err
+	}
+	return inst.buildLabeledDiffs(sortedKeys(diffs), templatePathByRel)
 }
 
 // appendTemplateFileDiffs adds relative paths for files that differ from templates.
@@ -172,6 +212,63 @@ func sortedKeys(entries map[string]struct{}) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func (inst *installer) buildLabeledDiffs(paths []string, templatePathByRel map[string]string) ([]LabeledPath, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	out := make([]LabeledPath, 0, len(paths))
+	for _, path := range paths {
+		templatePath := templatePathByRel[path]
+		ownership := OwnershipLocalCustomization
+		if templatePath != "" {
+			classified, err := inst.classifyOwnership(path, templatePath)
+			if err != nil {
+				return nil, err
+			}
+			ownership = classified
+		}
+		out = append(out, LabeledPath{
+			Path:      path,
+			Ownership: ownership,
+		})
+	}
+	return out, nil
+}
+
+func (inst *installer) managedTemplatePathByRel() (map[string]string, error) {
+	m := make(map[string]string)
+	for _, file := range inst.managedTemplateFiles() {
+		rel := filepath.ToSlash(inst.relativePath(file.path))
+		m[rel] = file.template
+	}
+	for _, dir := range inst.managedTemplateDirs() {
+		entries, err := inst.templateDirEntries(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			rel := filepath.ToSlash(inst.relativePath(entry.destPath))
+			m[rel] = entry.templatePath
+		}
+	}
+	return m, nil
+}
+
+func (inst *installer) memoryTemplatePathByRel() (map[string]string, error) {
+	m := make(map[string]string)
+	for _, dir := range inst.memoryTemplateDirs() {
+		entries, err := inst.templateDirEntries(dir)
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			rel := filepath.ToSlash(inst.relativePath(entry.destPath))
+			m[rel] = entry.templatePath
+		}
+	}
+	return m, nil
 }
 
 func (inst *installer) writeTemplateDirCached(dir templateDir) error {

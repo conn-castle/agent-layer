@@ -118,9 +118,10 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 ### Tasks
 
 **Explainability (Upgrade Plan Phase 1)**
-- [ ] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
-- [ ] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff (`upstream template delta` vs `local customization`) in upgrade and overwrite flows.
-- [ ] Add machine-readable output (`--json`) to `al upgrade plan` for CI/repo automation.
+- [x] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
+- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff (`upstream template delta` vs `local customization`) in upgrade and overwrite flows.
+- [x] Add machine-readable output (`--json`) to `al upgrade plan` for CI/repo automation.
+- [ ] Close GitHub issue #30 (j4k5l6: managed file diff visibility) after PR merge.
 - [ ] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
 - [ ] Add `al init --unpin` to remove `.agent-layer/al.version` cleanly; document manual unpinning as an alternative.
 - [ ] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.

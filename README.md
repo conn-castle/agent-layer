@@ -129,7 +129,7 @@ Upgrade contract details (event model, compatibility guarantees, migration rules
 
 When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually or pass `--version` to pin a specific release (`X.Y.Z` / `vX.Y.Z`) or `latest`.
 
-When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` is the exception: it runs on the invoking CLI version so pin updates and upgrades are not blocked by an older repo pin.
+When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
 
 Pin format:
 - `0.6.0` or `v0.6.0` (both are accepted)
@@ -449,6 +449,7 @@ al vscode --no-sync -- --reuse-window
 Other commands:
 
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
+- `al upgrade plan` — preview categorized template/pin changes with ownership labels; add `--json` for CI output
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)

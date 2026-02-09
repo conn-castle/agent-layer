@@ -36,6 +36,12 @@ const (
 	InitFlagNoWizard  = "Skip prompting to run the setup wizard after init"
 	InitFlagVersion   = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
 
+	UpgradeUse       = "upgrade"
+	UpgradeShort     = "Upgrade planning and rollback tools"
+	UpgradePlanUse   = "plan"
+	UpgradePlanShort = "Show a dry-run upgrade plan without writing files"
+	UpgradePlanJSON  = "Output machine-readable JSON"
+
 	InitWarnUpdateCheckFailedFmt = "Warning: failed to check for updates: %v\n"
 	InitWarnDevBuildFmt          = "Warning: running dev build; latest release is %s\n"
 	InitResolveLatestVersionFmt  = "resolve latest version: %w"
