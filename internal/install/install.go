@@ -127,6 +127,13 @@ func Run(root string, opts Options) error {
 	if err := runSteps(steps); err != nil {
 		return err
 	}
+	baselineSource := BaselineStateSourceWrittenByInit
+	if overwrite {
+		baselineSource = BaselineStateSourceWrittenByOverwrite
+	}
+	if err := inst.writeManagedBaselineIfConsistent(baselineSource); err != nil {
+		return err
+	}
 
 	inst.warnDifferences()
 	inst.warnUnknowns()

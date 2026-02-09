@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -65,6 +67,9 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan) error {
 	if err := writeUpgradeChangeSection(out, "Template updates", plan.TemplateUpdates); err != nil {
 		return err
 	}
+	if err := writeUpgradeChangeSection(out, "Section-aware updates (managed header only, user entries preserved)", plan.SectionAwareUpdates); err != nil {
+		return err
+	}
 	if err := writeUpgradeRenameSection(out, "Template renames", plan.TemplateRenames); err != nil {
 		return err
 	}
@@ -75,6 +80,9 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan) error {
 		return err
 	}
 	if err := writePinVersionSection(out, plan.PinVersionChange); err != nil {
+		return err
+	}
+	if err := writeOwnershipWarnings(out, plan); err != nil {
 		return err
 	}
 	return nil
@@ -150,4 +158,61 @@ func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff) er
 		return err
 	}
 	return nil
+}
+
+func writeOwnershipWarnings(out io.Writer, plan install.UpgradePlan) error {
+	lines := collectUnknownOwnershipLines(plan)
+	if len(lines) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(out, "\nOwnership warnings:"); err != nil {
+		return err
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(out, "  - %s\n", line); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out, "  - action: run `al init --overwrite` to refresh managed baseline evidence before applying upgrades."); err != nil {
+		return err
+	}
+	return nil
+}
+
+func collectUnknownOwnershipLines(plan install.UpgradePlan) []string {
+	lines := make([]string, 0)
+	appendChange := func(change install.UpgradeChange) {
+		if change.OwnershipState != install.OwnershipStateUnknownNoBaseline {
+			return
+		}
+		reasonText := "reasons=none"
+		if len(change.OwnershipReasonCodes) != 0 {
+			reasonText = "reasons=" + strings.Join(change.OwnershipReasonCodes, ",")
+		}
+		lines = append(lines, fmt.Sprintf("%s [%s, %s]", change.Path, change.Ownership.Display(), reasonText))
+	}
+	for _, change := range plan.TemplateAdditions {
+		appendChange(change)
+	}
+	for _, change := range plan.TemplateUpdates {
+		appendChange(change)
+	}
+	for _, change := range plan.SectionAwareUpdates {
+		appendChange(change)
+	}
+	for _, change := range plan.TemplateRemovalsOrOrphans {
+		appendChange(change)
+	}
+	for _, rename := range plan.TemplateRenames {
+		if rename.OwnershipState != install.OwnershipStateUnknownNoBaseline {
+			continue
+		}
+		reasonText := "reasons=none"
+		if len(rename.OwnershipReasonCodes) != 0 {
+			reasonText = "reasons=" + strings.Join(rename.OwnershipReasonCodes, ",")
+		}
+		lines = append(lines, fmt.Sprintf("%s -> %s [%s, %s]", rename.From, rename.To, rename.Ownership.Display(), reasonText))
+	}
+	sort.Strings(lines)
+	return lines
 }

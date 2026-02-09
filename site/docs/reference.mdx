@@ -300,6 +300,7 @@ Typical `.agent-layer/` files include:
 - `al.version` (optional repo pin)
 - `.env` (secrets, always gitignored)
 - `.gitignore` and `gitignore.block`
+- `.agent-layer/state/managed-baseline.json` (managed ownership baseline state; gitignored)
 
 **Gitignore template**
 
@@ -346,8 +347,24 @@ Each diff entry includes an ownership label:
 
 - `upstream template delta`
 - `local customization`
+- `mixed upstream and local`
+- `unknown no baseline`
+
+`unknown no baseline` means Agent Layer cannot prove ownership safely for that file from baseline evidence. In text output, `al upgrade plan` includes an **Ownership warnings** block with actionable guidance.
 
 For CI and automation, use `al upgrade plan --json`.
+
+Current JSON contract (additive):
+
+- top-level `schema_version`
+- per diff entry:
+  - `ownership` (legacy display label; backward compatible)
+  - `ownership_state` (`upstream_template_delta`, `local_customization`, `mixed_upstream_and_local`, `unknown_no_baseline`)
+  - `ownership_confidence` (`high`, `medium`, `low`, omitted for unknown)
+  - `ownership_baseline_source`
+  - `ownership_reason_codes`
+
+Prefer `ownership_state` for new automation; keep `ownership` for legacy consumers.
 
 ### Wizard
 

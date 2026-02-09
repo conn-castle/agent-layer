@@ -18,7 +18,7 @@ All notable changes to this project will be documented in this file.
 - Launcher template writes refactored for reliability with proper macOS path escaping.
 - Codex MCP header projection order corrected.
 - CI workflow caches pinned tools in GitHub Actions for faster builds.
-- Upgrade contract linked from README, site docs, DEVELOPMENT.md, RELEASE.md, and UPGRADE_PLAN.md.
+- Upgrade contract linked from README, site docs, DEVELOPMENT.md, RELEASE.md, and docs/UPGRADE_PLAN.md.
 
 ### Removed
 - `al-install.ps1` (Windows PowerShell installer).

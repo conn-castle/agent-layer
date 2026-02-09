@@ -27,6 +27,16 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
+    Priority: Medium. Area: website / marketing.
+    Description: The website needs professional metadata, SEO optimization, and a proper favicon to improve visibility and professional appearance.
+    Next step: Audit `site/` for missing meta tags and favicon, then implement them.
+
+- Issue 2026-02-09 web-init: Clarify "Initialize the repo" language on landing page
+    Priority: Medium. Area: website / UX.
+    Description: The landing page uses "Initialize the repo" which is ambiguous. It should be "Initializing agent-layer for your project" or similar to avoid confusion with `git init`.
+    Next step: Update landing page copy in `site/` to use more precise language about agent-layer initialization.
+
 - Issue 2026-02-08 mcp-glob: Document global MCP server fallback on website
     Priority: Medium. Area: documentation / website / UX.
     Description: Users can avoid `CODEX_HOME` and VS Code setup friction by configuring MCP servers globally in their home directory. Codex will still use local repo instructions and skills.

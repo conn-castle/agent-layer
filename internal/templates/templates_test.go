@@ -33,6 +33,16 @@ func TestReadLauncherTemplate(t *testing.T) {
 	}
 }
 
+func TestReadManifestTemplate(t *testing.T) {
+	data, err := Read("manifests/0.7.0.json")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected manifest content")
+	}
+}
+
 func TestWalkTemplates(t *testing.T) {
 	var seen bool
 	err := Walk("instructions", func(path string, d fs.DirEntry, err error) error {

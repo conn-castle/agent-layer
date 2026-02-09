@@ -154,8 +154,10 @@ Typical layout:
   commands.allow       # approved shell command prefixes
   al.version           # optional repo pin
   .env                 # secrets (always gitignored)
-  .gitignore           # ignores repo-local launchers, backups, templates
+  .gitignore           # ignores repo-local launchers, backups, templates, and state
   gitignore.block      # managed .gitignore block template
+  templates/docs/      # embedded memory template snapshots
+  state/managed-baseline.json # managed ownership baseline state
   tmp/                 # agent-only artifacts
 ```
 
@@ -240,6 +242,7 @@ Commit:
 Do not commit:
 
 - `.agent-layer/.env` (secrets)
+- `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
 - generated client outputs like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
 

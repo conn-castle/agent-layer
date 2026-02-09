@@ -135,7 +135,12 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Provides a clear, enforceable public contract without overpromising broad multi-line migration support before lifecycle tooling lands.
     Tradeoffs: Skipped-line upgrades remain best effort and may require additional manual migration guidance per release.
 
-- Decision 2026-02-09 p1-upgrade-plan-heuristics: Upgrade planning compares invoking binary templates with conservative labels
+- Decision 2026-02-09 p1-upgrade-plan-heuristics: Upgrade planning compares invoking binary templates with conservative labels (superseded by `p1b-ownership-baseline`)
     Decision: `al upgrade` bypasses repo pin dispatch, `al upgrade plan` compares repo state to the invoking binary's embedded templates, rename detection uses unique exact normalized-content hash matches, and ownership labels are best-effort without a managed-file hash manifest.
     Reason: Upgrade previews must reflect the version the user is actively running while still surfacing useful diffs now, before migration manifests and stronger ownership baselines land.
     Tradeoffs: Ambiguous rename/ownership cases fall back to non-rename + `local customization`, so some true upstream deltas may be under-labeled until manifest/baseline infrastructure is added.
+
+- Decision 2026-02-09 p1b-ownership-baseline: Ownership classification now uses embedded manifests plus canonical baseline state
+    Decision: `al upgrade plan` ownership classification now uses committed per-release manifests (`internal/templates/manifests/*.json`) and canonical repo baseline state (`.agent-layer/state/managed-baseline.json`) with section-aware policies (`memory_entries_v1`, `memory_roadmap_v1`, `allowlist_lines_v1`), and emits `unknown_no_baseline` when evidence is insufficient.
+    Reason: Distinguishes upstream template deltas from true local customization without runtime network/tag lookups and avoids silent guesses in ambiguous cases.
+    Tradeoffs: Release workflow must generate/commit manifests for each tag; repos lacking credible baseline evidence may show `unknown no baseline` until a baseline refresh run (for example `al init --overwrite`).

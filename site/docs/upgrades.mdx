@@ -71,6 +71,21 @@ How this table is maintained:
 - If a release includes `breaking/manual` items, list exact required actions.
 - If no special migration is needed, keep the row explicit to avoid ambiguity.
 
+### Ownership baseline and manifest policy
+
+Upgrade ownership classification is deterministic and offline:
+
+- Release manifests are committed in-repo under `internal/templates/manifests/<version>.json`.
+- Backfill manifests are committed for `v0.6.0`, `v0.6.1`, and `v0.7.0`.
+- New releases must add a manifest for the new tag as part of release prep.
+- Runtime upgrade planning does not call GitHub/tag APIs to infer ownership.
+
+Repo-local baseline state is stored at:
+
+- `.agent-layer/state/managed-baseline.json`
+
+`al upgrade plan` compares local files against baseline evidence plus embedded manifests and emits `unknown_no_baseline` when ownership cannot be proven safely.
+
 ## OS and shell capability matrix
 
 Windows is not supported.

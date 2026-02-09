@@ -16,10 +16,13 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
+		t.Fatalf("remove canonical baseline: %v", err)
+	}
 
 	// Simulate an unchanged local docs file relative to the prior managed baseline,
 	// while the embedded template has since changed.
-	oldRoadmap := []byte("old roadmap baseline\n")
+	oldRoadmap := []byte("# ROADMAP\n\nLegacy header\n\n<!-- PHASES START -->\n")
 	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
 	baselineRoadmapPath := filepath.Join(root, ".agent-layer", "templates", "docs", "ROADMAP.md")
 	if err := os.WriteFile(roadmapPath, oldRoadmap, 0o644); err != nil {
@@ -31,7 +34,12 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 
 	// Simulate a local customization in memory docs.
 	issuesPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	if err := os.WriteFile(issuesPath, []byte("custom issue text\n"), 0o644); err != nil {
+	issuesTemplate, err := templates.Read("docs/agent-layer/ISSUES.md")
+	if err != nil {
+		t.Fatalf("read issues template: %v", err)
+	}
+	customIssues := strings.Replace(string(issuesTemplate), "<!-- ENTRIES START -->\n", "<!-- ENTRIES START -->\n\n- issue from repo\n", 1)
+	if err := os.WriteFile(issuesPath, []byte(customIssues), 0o644); err != nil {
 		t.Fatalf("write issues: %v", err)
 	}
 
@@ -60,6 +68,9 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	if !plan.DryRun {
 		t.Fatalf("expected dry-run plan")
 	}
+	if plan.SchemaVersion != UpgradePlanSchemaVersion {
+		t.Fatalf("expected schema version %d, got %d", UpgradePlanSchemaVersion, plan.SchemaVersion)
+	}
 	if len(plan.ConfigKeyMigrations) != 0 {
 		t.Fatalf("expected empty config migrations, got %d", len(plan.ConfigKeyMigrations))
 	}
@@ -70,20 +81,29 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("unexpected pin transition: %#v", plan.PinVersionChange)
 	}
 
-	roadmapUpdate := findUpgradeChange(plan.TemplateUpdates, "docs/agent-layer/ROADMAP.md")
+	roadmapUpdate := findUpgradeChange(plan.SectionAwareUpdates, "docs/agent-layer/ROADMAP.md")
 	if roadmapUpdate == nil {
-		t.Fatalf("expected roadmap update in template updates")
+		t.Fatalf("expected roadmap update in section-aware updates")
 	}
 	if roadmapUpdate.Ownership != OwnershipUpstreamTemplateDelta {
 		t.Fatalf("expected upstream ownership for roadmap, got %s", roadmapUpdate.Ownership)
 	}
-
-	issuesUpdate := findUpgradeChange(plan.TemplateUpdates, "docs/agent-layer/ISSUES.md")
-	if issuesUpdate == nil {
-		t.Fatalf("expected issues update in template updates")
+	if roadmapUpdate.OwnershipState != OwnershipStateUpstreamTemplateDelta {
+		t.Fatalf("expected upstream ownership_state for roadmap, got %s", roadmapUpdate.OwnershipState)
 	}
-	if issuesUpdate.Ownership != OwnershipLocalCustomization {
-		t.Fatalf("expected local ownership for issues, got %s", issuesUpdate.Ownership)
+	if roadmapUpdate.OwnershipConfidence == nil || *roadmapUpdate.OwnershipConfidence != OwnershipConfidenceLow {
+		t.Fatalf("expected low ownership_confidence for roadmap, got %#v", roadmapUpdate.OwnershipConfidence)
+	}
+	if roadmapUpdate.OwnershipBaselineSource == nil || *roadmapUpdate.OwnershipBaselineSource != BaselineStateSourceMigratedFromLegacyDocsSnapshot {
+		t.Fatalf("expected migrated legacy baseline source for roadmap, got %#v", roadmapUpdate.OwnershipBaselineSource)
+	}
+
+	// ISSUES.md has a user entry below the marker but its managed section matches
+	// the template. Section-aware matching should exclude it from the plan entirely.
+	issuesInUpdates := findUpgradeChange(plan.TemplateUpdates, "docs/agent-layer/ISSUES.md")
+	issuesInSection := findUpgradeChange(plan.SectionAwareUpdates, "docs/agent-layer/ISSUES.md")
+	if issuesInUpdates != nil || issuesInSection != nil {
+		t.Fatal("ISSUES.md should be excluded: managed section matches template, only user entries differ")
 	}
 
 	if len(plan.TemplateRenames) == 0 {
@@ -101,6 +121,9 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	}
 	if rename.Detection != UpgradeRenameDetectionUniqueExactHash {
 		t.Fatalf("unexpected rename detection: %s", rename.Detection)
+	}
+	if rename.OwnershipState != OwnershipStateUpstreamTemplateDelta {
+		t.Fatalf("unexpected rename ownership_state: %s", rename.OwnershipState)
 	}
 }
 
@@ -203,6 +226,106 @@ func TestBuildUpgradePlan_ValidationErrors(t *testing.T) {
 	}
 }
 
+func TestBuildUpgradePlan_UnknownNoBaselineForManagedDiff(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
+		t.Fatalf("remove canonical baseline: %v", err)
+	}
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	if err := os.WriteFile(configPath, []byte("custom config\n"), 0o644); err != nil {
+		t.Fatalf("write custom config: %v", err)
+	}
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	if err != nil {
+		t.Fatalf("build upgrade plan: %v", err)
+	}
+	configUpdate := findUpgradeChange(plan.TemplateUpdates, ".agent-layer/config.toml")
+	if configUpdate == nil {
+		t.Fatal("expected config update in plan")
+	}
+	if configUpdate.Ownership != OwnershipUnknownNoBaseline {
+		t.Fatalf("expected unknown ownership, got %s", configUpdate.Ownership)
+	}
+	if configUpdate.OwnershipState != OwnershipStateUnknownNoBaseline {
+		t.Fatalf("expected unknown ownership_state, got %s", configUpdate.OwnershipState)
+	}
+	if configUpdate.OwnershipConfidence != nil {
+		t.Fatalf("expected nil ownership confidence for unknown baseline, got %#v", configUpdate.OwnershipConfidence)
+	}
+	foundBaselineMissing := false
+	for _, reason := range configUpdate.OwnershipReasonCodes {
+		if reason == ownershipReasonBaselineMissing {
+			foundBaselineMissing = true
+			break
+		}
+	}
+	if !foundBaselineMissing {
+		t.Fatalf("expected baseline_missing reason, got %#v", configUpdate.OwnershipReasonCodes)
+	}
+}
+
+func TestBuildUpgradePlan_PinManifestCredibleInference(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.7.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
+		t.Fatalf("remove canonical baseline: %v", err)
+	}
+
+	manifest, err := loadTemplateManifestByVersion("0.7.0")
+	if err != nil {
+		t.Fatalf("load 0.7.0 manifest: %v", err)
+	}
+	allowEntry, ok := manifestFileMap(manifest.Files)[".agent-layer/commands.allow"]
+	if !ok {
+		t.Fatal("0.7.0 manifest missing commands.allow")
+	}
+	payload, err := parseAllowlistPolicyPayload(allowEntry.PolicyPayload)
+	if err != nil {
+		t.Fatalf("parse allowlist payload: %v", err)
+	}
+
+	currentTemplate, err := templates.Read("commands.allow")
+	if err != nil {
+		t.Fatalf("read current commands.allow template: %v", err)
+	}
+	currentComp, err := buildOwnershipComparable(".agent-layer/commands.allow", currentTemplate)
+	if err != nil {
+		t.Fatalf("build current allowlist comparable: %v", err)
+	}
+	if currentComp.AllowHash == payload.UpstreamSetHash {
+		t.Skip("current commands.allow matches 0.7.0 manifest allowlist; cannot exercise upstream delta inference")
+	}
+
+	localContent := strings.Join(payload.UpstreamSet, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte(localContent), 0o644); err != nil {
+		t.Fatalf("write local commands.allow from manifest set: %v", err)
+	}
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}, TargetPinVersion: "0.7.0"})
+	if err != nil {
+		t.Fatalf("build upgrade plan: %v", err)
+	}
+	change := findUpgradeChange(plan.TemplateUpdates, ".agent-layer/commands.allow")
+	if change == nil {
+		t.Fatal("expected commands.allow update in plan")
+	}
+	if change.Ownership != OwnershipUpstreamTemplateDelta {
+		t.Fatalf("expected upstream ownership, got %s", change.Ownership)
+	}
+	if change.OwnershipConfidence == nil || *change.OwnershipConfidence != OwnershipConfidenceMedium {
+		t.Fatalf("expected medium ownership_confidence, got %#v", change.OwnershipConfidence)
+	}
+	if change.OwnershipBaselineSource == nil || *change.OwnershipBaselineSource != BaselineStateSourceInferredFromPinManifest {
+		t.Fatalf("expected inferred pin baseline source, got %#v", change.OwnershipBaselineSource)
+	}
+}
+
 func TestBuildUpgradePlan_StatErrorOnTemplateEntry(t *testing.T) {
 	root := t.TempDir()
 	sys := newFaultSystem(RealSystem{})
@@ -285,7 +408,13 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 
 	renames, remainingAdditions, remainingOrphans, err := detectUpgradeRenames(inst,
 		[]upgradeChangeWithTemplate{{path: ".agent-layer/config.toml", templatePath: "missing-template.md"}},
-		[]upgradeChangeWithTemplate{{path: ".agent-layer/orphan.md", ownership: OwnershipLocalCustomization}},
+		[]upgradeChangeWithTemplate{{
+			path: ".agent-layer/orphan.md",
+			ownership: ownershipClassification{
+				Label: OwnershipLocalCustomization,
+				State: OwnershipStateLocalCustomization,
+			},
+		}},
 	)
 	if err == nil {
 		t.Fatal("expected template read error")
@@ -311,7 +440,13 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 	inst.sys = badReadSys
 	renames, remainingAdditions, remainingOrphans, err = detectUpgradeRenames(inst,
 		[]upgradeChangeWithTemplate{{path: ".agent-layer/config.toml", templatePath: "config.toml"}},
-		[]upgradeChangeWithTemplate{{path: ".agent-layer/orphan.md", ownership: OwnershipLocalCustomization}},
+		[]upgradeChangeWithTemplate{{
+			path: ".agent-layer/orphan.md",
+			ownership: ownershipClassification{
+				Label: OwnershipLocalCustomization,
+				State: OwnershipStateLocalCustomization,
+			},
+		}},
 	)
 	if err == nil || !strings.Contains(err.Error(), "failed to read") {
 		t.Fatalf("expected orphan read error, got %v", err)
@@ -331,8 +466,20 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 			{path: ".agent-layer/config-b.toml", templatePath: "config.toml"},
 		},
 		[]upgradeChangeWithTemplate{
-			{path: ".agent-layer/orphan.md", ownership: OwnershipLocalCustomization},
-			{path: ".agent-layer/orphan-2.md", ownership: OwnershipLocalCustomization},
+			{
+				path: ".agent-layer/orphan.md",
+				ownership: ownershipClassification{
+					Label: OwnershipLocalCustomization,
+					State: OwnershipStateLocalCustomization,
+				},
+			},
+			{
+				path: ".agent-layer/orphan-2.md",
+				ownership: ownershipClassification{
+					Label: OwnershipLocalCustomization,
+					State: OwnershipStateLocalCustomization,
+				},
+			},
 		},
 	)
 	if err != nil {
@@ -343,5 +490,52 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 	}
 	if len(additions) != 2 || len(orphans) != 2 {
 		t.Fatalf("expected additions/orphans unchanged on ambiguity, got %d/%d", len(additions), len(orphans))
+	}
+}
+
+func TestDetectUpgradeRenames_NoCandidates(t *testing.T) {
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+	renames, additions, orphans, err := detectUpgradeRenames(inst, nil, nil)
+	if err != nil {
+		t.Fatalf("detectUpgradeRenames(nil,nil): %v", err)
+	}
+	if len(renames) != 0 || len(additions) != 0 || len(orphans) != 0 {
+		t.Fatalf("expected all empty, got %d/%d/%d", len(renames), len(additions), len(orphans))
+	}
+}
+
+func TestPinVersionDiff_RemoveNoneAndReadError(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("1.2.3\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	inst := &installer{root: root, pinVersion: "", sys: RealSystem{}}
+	diff, err := inst.pinVersionDiff()
+	if err != nil {
+		t.Fatalf("pinVersionDiff remove: %v", err)
+	}
+	if diff.Action != UpgradePinActionRemove {
+		t.Fatalf("expected remove action, got %s", diff.Action)
+	}
+
+	inst.pinVersion = "1.2.3"
+	diff, err = inst.pinVersionDiff()
+	if err != nil {
+		t.Fatalf("pinVersionDiff none: %v", err)
+	}
+	if diff.Action != UpgradePinActionNone {
+		t.Fatalf("expected none action, got %s", diff.Action)
+	}
+
+	readFault := newFaultSystem(RealSystem{})
+	readFault.readErrs[normalizePath(pinPath)] = errors.New("read boom")
+	inst.sys = readFault
+	if _, err := inst.pinVersionDiff(); err == nil {
+		t.Fatal("expected read error")
 	}
 }

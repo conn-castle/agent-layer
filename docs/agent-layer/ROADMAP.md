@@ -103,7 +103,7 @@ Incomplete:
 - Removed unsupported Windows upgrade surface from installers, release targets, launchers, and docs.
 - Implemented and hardened `al init` upgrade path reliability (`--version latest` resolution, explicit version validation, bootstrap init dispatch, corrupt pin recovery, and improved download errors/progress).
 - Published the canonical upgrade contract in `site/docs/upgrades.mdx` with event categories, sequential compatibility guarantees (`N-1` to `N`), release-versioned migration rules, and macOS/Linux shell capability matrix.
-- Linked the upgrade contract from user and contributor docs (`README.md`, site docs, `docs/DEVELOPMENT.md`, `docs/RELEASE.md`, and `docs/agent-layer/UPGRADE_PLAN.md`).
+- Linked the upgrade contract from user and contributor docs (`README.md`, site docs, `docs/DEVELOPMENT.md`, `docs/RELEASE.md`, and `docs/UPGRADE_PLAN.md`).
 
 ## Phase 11 — Upgrade lifecycle (explainability, safety, and migration engine)
 
@@ -119,7 +119,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 
 **Explainability (Upgrade Plan Phase 1)**
 - [x] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
-- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff (`upstream template delta` vs `local customization`) in upgrade and overwrite flows.
+- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer machine-readable ownership states).
 - [x] Add machine-readable output (`--json`) to `al upgrade plan` for CI/repo automation.
 - [ ] Close GitHub issue #30 (j4k5l6: managed file diff visibility) after PR merge.
 - [ ] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
