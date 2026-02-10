@@ -65,7 +65,7 @@ func newInitCmd() *cobra.Command {
 					return fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
 				}
 				return fmt.Errorf(messages.InitAlreadyInitialized)
-			} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			} else if !errors.Is(err, os.ErrNotExist) {
 				return fmt.Errorf(messages.InstallFailedStatFmt, agentLayerPath, err)
 			}
 			pinned, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)

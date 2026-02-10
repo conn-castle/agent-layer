@@ -23,6 +23,8 @@ const (
 	baselineStateSchemaVersion    = 1
 	baselineStateRelPath          = ".agent-layer/state/managed-baseline.json"
 	templateManifestDir           = "manifests"
+
+	baselineVersionUnknown = "unknown"
 )
 
 // BaselineStateSource identifies where baseline ownership evidence came from.
@@ -323,7 +325,7 @@ func buildCurrentTemplateManifest(inst *installer, generatedAt time.Time) (templ
 
 func resolveBaselineVersion(inst *installer) string {
 	if inst == nil {
-		return "unknown"
+		return baselineVersionUnknown
 	}
 	if strings.TrimSpace(inst.pinVersion) != "" {
 		return inst.pinVersion
@@ -336,7 +338,7 @@ func resolveBaselineVersion(inst *installer) string {
 			return normalized
 		}
 	}
-	return "unknown"
+	return baselineVersionUnknown
 }
 
 func baselineFileEntriesFromManifest(manifest templateManifest) []manifestFileEntry {

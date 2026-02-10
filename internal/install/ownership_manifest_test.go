@@ -12,6 +12,7 @@ import (
 
 func TestLoadTemplateManifestByVersion_BackfillTags(t *testing.T) {
 	versions := []string{"0.6.0", "0.6.1", "0.7.0"}
+	excludedPaths := []string{".agent-layer/.env", ".agent-layer/.gitignore", ".agent-layer/config.toml"}
 	for _, ver := range versions {
 		manifest, err := loadTemplateManifestByVersion(ver)
 		if err != nil {
@@ -24,7 +25,12 @@ func TestLoadTemplateManifestByVersion_BackfillTags(t *testing.T) {
 			t.Fatalf("manifest %s has no files", ver)
 		}
 		entries := manifestFileMap(manifest.Files)
-		allowEntry, ok := entries[".agent-layer/commands.allow"]
+		for _, excluded := range excludedPaths {
+			if _, ok := entries[excluded]; ok {
+				t.Fatalf("manifest %s unexpectedly includes excluded path %s", ver, excluded)
+			}
+		}
+		allowEntry, ok := entries[commandsAllowRelPath]
 		if !ok {
 			t.Fatalf("manifest %s missing commands.allow entry", ver)
 		}
@@ -82,7 +88,7 @@ func TestWriteReadManagedBaselineState_RoundTrip(t *testing.T) {
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{
 			{
-				Path:               ".agent-layer/commands.allow",
+				Path:               commandsAllowRelPath,
 				FullHashNormalized: "abc123",
 			},
 		},
@@ -101,7 +107,7 @@ func TestWriteReadManagedBaselineState_RoundTrip(t *testing.T) {
 	if readBack.Source != state.Source {
 		t.Fatalf("source = %q, want %q", readBack.Source, state.Source)
 	}
-	if len(readBack.Files) != 1 || readBack.Files[0].Path != ".agent-layer/commands.allow" {
+	if len(readBack.Files) != 1 || readBack.Files[0].Path != commandsAllowRelPath {
 		t.Fatalf("unexpected files: %#v", readBack.Files)
 	}
 }
@@ -152,7 +158,7 @@ func TestValidateTemplateManifest_ErrorPaths(t *testing.T) {
 		Version:       "0.7.0",
 		GeneratedAt:   "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/commands.allow",
+			Path:               commandsAllowRelPath,
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -193,7 +199,7 @@ func TestValidateManagedBaselineState_ErrorPaths(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/commands.allow",
+			Path:               commandsAllowRelPath,
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -244,7 +250,7 @@ func TestWriteManagedBaselineState_ErrorPaths(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/commands.allow",
+			Path:               commandsAllowRelPath,
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -288,14 +294,14 @@ func TestValidateManifestFileEntry_ErrorPaths(t *testing.T) {
 	}
 
 	if err := validateManifestFileEntry(manifestFileEntry{
-		Path: ".agent-layer/commands.allow",
+		Path: commandsAllowRelPath,
 	}); err == nil {
 		t.Fatal("expected missing full hash error")
 	}
 
 	rawPayload := json.RawMessage(`{"foo":"bar"}`)
 	if err := validateManifestFileEntry(manifestFileEntry{
-		Path:               ".agent-layer/commands.allow",
+		Path:               commandsAllowRelPath,
 		FullHashNormalized: "abc",
 		PolicyPayload:      rawPayload,
 	}); err == nil {
@@ -311,7 +317,7 @@ func TestValidateManagedBaselineState_MoreErrorPaths(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/commands.allow",
+			Path:               commandsAllowRelPath,
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -354,7 +360,7 @@ func TestReadManagedBaselineState_ValidationError(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
-	invalid := `{"schema_version":9,"baseline_version":"0.7.0","source":"written_by_init","created_at_utc":"2026-02-09T00:00:00Z","updated_at_utc":"2026-02-09T00:00:00Z","files":[{"path":".agent-layer/commands.allow","full_hash_normalized":"abc"}]}`
+	invalid := `{"schema_version":9,"baseline_version":"0.7.0","source":"written_by_init","created_at_utc":"2026-02-09T00:00:00Z","updated_at_utc":"2026-02-09T00:00:00Z","files":[{"path":"` + commandsAllowRelPath + `","full_hash_normalized":"abc"}]}`
 	if err := os.WriteFile(statePath, []byte(invalid), 0o644); err != nil {
 		t.Fatalf("write invalid state: %v", err)
 	}
@@ -372,7 +378,7 @@ func TestWriteManagedBaselineState_MkdirAndWriteErrors(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/commands.allow",
+			Path:               commandsAllowRelPath,
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -392,7 +398,7 @@ func TestWriteManagedBaselineState_MkdirAndWriteErrors(t *testing.T) {
 }
 
 func TestResolveBaselineVersion_Cases(t *testing.T) {
-	if got := resolveBaselineVersion(nil); got != "unknown" {
+	if got := resolveBaselineVersion(nil); got != baselineVersionUnknown {
 		t.Fatalf("resolveBaselineVersion(nil) = %q, want unknown", got)
 	}
 
@@ -417,7 +423,7 @@ func TestResolveBaselineVersion_Cases(t *testing.T) {
 	if err := os.WriteFile(versionPath, []byte("dev\n"), 0o644); err != nil {
 		t.Fatalf("write invalid version: %v", err)
 	}
-	if got := resolveBaselineVersion(inst); got != "unknown" {
+	if got := resolveBaselineVersion(inst); got != baselineVersionUnknown {
 		t.Fatalf("resolveBaselineVersion(invalid) = %q, want unknown", got)
 	}
 }

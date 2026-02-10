@@ -1,16 +1,8 @@
 {
   "schema_version": 1,
   "version": "0.6.1",
-  "generated_at_utc": "2026-02-09T20:05:34Z",
+  "generated_at_utc": "2026-02-10T03:50:19Z",
   "files": [
-    {
-      "path": ".agent-layer/.env",
-      "full_hash_normalized": "ec8ee90e7222c1837f298328ce088053dd5ea4a47180e7d9d4ddcdcc27d12241"
-    },
-    {
-      "path": ".agent-layer/.gitignore",
-      "full_hash_normalized": "f75046ad8dbf7849308713451644934987ddb71e57dff7ddea446e5beb7df275"
-    },
     {
       "path": ".agent-layer/commands.allow",
       "full_hash_normalized": "a9a3c1c6763d3605df8c7c970f7ee1d2c97d1c9387a32fa053dd34693a7d53a6",
@@ -47,10 +39,6 @@
         ],
         "upstream_set_hash": "467d2c8724b8cbfd0047f71e339f37bc0cc115429afe481ddeeef8954427f2a1"
       }
-    },
-    {
-      "path": ".agent-layer/config.toml",
-      "full_hash_normalized": "a0a5d73852448e52a398b858b34b70233e2c125ef062ef6f5176a90bbca4f868"
     },
     {
       "path": ".agent-layer/gitignore.block",

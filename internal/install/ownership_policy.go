@@ -15,6 +15,8 @@ const (
 
 	ownershipMarkerEntriesStart = "<!-- ENTRIES START -->"
 	ownershipMarkerPhasesStart  = "<!-- PHASES START -->"
+
+	commandsAllowRelPath = ".agent-layer/commands.allow"
 )
 
 const (
@@ -70,7 +72,7 @@ func (e ownershipComparableError) Unwrap() error {
 }
 
 func ownershipPolicyForPath(relPath string) string {
-	if relPath == ".agent-layer/commands.allow" {
+	if relPath == commandsAllowRelPath {
 		return ownershipPolicyAllowlist
 	}
 	if relPath == "docs/agent-layer/ROADMAP.md" {

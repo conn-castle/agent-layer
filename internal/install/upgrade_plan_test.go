@@ -243,7 +243,7 @@ func TestBuildUpgradePlan_UnknownNoBaselineForManagedDiff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build upgrade plan: %v", err)
 	}
-	allowUpdate := findUpgradeChange(plan.TemplateUpdates, ".agent-layer/commands.allow")
+	allowUpdate := findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath)
 	if allowUpdate == nil {
 		t.Fatal("expected commands.allow update in plan")
 	}
@@ -281,7 +281,7 @@ func TestBuildUpgradePlan_PinManifestCredibleInference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load 0.7.0 manifest: %v", err)
 	}
-	allowEntry, ok := manifestFileMap(manifest.Files)[".agent-layer/commands.allow"]
+	allowEntry, ok := manifestFileMap(manifest.Files)[commandsAllowRelPath]
 	if !ok {
 		t.Fatal("0.7.0 manifest missing commands.allow")
 	}
@@ -294,7 +294,7 @@ func TestBuildUpgradePlan_PinManifestCredibleInference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read current commands.allow template: %v", err)
 	}
-	currentComp, err := buildOwnershipComparable(".agent-layer/commands.allow", currentTemplate)
+	currentComp, err := buildOwnershipComparable(commandsAllowRelPath, currentTemplate)
 	if err != nil {
 		t.Fatalf("build current allowlist comparable: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestBuildUpgradePlan_PinManifestCredibleInference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build upgrade plan: %v", err)
 	}
-	change := findUpgradeChange(plan.TemplateUpdates, ".agent-layer/commands.allow")
+	change := findUpgradeChange(plan.TemplateUpdates, commandsAllowRelPath)
 	if change == nil {
 		t.Fatal("expected commands.allow update in plan")
 	}

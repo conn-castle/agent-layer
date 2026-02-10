@@ -197,7 +197,7 @@ func TestClassifyOrphanOwnership_DocsMissingBaselineAndDefaultFallback(t *testin
 
 func TestClassifyAgainstBaseline_FromCanonicalMixedAndReordered(t *testing.T) {
 	root := t.TempDir()
-	relPath := ".agent-layer/commands.allow"
+	relPath := commandsAllowRelPath
 	baselineContent := []byte("git status\ngit diff\n")
 
 	baselineComp, err := buildOwnershipComparable(relPath, baselineContent)
@@ -270,7 +270,7 @@ func TestClassifyAgainstBaseline_FromCanonicalMixedAndReordered(t *testing.T) {
 
 func TestClassifyAgainstBaseline_PolicyMismatchReturnsUnknown(t *testing.T) {
 	root := t.TempDir()
-	relPath := ".agent-layer/commands.allow"
+	relPath := commandsAllowRelPath
 	rawPayload := []byte(`{"marker":"` + ownershipMarkerEntriesStart + `","managed_section_hash":"abc"}`)
 	state := managedBaselineState{
 		SchemaVersion:   baselineStateSchemaVersion,
@@ -307,7 +307,7 @@ func TestClassifyAgainstBaseline_PolicyMismatchReturnsUnknown(t *testing.T) {
 
 func TestResolveBaselineComparable_PinManifestAndLegacyPaths(t *testing.T) {
 	root := t.TempDir()
-	relPath := ".agent-layer/commands.allow"
+	relPath := commandsAllowRelPath
 	localComp, err := buildOwnershipComparable(relPath, []byte("git status\n"))
 	if err != nil {
 		t.Fatalf("build local comparable: %v", err)
@@ -349,7 +349,7 @@ func TestResolveBaselineComparable_PinManifestAndLegacyPaths(t *testing.T) {
 
 func TestResolveBaselineComparable_ReadErrors(t *testing.T) {
 	root := t.TempDir()
-	relPath := ".agent-layer/commands.allow"
+	relPath := commandsAllowRelPath
 	localComp, err := buildOwnershipComparable(relPath, []byte("git status\n"))
 	if err != nil {
 		t.Fatalf("build local comparable: %v", err)

@@ -12,7 +12,7 @@ func TestOwnershipPolicyForPath(t *testing.T) {
 		path string
 		want string
 	}{
-		{path: ".agent-layer/commands.allow", want: ownershipPolicyAllowlist},
+		{path: commandsAllowRelPath, want: ownershipPolicyAllowlist},
 		{path: "docs/agent-layer/ROADMAP.md", want: ownershipPolicyMemoryRoadmap},
 		{path: "docs/agent-layer/BACKLOG.md", want: ownershipPolicyMemoryEntries},
 		{path: ".agent-layer/config.toml", want: ""},
@@ -75,7 +75,7 @@ func TestOwnershipPolicyPayload_RoundTrip(t *testing.T) {
 	}
 
 	allowContent := "# comment\n\nbeta\na1\nbeta\n"
-	allowComp, err := buildOwnershipComparable(".agent-layer/commands.allow", []byte(allowContent))
+	allowComp, err := buildOwnershipComparable(commandsAllowRelPath, []byte(allowContent))
 	if err != nil {
 		t.Fatalf("build allow comparable: %v", err)
 	}
