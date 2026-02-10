@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- **Breaking:** `al init` is now scaffolding only: it errors if `.agent-layer/` already exists. Use `al upgrade plan` and `al upgrade` to upgrade or repair templates.
+- `.agent-layer/.env` and `.agent-layer/config.toml` are now user-owned: seeded only when missing; never overwritten by init/upgrade.
+- `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plans/diffs.
+
+### Removed
+- **Breaking:** `al init --overwrite` and `al init --force` flags. Use `al upgrade` (interactive) or `al upgrade --force` (non-interactive) instead.
+
 ## v0.7.0 - 2026-02-07
 
 ### Added
@@ -18,7 +28,7 @@ All notable changes to this project will be documented in this file.
 - Launcher template writes refactored for reliability with proper macOS path escaping.
 - Codex MCP header projection order corrected.
 - CI workflow caches pinned tools in GitHub Actions for faster builds.
-- Upgrade contract linked from README, site docs, DEVELOPMENT.md, RELEASE.md, and UPGRADE_PLAN.md.
+- Upgrade contract linked from README, site docs, DEVELOPMENT.md, RELEASE.md, and docs/UPGRADE_PLAN.md.
 
 ### Removed
 - `al-install.ps1` (Windows PowerShell installer).

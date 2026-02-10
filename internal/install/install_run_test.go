@@ -120,10 +120,10 @@ func TestRunWithExistingDifferentFiles(t *testing.T) {
 		t.Fatalf("first Run error: %v", err)
 	}
 
-	// Modify a file to differ from template.
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.WriteFile(configPath, []byte("# custom config"), 0o644); err != nil {
-		t.Fatalf("write custom config: %v", err)
+	// Modify a managed file to differ from template.
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.WriteFile(allowPath, []byte("# custom allow\n"), 0o644); err != nil {
+		t.Fatalf("write custom allowlist: %v", err)
 	}
 
 	// Second run without overwrite - should complete but record diff.
@@ -132,12 +132,12 @@ func TestRunWithExistingDifferentFiles(t *testing.T) {
 	}
 
 	// Verify file was not overwritten.
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(allowPath)
 	if err != nil {
-		t.Fatalf("read config: %v", err)
+		t.Fatalf("read commands.allow: %v", err)
 	}
-	if string(data) != "# custom config" {
-		t.Fatalf("expected custom config to remain, got %q", string(data))
+	if string(data) != "# custom allow\n" {
+		t.Fatalf("expected custom allowlist to remain, got %q", string(data))
 	}
 }
 
@@ -149,24 +149,51 @@ func TestRunWithOverwrite(t *testing.T) {
 		t.Fatalf("first Run error: %v", err)
 	}
 
-	// Modify a file to differ from template.
+	// Modify user-owned files to differ from templates.
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	if err := os.WriteFile(configPath, []byte("# custom config"), 0o644); err != nil {
 		t.Fatalf("write custom config: %v", err)
 	}
+	envPath := filepath.Join(root, ".agent-layer", ".env")
+	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE=custom\n"), 0o600); err != nil {
+		t.Fatalf("write custom env: %v", err)
+	}
 
-	// Run with overwrite - should replace the file.
+	// Modify a managed file to differ from template.
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.WriteFile(allowPath, []byte("# custom allow\n"), 0o644); err != nil {
+		t.Fatalf("write custom allowlist: %v", err)
+	}
+
+	// Run with overwrite - managed files should be replaced, user-owned files preserved.
 	if err := Run(root, Options{Overwrite: true, Force: true, System: RealSystem{}}); err != nil {
 		t.Fatalf("overwrite Run error: %v", err)
 	}
 
-	// Verify file was overwritten with template content.
+	// Verify user-owned files were not overwritten.
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	if string(data) == "# custom config" {
-		t.Fatalf("expected config to be overwritten")
+	if string(data) != "# custom config" {
+		t.Fatalf("expected config to remain unchanged")
+	}
+
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read env: %v", err)
+	}
+	if string(envData) != "AL_EXAMPLE=custom\n" {
+		t.Fatalf("expected env to remain unchanged")
+	}
+
+	// Verify managed file was overwritten with template content.
+	allowData, err := os.ReadFile(allowPath)
+	if err != nil {
+		t.Fatalf("read commands.allow: %v", err)
+	}
+	if string(allowData) == "# custom allow\n" {
+		t.Fatalf("expected commands.allow to be overwritten")
 	}
 }
 
@@ -290,9 +317,9 @@ func TestRunWithOverwritePromptDecline(t *testing.T) {
 	}
 
 	// Modify a file to differ from template.
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.WriteFile(configPath, []byte("# custom config"), 0o644); err != nil {
-		t.Fatalf("write custom config: %v", err)
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o644); err != nil {
+		t.Fatalf("write custom allowlist: %v", err)
 	}
 
 	var prompted []string
@@ -315,14 +342,14 @@ func TestRunWithOverwritePromptDecline(t *testing.T) {
 		t.Fatalf("overwrite Run error: %v", err)
 	}
 
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(allowPath)
 	if err != nil {
-		t.Fatalf("read config: %v", err)
+		t.Fatalf("read commands.allow: %v", err)
 	}
-	if string(data) != "# custom config" {
-		t.Fatalf("expected config to remain after declining prompt")
+	if string(data) != "# custom allowlist\n" {
+		t.Fatalf("expected allowlist to remain after declining prompt")
 	}
-	if len(prompted) != 1 || prompted[0] != filepath.Join(".agent-layer", "config.toml") {
+	if len(prompted) != 1 || prompted[0] != filepath.Join(".agent-layer", "commands.allow") {
 		t.Fatalf("unexpected prompt paths: %v", prompted)
 	}
 }
@@ -372,21 +399,15 @@ func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 		t.Fatalf("write gitignore.block: %v", err)
 	}
 
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.WriteFile(configPath, []byte("# custom config"), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
 	inst := &installer{root: root, sys: RealSystem{}}
 	diffs, err := inst.listManagedDiffs()
 	if err != nil {
 		t.Fatalf("listManagedDiffs: %v", err)
 	}
-	if len(diffs) != 2 {
+	if len(diffs) != 1 {
 		t.Fatalf("unexpected diffs: %v", diffs)
 	}
 	expected := []string{
-		filepath.Join(".agent-layer", "config.toml"),
 		filepath.Join(".agent-layer", "gitignore.block"),
 	}
 	for i, diff := range diffs {

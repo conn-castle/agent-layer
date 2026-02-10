@@ -36,6 +36,17 @@ func TestPatchConfig_Errors(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "default MCP servers are required")
 	})
+
+	t.Run("restore missing server without template block", func(t *testing.T) {
+		choices := NewChoices()
+		choices.RestoreMissingMCPServers = true
+		choices.MissingDefaultMCPServers = []string{"does-not-exist"}
+		choices.DefaultMCPServers = []DefaultMCPServer{{ID: "does-not-exist"}}
+
+		_, err := PatchConfig("", choices)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "missing default MCP server template")
+	})
 }
 
 func TestPatchConfig_CanonicalOrder(t *testing.T) {
@@ -714,4 +725,134 @@ func TestExtraArrayBlocks(t *testing.T) {
 	assert.True(t, sort.SliceIsSorted(names, func(i, j int) bool {
 		return names[i] < names[j]
 	}), "extra arrays should be sorted by name")
+}
+
+func TestAssembleCanonicalConfig_SkipsNilBlock(t *testing.T) {
+	current := tomlDocument{
+		preamble: []string{"# current preamble"},
+		sections: map[string]*tomlBlock{},
+		arrays:   map[string][]*tomlBlock{},
+	}
+	template := tomlDocument{
+		preamble: []string{"# template preamble"},
+		sections: map[string]*tomlBlock{"missing": nil},
+		arrays:   map[string][]*tomlBlock{},
+		order:    []string{"missing"},
+	}
+
+	out, err := assembleCanonicalConfig(current, template, NewChoices())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"# current preamble"}, out)
+}
+
+func TestDefaultServerIDs_SkipsEmptyIDs(t *testing.T) {
+	choices := &Choices{
+		DefaultMCPServers: []DefaultMCPServer{
+			{ID: ""},
+			{ID: "github"},
+		},
+	}
+
+	ids := defaultServerIDs(choices, nil)
+	assert.Equal(t, []string{"github"}, ids)
+}
+
+func TestParseKeyValueWithState_EdgeCases(t *testing.T) {
+	key, value, ok := parseKeyValueWithState(`id = "x" # trailing comment`, "id", tomlStateNone)
+	require.True(t, ok)
+	assert.Equal(t, "id", key)
+	assert.Equal(t, `"x"`, value)
+
+	_, _, ok = parseKeyValueWithState(`id "x"`, "id", tomlStateNone)
+	assert.False(t, ok)
+}
+
+func TestSetCommentedKeyLine_CommentsExistingLineWhenTemplateMissing(t *testing.T) {
+	block := &tomlBlock{
+		name:  "agents.gemini",
+		lines: []string{"[agents.gemini]", `model = "custom"`},
+	}
+	setCommentedKeyLine(block, nil, "model", "enabled")
+	assert.Contains(t, strings.Join(block.lines, "\n"), "# model =")
+}
+
+func TestSetKeyValue_UsesExistingLineAndInsertsWhenMissing(t *testing.T) {
+	t.Run("updates existing line", func(t *testing.T) {
+		block := &tomlBlock{
+			name:  "agents.claude",
+			lines: []string{"[agents.claude]", "enabled = false"},
+		}
+		setKeyValue(block, nil, "enabled", "true", "")
+		assert.Contains(t, strings.Join(block.lines, "\n"), "enabled = true")
+	})
+
+	t.Run("inserts when missing", func(t *testing.T) {
+		block := &tomlBlock{
+			name:  "agents.claude",
+			lines: []string{"[agents.claude]"},
+		}
+		setKeyValue(block, nil, "enabled", "true", "")
+		assert.Contains(t, strings.Join(block.lines, "\n"), "enabled = true")
+	})
+}
+
+func TestFindKeyLine_KeyMissingReturnsFalse(t *testing.T) {
+	_, ok := findKeyLine([]string{"[section]", `present = "yes"`}, "missing")
+	assert.False(t, ok)
+}
+
+func TestBuildKeyLine_CommentAndInlineComment(t *testing.T) {
+	line := buildKeyLine(keyLine{indent: "  ", inlineComment: "# note"}, "model", `"x"`, true)
+	assert.Equal(t, `  # model = "x" # note`, line)
+}
+
+func TestEnsureCommented_AddsCommentAfterIndent(t *testing.T) {
+	line := ensureCommented("\tmodel = \"x\"")
+	assert.Equal(t, "\t# model = \"x\"", line)
+}
+
+func TestReplaceOrInsertLine_SkipsMultilineStringContent(t *testing.T) {
+	block := &tomlBlock{
+		name: "test",
+		lines: []string{
+			"[test]",
+			`description = """`,
+			`key = "fake"`,
+			`"""`,
+			`key = "real"`,
+		},
+	}
+
+	replaceOrInsertLine(block, "key", `key = "new"`, "")
+
+	joined := strings.Join(block.lines, "\n")
+	assert.Contains(t, joined, `key = "fake"`) // inside multiline string content
+	assert.Contains(t, joined, `key = "new"`)
+	assert.NotContains(t, joined, `key = "real"`)
+}
+
+func TestFindInsertIndex_EdgeCases(t *testing.T) {
+	assert.Equal(t, 0, findInsertIndex(nil, "after"))
+
+	lines := []string{
+		"[test]",
+		`description = """`,
+		`after = "fake"`,
+		`"""`,
+		"other = 1",
+	}
+	assert.Equal(t, 1, findInsertIndex(lines, "after"))
+	assert.Equal(t, 1, findInsertIndex([]string{"[test]", "x = 1"}, ""))
+}
+
+func TestPatchHelpers_EdgeCases(t *testing.T) {
+	assert.Nil(t, cloneBlock(nil))
+	assert.Nil(t, cloneLines(nil))
+
+	output := []string{"[section]"}
+	appendBlock(&output, []string{"", "  ", ""})
+	assert.Equal(t, []string{"[section]"}, output)
+
+	assert.Equal(t, []string{"a"}, trimEmptyLines([]string{"", "a", ""}))
+	assert.Equal(t, []string{"a"}, trimTrailingEmptyLines([]string{"a", "", "  "}))
 }

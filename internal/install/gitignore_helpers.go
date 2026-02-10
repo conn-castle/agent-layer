@@ -17,7 +17,7 @@ const (
 const gitignoreHashPrefix = "# Template hash: "
 const (
 	gitignoreHeaderLine1 = "# Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block"
-	gitignoreHeaderLine2 = "# and re-run `al init` to apply changes."
+	gitignoreHeaderLine2 = "# and re-run `al sync` to apply changes."
 )
 
 // wrapGitignoreBlock wraps content with agent-layer markers.

@@ -22,6 +22,9 @@ trap cleanup EXIT
 dist_dir="$tmp_root/dist"
 AL_VERSION="$version" DIST_DIR="$dist_dir" "$root_dir/scripts/build-release.sh"
 
+safe_cwd="$tmp_root/safe-cwd"
+mkdir -p "$safe_cwd"
+
 os="$(uname -s)"
 arch="$(uname -m)"
 
@@ -56,12 +59,12 @@ if [[ ! -f "$bin_path" ]]; then
   fail "missing built binary: $bin_path"
 fi
 
-version_out="$($bin_path --version)"
+version_out="$(cd "$safe_cwd" && "$bin_path" --version)"
 if [[ "$version_out" != "$version" ]]; then
   fail "expected version $version, got $version_out"
 fi
 
-help_out="$($bin_path --help)"
+help_out="$(cd "$safe_cwd" && "$bin_path" --help)"
 if ! echo "$help_out" | grep -q "init"; then
   fail "expected help output to mention init"
 fi
@@ -70,7 +73,7 @@ copy_prefix="$tmp_root/copy-prefix"
 mkdir -p "$copy_prefix/bin"
 cp "$bin_path" "$copy_prefix/bin/al"
 
-version_out="$(PATH="$copy_prefix/bin:$PATH" al --version)"
+version_out="$(cd "$safe_cwd" && PATH="$copy_prefix/bin:$PATH" al --version)"
 if [[ "$version_out" != "$version" ]]; then
   fail "expected copied install version $version, got $version_out"
 fi
@@ -82,7 +85,7 @@ if [[ ! -x "$install_prefix/bin/al" ]]; then
   fail "installed binary missing at $install_prefix/bin/al"
 fi
 
-version_out="$(PATH="$install_prefix/bin:$PATH" al --version)"
+version_out="$(cd "$safe_cwd" && PATH="$install_prefix/bin:$PATH" al --version)"
 if [[ "$version_out" != "$version" ]]; then
   fail "expected installer version $version, got $version_out"
 fi

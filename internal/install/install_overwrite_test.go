@@ -47,7 +47,7 @@ func TestShouldOverwrite_Force(t *testing.T) {
 
 func TestShouldOverwrite_ManagedPathUsesOverwriteAll(t *testing.T) {
 	root := t.TempDir()
-	managedPath := filepath.Join(root, ".agent-layer", "config.toml")
+	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
 
 	overwriteAllCalled := false
 	overwriteAllMemoryCalled := false
@@ -159,7 +159,7 @@ func TestShouldOverwrite_MissingPrompter(t *testing.T) {
 		prompter:            nil,
 	}
 
-	_, err := inst.shouldOverwrite(filepath.Join(root, ".agent-layer", "config.toml"))
+	_, err := inst.shouldOverwrite(filepath.Join(root, ".agent-layer", "commands.allow"))
 	if err == nil {
 		t.Fatalf("expected error when prompter is nil")
 	}
@@ -288,10 +288,10 @@ func TestListManagedDiffs_TemplateFileDiffError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	// Create config.toml as a directory to cause stat error
-	configPath := filepath.Join(alDir, "config.toml")
-	if err := os.Mkdir(configPath, 0o755); err != nil {
-		t.Fatalf("mkdir config: %v", err)
+	// Create commands.allow as a directory to cause stat error
+	allowPath := filepath.Join(alDir, "commands.allow")
+	if err := os.Mkdir(allowPath, 0o755); err != nil {
+		t.Fatalf("mkdir allow: %v", err)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}

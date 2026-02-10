@@ -40,6 +40,13 @@ func TestRunPromptServerPropagatesError(t *testing.T) {
 	}
 }
 
+func TestRunPromptServerNilRunner(t *testing.T) {
+	err := runPromptServer(context.Background(), "v1", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to run MCP prompt server") {
+		t.Fatalf("expected wrapped nil-runner error, got %v", err)
+	}
+}
+
 func TestPromptHandler(t *testing.T) {
 	cmd := config.SlashCommand{
 		Name:        "alpha",

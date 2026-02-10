@@ -5,6 +5,7 @@
 config.toml.bak
 .env.bak
 templates/
+state/
 tmp/
 open-vscode.app/
 open-vscode.command

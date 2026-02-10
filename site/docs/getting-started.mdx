@@ -63,9 +63,9 @@ This seeds:
 
 By default, `al init` prompts to run the setup wizard. Skip it with `--no-wizard` if you prefer to configure manually.
 
-`al init` is designed to be safe to re-run. It is scaffolding: it does not touch your application code, it just creates the files Agent Layer needs.
+`al init` is intended to be run once per repo. If `.agent-layer/` already exists, `al init` errors; use `al upgrade plan` and `al upgrade` to refresh template-managed files.
 
-For the detailed behavior and overwrite rules, see [Init](./reference#init) and [Wizard](./reference#wizard).
+For detailed behavior, see [Init](./reference#init), [Upgrade](./reference#upgrade), and [Wizard](./reference#wizard).
 
 ### 3) Launch an agent
 
@@ -154,8 +154,10 @@ Typical layout:
   commands.allow       # approved shell command prefixes
   al.version           # optional repo pin
   .env                 # secrets (always gitignored)
-  .gitignore           # ignores repo-local launchers, backups, templates
+  .gitignore           # ignores repo-local launchers, backups, templates, and state
   gitignore.block      # managed .gitignore block template
+  templates/docs/      # embedded memory template snapshots
+  state/managed-baseline.json # managed ownership baseline state
   tmp/                 # agent-only artifacts
 ```
 
@@ -222,9 +224,9 @@ If you keep your own files under `.vscode/`, delete only the Agent Layer-managed
 
 ### Git ignore defaults
 
-`al init` installs a managed `.gitignore` block that ignores `.agent-layer/` and generated client configs. If your team decides to commit `.agent-layer/`, edit `.agent-layer/gitignore.block` and re-run `al init`.
+`al init` installs a managed `.gitignore` block that ignores `.agent-layer/` and generated client configs. If your team decides to commit `.agent-layer/`, edit `.agent-layer/gitignore.block` and re-run `al sync` (or `al <client>`).
 
-`.agent-layer/gitignore.block` is the template. It should contain only ignore patterns and comments. Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If you see managed markers or a template hash inside `.agent-layer/gitignore.block`, re-run `al init --overwrite` to regenerate the template file.
+`.agent-layer/gitignore.block` is the template. It should contain only ignore patterns and comments. Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If you see managed markers or a template hash inside `.agent-layer/gitignore.block`, run `al upgrade` to restore the template file.
 
 When you are adopting Agent Layer as a team, this is the main choice to make: keep `.agent-layer/` local for experimentation, or commit it so every developer gets the same behavior by default. Secrets still live in `.agent-layer/.env`, which remains gitignored by `.agent-layer/.gitignore`.
 
@@ -240,6 +242,7 @@ Commit:
 Do not commit:
 
 - `.agent-layer/.env` (secrets)
+- `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
 - generated client outputs like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
 
@@ -254,6 +257,8 @@ If you only remember one pattern: `al <client>` is the “do the right thing” 
 | Command | Purpose | Details |
 | --- | --- | --- |
 | `al init` | Seed `.agent-layer/` and project memory. | [Init](./reference#init) |
+| `al upgrade` | Apply template-managed updates and update the repo pin. | [Upgrade](./reference#upgrade) |
+| `al upgrade plan` | Preview categorized upgrade changes without writing files (`--json` for machine-readable output). | [Upgrade plan](./reference#upgrade-plan) |
 | `al wizard` | Interactive configuration. | [Wizard](./reference#wizard) |
 | `al sync` | Regenerate configs without launching. | [Sync](./reference#sync) |
 | `al doctor` | Validate config and probe MCP servers. | [Doctor](./reference#doctor) |

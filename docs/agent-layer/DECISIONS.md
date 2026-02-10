@@ -108,7 +108,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Decision 2026-02-05 b6c1d2e: Gitignore block templating and validation
     Decision: Store `.agent-layer/gitignore.block` as the verbatim template content; inject managed markers, hash, and header only when writing the root `.gitignore`, and error if the block contains managed markers or a hash line.
     Reason: Keep the template file clean and user-editable while ensuring the root `.gitignore` stays managed and consistent.
-    Tradeoffs: Legacy blocks with markers/hash now require `al init --overwrite` to regenerate before `al sync` will succeed.
+    Tradeoffs: Legacy blocks with markers/hash now require `al upgrade` to restore the template file before `al sync` will succeed.
 
 - Decision 2026-02-05 f7a3c9d: Wizard config output uses canonical template order
     Decision: The wizard always rewrites `config.toml` in the template-defined order, rather than preserving the existing file layout.
@@ -126,11 +126,26 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Tradeoffs: Explicit pinning now depends on network access to validate release existence and can fail in fully offline workflows.
 
 - Decision 2026-02-07 p0a-pin-recovery: Empty/corrupt pin files produce warnings, not errors
-    Decision: `readPinnedVersion()` treats empty and non-semver pin files as "no pin" (returns a warning string instead of an error). `writeVersionFile()` auto-repairs empty/corrupt pins without requiring `--overwrite`.
-    Reason: A broken pin file should never make the CLI completely unusable. `al init` must always be able to self-heal the pin state.
+    Decision: `readPinnedVersion()` treats empty and non-semver pin files as "no pin" (returns a warning string instead of an error). `writeVersionFile()` auto-repairs empty/corrupt pins without requiring prompts.
+    Reason: A broken pin file should never make the CLI completely unusable. `al init`/`al upgrade` must always be able to self-heal the pin state.
     Tradeoffs: Corrupt pins silently fall through to the current binary version; users see a warning but may not notice it in noisy terminal output.
 
 - Decision 2026-02-08 p0b-upgrade-contract: Sequential guarantee + three-tier upgrade taxonomy
     Decision: Publish upgrade policy with three event categories (`safe auto`, `needs review`, `breaking/manual`) and a sequential compatibility guarantee (`N-1` to `N` release-line upgrades only, for example `0.6.x` -> `0.7.x`).
     Reason: Provides a clear, enforceable public contract without overpromising broad multi-line migration support before lifecycle tooling lands.
     Tradeoffs: Skipped-line upgrades remain best effort and may require additional manual migration guidance per release.
+
+- Decision 2026-02-09 p1-upgrade-plan-heuristics: Upgrade planning compares invoking binary templates with conservative labels (superseded by `p1b-ownership-baseline`)
+    Decision: `al upgrade` bypasses repo pin dispatch, `al upgrade plan` compares repo state to the invoking binary's embedded templates, rename detection uses unique exact normalized-content hash matches, and ownership labels are best-effort without a managed-file hash manifest.
+    Reason: Upgrade previews must reflect the version the user is actively running while still surfacing useful diffs now, before migration manifests and stronger ownership baselines land.
+    Tradeoffs: Ambiguous rename/ownership cases fall back to non-rename + `local customization`, so some true upstream deltas may be under-labeled until manifest/baseline infrastructure is added.
+
+- Decision 2026-02-09 p1b-ownership-baseline: Ownership classification now uses embedded manifests plus canonical baseline state
+    Decision: `al upgrade plan` ownership classification now uses committed per-release manifests (`internal/templates/manifests/*.json`) and canonical repo baseline state (`.agent-layer/state/managed-baseline.json`) with section-aware policies (`memory_entries_v1`, `memory_roadmap_v1`, `allowlist_lines_v1`), and emits `unknown_no_baseline` when evidence is insufficient.
+    Reason: Distinguishes upstream template deltas from true local customization without runtime network/tag lookups and avoids silent guesses in ambiguous cases.
+    Tradeoffs: Release workflow must generate/commit manifests for each tag; repos lacking credible baseline evidence may show `unknown no baseline` until a baseline refresh run (for example `al upgrade`).
+
+- Decision 2026-02-10 p1c-init-upgrade-ownership: Init scaffolding only; user-owned config/env; agent-only .gitignore
+    Decision: `al init` is one-time scaffolding (errors if `.agent-layer/` already exists). Upgrades/repairs are done via `al upgrade plan` + `al upgrade`. `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned and seeded only when missing (never overwritten by init/upgrade). `.agent-layer/.gitignore` is agent-owned internal and is always overwritten and excluded from upgrade plans/diffs.
+    Reason: Avoid accidental clobbering of user-specific configuration, reduce cognitive load in upgrade plans, and simplify init semantics by removing upgrade behavior.
+    Tradeoffs: Changes to `.agent-layer/.gitignore` cannot be preserved; repos without baseline evidence will require an `al upgrade` run to establish it (supersedes earlier init-overwrite guidance).

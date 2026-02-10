@@ -91,8 +91,8 @@ al doctor
 
 Notes:
 - `al init` prompts to run `al wizard` after seeding files. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
-- `al init` is safe to run multiple times; use `--overwrite` to review template diffs or `--force` to overwrite without prompts.
-- To refresh template-managed files, use `al init --overwrite` to review each file or `al init --force` to **overwrite and delete** unknown files under `.agent-layer` without prompts.
+- `al init` is intended to be run once per repo. If the repo is already initialized, use `al upgrade plan` and `al upgrade` to refresh template-managed files.
+- `al upgrade --force` overwrites managed files and deletes unknown files under `.agent-layer` without prompts.
 - Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, VS Code, etc.).
 
 ---
@@ -127,9 +127,9 @@ Version pinning keeps everyone on the same Agent Layer release and lets `al` dow
 
 Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: `/docs/upgrades`.
 
-When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually or pass `--version` to pin a specific release (`X.Y.Z` / `vX.Y.Z`) or `latest`.
+When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
 
-When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` is the exception: it runs on the invoking CLI version so pin updates and upgrades are not blocked by an older repo pin.
+When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
 
 Pin format:
 - `0.6.0` or `v0.6.0` (both are accepted)
@@ -150,7 +150,8 @@ Update the global CLI:
 - Homebrew: `brew upgrade conn-castle/tap/agent-layer` (updates the installed formula)
 - Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
 
-If a repo is pinned, run `al init --version latest` to move to the newest release. You can also pin an explicit release with `al init --version vX.Y.Z` (or `X.Y.Z`), or edit `.agent-layer/al.version` manually.
+If a repo is pinned (or just out of date), run `al upgrade plan` and then `al upgrade` inside the repo. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
+
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
 
@@ -449,6 +450,8 @@ al vscode --no-sync -- --reuse-window
 Other commands:
 
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
+- `al upgrade` — apply template-managed updates and update the repo pin (prompts unless `--force`)
+- `al upgrade plan` — preview categorized template/pin changes with ownership labels; add `--json` for CI output
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)
@@ -486,9 +489,9 @@ Installer adds a managed `.gitignore` block that typically ignores:
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 
-To commit `.agent-layer/`, remove the `/agent-layer/` line in `.agent-layer/gitignore.block` and re-run `al init`.
+To commit `.agent-layer/`, remove the `/agent-layer/` line in `.agent-layer/gitignore.block` and re-run `al sync`.
 
-To customize the managed block, edit `.agent-layer/gitignore.block` and re-run `al init`.
+To customize the managed block, edit `.agent-layer/gitignore.block` and re-run `al sync`.
 
 `.agent-layer/.env` is ignored by `.agent-layer/.gitignore`, not the parent repo `.gitignore`.
 

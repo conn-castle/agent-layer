@@ -820,8 +820,11 @@ func TestDownloadToFile_404_ActionableMessage(t *testing.T) {
 	if !strings.Contains(msg, "Remediation") {
 		t.Errorf("expected Remediation guidance in error, got: %s", msg)
 	}
-	if !strings.Contains(msg, "al init --version") {
-		t.Errorf("expected al init --version in error, got: %s", msg)
+	if !strings.Contains(msg, "al upgrade") {
+		t.Errorf("expected al upgrade guidance in error, got: %s", msg)
+	}
+	if !strings.Contains(msg, ".agent-layer/al.version") {
+		t.Errorf("expected pin file guidance in error, got: %s", msg)
 	}
 }
 

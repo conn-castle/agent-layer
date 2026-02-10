@@ -20,21 +20,28 @@ const (
 	// InitUse is the init command name.
 	InitUse   = "init"
 	InitShort = "Initialize Agent Layer in this repository"
+	// InitAlreadyInitialized is returned when init is invoked on an already-initialized repo.
+	InitAlreadyInitialized = "agent layer is already initialized (or partially initialized) in this repository; run 'al upgrade' to upgrade or repair templates"
+	InitRunWizardPrompt    = "Run the setup wizard now? (recommended)"
 
-	InitOverwriteRequiresTerminal = "init overwrite prompts require an interactive terminal; re-run with --force to overwrite without prompts"
-	InitOverwritePromptFmt        = "Overwrite %s with the template version?"
-	InitOverwriteAllPrompt        = "Overwrite all existing managed files with template versions and update the pin if needed?"
-	InitOverwriteManagedHeader    = "Existing managed files (and pin) that differ from templates:"
-	InitOverwriteMemoryHeader     = "Existing memory files in docs/agent-layer that differ from templates:"
-	InitOverwriteMemoryAllPrompt  = "Overwrite all existing memory files in docs/agent-layer with template versions?"
-	InitDeleteUnknownAllPrompt    = "Delete all unknown files under .agent-layer?"
-	InitDeleteUnknownPromptFmt    = "Delete %s?"
-	InitRunWizardPrompt           = "Run the setup wizard now? (recommended)"
+	InitFlagNoWizard = "Skip prompting to run the setup wizard after init"
+	InitFlagVersion  = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
 
-	InitFlagOverwrite = "Prompt before overwriting existing template files"
-	InitFlagForce     = "Overwrite existing template files and delete unknown files under .agent-layer without prompting (implies --overwrite)"
-	InitFlagNoWizard  = "Skip prompting to run the setup wizard after init"
-	InitFlagVersion   = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
+	UpgradeUse              = "upgrade"
+	UpgradeShort            = "Apply template-managed updates and update the repo pin"
+	UpgradePlanUse          = "plan"
+	UpgradePlanShort        = "Show a dry-run upgrade plan without writing files"
+	UpgradePlanJSON         = "Output machine-readable JSON"
+	UpgradeRequiresTerminal = "upgrade prompts require an interactive terminal; re-run with --force to upgrade without prompts"
+
+	UpgradeOverwritePromptFmt       = "Overwrite %s with the template version?"
+	UpgradeOverwriteAllPrompt       = "Overwrite all existing managed files with template versions and update the pin if needed?"
+	UpgradeOverwriteManagedHeader   = "Existing managed files (and pin) that differ from templates:"
+	UpgradeOverwriteMemoryHeader    = "Existing memory files in docs/agent-layer that differ from templates:"
+	UpgradeOverwriteMemoryAllPrompt = "Overwrite all existing memory files in docs/agent-layer with template versions?"
+	UpgradeDeleteUnknownAllPrompt   = "Delete all unknown files under .agent-layer?"
+	UpgradeDeleteUnknownPromptFmt   = "Delete %s?"
+	UpgradeFlagForce                = "Overwrite existing template files and delete unknown files under .agent-layer without prompting"
 
 	InitWarnUpdateCheckFailedFmt = "Warning: failed to check for updates: %v\n"
 	InitWarnDevBuildFmt          = "Warning: running dev build; latest release is %s\n"
@@ -46,8 +53,8 @@ const (
 	InitValidateReleaseVersionStatusFmt   = "validate requested release v%s: unexpected status %s"
 	InitReleaseVersionNotFoundFmt         = "requested release v%s not found; check available versions at %s"
 
-	UpdateUpgradeBlock         = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  2) Update the repo pin:\n     al init --version latest"
-	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al init --force` overwrites managed files and deletes unknown files under .agent-layer without prompts."
+	UpdateUpgradeBlock         = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  2) Upgrade this repo:\n     al upgrade plan\n     al upgrade"
+	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade --force` overwrites managed files and deletes unknown files under .agent-layer without prompts."
 	InitWarnUpdateAvailableFmt = "Warning: update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
 
 	// CompletionUse is the completion command usage.

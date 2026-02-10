@@ -62,13 +62,14 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 }
 
 // shouldBypassDispatch reports whether dispatch should be skipped for this invocation.
-// `al init` must run through the invoking CLI so repos pinned to older versions can upgrade.
+// `al init` and `al upgrade` run through the invoking CLI so upgrade planning is based on
+// the currently installed binary templates, not an older repo-pinned version.
 func shouldBypassDispatch(args []string) bool {
 	if len(args) < 2 {
 		return false
 	}
 	command := firstCommandArg(args[1:])
-	return command == "init"
+	return command == "init" || command == "upgrade"
 }
 
 // firstCommandArg extracts the first non-flag token from root command arguments.

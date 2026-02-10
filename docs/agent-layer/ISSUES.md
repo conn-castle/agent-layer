@@ -27,16 +27,35 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-10 upg-ver: Cannot apply a specific intermediate release during upgrade
+    Priority: Medium. Area: upgrade / version pinning / UX.
+    Description: With `al upgrade` always running the currently installed binary (dispatch bypass) and no `al upgrade --version`, there is no supported way to upgrade a repo from an older pin to an intermediate version (for example 0.6.0 -> 0.6.1) when a newer version is installed (for example 0.7.0); the repo is forced to upgrade to the installed version or rely on manual pin edits/reinstalling.
+    Next step: Decide on a supported workflow (`al upgrade --version X.Y.Z`, or an equivalent “dispatch/exec target version for upgrade” mechanism) and add tests + docs.
+
+- Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
+    Priority: Medium. Area: website / marketing.
+    Description: The website needs professional metadata, SEO optimization, and a proper favicon to improve visibility and professional appearance.
+    Next step: Audit `site/` for missing meta tags and favicon, then implement them.
+
+- Issue 2026-02-09 web-init: Clarify "Initialize the repo" language on landing page
+    Priority: Medium. Area: website / UX.
+    Description: The landing page uses "Initialize the repo" which is ambiguous. It should be "Initializing agent-layer for your project" or similar to avoid confusion with `git init`.
+    Next step: Update landing page copy in `site/` to use more precise language about agent-layer initialization.
+
+- Issue 2026-02-08 mcp-glob: Document global MCP server fallback on website
+    Priority: Medium. Area: documentation / website / UX.
+    Description: Users can avoid `CODEX_HOME` and VS Code setup friction by configuring MCP servers globally in their home directory. Codex will still use local repo instructions and skills.
+    Next step: Update website documentation to explain this "sucky but functional" fallback for users who don't want to manage local MCP settings.
+
+- Issue 2026-02-08 upd-msg: Ambiguous update available warning message
+    Priority: Medium. Area: CLI / update / UX.
+    Description: The warning message "Warning: update available: %s (current %s)" does not specify that the update is for `agent-layer`, which can be confusing to users.
+    Next step: Update `internal/messages/cli.go` and `internal/messages/doctor.go` to include "agent-layer" in the message (e.g., "Warning: agent-layer update available: ...").
+
 - Issue 2026-02-08 tmpl-mk: Slash-command templates reference non-existent Makefile targets
     Priority: Low. Area: templates / developer experience.
     Description: `finish-task.md`, `fix-issues.md`, and `cleanup-code.md` templates reference `make test-fast` and `make dead-code` which do not exist in the Makefile. Templates note these as optional/conditional, but they may confuse agents in repos that do not provide them.
     Next step: Either add `test-fast` and `dead-code` Makefile targets, or clarify the template language to make the conditional nature more explicit.
-
-- Issue 2026-01-26 j4k5l6: Managed file diff visibility for overwrite decisions
-    Priority: Medium. Area: install / UX.
-    GitHub: https://github.com/conn-castle/agent-layer/issues/30
-    Description: Users cannot easily determine whether differences in managed files are due to intentional local customizations they want to keep, or due to agent-layer version updates that should be accepted. This makes overwrite decisions difficult and error-prone.
-    Next step: Implement a diff or comparison view (e.g., `al diff` or during `al init --overwrite`) that shows what changed between local files and the new template versions, with annotations or categories for change types when possible.
 
 - Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
     Priority: Low. Area: developer experience.

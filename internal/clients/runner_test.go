@@ -259,3 +259,53 @@ Do it.`
 	}
 	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
+
+func TestRunNoSync_Success(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepo(t, root)
+
+	called := false
+	err := RunNoSync(root, "gemini", func(cfg *config.Config) *bool {
+		return cfg.Agents.Gemini.Enabled
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		called = true
+		if runInfo == nil || runInfo.Dir == "" || runInfo.ID == "" {
+			t.Fatalf("expected run info")
+		}
+		return nil
+	}, []string{"--arg"})
+	if err != nil {
+		t.Fatalf("RunNoSync: %v", err)
+	}
+	if !called {
+		t.Fatal("expected launch to be called")
+	}
+}
+
+func TestRunNoSync_Disabled(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepo(t, root)
+	disabled := false
+	err := RunNoSync(root, "gemini", func(cfg *config.Config) *bool {
+		return &disabled
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		return nil
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("expected disabled error, got %v", err)
+	}
+}
+
+func TestRunWithStderr_NilWriter(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepo(t, root)
+	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		return nil
+	}
+	err := RunWithStderr(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
+		return cfg.Agents.Gemini.Enabled
+	}, launch, nil, "v1.0.0", nil)
+	if err != nil {
+		t.Fatalf("RunWithStderr nil writer: %v", err)
+	}
+}

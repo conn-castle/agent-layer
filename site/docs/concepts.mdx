@@ -326,13 +326,14 @@ Pin formats:
 
 - `al init` writes a pin when you are running a release build
 - or pass `--version X.Y.Z` to `al init`
+- `al upgrade` updates the pin to match the currently running `al` binary
 - or edit `.agent-layer/al.version` directly
 
 ### Upgrading a pinned repo
 
-1. Upgrade the repo pin: `al init --version latest` (or `al init --version X.Y.Z`)
-2. Run `al` in the repo to dispatch to the pinned version
-3. Re-run `al init --overwrite` if you want to review template updates
+1. Install the target `al` version (Homebrew upgrade, or re-run the install script).
+2. Run `al upgrade plan` to preview changes.
+3. Run `al upgrade` to apply changes (use `--force` to skip prompts).
 
 For compatibility guarantees, upgrade event categories, and release-versioned migration guidance, see [Upgrades](./upgrades).
 

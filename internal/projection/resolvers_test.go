@@ -1,6 +1,7 @@
 package projection
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -118,5 +119,20 @@ func TestResolveEnabledMCPServers_DefaultHTTPTransport(t *testing.T) {
 	}
 	if resolved[1].HTTPTransport != "streamable" {
 		t.Fatalf("expected streamable http transport, got %s", resolved[1].HTTPTransport)
+	}
+}
+
+func TestMCPServerResolveError_Unwrap(t *testing.T) {
+	root := errors.New("boom")
+	err := &MCPServerResolveError{ServerID: "server-1", Err: root}
+
+	if err.Error() != "mcp server server-1: boom" {
+		t.Fatalf("unexpected error string: %q", err.Error())
+	}
+	if !errors.Is(err, root) {
+		t.Fatalf("expected errors.Is to match root error")
+	}
+	if err.Unwrap() != root {
+		t.Fatalf("expected Unwrap() to return root error")
 	}
 }

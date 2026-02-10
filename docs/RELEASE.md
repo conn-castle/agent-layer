@@ -25,6 +25,15 @@ git push origin "$VERSION"
 # Release assets are built by the GitHub Actions workflow.
 ```
 
+Before tagging, generate and commit the template ownership manifest for the release:
+
+```bash
+./scripts/generate-template-manifest.sh --tag "$VERSION"
+git add internal/templates/manifests/"${VERSION#v}".json
+```
+
+This keeps `al upgrade plan` ownership inference deterministic without runtime network/tag lookups.
+
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
 2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists and blocking placeholder migration text when changelog notes breaking/manual migration impact.
