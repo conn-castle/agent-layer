@@ -67,14 +67,14 @@ func run() error {
 	sitePages := filepath.Join(repoA, "site", "pages")
 	siteDocs := filepath.Join(repoA, "site", "docs")
 
-	if _, err := os.Stat(sitePages); os.IsNotExist(err) {
+	if _, err := osStatFunc(sitePages); os.IsNotExist(err) {
 		return fmt.Errorf("missing Repo A site pages dir: %s", sitePages)
 	}
-	if _, err := os.Stat(siteDocs); os.IsNotExist(err) {
+	if _, err := osStatFunc(siteDocs); os.IsNotExist(err) {
 		return fmt.Errorf("missing Repo A site docs dir: %s", siteDocs)
 	}
 	changelogSrc := filepath.Join(repoA, "CHANGELOG.md")
-	changelogInfo, err := os.Stat(changelogSrc)
+	changelogInfo, err := osStatFunc(changelogSrc)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("missing Repo A changelog: %s", changelogSrc)
@@ -100,12 +100,12 @@ func run() error {
 	}
 
 	// Sync canonical changelog into Repo B root for website rendering.
-	changelogData, err := os.ReadFile(changelogSrc)
+	changelogData, err := osReadFileFunc(changelogSrc)
 	if err != nil {
 		return fmt.Errorf("failed to read Repo A changelog: %w", err)
 	}
 	changelogDst := filepath.Join(repoB, "CHANGELOG.md")
-	if err := os.WriteFile(changelogDst, changelogData, changelogInfo.Mode()); err != nil {
+	if err := osWriteFileFunc(changelogDst, changelogData, changelogInfo.Mode()); err != nil {
 		return fmt.Errorf("failed to write Repo B changelog: %w", err)
 	}
 
@@ -151,8 +151,11 @@ func repoRoot() (string, error) {
 	}
 
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		goModPath := filepath.Join(dir, "go.mod")
+		if _, err := osStatFunc(goModPath); err == nil {
 			return dir, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("stat %s: %w", goModPath, err)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -167,6 +170,10 @@ func repoRoot() (string, error) {
 var tagRegexp = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
 
 var execCommandContext = exec.CommandContext
+var osStatFunc = os.Stat
+var osReadFileFunc = os.ReadFile
+var osWriteFileFunc = os.WriteFile
+var filepathWalkFunc = filepath.Walk
 
 func validateTagFormat(tag string) error {
 	if !tagRegexp.MatchString(tag) {
@@ -180,25 +187,40 @@ func stripV(tag string) string {
 }
 
 func validateRepoBRoot(repoB string) error {
-	if _, err := os.Stat(repoB); os.IsNotExist(err) {
-		return fmt.Errorf("--repo-b-dir does not exist: %s", repoB)
+	if _, err := osStatFunc(repoB); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("--repo-b-dir does not exist: %s", repoB)
+		}
+		return fmt.Errorf("stat --repo-b-dir %s: %w", repoB, err)
 	}
 
 	// Must be a git checkout.
-	if _, err := os.Stat(filepath.Join(repoB, ".git")); os.IsNotExist(err) {
-		return fmt.Errorf("--repo-b-dir is not a git checkout (missing .git): %s", repoB)
+	gitDir := filepath.Join(repoB, ".git")
+	if _, err := osStatFunc(gitDir); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("--repo-b-dir is not a git checkout (missing .git): %s", repoB)
+		}
+		return fmt.Errorf("stat --repo-b-dir .git %s: %w", gitDir, err)
 	}
 
 	// Must look like a Docusaurus repo root.
 	required := []string{"package.json", "docusaurus.config.js", "sidebars.js", "src"}
 	for _, f := range required {
-		if _, err := os.Stat(filepath.Join(repoB, f)); os.IsNotExist(err) {
-			return fmt.Errorf("--repo-b-dir missing %s: %s", f, repoB)
+		path := filepath.Join(repoB, f)
+		if _, err := osStatFunc(path); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("--repo-b-dir missing %s: %s", f, repoB)
+			}
+			return fmt.Errorf("stat --repo-b-dir required path %s: %w", path, err)
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(repoB, "src", "pages")); os.IsNotExist(err) {
-		return fmt.Errorf("--repo-b-dir missing src/pages/: %s", repoB)
+	pagesDir := filepath.Join(repoB, "src", "pages")
+	if _, err := osStatFunc(pagesDir); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("--repo-b-dir missing src/pages/: %s", repoB)
+		}
+		return fmt.Errorf("stat --repo-b-dir src/pages %s: %w", pagesDir, err)
 	}
 
 	return nil
@@ -210,7 +232,7 @@ func copyTree(src, dst string) error {
 		return err
 	}
 
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+	return filepathWalkFunc(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -225,11 +247,11 @@ func copyTree(src, dst string) error {
 			return os.MkdirAll(dstPath, info.Mode())
 		}
 
-		data, err := os.ReadFile(path)
+		data, err := osReadFileFunc(path)
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(dstPath, data, info.Mode())
+		return osWriteFileFunc(dstPath, data, info.Mode())
 	})
 }
 
@@ -248,8 +270,8 @@ func ensureIdempotentVersion(repoB, docsVersion string) error {
 
 	// Remove version from versions.json if present.
 	versionsPath := filepath.Join(repoB, "versions.json")
-	if _, err := os.Stat(versionsPath); err == nil {
-		data, err := os.ReadFile(versionsPath)
+	if _, err := osStatFunc(versionsPath); err == nil {
+		data, err := osReadFileFunc(versionsPath)
 		if err != nil {
 			return err
 		}
@@ -270,7 +292,7 @@ func ensureIdempotentVersion(repoB, docsVersion string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(versionsPath, append(newData, '\n'), 0644); err != nil {
+		if err := osWriteFileFunc(versionsPath, append(newData, '\n'), 0644); err != nil {
 			return err
 		}
 	}
@@ -388,11 +410,11 @@ func parseNumericIdentifier(s string) (int, bool) {
 
 func normalizeVersionsJSON(repoB string) error {
 	versionsPath := filepath.Join(repoB, "versions.json")
-	if _, err := os.Stat(versionsPath); os.IsNotExist(err) {
+	if _, err := osStatFunc(versionsPath); os.IsNotExist(err) {
 		return fmt.Errorf("versions.json not found after docs:version")
 	}
 
-	data, err := os.ReadFile(versionsPath)
+	data, err := osReadFileFunc(versionsPath)
 	if err != nil {
 		return err
 	}
@@ -450,5 +472,5 @@ func normalizeVersionsJSON(repoB string) error {
 		return err
 	}
 
-	return os.WriteFile(versionsPath, append(newData, '\n'), 0644)
+	return osWriteFileFunc(versionsPath, append(newData, '\n'), 0644)
 }

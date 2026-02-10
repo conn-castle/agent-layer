@@ -300,7 +300,7 @@ It is scaffolding: it creates the files that make behavior explicit and repeatab
 Typical `.agent-layer/` files include:
 
 - `config.toml` (seeded if missing; user-owned), `commands.allow`, `instructions/`, `slash-commands/`
-- `al.version` (optional repo pin)
+- `al.version` (repo pin; required)
 - `.env` (seeded if missing; user-owned secrets, always gitignored)
 - `.gitignore` (internal ignores) and `gitignore.block` (root `.gitignore` template)
 - `.agent-layer/state/managed-baseline.json` (managed ownership baseline state; gitignored)
@@ -322,6 +322,7 @@ In non-interactive environments, the wizard is skipped.
 
 - If you are running a release build, `al init` writes `.agent-layer/al.version`.
 - You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`).
+- `.agent-layer/al.version` is required for supported usage. If it is missing or invalid, run `al upgrade` to repair it.
 - Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
 - For upgrade contract details and release-versioned migration notes, see [Upgrades](./upgrades).
 

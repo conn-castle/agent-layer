@@ -123,7 +123,6 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [x] Add machine-readable output (`--json`) to `al upgrade plan` for CI/repo automation.
 - [ ] Close GitHub issue #30 (j4k5l6: managed file diff visibility) after PR merge.
 - [ ] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
-- [ ] Add `al upgrade --unpin` to remove `.agent-layer/al.version` cleanly; document manual unpinning as an alternative.
 - [ ] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
 - [ ] Add launch-impact preview (`al launch-plan <client>` or equivalent) showing whether launching will modify files before executing sync.
 

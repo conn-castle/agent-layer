@@ -67,11 +67,11 @@ If a server uses `npx` or `uvx`, you must have those tools installed.
 If MCP servers that use `npx` fail to start, VS Code may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so GUI apps can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
 ## Can I pin a repo to a specific version?
-Yes. Set `.agent-layer/al.version` to `X.Y.Z` or `vX.Y.Z`, or set an initial pin during `al init` with `--version`. You can temporarily override the pin with `AL_VERSION`.
+Yes. `.agent-layer/al.version` is the repo pin (required). Set it to `X.Y.Z` or `vX.Y.Z`, or set an initial pin during `al init` with `--version`. You can temporarily override the pin with `AL_VERSION`.
 
 See [/docs/concepts#version-pinning](/docs/concepts#version-pinning) for the full model and tradeoffs.
 
-## How do I upgrade a pinned repo?
+## How do I upgrade a repo?
 Upgrade the global CLI first, then run `al upgrade plan` and `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) to match the currently installed `al` version.
 
 For the full upgrade contract, compatibility guarantees, and release migration rules, see [/docs/upgrades](/docs/upgrades).

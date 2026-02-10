@@ -311,7 +311,7 @@ If you have used lockfiles in other ecosystems, pinning will feel familiar: it k
 
 ### How pinning works
 
-When `.agent-layer/al.version` exists, `al` will:
+Agent Layer requires a repo pin file at `.agent-layer/al.version`. `al` will:
 
 1. read the pinned version
 2. download it if missing from the local cache
@@ -329,7 +329,7 @@ Pin formats:
 - `al upgrade` updates the pin to match the currently running `al` binary
 - or edit `.agent-layer/al.version` directly
 
-### Upgrading a pinned repo
+### Upgrading a repo
 
 1. Install the target `al` version (Homebrew upgrade, or re-run the install script).
 2. Run `al upgrade plan` to preview changes.
@@ -345,12 +345,6 @@ For compatibility guarantees, upgrade event categories, and release-versioned mi
 | `AL_NO_NETWORK` | disable downloads (fails if the pinned version is not cached) |
 | `AL_CACHE_DIR` | override the cache location |
 
-### When to use pinning
+### Why pinning is required
 
-- Teams that want deterministic behavior across laptops and CI
-- Repos that require reproducible agent behavior
-- Any project where a breaking config change should be coordinated
-
-:::tip
-Pinning is most valuable once multiple developers are running `al` in the same repo.
-:::
+Pinning is required so the repo does not silently change behavior when a developer upgrades their global `al` install.

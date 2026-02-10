@@ -4,12 +4,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
@@ -130,9 +130,6 @@ mode = "none"`
 }
 
 func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("skipping permission-based test as root")
-	}
 	root := t.TempDir()
 	// Do NOT call setupRepo - let install run
 
@@ -143,16 +140,14 @@ func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
 		},
 	}
 
-	// Run wizard - install will succeed
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
-	// Install succeeds, config load should succeed too
-	// This test verifies the path works when install succeeds
-	// To test config failure after install, we'd need to corrupt config after install
-	// which is hard to do atomically. Instead verify the happy path.
-	if err != nil && strings.Contains(err.Error(), "failed to load config") {
-		// This is the path we're trying to cover - config load failed after install
-		return
+	// Stub loadProjectConfigFunc to return an error after install succeeds
+	orig := loadProjectConfigFunc
+	loadProjectConfigFunc = func(root string) (*config.ProjectConfig, error) {
+		return nil, errors.New("injected config load error")
 	}
-	// If we get here, install and config load both succeeded
-	// The test still exercises the code path
+	t.Cleanup(func() { loadProjectConfigFunc = orig })
+
+	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to load config")
 }

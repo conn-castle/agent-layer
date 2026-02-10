@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-10 wiz-run: Wizard Run() is a god function
+    Priority: Medium. Area: wizard / maintainability.
+    Description: `internal/wizard.Run()` is ~337 lines and mixes install gating, config loading, choice initialization, UI flow, and apply logic, making it hard to test and extend safely.
+    Next step: Extract focused helpers (init choices from config, prompt secrets, prompt warnings) and keep `Run()` as a small orchestrator.
+
 - Issue 2026-02-10 upg-ver: Cannot apply a specific intermediate release during upgrade
     Priority: Medium. Area: upgrade / version pinning / UX.
     Description: With `al upgrade` always running the currently installed binary (dispatch bypass) and no `al upgrade --version`, there is no supported way to upgrade a repo from an older pin to an intermediate version (for example 0.6.0 -> 0.6.1) when a newer version is installed (for example 0.7.0); the repo is forced to upgrade to the installed version or rely on manual pin edits/reinstalling.

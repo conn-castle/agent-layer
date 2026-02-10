@@ -17,6 +17,7 @@ import (
 var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
 	loadWarningDefaultsFunc   = loadWarningDefaults
+	loadProjectConfigFunc     = config.LoadProjectConfig
 )
 
 // Run starts the interactive wizard.
@@ -44,7 +45,7 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	}
 
 	// 3. Load config
-	cfg, err := config.LoadProjectConfig(root)
+	cfg, err := loadProjectConfigFunc(root)
 	if err != nil {
 		return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
 	}

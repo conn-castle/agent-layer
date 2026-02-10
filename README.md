@@ -121,7 +121,7 @@ If MCP servers that use `npx` are failing in VS Code, your GUI environment may n
 
 ---
 
-## Version pinning (per repo, optional)
+## Version pinning (per repo, required)
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
 
@@ -130,6 +130,10 @@ Upgrade contract details (event model, compatibility guarantees, migration rules
 When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
 
 When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
+
+By default, `al init` enables pinning in release builds by writing `.agent-layer/al.version`. Think of this file like a lockfile: it prevents the repo from silently changing behavior when you update your globally installed `al`.
+
+Agent Layer treats `.agent-layer/al.version` as required for supported usage. Do not delete it. If it is missing or invalid, install a release build and run `al upgrade` to repair it.
 
 Pin format:
 - `0.6.0` or `v0.6.0` (both are accepted)
@@ -150,7 +154,7 @@ Update the global CLI:
 - Homebrew: `brew upgrade conn-castle/tap/agent-layer` (updates the installed formula)
 - Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
 
-If a repo is pinned (or just out of date), run `al upgrade plan` and then `al upgrade` inside the repo. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
+Run `al upgrade plan` and then `al upgrade` inside the repo to apply template-managed updates. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
 
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
@@ -187,9 +191,9 @@ The wizard rewrites `config.toml` in the template-defined order and creates back
 `al init` creates three buckets: user configuration, project memory, and generated client files.
 
 ### User configuration (gitignored by default, but can be committed)
-- `.agent-layer/`
+  - `.agent-layer/`
   - `config.toml` (main configuration; human-editable)
-  - `al.version` (repo pin; optional but recommended)
+  - `al.version` (repo pin; required)
   - `instructions/` (numbered `*.md` fragments; lexicographic order)
   - `slash-commands/` (workflow markdown; one file per command)
   - `commands.allow` (approved shell commands; line-based)

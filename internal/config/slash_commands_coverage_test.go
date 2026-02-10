@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,15 +16,20 @@ func TestLoadSlashCommands_ReadDirError(t *testing.T) {
 }
 
 func TestLoadSlashCommands_ReadFileError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("skipping read error test as root")
-	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.md")
-	if err := os.WriteFile(path, []byte{}, 0o000); err != nil {
+	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	defer func() { _ = os.Chmod(path, 0o644) }()
+
+	orig := osReadFileFunc
+	osReadFileFunc = func(name string) ([]byte, error) {
+		if name == path {
+			return nil, errors.New("injected read error")
+		}
+		return orig(name)
+	}
+	t.Cleanup(func() { osReadFileFunc = orig })
 
 	_, err := LoadSlashCommands(dir)
 	if err == nil {

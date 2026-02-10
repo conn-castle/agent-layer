@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-10 analytics: Add tracking and analytics to the website
+    Priority: Medium. Area: website
+    Description: Integrate tracking and analytics into the project website to monitor visitor counts and usage patterns.
+    Acceptance criteria: Website includes an analytics provider (e.g., Google Analytics, Plausible) and visitor data is accessible.
+    Notes: Ensure privacy compliance (GDPR/CCPA) and consider privacy-respecting alternatives.
+
 - Backlog 2026-02-03 f1a2b3c: Transform roadmap into public-facing documentation
     Priority: Medium. Area: documentation
     Description: Convert the internal `ROADMAP.md` into actual documentation that clearly communicates the project's direction and upcoming features to users.

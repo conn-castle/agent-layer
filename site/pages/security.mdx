@@ -12,7 +12,7 @@ Agent Layer does not collect telemetry.
 Agent Layer itself may make outbound network requests for:
 
 - **Update checks** (GitHub API). `al doctor` checks for newer releases and warns if you're behind. `al init` may warn when your installed CLI is out of date.
-- **Pinned version downloads** (GitHub Releases). If a repo pins `.agent-layer/al.version`, `al` may download that version into your local cache and dispatch to it.
+- **Pinned version downloads** (GitHub Releases). Agent Layer uses `.agent-layer/al.version` to pin repo versions; `al` may download that version into your local cache and dispatch to it.
 
 To disable update checks and pinned downloads, set `AL_NO_NETWORK=1` (see [/docs/reference#environment-variables](/docs/reference#environment-variables)). If the pinned version is not already cached, `al` will fail fast and explain why.
 

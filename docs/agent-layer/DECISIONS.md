@@ -145,7 +145,17 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Distinguishes upstream template deltas from true local customization without runtime network/tag lookups and avoids silent guesses in ambiguous cases.
     Tradeoffs: Release workflow must generate/commit manifests for each tag; repos lacking credible baseline evidence may show `unknown no baseline` until a baseline refresh run (for example `al upgrade`).
 
+- Decision 2026-02-10 cov-stab: Replace chmod-based error injection with function-variable stubs
+    Decision: Replace all `chmod 0o000`/`0o444` + `t.Skip` error injection in tests with deterministic function-variable stubs (`var osFunc = os.Func` + path-selective overrides + `t.Cleanup` restore).
+    Reason: chmod-based tests skipped on platforms that don't enforce permission denial (macOS root, CI), causing non-deterministic coverage between CI and local runs.
+    Tradeoffs: Adds package-level function variables to production code; acceptable since the pattern is already established in `cmd/al/` and `internal/install/`.
+
 - Decision 2026-02-10 p1c-init-upgrade-ownership: Init scaffolding only; user-owned config/env; agent-only .gitignore
     Decision: `al init` is one-time scaffolding (errors if `.agent-layer/` already exists). Upgrades/repairs are done via `al upgrade plan` + `al upgrade`. `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned and seeded only when missing (never overwritten by init/upgrade). `.agent-layer/.gitignore` is agent-owned internal and is always overwritten and excluded from upgrade plans/diffs.
     Reason: Avoid accidental clobbering of user-specific configuration, reduce cognitive load in upgrade plans, and simplify init semantics by removing upgrade behavior.
     Tradeoffs: Changes to `.agent-layer/.gitignore` cannot be preserved; repos without baseline evidence will require an `al upgrade` run to establish it (supersedes earlier init-overwrite guidance).
+
+- Decision 2026-02-10 pin-required: Pinning required for supported repos
+    Decision: Treat `.agent-layer/al.version` as required and do not support or document an end-user “unpin” workflow.
+    Reason: Unpinned repos can silently drift when developers upgrade the global `al` install, causing hard-to-debug mismatches.
+    Tradeoffs: Advanced users can still delete the pin file manually, but that is unsupported and reduces reproducibility.
