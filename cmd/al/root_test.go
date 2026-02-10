@@ -225,52 +225,6 @@ func TestInitCommandNonInteractiveSkipsWizard(t *testing.T) {
 	}
 }
 
-func TestInitCommandOverwriteRequiresTerminal(t *testing.T) {
-	root := t.TempDir()
-	originalGetwd := getwd
-	getwd = func() (string, error) { return root, nil }
-	t.Cleanup(func() { getwd = originalGetwd })
-
-	originalIsTerminal := isTerminal
-	isTerminal = func() bool { return false }
-	t.Cleanup(func() { isTerminal = originalIsTerminal })
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetIn(bytes.NewBufferString(""))
-
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error when overwrite prompts are requested without a terminal")
-	}
-	if !strings.Contains(err.Error(), "interactive terminal") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestInitCommandForceNonInteractive(t *testing.T) {
-	root := t.TempDir()
-	originalGetwd := getwd
-	getwd = func() (string, error) { return root, nil }
-	t.Cleanup(func() { getwd = originalGetwd })
-
-	originalIsTerminal := isTerminal
-	isTerminal = func() bool { return false }
-	t.Cleanup(func() { isTerminal = originalIsTerminal })
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--force"})
-	cmd.SetOut(&bytes.Buffer{})
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetIn(bytes.NewBufferString(""))
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("init error: %v", err)
-	}
-}
-
 func TestInitCommandPromptNoDeclinesWizard(t *testing.T) {
 	root := t.TempDir()
 	originalGetwd := getwd

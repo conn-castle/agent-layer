@@ -115,7 +115,10 @@ func main() {
 
 func collectTemplateSources(root string, tag string) ([]templateSource, error) {
 	templateRoot := "internal/templates"
-	rootFiles := []string{"config.toml", "commands.allow", "env", "gitignore.block", "agent-layer.gitignore"}
+	// Only include upgrade-managed root templates in the manifest. User-owned seed-only
+	// files (.agent-layer/config.toml, .agent-layer/.env) and agent-only internal files
+	// (.agent-layer/.gitignore) are intentionally excluded.
+	rootFiles := []string{"commands.allow", "gitignore.block"}
 	sources := make([]templateSource, 0, 64)
 	for _, name := range rootFiles {
 		repoPath := filepath.ToSlash(filepath.Join(templateRoot, name))

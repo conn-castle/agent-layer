@@ -31,7 +31,7 @@ This repo is built around determinism: the same inputs should produce the same c
 - Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage, and release builds.
 - Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH. This avoids “works on my machine” drift and keeps local output aligned with CI.
 - Use `make dev` for a quick local pass (format + fmt-check + lint + coverage + release tests). Run `./scripts/setup.sh` or `make tools` first.
-- If you change installer templates (anything under `internal/templates/`), re-run `go run ./cmd/al init` in a target repo to re-seed files. See the README Quick start for overwrite/force flag guidance.
+- If you change installer templates (anything under `internal/templates/`), run `go run ./cmd/al upgrade` in a target repo to apply the updated templates (or `go run ./cmd/al init` for a fresh repo).
 - If template-managed file semantics change for release upgrades, regenerate the release manifest: `./scripts/generate-template-manifest.sh --tag vX.Y.Z`.
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
 

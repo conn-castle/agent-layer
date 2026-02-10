@@ -135,7 +135,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	add(filepath.Join(root, ".agent-layer", "tmp", "runs"))
 
 	// Root-level managed files.
-	for _, file := range inst.managedTemplateFiles() {
+	for _, file := range inst.knownTemplateFiles() {
 		add(file.path)
 	}
 	add(filepath.Join(root, ".agent-layer", "al.version"))

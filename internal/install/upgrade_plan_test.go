@@ -234,37 +234,37 @@ func TestBuildUpgradePlan_UnknownNoBaselineForManagedDiff(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.WriteFile(configPath, []byte("custom config\n"), 0o644); err != nil {
-		t.Fatalf("write custom config: %v", err)
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o644); err != nil {
+		t.Fatalf("write custom allowlist: %v", err)
 	}
 
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	if err != nil {
 		t.Fatalf("build upgrade plan: %v", err)
 	}
-	configUpdate := findUpgradeChange(plan.TemplateUpdates, ".agent-layer/config.toml")
-	if configUpdate == nil {
-		t.Fatal("expected config update in plan")
+	allowUpdate := findUpgradeChange(plan.TemplateUpdates, ".agent-layer/commands.allow")
+	if allowUpdate == nil {
+		t.Fatal("expected commands.allow update in plan")
 	}
-	if configUpdate.Ownership != OwnershipUnknownNoBaseline {
-		t.Fatalf("expected unknown ownership, got %s", configUpdate.Ownership)
+	if allowUpdate.Ownership != OwnershipUnknownNoBaseline {
+		t.Fatalf("expected unknown ownership, got %s", allowUpdate.Ownership)
 	}
-	if configUpdate.OwnershipState != OwnershipStateUnknownNoBaseline {
-		t.Fatalf("expected unknown ownership_state, got %s", configUpdate.OwnershipState)
+	if allowUpdate.OwnershipState != OwnershipStateUnknownNoBaseline {
+		t.Fatalf("expected unknown ownership_state, got %s", allowUpdate.OwnershipState)
 	}
-	if configUpdate.OwnershipConfidence != nil {
-		t.Fatalf("expected nil ownership confidence for unknown baseline, got %#v", configUpdate.OwnershipConfidence)
+	if allowUpdate.OwnershipConfidence != nil {
+		t.Fatalf("expected nil ownership confidence for unknown baseline, got %#v", allowUpdate.OwnershipConfidence)
 	}
 	foundBaselineMissing := false
-	for _, reason := range configUpdate.OwnershipReasonCodes {
+	for _, reason := range allowUpdate.OwnershipReasonCodes {
 		if reason == ownershipReasonBaselineMissing {
 			foundBaselineMissing = true
 			break
 		}
 	}
 	if !foundBaselineMissing {
-		t.Fatalf("expected baseline_missing reason, got %#v", configUpdate.OwnershipReasonCodes)
+		t.Fatalf("expected baseline_missing reason, got %#v", allowUpdate.OwnershipReasonCodes)
 	}
 }
 
@@ -329,8 +329,8 @@ func TestBuildUpgradePlan_PinManifestCredibleInference(t *testing.T) {
 func TestBuildUpgradePlan_StatErrorOnTemplateEntry(t *testing.T) {
 	root := t.TempDir()
 	sys := newFaultSystem(RealSystem{})
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	sys.statErrs[normalizePath(configPath)] = errors.New("stat boom")
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	sys.statErrs[normalizePath(allowPath)] = errors.New("stat boom")
 
 	_, err := BuildUpgradePlan(root, UpgradePlanOptions{
 		TargetPinVersion: "1.2.3",

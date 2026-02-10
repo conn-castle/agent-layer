@@ -55,23 +55,17 @@ func TestInitCmd(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                         string
-		args                         []string
-		isTerminal                   bool
-		mockInstallErr               error
-		mockWizardErr                error
-		userInput                    string // for stdin
-		wantErr                      bool
-		wantInstall                  bool
-		wantWizard                   bool
-		wantOverwrite                bool // Expect install options overwrite
-		wantForce                    bool // Expect install options force
-		wantPromptOverwriteAll       bool
-		wantPromptOverwriteMemoryAll bool
-		wantPromptOverwrite          bool
-		wantPromptDeleteAll          bool
-		wantPromptDelete             bool
-		checkErr                     func(error) bool
+		name                   string
+		args                   []string
+		isTerminal             bool
+		mockInstallErr         error
+		mockWizardErr          error
+		userInput              string // for stdin
+		wantErr                bool
+		wantInstall            bool
+		wantWizard             bool
+		precreateAgentLayerDir bool
+		checkErr               func(error) bool
 	}{
 		{
 			name:        "Happy path non-interactive",
@@ -97,44 +91,23 @@ func TestInitCmd(t *testing.T) {
 			wantWizard:  true,
 		},
 		{
-			name:       "Overwrite requires interactive if not forced",
-			args:       []string{"--overwrite"},
-			isTerminal: false,
-			wantErr:    true,
-			checkErr: func(err error) bool {
-				return err.Error() == "init overwrite prompts require an interactive terminal; re-run with --force to overwrite without prompts"
-			},
-		},
-		{
-			name:          "Force works non-interactive",
-			args:          []string{"--force"},
-			isTerminal:    false,
-			wantInstall:   true,
-			wantOverwrite: true,
-			wantForce:     true,
-		},
-		{
-			name:                         "Overwrite interactive",
-			args:                         []string{"--overwrite"},
-			isTerminal:                   true,
-			userInput:                    "y\nn\ny\nn\n", // OverwriteAll managed (y), OverwriteAll memory (n), DeleteAll (y), Wizard (n)
-			wantInstall:                  true,
-			wantOverwrite:                true,
-			wantForce:                    false,
-			wantWizard:                   false,
-			wantPromptOverwriteAll:       true,
-			wantPromptOverwriteMemoryAll: false,
-			wantPromptOverwrite:          true,
-			wantPromptDeleteAll:          true,
-			wantPromptDelete:             true,
-		},
-		{
 			name:           "Install fails",
 			args:           []string{},
 			isTerminal:     false,
 			mockInstallErr: fmt.Errorf("install failed"),
 			wantErr:        true,
 			wantInstall:    true,
+		},
+		{
+			name:                   "Already initialized errors",
+			args:                   []string{},
+			isTerminal:             false,
+			precreateAgentLayerDir: true,
+			wantErr:                true,
+			wantInstall:            false,
+			checkErr: func(err error) bool {
+				return err != nil && strings.Contains(err.Error(), "already initialized")
+			},
 		},
 		{
 			name:        "No Wizard Flag",
@@ -159,21 +132,7 @@ func TestInitCmd(t *testing.T) {
 				return err != nil && err.Error() == "getwd failed"
 			},
 		},
-		{
-			name:                         "Prompt Overwrite Callback Yes",
-			args:                         []string{"--overwrite"},
-			isTerminal:                   true,
-			userInput:                    "n\nn\ny\ny\nn\n", // OverwriteAll managed (n), OverwriteAll memory (n), Overwrite (y), DeleteAll (y), Wizard (n)
-			wantInstall:                  true,
-			wantOverwrite:                true,
-			wantForce:                    false,
-			wantWizard:                   false,
-			wantPromptOverwriteAll:       false,
-			wantPromptOverwriteMemoryAll: false,
-			wantPromptOverwrite:          true,
-			wantPromptDeleteAll:          true,
-			wantPromptDelete:             true,
-		}}
+	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -182,6 +141,11 @@ func TestInitCmd(t *testing.T) {
 			// Create .git to make it a valid root
 			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
 				t.Fatal(err)
+			}
+			if tt.precreateAgentLayerDir {
+				if err := os.MkdirAll(filepath.Join(tmpDir, ".agent-layer"), 0o755); err != nil {
+					t.Fatal(err)
+				}
 			}
 
 			// Mock getwd
@@ -208,57 +172,14 @@ func TestInitCmd(t *testing.T) {
 				if root != tmpDir {
 					t.Errorf("installRun root = %v, want %v", root, tmpDir)
 				}
-				if opts.Overwrite != (tt.wantOverwrite || tt.wantForce) {
-					t.Errorf("installRun opts.Overwrite = %v, want %v", opts.Overwrite, tt.wantOverwrite || tt.wantForce)
+				if opts.Overwrite {
+					t.Errorf("installRun opts.Overwrite = true, want false")
 				}
-				if opts.Force != tt.wantForce {
-					t.Errorf("installRun opts.Force = %v, want %v", opts.Force, tt.wantForce)
+				if opts.Force {
+					t.Errorf("installRun opts.Force = true, want false")
 				}
-
-				if tt.wantOverwrite && !tt.wantForce {
-					if opts.Prompter == nil {
-						t.Error("Expected Prompter to be set")
-					} else {
-						yes, err := opts.Prompter.OverwriteAll([]string{"managed"})
-						if err != nil {
-							t.Errorf("OverwriteAll error: %v", err)
-						}
-						if yes != tt.wantPromptOverwriteAll {
-							t.Errorf("OverwriteAll returned %v, want %v", yes, tt.wantPromptOverwriteAll)
-						}
-						yes, err = opts.Prompter.OverwriteAllMemory([]string{"docs/agent-layer/ISSUES.md"})
-						if err != nil {
-							t.Errorf("OverwriteAllMemory error: %v", err)
-						}
-						if yes != tt.wantPromptOverwriteMemoryAll {
-							t.Errorf("OverwriteAllMemory returned %v, want %v", yes, tt.wantPromptOverwriteMemoryAll)
-						}
-						if !tt.wantPromptOverwriteAll {
-							overwrite, err := opts.Prompter.Overwrite("testfile")
-							if err != nil {
-								t.Errorf("Overwrite error: %v", err)
-							}
-							if overwrite != tt.wantPromptOverwrite {
-								t.Errorf("Overwrite returned %v, want %v", overwrite, tt.wantPromptOverwrite)
-							}
-						}
-						deleteAll, err := opts.Prompter.DeleteUnknownAll([]string{"unknown"})
-						if err != nil {
-							t.Errorf("DeleteUnknownAll error: %v", err)
-						}
-						if deleteAll != tt.wantPromptDeleteAll {
-							t.Errorf("DeleteUnknownAll returned %v, want %v", deleteAll, tt.wantPromptDeleteAll)
-						}
-						if !deleteAll {
-							deletePath, err := opts.Prompter.DeleteUnknown("unknown")
-							if err != nil {
-								t.Errorf("DeleteUnknown error: %v", err)
-							}
-							if deletePath != tt.wantPromptDelete {
-								t.Errorf("DeleteUnknown returned %v, want %v", deletePath, tt.wantPromptDelete)
-							}
-						}
-					}
+				if opts.Prompter != nil {
+					t.Errorf("installRun opts.Prompter = %T, want nil", opts.Prompter)
 				}
 
 				return tt.mockInstallErr
@@ -295,9 +216,8 @@ func TestInitCmd(t *testing.T) {
 				}
 			}
 
-			// If we expect install failure, installCalled is true.
-			// If we expect resolve error, installCalled is false.
-			if tt.name == "Resolve Root Error" || tt.name == "Resolve Pin Version Error" {
+			// If we expect resolve/init-gating error, installRun should not run.
+			if tt.name == "Resolve Root Error" || tt.name == "Resolve Pin Version Error" || tt.name == "Already initialized errors" {
 				if installCalled {
 					t.Error("installRun called unexpectedly")
 				}
@@ -603,7 +523,10 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 	if !strings.Contains(output, "Homebrew: brew upgrade conn-castle/tap/agent-layer") {
 		t.Fatalf("expected Homebrew upgrade command, got %q", output)
 	}
-	if !strings.Contains(output, "al init --force") {
+	if !strings.Contains(output, "al upgrade plan") {
+		t.Fatalf("expected upgrade plan guidance, got %q", output)
+	}
+	if !strings.Contains(output, "al upgrade --force") {
 		t.Fatalf("expected --force safety note, got %q", output)
 	}
 }
@@ -732,547 +655,6 @@ func TestInitCmd_WizardPromptYes(t *testing.T) {
 	}
 }
 
-func TestInitCmd_OverwriteAllMemoryPromptError(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	installRun = func(root string, opts install.Options) error {
-		// Call OverwriteAllMemory with paths to trigger the display code
-		if opts.Prompter != nil {
-			paths := []string{"docs/agent-layer/ISSUES.md"}
-			_, _ = opts.Prompter.OverwriteAllMemory(paths)
-		}
-		return nil
-	}
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	// Provide enough input for all prompts
-	cmd.SetIn(&slowReader{r: strings.NewReader("n\nn\nn\nn\n")})
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("init failed: %v", err)
-	}
-}
-
-func TestInitCmd_DeleteUnknownAllPromptWithPaths(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	installRun = func(root string, opts install.Options) error {
-		// Call DeleteUnknownAll with paths to trigger the display code
-		if opts.Prompter != nil {
-			paths := []string{"unknown1.txt", "unknown2.txt"}
-			_, _ = opts.Prompter.DeleteUnknownAll(paths)
-		}
-		return nil
-	}
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	// Provide enough input for all prompts
-	cmd.SetIn(&slowReader{r: strings.NewReader("n\nn\nn\nn\n")})
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("init failed: %v", err)
-	}
-}
-
-func TestInitCmd_OverwritePromptFuncCallback(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	installRun = func(root string, opts install.Options) error {
-		// Call Overwrite to trigger that code path
-		if opts.Prompter != nil {
-			_, _ = opts.Prompter.Overwrite("test-file.md")
-		}
-		return nil
-	}
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	// Provide enough input
-	cmd.SetIn(&slowReader{r: strings.NewReader("n\nn\nn\nn\nn\n")})
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("init failed: %v", err)
-	}
-}
-
-func TestInitCmd_DeleteUnknownFuncCallback(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	installRun = func(root string, opts install.Options) error {
-		// Call DeleteUnknown to trigger that code path
-		if opts.Prompter != nil {
-			_, _ = opts.Prompter.DeleteUnknown("unknown-file.txt")
-		}
-		return nil
-	}
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	// Provide enough input
-	cmd.SetIn(&slowReader{r: strings.NewReader("n\nn\nn\nn\nn\n")})
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("init failed: %v", err)
-	}
-}
-
-func TestInitCmd_OverwriteAllManagedWithPaths(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	installRun = func(root string, opts install.Options) error {
-		// Call OverwriteAll with paths to trigger the display code
-		if opts.Prompter != nil {
-			paths := []string{".agent-layer/config.toml", ".agent-layer/commands.allow"}
-			_, _ = opts.Prompter.OverwriteAll(paths)
-		}
-		return nil
-	}
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	// Provide input for prompts
-	cmd.SetIn(&slowReader{r: strings.NewReader("y\nn\n")})
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("init failed: %v", err)
-	}
-	// Just ensure no error - output verification is already done above
-}
-
-// errWriter returns an error on all write operations.
-type errWriter struct {
-	err error
-}
-
-func (e *errWriter) Write([]byte) (int, error) {
-	return 0, e.err
-}
-
-func TestInitCmd_OverwriteAllFprintlnError(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	writeErr := fmt.Errorf("write error")
-	installRun = func(root string, opts install.Options) error {
-		if opts.Prompter == nil {
-			return fmt.Errorf("expected prompter")
-		}
-		// Call with paths to trigger fmt.Fprintln
-		_, err := opts.Prompter.OverwriteAll([]string{"file1.txt"})
-		if err == nil {
-			t.Errorf("expected error from OverwriteAll")
-		}
-		if err != writeErr {
-			t.Errorf("expected write error, got %v", err)
-		}
-		return nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	cmd.SetIn(&slowReader{r: strings.NewReader("y\n")})
-	cmd.SetOut(&errWriter{err: writeErr})
-
-	_ = cmd.Execute()
-}
-
-func TestInitCmd_OverwriteAllHeaderError(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	// Writer that fails on second write (header line)
-	callCount := 0
-	writeErr := fmt.Errorf("header write error")
-	installRun = func(root string, opts install.Options) error {
-		if opts.Prompter == nil {
-			return fmt.Errorf("expected prompter")
-		}
-		_, err := opts.Prompter.OverwriteAll([]string{"file1.txt"})
-		if err == nil {
-			t.Errorf("expected error from OverwriteAll")
-		}
-		return nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	cmd.SetIn(&slowReader{r: strings.NewReader("y\n")})
-	cmd.SetOut(&limitedWriter{n: 1, err: writeErr, callCount: &callCount})
-
-	_ = cmd.Execute()
-}
-
-func TestInitCmd_OverwriteAllPathError(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	// Writer that fails on third write (path line)
-	callCount := 0
-	writeErr := fmt.Errorf("path write error")
-	installRun = func(root string, opts install.Options) error {
-		if opts.Prompter == nil {
-			return fmt.Errorf("expected prompter")
-		}
-		_, err := opts.Prompter.OverwriteAll([]string{"file1.txt"})
-		if err == nil {
-			t.Errorf("expected error from OverwriteAll")
-		}
-		return nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	cmd.SetIn(&slowReader{r: strings.NewReader("y\n")})
-	cmd.SetOut(&limitedWriter{n: 2, err: writeErr, callCount: &callCount})
-
-	_ = cmd.Execute()
-}
-
-func TestInitCmd_OverwriteAllTrailingNewlineError(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	// Writer that fails on fourth write (trailing newline)
-	callCount := 0
-	writeErr := fmt.Errorf("trailing newline error")
-	installRun = func(root string, opts install.Options) error {
-		if opts.Prompter == nil {
-			return fmt.Errorf("expected prompter")
-		}
-		_, err := opts.Prompter.OverwriteAll([]string{"file1.txt"})
-		if err == nil {
-			t.Errorf("expected error from OverwriteAll")
-		}
-		return nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{"--overwrite"})
-	cmd.SetIn(&slowReader{r: strings.NewReader("y\n")})
-	cmd.SetOut(&limitedWriter{n: 3, err: writeErr, callCount: &callCount})
-
-	_ = cmd.Execute()
-}
-
-func TestInitCmd_OverwriteAllMemoryFprintlnErrors(t *testing.T) {
-	tests := []struct {
-		name       string
-		failAfterN int
-	}{
-		{"first newline", 0},
-		{"header", 1},
-		{"path", 2},
-		{"trailing newline", 3},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			origGetwd := getwd
-			origIsTerminal := isTerminal
-			origInstallRun := installRun
-			origCheckForUpdate := checkForUpdate
-			t.Cleanup(func() {
-				getwd = origGetwd
-				isTerminal = origIsTerminal
-				installRun = origInstallRun
-				checkForUpdate = origCheckForUpdate
-			})
-
-			tmpDir := t.TempDir()
-			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-				t.Fatal(err)
-			}
-
-			getwd = func() (string, error) { return tmpDir, nil }
-			isTerminal = func() bool { return true }
-			checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-				return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-			}
-
-			callCount := 0
-			writeErr := fmt.Errorf("write error at %d", tt.failAfterN)
-			installRun = func(root string, opts install.Options) error {
-				if opts.Prompter == nil {
-					return fmt.Errorf("expected prompter")
-				}
-				_, err := opts.Prompter.OverwriteAllMemory([]string{"docs/ISSUES.md"})
-				if err == nil {
-					t.Errorf("expected error from OverwriteAllMemory")
-				}
-				return nil
-			}
-
-			cmd := newInitCmd()
-			cmd.SetArgs([]string{"--overwrite"})
-			cmd.SetIn(&slowReader{r: strings.NewReader("y\n")})
-			cmd.SetOut(&limitedWriter{n: tt.failAfterN, err: writeErr, callCount: &callCount})
-
-			_ = cmd.Execute()
-		})
-	}
-}
-
-func TestInitCmd_DeleteUnknownAllFprintlnErrors(t *testing.T) {
-	tests := []struct {
-		name       string
-		failAfterN int
-	}{
-		{"first newline", 0},
-		{"header", 1},
-		{"path", 2},
-		{"trailing newline", 3},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			origGetwd := getwd
-			origIsTerminal := isTerminal
-			origInstallRun := installRun
-			origCheckForUpdate := checkForUpdate
-			t.Cleanup(func() {
-				getwd = origGetwd
-				isTerminal = origIsTerminal
-				installRun = origInstallRun
-				checkForUpdate = origCheckForUpdate
-			})
-
-			tmpDir := t.TempDir()
-			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-				t.Fatal(err)
-			}
-
-			getwd = func() (string, error) { return tmpDir, nil }
-			isTerminal = func() bool { return true }
-			checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-				return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-			}
-
-			callCount := 0
-			writeErr := fmt.Errorf("write error at %d", tt.failAfterN)
-			installRun = func(root string, opts install.Options) error {
-				if opts.Prompter == nil {
-					return fmt.Errorf("expected prompter")
-				}
-				_, err := opts.Prompter.DeleteUnknownAll([]string{"unknown.txt"})
-				if err == nil {
-					t.Errorf("expected error from DeleteUnknownAll")
-				}
-				return nil
-			}
-
-			cmd := newInitCmd()
-			cmd.SetArgs([]string{"--overwrite"})
-			cmd.SetIn(&slowReader{r: strings.NewReader("y\n")})
-			cmd.SetOut(&limitedWriter{n: tt.failAfterN, err: writeErr, callCount: &callCount})
-
-			_ = cmd.Execute()
-		})
-	}
-}
-
-// limitedWriter writes successfully n times, then returns err.
-type limitedWriter struct {
-	n         int
-	err       error
-	callCount *int
-}
-
-func (l *limitedWriter) Write(p []byte) (int, error) {
-	*l.callCount++
-	if *l.callCount > l.n {
-		return 0, l.err
-	}
-	return len(p), nil
-}
-
 func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -1350,5 +732,99 @@ func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 				t.Fatalf("expected update check to be skipped, got %d calls", calls)
 			}
 		})
+	}
+}
+
+func TestInitCmd_StatAgentLayerErrorFailsFast(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origRunWizard := runWizard
+	origStat := statAgentLayerPath
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		runWizard = origRunWizard
+		statAgentLayerPath = origStat
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return false }
+
+	installCalled := false
+	installRun = func(string, install.Options) error {
+		installCalled = true
+		return nil
+	}
+	runWizard = func(string, string) error { return nil }
+
+	statAgentLayerPath = func(string) (os.FileInfo, error) {
+		return nil, &os.PathError{Op: "stat", Path: ".agent-layer", Err: os.ErrPermission}
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--no-wizard"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "failed to stat") {
+		t.Fatalf("expected stat error, got %v", err)
+	}
+	if installCalled {
+		t.Fatal("expected installRun not to be called when stat fails")
+	}
+}
+
+func TestInitCmd_AgentLayerIsFileErrors(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".agent-layer"), []byte("not a dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return false }
+	installRun = func(string, install.Options) error {
+		t.Fatal("installRun should not be called when .agent-layer is not a directory")
+		return nil
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--no-wizard"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exists but is not a directory") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "move or remove") {
+		t.Fatalf("expected remediation guidance, got %v", err)
 	}
 }

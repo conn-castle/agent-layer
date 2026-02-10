@@ -31,8 +31,10 @@ type BaselineStateSource string
 const (
 	// BaselineStateSourceWrittenByInit indicates baseline was captured by a successful init write flow.
 	BaselineStateSourceWrittenByInit BaselineStateSource = "written_by_init"
-	// BaselineStateSourceWrittenByOverwrite indicates baseline was captured by an overwrite write flow.
-	BaselineStateSourceWrittenByOverwrite BaselineStateSource = "written_by_overwrite"
+	// BaselineStateSourceWrittenByUpgrade indicates baseline was captured by an upgrade write flow.
+	BaselineStateSourceWrittenByUpgrade BaselineStateSource = "written_by_overwrite"
+	// BaselineStateSourceWrittenByOverwrite is a legacy name for BaselineStateSourceWrittenByUpgrade.
+	BaselineStateSourceWrittenByOverwrite BaselineStateSource = BaselineStateSourceWrittenByUpgrade
 	// BaselineStateSourceInferredFromPinManifest indicates baseline was inferred from a pinned release manifest.
 	BaselineStateSourceInferredFromPinManifest BaselineStateSource = "inferred_from_pin_manifest"
 	// BaselineStateSourceMigratedFromLegacyDocsSnapshot indicates baseline was inferred from legacy docs snapshot files.

@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/install"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -27,6 +29,205 @@ func TestNewUpgradeCmd_RegistersPlanSubcommand(t *testing.T) {
 	if !foundPlan {
 		t.Fatal("expected upgrade plan subcommand")
 	}
+}
+
+func TestUpgradeCmd_RequiresTerminalWithoutForce(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installCalled := false
+	installRun = func(string, install.Options) error {
+		installCalled = true
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if err.Error() != messages.UpgradeRequiresTerminal {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if installCalled {
+			t.Fatal("expected installRun not to be called when terminal is required")
+		}
+	})
+}
+
+func TestUpgradeCmd_ForceNonInteractiveRunsInstallWithoutPrompter(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(gotRoot string, opts install.Options) error {
+		if gotRoot != root {
+			t.Fatalf("installRun root = %q, want %q", gotRoot, root)
+		}
+		if !opts.Overwrite {
+			t.Fatalf("opts.Overwrite = false, want true")
+		}
+		if !opts.Force {
+			t.Fatalf("opts.Force = false, want true")
+		}
+		if opts.Prompter != nil {
+			t.Fatalf("opts.Prompter = %T, want nil", opts.Prompter)
+		}
+		if opts.PinVersion != "" {
+			t.Fatalf("opts.PinVersion = %q, want empty pin for dev build", opts.PinVersion)
+		}
+		if opts.System == nil {
+			t.Fatal("opts.System = nil, want non-nil system")
+		}
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--force"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade --force: %v", err)
+		}
+	})
+}
+
+func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error {
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	var captured install.Options
+	installRun = func(gotRoot string, opts install.Options) error {
+		if gotRoot != root {
+			t.Fatalf("installRun root = %q, want %q", gotRoot, root)
+		}
+		captured = opts
+		return nil
+	}
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+	})
+
+	if !captured.Overwrite {
+		t.Fatalf("captured opts.Overwrite = false, want true")
+	}
+	if captured.Force {
+		t.Fatalf("captured opts.Force = true, want false")
+	}
+	if captured.Prompter == nil {
+		t.Fatal("captured opts.Prompter = nil, want non-nil")
+	}
+	promptFuncs, ok := captured.Prompter.(install.PromptFuncs)
+	if !ok {
+		t.Fatalf("captured opts.Prompter = %T, want install.PromptFuncs", captured.Prompter)
+	}
+	if promptFuncs.OverwriteAllFunc == nil ||
+		promptFuncs.OverwriteAllMemoryFunc == nil ||
+		promptFuncs.OverwriteFunc == nil ||
+		promptFuncs.DeleteUnknownAllFunc == nil ||
+		promptFuncs.DeleteUnknownFunc == nil {
+		t.Fatalf("expected all prompt callbacks to be wired: %+v", promptFuncs)
+	}
+}
+
+func TestUpgradeCmd_PropagatesInstallErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	sentinel := errors.New("boom")
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error {
+		return sentinel
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--force"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("expected sentinel error, got %v", err)
+		}
+	})
+}
+
+func TestUpgradeCmd_MissingAgentLayerErrors(t *testing.T) {
+	root := t.TempDir()
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--force"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if err.Error() != messages.RootMissingAgentLayer {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
@@ -117,8 +318,8 @@ func TestUpgradePlanCmd_TextOutputShowsUnknownBaselineWarning(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte("custom config\n"), 0o644); err != nil {
-		t.Fatalf("write custom config: %v", err)
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte("# custom allowlist\n"), 0o644); err != nil {
+		t.Fatalf("write custom allowlist: %v", err)
 	}
 
 	withWorkingDir(t, root, func() {

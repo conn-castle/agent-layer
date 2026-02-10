@@ -129,7 +129,7 @@ func Run(root string, opts Options) error {
 	}
 	baselineSource := BaselineStateSourceWrittenByInit
 	if overwrite {
-		baselineSource = BaselineStateSourceWrittenByOverwrite
+		baselineSource = BaselineStateSourceWrittenByUpgrade
 	}
 	if err := inst.writeManagedBaselineIfConsistent(baselineSource); err != nil {
 		return err
@@ -199,6 +199,22 @@ func (inst *installer) writeVSCodeLaunchers() error {
 }
 
 func (inst *installer) writeTemplateFiles() error {
+	// User-owned required files: seed only when missing; never overwrite.
+	for _, file := range inst.userOwnedSeedFiles() {
+		if err := writeTemplateIfMissing(inst.sys, file.path, file.template, file.perm); err != nil {
+			return err
+		}
+	}
+
+	// Agent-owned internal files: always overwrite to enforce safety invariants.
+	alwaysOverwrite := func(string) (bool, error) { return true, nil }
+	for _, file := range inst.agentOnlyFiles() {
+		if err := writeTemplateFile(inst.sys, file.path, file.template, file.perm, alwaysOverwrite, nil); err != nil {
+			return err
+		}
+	}
+
+	// Upgrade-managed files: overwrite behavior is controlled by init/upgrade flags.
 	for _, file := range inst.managedTemplateFiles() {
 		if file.template == templateGitignoreBlock {
 			if err := writeGitignoreBlock(inst.sys, file.path, file.template, file.perm, inst.shouldOverwrite, inst.recordDiff); err != nil {

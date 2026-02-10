@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ var runWizard = func(root string, pinVersion string) error {
 }
 
 var installRun = install.Run
+var statAgentLayerPath = os.Stat
 
 var resolveLatestPinVersion = func(ctx context.Context, currentVersion string) (string, error) {
 	result, err := checkForUpdate(ctx, currentVersion)
@@ -46,8 +48,6 @@ var releaseValidationBaseURL = update.ReleasesBaseURL
 var validatePinnedReleaseVersionFunc = validatePinnedReleaseVersion
 
 func newInitCmd() *cobra.Command {
-	var overwrite bool
-	var force bool
 	var noWizard bool
 	var pinVersion string
 
@@ -59,9 +59,14 @@ func newInitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			overwriteMode := overwrite || force
-			if overwriteMode && !force && !isTerminal() {
-				return fmt.Errorf(messages.InitOverwriteRequiresTerminal)
+			agentLayerPath := filepath.Join(root, ".agent-layer")
+			if info, err := statAgentLayerPath(agentLayerPath); err == nil {
+				if !info.IsDir() {
+					return fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
+				}
+				return fmt.Errorf(messages.InitAlreadyInitialized)
+			} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf(messages.InstallFailedStatFmt, agentLayerPath, err)
 			}
 			pinned, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
 			if err != nil {
@@ -74,40 +79,10 @@ func newInitCmd() *cobra.Command {
 			}
 			warnInitUpdate(cmd, pinVersion)
 			opts := install.Options{
-				Overwrite:  overwriteMode,
-				Force:      force,
+				Overwrite:  false,
+				Force:      false,
 				PinVersion: pinned,
 				System:     install.RealSystem{},
-			}
-			if overwriteMode && !force {
-				opts.Prompter = install.PromptFuncs{
-					OverwriteAllFunc: func(paths []string) (bool, error) {
-						if err := printFilePaths(cmd.OutOrStdout(), messages.InitOverwriteManagedHeader, paths); err != nil {
-							return false, err
-						}
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteAllPrompt, true)
-					},
-					OverwriteAllMemoryFunc: func(paths []string) (bool, error) {
-						if err := printFilePaths(cmd.OutOrStdout(), messages.InitOverwriteMemoryHeader, paths); err != nil {
-							return false, err
-						}
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitOverwriteMemoryAllPrompt, false)
-					},
-					OverwriteFunc: func(path string) (bool, error) {
-						prompt := fmt.Sprintf(messages.InitOverwritePromptFmt, path)
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
-					},
-					DeleteUnknownAllFunc: func(paths []string) (bool, error) {
-						if err := printFilePaths(cmd.OutOrStdout(), messages.InstallUnknownHeader, paths); err != nil {
-							return false, err
-						}
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.InitDeleteUnknownAllPrompt, false)
-					},
-					DeleteUnknownFunc: func(path string) (bool, error) {
-						prompt := fmt.Sprintf(messages.InitDeleteUnknownPromptFmt, path)
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
-					},
-				}
 			}
 			if err := installRun(root, opts); err != nil {
 				return err
@@ -126,8 +101,6 @@ func newInitCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&overwrite, "overwrite", false, messages.InitFlagOverwrite)
-	cmd.Flags().BoolVar(&force, "force", false, messages.InitFlagForce)
 	cmd.Flags().BoolVar(&noWizard, "no-wizard", false, messages.InitFlagNoWizard)
 	cmd.Flags().StringVar(&pinVersion, "version", "", messages.InitFlagVersion)
 

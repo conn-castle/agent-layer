@@ -57,7 +57,7 @@ Generated client outputs are meant to be disposable. If you see generated files 
 - the ignore rules were customized,
 - or the generated files were committed previously.
 
-Re-run `al init` to reinstall the managed ignore rules. If the files were already committed, you will also need to stop tracking them in git (and ensure `.agent-layer/.env` stays untracked, since it contains secrets).
+Run `al sync` (or `al <client>`) to reinstall the managed ignore rules. If the files were already committed, you will also need to stop tracking them in git (and ensure `.agent-layer/.env` stays untracked, since it contains secrets).
 
 :::caution
 `.codex/config.toml` may contain resolved values for MCP server URLs, commands, or environment variables. Treat it as private and keep it gitignored.
@@ -65,11 +65,11 @@ Re-run `al init` to reinstall the managed ignore rules. If the files were alread
 
 ### "gitignore block must not include managed markers or template hash"
 
-`.agent-layer/gitignore.block` should contain only ignore patterns and comments. Agent Layer injects the managed header and template hash only when updating the root `.gitignore`. If your template file contains `# >>> agent-layer`, `# <<< agent-layer`, or `# Template hash: ...`, re-run `al init --overwrite` to regenerate it.
+`.agent-layer/gitignore.block` should contain only ignore patterns and comments. Agent Layer injects the managed header and template hash only when updating the root `.gitignore`. If your template file contains `# >>> agent-layer`, `# <<< agent-layer`, or `# Template hash: ...`, run `al upgrade` to restore the template file, then re-run `al sync`.
 
 ### "invalid pinned version" or version format errors
 
-`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or re-run `al init --version X.Y.Z`. See [Version pinning](./concepts#version-pinning) and [Upgrades](./upgrades).
+`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or run `al upgrade` to rewrite it to the current version. See [Version pinning](./concepts#version-pinning) and [Upgrades](./upgrades).
 
 ### `config.toml` validation failures
 

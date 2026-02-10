@@ -37,12 +37,12 @@ func TestOwnershipLabelState_Mappings(t *testing.T) {
 
 func TestShouldOverwriteAllManaged_FormatsOwnershipLabels(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(configPath, []byte("custom config\n"), 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
+		t.Fatalf("write allowlist: %v", err)
 	}
 
 	var promptPaths []string

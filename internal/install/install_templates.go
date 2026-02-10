@@ -18,15 +18,45 @@ import (
 const templateGitignoreBlock = "gitignore.block"
 
 // managedTemplateFiles lists template-managed files under .agent-layer.
+// These files are considered part of the upgradeable template surface area:
+// they appear in `al upgrade plan`, are eligible for overwrite prompts, and are
+// captured in managed baseline evidence.
 func (inst *installer) managedTemplateFiles() []templateFile {
 	root := inst.root
 	return []templateFile{
-		{filepath.Join(root, ".agent-layer", "config.toml"), "config.toml", 0o644},
 		{filepath.Join(root, ".agent-layer", "commands.allow"), "commands.allow", 0o644},
-		{filepath.Join(root, ".agent-layer", ".env"), "env", 0o600},
-		{filepath.Join(root, ".agent-layer", ".gitignore"), "agent-layer.gitignore", 0o644},
 		{filepath.Join(root, ".agent-layer", templateGitignoreBlock), templateGitignoreBlock, 0o644},
 	}
+}
+
+// userOwnedSeedFiles lists user-owned files under .agent-layer that are required
+// for Agent Layer to operate, but should never be overwritten during init or
+// upgrade flows. They are seeded only when missing.
+func (inst *installer) userOwnedSeedFiles() []templateFile {
+	root := inst.root
+	return []templateFile{
+		{filepath.Join(root, ".agent-layer", "config.toml"), "config.toml", 0o644},
+		{filepath.Join(root, ".agent-layer", ".env"), "env", 0o600},
+	}
+}
+
+// agentOnlyFiles lists agent-owned files under .agent-layer that are safe to
+// overwrite unconditionally and should not be surfaced as upgrade actions.
+func (inst *installer) agentOnlyFiles() []templateFile {
+	root := inst.root
+	return []templateFile{
+		{filepath.Join(root, ".agent-layer", ".gitignore"), "agent-layer.gitignore", 0o644},
+	}
+}
+
+// knownTemplateFiles returns all template-related file paths that should be
+// treated as known (never "unknown") within .agent-layer.
+func (inst *installer) knownTemplateFiles() []templateFile {
+	out := make([]templateFile, 0, len(inst.managedTemplateFiles())+len(inst.userOwnedSeedFiles())+len(inst.agentOnlyFiles()))
+	out = append(out, inst.managedTemplateFiles()...)
+	out = append(out, inst.userOwnedSeedFiles()...)
+	out = append(out, inst.agentOnlyFiles()...)
+	return out
 }
 
 // managedTemplateDirs lists template-managed directories under .agent-layer.

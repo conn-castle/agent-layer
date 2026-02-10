@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-10 upg-ver: Cannot apply a specific intermediate release during upgrade
+    Priority: Medium. Area: upgrade / version pinning / UX.
+    Description: With `al upgrade` always running the currently installed binary (dispatch bypass) and no `al upgrade --version`, there is no supported way to upgrade a repo from an older pin to an intermediate version (for example 0.6.0 -> 0.6.1) when a newer version is installed (for example 0.7.0); the repo is forced to upgrade to the installed version or rely on manual pin edits/reinstalling.
+    Next step: Decide on a supported workflow (`al upgrade --version X.Y.Z`, or an equivalent “dispatch/exec target version for upgrade” mechanism) and add tests + docs.
+
 - Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
     Priority: Medium. Area: website / marketing.
     Description: The website needs professional metadata, SEO optimization, and a proper favicon to improve visibility and professional appearance.

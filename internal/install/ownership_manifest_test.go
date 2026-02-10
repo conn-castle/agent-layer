@@ -82,7 +82,7 @@ func TestWriteReadManagedBaselineState_RoundTrip(t *testing.T) {
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{
 			{
-				Path:               ".agent-layer/config.toml",
+				Path:               ".agent-layer/commands.allow",
 				FullHashNormalized: "abc123",
 			},
 		},
@@ -101,7 +101,7 @@ func TestWriteReadManagedBaselineState_RoundTrip(t *testing.T) {
 	if readBack.Source != state.Source {
 		t.Fatalf("source = %q, want %q", readBack.Source, state.Source)
 	}
-	if len(readBack.Files) != 1 || readBack.Files[0].Path != ".agent-layer/config.toml" {
+	if len(readBack.Files) != 1 || readBack.Files[0].Path != ".agent-layer/commands.allow" {
 		t.Fatalf("unexpected files: %#v", readBack.Files)
 	}
 }
@@ -129,12 +129,12 @@ func TestRun_WritesManagedBaselineState(t *testing.T) {
 
 func TestRun_DoesNotWriteBaselineWhenManagedDiffsRemain(t *testing.T) {
 	root := t.TempDir()
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		t.Fatalf("mkdir config dir: %v", err)
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+		t.Fatalf("mkdir allow dir: %v", err)
 	}
-	if err := os.WriteFile(configPath, []byte("custom config\n"), 0o644); err != nil {
-		t.Fatalf("write custom config: %v", err)
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
+		t.Fatalf("write custom allow: %v", err)
 	}
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("run install with preexisting diff: %v", err)
@@ -152,7 +152,7 @@ func TestValidateTemplateManifest_ErrorPaths(t *testing.T) {
 		Version:       "0.7.0",
 		GeneratedAt:   "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/config.toml",
+			Path:               ".agent-layer/commands.allow",
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -193,7 +193,7 @@ func TestValidateManagedBaselineState_ErrorPaths(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/config.toml",
+			Path:               ".agent-layer/commands.allow",
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -244,7 +244,7 @@ func TestWriteManagedBaselineState_ErrorPaths(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/config.toml",
+			Path:               ".agent-layer/commands.allow",
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -259,14 +259,14 @@ func TestWriteManagedBaselineState_ErrorPaths(t *testing.T) {
 	}
 }
 
-func TestRun_WritesManagedBaselineSourceOverwrite(t *testing.T) {
+func TestRun_WritesManagedBaselineSourceUpgrade(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.WriteFile(configPath, []byte("custom config\n"), 0o644); err != nil {
-		t.Fatalf("write custom config: %v", err)
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
+		t.Fatalf("write custom allow: %v", err)
 	}
 	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Force: true}); err != nil {
 		t.Fatalf("overwrite run: %v", err)
@@ -275,8 +275,8 @@ func TestRun_WritesManagedBaselineSourceOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read state: %v", err)
 	}
-	if state.Source != BaselineStateSourceWrittenByOverwrite {
-		t.Fatalf("source = %q, want %q", state.Source, BaselineStateSourceWrittenByOverwrite)
+	if state.Source != BaselineStateSourceWrittenByUpgrade {
+		t.Fatalf("source = %q, want %q", state.Source, BaselineStateSourceWrittenByUpgrade)
 	}
 }
 
@@ -288,14 +288,14 @@ func TestValidateManifestFileEntry_ErrorPaths(t *testing.T) {
 	}
 
 	if err := validateManifestFileEntry(manifestFileEntry{
-		Path: ".agent-layer/config.toml",
+		Path: ".agent-layer/commands.allow",
 	}); err == nil {
 		t.Fatal("expected missing full hash error")
 	}
 
 	rawPayload := json.RawMessage(`{"foo":"bar"}`)
 	if err := validateManifestFileEntry(manifestFileEntry{
-		Path:               ".agent-layer/config.toml",
+		Path:               ".agent-layer/commands.allow",
 		FullHashNormalized: "abc",
 		PolicyPayload:      rawPayload,
 	}); err == nil {
@@ -311,7 +311,7 @@ func TestValidateManagedBaselineState_MoreErrorPaths(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/config.toml",
+			Path:               ".agent-layer/commands.allow",
 			FullHashNormalized: "abc",
 		}},
 	}
@@ -354,7 +354,7 @@ func TestReadManagedBaselineState_ValidationError(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
-	invalid := `{"schema_version":9,"baseline_version":"0.7.0","source":"written_by_init","created_at_utc":"2026-02-09T00:00:00Z","updated_at_utc":"2026-02-09T00:00:00Z","files":[{"path":".agent-layer/config.toml","full_hash_normalized":"abc"}]}`
+	invalid := `{"schema_version":9,"baseline_version":"0.7.0","source":"written_by_init","created_at_utc":"2026-02-09T00:00:00Z","updated_at_utc":"2026-02-09T00:00:00Z","files":[{"path":".agent-layer/commands.allow","full_hash_normalized":"abc"}]}`
 	if err := os.WriteFile(statePath, []byte(invalid), 0o644); err != nil {
 		t.Fatalf("write invalid state: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestWriteManagedBaselineState_MkdirAndWriteErrors(t *testing.T) {
 		CreatedAt:       "2026-02-09T00:00:00Z",
 		UpdatedAt:       "2026-02-09T00:00:00Z",
 		Files: []manifestFileEntry{{
-			Path:               ".agent-layer/config.toml",
+			Path:               ".agent-layer/commands.allow",
 			FullHashNormalized: "abc",
 		}},
 	}

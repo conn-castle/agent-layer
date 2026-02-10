@@ -52,7 +52,7 @@ Agent Layer follows a sequential release-line guarantee:
 What "guaranteed" means:
 - We provide documented migration guidance for the guaranteed path.
 - We classify known upgrade-impact changes using the event model on this page.
-- We aim to keep `al init`-based upgrade workflows predictable for that one-step path.
+- We aim to keep `al upgrade` workflows predictable for that one-step path.
 
 What it does not mean:
 - It is not a guarantee that every repo custom state can be auto-migrated.
@@ -64,7 +64,8 @@ Migration rules are published per release and versioned with docs/release notes.
 
 | Target release | Supported source release lines | Event summary | Required manual actions | Notes |
 | --- | --- | --- | --- | --- |
-| `v0.7.0` | `0.6.x` | `breaking/manual`: Windows support removed (installer, launcher, release targets, code paths). `safe auto`: upgrade path hardening (pin recovery, init dispatch bypass, download progress/errors), upgrade contract published. | **Windows users:** Windows is no longer supported; remove `al-install.ps1` and `open-vscode.bat` if present and migrate to macOS or Linux. **All other users:** No manual action required; run `al init --version v0.7.0` to upgrade. | First release with published upgrade contract. |
+| `unreleased` | `0.7.x` | `breaking/manual`: `al init` is now one-time scaffolding and no longer supports upgrade/repair; `al init --overwrite` and `al init --force` removed. | Replace any automation that runs `al init --force` with `al upgrade --force`. For interactive flows, run `al upgrade plan` then `al upgrade`. | `al upgrade` never overwrites `.agent-layer/.env` or `.agent-layer/config.toml`. Root `.gitignore` managed block is still updated automatically and is excluded from upgrade plans. |
+| `v0.7.0` | `0.6.x` | `breaking/manual`: Windows support removed (installer, launcher, release targets, code paths). `safe auto`: upgrade path hardening (pin recovery, init dispatch bypass, download progress/errors), upgrade contract published. | **Windows users:** Windows is no longer supported; remove `al-install.ps1` and `open-vscode.bat` if present and migrate to macOS or Linux. **All other users:** No manual action required; run `al upgrade plan` and `al upgrade`. | First release with published upgrade contract. |
 
 How this table is maintained:
 - Add or update a row for every release.
@@ -94,7 +95,7 @@ Windows is not supported.
 | --- | --- | --- | --- |
 | Install via Homebrew | Supported | Supported | Requires Homebrew setup for platform. |
 | Install via `al-install.sh` | Supported | Supported | Requires `curl` and `sha256sum` or `shasum`. |
-| `al` CLI core commands | Supported | Supported | Includes `init`, `sync`, `doctor`, client launch commands. |
+| `al` CLI core commands | Supported | Supported | Includes `init`, `upgrade`, `sync`, `doctor`, client launch commands. |
 | VS Code launchers | Supported | Supported | macOS: `.app`/`.command`; Linux: `.desktop`/`.sh`. |
 | Shell completion: `bash` | Supported | Supported | `al completion bash --install`. |
 | Shell completion: `zsh` | Supported | Supported | `al completion zsh --install`; may require `fpath` setup. |

@@ -263,6 +263,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | Command | Purpose |
 | --- | --- |
 | `al init` | Initialize a repo with Agent Layer templates and memory files. |
+| `al upgrade` | Apply template-managed updates and update the repo pin (prompts unless `--force`). |
 | `al upgrade plan` | Show a dry-run, categorized upgrade plan with ownership labels (`--json` for machine-readable output). |
 | `al wizard` | Interactive configuration for approvals, agents, MCP servers, and warnings. |
 | `al sync` | Regenerate client configs without launching a client. |
@@ -277,18 +278,20 @@ The command surface is intentionally small. Most of the time you only need one r
 
 `al init` sets up Agent Layer in a repository.
 
+If `.agent-layer/` already exists, `al init` errors; use `al upgrade plan` and `al upgrade` instead.
+
 It is scaffolding: it creates the files that make behavior explicit and repeatable, so day-to-day work becomes “edit the source of truth, regenerate outputs,” not “hunt for the right config format.”
 
 **What it does**
 
-- Creates or updates `.agent-layer/` (configuration, instructions, approvals, MCP servers)
+- Creates `.agent-layer/` (configuration, instructions, approvals, MCP servers)
 - Creates `docs/agent-layer/` (project memory files)
 - Installs a managed `.gitignore` block
 
 **Steps (high level)**
 
-1. Reads existing managed files to determine whether it should prompt or overwrite.
-2. Writes or updates template-managed files under `.agent-layer/` and `docs/agent-layer/`.
+1. Creates required directories.
+2. Writes template-managed files under `.agent-layer/` and `docs/agent-layer/` (seeds user-owned files only when missing).
 3. Adds or updates the managed `.gitignore` block.
 4. If running interactively, prompts to run the wizard unless `--no-wizard` is set.
 
@@ -296,25 +299,19 @@ It is scaffolding: it creates the files that make behavior explicit and repeatab
 
 Typical `.agent-layer/` files include:
 
-- `config.toml`, `commands.allow`, `instructions/`, `slash-commands/`
+- `config.toml` (seeded if missing; user-owned), `commands.allow`, `instructions/`, `slash-commands/`
 - `al.version` (optional repo pin)
-- `.env` (secrets, always gitignored)
-- `.gitignore` and `gitignore.block`
+- `.env` (seeded if missing; user-owned secrets, always gitignored)
+- `.gitignore` (internal ignores) and `gitignore.block` (root `.gitignore` template)
 - `.agent-layer/state/managed-baseline.json` (managed ownership baseline state; gitignored)
 
 **Gitignore template**
 
-`.agent-layer/gitignore.block` is the template file. It must contain only ignore patterns and comments (no managed markers and no template hash). Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If the template file contains managed markers or a hash line, `al init`/`al sync` will error; re-run `al init --overwrite` to regenerate it.
+`.agent-layer/gitignore.block` is the template file. It must contain only ignore patterns and comments (no managed markers and no template hash). Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If the template file contains managed markers or a hash line, `al sync` will error; run `al upgrade` to restore the template file.
 
 Typical project memory files under `docs/agent-layer/`:
 
 - `ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`
-
-**Overwrite behavior**
-
-- Default behavior is safe and idempotent.
-- `--overwrite` prompts before replacing managed template files.
-- `--force` overwrites managed files and deletes unknown files under `.agent-layer`.
 
 **Wizard prompt**
 
@@ -324,9 +321,20 @@ In non-interactive environments, the wizard is skipped.
 **Version pinning and network**
 
 - If you are running a release build, `al init` writes `.agent-layer/al.version`.
-- You can pin a version explicitly with `--version X.Y.Z`.
+- You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`).
 - Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
 - For upgrade contract details and release-versioned migration notes, see [Upgrades](./upgrades).
+
+### Upgrade
+
+`al upgrade` applies template-managed updates in an existing repo.
+
+**What it does**
+
+- Updates `.agent-layer/al.version` to match the currently running `al` binary
+- Prompts before overwriting managed template files (use `--force` to skip prompts)
+- Deletes unknown files under `.agent-layer` only if you explicitly approve each deletion (or use `--force`)
+- Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
 
 ### Upgrade plan
 
@@ -334,7 +342,7 @@ In non-interactive environments, the wizard is skipped.
 
 It compares your repository state against templates embedded in the currently running `al` binary (not an older repo-pinned binary).
 
-Use it before `al init --overwrite` to understand what would change:
+Use it before `al upgrade` to understand what would change:
 
 - Template additions
 - Template updates

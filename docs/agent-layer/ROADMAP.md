@@ -64,7 +64,7 @@ Incomplete:
 - Implemented `[[mcp.servers]]` projection for HTTP and stdio transports with environment variable wiring.
 - Added `${ENV_VAR}` substitution from `.agent-layer/.env` with client-specific placeholder syntax preservation.
 - Implemented approval modes (`all`, `mcp`, `commands`, `none`) with per-client projections.
-- Added `al init --overwrite` flag and warnings for existing files that differ from templates.
+- Added `al init --overwrite` flag and warnings for existing files that differ from templates (later superseded by `al upgrade`).
 - Fixed `go run ./cmd/al <client>` to locate the binary correctly for the internal MCP prompt server.
 - Updated default `gitignore.block` to make `.agent-layer/` optional with customization guidance.
 - Release workflow now auto-extracts release notes from `CHANGELOG.md`.
@@ -82,7 +82,7 @@ Incomplete:
 - Added shell completion for bash, zsh, and fish (`al completion <shell>`).
 - Added manual installers (`al-install.sh`, `al-install.ps1`) with SHA-256 checksum verification.
 - Added Linux VS Code launcher (desktop entry with `CODEX_HOME` support).
-- Added per-file overwrite prompts during `al init --overwrite` with `--force` flag to skip prompts.
+- Added per-file overwrite prompts during `al init --overwrite` with `--force` flag to skip prompts (later superseded by `al upgrade`).
 
 ## Phase 8 ✅ — v0.5.4 Workflows and instructions
 - Added tool instructions guiding models to use search or Context7 for time-sensitive information.
@@ -101,7 +101,7 @@ Incomplete:
 
 ## Phase 10 ✅ — Upgrade Phase 0 stabilization (immediate)
 - Removed unsupported Windows upgrade surface from installers, release targets, launchers, and docs.
-- Implemented and hardened `al init` upgrade path reliability (`--version latest` resolution, explicit version validation, bootstrap init dispatch, corrupt pin recovery, and improved download errors/progress).
+- Implemented and hardened pin management (`--version latest` resolution, explicit version validation, init/upgrade dispatch bypass, corrupt pin recovery, and improved download errors/progress).
 - Published the canonical upgrade contract in `site/docs/upgrades.mdx` with event categories, sequential compatibility guarantees (`N-1` to `N`), release-versioned migration rules, and macOS/Linux shell capability matrix.
 - Linked the upgrade contract from user and contributor docs (`README.md`, site docs, `docs/DEVELOPMENT.md`, `docs/RELEASE.md`, and `docs/UPGRADE_PLAN.md`).
 
@@ -123,7 +123,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [x] Add machine-readable output (`--json`) to `al upgrade plan` for CI/repo automation.
 - [ ] Close GitHub issue #30 (j4k5l6: managed file diff visibility) after PR merge.
 - [ ] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
-- [ ] Add `al init --unpin` to remove `.agent-layer/al.version` cleanly; document manual unpinning as an alternative.
+- [ ] Add `al upgrade --unpin` to remove `.agent-layer/al.version` cleanly; document manual unpinning as an alternative.
 - [ ] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
 - [ ] Add launch-impact preview (`al launch-plan <client>` or equivalent) showing whether launching will modify files before executing sync.
 
@@ -132,7 +132,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [ ] Replace binary `--force` semantics with explicit flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`.
 - [ ] Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
 - [ ] Add `al upgrade rollback <snapshot-id>` command to restore a previous managed-file snapshot.
-- [ ] Add CI-safe non-interactive `--overwrite --yes` mode that applies managed template updates without deleting unknowns, bridging the gap between interactive `--overwrite` and destructive `--force`.
+- [ ] Add CI-safe non-interactive apply mode (for example `al upgrade --yes --apply-managed-updates`) that applies managed template updates without deleting unknowns, bridging the gap between interactive `al upgrade` and destructive `al upgrade --force`.
 - [ ] Add explicit sync modes for launch commands across clients (`apply`, `check`, `off`) with default mode `check` (locked decision 3B); users opt into mutation or no-sync explicitly.
 
 **Migration engine (Upgrade Plan Phase 3)**
@@ -146,7 +146,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 ### Task details
 - Backlog 2026-01-25 8b9c2d1
   Description: Define how to handle renamed/deleted template files so stale orphans are not left behind in user repos. Migration manifests codify the mapping per release.
-  Acceptance criteria: Each release includes a manifest; `al init` executes manifest migrations idempotently before template write; stale managed files are detected and handled.
+  Acceptance criteria: Each release includes a manifest; `al upgrade` executes manifest migrations idempotently before template write; stale managed files are detected and handled.
   Notes: Current behavior adds/updates files but does not remove files that vanished from templates.
 - Backlog 2026-02-03 b4c5d6e
   Description: Allow teams to specify a custom Git repository as template source during `al init`.
@@ -158,7 +158,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - `al upgrade plan --json` produces machine-readable output consumable by CI.
 - Every upgrade operation creates a snapshot that can be rolled back via `al upgrade rollback`.
 - `--force` is replaced by granular flags; no single flag can silently delete unknowns.
-- `al init --overwrite --yes` is CI-safe and does not delete unknown files.
+- `al upgrade --yes --apply-managed-updates` is CI-safe and does not delete unknown files.
 - Launch commands default to `check` mode (no implicit file mutation).
 - Migration manifests ship with each release and handle renames, deletions, and config transitions.
 - Breaking changes follow a documented deprecation period with compatibility shims.

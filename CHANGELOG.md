@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- **Breaking:** `al init` is now scaffolding only: it errors if `.agent-layer/` already exists. Use `al upgrade plan` and `al upgrade` to upgrade or repair templates.
+- `.agent-layer/.env` and `.agent-layer/config.toml` are now user-owned: seeded only when missing; never overwritten by init/upgrade.
+- `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plans/diffs.
+
+### Removed
+- **Breaking:** `al init --overwrite` and `al init --force` flags. Use `al upgrade` (interactive) or `al upgrade --force` (non-interactive) instead.
+
 ## v0.7.0 - 2026-02-07
 
 ### Added

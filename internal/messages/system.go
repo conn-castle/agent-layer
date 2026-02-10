@@ -33,7 +33,7 @@ const (
 	DispatchHashFileFmt                 = "hash %s: %w"
 	DispatchChecksumMismatchFmt         = "checksum mismatch for %s (expected %s, got %s)"
 
-	DispatchDownload404Fmt     = "download %s: release not found (HTTP 404)\n\nThe requested version may not exist or may have been removed.\nRemediation:\n  - Verify the version exists at %s\n  - Update the pin: al init --version latest\n  - Or set a valid version: al init --version X.Y.Z"
+	DispatchDownload404Fmt     = "download %s: release not found (HTTP 404)\n\nThe requested version may not exist or may have been removed.\nRemediation:\n  - Verify the version exists at %s\n  - If this repo is pinned to a bad version, install a valid `al` release and run: al upgrade\n  - Or edit .agent-layer/al.version to a valid version (X.Y.Z)"
 	DispatchDownloadTimeoutFmt = "download %s: request timed out\n\nRemediation:\n  - Check your internet connection\n  - If behind a proxy, ensure HTTP_PROXY/HTTPS_PROXY are set\n  - Retry the command\n  - To work offline with a previously cached version, set AL_NO_NETWORK=1"
 
 	DispatchDownloadingFmt = "Downloading al v%s...\n"
@@ -43,13 +43,13 @@ const (
 	DispatchLockFmt          = "lock %s: %w"
 	DispatchReadPinFailedFmt = "read %s: %w"
 
-	DispatchPinFileEmptyWarningFmt         = "warning: pin file %s is empty; ignoring (run al init to fix)\n"
-	DispatchInvalidPinnedVersionWarningFmt = "warning: invalid pinned version in %s: %v; ignoring (run al init to fix)\n"
+	DispatchPinFileEmptyWarningFmt         = "warning: pin file %s is empty; ignoring (run al upgrade to repair)\n"
+	DispatchInvalidPinnedVersionWarningFmt = "warning: invalid pinned version in %s: %v; ignoring (run al upgrade to repair)\n"
 
 	// RootStartPathRequired indicates start path is required for root resolution.
 	RootStartPathRequired   = "start path is required"
 	RootResolvePathFmt      = "resolve path %s: %w"
-	RootPathNotDirFmt       = "%s exists but is not a directory"
+	RootPathNotDirFmt       = "%s exists but is not a directory; move or remove it and retry"
 	RootCheckPathFmt        = "check %s: %w"
 	RootPathNotDirOrFileFmt = "%s exists but is not a directory or file"
 

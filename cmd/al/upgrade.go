@@ -14,11 +14,70 @@ import (
 )
 
 func newUpgradeCmd() *cobra.Command {
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   messages.UpgradeUse,
 		Short: messages.UpgradeShort,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+
+			if !force && !isTerminal() {
+				return fmt.Errorf(messages.UpgradeRequiresTerminal)
+			}
+
+			targetPin, err := resolvePinVersion("", Version)
+			if err != nil {
+				return err
+			}
+			opts := install.Options{
+				Overwrite:  true,
+				Force:      force,
+				PinVersion: targetPin,
+				System:     install.RealSystem{},
+			}
+			if !force {
+				opts.Prompter = install.PromptFuncs{
+					OverwriteAllFunc: func(paths []string) (bool, error) {
+						if err := printFilePaths(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, paths); err != nil {
+							return false, err
+						}
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+					},
+					OverwriteAllMemoryFunc: func(paths []string) (bool, error) {
+						if err := printFilePaths(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, paths); err != nil {
+							return false, err
+						}
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+					},
+					OverwriteFunc: func(path string) (bool, error) {
+						prompt := fmt.Sprintf(messages.UpgradeOverwritePromptFmt, path)
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
+					},
+					DeleteUnknownAllFunc: func(paths []string) (bool, error) {
+						if err := printFilePaths(cmd.OutOrStdout(), messages.InstallUnknownHeader, paths); err != nil {
+							return false, err
+						}
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeDeleteUnknownAllPrompt, false)
+					},
+					DeleteUnknownFunc: func(path string) (bool, error) {
+						prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownPromptFmt, path)
+						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
+					},
+				}
+			}
+			if err := installRun(root, opts); err != nil {
+				return err
+			}
+			return nil
+		},
 	}
 	cmd.AddCommand(newUpgradePlanCmd())
+
+	cmd.Flags().BoolVar(&force, "force", false, messages.UpgradeFlagForce)
 	return cmd
 }
 
@@ -173,7 +232,7 @@ func writeOwnershipWarnings(out io.Writer, plan install.UpgradePlan) error {
 			return err
 		}
 	}
-	if _, err := fmt.Fprintln(out, "  - action: run `al init --overwrite` to refresh managed baseline evidence before applying upgrades."); err != nil {
+	if _, err := fmt.Fprintln(out, "  - action: run `al upgrade` (or `al upgrade --force`) to apply template changes and capture baseline evidence for ownership labels."); err != nil {
 		return err
 	}
 	return nil
