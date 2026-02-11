@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-10 test-agents: Multi-agent test strategy and execution workflows
+    Priority: High. Area: workflows/testing
+    Description: Multi-agent workflow where one agent "dreams up" and documents test strategies/cases (unit/E2E/integration), while a second agent implements tests, runs them, fixes failures, and opens PRs.
+    Acceptance criteria: E2E agents use tools like Playwright to actively "break things," turning failures into new tests; results are delivered as complete PRs with code and tests.
+    Notes: Must distinguish between test types; requires full product access for E2E agents to explore and find edge cases.
+
 - Backlog 2026-02-10 analytics: Add tracking and analytics to the website
     Priority: Medium. Area: website
     Description: Integrate tracking and analytics into the project website to monitor visitor counts and usage patterns.

@@ -29,6 +29,8 @@ For full detail, see [/docs/reference#sync](/docs/reference#sync).
 ## Why does Codex ask me to sign in again per repo?
 The Codex VS Code extension reads `CODEX_HOME` at startup, and Agent Layer sets a repo-specific `CODEX_HOME` via its launchers. That means authentication is stored per repo. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected and keeps credentials isolated. A practical benefit is that you can use different Codex accounts across repositories, such as one for personal projects and one for work, without mixing credentials.
 
+If you prefer to avoid the VS Code launcher, the best alternative is to configure MCP servers globally for the Codex VS Code extension. See [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
+
 ## Should we commit `.agent-layer/`?
 By default it is gitignored, but teams can choose to commit it (except `.agent-layer/.env`).
 

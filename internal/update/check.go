@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -21,6 +22,29 @@ const ReleasesBaseURL = "https://github.com/" + Repo + "/releases"
 
 var latestReleaseURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 var httpClient = &http.Client{Timeout: 10 * time.Second}
+
+// RateLimitError indicates GitHub's API rate limit was hit while checking for updates.
+//
+// Callers should generally treat this as a best-effort failure and suppress/minimize output.
+type RateLimitError struct {
+	StatusCode int
+	Status     string
+	Remaining  *int
+}
+
+func (e *RateLimitError) Error() string {
+	remainingText := "unknown"
+	if e.Remaining != nil {
+		remainingText = fmt.Sprintf("%d", *e.Remaining)
+	}
+	return fmt.Sprintf("github api rate limit exceeded (%s, remaining=%s)", e.Status, remainingText)
+}
+
+// IsRateLimitError reports whether err represents a GitHub API rate-limit condition.
+func IsRateLimitError(err error) bool {
+	var rl *RateLimitError
+	return errors.As(err, &rl)
+}
 
 // CheckResult captures the latest release check outcome.
 type CheckResult struct {
@@ -82,6 +106,9 @@ func fetchLatestReleaseVersion(ctx context.Context) (string, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
+		if rateLimitErr := rateLimitErrorFromResponse(resp); rateLimitErr != nil {
+			return "", rateLimitErr
+		}
 		return "", fmt.Errorf(messages.UpdateFetchLatestReleaseStatusFmt, resp.Status)
 	}
 
@@ -97,6 +124,30 @@ func fetchLatestReleaseVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf(messages.UpdateInvalidLatestReleaseTagFmt, payload.TagName, err)
 	}
 	return normalized, nil
+}
+
+func rateLimitErrorFromResponse(resp *http.Response) *RateLimitError {
+	if resp == nil {
+		return nil
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return &RateLimitError{StatusCode: resp.StatusCode, Status: resp.Status}
+	}
+	// GitHub returns 403 Forbidden for unauthenticated exhaustion; confirm with rate-limit headers.
+	if resp.StatusCode == http.StatusForbidden {
+		remainingStr := strings.TrimSpace(resp.Header.Get("X-RateLimit-Remaining"))
+		if remainingStr == "" {
+			return nil
+		}
+		remaining, err := strconv.Atoi(remainingStr)
+		if err != nil {
+			return nil //nolint:nilerr // Malformed header means we cannot confirm rate limiting; fall through to generic error.
+		}
+		if remaining == 0 {
+			return &RateLimitError{StatusCode: resp.StatusCode, Status: resp.Status, Remaining: &remaining}
+		}
+	}
+	return nil
 }
 
 // normalizeCurrentVersion validates the current version and reports dev builds.

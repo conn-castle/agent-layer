@@ -32,6 +32,9 @@ func WarnIfOutdated(ctx context.Context, currentVersion string, stderr io.Writer
 	warnColor := color.New(color.FgYellow)
 	result, err := CheckForUpdate(ctx, currentVersion)
 	if err != nil {
+		if update.IsRateLimitError(err) {
+			return
+		}
 		_, _ = warnColor.Fprintf(stderr, messages.InitWarnUpdateCheckFailedFmt, err)
 		return
 	}

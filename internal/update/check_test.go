@@ -159,6 +159,90 @@ func TestFetchLatestReleaseVersion_StatusError(t *testing.T) {
 	}
 }
 
+func TestFetchLatestReleaseVersion_RateLimit429(t *testing.T) {
+	withLatestReleaseServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+	})
+
+	_, err := fetchLatestReleaseVersion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for rate limit")
+	}
+	if !IsRateLimitError(err) {
+		t.Fatalf("expected rate limit error, got %T: %v", err, err)
+	}
+	var rl *RateLimitError
+	if !errors.As(err, &rl) || rl.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected RateLimitError with 429, got %T: %#v", err, rl)
+	}
+}
+
+func TestFetchLatestReleaseVersion_RateLimit403WithRemainingZero(t *testing.T) {
+	withLatestReleaseServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+	})
+
+	_, err := fetchLatestReleaseVersion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for rate limit")
+	}
+	if !IsRateLimitError(err) {
+		t.Fatalf("expected rate limit error, got %T: %v", err, err)
+	}
+	var rl *RateLimitError
+	if !errors.As(err, &rl) || rl.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected RateLimitError with 403, got %T: %#v", err, rl)
+	}
+	if rl.Remaining == nil || *rl.Remaining != 0 {
+		t.Fatalf("expected remaining=0, got %#v", rl.Remaining)
+	}
+}
+
+func TestFetchLatestReleaseVersion_ForbiddenWithoutRateLimitHeadersIsNotRateLimited(t *testing.T) {
+	withLatestReleaseServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	})
+
+	_, err := fetchLatestReleaseVersion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for forbidden")
+	}
+	if IsRateLimitError(err) {
+		t.Fatalf("expected non-rate-limit error, got %T: %v", err, err)
+	}
+}
+
+func TestFetchLatestReleaseVersion_ForbiddenWithNonZeroRemainingIsNotRateLimited(t *testing.T) {
+	withLatestReleaseServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "5")
+		w.WriteHeader(http.StatusForbidden)
+	})
+
+	_, err := fetchLatestReleaseVersion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for forbidden")
+	}
+	if IsRateLimitError(err) {
+		t.Fatalf("expected non-rate-limit error, got %T: %v", err, err)
+	}
+}
+
+func TestFetchLatestReleaseVersion_ForbiddenWithMalformedRemainingIsNotRateLimited(t *testing.T) {
+	withLatestReleaseServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "abc")
+		w.WriteHeader(http.StatusForbidden)
+	})
+
+	_, err := fetchLatestReleaseVersion(context.Background())
+	if err == nil {
+		t.Fatal("expected error for forbidden")
+	}
+	if IsRateLimitError(err) {
+		t.Fatalf("expected non-rate-limit error, got %T: %v", err, err)
+	}
+}
+
 func TestFetchLatestReleaseVersion_DecodeError(t *testing.T) {
 	withLatestReleaseServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

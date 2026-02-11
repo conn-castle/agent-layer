@@ -531,6 +531,53 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 	}
 }
 
+func TestInitCmd_UpdateWarningRateLimitSuppressed(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origRunWizard := runWizard
+	origCheckForUpdate := checkForUpdate
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		runWizard = origRunWizard
+		checkForUpdate = origCheckForUpdate
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	getwd = func() (string, error) { return tmpDir, nil }
+	isTerminal = func() bool { return false }
+	installCalled := false
+	installRun = func(string, install.Options) error {
+		installCalled = true
+		return nil
+	}
+	runWizard = func(string, string) error { return nil }
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{}, &update.RateLimitError{StatusCode: 403, Status: "403 Forbidden"}
+	}
+
+	cmd := newInitCmd()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetOut(&bytes.Buffer{})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init failed: %v", err)
+	}
+	if !installCalled {
+		t.Fatal("expected install to run")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no update-warning output, got %q", stderr.String())
+	}
+}
+
 func TestInitCmd_UpdateWarningDevBuild(t *testing.T) {
 	origGetwd := getwd
 	origIsTerminal := isTerminal

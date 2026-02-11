@@ -35,6 +35,7 @@ const (
 
 	DoctorUpdateSkippedFmt          = "Update check skipped because %s is set"
 	DoctorUpdateSkippedRecommendFmt = "Unset %s to check for updates."
+	DoctorUpdateRateLimited         = "Update check skipped due to GitHub API rate limit (HTTP 403/429)"
 	DoctorUpdateFailedFmt           = "Failed to check for updates: %v"
 	DoctorUpdateFailedRecommend     = "Verify network access and try again."
 	DoctorUpdateDevBuildFmt         = "Running dev build; latest release is %s"

@@ -396,6 +396,58 @@ func TestDoctorCommand_UpdateCheckError(t *testing.T) {
 	}
 }
 
+func TestDoctorCommand_UpdateCheckRateLimitedIsMinimized(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepo(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{}, &update.RateLimitError{StatusCode: 429, Status: "429 Too Many Requests"})
+
+	origInstructions := checkInstructions
+	origMCP := checkMCPServers
+	t.Cleanup(func() {
+		checkInstructions = origInstructions
+		checkMCPServers = origMCP
+	})
+	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
+		return nil, nil
+	}
+
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = w.Close()
+		_ = r.Close()
+		os.Stdout = origStdout
+	})
+	os.Stdout = w
+
+	withWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("doctor failed on rate limit: %v", err)
+		}
+	})
+
+	_ = w.Close()
+	outBytes, readErr := io.ReadAll(r)
+	if readErr != nil {
+		t.Fatalf("read stdout: %v", readErr)
+	}
+	output := string(outBytes)
+	if !strings.Contains(output, messages.DoctorUpdateRateLimited) {
+		t.Fatalf("expected rate-limit message in output, got:\n%s", output)
+	}
+	if strings.Contains(output, messages.DoctorUpdateFailedRecommend) {
+		t.Fatalf("expected no network-failure recommendation block on rate limit, got:\n%s", output)
+	}
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
 func TestDoctorCommand_UpdateCheckDevBuild(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepo(t, root)

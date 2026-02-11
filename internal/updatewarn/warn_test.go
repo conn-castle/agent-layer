@@ -75,6 +75,20 @@ func TestWarnIfOutdated_ErrorDevAndOutdated(t *testing.T) {
 	}
 }
 
+func TestWarnIfOutdated_RateLimitProducesNoOutput(t *testing.T) {
+	orig := CheckForUpdate
+	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{}, &update.RateLimitError{StatusCode: 429, Status: "429 Too Many Requests"}
+	}
+	t.Cleanup(func() { CheckForUpdate = orig })
+
+	var stderr bytes.Buffer
+	WarnIfOutdated(context.Background(), "v1.0.0", &stderr)
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no output, got %q", stderr.String())
+	}
+}
+
 func TestWarnIfOutdated_NoOutputWhenUpToDate(t *testing.T) {
 	orig := CheckForUpdate
 	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {

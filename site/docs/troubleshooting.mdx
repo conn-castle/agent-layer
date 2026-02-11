@@ -92,6 +92,41 @@ Run `al doctor` to see structured config errors.
 - For HTTP servers, confirm the URL and headers are correct.
 - Use `al doctor` to confirm discovery and tool listing.
 
+### Global MCP server fallback for VS Code (Codex)
+
+This is primarily a VS Code fallback.
+
+You should still use `al codex` on the CLI. `al codex` sets a repo-local `CODEX_HOME`, so Codex uses the repo-local `.codex/config.toml` (which Agent Layer generates from `.agent-layer/config.toml`, including MCP servers).
+
+If you launch VS Code without Agent Layer's repo-local launcher, the Codex VS Code extension will not get the repo-local `CODEX_HOME`. In that case, the extension will still use the repo-local instructions and slash commands, but it will use MCP servers from your global Codex config instead.
+
+Tradeoffs (VS Code without launcher):
+
+- You are no longer using `.agent-layer/config.toml` as the single source of truth for Codex MCP servers.
+- Codex auth/state is shared across repos (which can be convenient, but is less isolated).
+
+Workflow (best-effort; depends on your Codex client version):
+
+1. Configure MCP servers in your global Codex config (typically `~/.codex/config.toml`).
+
+   Example (no secrets):
+
+   ```toml
+   [mcp_servers.ripgrep]
+   command = "npx"
+   args = ["-y", "mcp-ripgrep@latest"]
+
+   [mcp_servers.fetch]
+   command = "uvx"
+   args = ["mcp-server-fetch"]
+   ```
+
+   Note: for servers that require API keys, prefer environment variables and avoid hardcoding secrets into your global config.
+2. Launch VS Code without Agent Layer's `CODEX_HOME` launcher so the extension uses the global config.
+3. Keep using Agent Layer for repo-local prompts/skills and slash commands.
+
+If you want the fully managed setup in VS Code, use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CODEX_HOME` and uses MCP servers projected from `.agent-layer/config.toml`.
+
 ### Client CLI not found
 
 Install the target client CLI (Gemini, Claude, Codex, VS Code, Antigravity) and ensure it is available on your `PATH`.
