@@ -159,3 +159,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Treat `.agent-layer/al.version` as required and do not support or document an end-user “unpin” workflow.
     Reason: Unpinned repos can silently drift when developers upgrade the global `al` install, causing hard-to-debug mismatches.
     Tradeoffs: Advanced users can still delete the pin file manually, but that is unsupported and reduces reproducibility.
+
+- Decision 2026-02-11 p1d-json-contract: Upgrade-plan JSON is diagnostic, not a stable public schema contract
+    Decision: Keep `al upgrade plan --json` as optional diagnostic output, but do not guarantee a stable field-level schema for CI automation.
+    Reason: There are currently no first-party automation consumers; locking the schema now would add compatibility burden without immediate product value.
+    Tradeoffs: External automation must pin CLI versions (or parse defensively) if it chooses to consume `--json` output.
+
+- Decision 2026-02-11 p1e-readiness-heuristics: Readiness checks are text-first with VS Code mtime heuristic
+    Decision: Implement upgrade readiness checks in text dry-run output; detect stale `--no-sync` state using VS Code generated-output presence plus config-vs-output mtime comparison (instead of full sync-content diffing).
+    Reason: Keeps checks decoupled from sync internals while surfacing practical risk before upgrade apply.
+    Tradeoffs: mtime-based detection can produce false positives after non-functional config file touches; accepted for lower complexity and maintenance.

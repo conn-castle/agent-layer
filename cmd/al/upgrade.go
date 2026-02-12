@@ -141,6 +141,9 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan) error {
 	if err := writePinVersionSection(out, plan.PinVersionChange); err != nil {
 		return err
 	}
+	if err := writeReadinessSection(out, plan.ReadinessChecks); err != nil {
+		return err
+	}
 	if err := writeOwnershipWarnings(out, plan); err != nil {
 		return err
 	}
@@ -215,6 +218,27 @@ func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff) er
 	}
 	if _, err := fmt.Fprintf(out, "  - action: %s\n", pin.Action); err != nil {
 		return err
+	}
+	return nil
+}
+
+func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck) error {
+	if _, err := fmt.Fprintln(out, "\nReadiness checks:"); err != nil {
+		return err
+	}
+	if len(checks) == 0 {
+		_, err := fmt.Fprintln(out, "  - (none)")
+		return err
+	}
+	for _, check := range checks {
+		if _, err := fmt.Fprintf(out, "  - %s: %s\n", check.ID, check.Summary); err != nil {
+			return err
+		}
+		for _, detail := range check.Details {
+			if _, err := fmt.Fprintf(out, "    %s\n", detail); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

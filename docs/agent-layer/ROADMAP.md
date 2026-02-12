@@ -113,16 +113,16 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - Users can preview all upgrade changes before any file is written, with clear ownership labels (upstream vs local).
 - Upgrades are reversible via automatic snapshots, and destructive operations require explicit, granular opt-in.
 - Each release ships a migration manifest that handles file renames, deletions, and config transitions idempotently.
-- CI and automation can consume upgrade plans as machine-readable JSON and run non-interactive upgrades safely.
+- Upgrade planning remains explainable in human-readable output without requiring a stable machine-readable schema contract.
 
 ### Tasks
 
 **Explainability (Upgrade Plan Phase 1)**
 - [x] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
-- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer machine-readable ownership states).
-- [x] Add machine-readable output (`--json`) to `al upgrade plan` for CI/repo automation.
-- [ ] Close GitHub issue #30 (j4k5l6: managed file diff visibility) after PR merge.
-- [ ] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
+- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer ownership states).
+- [x] Add optional `--json` output to `al upgrade plan` for ad-hoc diagnostics (explicitly non-contractual format).
+- [ ] Validate GitHub issue #30 (j4k5l6: managed file diff visibility) closure criteria; close only after line-level diff visibility is shipped, otherwise record the remaining gap.
+- [x] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
 - [x] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
 - [ ] Add launch-impact preview (`al launch-plan <client>` or equivalent) showing whether launching will modify files before executing sync.
 
@@ -154,7 +154,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 
 ### Exit criteria
 - `al upgrade plan` exists and shows categorized, ownership-labeled changes without writing files.
-- `al upgrade plan --json` produces machine-readable output consumable by CI.
+- `al upgrade plan --json` is documented as optional diagnostic output, not a stable public schema contract.
 - Every upgrade operation creates a snapshot that can be rolled back via `al upgrade rollback`.
 - `--force` is replaced by granular flags; no single flag can silently delete unknowns.
 - `al upgrade --yes --apply-managed-updates` is CI-safe and does not delete unknown files.

@@ -299,6 +299,7 @@ func TestUpgradePlanCmd_TextOutputIncludesSectionsAndLabels(t *testing.T) {
 			"Template removals/orphans:",
 			"Config key migrations:",
 			"Pin version change:",
+			"Readiness checks:",
 			"upstream template delta",
 			"confidence=high",
 		}

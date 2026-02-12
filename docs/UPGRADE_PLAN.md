@@ -178,7 +178,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - config key migrations
    - pin version changes (current → target)
 2. Add clear ownership labels per diff: `upstream template delta` vs `local customization`.
-3. Add machine-readable output (`--json`) for CI/repo automation.
+3. Add optional machine-readable output (`--json`) for ad-hoc diagnostics (explicitly non-contractual; no stable field-level schema guarantee).
 4. Add upgrade-readiness checks in dry-run output:
    - flag suspicious/unrecognized config keys
    - flag stale generated outputs when launch path uses `--no-sync`

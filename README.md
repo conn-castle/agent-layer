@@ -455,7 +455,7 @@ Other commands:
 
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
 - `al upgrade` — apply template-managed updates and update the repo pin (prompts unless `--force`)
-- `al upgrade plan` — preview categorized template/pin changes with ownership labels; add `--json` for CI output
+- `al upgrade plan` — preview categorized template/pin changes with ownership labels; optional `--json` output is for ad-hoc diagnostics (format may change between releases)
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)
