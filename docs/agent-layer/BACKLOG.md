@@ -28,6 +28,24 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-13 launch-plan-revisit: Reevaluate dedicated launch-impact preview command
+    Priority: Medium. Area: launch UX
+    Description: Reconsider whether a standalone `al launch-plan <client>` command is needed, versus integrating preview behavior into launch/sync mode UX.
+    Acceptance criteria: After Phase 11 is complete, decision is documented to keep/remove/reshape launch-plan based on final launch sync-mode semantics and safety guarantees.
+    Notes: Explicitly defer the decision until Phase 11 finishes so it is evaluated against the final upgrade/sync design.
+
+- Backlog 2026-02-10 test-agents: Multi-agent test strategy and execution workflows
+    Priority: High. Area: workflows/testing
+    Description: Multi-agent workflow where one agent "dreams up" and documents test strategies/cases (unit/E2E/integration), while a second agent implements tests, runs them, fixes failures, and opens PRs.
+    Acceptance criteria: E2E agents use tools like Playwright to actively "break things," turning failures into new tests; results are delivered as complete PRs with code and tests.
+    Notes: Must distinguish between test types; requires full product access for E2E agents to explore and find edge cases.
+
+- Backlog 2026-02-10 analytics: Add tracking and analytics to the website
+    Priority: Medium. Area: website
+    Description: Integrate tracking and analytics into the project website to monitor visitor counts and usage patterns.
+    Acceptance criteria: Website includes an analytics provider (e.g., Google Analytics, Plausible) and visitor data is accessible.
+    Notes: Ensure privacy compliance (GDPR/CCPA) and consider privacy-respecting alternatives.
+
 - Backlog 2026-02-03 f1a2b3c: Transform roadmap into public-facing documentation
     Priority: Medium. Area: documentation
     Description: Convert the internal `ROADMAP.md` into actual documentation that clearly communicates the project's direction and upcoming features to users.

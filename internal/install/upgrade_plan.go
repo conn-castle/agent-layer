@@ -46,15 +46,16 @@ type UpgradePlanOptions struct {
 
 // UpgradePlan is the machine-readable output of `al upgrade plan`.
 type UpgradePlan struct {
-	SchemaVersion             int                   `json:"schema_version"`
-	DryRun                    bool                  `json:"dry_run"`
-	TemplateAdditions         []UpgradeChange       `json:"template_additions"`
-	TemplateUpdates           []UpgradeChange       `json:"template_updates"`
-	SectionAwareUpdates       []UpgradeChange       `json:"section_aware_updates"`
-	TemplateRenames           []UpgradeRename       `json:"template_renames"`
-	TemplateRemovalsOrOrphans []UpgradeChange       `json:"template_removals_or_orphans"`
-	ConfigKeyMigrations       []ConfigKeyMigration  `json:"config_key_migrations"`
-	PinVersionChange          UpgradePinVersionDiff `json:"pin_version_change"`
+	SchemaVersion             int                     `json:"schema_version"`
+	DryRun                    bool                    `json:"dry_run"`
+	TemplateAdditions         []UpgradeChange         `json:"template_additions"`
+	TemplateUpdates           []UpgradeChange         `json:"template_updates"`
+	SectionAwareUpdates       []UpgradeChange         `json:"section_aware_updates"`
+	TemplateRenames           []UpgradeRename         `json:"template_renames"`
+	TemplateRemovalsOrOrphans []UpgradeChange         `json:"template_removals_or_orphans"`
+	ConfigKeyMigrations       []ConfigKeyMigration    `json:"config_key_migrations"`
+	PinVersionChange          UpgradePinVersionDiff   `json:"pin_version_change"`
+	ReadinessChecks           []UpgradeReadinessCheck `json:"readiness_checks"`
 }
 
 // UpgradeChange describes a single template delta entry.
@@ -193,6 +194,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	}
 
 	regularUpdates, sectionUpdates := splitSectionAwareUpdates(updates)
+	readinessChecks, err := buildUpgradeReadinessChecks(inst)
+	if err != nil {
+		return UpgradePlan{}, err
+	}
 
 	return UpgradePlan{
 		SchemaVersion:             UpgradePlanSchemaVersion,
@@ -204,6 +209,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		TemplateRemovalsOrOrphans: toUpgradeChanges(orphans),
 		ConfigKeyMigrations:       []ConfigKeyMigration{},
 		PinVersionChange:          pinDiff,
+		ReadinessChecks:           readinessChecks,
 	}, nil
 }
 

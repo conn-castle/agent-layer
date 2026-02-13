@@ -16,15 +16,20 @@ func TestLoadInstructions_ReadDirError(t *testing.T) {
 }
 
 func TestLoadInstructions_ReadFileError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("skipping read error test as root")
-	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.md")
-	if err := os.WriteFile(path, []byte{}, 0o000); err != nil {
+	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	defer func() { _ = os.Chmod(path, 0o644) }()
+
+	orig := osReadFileFunc
+	osReadFileFunc = func(name string) ([]byte, error) {
+		if name == path {
+			return nil, errors.New("injected read error")
+		}
+		return orig(name)
+	}
+	t.Cleanup(func() { osReadFileFunc = orig })
 
 	_, err := LoadInstructions(dir)
 	if err == nil {
@@ -33,7 +38,7 @@ func TestLoadInstructions_ReadFileError(t *testing.T) {
 }
 
 func TestWalkInstructionFiles_ReadDirError(t *testing.T) {
-	err := WalkInstructionFiles("/non-existent/dir", func(path string, entry fs.DirEntry) error {
+	err := walkInstructionFiles("/non-existent/dir", func(path string, entry fs.DirEntry) error {
 		return nil
 	})
 	if err == nil {
@@ -47,7 +52,7 @@ func TestWalkInstructionFiles_FnError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	err := WalkInstructionFiles(dir, func(path string, entry fs.DirEntry) error {
+	err := walkInstructionFiles(dir, func(path string, entry fs.DirEntry) error {
 		return errors.New("boom")
 	})
 	if err == nil {

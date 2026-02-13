@@ -70,7 +70,7 @@ func TestWalkInstructionFiles(t *testing.T) {
 	}
 
 	var seen []string
-	err := WalkInstructionFiles(dir, func(path string, entry os.DirEntry) error {
+	err := walkInstructionFiles(dir, func(path string, entry os.DirEntry) error {
 		seen = append(seen, filepath.Base(path))
 		return nil
 	})
@@ -88,7 +88,7 @@ func TestWalkInstructionFilesError(t *testing.T) {
 		t.Fatalf("write base: %v", err)
 	}
 	expected := errors.New("boom")
-	err := WalkInstructionFiles(dir, func(path string, entry os.DirEntry) error {
+	err := walkInstructionFiles(dir, func(path string, entry os.DirEntry) error {
 		return expected
 	})
 	if !errors.Is(err, expected) {

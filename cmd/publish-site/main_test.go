@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"os"
@@ -272,6 +273,19 @@ func TestValidateRepoBRootErrors(t *testing.T) {
 	}
 }
 
+func TestValidateRepoBRoot_StatError(t *testing.T) {
+	repo := t.TempDir()
+	withStatError(t, repo, os.ErrPermission)
+
+	err := validateRepoBRoot(repo)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected permission error, got %v", err)
+	}
+}
+
 func TestRepoRoot(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o644); err != nil {
@@ -308,6 +322,30 @@ func TestRepoRoot(t *testing.T) {
 	if gotEval != repoEval {
 		t.Fatalf("expected %q, got %q", repoEval, gotEval)
 	}
+}
+
+func TestRepoRoot_GoModStatError(t *testing.T) {
+	repo := t.TempDir()
+	goModPath := filepath.Join(repo, "go.mod")
+	if err := os.WriteFile(goModPath, []byte("module example.com/test"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	nested := filepath.Join(repo, "nested", "dir")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+
+	withWorkingDir(t, nested, func() {
+		withStatError(t, goModPath, os.ErrPermission)
+
+		_, err := repoRoot()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("expected permission error, got %v", err)
+		}
+	})
 }
 
 func TestNormalizeVersionsJSON_Missing(t *testing.T) {
@@ -397,29 +435,11 @@ func TestRun_MissingChangelog(t *testing.T) {
 }
 
 func TestRun_ChangelogStatError(t *testing.T) {
-	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: false})
+	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 	repoB := setupRepoB(t)
 
-	protectedDir := filepath.Join(repoA, "protected")
-	if err := os.MkdirAll(protectedDir, 0o755); err != nil {
-		t.Fatalf("mkdir protected: %v", err)
-	}
-	target := filepath.Join(protectedDir, "changelog")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write target: %v", err)
-	}
-	if err := os.Chmod(protectedDir, 0o000); err != nil {
-		t.Skipf("chmod failed: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) })
-
-	link := filepath.Join(repoA, "CHANGELOG.md")
-	if err := os.Symlink(target, link); err != nil {
-		t.Skipf("symlink failed: %v", err)
-	}
-	if _, err := os.Stat(link); err == nil || os.IsNotExist(err) {
-		t.Skip("unable to trigger stat permission error")
-	}
+	changelogPath := filepath.Join(repoA, "CHANGELOG.md")
+	withStatError(t, changelogPath, os.ErrPermission)
 
 	withWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
@@ -432,13 +452,9 @@ func TestRun_ChangelogStatError(t *testing.T) {
 func TestRun_CopyPagesError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 	repoB := setupRepoB(t)
+
 	badFile := filepath.Join(repoA, "site", "pages", "index.mdx")
-	if err := os.Chmod(badFile, 0o000); err != nil {
-		t.Skipf("chmod failed: %v", err)
-	}
-	if _, err := os.ReadFile(badFile); err == nil {
-		t.Skip("unable to make file unreadable on this platform")
-	}
+	withReadFileError(t, badFile, os.ErrPermission)
 
 	withWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
@@ -451,13 +467,9 @@ func TestRun_CopyPagesError(t *testing.T) {
 func TestRun_CopyDocsError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 	repoB := setupRepoB(t)
+
 	badFile := filepath.Join(repoA, "site", "docs", "reference.mdx")
-	if err := os.Chmod(badFile, 0o000); err != nil {
-		t.Skipf("chmod failed: %v", err)
-	}
-	if _, err := os.ReadFile(badFile); err == nil {
-		t.Skip("unable to make file unreadable on this platform")
-	}
+	withReadFileError(t, badFile, os.ErrPermission)
 
 	withWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
@@ -507,14 +519,12 @@ func TestCopyTree_WalkError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(blocked, "file.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write blocked file: %v", err)
 	}
-	if err := os.Chmod(blocked, 0o000); err != nil {
-		t.Skipf("chmod failed: %v", err)
-	}
-	defer func() { _ = os.Chmod(blocked, 0o755) }()
+
+	withWalkError(t, blocked, os.ErrPermission)
 
 	dst := t.TempDir()
 	if err := copyTree(src, filepath.Join(dst, "out")); err == nil {
-		t.Skip("unable to trigger walk error on this platform")
+		t.Fatal("expected walk error")
 	}
 }
 
@@ -558,11 +568,14 @@ func TestEnsureIdempotentVersion_ReadError(t *testing.T) {
 func TestEnsureIdempotentVersion_WriteError(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, []byte("[\"1.2.3\"]"), 0o444); err != nil {
+	if err := os.WriteFile(versionsPath, []byte("[\"1.2.3\"]"), 0o644); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
+
+	withWriteFileError(t, versionsPath, os.ErrPermission)
+
 	if err := ensureIdempotentVersion(repo, "1.2.3"); err == nil {
-		t.Skip("unable to trigger write error on this platform")
+		t.Fatal("expected write error")
 	}
 }
 
@@ -998,6 +1011,71 @@ func setArgs(t *testing.T, args ...string) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
 	flag.CommandLine.SetOutput(io.Discard)
 	os.Args = append([]string{origArgs[0]}, args...)
+}
+
+// resolveSymlinks returns both the original and symlink-resolved paths.
+// On macOS, t.TempDir() returns /var/... while os.Getwd() returns /private/var/...;
+// matching both ensures stubs work for direct calls and calls through run().
+func resolveSymlinks(path string) (original, resolved string) {
+	resolved = path
+	if r, err := filepath.EvalSymlinks(path); err == nil {
+		resolved = r
+	}
+	return path, resolved
+}
+
+func withStatError(t *testing.T, path string, injectedErr error) {
+	t.Helper()
+	origPath, resolvedPath := resolveSymlinks(path)
+	orig := osStatFunc
+	osStatFunc = func(name string) (os.FileInfo, error) {
+		if name == origPath || name == resolvedPath {
+			return nil, injectedErr
+		}
+		return orig(name)
+	}
+	t.Cleanup(func() { osStatFunc = orig })
+}
+
+func withReadFileError(t *testing.T, path string, injectedErr error) {
+	t.Helper()
+	origPath, resolvedPath := resolveSymlinks(path)
+	orig := osReadFileFunc
+	osReadFileFunc = func(name string) ([]byte, error) {
+		if name == origPath || name == resolvedPath {
+			return nil, injectedErr
+		}
+		return orig(name)
+	}
+	t.Cleanup(func() { osReadFileFunc = orig })
+}
+
+func withWriteFileError(t *testing.T, path string, injectedErr error) {
+	t.Helper()
+	origPath, resolvedPath := resolveSymlinks(path)
+	orig := osWriteFileFunc
+	osWriteFileFunc = func(name string, data []byte, perm os.FileMode) error {
+		if name == origPath || name == resolvedPath {
+			return injectedErr
+		}
+		return orig(name, data, perm)
+	}
+	t.Cleanup(func() { osWriteFileFunc = orig })
+}
+
+func withWalkError(t *testing.T, errorDir string, injectedErr error) {
+	t.Helper()
+	origDir, resolvedDir := resolveSymlinks(errorDir)
+	orig := filepathWalkFunc
+	filepathWalkFunc = func(root string, fn filepath.WalkFunc) error {
+		return orig(root, func(path string, info os.FileInfo, err error) error {
+			if (path == origDir || path == resolvedDir) && info != nil && info.IsDir() {
+				return injectedErr
+			}
+			return fn(path, info, err)
+		})
+	}
+	t.Cleanup(func() { filepathWalkFunc = orig })
 }
 
 func withHelperCommand(t *testing.T, extraEnv ...string) {

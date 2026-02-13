@@ -15,6 +15,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -52,6 +53,9 @@ func newDoctorCmd() *cobra.Command {
 			} else {
 				result, err := checkForUpdate(cmd.Context(), Version)
 				switch {
+				case err != nil && update.IsRateLimitError(err):
+					updateResult.Status = doctor.StatusWarn
+					updateResult.Message = messages.DoctorUpdateRateLimited
 				case err != nil:
 					updateResult.Status = doctor.StatusWarn
 					updateResult.Message = fmt.Sprintf(messages.DoctorUpdateFailedFmt, err)

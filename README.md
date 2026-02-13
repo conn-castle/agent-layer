@@ -121,15 +121,19 @@ If MCP servers that use `npx` are failing in VS Code, your GUI environment may n
 
 ---
 
-## Version pinning (per repo, optional)
+## Version pinning (per repo, required)
 
 Version pinning keeps everyone on the same Agent Layer release and lets `al` download the right binary automatically.
 
-Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: `/docs/upgrades`.
+Upgrade contract details (event model, compatibility guarantees, migration rules, OS/shell matrix) are maintained in one canonical location: the [upgrade contract](https://conn-castle.github.io/agent-layer-web/docs/upgrades) (source: `site/docs/upgrades.mdx`).
 
 When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
 
 When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
+
+By default, `al init` enables pinning in release builds by writing `.agent-layer/al.version`. Think of this file like a lockfile: it prevents the repo from silently changing behavior when you update your globally installed `al`.
+
+Agent Layer treats `.agent-layer/al.version` as required for supported usage. Do not delete it. If it is missing or invalid, install a release build and run `al upgrade` to repair it.
 
 Pin format:
 - `0.6.0` or `v0.6.0` (both are accepted)
@@ -150,7 +154,9 @@ Update the global CLI:
 - Homebrew: `brew upgrade conn-castle/tap/agent-layer` (updates the installed formula)
 - Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
 
-If a repo is pinned (or just out of date), run `al upgrade plan` and then `al upgrade` inside the repo. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
+Run `al upgrade plan` and then `al upgrade` inside the repo to apply template-managed updates. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
+
+Upgrade previews now include line-level diffs in both `al upgrade plan` and interactive `al upgrade` prompts. By default, each file preview is truncated to 40 lines; raise this with `--diff-lines N` when needed.
 
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
@@ -158,7 +164,7 @@ If a repo is pinned (or just out of date), run `al upgrade plan` and then `al up
 Compatibility guarantee:
 - Guaranteed upgrade path is sequential release lines only (`N-1` to `N`; example: `0.6.x` to `0.7.x`).
 - Skipping release lines is best effort and may require additional manual migration.
-- See `/docs/upgrades` for event categories and release-versioned migration rules.
+- See the [upgrade contract](https://conn-castle.github.io/agent-layer-web/docs/upgrades) (source: `site/docs/upgrades.mdx`) for event categories and release-versioned migration rules.
 
 ---
 
@@ -187,9 +193,9 @@ The wizard rewrites `config.toml` in the template-defined order and creates back
 `al init` creates three buckets: user configuration, project memory, and generated client files.
 
 ### User configuration (gitignored by default, but can be committed)
-- `.agent-layer/`
+  - `.agent-layer/`
   - `config.toml` (main configuration; human-editable)
-  - `al.version` (repo pin; optional but recommended)
+  - `al.version` (repo pin; required)
   - `instructions/` (numbered `*.md` fragments; lexicographic order)
   - `slash-commands/` (workflow markdown; one file per command)
   - `commands.allow` (approved shell commands; line-based)
@@ -207,6 +213,7 @@ Common memory files include:
 - `docs/agent-layer/BACKLOG.md`
 - `docs/agent-layer/ROADMAP.md`
 - `docs/agent-layer/DECISIONS.md`
+- `docs/agent-layer/COMMANDS.md`
 
 ### Generated client files (gitignored by default)
 Generated outputs are written into the repo in client-specific formats (examples):
@@ -450,8 +457,8 @@ al vscode --no-sync -- --reuse-window
 Other commands:
 
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
-- `al upgrade` — apply template-managed updates and update the repo pin (prompts unless `--force`)
-- `al upgrade plan` — preview categorized template/pin changes with ownership labels; add `--json` for CI output
+- `al upgrade` — apply template-managed updates and update the repo pin (prompts unless `--force`; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size)
+- `al upgrade plan` — preview categorized template/pin changes with ownership labels and line-level diff previews (`--diff-lines N` to raise per-file preview size); optional `--json` output is for ad-hoc diagnostics (format may change between releases)
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)

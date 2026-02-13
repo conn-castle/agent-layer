@@ -29,6 +29,8 @@ For full detail, see [/docs/reference#sync](/docs/reference#sync).
 ## Why does Codex ask me to sign in again per repo?
 The Codex VS Code extension reads `CODEX_HOME` at startup, and Agent Layer sets a repo-specific `CODEX_HOME` via its launchers. That means authentication is stored per repo. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected and keeps credentials isolated. A practical benefit is that you can use different Codex accounts across repositories, such as one for personal projects and one for work, without mixing credentials.
 
+If you prefer to avoid the VS Code launcher, the best alternative is to configure MCP servers globally for the Codex VS Code extension. See [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
+
 ## Should we commit `.agent-layer/`?
 By default it is gitignored, but teams can choose to commit it (except `.agent-layer/.env`).
 
@@ -67,11 +69,11 @@ If a server uses `npx` or `uvx`, you must have those tools installed.
 If MCP servers that use `npx` fail to start, VS Code may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so GUI apps can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
 ## Can I pin a repo to a specific version?
-Yes. Set `.agent-layer/al.version` to `X.Y.Z` or `vX.Y.Z`, or set an initial pin during `al init` with `--version`. You can temporarily override the pin with `AL_VERSION`.
+Yes. `.agent-layer/al.version` is the repo pin (required). Set it to `X.Y.Z` or `vX.Y.Z`, or set an initial pin during `al init` with `--version`. You can temporarily override the pin with `AL_VERSION`.
 
 See [/docs/concepts#version-pinning](/docs/concepts#version-pinning) for the full model and tradeoffs.
 
-## How do I upgrade a pinned repo?
+## How do I upgrade a repo?
 Upgrade the global CLI first, then run `al upgrade plan` and `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) to match the currently installed `al` version.
 
 For the full upgrade contract, compatibility guarantees, and release migration rules, see [/docs/upgrades](/docs/upgrades).

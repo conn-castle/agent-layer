@@ -121,6 +121,9 @@ func warnInitUpdate(cmd *cobra.Command, flagVersion string) {
 	warnColor := color.New(color.FgYellow)
 	result, err := checkForUpdate(cmd.Context(), Version)
 	if err != nil {
+		if update.IsRateLimitError(err) {
+			return
+		}
 		_, _ = warnColor.Fprintf(cmd.ErrOrStderr(), messages.InitWarnUpdateCheckFailedFmt, err)
 		return
 	}

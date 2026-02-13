@@ -35,7 +35,7 @@ func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 	commands := make([]SlashCommand, 0, len(names))
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		data, err := os.ReadFile(path)
+		data, err := osReadFileFunc(path)
 		if err != nil {
 			return nil, fmt.Errorf(messages.ConfigFailedReadSlashCommandFmt, path, err)
 		}

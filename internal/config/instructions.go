@@ -14,6 +14,8 @@ import (
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
+var osReadFileFunc = os.ReadFile
+
 // LoadInstructions reads .agent-layer/instructions/*.md in lexicographic order.
 func LoadInstructions(dir string) ([]InstructionFile, error) {
 	entries, err := os.ReadDir(dir)
@@ -41,7 +43,7 @@ func LoadInstructions(dir string) ([]InstructionFile, error) {
 	files := make([]InstructionFile, 0, len(names))
 	for _, name := range names {
 		path := filepath.Join(dir, name)
-		data, err := os.ReadFile(path)
+		data, err := osReadFileFunc(path)
 		if err != nil {
 			return nil, fmt.Errorf(messages.ConfigFailedReadInstructionFmt, path, err)
 		}
@@ -55,8 +57,8 @@ func LoadInstructions(dir string) ([]InstructionFile, error) {
 	return files, nil
 }
 
-// WalkInstructionFiles is a helper to walk instruction files in a directory.
-func WalkInstructionFiles(dir string, fn func(path string, entry fs.DirEntry) error) error {
+// walkInstructionFiles is a helper to walk instruction files in a directory.
+func walkInstructionFiles(dir string, fn func(path string, entry fs.DirEntry) error) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err

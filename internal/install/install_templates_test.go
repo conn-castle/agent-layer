@@ -47,6 +47,72 @@ func TestWriteTemplateIfMissingInvalidTemplate(t *testing.T) {
 	}
 }
 
+func TestWriteSectionAwareTemplateFile_CreatesMissingFile(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{
+		root: root,
+		sys:  RealSystem{},
+	}
+	relPath := filepath.ToSlash(filepath.Join("docs", "agent-layer", "ISSUES.md"))
+	destPath := filepath.Join(root, filepath.FromSlash(relPath))
+	if err := inst.writeSectionAwareTemplateFile(destPath, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart); err != nil {
+		t.Fatalf("writeSectionAwareTemplateFile: %v", err)
+	}
+
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("read written section-aware file: %v", err)
+	}
+	if !strings.Contains(string(content), ownershipMarkerEntriesStart) {
+		t.Fatalf("expected marker %q in written file", ownershipMarkerEntriesStart)
+	}
+}
+
+func TestBuildLabeledDiffs_NormalizesRelativePath(t *testing.T) {
+	inst := &installer{}
+	labeled, err := inst.buildLabeledDiffs([]string{".agent-layer\\commands.allow"}, map[string]string{})
+	if err != nil {
+		t.Fatalf("buildLabeledDiffs: %v", err)
+	}
+	if len(labeled) != 1 {
+		t.Fatalf("expected 1 labeled path, got %d", len(labeled))
+	}
+	if labeled[0].Path != ".agent-layer/commands.allow" {
+		t.Fatalf("expected slash-normalized path, got %q", labeled[0].Path)
+	}
+	if labeled[0].Ownership != OwnershipLocalCustomization {
+		t.Fatalf("expected default ownership local customization, got %q", labeled[0].Ownership)
+	}
+}
+
+func TestBuildLabeledDiffs_UsesSlashNormalizedTemplateMapping(t *testing.T) {
+	root := t.TempDir()
+	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(allowPath, []byte("custom allowlist\n"), 0o644); err != nil {
+		t.Fatalf("write commands.allow: %v", err)
+	}
+
+	inst := &installer{
+		root: root,
+		sys:  RealSystem{},
+	}
+	_, err := inst.buildLabeledDiffs(
+		[]string{".agent-layer\\commands.allow"},
+		map[string]string{
+			".agent-layer/commands.allow": "missing-template",
+		},
+	)
+	if err == nil {
+		t.Fatal("expected template-read error when slash-normalized mapping is used")
+	}
+	if !strings.Contains(err.Error(), "missing-template") {
+		t.Fatalf("expected missing-template error, got %v", err)
+	}
+}
+
 func TestWriteTemplateIfMissingStatError(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")

@@ -450,14 +450,3 @@ func sortAndDedupeReasons(reasons []string) []string {
 	sort.Strings(out)
 	return out
 }
-
-func formatLabeledPaths(entries []LabeledPath) []string {
-	if len(entries) == 0 {
-		return nil
-	}
-	lines := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		lines = append(lines, entry.Path+" ["+entry.Ownership.Display()+"]")
-	}
-	return lines
-}

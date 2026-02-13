@@ -53,7 +53,7 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 9. **[Resolved in Phase 10 work]** Update warnings suggest `al upgrade plan` and `al upgrade` (or `al upgrade --force`). Keep regression coverage to prevent guidance drift.
 10. **[Resolved in Phase 10 work]** `ensureCachedBinary` now emits "Downloading al vX.Y.Z..." / "Downloaded al vX.Y.Z" progress lines to stderr. Keep regression coverage to prevent re-introduction.
 11. **[Resolved in Phase 10 work]** `al init --version X.Y.Z` now validates the release exists before writing the pin file, returning a clear not-found message instead of a cryptic 404 on the next invocation. Keep regression coverage to prevent re-introduction.
-12. No mechanism to unpin. Users must manually delete `.agent-layer/al.version`; there is no `al upgrade --unpin` or equivalent.
+12. **[Intentional]** Pinning is required for supported repos. Disabling pinning (for example by deleting `.agent-layer/al.version`) is unsupported and should not be documented for end users.
 13. Pin file format does not support comments. Users accustomed to `.gitignore`-style files may add `# comments`, which causes the entire file to fail semver validation.
 14. Binary download uses a fixed 30-second HTTP timeout (`cache.go`). Large binaries on slow connections can time out with no retry.
 
@@ -178,13 +178,13 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - config key migrations
    - pin version changes (current → target)
 2. Add clear ownership labels per diff: `upstream template delta` vs `local customization`.
-3. Add machine-readable output (`--json`) for CI/repo automation.
+3. Add optional machine-readable output (`--json`) for ad-hoc diagnostics (explicitly non-contractual; no stable field-level schema guarantee).
 4. Add upgrade-readiness checks in dry-run output:
    - flag suspicious/unrecognized config keys
    - flag stale generated outputs when launch path uses `--no-sync`
    - flag floating external dependency specs (for example `@latest`)
    - flag stale generated artifacts for disabled agents
-5. Add `al upgrade --unpin` to remove `.agent-layer/al.version` cleanly. Document manual unpinning as an alternative.
+5. Document pinning as required and add clear repair guidance for missing/invalid `.agent-layer/al.version`.
 6. Gracefully degrade GitHub API update checks: when rate-limited (HTTP 403/429), suppress the warning silently or emit a one-line note instead of a multi-line block.
 7. Add launch-impact preview (`al launch-plan <client>` or equivalent) that shows whether launching will modify files before executing sync.
 
