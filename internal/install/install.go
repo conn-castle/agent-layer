@@ -18,10 +18,6 @@ import (
 // PromptOverwriteFunc asks whether to overwrite a given path.
 type PromptOverwriteFunc func(path string) (bool, error)
 
-// PromptOverwriteAllFunc asks whether to overwrite all managed files.
-// paths contains the relative files that differ from templates.
-type PromptOverwriteAllFunc func(paths []string) (bool, error)
-
 // PromptDeleteUnknownAllFunc asks whether to delete all unknown paths.
 type PromptDeleteUnknownAllFunc func(paths []string) (bool, error)
 
@@ -30,12 +26,13 @@ type PromptDeleteUnknownFunc func(path string) (bool, error)
 
 // Options controls installer behavior.
 type Options struct {
-	Overwrite  bool
-	Force      bool
-	Prompter   Prompter
-	WarnWriter io.Writer
-	PinVersion string
-	System     System
+	Overwrite    bool
+	Force        bool
+	Prompter     Prompter
+	WarnWriter   io.Writer
+	PinVersion   string
+	DiffMaxLines int
+	System       System
 }
 
 type installer struct {
@@ -53,6 +50,9 @@ type installer struct {
 	pinVersion                string
 	templateEntries           map[string][]templateEntry
 	templateMatchCache        map[string]matchCacheEntry
+	diffMaxLines              int
+	managedDiffPreviews       map[string]DiffPreview
+	memoryDiffPreviews        map[string]DiffPreview
 	sys                       System
 }
 
@@ -99,12 +99,13 @@ func Run(root string, opts Options) error {
 		warnWriter = os.Stderr
 	}
 	inst := &installer{
-		root:       root,
-		overwrite:  overwrite,
-		force:      opts.Force,
-		prompter:   opts.Prompter,
-		warnWriter: warnWriter,
-		sys:        sys,
+		root:         root,
+		overwrite:    overwrite,
+		force:        opts.Force,
+		prompter:     opts.Prompter,
+		warnWriter:   warnWriter,
+		diffMaxLines: normalizeDiffMaxLines(opts.DiffMaxLines),
+		sys:          sys,
 	}
 	if strings.TrimSpace(opts.PinVersion) != "" {
 		normalized, err := version.Normalize(opts.PinVersion)

@@ -45,7 +45,7 @@ func TestValidatePrompter_MissingOverwriteAll_ReturnsError(t *testing.T) {
 }
 
 func TestValidatePrompter_MissingOverwriteAllMemory_ReturnsError(t *testing.T) {
-	if err := validatePrompter(PromptFuncs{OverwriteAllFunc: func([]string) (bool, error) { return false, nil }}, true, false); err == nil {
+	if err := validatePrompter(PromptFuncs{OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil }}, true, false); err == nil {
 		t.Fatalf("expected error")
 	}
 }

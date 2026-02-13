@@ -45,29 +45,29 @@ func TestShouldOverwriteAllManaged_FormatsOwnershipLabels(t *testing.T) {
 		t.Fatalf("write allowlist: %v", err)
 	}
 
-	var promptPaths []string
+	var promptPreviews []DiffPreview
 	inst := &installer{
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
 		prompter: PromptFuncs{
-			OverwriteAllFunc: func(paths []string) (bool, error) {
-				promptPaths = append(promptPaths, paths...)
+			OverwriteAllPreviewFunc: func(previews []DiffPreview) (bool, error) {
+				promptPreviews = append(promptPreviews, previews...)
 				return false, nil
 			},
-			OverwriteAllMemoryFunc: func([]string) (bool, error) { return false, nil },
-			OverwriteFunc:          func(string) (bool, error) { return false, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
+			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return false, nil },
 		},
 	}
 
 	if _, err := inst.shouldOverwriteAllManaged(); err != nil {
 		t.Fatalf("shouldOverwriteAllManaged: %v", err)
 	}
-	if len(promptPaths) == 0 {
-		t.Fatalf("expected prompt paths")
+	if len(promptPreviews) == 0 {
+		t.Fatalf("expected prompt previews")
 	}
-	if !strings.Contains(promptPaths[0], "unknown no baseline") {
-		t.Fatalf("expected ownership label in prompt path, got %q", promptPaths[0])
+	if promptPreviews[0].Ownership != OwnershipUnknownNoBaseline {
+		t.Fatalf("expected ownership label %q, got %q", OwnershipUnknownNoBaseline, promptPreviews[0].Ownership)
 	}
 }
 
@@ -89,26 +89,29 @@ func TestShouldOverwriteAllMemory_FormatsOwnershipLabels(t *testing.T) {
 		t.Fatalf("write baseline doc: %v", err)
 	}
 
-	var promptPaths []string
+	var promptPreviews []DiffPreview
 	inst := &installer{
 		root:      root,
 		overwrite: true,
 		sys:       RealSystem{},
 		prompter: PromptFuncs{
-			OverwriteAllFunc:       func([]string) (bool, error) { return false, nil },
-			OverwriteAllMemoryFunc: func(paths []string) (bool, error) { promptPaths = append(promptPaths, paths...); return false, nil },
-			OverwriteFunc:          func(string) (bool, error) { return false, nil },
+			OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
+			OverwriteAllMemoryPreviewFunc: func(previews []DiffPreview) (bool, error) {
+				promptPreviews = append(promptPreviews, previews...)
+				return false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) { return false, nil },
 		},
 	}
 
 	if _, err := inst.shouldOverwriteAllMemory(); err != nil {
 		t.Fatalf("shouldOverwriteAllMemory: %v", err)
 	}
-	if len(promptPaths) == 0 {
-		t.Fatalf("expected prompt paths")
+	if len(promptPreviews) == 0 {
+		t.Fatalf("expected prompt previews")
 	}
-	if !strings.Contains(promptPaths[0], "upstream template delta") {
-		t.Fatalf("expected ownership label in prompt path, got %q", promptPaths[0])
+	if promptPreviews[0].Ownership != OwnershipUpstreamTemplateDelta {
+		t.Fatalf("expected ownership label %q, got %q", OwnershipUpstreamTemplateDelta, promptPreviews[0].Ownership)
 	}
 }
 

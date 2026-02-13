@@ -121,7 +121,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [x] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
 - [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer ownership states).
 - [x] Add optional `--json` output to `al upgrade plan` for ad-hoc diagnostics (explicitly non-contractual format).
-- [ ] Validate GitHub issue #30 (j4k5l6: managed file diff visibility) closure criteria; close only after line-level diff visibility is shipped, otherwise record the remaining gap.
+- [x] Validate GitHub issue #30 (j4k5l6: managed file diff visibility) closure criteria; close only after line-level diff visibility is shipped, otherwise record the remaining gap.
 - [x] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
 - [x] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
 - [ ] Add launch-impact preview (`al launch-plan <client>` or equivalent) showing whether launching will modify files before executing sync.

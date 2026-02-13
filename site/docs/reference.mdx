@@ -263,8 +263,8 @@ The command surface is intentionally small. Most of the time you only need one r
 | Command | Purpose |
 | --- | --- |
 | `al init` | Initialize a repo with Agent Layer templates and memory files. |
-| `al upgrade` | Apply template-managed updates and update the repo pin (prompts unless `--force`). |
-| `al upgrade plan` | Show a dry-run, categorized upgrade plan with ownership labels. |
+| `al upgrade` | Apply template-managed updates and update the repo pin (prompts unless `--force`; line-level diff previews shown by default, configurable with `--diff-lines`). |
+| `al upgrade plan` | Show a dry-run, categorized upgrade plan with ownership labels and line-level diff previews (configurable with `--diff-lines`). |
 | `al wizard` | Interactive configuration for approvals, agents, MCP servers, and warnings. |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
@@ -334,8 +334,11 @@ In non-interactive environments, the wizard is skipped.
 
 - Updates `.agent-layer/al.version` to match the currently running `al` binary
 - Prompts before overwriting managed template files (use `--force` to skip prompts)
+- Shows line-level diff previews before overwrite decisions by default
 - Deletes unknown files under `.agent-layer` only if you explicitly approve each deletion (or use `--force`)
 - Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
+
+Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
 
 ### Upgrade plan
 
@@ -361,6 +364,8 @@ Each diff entry includes an ownership label:
 - `unknown no baseline`
 
 `unknown no baseline` means Agent Layer cannot prove ownership safely for that file from baseline evidence. In text output, `al upgrade plan` includes an **Ownership warnings** block with actionable guidance.
+
+`al upgrade plan` also includes line-level diff previews for changed files. Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
 
 `al upgrade plan --json` is available as optional diagnostic output. Its field-level shape is not a stable public schema contract and may change between releases.
 

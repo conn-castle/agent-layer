@@ -6,7 +6,7 @@ These rules are mandatory and apply to all work: editing files, generating patch
 - **Single source of truth:** Do not maintain duplicate mutable state when it can be derived from a canonical source.
 - **UTC-only internals:** Store, compute, and transport time in UTC; local time display is presentation-only.
 - **Response protocol:** Answer direct questions explicitly before proposing or generating changes.
-- **Environment files:** Never modify the `.env` file. Only modify the `.env.example` file. If a change is needed in `.env`, ask the user to make it and provide exact, copyable instructions.
+- **Environment files:** Never modify the repository's `.env` file (application secrets). Only modify the `.env.example` file. If a change is needed in `.env`, ask the user to make it and provide exact, copyable instructions. Note: `.agent-layer/.env` is managed by `al wizard` and is a separate file from the repository's application `.env`.
 - **Repository boundary:** Never delete files outside of the repository. If a file outside of the repository needs to be deleted, ask the user to delete it.
 - **Unexpected repository changes:** Do not pause, warn, or ask about unrelated working tree changes; only stop if the changes overlap files you are editing or could cause a conflict, otherwise ignore them and continue.
 - **Secrets and credentials:** Never add secrets, private keys, access tokens, or credentials to repository files, logs, or outputs. Use placeholders and documented variable names in `.env.example`, and instruct the user to supply real values locally.

@@ -166,9 +166,9 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 	if !ok {
 		t.Fatalf("captured opts.Prompter = %T, want install.PromptFuncs", captured.Prompter)
 	}
-	if promptFuncs.OverwriteAllFunc == nil ||
-		promptFuncs.OverwriteAllMemoryFunc == nil ||
-		promptFuncs.OverwriteFunc == nil ||
+	if promptFuncs.OverwriteAllPreviewFunc == nil ||
+		promptFuncs.OverwriteAllMemoryPreviewFunc == nil ||
+		promptFuncs.OverwritePreviewFunc == nil ||
 		promptFuncs.DeleteUnknownAllFunc == nil ||
 		promptFuncs.DeleteUnknownFunc == nil {
 		t.Fatalf("expected all prompt callbacks to be wired: %+v", promptFuncs)
@@ -233,7 +233,8 @@ func TestUpgradeCmd_MissingAgentLayerErrors(t *testing.T) {
 func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 	root := prepareUpgradeTestRepo(t)
 	withWorkingDir(t, root, func() {
-		cmd := newUpgradePlanCmd()
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
 		cmd.SetArgs([]string{"--json"})
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -280,7 +281,8 @@ func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 func TestUpgradePlanCmd_TextOutputIncludesSectionsAndLabels(t *testing.T) {
 	root := prepareUpgradeTestRepo(t)
 	withWorkingDir(t, root, func() {
-		cmd := newUpgradePlanCmd()
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -324,7 +326,8 @@ func TestUpgradePlanCmd_TextOutputShowsUnknownBaselineWarning(t *testing.T) {
 	}
 
 	withWorkingDir(t, root, func() {
-		cmd := newUpgradePlanCmd()
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
@@ -338,6 +341,69 @@ func TestUpgradePlanCmd_TextOutputShowsUnknownBaselineWarning(t *testing.T) {
 		}
 		if !strings.Contains(output, "unknown no baseline") {
 			t.Fatalf("expected unknown ownership label in output:\n%s", output)
+		}
+	})
+}
+
+func TestUpgradePlanCmd_TextOutputIncludesDiffPreviewAndTruncation(t *testing.T) {
+	root := prepareUpgradeTestRepo(t)
+	withWorkingDir(t, root, func() {
+		diffLines := 1
+		cmd := newUpgradePlanCmd(&diffLines)
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade plan: %v", err)
+		}
+		output := out.String()
+		if !strings.Contains(output, "diff:") {
+			t.Fatalf("expected diff blocks in plan output:\n%s", output)
+		}
+		if !strings.Contains(output, "--diff-lines") {
+			t.Fatalf("expected truncation hint to mention --diff-lines:\n%s", output)
+		}
+	})
+}
+
+func TestUpgradePlanCmd_InvalidDiffLines(t *testing.T) {
+	root := prepareUpgradeTestRepo(t)
+	withWorkingDir(t, root, func() {
+		diffLines := 0
+		cmd := newUpgradePlanCmd(&diffLines)
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&out)
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for invalid --diff-lines")
+		}
+		if !strings.Contains(err.Error(), "invalid value for --diff-lines") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestUpgradeCmd_InvalidDiffLines(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--force", "--diff-lines=0"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error for invalid --diff-lines")
+		}
+		if !strings.Contains(err.Error(), "invalid value for --diff-lines") {
+			t.Fatalf("unexpected error: %v", err)
 		}
 	})
 }

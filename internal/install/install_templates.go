@@ -185,12 +185,25 @@ func (inst *installer) appendTemplateDirDiffs(diffs map[string]struct{}, dir tem
 	}
 	sys := inst.sys
 	for _, entry := range entries {
+		relPath := filepath.ToSlash(inst.relativePath(entry.destPath))
 		info, err := sys.Stat(entry.destPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
 			return fmt.Errorf(messages.InstallFailedStatFmt, entry.destPath, err)
+		}
+		if _, ok := sectionAwareMarkerForPath(relPath); ok {
+			matches, matchErr := inst.sectionAwareTemplateMatch(relPath, entry.destPath, entry.templatePath)
+			if matchErr != nil {
+				return matchErr
+			}
+			if matches {
+				continue
+			}
+			// If the marker is missing or malformed, the write path will fail loudly.
+			diffs[inst.relativePath(entry.destPath)] = struct{}{}
+			continue
 		}
 		matches, err := inst.matchTemplate(sys, entry.destPath, entry.templatePath, info)
 		if err != nil {
@@ -308,11 +321,64 @@ func (inst *installer) writeTemplateDirCached(dir templateDir) error {
 	}
 	sys := inst.sys
 	for _, entry := range entries {
+		relPath := filepath.ToSlash(inst.relativePath(entry.destPath))
+		if marker, ok := sectionAwareMarkerForPath(relPath); ok {
+			if err := inst.writeSectionAwareTemplateFile(entry.destPath, entry.templatePath, entry.perm, relPath, marker); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := writeTemplateFileWithMatch(sys, entry.destPath, entry.templatePath, entry.perm, inst.shouldOverwrite, inst.recordDiff, inst.matchTemplate); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (inst *installer) writeSectionAwareTemplateFile(path string, templatePath string, perm fs.FileMode, relPath string, marker string) error {
+	_, err := inst.sys.Stat(path)
+	if err == nil {
+		localBytes, readErr := inst.sys.ReadFile(path)
+		if readErr != nil {
+			return fmt.Errorf(messages.InstallFailedReadFmt, path, readErr)
+		}
+		templateBytes, templateErr := templates.Read(templatePath)
+		if templateErr != nil {
+			return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templatePath, templateErr)
+		}
+
+		localManaged, localUser, splitErr := splitSectionAwareContent(relPath, marker, localBytes)
+		if splitErr != nil {
+			return splitErr
+		}
+		templateManaged, _, templateSplitErr := splitSectionAwareContent(relPath, marker, templateBytes)
+		if templateSplitErr != nil {
+			return templateSplitErr
+		}
+
+		if normalizeTemplateContent(localManaged) == normalizeTemplateContent(templateManaged) {
+			return nil
+		}
+
+		overwrite, overwriteErr := inst.shouldOverwrite(path)
+		if overwriteErr != nil {
+			return overwriteErr
+		}
+		if !overwrite {
+			inst.recordDiff(path)
+			return nil
+		}
+
+		merged := []byte(templateManaged + localUser)
+		if err := inst.sys.WriteFileAtomic(path, merged, perm); err != nil {
+			return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	return writeTemplateFileWithMatch(inst.sys, path, templatePath, perm, inst.shouldOverwrite, inst.recordDiff, inst.matchTemplate)
 }
 
 func (inst *installer) templateDirEntries(dir templateDir) ([]templateEntry, error) {

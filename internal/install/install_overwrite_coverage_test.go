@@ -49,7 +49,7 @@ func TestShouldOverwriteAllManaged_ListManagedLabeledDiffsErrorPropagates(t *tes
 		root: t.TempDir(),
 		sys:  RealSystem{},
 		prompter: PromptFuncs{
-			OverwriteAllFunc: func([]string) (bool, error) {
+			OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) {
 				t.Fatalf("did not expect overwrite-all prompt to be called")
 				return false, nil
 			},
@@ -73,7 +73,7 @@ func TestShouldOverwriteAllMemory_ListMemoryLabeledDiffsErrorPropagates(t *testi
 		root: t.TempDir(),
 		sys:  RealSystem{},
 		prompter: PromptFuncs{
-			OverwriteAllMemoryFunc: func([]string) (bool, error) {
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) {
 				t.Fatalf("did not expect overwrite-all-memory prompt to be called")
 				return false, nil
 			},

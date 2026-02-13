@@ -47,6 +47,27 @@ func TestWriteTemplateIfMissingInvalidTemplate(t *testing.T) {
 	}
 }
 
+func TestWriteSectionAwareTemplateFile_CreatesMissingFile(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{
+		root: root,
+		sys:  RealSystem{},
+	}
+	relPath := filepath.ToSlash(filepath.Join("docs", "agent-layer", "ISSUES.md"))
+	destPath := filepath.Join(root, filepath.FromSlash(relPath))
+	if err := inst.writeSectionAwareTemplateFile(destPath, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart); err != nil {
+		t.Fatalf("writeSectionAwareTemplateFile: %v", err)
+	}
+
+	content, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("read written section-aware file: %v", err)
+	}
+	if !strings.Contains(string(content), ownershipMarkerEntriesStart) {
+		t.Fatalf("expected marker %q in written file", ownershipMarkerEntriesStart)
+	}
+}
+
 func TestWriteTemplateIfMissingStatError(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")

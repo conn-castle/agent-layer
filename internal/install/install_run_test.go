@@ -244,11 +244,11 @@ func TestRunWithOverwritePromptsUnknownDeletion(t *testing.T) {
 	if err := Run(root, Options{
 		Overwrite: true,
 		Prompter: PromptFuncs{
-			OverwriteAllFunc:       func([]string) (bool, error) { return true, nil },
-			OverwriteAllMemoryFunc: func([]string) (bool, error) { return true, nil },
-			OverwriteFunc:          func(string) (bool, error) { return true, nil },
-			DeleteUnknownAllFunc:   promptDeleteAll,
-			DeleteUnknownFunc:      promptDelete,
+			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return true, nil },
+			DeleteUnknownAllFunc:          promptDeleteAll,
+			DeleteUnknownFunc:             promptDelete,
 		},
 		System: RealSystem{},
 	}); err != nil {
@@ -280,10 +280,10 @@ func TestRunWithOverwriteMissingDeletePrompt(t *testing.T) {
 	if err := Run(root, Options{
 		Overwrite: true,
 		Prompter: PromptFuncs{
-			OverwriteAllFunc:       func([]string) (bool, error) { return true, nil },
-			OverwriteAllMemoryFunc: func([]string) (bool, error) { return true, nil },
-			OverwriteFunc:          func(string) (bool, error) { return true, nil },
-			DeleteUnknownAllFunc:   func([]string) (bool, error) { return true, nil },
+			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return true, nil },
+			DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
 		},
 		System: RealSystem{},
 	}); err == nil {
@@ -297,10 +297,10 @@ func TestRunWithOverwriteMissingPerFilePrompt(t *testing.T) {
 	if err := Run(root, Options{
 		Overwrite: true,
 		Prompter: PromptFuncs{
-			OverwriteAllFunc:       func([]string) (bool, error) { return true, nil },
-			OverwriteAllMemoryFunc: func([]string) (bool, error) { return true, nil },
-			DeleteUnknownAllFunc:   func([]string) (bool, error) { return true, nil },
-			DeleteUnknownFunc:      func(string) (bool, error) { return true, nil },
+			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+			DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
+			DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
 		},
 		System: RealSystem{},
 	}); err == nil {
@@ -323,19 +323,19 @@ func TestRunWithOverwritePromptDecline(t *testing.T) {
 	}
 
 	var prompted []string
-	prompt := func(path string) (bool, error) {
-		prompted = append(prompted, path)
+	prompt := func(preview DiffPreview) (bool, error) {
+		prompted = append(prompted, preview.Path)
 		return false, nil
 	}
 
 	if err := Run(root, Options{
 		Overwrite: true,
 		Prompter: PromptFuncs{
-			OverwriteAllFunc:       func([]string) (bool, error) { return false, nil },
-			OverwriteAllMemoryFunc: func([]string) (bool, error) { return false, nil },
-			OverwriteFunc:          prompt,
-			DeleteUnknownAllFunc:   func([]string) (bool, error) { return true, nil },
-			DeleteUnknownFunc:      func(string) (bool, error) { return true, nil },
+			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return false, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
+			OverwritePreviewFunc:          prompt,
+			DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
+			DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
 		},
 		System: RealSystem{},
 	}); err != nil {
@@ -364,9 +364,9 @@ func TestShouldOverwrite_UsesMemoryPrompt(t *testing.T) {
 		root:      root,
 		overwrite: true,
 		prompter: PromptFuncs{
-			OverwriteAllFunc:       func([]string) (bool, error) { managedCalled = true; return false, nil },
-			OverwriteAllMemoryFunc: func([]string) (bool, error) { memoryCalled = true; return false, nil },
-			OverwriteFunc:          func(string) (bool, error) { return false, nil },
+			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { managedCalled = true; return false, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { memoryCalled = true; return false, nil },
+			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return false, nil },
 		},
 		sys: RealSystem{},
 	}
@@ -525,7 +525,7 @@ func TestWriteVersionFile_InvalidExisting(t *testing.T) {
 	// Mock overwriteAllDecided to skip PromptOverwriteAll check which is missing
 	inst.overwriteAllDecided = true
 	inst.prompter = PromptFuncs{
-		OverwriteFunc: func(string) (bool, error) {
+		OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
 			return true, nil
 		},
 	}
@@ -557,7 +557,7 @@ func TestWriteVersionFile_PromptError(t *testing.T) {
 		overwrite:  true,
 		sys:        RealSystem{},
 		prompter: PromptFuncs{
-			OverwriteFunc: func(string) (bool, error) {
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
 				return false, errors.New("prompt failed")
 			},
 		},
@@ -645,7 +645,7 @@ func TestWriteVersionFile_OverwriteFalse(t *testing.T) {
 		overwriteAll:        false,
 		sys:                 RealSystem{},
 		prompter: PromptFuncs{
-			OverwriteFunc: func(string) (bool, error) {
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
 				return false, nil // Don't overwrite
 			},
 		},
@@ -665,9 +665,9 @@ func TestRun_DeleteUnknownPromptRequired(t *testing.T) {
 	err := Run(root, Options{
 		Overwrite: true,
 		Prompter: PromptFuncs{
-			OverwriteAllFunc:       func([]string) (bool, error) { return true, nil },
-			OverwriteAllMemoryFunc: func([]string) (bool, error) { return true, nil },
-			OverwriteFunc:          func(string) (bool, error) { return true, nil },
+			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+			OverwritePreviewFunc:          func(preview DiffPreview) (bool, error) { return true, nil },
 			// Missing DeleteUnknownAllFunc
 		},
 		System: RealSystem{},
@@ -717,5 +717,117 @@ func TestRun_OverwriteExisting(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("second run: %v", err)
+	}
+}
+
+func TestRun_SectionAwareOverwritePreservesUserEntries(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	issuesPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
+	initial, err := os.ReadFile(issuesPath)
+	if err != nil {
+		t.Fatalf("read issues: %v", err)
+	}
+
+	updated := strings.Replace(string(initial), "# Issues", "# Issues (local old header)", 1)
+	updated += "\n- Issue 2099-01-01 localtest: keep me\n    Priority: Low. Area: tests.\n    Description: local entry.\n    Next step: keep.\n"
+	if err := os.WriteFile(issuesPath, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write custom issues: %v", err)
+	}
+
+	if err := Run(root, Options{Overwrite: true, Force: true, System: RealSystem{}}); err != nil {
+		t.Fatalf("overwrite run: %v", err)
+	}
+
+	finalContent, err := os.ReadFile(issuesPath)
+	if err != nil {
+		t.Fatalf("read final issues: %v", err)
+	}
+	finalText := string(finalContent)
+	if strings.Contains(finalText, "# Issues (local old header)") {
+		t.Fatalf("expected managed header to be restored from template")
+	}
+	if !strings.Contains(finalText, "localtest: keep me") {
+		t.Fatalf("expected local user entry to be preserved below marker:\n%s", finalText)
+	}
+}
+
+func TestRun_OverwriteAllDeclineFallsBackToPerFileDiffPreview(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	original, err := os.ReadFile(managedPath)
+	if err != nil {
+		t.Fatalf("read managed file: %v", err)
+	}
+	updated := string(original) + "\n# local customization\n"
+	if err := os.WriteFile(managedPath, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write managed customization: %v", err)
+	}
+
+	batchPromptCalled := false
+	perFilePromptCalled := false
+	sawManagedInBatch := false
+
+	opts := Options{
+		Overwrite: true,
+		Prompter: PromptFuncs{
+			OverwriteAllPreviewFunc: func(previews []DiffPreview) (bool, error) {
+				batchPromptCalled = true
+				for _, preview := range previews {
+					if preview.Path != ".agent-layer/commands.allow" {
+						continue
+					}
+					sawManagedInBatch = true
+					if strings.TrimSpace(preview.UnifiedDiff) == "" {
+						t.Fatalf("expected non-empty batch diff preview for %s", preview.Path)
+					}
+				}
+				return false, nil
+			},
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) {
+				return false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
+				perFilePromptCalled = true
+				if preview.Path != ".agent-layer/commands.allow" {
+					t.Fatalf("unexpected per-file diff path: %s", preview.Path)
+				}
+				if strings.TrimSpace(preview.UnifiedDiff) == "" {
+					t.Fatalf("expected non-empty per-file diff preview for %s", preview.Path)
+				}
+				return false, nil
+			},
+			DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
+			DeleteUnknownFunc:    func(string) (bool, error) { return false, nil },
+		},
+		System: RealSystem{},
+	}
+
+	if err := Run(root, opts); err != nil {
+		t.Fatalf("run with prompts: %v", err)
+	}
+	if !batchPromptCalled {
+		t.Fatal("expected overwrite-all batch prompt to be called")
+	}
+	if !sawManagedInBatch {
+		t.Fatal("expected overwrite-all batch prompt to include managed file preview")
+	}
+	if !perFilePromptCalled {
+		t.Fatal("expected per-file prompt after declining overwrite-all batch prompt")
+	}
+
+	finalContent, err := os.ReadFile(managedPath)
+	if err != nil {
+		t.Fatalf("read final managed file: %v", err)
+	}
+	if string(finalContent) != updated {
+		t.Fatalf("expected managed file to remain unchanged after declining prompts")
 	}
 }

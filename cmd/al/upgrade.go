@@ -15,11 +15,15 @@ import (
 
 func newUpgradeCmd() *cobra.Command {
 	var force bool
+	var diffLines int
 
 	cmd := &cobra.Command{
 		Use:   messages.UpgradeUse,
 		Short: messages.UpgradeShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if diffLines <= 0 {
+				return fmt.Errorf(messages.UpgradeDiffLinesInvalidFmt, diffLines)
+			}
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
@@ -34,27 +38,31 @@ func newUpgradeCmd() *cobra.Command {
 				return err
 			}
 			opts := install.Options{
-				Overwrite:  true,
-				Force:      force,
-				PinVersion: targetPin,
-				System:     install.RealSystem{},
+				Overwrite:    true,
+				Force:        force,
+				PinVersion:   targetPin,
+				DiffMaxLines: diffLines,
+				System:       install.RealSystem{},
 			}
 			if !force {
 				opts.Prompter = install.PromptFuncs{
-					OverwriteAllFunc: func(paths []string) (bool, error) {
-						if err := printFilePaths(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, paths); err != nil {
+					OverwriteAllPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
+						if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews); err != nil {
 							return false, err
 						}
 						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
 					},
-					OverwriteAllMemoryFunc: func(paths []string) (bool, error) {
-						if err := printFilePaths(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, paths); err != nil {
+					OverwriteAllMemoryPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
+						if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews); err != nil {
 							return false, err
 						}
 						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
 					},
-					OverwriteFunc: func(path string) (bool, error) {
-						prompt := fmt.Sprintf(messages.UpgradeOverwritePromptFmt, path)
+					OverwritePreviewFunc: func(preview install.DiffPreview) (bool, error) {
+						if err := printDiffPreviews(cmd.OutOrStdout(), "", []install.DiffPreview{preview}); err != nil {
+							return false, err
+						}
+						prompt := fmt.Sprintf(messages.UpgradeOverwritePromptFmt, preview.Path)
 						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
 					},
 					DeleteUnknownAllFunc: func(paths []string) (bool, error) {
@@ -75,18 +83,25 @@ func newUpgradeCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.AddCommand(newUpgradePlanCmd())
+	cmd.AddCommand(newUpgradePlanCmd(&diffLines))
 
 	cmd.Flags().BoolVar(&force, "force", false, messages.UpgradeFlagForce)
+	cmd.PersistentFlags().IntVar(&diffLines, "diff-lines", install.DefaultDiffMaxLines, messages.UpgradeFlagDiffLines)
 	return cmd
 }
 
-func newUpgradePlanCmd() *cobra.Command {
+func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 	var outputJSON bool
 	cmd := &cobra.Command{
 		Use:   messages.UpgradePlanUse,
 		Short: messages.UpgradePlanShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if diffLines == nil {
+				return fmt.Errorf(messages.UpgradeDiffLinesInvalidFmt, 0)
+			}
+			if *diffLines <= 0 {
+				return fmt.Errorf(messages.UpgradeDiffLinesInvalidFmt, *diffLines)
+			}
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
@@ -109,36 +124,43 @@ func newUpgradePlanCmd() *cobra.Command {
 				encoder.SetIndent("", "  ")
 				return encoder.Encode(plan)
 			}
-			return renderUpgradePlanText(cmd.OutOrStdout(), plan)
+			previews, err := install.BuildUpgradePlanDiffPreviews(root, plan, install.UpgradePlanDiffPreviewOptions{
+				System:       install.RealSystem{},
+				MaxDiffLines: *diffLines,
+			})
+			if err != nil {
+				return err
+			}
+			return renderUpgradePlanText(cmd.OutOrStdout(), plan, previews)
 		},
 	}
 	cmd.Flags().BoolVar(&outputJSON, "json", false, messages.UpgradePlanJSON)
 	return cmd
 }
 
-func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan) error {
+func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map[string]install.DiffPreview) error {
 	if _, err := fmt.Fprintln(out, "Upgrade plan (dry-run): no files were written."); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Template additions", plan.TemplateAdditions); err != nil {
+	if err := writeUpgradeChangeSection(out, "Template additions", plan.TemplateAdditions, previews); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Template updates", plan.TemplateUpdates); err != nil {
+	if err := writeUpgradeChangeSection(out, "Template updates", plan.TemplateUpdates, previews); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Section-aware updates (managed header only, user entries preserved)", plan.SectionAwareUpdates); err != nil {
+	if err := writeUpgradeChangeSection(out, "Section-aware updates (managed header only, user entries preserved)", plan.SectionAwareUpdates, previews); err != nil {
 		return err
 	}
 	if err := writeUpgradeRenameSection(out, "Template renames", plan.TemplateRenames); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Template removals/orphans", plan.TemplateRemovalsOrOrphans); err != nil {
+	if err := writeUpgradeChangeSection(out, "Template removals/orphans", plan.TemplateRemovalsOrOrphans, previews); err != nil {
 		return err
 	}
 	if err := writeConfigMigrationSection(out, "Config key migrations", plan.ConfigKeyMigrations); err != nil {
 		return err
 	}
-	if err := writePinVersionSection(out, plan.PinVersionChange); err != nil {
+	if err := writePinVersionSection(out, plan.PinVersionChange, previews); err != nil {
 		return err
 	}
 	if err := writeReadinessSection(out, plan.ReadinessChecks); err != nil {
@@ -150,7 +172,7 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan) error {
 	return nil
 }
 
-func writeUpgradeChangeSection(out io.Writer, title string, changes []install.UpgradeChange) error {
+func writeUpgradeChangeSection(out io.Writer, title string, changes []install.UpgradeChange, previews map[string]install.DiffPreview) error {
 	if _, err := fmt.Fprintf(out, "\n%s:\n", title); err != nil {
 		return err
 	}
@@ -160,6 +182,9 @@ func writeUpgradeChangeSection(out io.Writer, title string, changes []install.Up
 	}
 	for _, change := range changes {
 		if _, err := fmt.Fprintf(out, "  - %s [%s]\n", change.Path, change.Ownership.Display()); err != nil {
+			return err
+		}
+		if err := writeSinglePreviewBlock(out, previews[change.Path]); err != nil {
 			return err
 		}
 	}
@@ -206,7 +231,7 @@ func writeConfigMigrationSection(out io.Writer, title string, migrations []insta
 	return nil
 }
 
-func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff) error {
+func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff, previews map[string]install.DiffPreview) error {
 	if _, err := fmt.Fprintln(out, "\nPin version change:"); err != nil {
 		return err
 	}
@@ -218,6 +243,64 @@ func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff) er
 	}
 	if _, err := fmt.Fprintf(out, "  - action: %s\n", pin.Action); err != nil {
 		return err
+	}
+	if pin.Action != install.UpgradePinActionNone {
+		if err := writeSinglePreviewBlock(out, previews[".agent-layer/al.version"]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeSinglePreviewBlock(out io.Writer, preview install.DiffPreview) error {
+	if strings.TrimSpace(preview.UnifiedDiff) == "" {
+		return nil
+	}
+	if _, err := fmt.Fprintln(out, "    diff:"); err != nil {
+		return err
+	}
+	lines := strings.Split(strings.TrimRight(preview.UnifiedDiff, "\n"), "\n")
+	for _, line := range lines {
+		if _, err := fmt.Fprintf(out, "      %s\n", line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printDiffPreviews(out io.Writer, header string, previews []install.DiffPreview) error {
+	if len(previews) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return err
+	}
+	if strings.TrimSpace(header) != "" {
+		if _, err := fmt.Fprintln(out, header); err != nil {
+			return err
+		}
+	}
+	for _, preview := range previews {
+		if _, err := fmt.Fprintf(out, messages.InstallDiffLineFmt, preview.Path+" ["+preview.Ownership.Display()+"]"); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return err
+	}
+	for _, preview := range previews {
+		if strings.TrimSpace(preview.UnifiedDiff) == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(out, "Diff for %s:\n", preview.Path); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprint(out, preview.UnifiedDiff); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
 	}
 	return nil
 }

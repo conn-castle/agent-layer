@@ -26,10 +26,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
 
 <!-- ENTRIES START -->
 
-- Decision 2026-01-22 f1e2d3c: Distribution model (global CLI with per-repo pinning)
-    Decision: Ship a single globally installed `al` CLI with per-repo version pinning via `.agent-layer/al.version` and cached binaries.
-    Reason: A single entrypoint reduces support burden while pinning keeps multi-repo setups reproducible.
-
 - Decision 2026-01-17 e5f6a7b: MCP architecture (external servers + internal prompt server)
     Decision: External MCP servers are user-defined in `config.toml`. The internal prompt server (`al mcp-prompts`) exposes slash commands automatically and is not user-configured.
     Reason: Users need arbitrary MCP servers while slash command discovery should be consistent and automatic.
@@ -50,6 +46,15 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Generated configs use client-specific placeholder syntax so secrets are never embedded. Exception: Codex embeds secrets in URLs/env and uses `bearer_token_env_var` for headers. Shell environment takes precedence over `.agent-layer/.env`.
     Reason: Prevents accidental secret exposure; Codex limitations require an exception.
 
+- Decision 2026-01-22 f1e2d3c: Distribution model (global CLI with per-repo pinning)
+    Decision: Ship a single globally installed `al` CLI with per-repo version pinning via `.agent-layer/al.version` and cached binaries.
+    Reason: A single entrypoint reduces support burden while pinning keeps multi-repo setups reproducible.
+
+- Decision 2026-01-24 a1b2c3d: Ignore unexpected working tree changes
+    Decision: Agents will not pause, warn, or stop due to unexpected working tree changes (unstaged or staged files not created by the agent).
+    Reason: The user works in parallel with agents, making concurrent changes a normal operating condition.
+    Tradeoffs: Increases risk of edit conflicts if both user and agent modify the same file simultaneously; relies on git for resolution.
+
 - Decision 2026-01-25 edefea6: Sync dependency injection for system calls
     Decision: Added a `System` interface with a `RealSystem` implementation and threaded it through `internal/sync` writers and prompt resolution instead of patching globals.
     Reason: Removes test-only global state and enables parallel-safe unit tests.
@@ -64,11 +69,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Do not manually update `.agent-layer/` in this repo; use a migration later.
     Reason: Preserve the current `.agent-layer/` state for testing migration behavior in a future release.
     Tradeoffs: Repo-local instructions may drift from templates until the migration is exercised.
-
-- Decision 2026-01-24 a1b2c3d: Ignore unexpected working tree changes
-    Decision: Agents will not pause, warn, or stop due to unexpected working tree changes (unstaged or staged files not created by the agent).
-    Reason: The user works in parallel with agents, making concurrent changes a normal operating condition.
-    Tradeoffs: Increases risk of edit conflicts if both user and agent modify the same file simultaneously; relies on git for resolution.
 
 - Decision 2026-01-25 7e2c9f4: Agent-only workflow artifacts live in `.agent-layer/tmp`
     Decision: Workflow artifacts are written to `.agent-layer/tmp` using a unique per-invocation filename: `.agent-layer/tmp/<workflow>.<run-id>.<type>.md` with `run-id = YYYYMMDD-HHMMSS-<short-rand>`; no path overrides.
@@ -169,3 +169,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Implement upgrade readiness checks in text dry-run output; detect stale `--no-sync` state using VS Code generated-output presence plus config-vs-output mtime comparison (instead of full sync-content diffing).
     Reason: Keeps checks decoupled from sync internals while surfacing practical risk before upgrade apply.
     Tradeoffs: mtime-based detection can produce false positives after non-functional config file touches; accepted for lower complexity and maintenance.
+
+- Decision 2026-02-12 chlog-immutable: CHANGELOG entries are historical and immutable
+    Decision: Never modify published CHANGELOG entries. They record what happened at the time of release and are treated as fixed historical records, even if terminology or paths have since changed.
+    Reason: Changing historical entries undermines trust in the changelog as a factual record and can confuse readers comparing old entries against old tags.
+    Tradeoffs: Stale references in old entries (e.g., renamed files) remain; readers must consult current docs for the latest names.
+
+- Decision 2026-02-12 p1f-upgrade-diff-previews: Always show line-level diffs in upgrade previews and prompts
+    Decision: `al upgrade plan` and interactive `al upgrade` overwrite prompts now render unified line-level diffs by default, with per-file truncation at 40 lines and an explicit `--diff-lines` override.
+    Reason: Issue #30 required users to see specific line changes before accepting/rejecting overwrite decisions; always-on previews remove blind yes/no prompts.
+    Tradeoffs: Default output is noisier for large files; users who need deeper context must opt in with a larger `--diff-lines` value.

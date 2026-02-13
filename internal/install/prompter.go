@@ -8,47 +8,53 @@ import (
 
 // Prompter provides user prompts for overwrite and delete decisions.
 type Prompter interface {
-	OverwriteAll(paths []string) (bool, error)
-	OverwriteAllMemory(paths []string) (bool, error)
-	Overwrite(path string) (bool, error)
+	OverwriteAll(previews []DiffPreview) (bool, error)
+	OverwriteAllMemory(previews []DiffPreview) (bool, error)
+	Overwrite(preview DiffPreview) (bool, error)
 	DeleteUnknownAll(paths []string) (bool, error)
 	DeleteUnknown(path string) (bool, error)
 }
 
+// PromptOverwriteAllPreviewFunc asks whether to overwrite all paths in a diff preview batch.
+type PromptOverwriteAllPreviewFunc func(previews []DiffPreview) (bool, error)
+
+// PromptOverwritePreviewFunc asks whether to overwrite a single diff preview path.
+type PromptOverwritePreviewFunc func(preview DiffPreview) (bool, error)
+
 // PromptFuncs adapts optional prompt callbacks into a Prompter.
 type PromptFuncs struct {
-	OverwriteAllFunc       PromptOverwriteAllFunc
-	OverwriteAllMemoryFunc PromptOverwriteAllFunc
-	OverwriteFunc          PromptOverwriteFunc
-	DeleteUnknownAllFunc   PromptDeleteUnknownAllFunc
-	DeleteUnknownFunc      PromptDeleteUnknownFunc
+	OverwriteAllPreviewFunc       PromptOverwriteAllPreviewFunc
+	OverwriteAllMemoryPreviewFunc PromptOverwriteAllPreviewFunc
+	OverwritePreviewFunc          PromptOverwritePreviewFunc
+	DeleteUnknownAllFunc          PromptDeleteUnknownAllFunc
+	DeleteUnknownFunc             PromptDeleteUnknownFunc
 }
 
 // OverwriteAll prompts the user to confirm overwriting all given paths.
-// Returns an error if no OverwriteAllFunc is configured.
-func (p PromptFuncs) OverwriteAll(paths []string) (bool, error) {
-	if p.OverwriteAllFunc == nil {
+// Returns an error if no overwrite callback is configured.
+func (p PromptFuncs) OverwriteAll(previews []DiffPreview) (bool, error) {
+	if p.OverwriteAllPreviewFunc == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
-	return p.OverwriteAllFunc(paths)
+	return p.OverwriteAllPreviewFunc(previews)
 }
 
 // OverwriteAllMemory prompts the user to confirm overwriting all memory file paths.
-// Returns an error if no OverwriteAllMemoryFunc is configured.
-func (p PromptFuncs) OverwriteAllMemory(paths []string) (bool, error) {
-	if p.OverwriteAllMemoryFunc == nil {
+// Returns an error if no OverwriteAll callback is configured.
+func (p PromptFuncs) OverwriteAllMemory(previews []DiffPreview) (bool, error) {
+	if p.OverwriteAllMemoryPreviewFunc == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
-	return p.OverwriteAllMemoryFunc(paths)
+	return p.OverwriteAllMemoryPreviewFunc(previews)
 }
 
 // Overwrite prompts the user to confirm overwriting a single path.
-// Returns an error if no OverwriteFunc is configured.
-func (p PromptFuncs) Overwrite(path string) (bool, error) {
-	if p.OverwriteFunc == nil {
+// Returns an error if no Overwrite callback is configured.
+func (p PromptFuncs) Overwrite(preview DiffPreview) (bool, error) {
+	if p.OverwritePreviewFunc == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
-	return p.OverwriteFunc(path)
+	return p.OverwritePreviewFunc(preview)
 }
 
 // DeleteUnknownAll prompts the user to confirm deleting all unknown paths.
@@ -78,15 +84,15 @@ type promptValidator interface {
 }
 
 func (p PromptFuncs) hasOverwriteAll() bool {
-	return p.OverwriteAllFunc != nil
+	return p.OverwriteAllPreviewFunc != nil
 }
 
 func (p PromptFuncs) hasOverwriteAllMemory() bool {
-	return p.OverwriteAllMemoryFunc != nil
+	return p.OverwriteAllMemoryPreviewFunc != nil
 }
 
 func (p PromptFuncs) hasOverwrite() bool {
-	return p.OverwriteFunc != nil
+	return p.OverwritePreviewFunc != nil
 }
 
 func (p PromptFuncs) hasDeleteUnknownAll() bool {

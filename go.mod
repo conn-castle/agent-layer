@@ -3,6 +3,7 @@ module github.com/conn-castle/agent-layer
 go 1.25.6
 
 require (
+	github.com/aymanbagabas/go-udiff v0.3.1
 	github.com/charmbracelet/huh v0.8.0
 	github.com/fatih/color v1.18.0
 	github.com/golangci/golangci-lint/v2 v2.8.0
