@@ -244,6 +244,19 @@ func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 			t.Fatalf("execute upgrade plan --json: %v", err)
 		}
 
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+			t.Fatalf("decode raw json: %v\noutput: %s", err, out.String())
+		}
+		readinessJSON, ok := raw["readiness_checks"]
+		if !ok {
+			t.Fatalf("expected readiness_checks in json output\noutput: %s", out.String())
+		}
+		var readinessChecks []install.UpgradeReadinessCheck
+		if err := json.Unmarshal(readinessJSON, &readinessChecks); err != nil {
+			t.Fatalf("decode readiness_checks: %v\njson: %s", err, string(readinessJSON))
+		}
+
 		var plan install.UpgradePlan
 		if err := json.Unmarshal(out.Bytes(), &plan); err != nil {
 			t.Fatalf("decode json: %v\noutput: %s", err, out.String())

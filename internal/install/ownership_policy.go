@@ -17,6 +17,7 @@ const (
 	ownershipMarkerPhasesStart  = "<!-- PHASES START -->"
 
 	commandsAllowRelPath = ".agent-layer/commands.allow"
+	pinVersionRelPath    = ".agent-layer/al.version"
 )
 
 const (

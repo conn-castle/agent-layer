@@ -14,6 +14,16 @@ func managedBlock(block string) string {
 	return wrapGitignoreBlock(renderGitignoreBlock(block))
 }
 
+func TestRenderGitignoreBlock_UsesSyncGuidance(t *testing.T) {
+	rendered := renderGitignoreBlock("foo\n")
+	if !strings.Contains(rendered, "re-run `al sync`") {
+		t.Fatalf("expected rendered block to guide al sync, got %q", rendered)
+	}
+	if strings.Contains(rendered, "al init") {
+		t.Fatalf("expected rendered block to avoid al init guidance, got %q", rendered)
+	}
+}
+
 func TestEnsureGitignoreCreatesFile(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".gitignore")

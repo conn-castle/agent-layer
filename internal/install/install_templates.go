@@ -171,7 +171,7 @@ func (inst *installer) appendTemplateFileDiffs(diffs map[string]struct{}, files 
 			return err
 		}
 		if !matches {
-			diffs[inst.relativePath(file.path)] = struct{}{}
+			diffs[normalizeRelPath(inst.relativePath(file.path))] = struct{}{}
 		}
 	}
 	return nil
@@ -185,7 +185,7 @@ func (inst *installer) appendTemplateDirDiffs(diffs map[string]struct{}, dir tem
 	}
 	sys := inst.sys
 	for _, entry := range entries {
-		relPath := filepath.ToSlash(inst.relativePath(entry.destPath))
+		relPath := normalizeRelPath(inst.relativePath(entry.destPath))
 		info, err := sys.Stat(entry.destPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -202,7 +202,7 @@ func (inst *installer) appendTemplateDirDiffs(diffs map[string]struct{}, dir tem
 				continue
 			}
 			// If the marker is missing or malformed, the write path will fail loudly.
-			diffs[inst.relativePath(entry.destPath)] = struct{}{}
+			diffs[relPath] = struct{}{}
 			continue
 		}
 		matches, err := inst.matchTemplate(sys, entry.destPath, entry.templatePath, info)
@@ -210,7 +210,7 @@ func (inst *installer) appendTemplateDirDiffs(diffs map[string]struct{}, dir tem
 			return err
 		}
 		if !matches {
-			diffs[inst.relativePath(entry.destPath)] = struct{}{}
+			diffs[relPath] = struct{}{}
 		}
 	}
 	return nil
@@ -239,7 +239,7 @@ func (inst *installer) appendPinnedVersionDiff(diffs map[string]struct{}) error 
 		normalized = ""
 	}
 	if normalized != inst.pinVersion {
-		diffs[inst.relativePath(path)] = struct{}{}
+		diffs[normalizeRelPath(inst.relativePath(path))] = struct{}{}
 	}
 	return nil
 }
@@ -263,17 +263,18 @@ func (inst *installer) buildLabeledDiffs(paths []string, templatePathByRel map[s
 	}
 	out := make([]LabeledPath, 0, len(paths))
 	for _, path := range paths {
-		templatePath := templatePathByRel[path]
+		relPath := normalizeRelPath(path)
+		templatePath := templatePathByRel[relPath]
 		ownership := OwnershipLocalCustomization
 		if templatePath != "" {
-			classified, err := inst.classifyOwnership(path, templatePath)
+			classified, err := inst.classifyOwnership(relPath, templatePath)
 			if err != nil {
 				return nil, err
 			}
 			ownership = classified
 		}
 		out = append(out, LabeledPath{
-			Path:      path,
+			Path:      relPath,
 			Ownership: ownership,
 		})
 	}
@@ -283,7 +284,7 @@ func (inst *installer) buildLabeledDiffs(paths []string, templatePathByRel map[s
 func (inst *installer) managedTemplatePathByRel() (map[string]string, error) {
 	m := make(map[string]string)
 	for _, file := range inst.managedTemplateFiles() {
-		rel := filepath.ToSlash(inst.relativePath(file.path))
+		rel := normalizeRelPath(inst.relativePath(file.path))
 		m[rel] = file.template
 	}
 	for _, dir := range inst.managedTemplateDirs() {
@@ -292,7 +293,7 @@ func (inst *installer) managedTemplatePathByRel() (map[string]string, error) {
 			return nil, err
 		}
 		for _, entry := range entries {
-			rel := filepath.ToSlash(inst.relativePath(entry.destPath))
+			rel := normalizeRelPath(inst.relativePath(entry.destPath))
 			m[rel] = entry.templatePath
 		}
 	}
@@ -307,7 +308,7 @@ func (inst *installer) memoryTemplatePathByRel() (map[string]string, error) {
 			return nil, err
 		}
 		for _, entry := range entries {
-			rel := filepath.ToSlash(inst.relativePath(entry.destPath))
+			rel := normalizeRelPath(inst.relativePath(entry.destPath))
 			m[rel] = entry.templatePath
 		}
 	}
@@ -321,7 +322,7 @@ func (inst *installer) writeTemplateDirCached(dir templateDir) error {
 	}
 	sys := inst.sys
 	for _, entry := range entries {
-		relPath := filepath.ToSlash(inst.relativePath(entry.destPath))
+		relPath := normalizeRelPath(inst.relativePath(entry.destPath))
 		if marker, ok := sectionAwareMarkerForPath(relPath); ok {
 			if err := inst.writeSectionAwareTemplateFile(entry.destPath, entry.templatePath, entry.perm, relPath, marker); err != nil {
 				return err
@@ -414,6 +415,10 @@ func (inst *installer) templateDirEntries(dir templateDir) ([]templateEntry, err
 	}
 	inst.templateEntries[key] = entries
 	return entries, nil
+}
+
+func normalizeRelPath(path string) string {
+	return strings.ReplaceAll(filepath.ToSlash(path), "\\", "/")
 }
 
 func (inst *installer) matchTemplate(sys System, path string, templatePath string, info fs.FileInfo) (bool, error) {

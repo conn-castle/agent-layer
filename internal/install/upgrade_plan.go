@@ -55,7 +55,7 @@ type UpgradePlan struct {
 	TemplateRemovalsOrOrphans []UpgradeChange         `json:"template_removals_or_orphans"`
 	ConfigKeyMigrations       []ConfigKeyMigration    `json:"config_key_migrations"`
 	PinVersionChange          UpgradePinVersionDiff   `json:"pin_version_change"`
-	ReadinessChecks           []UpgradeReadinessCheck `json:"-"`
+	ReadinessChecks           []UpgradeReadinessCheck `json:"readiness_checks"`
 }
 
 // UpgradeChange describes a single template delta entry.

@@ -35,9 +35,9 @@ var floatingDependencyPattern = regexp.MustCompile(`(?i)@(latest|next|canary)\b`
 
 // UpgradeReadinessCheck captures a non-fatal pre-upgrade readiness finding for text output.
 type UpgradeReadinessCheck struct {
-	ID      string
-	Summary string
-	Details []string
+	ID      string   `json:"id"`
+	Summary string   `json:"summary"`
+	Details []string `json:"details"`
 }
 
 func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, error) {

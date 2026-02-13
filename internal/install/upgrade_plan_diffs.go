@@ -70,11 +70,11 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 	}
 
 	if plan.PinVersionChange.Action != UpgradePinActionNone {
-		pinPreview, err := inst.pinVersionDiffPreview(".agent-layer/al.version", OwnershipUpstreamTemplateDelta)
+		pinPreview, err := inst.pinVersionDiffPreview(pinVersionRelPath, OwnershipUpstreamTemplateDelta)
 		if err != nil {
 			return nil, err
 		}
-		previews[".agent-layer/al.version"] = pinPreview
+		previews[pinVersionRelPath] = pinPreview
 	}
 
 	return previews, nil

@@ -137,11 +137,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `withWorkingDir` is defined in `cmd/al/root_test.go` (25 uses) and `cmd/publish-site/main_test.go` (15 uses) with a minor error-handling difference.
     Next step: Consolidate into `internal/testutil` package using the fatal-logging variant.
 
-- Issue 2026-02-12 3c5f958e: ReadinessChecks excluded from upgrade plan JSON output
-    Priority: Low. Area: install / diagnostics.
-    Description: `UpgradePlan.ReadinessChecks` in `upgrade_plan.go` uses `json:"-"`, excluding readiness information from `al upgrade plan --json` despite the field being shown in text output.
-    Next step: Change JSON tag to `json:"readiness_checks"` and add test coverage.
-
 - Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
     Priority: Low. Area: install / maintainability.
     Description: The `installer` struct in `internal/install/` has 14 fields and 57 methods spread across 8 files. While logically grouped, this concentration increases coupling risk as Phase 11 continues adding features (snapshot/rollback, migration engine).

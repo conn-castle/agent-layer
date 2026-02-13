@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-13 launch-plan-revisit: Reevaluate dedicated launch-impact preview command
+    Priority: Medium. Area: launch UX
+    Description: Reconsider whether a standalone `al launch-plan <client>` command is needed, versus integrating preview behavior into launch/sync mode UX.
+    Acceptance criteria: After Phase 11 is complete, decision is documented to keep/remove/reshape launch-plan based on final launch sync-mode semantics and safety guarantees.
+    Notes: Explicitly defer the decision until Phase 11 finishes so it is evaluated against the final upgrade/sync design.
+
 - Backlog 2026-02-10 test-agents: Multi-agent test strategy and execution workflows
     Priority: High. Area: workflows/testing
     Description: Multi-agent workflow where one agent "dreams up" and documents test strategies/cases (unit/E2E/integration), while a second agent implements tests, runs them, fixes failures, and opens PRs.

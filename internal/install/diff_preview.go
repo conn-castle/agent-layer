@@ -82,7 +82,7 @@ func (inst *installer) buildSingleDiffPreview(entry LabeledPath, templatePathByR
 	if relPath == "" {
 		return DiffPreview{}, fmt.Errorf(messages.InstallDiffPreviewPathRequired)
 	}
-	if relPath == ".agent-layer/al.version" {
+	if relPath == pinVersionRelPath {
 		return inst.pinVersionDiffPreview(relPath, entry.Ownership)
 	}
 
@@ -148,8 +148,8 @@ func (inst *installer) pinVersionDiffPreview(relPath string, ownership Ownership
 	}
 
 	rendered, truncated := renderTruncatedUnifiedDiff(
-		".agent-layer/al.version (current)",
-		".agent-layer/al.version (target)",
+		pinVersionRelPath+" (current)",
+		pinVersionRelPath+" (target)",
 		from,
 		to,
 		inst.diffMaxLines,

@@ -180,15 +180,15 @@ func TestLookupDiffPreview_FallbackPinUsesUpstreamOwnership(t *testing.T) {
 		pinVersion: "0.2.0",
 		sys:        RealSystem{},
 	}
-	preview, err := inst.lookupDiffPreview(".agent-layer/al.version")
+	preview, err := inst.lookupDiffPreview(pinVersionRelPath)
 	if err != nil {
 		t.Fatalf("lookupDiffPreview: %v", err)
 	}
 	if preview.Ownership != OwnershipUpstreamTemplateDelta {
 		t.Fatalf("preview ownership = %q, want %q", preview.Ownership, OwnershipUpstreamTemplateDelta)
 	}
-	if preview.Path != ".agent-layer/al.version" {
-		t.Fatalf("preview path = %q, want .agent-layer/al.version", preview.Path)
+	if preview.Path != pinVersionRelPath {
+		t.Fatalf("preview path = %q, want %s", preview.Path, pinVersionRelPath)
 	}
 }
 

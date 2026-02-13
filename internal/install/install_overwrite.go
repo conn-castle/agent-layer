@@ -171,7 +171,7 @@ func (inst *installer) lookupDiffPreview(relPath string) (DiffPreview, error) {
 }
 
 func (inst *installer) diffPreviewEntry(relPath string, templatePathByRel map[string]string) (LabeledPath, error) {
-	if relPath == ".agent-layer/al.version" {
+	if relPath == pinVersionRelPath {
 		return LabeledPath{
 			Path:      relPath,
 			Ownership: OwnershipUpstreamTemplateDelta,

@@ -44,9 +44,9 @@ func TestBuildUpgradePlanDiffPreviews_GeneratesChangedFileAndPinDiffs(t *testing
 		t.Fatalf("expected non-empty diff preview for commands.allow")
 	}
 
-	pinPreview, ok := previews[".agent-layer/al.version"]
+	pinPreview, ok := previews[pinVersionRelPath]
 	if !ok {
-		t.Fatalf("expected preview for .agent-layer/al.version when pin changes")
+		t.Fatalf("expected preview for %s when pin changes", pinVersionRelPath)
 	}
 	if strings.TrimSpace(pinPreview.UnifiedDiff) == "" {
 		t.Fatalf("expected non-empty pin diff preview")
