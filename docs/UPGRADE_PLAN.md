@@ -50,7 +50,7 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 6. Upgrade checks depend on the unauthenticated GitHub API (60 requests/hour rate limit) and can warn/fail noisily in CI, shared networks, or restricted environments.
 7. Old versions can leak `AL_SHIM_ACTIVE` into child shells (documented historical regression).
 8. Historical command renames across versions (for example legacy `install` vs current `init`) can break old scripts.
-9. **[Resolved in Phase 10 work]** Update warnings suggest `al upgrade plan` and `al upgrade` (or `al upgrade --force`). Keep regression coverage to prevent guidance drift.
+9. **[Resolved in Phase 11 work]** Update warnings suggest `al upgrade plan` and `al upgrade` with explicit apply flags for non-interactive usage (for example `--yes --apply-managed-updates`). Keep regression coverage to prevent guidance drift.
 10. **[Resolved in Phase 10 work]** `ensureCachedBinary` now emits "Downloading al vX.Y.Z..." / "Downloaded al vX.Y.Z" progress lines to stderr. Keep regression coverage to prevent re-introduction.
 11. **[Resolved in Phase 10 work]** `al init --version X.Y.Z` now validates the release exists before writing the pin file, returning a clear not-found message instead of a cryptic 404 on the next invocation. Keep regression coverage to prevent re-introduction.
 12. **[Intentional]** Pinning is required for supported repos. Disabling pinning (for example by deleting `.agent-layer/al.version`) is unsupported and should not be documented for end users.
@@ -61,8 +61,8 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 
 1. No built-in migration engine for renamed/deleted managed templates (stale orphans risk).
 2. Diff prompts do not clearly separate "my customization" vs "upstream template change" (known issue).
-3. Per-file upgrade prompts require an interactive terminal (`upgrade.go`); users must choose destructive `--force` or do manual interaction. There is no CI-safe middle ground (for example `--yes --apply-managed-updates` without `--apply-deletions`).
-4. `--force` can delete unknown files under `.agent-layer` (`install_unknowns.go`), which is high-risk in mixed/manual setups. The flag name does not communicate the deletion behavior.
+3. **[Resolved in Phase 11 work]** CI-safe non-interactive apply now exists (`--yes` plus explicit apply flags, e.g. `--apply-managed-updates`) without requiring deletion behavior.
+4. **[Resolved in Phase 11 work]** Binary `--force` semantics were removed in favor of explicit apply flags, including explicit deletion opt-in (`--apply-deletions`).
 5. Large prompt sets are cognitively heavy when many files differ.
 6. Memory files (`docs/agent-layer/*`) prompt separately with a distinct "overwrite all memory?" question; users who said "yes" to managed files may not understand why they're prompted again or may assume it was already covered.
 7. Unknown-file cleanup only applies under `.agent-layer`; stale docs/memory files can still drift.
@@ -126,7 +126,7 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 
 1. Generated files can contain sensitive resolved values (especially Codex projection paths) if users commit wrong artifacts.
 2. Users may not realize `.agent-layer/.env` is the only safe secret store and accidentally place secrets in tracked files.
-3. Destructive upgrade mode (`--force`) is powerful and easy to misuse under time pressure.
+3. Explicit apply/deletion flags reduce accidental destructive operations, but teams can still misuse `--apply-deletions` under time pressure without process guardrails.
 
 ### 10. Documentation/discoverability pain
 
@@ -155,7 +155,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 ### Phase 0a: Fix shipping bugs in upgrade guidance (immediate, before next release)
 
 1. **Drop Windows support.** Remove `al-install.ps1`, the Windows release target from `scripts/build-release.sh`, the `osWindows` code path in `cache.go`, `open-vscode.bat` launcher, and all Windows-specific documentation. Windows was never tested and "best-effort" support erodes trust.
-2. **[Done] Fix upgrade guidance warnings.** Update warnings recommend `al upgrade plan` and `al upgrade` (or `al upgrade --force`) instead of using `al init` for upgrades.
+2. **[Done] Fix upgrade guidance warnings.** Update warnings recommend `al upgrade plan` and `al upgrade` (plus explicit apply flags for non-interactive usage) instead of using `al init` for upgrades.
 3. **[Done] Let `al init` recover from empty/corrupt pin files.** Two fixes applied: (a) `readPinnedVersion()` in `pin.go` treats empty/invalid pins as "no pin" with a warning, so dispatch falls through to the current binary. (b) `writeVersionFile()` in `install.go` auto-repairs empty/corrupt pins without requiring prompts.
 4. **Add `al init --version X` release validation.** Before writing the pin, HEAD the GitHub release URL to confirm the version exists. Fail with a clear "release X.Y.Z not found" message instead of writing a pin that will 404 on next use.
 5. **[Done] Improve dispatch error messages.** `downloadToFile()` and `fetchChecksum()` now produce actionable 404 and timeout messages with remediation steps.
@@ -191,13 +191,13 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 ### Phase 2: Make upgrades safe and reversible
 
 1. **[Done]** Add automatic snapshot/rollback for managed files during upgrade operations.
-2. Replace binary `--force` semantics with explicit flags:
+2. **[Done]** Replace binary `--force` semantics with explicit flags:
    - `--apply-managed-updates`
    - `--apply-memory-updates`
    - `--apply-deletions`
-3. Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
+3. **[Done]** Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
 4. Add `al upgrade rollback <snapshot-id>`.
-5. Add CI-safe non-interactive apply mode: `al upgrade --yes --apply-managed-updates` applies managed template updates without deleting unknowns, bridging the gap between interactive `al upgrade` and destructive `al upgrade --force`.
+5. **[Done]** Add CI-safe non-interactive apply mode: `al upgrade --yes --apply-managed-updates` applies managed template updates without deleting unknowns.
 6. Keep launch sync behavior simple for everyday users; defer multi-mode launch sync controls.
 
 ### Phase 3: Add real migration support (root cause for long-term pain)
@@ -229,7 +229,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - `al upgrade` (interactive apply)
    - `al doctor`
 2. Link this path from README/reference/troubleshooting/changelog.
-3. Provide one-page upgrade checklist for teams/CI, including a non-interactive CI path: `al upgrade --yes --apply-managed-updates && al sync && al doctor` (depends on Phase 2, item 5 delivering `--yes --apply-managed-updates`; until then, CI must use `al upgrade --force`).
+3. Provide one-page upgrade checklist for teams/CI, including a non-interactive CI path: `al upgrade --yes --apply-managed-updates && al sync && al doctor`.
 4. Validate all upgrade call-to-action text against real CLI acceptance (Phase 0a ensures initial fix; this phase adds regression tests and a linter for message constants).
 5. Provide platform-specific upgrade quick paths for macOS/Linux shells, including completion expectations.
 6. Document the pin-file format and parser behavior clearly (including support for comment/blank-line handling and auto-fix behavior). Add this to README and reference docs.

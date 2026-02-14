@@ -7,7 +7,7 @@ const (
 	// InstallSystemRequired indicates system is required for install.
 	InstallSystemRequired = "install system is required"
 	// InstallOverwritePromptRequired indicates overwrite prompts need a handler.
-	InstallOverwritePromptRequired          = "overwrite prompts require a prompt handler; run in an interactive terminal (advanced: --force skips prompts)"
+	InstallOverwritePromptRequired          = "overwrite prompts require a prompt handler; run in an interactive terminal or use `al upgrade --yes` with explicit apply flags"
 	InstallInvalidPinVersionFmt             = "invalid pin version: %w"
 	InstallCreateDirFailedFmt               = "failed to create directory %s: %w"
 	InstallAutoRepairPinWarningFmt          = "Auto-repairing invalid pin file %s (was %q, now %s)\n"
@@ -21,10 +21,10 @@ const (
 	InstallUnexpectedTemplatePathFmt        = "unexpected template path %s"
 	InstallDiffHeader                       = "Found existing files that differ from the templates:"
 	InstallDiffLineFmt                      = "  - %s\n"
-	InstallDiffFooter                       = "Run `al upgrade` to review each file. Advanced: `al upgrade --force` replaces them without prompts."
+	InstallDiffFooter                       = "Run `al upgrade` to review each file. Non-interactive managed apply: `al upgrade --yes --apply-managed-updates`."
 	InstallUnknownHeader                    = "Found files in .agent-layer not tracked by Agent Layer:"
-	InstallUnknownFooter                    = "Run `al upgrade` to review deleting them. Advanced: `al upgrade --force` deletes unknown files without prompts."
-	InstallDeleteUnknownPromptRequired      = "delete prompts require a prompt handler; run in an interactive terminal (advanced: --force skips prompts)"
+	InstallUnknownFooter                    = "Run `al upgrade` to review deleting them. Non-interactive deletion apply: `al upgrade --yes --apply-deletions`."
+	InstallDeleteUnknownPromptRequired      = "delete prompts require a prompt handler; run in an interactive terminal or include `--apply-deletions` with explicit confirmation settings"
 	InstallDeleteUnknownFailedFmt           = "failed to delete %s: %w"
 	InstallUpgradeSnapshotCreatedFmt        = "Created upgrade snapshot: %s\n"
 	InstallUpgradeSnapshotRolledBackFmt     = "Upgrade failed during %s. Changes were rolled back using snapshot %s.\n"

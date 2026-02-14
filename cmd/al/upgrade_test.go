@@ -31,7 +31,7 @@ func TestNewUpgradeCmd_RegistersPlanSubcommand(t *testing.T) {
 	}
 }
 
-func TestUpgradeCmd_RequiresTerminalWithoutForce(t *testing.T) {
+func TestUpgradeCmd_RequiresTerminalWithoutApplyFlags(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
@@ -69,7 +69,45 @@ func TestUpgradeCmd_RequiresTerminalWithoutForce(t *testing.T) {
 	})
 }
 
-func TestUpgradeCmd_ForceNonInteractiveRunsInstallWithoutPrompter(t *testing.T) {
+func TestUpgradeCmd_YesWithoutApplyFlagsErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installCalled := false
+	installRun = func(string, install.Options) error {
+		installCalled = true
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--yes"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if err.Error() != messages.UpgradeYesRequiresApply {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if installCalled {
+			t.Fatal("expected installRun not to be called")
+		}
+	})
+}
+
+func TestUpgradeCmd_NonInteractiveApplyWithoutYesErrors(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
@@ -80,40 +118,105 @@ func TestUpgradeCmd_ForceNonInteractiveRunsInstallWithoutPrompter(t *testing.T) 
 	t.Cleanup(func() { isTerminal = origIsTerminal })
 
 	origInstallRun := installRun
-	installRun = func(gotRoot string, opts install.Options) error {
-		if gotRoot != root {
-			t.Fatalf("installRun root = %q, want %q", gotRoot, root)
-		}
-		if !opts.Overwrite {
-			t.Fatalf("opts.Overwrite = false, want true")
-		}
-		if !opts.Force {
-			t.Fatalf("opts.Force = false, want true")
-		}
-		if opts.Prompter != nil {
-			t.Fatalf("opts.Prompter = %T, want nil", opts.Prompter)
-		}
-		if opts.PinVersion != "" {
-			t.Fatalf("opts.PinVersion = %q, want empty pin for dev build", opts.PinVersion)
-		}
-		if opts.System == nil {
-			t.Fatal("opts.System = nil, want non-nil system")
-		}
+	installCalled := false
+	installRun = func(string, install.Options) error {
+		installCalled = true
 		return nil
 	}
 	t.Cleanup(func() { installRun = origInstallRun })
 
 	withWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
-		cmd.SetArgs([]string{"--force"})
+		cmd.SetArgs([]string{"--apply-managed-updates"})
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
 		cmd.SetIn(bytes.NewBufferString(""))
 
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("execute upgrade --force: %v", err)
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if err.Error() != messages.UpgradeNonInteractiveRequiresYesApply {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if installCalled {
+			t.Fatal("expected installRun not to be called")
 		}
 	})
+}
+
+func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	var captured install.Options
+	installRun = func(gotRoot string, opts install.Options) error {
+		if canonicalPath(gotRoot) != canonicalPath(root) {
+			t.Fatalf("installRun root = %q, want %q", gotRoot, root)
+		}
+		captured = opts
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+		errText := stderr.String()
+		if !strings.Contains(errText, messages.UpgradeSkipMemoryUpdatesInfo) {
+			t.Fatalf("expected skip-memory note, got %q", errText)
+		}
+		if !strings.Contains(errText, messages.UpgradeSkipDeletionsInfo) {
+			t.Fatalf("expected skip-deletions note, got %q", errText)
+		}
+	})
+
+	if !captured.Overwrite {
+		t.Fatalf("captured opts.Overwrite = false, want true")
+	}
+	if captured.Force {
+		t.Fatalf("captured opts.Force = true, want false")
+	}
+	if captured.Prompter == nil {
+		t.Fatal("captured opts.Prompter = nil, want non-nil")
+	}
+	promptFuncs, ok := captured.Prompter.(install.PromptFuncs)
+	if !ok {
+		t.Fatalf("captured opts.Prompter = %T, want install.PromptFuncs", captured.Prompter)
+	}
+	if promptFuncs.OverwriteAllPreviewFunc == nil ||
+		promptFuncs.OverwriteAllMemoryPreviewFunc == nil ||
+		promptFuncs.OverwritePreviewFunc == nil ||
+		promptFuncs.DeleteUnknownAllFunc == nil ||
+		promptFuncs.DeleteUnknownFunc == nil {
+		t.Fatalf("expected all prompt callbacks to be wired: %+v", promptFuncs)
+	}
+
+	if overwriteManaged, err := promptFuncs.OverwriteAll(nil); err != nil || !overwriteManaged {
+		t.Fatalf("OverwriteAll = (%v, %v), want (true, nil)", overwriteManaged, err)
+	}
+	if overwriteMemory, err := promptFuncs.OverwriteAllMemory(nil); err != nil || overwriteMemory {
+		t.Fatalf("OverwriteAllMemory = (%v, %v), want (false, nil)", overwriteMemory, err)
+	}
+	if deleteAll, err := promptFuncs.DeleteUnknownAll(nil); err != nil || deleteAll {
+		t.Fatalf("DeleteUnknownAll = (%v, %v), want (false, nil)", deleteAll, err)
+	}
 }
 
 func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
@@ -134,7 +237,7 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 
 	var captured install.Options
 	installRun = func(gotRoot string, opts install.Options) error {
-		if gotRoot != root {
+		if canonicalPath(gotRoot) != canonicalPath(root) {
 			t.Fatalf("installRun root = %q, want %q", gotRoot, root)
 		}
 		captured = opts
@@ -175,6 +278,63 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 	}
 }
 
+func TestUpgradeCmd_InteractiveApplyManagedAutoApprovesOnlyManaged(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	var captured install.Options
+	installRun = func(gotRoot string, opts install.Options) error {
+		if canonicalPath(gotRoot) != canonicalPath(root) {
+			t.Fatalf("installRun root = %q, want %q", gotRoot, root)
+		}
+		captured = opts
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.SetArgs([]string{"--apply-managed-updates"})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+		errText := stderr.String()
+		if !strings.Contains(errText, messages.UpgradeSkipMemoryUpdatesInfo) {
+			t.Fatalf("expected skip-memory note, got %q", errText)
+		}
+		if !strings.Contains(errText, messages.UpgradeSkipDeletionsInfo) {
+			t.Fatalf("expected skip-deletions note, got %q", errText)
+		}
+	})
+
+	promptFuncs, ok := captured.Prompter.(install.PromptFuncs)
+	if !ok {
+		t.Fatalf("captured opts.Prompter = %T, want install.PromptFuncs", captured.Prompter)
+	}
+	if overwriteManaged, err := promptFuncs.OverwriteAll(nil); err != nil || !overwriteManaged {
+		t.Fatalf("OverwriteAll = (%v, %v), want (true, nil)", overwriteManaged, err)
+	}
+	if overwriteMemory, err := promptFuncs.OverwriteAllMemory(nil); err != nil || overwriteMemory {
+		t.Fatalf("OverwriteAllMemory = (%v, %v), want (false, nil)", overwriteMemory, err)
+	}
+	if deleteAll, err := promptFuncs.DeleteUnknownAll(nil); err != nil || deleteAll {
+		t.Fatalf("DeleteUnknownAll = (%v, %v), want (false, nil)", deleteAll, err)
+	}
+}
+
 func TestUpgradeCmd_PropagatesInstallErrors(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
@@ -194,7 +354,7 @@ func TestUpgradeCmd_PropagatesInstallErrors(t *testing.T) {
 
 	withWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
-		cmd.SetArgs([]string{"--force"})
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
 		cmd.SetIn(bytes.NewBufferString(""))
@@ -215,7 +375,7 @@ func TestUpgradeCmd_MissingAgentLayerErrors(t *testing.T) {
 
 	withWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
-		cmd.SetArgs([]string{"--force"})
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
 		cmd.SetIn(bytes.NewBufferString(""))
@@ -244,12 +404,19 @@ func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute upgrade plan --json: %v", err)
 		}
-		if !strings.Contains(errOut.String(), "deprecated") {
-			t.Fatalf("expected deprecation warning for --json, got: %q", errOut.String())
+		deprecationOutput := errOut.String() + out.String()
+		if !strings.Contains(deprecationOutput, "deprecated") {
+			t.Fatalf("expected deprecation warning for --json, got: stderr=%q stdout=%q", errOut.String(), out.String())
 		}
+		jsonPayload := out.Bytes()
+		jsonStart := bytes.IndexByte(jsonPayload, '{')
+		if jsonStart == -1 {
+			t.Fatalf("expected json object in output, got: %q", out.String())
+		}
+		jsonPayload = jsonPayload[jsonStart:]
 
 		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(out.Bytes(), &raw); err != nil {
+		if err := json.Unmarshal(jsonPayload, &raw); err != nil {
 			t.Fatalf("decode raw json: %v\noutput: %s", err, out.String())
 		}
 		readinessJSON, ok := raw["readiness_checks"]
@@ -262,7 +429,7 @@ func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 		}
 
 		var plan install.UpgradePlan
-		if err := json.Unmarshal(out.Bytes(), &plan); err != nil {
+		if err := json.Unmarshal(jsonPayload, &plan); err != nil {
 			t.Fatalf("decode json: %v\noutput: %s", err, out.String())
 		}
 		if !plan.DryRun {
@@ -432,7 +599,7 @@ func TestUpgradeCmd_InvalidDiffLines(t *testing.T) {
 	}
 	withWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
-		cmd.SetArgs([]string{"--force", "--diff-lines=0"})
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates", "--diff-lines=0"})
 		cmd.SetOut(&bytes.Buffer{})
 		cmd.SetErr(&bytes.Buffer{})
 		cmd.SetIn(bytes.NewBufferString(""))
@@ -445,6 +612,32 @@ func TestUpgradeCmd_InvalidDiffLines(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
+}
+
+func TestUpgradeCmd_HelpShowsApplyFlagsWithoutForce(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetArgs([]string{"--help"})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute upgrade --help: %v", err)
+	}
+	help := out.String()
+	if strings.Contains(help, "--force") {
+		t.Fatalf("expected --force to be removed from help output:\n%s", help)
+	}
+	for _, flag := range []string{
+		"--yes",
+		"--apply-managed-updates",
+		"--apply-memory-updates",
+		"--apply-deletions",
+	} {
+		if !strings.Contains(help, flag) {
+			t.Fatalf("expected help output to include %s:\n%s", flag, help)
+		}
+	}
 }
 
 func prepareUpgradeTestRepo(t *testing.T) string {
@@ -487,4 +680,12 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 		t.Fatalf("write orphan rename file: %v", err)
 	}
 	return root
+}
+
+func canonicalPath(path string) string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved
+	}
+	return filepath.Clean(path)
 }

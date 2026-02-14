@@ -92,7 +92,7 @@ al doctor
 Notes:
 - `al init` prompts to run `al wizard` after seeding files. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
 - `al init` is intended to be run once per repo. If the repo is already initialized, use `al upgrade plan` and `al upgrade` to refresh template-managed files.
-- `al upgrade` is the recommended path. Advanced: `al upgrade --force` overwrites managed files and deletes unknown files under `.agent-layer` without prompts.
+- `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories.
 - `al upgrade` automatically creates a managed-file snapshot and rolls changes back if an upgrade step fails. Snapshots are written under `.agent-layer/state/upgrade-snapshots/`.
 - Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, VS Code, etc.).
 
@@ -460,7 +460,7 @@ al vscode --no-sync -- --reuse-window
 Other commands:
 
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
-- `al upgrade` — apply template-managed updates and update the repo pin (prompts unless `--force`; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
+- `al upgrade` — apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates

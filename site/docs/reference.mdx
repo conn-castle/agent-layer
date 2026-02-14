@@ -263,7 +263,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | Command | Purpose |
 | --- | --- |
 | `al init` | Initialize a repo with Agent Layer templates and memory files. |
-| `al upgrade` | Apply template-managed updates and update the repo pin (prompts unless `--force`; line-level diff previews shown by default, configurable with `--diff-lines`). |
+| `al upgrade` | Apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, configurable with `--diff-lines`). |
 | `al upgrade plan` | Show a dry-run, categorized upgrade plan with ownership labels and line-level diff previews (configurable with `--diff-lines`). |
 | `al wizard` | Interactive configuration for approvals, agents, MCP servers, and warnings. |
 | `al sync` | Regenerate client configs without launching a client. |
@@ -333,9 +333,10 @@ In non-interactive environments, the wizard is skipped.
 **What it does**
 
 - Updates `.agent-layer/al.version` to match the currently running `al` binary
-- Prompts before overwriting managed template files (use `--force` to skip prompts)
+- Prompts before overwriting managed template files unless apply flags are explicitly selected
 - Shows line-level diff previews before overwrite decisions by default
-- Deletes unknown files under `.agent-layer` only if you explicitly approve each deletion (or use `--force`)
+- Requires explicit `--apply-deletions` before unknown files under `.agent-layer` are eligible for deletion
+- Requires explicit confirmation for deletions unless `--yes --apply-deletions` is used
 - Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
 - Creates an automatic snapshot for managed upgrade targets and auto-rolls back if an upgrade step fails
 - Stores snapshots under `.agent-layer/state/upgrade-snapshots/`
