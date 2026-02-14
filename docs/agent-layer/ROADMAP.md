@@ -130,7 +130,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [x] Add automatic snapshot/rollback for managed files during upgrade operations.
 - [x] Replace binary `--force` semantics with explicit flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`.
 - [x] Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
-- [ ] Add `al upgrade rollback <snapshot-id>` command to restore a previous managed-file snapshot.
+- [x] Add `al upgrade rollback <snapshot-id>` command to restore a previous managed-file snapshot.
 - [x] Add CI-safe non-interactive apply mode (for example `al upgrade --yes --apply-managed-updates`) that applies managed template updates without deleting unknowns, bridging the gap between interactive upgrades and all-in destructive apply behavior.
 
 **Migration engine (Upgrade Plan Phase 3)**

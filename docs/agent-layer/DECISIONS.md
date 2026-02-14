@@ -194,3 +194,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al upgrade` no longer supports `--force`. Non-interactive runs require `--yes` plus one or more explicit apply flags (`--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`), and deletion remains gated behind explicit `--apply-deletions`.
     Reason: Prevent accidental destructive upgrades and make non-interactive intent explicit per mutation category.
     Tradeoffs: Existing `al upgrade --force` automation breaks and must be migrated to explicit apply flags.
+
+- Decision 2026-02-14 p2c-manual-rollback-status: Manual rollback eligibility and status handling
+    Decision: `al upgrade rollback <snapshot-id>` accepts only snapshots in `applied` status; successful manual rollback preserves `applied`, while manual rollback failures set `rollback_failed` with `failure_step=manual_rollback`.
+    Reason: Keep rollback semantics deterministic with the current snapshot schema while preserving a clear failure trail for failed manual restores.
+    Tradeoffs: Snapshot metadata cannot currently distinguish "applied and later manually restored" from "applied and never manually restored" without a future schema extension.

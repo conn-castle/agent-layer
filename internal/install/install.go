@@ -114,14 +114,15 @@ func Run(root string, opts Options) error {
 		}
 		inst.pinVersion = normalized
 	}
-	preTransactionSteps := []func() error{
-		inst.createDirs,
-		inst.scanUnknowns,
-	}
-	if err := runSteps(preTransactionSteps); err != nil {
+	if err := inst.createDirs(); err != nil {
 		return err
 	}
 	if overwrite {
+		// Overwrite upgrades need unknowns scanned before snapshot capture so the
+		// snapshot can restore unknown paths that handleUnknowns may delete.
+		if err := inst.scanUnknowns(); err != nil {
+			return err
+		}
 		snapshot, err := inst.createUpgradeSnapshot()
 		if err != nil {
 			return err
@@ -130,13 +131,17 @@ func Run(root string, opts Options) error {
 			return err
 		}
 	} else {
+		// scanUnknowns is a no-op for init (init requires no prior .agent-layer/),
+		// but is kept for symmetry and defensive coverage.
+		if err := inst.scanUnknowns(); err != nil {
+			return err
+		}
 		steps := []func() error{
 			inst.writeVersionFile,
 			inst.writeTemplateFiles,
 			inst.writeTemplateDirs,
 			inst.updateGitignore,
 			inst.writeVSCodeLaunchers,
-			inst.handleUnknowns,
 		}
 		if err := runSteps(steps); err != nil {
 			return err

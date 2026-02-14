@@ -1,6 +1,8 @@
 package install
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,5 +90,161 @@ func TestDiffPreviewErrorsUseMessageConstants(t *testing.T) {
 	}
 	if err.Error() != messages.InstallDiffPreviewPathRequired {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSplitDiffLinesAndTrailingNewlineHelpers(t *testing.T) {
+	if got := splitDiffLines(""); len(got) != 0 {
+		t.Fatalf("splitDiffLines(\"\") = %v, want empty", got)
+	}
+	if got := splitDiffLines("a\nb\n"); len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Fatalf("splitDiffLines unexpected output: %v", got)
+	}
+	if got := ensureTrailingNewline(""); got != "" {
+		t.Fatalf("ensureTrailingNewline empty = %q, want empty", got)
+	}
+	if got := ensureTrailingNewline("x"); got != "x\n" {
+		t.Fatalf("ensureTrailingNewline no newline = %q, want %q", got, "x\n")
+	}
+	if got := ensureTrailingNewline("x\n"); got != "x\n" {
+		t.Fatalf("ensureTrailingNewline existing newline = %q, want %q", got, "x\n")
+	}
+}
+
+func TestBuildManagedAndMemoryDiffPreviews(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	inst := &installer{
+		root:         root,
+		sys:          RealSystem{},
+		diffMaxLines: 20,
+	}
+
+	managedEntries := []LabeledPath{{
+		Path:      ".agent-layer/commands.allow",
+		Ownership: OwnershipUpstreamTemplateDelta,
+	}}
+	memoryEntries := []LabeledPath{{
+		Path:      "docs/agent-layer/ROADMAP.md",
+		Ownership: OwnershipUpstreamTemplateDelta,
+	}}
+
+	managedPreviews, managedIndex, err := inst.buildManagedDiffPreviews(managedEntries)
+	if err != nil {
+		t.Fatalf("buildManagedDiffPreviews: %v", err)
+	}
+	if len(managedPreviews) != 1 || len(managedIndex) != 1 {
+		t.Fatalf("unexpected managed preview sizes: previews=%d index=%d", len(managedPreviews), len(managedIndex))
+	}
+
+	memoryPreviews, memoryIndex, err := inst.buildMemoryDiffPreviews(memoryEntries)
+	if err != nil {
+		t.Fatalf("buildMemoryDiffPreviews: %v", err)
+	}
+	if len(memoryPreviews) != 1 || len(memoryIndex) != 1 {
+		t.Fatalf("unexpected memory preview sizes: previews=%d index=%d", len(memoryPreviews), len(memoryIndex))
+	}
+}
+
+func TestBuildManagedAndMemoryDiffPreviews_Errors(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	inst := &installer{
+		root:         root,
+		sys:          RealSystem{},
+		diffMaxLines: 20,
+	}
+
+	_, _, err := inst.buildManagedDiffPreviews([]LabeledPath{{
+		Path:      ".agent-layer/not-managed",
+		Ownership: OwnershipUpstreamTemplateDelta,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "missing template path mapping") {
+		t.Fatalf("expected managed preview mapping error, got %v", err)
+	}
+
+	_, _, err = inst.buildMemoryDiffPreviews([]LabeledPath{{
+		Path:      "docs/agent-layer/not-managed.md",
+		Ownership: OwnershipUpstreamTemplateDelta,
+	}})
+	if err == nil || !strings.Contains(err.Error(), "missing template path mapping") {
+		t.Fatalf("expected memory preview mapping error, got %v", err)
+	}
+}
+
+func TestBuildDiffPreviews_PropagatesSinglePreviewError(t *testing.T) {
+	inst := &installer{
+		root:         t.TempDir(),
+		sys:          RealSystem{},
+		diffMaxLines: 20,
+	}
+	_, err := inst.buildDiffPreviews([]LabeledPath{{Path: ""}}, map[string]string{})
+	if err == nil || err.Error() != messages.InstallDiffPreviewPathRequired {
+		t.Fatalf("expected diff preview path required error, got %v", err)
+	}
+}
+
+func TestBuildSingleDiffPreview_EdgeCases(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	inst := &installer{
+		root:         root,
+		sys:          RealSystem{},
+		diffMaxLines: 20,
+		pinVersion:   "1.1.0",
+	}
+
+	pinPreview, err := inst.buildSingleDiffPreview(LabeledPath{
+		Path:      pinVersionRelPath,
+		Ownership: OwnershipUpstreamTemplateDelta,
+	}, map[string]string{})
+	if err != nil {
+		t.Fatalf("buildSingleDiffPreview pin path: %v", err)
+	}
+	if pinPreview.Path != pinVersionRelPath {
+		t.Fatalf("pin preview path = %q, want %q", pinPreview.Path, pinVersionRelPath)
+	}
+
+	_, err = inst.buildSingleDiffPreview(LabeledPath{
+		Path:      ".agent-layer/missing.file",
+		Ownership: OwnershipUpstreamTemplateDelta,
+	}, map[string]string{})
+	if err == nil || !strings.Contains(err.Error(), "missing template path mapping") {
+		t.Fatalf("expected missing template mapping error, got %v", err)
+	}
+}
+
+func TestBuildSingleDiffPreview_SectionAwareMarkerError(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	if err := os.WriteFile(roadmapPath, []byte("# no marker here\n"), 0o644); err != nil {
+		t.Fatalf("write roadmap without marker: %v", err)
+	}
+
+	inst := &installer{
+		root:         root,
+		sys:          RealSystem{},
+		diffMaxLines: 20,
+	}
+	templatePathByRel, err := inst.memoryTemplatePathByRel()
+	if err != nil {
+		t.Fatalf("memoryTemplatePathByRel: %v", err)
+	}
+
+	_, err = inst.buildSingleDiffPreview(LabeledPath{
+		Path:      "docs/agent-layer/ROADMAP.md",
+		Ownership: OwnershipUpstreamTemplateDelta,
+	}, templatePathByRel)
+	if err == nil || !strings.Contains(err.Error(), "missing in") {
+		t.Fatalf("expected section-aware marker missing error, got %v", err)
 	}
 }

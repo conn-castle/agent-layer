@@ -20,14 +20,20 @@ func TestNewUpgradeCmd_RegistersPlanSubcommand(t *testing.T) {
 		t.Fatalf("unexpected use: %s", cmd.Use)
 	}
 	foundPlan := false
+	foundRollback := false
 	for _, sub := range cmd.Commands() {
 		if sub.Use == "plan" {
 			foundPlan = true
-			break
+		}
+		if strings.HasPrefix(sub.Use, "rollback") {
+			foundRollback = true
 		}
 	}
 	if !foundPlan {
 		t.Fatal("expected upgrade plan subcommand")
+	}
+	if !foundRollback {
+		t.Fatal("expected upgrade rollback subcommand")
 	}
 }
 
@@ -404,16 +410,13 @@ func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute upgrade plan --json: %v", err)
 		}
-		deprecationOutput := errOut.String() + out.String()
-		if !strings.Contains(deprecationOutput, "deprecated") {
-			t.Fatalf("expected deprecation warning for --json, got: stderr=%q stdout=%q", errOut.String(), out.String())
+		if !strings.Contains(errOut.String(), "deprecated") {
+			t.Fatalf("expected deprecation warning on stderr for --json, got stderr=%q", errOut.String())
 		}
-		jsonPayload := out.Bytes()
-		jsonStart := bytes.IndexByte(jsonPayload, '{')
-		if jsonStart == -1 {
-			t.Fatalf("expected json object in output, got: %q", out.String())
+		jsonPayload := bytes.TrimSpace(out.Bytes())
+		if len(jsonPayload) == 0 || jsonPayload[0] != '{' {
+			t.Fatalf("expected pure json object in stdout, got: %q", out.String())
 		}
-		jsonPayload = jsonPayload[jsonStart:]
 
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal(jsonPayload, &raw); err != nil {
@@ -638,6 +641,99 @@ func TestUpgradeCmd_HelpShowsApplyFlagsWithoutForce(t *testing.T) {
 			t.Fatalf("expected help output to include %s:\n%s", flag, help)
 		}
 	}
+}
+
+func TestUpgradeRollbackCmd_RequiresSnapshotID(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"rollback"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if err.Error() != messages.UpgradeRollbackRequiresSnapshotID {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestUpgradeRollbackCmd_InvokesInstallRollback(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origRollback := installRollbackUpgradeSnapshot
+	called := false
+	installRollbackUpgradeSnapshot = func(gotRoot string, snapshotID string, opts install.RollbackUpgradeSnapshotOptions) error {
+		called = true
+		if canonicalPath(gotRoot) != canonicalPath(root) {
+			t.Fatalf("rollback root = %q, want %q", gotRoot, root)
+		}
+		if snapshotID != "snapshot-123" {
+			t.Fatalf("snapshot id = %q, want snapshot-123", snapshotID)
+		}
+		if opts.System == nil {
+			t.Fatal("opts.System = nil, want non-nil")
+		}
+		return nil
+	}
+	t.Cleanup(func() { installRollbackUpgradeSnapshot = origRollback })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var out bytes.Buffer
+		cmd.SetArgs([]string{"rollback", "snapshot-123"})
+		cmd.SetOut(&out)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade rollback: %v", err)
+		}
+		if !called {
+			t.Fatal("expected installRollbackUpgradeSnapshot to be called")
+		}
+		if !strings.Contains(out.String(), "snapshot-123") {
+			t.Fatalf("expected success output with snapshot id, got %q", out.String())
+		}
+	})
+}
+
+func TestUpgradeRollbackCmd_PropagatesInstallErrors(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	sentinel := errors.New("rollback failed")
+	origRollback := installRollbackUpgradeSnapshot
+	installRollbackUpgradeSnapshot = func(string, string, install.RollbackUpgradeSnapshotOptions) error {
+		return sentinel
+	}
+	t.Cleanup(func() { installRollbackUpgradeSnapshot = origRollback })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"rollback", "snapshot-123"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("expected sentinel error, got %v", err)
+		}
+	})
 }
 
 func prepareUpgradeTestRepo(t *testing.T) string {

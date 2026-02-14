@@ -63,7 +63,7 @@ func newUpgradeCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.AddCommand(newUpgradePlanCmd(&diffLines))
+	cmd.AddCommand(newUpgradePlanCmd(&diffLines), newUpgradeRollbackCmd())
 
 	cmd.Flags().BoolVar(&yes, "yes", false, messages.UpgradeFlagYes)
 	cmd.Flags().BoolVar(&applyManagedUpdates, "apply-managed-updates", false, messages.UpgradeFlagApplyManagedUpdates)
@@ -71,6 +71,33 @@ func newUpgradeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&applyDeletions, "apply-deletions", false, messages.UpgradeFlagApplyDeletions)
 	cmd.PersistentFlags().IntVar(&diffLines, "diff-lines", install.DefaultDiffMaxLines, messages.UpgradeFlagDiffLines)
 	return cmd
+}
+
+func newUpgradeRollbackCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   messages.UpgradeRollbackUse,
+		Short: messages.UpgradeRollbackShort,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return fmt.Errorf(messages.UpgradeRollbackRequiresSnapshotID)
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			snapshotID := strings.TrimSpace(args[0])
+			if err := installRollbackUpgradeSnapshot(root, snapshotID, install.RollbackUpgradeSnapshotOptions{
+				System: install.RealSystem{},
+			}); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradeRollbackSuccessFmt, snapshotID)
+			return err
+		},
+	}
 }
 
 type upgradeApplyInputs struct {
@@ -149,6 +176,10 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) install
 		},
 		DeleteUnknownAllFunc: func(paths []string) (bool, error) {
 			if policy.explicitCategory {
+				// Explicit deletion policy has three states:
+				// 1) no --apply-deletions: skip all deletions,
+				// 2) --apply-deletions --yes: auto-approve deletions,
+				// 3) --apply-deletions without --yes: still prompt in interactive mode.
 				if !policy.applyDeletions {
 					return false, nil
 				}
@@ -163,6 +194,8 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) install
 		},
 		DeleteUnknownFunc: func(path string) (bool, error) {
 			if policy.explicitCategory {
+				// Mirror DeleteUnknownAllFunc so per-path prompts follow the same
+				// explicit-category behavior (skip/auto-approve/prompt).
 				if !policy.applyDeletions {
 					return false, nil
 				}
@@ -236,6 +269,9 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 			}
 
 			if outputJSON {
+				if _, err := fmt.Fprintln(cmd.ErrOrStderr(), messages.UpgradePlanJSONDeprecated); err != nil {
+					return err
+				}
 				encoder := json.NewEncoder(cmd.OutOrStdout())
 				encoder.SetIndent("", "  ")
 				return encoder.Encode(plan)
@@ -252,7 +288,6 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&outputJSON, "json", false, messages.UpgradePlanJSON)
 	_ = cmd.Flags().MarkHidden("json")
-	_ = cmd.Flags().MarkDeprecated("json", messages.UpgradePlanJSONDeprecated)
 	return cmd
 }
 

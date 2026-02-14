@@ -196,7 +196,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - `--apply-memory-updates`
    - `--apply-deletions`
 3. **[Done]** Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
-4. Add `al upgrade rollback <snapshot-id>`.
+4. **[Done]** Add `al upgrade rollback <snapshot-id>`.
 5. **[Done]** Add CI-safe non-interactive apply mode: `al upgrade --yes --apply-managed-updates` applies managed template updates without deleting unknowns.
 6. Keep launch sync behavior simple for everyday users; defer multi-mode launch sync controls.
 

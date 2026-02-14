@@ -100,12 +100,19 @@ func (inst *installer) writeUpgradeSnapshot(snapshot upgradeSnapshot, pruneBefor
 		return fmt.Errorf(messages.InstallFailedCreateDirForFmt, dir, err)
 	}
 	path := filepath.Join(dir, snapshot.SnapshotID+".json")
+	return writeUpgradeSnapshotFile(path, snapshot, inst.sys)
+}
+
+func writeUpgradeSnapshotFile(path string, snapshot upgradeSnapshot, sys System) error {
+	if err := validateUpgradeSnapshot(snapshot); err != nil {
+		return fmt.Errorf("validate upgrade snapshot: %w", err)
+	}
 	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal upgrade snapshot: %w", err)
 	}
 	data = append(data, '\n')
-	if err := inst.sys.WriteFileAtomic(path, data, 0o644); err != nil {
+	if err := sys.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
 	return nil
@@ -199,7 +206,7 @@ func (inst *installer) pruneUpgradeSnapshots(retain int) error {
 	}
 	files, err := inst.listUpgradeSnapshotFiles()
 	if err != nil {
-		return err
+		return fmt.Errorf("list upgrade snapshots under %s: %w", dir, err)
 	}
 	if len(files) <= retain {
 		return nil
@@ -252,76 +259,7 @@ func (inst *installer) listUpgradeSnapshotFiles() ([]upgradeSnapshotFile, error)
 }
 
 func (inst *installer) rollbackUpgradeSnapshot(snapshot upgradeSnapshot, targets []string) error {
-	if err := validateUpgradeSnapshot(snapshot); err != nil {
-		return err
-	}
-	scopedTargets := uniqueNormalizedPaths(targets)
-	if len(scopedTargets) == 0 {
-		return nil
-	}
-	sort.Slice(scopedTargets, func(i, j int) bool {
-		left := normalizeRelPath(scopedTargets[i])
-		right := normalizeRelPath(scopedTargets[j])
-		if strings.Count(left, "/") == strings.Count(right, "/") {
-			return left > right
-		}
-		return strings.Count(left, "/") > strings.Count(right, "/")
-	})
-	for _, target := range scopedTargets {
-		if err := inst.sys.RemoveAll(target); err != nil {
-			rel, relErr := filepath.Rel(inst.root, target)
-			if relErr != nil {
-				rel = target
-			}
-			return fmt.Errorf("reset path %s for rollback: %w", rel, err)
-		}
-	}
-	return inst.restoreUpgradeSnapshotEntries(snapshot.Entries)
-}
-
-func (inst *installer) restoreUpgradeSnapshotEntries(entries []upgradeSnapshotEntry) error {
-	dirs := make([]upgradeSnapshotEntry, 0)
-	files := make([]upgradeSnapshotEntry, 0)
-	for _, entry := range entries {
-		switch entry.Kind {
-		case upgradeSnapshotEntryKindDir:
-			dirs = append(dirs, entry)
-		case upgradeSnapshotEntryKindFile:
-			files = append(files, entry)
-		case upgradeSnapshotEntryKindAbsent:
-			continue
-		}
-	}
-	sort.Slice(dirs, func(i, j int) bool {
-		if strings.Count(dirs[i].Path, "/") == strings.Count(dirs[j].Path, "/") {
-			return dirs[i].Path < dirs[j].Path
-		}
-		return strings.Count(dirs[i].Path, "/") < strings.Count(dirs[j].Path, "/")
-	})
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Path < files[j].Path
-	})
-
-	for _, entry := range dirs {
-		absPath := filepath.Join(inst.root, filepath.FromSlash(entry.Path))
-		if err := inst.sys.MkdirAll(absPath, permFromSnapshot(entry.Perm, 0o755)); err != nil {
-			return fmt.Errorf("restore directory %s: %w", entry.Path, err)
-		}
-	}
-	for _, entry := range files {
-		absPath := filepath.Join(inst.root, filepath.FromSlash(entry.Path))
-		content, err := base64.StdEncoding.DecodeString(entry.ContentBase64)
-		if err != nil {
-			return fmt.Errorf("decode content for %s: %w", entry.Path, err)
-		}
-		if err := inst.sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
-			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
-		}
-		if err := inst.sys.WriteFileAtomic(absPath, content, permFromSnapshot(entry.Perm, 0o644)); err != nil {
-			return fmt.Errorf(messages.InstallFailedWriteFmt, absPath, err)
-		}
-	}
-	return nil
+	return rollbackUpgradeSnapshotState(inst.root, inst.sys, snapshot, targets)
 }
 
 func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, error) {

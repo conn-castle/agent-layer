@@ -158,6 +158,7 @@ Update the global CLI:
 Run `al upgrade plan` and then `al upgrade` inside the repo to apply template-managed updates. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
 
 Each `al upgrade` run writes an automatic snapshot of managed upgrade targets and auto-rolls back if an upgrade step fails. Snapshots are retained under `.agent-layer/state/upgrade-snapshots/` for rollback history.
+To manually restore an applied snapshot, run `al upgrade rollback <snapshot-id>` (use the JSON filename stem from `.agent-layer/state/upgrade-snapshots/` as `<snapshot-id>`).
 
 Upgrade previews now include line-level diffs in both `al upgrade plan` and interactive `al upgrade` prompts. By default, each file preview is truncated to 40 lines; raise this with `--diff-lines N` when needed.
 
@@ -462,6 +463,7 @@ Other commands:
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
 - `al upgrade` — apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
+- `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`)
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)

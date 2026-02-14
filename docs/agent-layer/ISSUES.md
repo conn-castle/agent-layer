@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-14 upg-rollback-audit-v1: Manual rollback success is not represented in snapshot status
+    Priority: Low. Area: install / observability.
+    Description: `al upgrade rollback <snapshot-id>` intentionally leaves successful rollbacks at `status: applied` because schema v1 has no dedicated manual-rollback-complete status.
+    Next step: Add a schema/status extension for manual rollback auditability and update rollback/docs/tests accordingly.
+    Notes: Current behavior still records manual rollback failures as `rollback_failed` with `failure_step=manual_rollback`.
+
 - Issue 2026-02-14 upg-force-api: install.Options.Force is now dead for production upgrade path
     Priority: Low. Area: install / API hygiene.
     Description: `cmd/al/upgrade.go` always passes `Force: false` and drives apply behavior through category-aware prompts, while `install.Options.Force` remains in the public install API and is still used mostly by tests.

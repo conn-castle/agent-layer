@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/conn-castle/agent-layer/internal/launchers"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func TestRunWithOverwrite_WritesAppliedUpgradeSnapshot(t *testing.T) {
@@ -213,6 +215,436 @@ func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
 	}
 }
 
+func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer/tmp: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir docs/agent-layer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write current pin: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md"), []byte("new roadmap\n"), 0o644); err != nil {
+		t.Fatalf("write current roadmap: %v", err)
+	}
+	extraPath := filepath.Join(root, ".agent-layer", "tmp", "extra.txt")
+	if err := os.WriteFile(extraPath, []byte("remove me"), 0o644); err != nil {
+		t.Fatalf("write extra file: %v", err)
+	}
+
+	permFile := uint32(0o644)
+	permDir := uint32(0o755)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "manual-restore-1",
+		CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &permFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			},
+			{
+				Path: ".agent-layer/tmp/extra.txt",
+				Kind: upgradeSnapshotEntryKindAbsent,
+			},
+			{
+				Path: "docs/agent-layer",
+				Kind: upgradeSnapshotEntryKindDir,
+				Perm: &permDir,
+			},
+			{
+				Path:          "docs/agent-layer/ROADMAP.md",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &permFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old roadmap\n")),
+			},
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	if err := RollbackUpgradeSnapshot(root, "manual-restore-1", RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("manual rollback: %v", err)
+	}
+
+	versionBytes, err := os.ReadFile(filepath.Join(root, ".agent-layer", "al.version"))
+	if err != nil {
+		t.Fatalf("read restored pin: %v", err)
+	}
+	if string(versionBytes) != "0.5.0\n" {
+		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "0.5.0\n")
+	}
+	roadmapBytes, err := os.ReadFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md"))
+	if err != nil {
+		t.Fatalf("read restored roadmap: %v", err)
+	}
+	if string(roadmapBytes) != "old roadmap\n" {
+		t.Fatalf("restored roadmap = %q, want %q", string(roadmapBytes), "old roadmap\n")
+	}
+	if _, err := os.Stat(extraPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected extra file removed, stat err = %v", err)
+	}
+
+	restoredSnapshot := latestSnapshot(t, root)
+	if restoredSnapshot.Status != upgradeSnapshotStatusApplied {
+		t.Fatalf("snapshot status mutated to %q, want %q", restoredSnapshot.Status, upgradeSnapshotStatusApplied)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RejectsNonAppliedStatuses(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	statuses := []upgradeSnapshotStatus{
+		upgradeSnapshotStatusCreated,
+		upgradeSnapshotStatusAutoRolledBack,
+		upgradeSnapshotStatusRollbackFailed,
+	}
+	for idx, status := range statuses {
+		snapshot := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    fmt.Sprintf("non-applied-%d", idx),
+			CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, idx, 0, time.UTC).Format(time.RFC3339),
+			Status:        status,
+		}
+		if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+			t.Fatalf("write snapshot for status %q: %v", status, err)
+		}
+		err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}})
+		if err == nil {
+			t.Fatalf("expected rollback rejection for status %q", status)
+		}
+		if !strings.Contains(err.Error(), "not rollbackable") {
+			t.Fatalf("expected rollbackability error for status %q, got %v", status, err)
+		}
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RequiresSnapshotID(t *testing.T) {
+	root := t.TempDir()
+	err := RollbackUpgradeSnapshot(root, " ", RollbackUpgradeSnapshotOptions{System: RealSystem{}})
+	if err == nil {
+		t.Fatal("expected missing snapshot id error")
+	}
+	if !strings.Contains(err.Error(), messages.InstallUpgradeRollbackSnapshotIDRequired) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_NotFound(t *testing.T) {
+	root := t.TempDir()
+	err := RollbackUpgradeSnapshot(root, "missing-id", RollbackUpgradeSnapshotOptions{System: RealSystem{}})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not-found error, got %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RequiresRoot(t *testing.T) {
+	err := RollbackUpgradeSnapshot(" ", "snapshot-id", RollbackUpgradeSnapshotOptions{System: RealSystem{}})
+	if err == nil {
+		t.Fatal("expected missing root error")
+	}
+	if !strings.Contains(err.Error(), messages.InstallRootRequired) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RequiresSystem(t *testing.T) {
+	root := t.TempDir()
+	err := RollbackUpgradeSnapshot(root, "snapshot-id", RollbackUpgradeSnapshotOptions{})
+	if err == nil {
+		t.Fatal("expected missing system error")
+	}
+	if !strings.Contains(err.Error(), messages.InstallSystemRequired) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_StatError(t *testing.T) {
+	root := t.TempDir()
+	snapshotID := "snapshot-id"
+	snapshotPath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), snapshotID+".json")
+
+	faults := newFaultSystem(RealSystem{})
+	faults.statErrs[normalizePath(snapshotPath)] = errors.New("stat failed")
+
+	err := RollbackUpgradeSnapshot(root, snapshotID, RollbackUpgradeSnapshotOptions{System: faults})
+	if err == nil {
+		t.Fatal("expected stat error")
+	}
+	if !strings.Contains(err.Error(), "failed to stat") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSnapshotEntryAbsPath_RejectsOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	_, err := snapshotEntryAbsPath(root, "../../outside")
+	if err == nil {
+		t.Fatal("expected outside-root error")
+	}
+	if !strings.Contains(err.Error(), "outside repo root") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSnapshotEntryAbsPath_RejectsDot(t *testing.T) {
+	root := t.TempDir()
+	_, err := snapshotEntryAbsPath(root, ".")
+	if err == nil || !strings.Contains(err.Error(), "is invalid") {
+		t.Fatalf("expected invalid path error, got %v", err)
+	}
+}
+
+func TestRollbackTargetsFromSnapshotEntries_DedupesPaths(t *testing.T) {
+	root := t.TempDir()
+	entries := []upgradeSnapshotEntry{
+		{Path: ".agent-layer/al.version", Kind: upgradeSnapshotEntryKindFile},
+		{Path: ".agent-layer/./al.version", Kind: upgradeSnapshotEntryKindFile},
+		{Path: "docs/agent-layer/ROADMAP.md", Kind: upgradeSnapshotEntryKindFile},
+	}
+
+	targets, err := rollbackTargetsFromSnapshotEntries(root, entries)
+	if err != nil {
+		t.Fatalf("rollbackTargetsFromSnapshotEntries: %v", err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("target count = %d, want 2 (%v)", len(targets), targets)
+	}
+}
+
+func TestRollbackTargetsFromSnapshotEntries_InvalidPath(t *testing.T) {
+	root := t.TempDir()
+	_, err := rollbackTargetsFromSnapshotEntries(root, []upgradeSnapshotEntry{
+		{Path: " ", Kind: upgradeSnapshotEntryKindFile},
+	})
+	if err == nil {
+		t.Fatal("expected invalid path error")
+	}
+}
+
+func TestRollbackTargetRelativeDepth_UsesRepoRelativePath(t *testing.T) {
+	root := filepath.Join(string(os.PathSeparator), "tmp", "repo")
+	rel, depth := rollbackTargetRelativeDepth(root, filepath.Join(root, "a", "b", "c.txt"))
+	if rel != "a/b/c.txt" {
+		t.Fatalf("relative path = %q, want %q", rel, "a/b/c.txt")
+	}
+	if depth != 2 {
+		t.Fatalf("depth = %d, want 2", depth)
+	}
+}
+
+func TestRollbackTargetRelativeDepth_FallbackOnInvalidPath(t *testing.T) {
+	rel, depth := rollbackTargetRelativeDepth("/tmp/repo", string([]byte{0}))
+	if rel == "" {
+		t.Fatalf("expected non-empty fallback relative path, got %q", rel)
+	}
+	if depth < 0 {
+		t.Fatalf("depth = %d, want non-negative", depth)
+	}
+}
+
+func TestRollbackUpgradeSnapshotState_NoTargets(t *testing.T) {
+	root := t.TempDir()
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "no-targets",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+	}
+	if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, nil); err != nil {
+		t.Fatalf("rollbackUpgradeSnapshotState: %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_MalformedSnapshotFailsLoudly(t *testing.T) {
+	root := t.TempDir()
+	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		t.Fatalf("mkdir snapshot dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshotDir, "bad.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("write malformed snapshot: %v", err)
+	}
+
+	err := RollbackUpgradeSnapshot(root, "bad", RollbackUpgradeSnapshotOptions{System: RealSystem{}})
+	if err == nil {
+		t.Fatal("expected malformed snapshot error")
+	}
+	if !strings.Contains(err.Error(), "decode upgrade snapshot") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_FailureMarksSnapshotRollbackFailed(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write current pin: %v", err)
+	}
+
+	perm := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "manual-rollback-fails",
+		CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &perm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			},
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	failPath := filepath.Join(root, ".agent-layer", "al.version")
+	faults := &writeFailOnceSystem{
+		base:     RealSystem{},
+		failPath: failPath,
+		err:      errors.New("restore write failed"),
+	}
+
+	err := RollbackUpgradeSnapshot(root, "manual-rollback-fails", RollbackUpgradeSnapshotOptions{System: faults})
+	if err == nil {
+		t.Fatal("expected rollback failure")
+	}
+	if !strings.Contains(err.Error(), "rollback snapshot manual-rollback-fails failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	snapshotPath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), "manual-rollback-fails.json")
+	updated, err := readUpgradeSnapshot(snapshotPath, RealSystem{})
+	if err != nil {
+		t.Fatalf("read updated snapshot: %v", err)
+	}
+	if updated.Status != upgradeSnapshotStatusRollbackFailed {
+		t.Fatalf("updated snapshot status = %q, want %q", updated.Status, upgradeSnapshotStatusRollbackFailed)
+	}
+	if updated.FailureStep != manualRollbackFailureStep {
+		t.Fatalf("updated failure_step = %q, want %q", updated.FailureStep, manualRollbackFailureStep)
+	}
+	if !strings.Contains(updated.FailureError, "restore write failed") {
+		t.Fatalf("updated failure_error = %q, want restore failure detail", updated.FailureError)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_FailureAndStatusWriteFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write current pin: %v", err)
+	}
+
+	perm := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "manual-rollback-write-fail",
+		CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &perm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			},
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	snapshotPath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), snapshot.SnapshotID+".json")
+	faults := newFaultSystem(RealSystem{})
+	faults.removeErrs[normalizePath(versionPath)] = errors.New("remove failed")
+	faults.writeErrs[normalizePath(snapshotPath)] = errors.New("snapshot write failed")
+
+	err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: faults})
+	if err == nil {
+		t.Fatal("expected rollback error")
+	}
+	if !strings.Contains(err.Error(), "failed to persist rollback_failed state") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RestoresSpecialPathEntries(t *testing.T) {
+	root := t.TempDir()
+	deepDir := filepath.Join(root, "docs", "agent-layer", "Deep Space")
+	if err := os.MkdirAll(deepDir, 0o755); err != nil {
+		t.Fatalf("mkdir deep dir: %v", err)
+	}
+
+	targetPath := filepath.Join(deepDir, "notes v1.md")
+	if err := os.WriteFile(targetPath, []byte("new notes\n"), 0o644); err != nil {
+		t.Fatalf("write current notes: %v", err)
+	}
+	extraPath := filepath.Join(deepDir, "extra.tmp")
+	if err := os.WriteFile(extraPath, []byte("remove"), 0o644); err != nil {
+		t.Fatalf("write extra path: %v", err)
+	}
+
+	perm := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "manual-restore-special",
+		CreatedAtUTC:  time.Date(2026, time.January, 3, 1, 2, 3, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          "docs/agent-layer/Deep Space/notes v1.md",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &perm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old notes\n")),
+			},
+			{
+				Path: "docs/agent-layer/Deep Space/extra.tmp",
+				Kind: upgradeSnapshotEntryKindAbsent,
+			},
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	if err := RollbackUpgradeSnapshot(root, snapshot.SnapshotID, RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("rollback snapshot: %v", err)
+	}
+
+	restored, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read restored notes: %v", err)
+	}
+	if string(restored) != "old notes\n" {
+		t.Fatalf("restored notes = %q, want %q", string(restored), "old notes\n")
+	}
+	if _, err := os.Stat(extraPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected extra path removed, stat err = %v", err)
+	}
+}
+
 func TestPruneUpgradeSnapshots_KeepNewest(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -244,6 +676,183 @@ func TestPruneUpgradeSnapshots_KeepNewest(t *testing.T) {
 	}
 }
 
+func TestPruneUpgradeSnapshots_RetainZero(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+
+	for idx := 0; idx < 3; idx++ {
+		now := time.Date(2026, time.January, 1, 0, idx, 0, 0, time.UTC)
+		snapshot := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    fmt.Sprintf("zero-%d", idx),
+			CreatedAtUTC:  now.Format(time.RFC3339),
+			Status:        upgradeSnapshotStatusApplied,
+		}
+		if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+			t.Fatalf("write snapshot %d: %v", idx, err)
+		}
+	}
+
+	if err := inst.pruneUpgradeSnapshots(0); err != nil {
+		t.Fatalf("prune snapshots: %v", err)
+	}
+	files, err := inst.listUpgradeSnapshotFiles()
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("snapshot count = %d, want 0", len(files))
+	}
+}
+
+func TestPruneUpgradeSnapshots_RetainCountNoOp(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+
+	for idx := 0; idx < 3; idx++ {
+		now := time.Date(2026, time.January, 1, 1, idx, 0, 0, time.UTC)
+		snapshot := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    fmt.Sprintf("retain-%d", idx),
+			CreatedAtUTC:  now.Format(time.RFC3339),
+			Status:        upgradeSnapshotStatusApplied,
+		}
+		if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+			t.Fatalf("write snapshot %d: %v", idx, err)
+		}
+	}
+
+	if err := inst.pruneUpgradeSnapshots(3); err != nil {
+		t.Fatalf("prune snapshots: %v", err)
+	}
+	files, err := inst.listUpgradeSnapshotFiles()
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("snapshot count = %d, want 3", len(files))
+	}
+	if files[0].id != "retain-0" || files[1].id != "retain-1" || files[2].id != "retain-2" {
+		t.Fatalf("unexpected snapshot order after no-op prune: %+v", files)
+	}
+}
+
+func TestPruneUpgradeSnapshots_InvalidRetain(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	err := inst.pruneUpgradeSnapshots(-1)
+	if err == nil || !strings.Contains(err.Error(), "retain must be non-negative") {
+		t.Fatalf("expected invalid retain error, got %v", err)
+	}
+}
+
+func TestListUpgradeSnapshotFiles_SortsByIDWhenCreatedAtEqual(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	ts := time.Date(2026, time.January, 1, 3, 4, 5, 0, time.UTC).Format(time.RFC3339)
+	first := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "zzz",
+		CreatedAtUTC:  ts,
+		Status:        upgradeSnapshotStatusApplied,
+	}
+	second := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "aaa",
+		CreatedAtUTC:  ts,
+		Status:        upgradeSnapshotStatusApplied,
+	}
+	if err := inst.writeUpgradeSnapshot(first, false); err != nil {
+		t.Fatalf("write first snapshot: %v", err)
+	}
+	if err := inst.writeUpgradeSnapshot(second, false); err != nil {
+		t.Fatalf("write second snapshot: %v", err)
+	}
+	files, err := inst.listUpgradeSnapshotFiles()
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("snapshot count = %d, want 2", len(files))
+	}
+	if files[0].id != "aaa" || files[1].id != "zzz" {
+		t.Fatalf("unexpected ordering for equal timestamps: %+v", files)
+	}
+}
+
+func TestPruneUpgradeSnapshots_StatError(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+	faults := newFaultSystem(RealSystem{})
+	faults.statErrs[normalizePath(dir)] = errors.New("stat failed")
+	inst := &installer{root: root, sys: faults}
+	err := inst.pruneUpgradeSnapshots(1)
+	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
+		t.Fatalf("expected stat error, got %v", err)
+	}
+}
+
+func TestWriteUpgradeSnapshot_PruneAndMkdirErrors(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "new",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusCreated,
+	}
+
+	// prune-before-create propagates malformed snapshot failures.
+	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		t.Fatalf("mkdir snapshot dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshotDir, "bad.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("write malformed snapshot: %v", err)
+	}
+	err := inst.writeUpgradeSnapshot(snapshot, true)
+	if err == nil || !strings.Contains(err.Error(), "list upgrade snapshots under") {
+		t.Fatalf("expected prune failure, got %v", err)
+	}
+
+	// mkdir failures are surfaced during snapshot writes.
+	faults := newFaultSystem(RealSystem{})
+	faults.mkdirErrs[normalizePath(snapshotDir)] = errors.New("mkdir failed")
+	inst = &installer{root: root, sys: faults}
+	err = inst.writeUpgradeSnapshot(snapshot, false)
+	if err == nil || !strings.Contains(err.Error(), "failed to create directory for") {
+		t.Fatalf("expected mkdir error, got %v", err)
+	}
+}
+
+func TestCreateUpgradeSnapshot_SuccessAndCaptureError(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn}
+	snapshot, err := inst.createUpgradeSnapshot()
+	if err != nil {
+		t.Fatalf("createUpgradeSnapshot: %v", err)
+	}
+	if snapshot.Status != upgradeSnapshotStatusCreated {
+		t.Fatalf("snapshot status = %q, want %q", snapshot.Status, upgradeSnapshotStatusCreated)
+	}
+	if !strings.Contains(warn.String(), "Created upgrade snapshot:") {
+		t.Fatalf("expected snapshot creation warning output, got %q", warn.String())
+	}
+
+	faults := newFaultSystem(RealSystem{})
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	faults.statErrs[normalizePath(versionPath)] = errors.New("stat failed")
+	inst = &installer{root: root, sys: faults}
+	if _, err := inst.createUpgradeSnapshot(); err == nil {
+		t.Fatal("expected createUpgradeSnapshot error")
+	}
+}
+
 func TestPruneUpgradeSnapshots_FailsLoudlyOnMalformedSnapshot(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -255,8 +864,12 @@ func TestPruneUpgradeSnapshots_FailsLoudlyOnMalformedSnapshot(t *testing.T) {
 	if err := os.WriteFile(malformedPath, []byte("{"), 0o644); err != nil {
 		t.Fatalf("write malformed snapshot: %v", err)
 	}
-	if err := inst.pruneUpgradeSnapshots(1); err == nil {
+	err := inst.pruneUpgradeSnapshots(1)
+	if err == nil {
 		t.Fatal("expected prune to fail on malformed snapshot")
+	}
+	if !strings.Contains(err.Error(), "list upgrade snapshots under") {
+		t.Fatalf("expected prune error context, got %v", err)
 	}
 }
 
@@ -284,6 +897,147 @@ func TestPruneUpgradeSnapshots_FailsLoudlyOnInvalidSnapshot(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid status") {
 		t.Fatalf("expected invalid status failure, got %v", err)
+	}
+}
+
+func TestWriteUpgradeSnapshotFile_Errors(t *testing.T) {
+	root := t.TempDir()
+	invalid := upgradeSnapshot{
+		SchemaVersion: 99,
+		SnapshotID:    "invalid",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusCreated,
+	}
+	err := writeUpgradeSnapshotFile(filepath.Join(root, "invalid.json"), invalid, RealSystem{})
+	if err == nil || !strings.Contains(err.Error(), "validate upgrade snapshot") {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+
+	valid := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "valid",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusCreated,
+	}
+	target := filepath.Join(root, "valid.json")
+	faults := newFaultSystem(RealSystem{})
+	faults.writeErrs[normalizePath(target)] = errors.New("write failed")
+	err = writeUpgradeSnapshotFile(target, valid, faults)
+	if err == nil || !strings.Contains(err.Error(), "failed to write") {
+		t.Fatalf("expected write error, got %v", err)
+	}
+}
+
+func TestReadUpgradeSnapshot_ReadError(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "missing.json")
+	faults := newFaultSystem(RealSystem{})
+	faults.readErrs[normalizePath(path)] = errors.New("read failed")
+	_, err := readUpgradeSnapshot(path, faults)
+	if err == nil || !strings.Contains(err.Error(), "failed to read") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestCaptureUpgradeSnapshotTarget_AbsentThenFile(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	entries := make(map[string]upgradeSnapshotEntry)
+	path := filepath.Join(root, ".agent-layer", "al.version")
+
+	if err := inst.captureUpgradeSnapshotTarget(path, entries); err != nil {
+		t.Fatalf("capture absent target: %v", err)
+	}
+	entry, ok := entries[".agent-layer/al.version"]
+	if !ok || entry.Kind != upgradeSnapshotEntryKindAbsent {
+		t.Fatalf("expected absent entry, got %+v", entry)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := inst.captureUpgradeSnapshotTarget(path, entries); err != nil {
+		t.Fatalf("capture file target: %v", err)
+	}
+	entry = entries[".agent-layer/al.version"]
+	if entry.Kind != upgradeSnapshotEntryKindFile {
+		t.Fatalf("expected file entry after upsert, got %+v", entry)
+	}
+}
+
+func TestCaptureUpgradeSnapshotTarget_StatError(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	faults := newFaultSystem(RealSystem{})
+	faults.statErrs[normalizePath(path)] = errors.New("stat failed")
+	inst := &installer{root: root, sys: faults}
+
+	err := inst.captureUpgradeSnapshotTarget(path, map[string]upgradeSnapshotEntry{})
+	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
+		t.Fatalf("expected stat error, got %v", err)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_UnsupportedSymlink(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	target := filepath.Join(root, ".agent-layer", "target.txt")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write target file: %v", err)
+	}
+	link := filepath.Join(dir, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	err := inst.captureUpgradeSnapshotDirectory(dir, map[string]upgradeSnapshotEntry{})
+	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
+		t.Fatalf("expected unsupported file type error, got %v", err)
+	}
+}
+
+func TestCaptureUpgradeSnapshotFile_ReadError(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	faults := newFaultSystem(RealSystem{})
+	faults.readErrs[normalizePath(path)] = errors.New("read failed")
+	inst := &installer{root: root, sys: faults}
+	err := inst.captureUpgradeSnapshotFile(path, 0o644, map[string]upgradeSnapshotEntry{})
+	if err == nil || !strings.Contains(err.Error(), "failed to read") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestRepoRelativePath_OutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	_, err := inst.repoRelativePath(filepath.Join(root, "..", "outside.txt"))
+	if err == nil || !strings.Contains(err.Error(), "outside repo root") {
+		t.Fatalf("expected outside root error, got %v", err)
+	}
+}
+
+func TestPermFromSnapshot_FallbackAndMask(t *testing.T) {
+	if got := permFromSnapshot(nil, 0o640); got != 0o640 {
+		t.Fatalf("permFromSnapshot(nil) = %v, want %v", got, fs.FileMode(0o640))
+	}
+	perm := uint32(0o120777)
+	if got := permFromSnapshot(&perm, 0o600); got != 0o777 {
+		t.Fatalf("permFromSnapshot(masked) = %v, want %v", got, fs.FileMode(0o777))
 	}
 }
 
@@ -464,6 +1218,9 @@ func findSnapshotEntry(snapshot upgradeSnapshot, path string) (upgradeSnapshotEn
 	return upgradeSnapshotEntry{}, false
 }
 
+// writeFailOnceSystem injects a one-shot write failure for a path.
+// Unlike faultSystem.writeErrs, it fails only the first matching write so tests
+// can validate rollback paths where a follow-up write must succeed.
 type writeFailOnceSystem struct {
 	base     System
 	failPath string
