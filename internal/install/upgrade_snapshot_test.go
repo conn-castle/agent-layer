@@ -337,6 +337,19 @@ func TestRollbackUpgradeSnapshot_RequiresSnapshotID(t *testing.T) {
 	}
 }
 
+func TestRollbackUpgradeSnapshot_RejectsPathTraversal(t *testing.T) {
+	root := t.TempDir()
+	for _, id := range []string{"../evil", "../../etc/passwd", "sub/dir", "a/../b"} {
+		err := RollbackUpgradeSnapshot(root, id, RollbackUpgradeSnapshotOptions{System: RealSystem{}})
+		if err == nil {
+			t.Fatalf("expected path traversal error for %q", id)
+		}
+		if !strings.Contains(err.Error(), "must not contain path separators") {
+			t.Fatalf("expected path separator error for %q, got %v", id, err)
+		}
+	}
+}
+
 func TestRollbackUpgradeSnapshot_NotFound(t *testing.T) {
 	root := t.TempDir()
 	err := RollbackUpgradeSnapshot(root, "missing-id", RollbackUpgradeSnapshotOptions{System: RealSystem{}})

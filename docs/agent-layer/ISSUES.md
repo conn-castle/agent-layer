@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-14 upg-scoped-restore: Automatic rollback restores all snapshot entries instead of scoped targets
+    Priority: Low. Area: install / correctness.
+    Description: `rollbackUpgradeSnapshotState` computes scoped targets for the delete phase but `restoreUpgradeSnapshotEntriesAtRoot` restores all snapshot entries unfiltered. If a write fails on an unrelated entry during restore, the snapshot is marked `rollback_failed` even though that path was never part of the failed transaction scope. In practice this is safe (unmodified files are rewritten with identical content) but is an inconsistency.
+    Next step: Filter the restore phase to entries covered by scoped targets, or document current full-restore behavior as intentional.
+
 - Issue 2026-02-14 upg-rollback-audit-v1: Manual rollback success is not represented in snapshot status
     Priority: Low. Area: install / observability.
     Description: `al upgrade rollback <snapshot-id>` intentionally leaves successful rollbacks at `status: applied` because schema v1 has no dedicated manual-rollback-complete status.

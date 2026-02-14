@@ -30,6 +30,7 @@ const (
 	InstallUpgradeSnapshotRolledBackFmt              = "Upgrade failed during %s. Changes were rolled back using snapshot %s.\n"
 	InstallUpgradeSnapshotRollbackFailedFmt          = "Upgrade failed during %s. Rollback using snapshot %s failed: %v\n"
 	InstallUpgradeRollbackSnapshotIDRequired         = "upgrade rollback requires a snapshot id"
+	InstallUpgradeRollbackSnapshotIDInvalid          = "invalid snapshot id %q: must not contain path separators"
 	InstallUpgradeRollbackSnapshotNotFoundFmt        = "upgrade snapshot %s not found under %s"
 	InstallUpgradeRollbackSnapshotNotRollbackableFmt = "upgrade snapshot %s is not rollbackable (status %s; expected %s)"
 	InstallUpgradeRollbackFailedFmt                  = "rollback snapshot %s failed: %w"

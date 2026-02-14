@@ -28,6 +28,10 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if snapshotID == "" {
 		return fmt.Errorf(messages.InstallUpgradeRollbackSnapshotIDRequired)
 	}
+	// Reject path traversal: snapshotID must be a bare filename component.
+	if filepath.Base(snapshotID) != snapshotID {
+		return fmt.Errorf(messages.InstallUpgradeRollbackSnapshotIDInvalid, snapshotID)
+	}
 	sys := opts.System
 	if sys == nil {
 		return fmt.Errorf(messages.InstallSystemRequired)
