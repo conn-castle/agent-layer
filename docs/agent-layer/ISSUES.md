@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-14 upg-snapshot-size: No per-snapshot size guard for upgrade snapshots
+    Priority: Low. Area: install / storage.
+    Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
+    Next step: Add snapshot-size budget checks (warning and/or configurable cap) and document retention sizing guidance.
+
 - Issue 2026-02-12 mcp-env: os.Environ() leaks credentials to MCP child processes
     Priority: Critical. Area: doctor / security.
     Description: `internal/doctor/mcp_connector.go:90-93` passes `os.Environ()` to MCP child processes, leaking all parent env vars (API keys, tokens, credentials) to potentially untrusted MCP servers.

@@ -337,6 +337,8 @@ In non-interactive environments, the wizard is skipped.
 - Shows line-level diff previews before overwrite decisions by default
 - Deletes unknown files under `.agent-layer` only if you explicitly approve each deletion (or use `--force`)
 - Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
+- Creates an automatic snapshot for managed upgrade targets and auto-rolls back if an upgrade step fails
+- Stores snapshots under `.agent-layer/state/upgrade-snapshots/`
 
 Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
 

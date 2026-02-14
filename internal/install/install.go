@@ -114,19 +114,33 @@ func Run(root string, opts Options) error {
 		}
 		inst.pinVersion = normalized
 	}
-	steps := []func() error{
+	preTransactionSteps := []func() error{
 		inst.createDirs,
-		inst.writeVersionFile,
-		inst.writeTemplateFiles,
-		inst.writeTemplateDirs,
-		inst.updateGitignore,
-		inst.writeVSCodeLaunchers,
 		inst.scanUnknowns,
-		inst.handleUnknowns,
 	}
-
-	if err := runSteps(steps); err != nil {
+	if err := runSteps(preTransactionSteps); err != nil {
 		return err
+	}
+	if overwrite {
+		snapshot, err := inst.createUpgradeSnapshot()
+		if err != nil {
+			return err
+		}
+		if err := inst.runUpgradeTransaction(&snapshot); err != nil {
+			return err
+		}
+	} else {
+		steps := []func() error{
+			inst.writeVersionFile,
+			inst.writeTemplateFiles,
+			inst.writeTemplateDirs,
+			inst.updateGitignore,
+			inst.writeVSCodeLaunchers,
+			inst.handleUnknowns,
+		}
+		if err := runSteps(steps); err != nil {
+			return err
+		}
 	}
 	baselineSource := BaselineStateSourceWrittenByInit
 	if overwrite {
@@ -139,6 +153,75 @@ func Run(root string, opts Options) error {
 	inst.warnDifferences()
 	inst.warnUnknowns()
 	return nil
+}
+
+type transactionStep struct {
+	name            string
+	run             func() error
+	rollbackTargets func() []string
+}
+
+func (inst *installer) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
+	steps := []transactionStep{
+		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
+		{name: "writeTemplateFiles", run: inst.writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
+		{name: "writeTemplateDirs", run: inst.writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
+		{name: "updateGitignore", run: inst.updateGitignore, rollbackTargets: inst.updateGitignoreTargetPaths},
+		{name: "writeVSCodeLaunchers", run: inst.writeVSCodeLaunchers, rollbackTargets: inst.writeVSCodeLaunchersTargetPaths},
+		{name: "handleUnknowns", run: inst.handleUnknowns, rollbackTargets: inst.handleUnknownsTargetPaths},
+	}
+	completedTargets := make(map[string]struct{})
+	for _, step := range steps {
+		currentStepTargets := step.rollbackTargets()
+		if err := step.run(); err != nil {
+			snapshot.Status = upgradeSnapshotStatusAutoRolledBack
+			snapshot.FailureStep = step.name
+			snapshot.FailureError = err.Error()
+
+			rollbackTargets := mergeRollbackTargets(completedTargets, currentStepTargets)
+			rollbackErr := inst.rollbackUpgradeSnapshot(*snapshot, rollbackTargets)
+			if rollbackErr != nil {
+				snapshot.Status = upgradeSnapshotStatusRollbackFailed
+				if writeErr := inst.writeUpgradeSnapshot(*snapshot, false); writeErr != nil {
+					return fmt.Errorf("upgrade step %s failed: %w; rollback failed: %v; failed to write snapshot state: %v", step.name, err, rollbackErr, writeErr)
+				}
+				_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallUpgradeSnapshotRollbackFailedFmt, step.name, snapshot.SnapshotID, rollbackErr)
+				return fmt.Errorf("upgrade step %s failed: %w; rollback failed: %v", step.name, err, rollbackErr)
+			}
+			if writeErr := inst.writeUpgradeSnapshot(*snapshot, false); writeErr != nil {
+				return fmt.Errorf("upgrade step %s failed: %w; rollback succeeded; failed to write snapshot state: %v", step.name, err, writeErr)
+			}
+			_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallUpgradeSnapshotRolledBackFmt, step.name, snapshot.SnapshotID)
+			return fmt.Errorf("upgrade step %s failed: %w", step.name, err)
+		}
+		for _, path := range currentStepTargets {
+			completedTargets[filepath.Clean(path)] = struct{}{}
+		}
+	}
+
+	snapshot.Status = upgradeSnapshotStatusApplied
+	snapshot.FailureStep = ""
+	snapshot.FailureError = ""
+	if err := inst.writeUpgradeSnapshot(*snapshot, false); err != nil {
+		return fmt.Errorf("mark upgrade snapshot %s as applied: %w", snapshot.SnapshotID, err)
+	}
+	return nil
+}
+
+func mergeRollbackTargets(completed map[string]struct{}, current []string) []string {
+	targets := make(map[string]struct{}, len(completed)+len(current))
+	for path := range completed {
+		targets[path] = struct{}{}
+	}
+	for _, path := range current {
+		targets[filepath.Clean(path)] = struct{}{}
+	}
+	out := make([]string, 0, len(targets))
+	for path := range targets {
+		out = append(out, path)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func runSteps(steps []func() error) error {

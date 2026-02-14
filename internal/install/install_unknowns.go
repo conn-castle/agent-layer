@@ -131,6 +131,8 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	add(filepath.Join(root, ".agent-layer", "templates", "docs"))
 	add(filepath.Join(root, ".agent-layer", "state"))
 	add(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json"))
+	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+	add(snapshotDir)
 	add(filepath.Join(root, ".agent-layer", "tmp"))
 	add(filepath.Join(root, ".agent-layer", "tmp", "runs"))
 
@@ -171,6 +173,26 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	if err := addTemplatePaths("docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs")); err != nil {
 		return nil, err
 	}
+	if err := inst.addExistingKnownPaths(snapshotDir, add); err != nil {
+		return nil, err
+	}
 
 	return known, nil
+}
+
+func (inst *installer) addExistingKnownPaths(root string, add func(string)) error {
+	sys := inst.sys
+	if _, err := sys.Stat(root); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf(messages.InstallFailedStatFmt, root, err)
+	}
+	return sys.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		add(path)
+		return nil
+	})
 }

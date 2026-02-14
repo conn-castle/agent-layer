@@ -190,7 +190,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 
 ### Phase 2: Make upgrades safe and reversible
 
-1. Add automatic snapshot/rollback for managed files during upgrade operations.
+1. **[Done]** Add automatic snapshot/rollback for managed files during upgrade operations.
 2. Replace binary `--force` semantics with explicit flags:
    - `--apply-managed-updates`
    - `--apply-memory-updates`

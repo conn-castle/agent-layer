@@ -320,6 +320,30 @@ func TestScanUnknownRoot_StatErrorNonNotExist(t *testing.T) {
 	}
 }
 
+func TestBuildKnownPaths_IncludesUpgradeSnapshots(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		t.Fatalf("mkdir snapshot dir: %v", err)
+	}
+	snapshotPath := filepath.Join(snapshotDir, "example.json")
+	if err := os.WriteFile(snapshotPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write snapshot file: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	known, err := inst.buildKnownPaths()
+	if err != nil {
+		t.Fatalf("buildKnownPaths: %v", err)
+	}
+	if _, ok := known[filepath.Clean(snapshotPath)]; !ok {
+		t.Fatalf("expected snapshot file path %s to be known", snapshotPath)
+	}
+}
+
 func TestRelativeUnknowns_Empty(t *testing.T) {
 	inst := &installer{
 		unknowns: nil,

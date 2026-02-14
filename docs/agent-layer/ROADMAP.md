@@ -127,7 +127,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [x] Simplify default `al upgrade plan` text output to plain-language sections/actions and remove default exposure of ownership reason codes, confidence, and detection metadata.
 
 **Safety and reversibility (Upgrade Plan Phase 2)**
-- [ ] Add automatic snapshot/rollback for managed files during upgrade operations.
+- [x] Add automatic snapshot/rollback for managed files during upgrade operations.
 - [ ] Replace binary `--force` semantics with explicit flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`.
 - [ ] Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
 - [ ] Add `al upgrade rollback <snapshot-id>` command to restore a previous managed-file snapshot.
