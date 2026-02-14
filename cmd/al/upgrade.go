@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -135,6 +134,8 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&outputJSON, "json", false, messages.UpgradePlanJSON)
+	_ = cmd.Flags().MarkHidden("json")
+	_ = cmd.Flags().MarkDeprecated("json", messages.UpgradePlanJSONDeprecated)
 	return cmd
 }
 
@@ -142,31 +143,31 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map
 	if _, err := fmt.Fprintln(out, "Upgrade plan (dry-run): no files were written."); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Template additions", plan.TemplateAdditions, previews); err != nil {
+	if err := writeUpgradeSummary(out, plan); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Template updates", plan.TemplateUpdates, previews); err != nil {
+	allUpdates := make([]install.UpgradeChange, 0, len(plan.TemplateUpdates)+len(plan.SectionAwareUpdates))
+	allUpdates = append(allUpdates, plan.TemplateUpdates...)
+	allUpdates = append(allUpdates, plan.SectionAwareUpdates...)
+	if err := writeUpgradeChangeSection(out, "Files to add", plan.TemplateAdditions, previews); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Section-aware updates (managed header only, user entries preserved)", plan.SectionAwareUpdates, previews); err != nil {
+	if err := writeUpgradeChangeSection(out, "Files to update", allUpdates, previews); err != nil {
 		return err
 	}
-	if err := writeUpgradeRenameSection(out, "Template renames", plan.TemplateRenames); err != nil {
+	if err := writeUpgradeRenameSection(out, "Files to rename", plan.TemplateRenames); err != nil {
 		return err
 	}
-	if err := writeUpgradeChangeSection(out, "Template removals/orphans", plan.TemplateRemovalsOrOrphans, previews); err != nil {
+	if err := writeUpgradeChangeSection(out, "Files to review for removal", plan.TemplateRemovalsOrOrphans, previews); err != nil {
 		return err
 	}
-	if err := writeConfigMigrationSection(out, "Config key migrations", plan.ConfigKeyMigrations); err != nil {
+	if err := writeConfigMigrationSection(out, "Config updates", plan.ConfigKeyMigrations); err != nil {
 		return err
 	}
 	if err := writePinVersionSection(out, plan.PinVersionChange, previews); err != nil {
 		return err
 	}
 	if err := writeReadinessSection(out, plan.ReadinessChecks); err != nil {
-		return err
-	}
-	if err := writeOwnershipWarnings(out, plan); err != nil {
 		return err
 	}
 	return nil
@@ -181,7 +182,7 @@ func writeUpgradeChangeSection(out io.Writer, title string, changes []install.Up
 		return err
 	}
 	for _, change := range changes {
-		if _, err := fmt.Fprintf(out, "  - %s [%s]\n", change.Path, change.Ownership.Display()); err != nil {
+		if _, err := fmt.Fprintf(out, "  - %s\n", change.Path); err != nil {
 			return err
 		}
 		if err := writeSinglePreviewBlock(out, previews[change.Path]); err != nil {
@@ -200,15 +201,7 @@ func writeUpgradeRenameSection(out io.Writer, title string, renames []install.Up
 		return err
 	}
 	for _, rename := range renames {
-		if _, err := fmt.Fprintf(
-			out,
-			"  - %s -> %s [%s, confidence=%s, detection=%s]\n",
-			rename.From,
-			rename.To,
-			rename.Ownership.Display(),
-			rename.Confidence,
-			rename.Detection,
-		); err != nil {
+		if _, err := fmt.Fprintf(out, "  - %s -> %s\n", rename.From, rename.To); err != nil {
 			return err
 		}
 	}
@@ -281,7 +274,7 @@ func printDiffPreviews(out io.Writer, header string, previews []install.DiffPrev
 		}
 	}
 	for _, preview := range previews {
-		if _, err := fmt.Fprintf(out, messages.InstallDiffLineFmt, preview.Path+" ["+preview.Ownership.Display()+"]"); err != nil {
+		if _, err := fmt.Fprintf(out, messages.InstallDiffLineFmt, preview.Path); err != nil {
 			return err
 		}
 	}
@@ -314,11 +307,26 @@ func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck
 		return err
 	}
 	for _, check := range checks {
-		if _, err := fmt.Fprintf(out, "  - %s: %s\n", check.ID, check.Summary); err != nil {
+		if _, err := fmt.Fprintf(out, "  - %s\n", readinessSummary(check)); err != nil {
 			return err
 		}
-		for _, detail := range check.Details {
-			if _, err := fmt.Fprintf(out, "    %s\n", detail); err != nil {
+		action := readinessAction(check.ID)
+		if action != "" {
+			if _, err := fmt.Fprintf(out, "    action: %s\n", action); err != nil {
+				return err
+			}
+		}
+		details := check.Details
+		if len(details) > 3 {
+			details = details[:3]
+		}
+		for _, detail := range details {
+			if _, err := fmt.Fprintf(out, "    note: %s\n", detail); err != nil {
+				return err
+			}
+		}
+		if len(check.Details) > len(details) {
+			if _, err := fmt.Fprintf(out, "    note: ... and %d more\n", len(check.Details)-len(details)); err != nil {
 				return err
 			}
 		}
@@ -326,59 +334,66 @@ func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck
 	return nil
 }
 
-func writeOwnershipWarnings(out io.Writer, plan install.UpgradePlan) error {
-	lines := collectUnknownOwnershipLines(plan)
-	if len(lines) == 0 {
-		return nil
+func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
+	filesToUpdate := len(plan.TemplateUpdates) + len(plan.SectionAwareUpdates)
+	needsReview := len(plan.ReadinessChecks) > 0
+	reviewState := "yes"
+	if !needsReview {
+		reviewState = "no"
 	}
-	if _, err := fmt.Fprintln(out, "\nOwnership warnings:"); err != nil {
+	if _, err := fmt.Fprintln(out, "\nSummary:"); err != nil {
 		return err
 	}
-	for _, line := range lines {
-		if _, err := fmt.Fprintf(out, "  - %s\n", line); err != nil {
-			return err
-		}
+	if _, err := fmt.Fprintf(out, "  - files to add: %d\n", len(plan.TemplateAdditions)); err != nil {
+		return err
 	}
-	if _, err := fmt.Fprintln(out, "  - action: run `al upgrade` (or `al upgrade --force`) to apply template changes and capture baseline evidence for ownership labels."); err != nil {
+	if _, err := fmt.Fprintf(out, "  - files to update: %d\n", filesToUpdate); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - files to rename: %d\n", len(plan.TemplateRenames)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - files to review for removal: %d\n", len(plan.TemplateRemovalsOrOrphans)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - config updates: %d\n", len(plan.ConfigKeyMigrations)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - readiness warnings: %d\n", len(plan.ReadinessChecks)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - needs review before apply: %s\n", reviewState); err != nil {
 		return err
 	}
 	return nil
 }
 
-func collectUnknownOwnershipLines(plan install.UpgradePlan) []string {
-	lines := make([]string, 0)
-	appendChange := func(change install.UpgradeChange) {
-		if change.OwnershipState != install.OwnershipStateUnknownNoBaseline {
-			return
-		}
-		reasonText := "reasons=none"
-		if len(change.OwnershipReasonCodes) != 0 {
-			reasonText = "reasons=" + strings.Join(change.OwnershipReasonCodes, ",")
-		}
-		lines = append(lines, fmt.Sprintf("%s [%s, %s]", change.Path, change.Ownership.Display(), reasonText))
+func readinessSummary(check install.UpgradeReadinessCheck) string {
+	switch check.ID {
+	case "unrecognized_config_keys":
+		return "Config needs review before upgrade."
+	case "vscode_no_sync_outputs_stale":
+		return "VS Code generated files may be stale."
+	case "floating_external_dependency_specs":
+		return "Some enabled MCP dependencies use floating versions."
+	case "stale_disabled_agent_artifacts":
+		return "Disabled-agent generated files are still present."
+	default:
+		return check.Summary
 	}
-	for _, change := range plan.TemplateAdditions {
-		appendChange(change)
+}
+
+func readinessAction(id string) string {
+	switch id {
+	case "unrecognized_config_keys":
+		return "Fix unknown or invalid keys in `.agent-layer/config.toml` (or run `al wizard`) before applying."
+	case "vscode_no_sync_outputs_stale":
+		return "Run `al sync` before `al upgrade` so generated VS Code files match current config."
+	case "floating_external_dependency_specs":
+		return "Pin floating dependency specs in `.agent-layer/config.toml` for stable upgrades."
+	case "stale_disabled_agent_artifacts":
+		return "Remove stale generated files for disabled agents, or re-enable those agents."
+	default:
+		return ""
 	}
-	for _, change := range plan.TemplateUpdates {
-		appendChange(change)
-	}
-	for _, change := range plan.SectionAwareUpdates {
-		appendChange(change)
-	}
-	for _, change := range plan.TemplateRemovalsOrOrphans {
-		appendChange(change)
-	}
-	for _, rename := range plan.TemplateRenames {
-		if rename.OwnershipState != install.OwnershipStateUnknownNoBaseline {
-			continue
-		}
-		reasonText := "reasons=none"
-		if len(rename.OwnershipReasonCodes) != 0 {
-			reasonText = "reasons=" + strings.Join(rename.OwnershipReasonCodes, ",")
-		}
-		lines = append(lines, fmt.Sprintf("%s -> %s [%s, %s]", rename.From, rename.To, rename.Ownership.Display(), reasonText))
-	}
-	sort.Strings(lines)
-	return lines
 }

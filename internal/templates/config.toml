@@ -1,3 +1,8 @@
+# Everyday setup:
+# - Use `al wizard` for most changes.
+# - Usually you only need to toggle agent/server `enabled` values.
+# - Leave advanced fields as-is unless you have a specific need.
+
 [approvals]
 # one of: "all", "mcp", "commands", "none"
 mode = "all"
@@ -27,12 +32,11 @@ enabled = true
 
 [mcp]
 # Secrets belong in .agent-layer/.env (never in config.toml).
-# MCP servers here are the external tool servers that get projected into client configs.
-# The installer seeds a small library of defaults you can edit, disable, or delete.
+# These are optional external MCP servers projected into client configs.
+# Most teams only enable the few they actively use.
 
 [[mcp.servers]]
-# Context7: current library docs + code examples. Great first server to enable when integrating SDKs.
-# Requires an API key in .agent-layer/.env: AL_CONTEXT7_API_KEY (sign up).
+# Context7 docs/code lookup (requires AL_CONTEXT7_API_KEY).
 id = "context7"
 enabled = false
 transport = "stdio"
@@ -41,8 +45,7 @@ args = ["-y", "@upstash/context7-mcp"]
 env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 
 [[mcp.servers]]
-# GitHub: issues/PRs/actions workflows. Enable when you want the agent to operate on GitHub, not just local code.
-# Requires a token in .agent-layer/.env: AL_GITHUB_PERSONAL_ACCESS_TOKEN (and access to the configured endpoint).
+# GitHub issues/PR/actions (requires AL_GITHUB_PERSONAL_ACCESS_TOKEN).
 id = "github"
 enabled = false
 transport = "http"
@@ -51,8 +54,7 @@ url = "https://api.githubcopilot.com/mcp/"
 headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
 
 [[mcp.servers]]
-# Tavily: web search/research for up-to-date information (beyond training data).
-# Requires an API key in .agent-layer/.env: AL_TAVILY_API_KEY (sign up).
+# Tavily web search/research (requires AL_TAVILY_API_KEY).
 id = "tavily"
 enabled = false
 transport = "http"
@@ -60,8 +62,7 @@ http_transport = "streamable"
 url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${AL_TAVILY_API_KEY}"
 
 [[mcp.servers]]
-# Fetch: retrieve a URL's contents for the agent to read. Useful alongside search.
-# Requires `uvx` (from `uv`) to be installed.
+# Fetch URL contents (requires `uvx`).
 id = "fetch"
 enabled = false
 transport = "stdio"
@@ -69,8 +70,7 @@ command = "uvx"
 args = ["mcp-server-fetch"]
 
 [[mcp.servers]]
-# Playwright: browser automation for web flows and complex pages. High leverage, not needed in every repo.
-# Requires Node (npx) and downloads browser dependencies on first use.
+# Playwright browser automation (requires Node/npx).
 id = "playwright"
 enabled = false
 transport = "stdio"
@@ -78,8 +78,7 @@ command = "npx"
 args = ["-y", "@playwright/mcp@latest"]
 
 [[mcp.servers]]
-# Ripgrep: fast repo search (often the difference between "guessing" and finding the right file quickly).
-# Requires Node (npx).
+# Ripgrep fast repo search (requires Node/npx).
 id = "ripgrep"
 enabled = false
 clients = ["gemini", "claude", "codex"]
@@ -88,8 +87,7 @@ command = "npx"
 args = ["-y", "mcp-ripgrep@latest"]
 
 [[mcp.servers]]
-# Filesystem: controlled filesystem access. The template restricts access to the current repo root.
-# Requires Node (npx).
+# Filesystem access scoped to this repo (requires Node/npx).
 id = "filesystem"
 enabled = false
 clients = ["gemini", "claude", "codex"]
@@ -100,8 +98,8 @@ command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
 
 [warnings]
-# Optional thresholds for warning checks. Omit or comment out to disable.
-# Warn when a newer Agent Layer version is available during sync runs.
+# Optional warning defaults.
+# Wizard now uses these defaults directly when warnings are enabled.
 version_update_on_sync = true
 instruction_token_threshold = 10000
 mcp_server_threshold = 15

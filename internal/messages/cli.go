@@ -31,8 +31,9 @@ const (
 	UpgradeShort               = "Apply template-managed updates and update the repo pin"
 	UpgradePlanUse             = "plan"
 	UpgradePlanShort           = "Show a dry-run upgrade plan without writing files"
-	UpgradePlanJSON            = "Output machine-readable JSON"
-	UpgradeRequiresTerminal    = "upgrade prompts require an interactive terminal; re-run with --force to upgrade without prompts"
+	UpgradePlanJSON            = "DEPRECATED: output machine-readable JSON"
+	UpgradePlanJSONDeprecated  = "deprecated: --json will be removed in a future release; use default text output"
+	UpgradeRequiresTerminal    = "upgrade prompts require an interactive terminal; re-run `al upgrade` in a terminal (advanced: --force skips prompts and may delete unknown files)"
 	UpgradeFlagDiffLines       = "Max number of diff lines shown per file in upgrade previews"
 	UpgradeDiffLinesInvalidFmt = "invalid value for --diff-lines: %d (must be > 0)"
 
@@ -56,7 +57,7 @@ const (
 	InitReleaseVersionNotFoundFmt         = "requested release v%s not found; check available versions at %s"
 
 	UpdateUpgradeBlock         = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  2) Upgrade this repo:\n     al upgrade plan\n     al upgrade"
-	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade --force` overwrites managed files and deletes unknown files under .agent-layer without prompts."
+	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade` is the recommended default path.\n  - Advanced: `al upgrade --force` overwrites managed files and deletes unknown files under .agent-layer without prompts."
 	InitWarnUpdateAvailableFmt = "Warning: update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
 
 	// CompletionUse is the completion command usage.

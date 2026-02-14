@@ -292,26 +292,6 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	}
 	choices.WarningsEnabled = warningsEnabled
 	choices.WarningsEnabledTouched = true
-	if choices.WarningsEnabled {
-		if err := promptPositiveInt(ui, messages.WizardInstructionTokenThresholdTitle, &choices.InstructionTokenThreshold); err != nil {
-			return err
-		}
-		if err := promptPositiveInt(ui, messages.WizardMCPServerThresholdTitle, &choices.MCPServerThreshold); err != nil {
-			return err
-		}
-		if err := promptPositiveInt(ui, messages.WizardMCPToolsTotalThresholdTitle, &choices.MCPToolsTotalThreshold); err != nil {
-			return err
-		}
-		if err := promptPositiveInt(ui, messages.WizardMCPServerToolsThresholdTitle, &choices.MCPServerToolsThreshold); err != nil {
-			return err
-		}
-		if err := promptPositiveInt(ui, messages.WizardMCPSchemaTokensTotalThresholdTitle, &choices.MCPSchemaTokensTotalThreshold); err != nil {
-			return err
-		}
-		if err := promptPositiveInt(ui, messages.WizardMCPSchemaTokensServerThresholdTitle, &choices.MCPSchemaTokensServerThreshold); err != nil {
-			return err
-		}
-	}
 
 	// 6. Summary
 	summary := buildSummary(choices)

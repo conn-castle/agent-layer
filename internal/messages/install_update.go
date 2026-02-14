@@ -7,7 +7,7 @@ const (
 	// InstallSystemRequired indicates system is required for install.
 	InstallSystemRequired = "install system is required"
 	// InstallOverwritePromptRequired indicates overwrite prompts need a handler.
-	InstallOverwritePromptRequired        = "overwrite prompts require a prompt handler; re-run with --force to overwrite without prompts"
+	InstallOverwritePromptRequired        = "overwrite prompts require a prompt handler; run in an interactive terminal (advanced: --force skips prompts)"
 	InstallInvalidPinVersionFmt           = "invalid pin version: %w"
 	InstallCreateDirFailedFmt             = "failed to create directory %s: %w"
 	InstallAutoRepairPinWarningFmt        = "Auto-repairing invalid pin file %s (was %q, now %s)\n"
@@ -21,10 +21,10 @@ const (
 	InstallUnexpectedTemplatePathFmt      = "unexpected template path %s"
 	InstallDiffHeader                     = "Found existing files that differ from the templates:"
 	InstallDiffLineFmt                    = "  - %s\n"
-	InstallDiffFooter                     = "Run `al upgrade` to review each file, or `al upgrade --force` to replace them without prompts."
+	InstallDiffFooter                     = "Run `al upgrade` to review each file. Advanced: `al upgrade --force` replaces them without prompts."
 	InstallUnknownHeader                  = "Found files in .agent-layer not tracked by Agent Layer:"
-	InstallUnknownFooter                  = "Run `al upgrade` to review deleting them, or `al upgrade --force` to delete them without prompts."
-	InstallDeleteUnknownPromptRequired    = "delete prompts require a prompt handler; re-run with --force to delete unknown files without prompts"
+	InstallUnknownFooter                  = "Run `al upgrade` to review deleting them. Advanced: `al upgrade --force` deletes unknown files without prompts."
+	InstallDeleteUnknownPromptRequired    = "delete prompts require a prompt handler; run in an interactive terminal (advanced: --force skips prompts)"
 	InstallDeleteUnknownFailedFmt         = "failed to delete %s: %w"
 	InstallDiffPreviewPathRequired        = "diff preview path is required"
 	InstallMissingTemplatePathMappingFmt  = "missing template path mapping for %s"

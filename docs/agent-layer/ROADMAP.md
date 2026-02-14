@@ -110,20 +110,21 @@ Incomplete:
 Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 
 ### Goal
-- Users can preview all upgrade changes before any file is written, with clear ownership labels (upstream vs local).
+- Users can preview upgrade changes before any file is written, using plain-language summaries plus line-level diffs.
 - Upgrades are reversible via automatic snapshots, and destructive operations require explicit, granular opt-in.
 - Each release ships a migration manifest that handles file renames, deletions, and config transitions idempotently.
-- Upgrade planning remains explainable in human-readable output without requiring a stable machine-readable schema contract.
+- Upgrade planning remains explainable in human-readable output while keeping internal diagnostics out of the default UX path.
 
 ### Tasks
 
 **Explainability (Upgrade Plan Phase 1)**
 - [x] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
-- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer ownership states).
-- [x] Add optional `--json` output to `al upgrade plan` for ad-hoc diagnostics (explicitly non-contractual format).
+- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer ownership states), while keeping ownership diagnostics out of default upgrade-plan text output.
+- [x] Keep `al upgrade plan --json` as compatibility-only output during cleanup transition; hide it from help and mark it deprecated for eventual removal.
 - [x] Validate GitHub issue #30 (j4k5l6: managed file diff visibility) closure criteria; close only after line-level diff visibility is shipped, otherwise record the remaining gap.
 - [x] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
 - [x] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
+- [x] Simplify default `al upgrade plan` text output to plain-language sections/actions and remove default exposure of ownership reason codes, confidence, and detection metadata.
 
 **Safety and reversibility (Upgrade Plan Phase 2)**
 - [ ] Add automatic snapshot/rollback for managed files during upgrade operations.
@@ -131,13 +132,11 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [ ] Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
 - [ ] Add `al upgrade rollback <snapshot-id>` command to restore a previous managed-file snapshot.
 - [ ] Add CI-safe non-interactive apply mode (for example `al upgrade --yes --apply-managed-updates`) that applies managed template updates without deleting unknowns, bridging the gap between interactive `al upgrade` and destructive `al upgrade --force`.
-- [ ] Add explicit sync modes for launch commands across clients (`apply`, `check`, `off`) with default mode `check` (locked decision 3B); users opt into mutation or no-sync explicitly.
 
 **Migration engine (Upgrade Plan Phase 3)**
 - [ ] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Implement migration manifests per release for file rename/delete mapping, config key rename/default transform, and generated artifact transitions.
 - [ ] Execute migrations idempotently before template write; emit deterministic migration report with before/after rationale.
 - [ ] Add compatibility shims plus deprecation periods for renamed commands/flags.
-- [ ] Add migration manifest entry for launch-sync default change (locked decision 3B): deprecate implicit `apply` mode, warn for N releases, then switch default to `check`.
 - [ ] Add migration guidance/rules for env key transitions (e.g., non-`AL_` to `AL_`).
 - [ ] Backlog 2026-02-03 b4c5d6e (Priority: Medium, Area: lifecycle management): Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
 
@@ -152,12 +151,11 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
   Notes: Requires secure fetch + cache strategy and compatibility with pinning/update notifications.
 
 ### Exit criteria
-- `al upgrade plan` exists and shows categorized, ownership-labeled changes without writing files.
-- `al upgrade plan --json` is documented as optional diagnostic output, not a stable public schema contract.
+- `al upgrade plan` exists and shows plain-language categorized changes without writing files.
+- `al upgrade plan --json` is hidden/deprecated compatibility output (no stable schema contract) and is no longer in the default user guidance path.
 - Every upgrade operation creates a snapshot that can be rolled back via `al upgrade rollback`.
 - `--force` is replaced by granular flags; no single flag can silently delete unknowns.
 - `al upgrade --yes --apply-managed-updates` is CI-safe and does not delete unknown files.
-- Launch commands default to `check` mode (no implicit file mutation).
 - Migration manifests ship with each release and handle renames, deletions, and config transitions.
 - Breaking changes follow a documented deprecation period with compatibility shims.
 - Custom template repositories upgrade deterministically with pinning rules.

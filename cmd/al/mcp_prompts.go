@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -14,8 +12,9 @@ var runPromptServer = mcp.RunPromptServer
 
 func newMcpPromptsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   messages.McpPromptsUse,
-		Short: messages.McpPromptsShort,
+		Use:    messages.McpPromptsUse,
+		Short:  messages.McpPromptsShort,
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {
@@ -25,7 +24,7 @@ func newMcpPromptsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runPromptServer(context.Background(), Version, project.SlashCommands)
+			return runPromptServer(cmd.Context(), Version, project.SlashCommands)
 		},
 	}
 

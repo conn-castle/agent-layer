@@ -237,11 +237,15 @@ func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 		cmd := newUpgradePlanCmd(&diffLines)
 		cmd.SetArgs([]string{"--json"})
 		var out bytes.Buffer
+		var errOut bytes.Buffer
 		cmd.SetOut(&out)
-		cmd.SetErr(&out)
+		cmd.SetErr(&errOut)
 
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute upgrade plan --json: %v", err)
+		}
+		if !strings.Contains(errOut.String(), "deprecated") {
+			t.Fatalf("expected deprecation warning for --json, got: %q", errOut.String())
 		}
 
 		var raw map[string]json.RawMessage
@@ -291,7 +295,7 @@ func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
 	})
 }
 
-func TestUpgradePlanCmd_TextOutputIncludesSectionsAndLabels(t *testing.T) {
+func TestUpgradePlanCmd_TextOutputIncludesPlainSections(t *testing.T) {
 	root := prepareUpgradeTestRepo(t)
 	withWorkingDir(t, root, func() {
 		diffLines := install.DefaultDiffMaxLines
@@ -307,16 +311,16 @@ func TestUpgradePlanCmd_TextOutputIncludesSectionsAndLabels(t *testing.T) {
 		output := out.String()
 		expectedSnippets := []string{
 			"Upgrade plan (dry-run): no files were written.",
-			"Template additions:",
-			"Template updates:",
-			"Section-aware updates (managed header only, user entries preserved):",
-			"Template renames:",
-			"Template removals/orphans:",
-			"Config key migrations:",
+			"Summary:",
+			"Files to add:",
+			"Files to update:",
+			"Files to rename:",
+			"Files to review for removal:",
+			"Config updates:",
 			"Pin version change:",
 			"Readiness checks:",
-			"upstream template delta",
-			"confidence=high",
+			"action:",
+			"needs review before apply:",
 		}
 		for _, snippet := range expectedSnippets {
 			if !strings.Contains(output, snippet) {
@@ -326,7 +330,7 @@ func TestUpgradePlanCmd_TextOutputIncludesSectionsAndLabels(t *testing.T) {
 	})
 }
 
-func TestUpgradePlanCmd_TextOutputShowsUnknownBaselineWarning(t *testing.T) {
+func TestUpgradePlanCmd_TextOutputHidesOwnershipDiagnostics(t *testing.T) {
 	root := t.TempDir()
 	if err := install.Run(root, install.Options{System: install.RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
@@ -349,13 +353,35 @@ func TestUpgradePlanCmd_TextOutputShowsUnknownBaselineWarning(t *testing.T) {
 			t.Fatalf("execute upgrade plan: %v", err)
 		}
 		output := out.String()
-		if !strings.Contains(output, "Ownership warnings:") {
-			t.Fatalf("expected ownership warning block in output:\n%s", output)
+		notExpected := []string{
+			"Ownership warnings:",
+			"unknown no baseline",
+			"confidence=high",
+			"detection=",
+			"reasons=",
 		}
-		if !strings.Contains(output, "unknown no baseline") {
-			t.Fatalf("expected unknown ownership label in output:\n%s", output)
+		for _, snippet := range notExpected {
+			if strings.Contains(output, snippet) {
+				t.Fatalf("expected output not to contain %q\noutput:\n%s", snippet, output)
+			}
 		}
 	})
+}
+
+func TestUpgradePlanCmd_HelpHidesJSONFlag(t *testing.T) {
+	diffLines := install.DefaultDiffMaxLines
+	cmd := newUpgradePlanCmd(&diffLines)
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--help"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute help: %v", err)
+	}
+	if strings.Contains(out.String(), "--json") {
+		t.Fatalf("expected --json to be hidden from help output:\n%s", out.String())
+	}
 }
 
 func TestUpgradePlanCmd_TextOutputIncludesDiffPreviewAndTruncation(t *testing.T) {

@@ -160,7 +160,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Unpinned repos can silently drift when developers upgrade the global `al` install, causing hard-to-debug mismatches.
     Tradeoffs: Advanced users can still delete the pin file manually, but that is unsupported and reduces reproducibility.
 
-- Decision 2026-02-11 p1d-json-contract: Upgrade-plan JSON is diagnostic, not a stable public schema contract
+- Decision 2026-02-11 p1d-json-contract: Upgrade-plan JSON is diagnostic, not a stable public schema contract (superseded in user-facing UX by `p1g-upgrade-everyday-output`)
     Decision: Keep `al upgrade plan --json` as optional diagnostic output, but do not guarantee a stable field-level schema for CI automation.
     Reason: There are currently no first-party automation consumers; locking the schema now would add compatibility burden without immediate product value.
     Tradeoffs: External automation must pin CLI versions (or parse defensively) if it chooses to consume `--json` output.
@@ -179,3 +179,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al upgrade plan` and interactive `al upgrade` overwrite prompts now render unified line-level diffs by default, with per-file truncation at 40 lines and an explicit `--diff-lines` override.
     Reason: Issue #30 required users to see specific line changes before accepting/rejecting overwrite decisions; always-on previews remove blind yes/no prompts.
     Tradeoffs: Default output is noisier for large files; users who need deeper context must opt in with a larger `--diff-lines` value.
+
+- Decision 2026-02-14 p1g-upgrade-everyday-output: Default upgrade UX is plain-language; JSON is compatibility-only
+    Decision: `al upgrade plan` default text output now prioritizes plain-language summaries/actions and no longer surfaces ownership reason codes, confidence/detection metadata, or readiness IDs; `--json` remains only as a hidden deprecated compatibility path (supersedes the user-facing part of `p1d-json-contract`).
+    Reason: Everyday users need low-jargon guidance, while existing automation needs a short migration window instead of immediate JSON removal.
+    Tradeoffs: Power users lose internal diagnostics in the default path and must rely on the temporary deprecated JSON mode or source-level inspection during the transition.

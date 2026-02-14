@@ -219,7 +219,7 @@ func TestSelectOptionalValue_LeaveBlank(t *testing.T) {
 func TestPromptPositiveInt_Default(t *testing.T) {
 	ui := &MockUI{}
 	value := 10
-	err := promptPositiveInt(ui, "Threshold", &value)
+	err := promptPositiveInt(ui, "Instruction threshold", &value)
 	assert.NoError(t, err)
 	assert.Equal(t, 10, value)
 }
@@ -232,7 +232,7 @@ func TestPromptPositiveInt_Override(t *testing.T) {
 		},
 	}
 	value := 10
-	err := promptPositiveInt(ui, "Threshold", &value)
+	err := promptPositiveInt(ui, "MCP server threshold", &value)
 	assert.NoError(t, err)
 	assert.Equal(t, 42, value)
 }

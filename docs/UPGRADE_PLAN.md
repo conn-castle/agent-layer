@@ -177,8 +177,8 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - template removals/orphans
    - config key migrations
    - pin version changes (current → target)
-2. Add clear ownership labels per diff: `upstream template delta` vs `local customization`.
-3. Add optional machine-readable output (`--json`) for ad-hoc diagnostics (explicitly non-contractual; no stable field-level schema guarantee).
+2. Keep ownership classification for internal safety decisions, but prefer plain-language default output over ownership-jargon-heavy rendering.
+3. Keep machine-readable output (`--json`) only as a temporary compatibility path; hide/deprecate it in default UX and remove after migration window.
 4. Add upgrade-readiness checks in dry-run output:
    - flag suspicious/unrecognized config keys
    - flag stale generated outputs when launch path uses `--no-sync`
@@ -186,7 +186,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - flag stale generated artifacts for disabled agents
 5. Document pinning as required and add clear repair guidance for missing/invalid `.agent-layer/al.version`.
 6. Gracefully degrade GitHub API update checks: when rate-limited (HTTP 403/429), suppress the warning silently or emit a one-line note instead of a multi-line block.
-7. Add launch-impact preview (`al launch-plan <client>` or equivalent) that shows whether launching will modify files before executing sync.
+7. Keep launch-impact preview work optional/deferred; prioritize upgrade UX simplification first.
 
 ### Phase 2: Make upgrades safe and reversible
 
@@ -198,7 +198,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 3. Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
 4. Add `al upgrade rollback <snapshot-id>`.
 5. Add CI-safe non-interactive apply mode: `al upgrade --yes --apply-managed-updates` applies managed template updates without deleting unknowns, bridging the gap between interactive `al upgrade` and destructive `al upgrade --force`.
-6. Add explicit sync modes for launch commands across clients (`apply`, `check`, `off`) with default mode `check` so users can choose between mutation, verification-only, or no sync.
+6. Keep launch sync behavior simple for everyday users; defer multi-mode launch sync controls.
 
 ### Phase 3: Add real migration support (root cause for long-term pain)
 
@@ -209,7 +209,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 2. Execute migrations idempotently before template write.
 3. Emit deterministic migration report with before/after rationale.
 4. Add compatibility shims plus deprecation periods for renamed commands/flags.
-5. Add migration manifest entry for the launch-sync default change (Locked Decision 3B): deprecate implicit `apply` mode, warn for N releases, then switch default to `check`.
+5. Remove migration dependencies on launch sync-mode matrix changes.
 6. Add migration guidance/rules for env key transitions (for example non-`AL_` to `AL_`).
 7. Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
 

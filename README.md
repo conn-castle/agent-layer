@@ -92,7 +92,7 @@ al doctor
 Notes:
 - `al init` prompts to run `al wizard` after seeding files. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
 - `al init` is intended to be run once per repo. If the repo is already initialized, use `al upgrade plan` and `al upgrade` to refresh template-managed files.
-- `al upgrade --force` overwrites managed files and deletes unknown files under `.agent-layer` without prompts.
+- `al upgrade` is the recommended path. Advanced: `al upgrade --force` overwrites managed files and deletes unknown files under `.agent-layer` without prompts.
 - Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, VS Code, etc.).
 
 ---
@@ -176,7 +176,7 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex reasoning effort)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
-- **Warning Thresholds** (optional; configure warnings for common performance/usage issues)
+- **Warnings** (enable/disable warning checks; threshold values use template defaults)
 
 **Controls:**
 - **Arrow keys**: Navigate
@@ -458,12 +458,11 @@ Other commands:
 
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
 - `al upgrade` — apply template-managed updates and update the repo pin (prompts unless `--force`; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size)
-- `al upgrade plan` — preview categorized template/pin changes with ownership labels and line-level diff previews (`--diff-lines N` to raise per-file preview size); optional `--json` output is for ad-hoc diagnostics (format may change between releases)
+- `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)
 - `al completion` — generate shell completion scripts (bash/zsh/fish, macOS/Linux only)
-- `al mcp-prompts` — internal MCP prompt server (normally launched by the client)
 
 ---
 
