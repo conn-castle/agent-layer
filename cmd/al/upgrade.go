@@ -13,7 +13,10 @@ import (
 )
 
 func newUpgradeCmd() *cobra.Command {
-	var force bool
+	var yes bool
+	var applyManagedUpdates bool
+	var applyMemoryUpdates bool
+	var applyDeletions bool
 	var diffLines int
 
 	cmd := &cobra.Command{
@@ -28,8 +31,18 @@ func newUpgradeCmd() *cobra.Command {
 				return err
 			}
 
-			if !force && !isTerminal() {
-				return fmt.Errorf(messages.UpgradeRequiresTerminal)
+			policy, err := resolveUpgradeApplyPolicy(upgradeApplyInputs{
+				interactive:    isTerminal(),
+				yes:            yes,
+				applyManaged:   applyManagedUpdates,
+				applyMemory:    applyMemoryUpdates,
+				applyDeletions: applyDeletions,
+			})
+			if err != nil {
+				return err
+			}
+			if err := writeUpgradeSkippedCategoryNotes(cmd.ErrOrStderr(), policy); err != nil {
+				return err
 			}
 
 			targetPin, err := resolvePinVersion("", Version)
@@ -38,55 +51,192 @@ func newUpgradeCmd() *cobra.Command {
 			}
 			opts := install.Options{
 				Overwrite:    true,
-				Force:        force,
+				Force:        false,
 				PinVersion:   targetPin,
 				DiffMaxLines: diffLines,
 				System:       install.RealSystem{},
 			}
-			if !force {
-				opts.Prompter = install.PromptFuncs{
-					OverwriteAllPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
-						if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews); err != nil {
-							return false, err
-						}
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
-					},
-					OverwriteAllMemoryPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
-						if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews); err != nil {
-							return false, err
-						}
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
-					},
-					OverwritePreviewFunc: func(preview install.DiffPreview) (bool, error) {
-						if err := printDiffPreviews(cmd.OutOrStdout(), "", []install.DiffPreview{preview}); err != nil {
-							return false, err
-						}
-						prompt := fmt.Sprintf(messages.UpgradeOverwritePromptFmt, preview.Path)
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
-					},
-					DeleteUnknownAllFunc: func(paths []string) (bool, error) {
-						if err := printFilePaths(cmd.OutOrStdout(), messages.InstallUnknownHeader, paths); err != nil {
-							return false, err
-						}
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeDeleteUnknownAllPrompt, false)
-					},
-					DeleteUnknownFunc: func(path string) (bool, error) {
-						prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownPromptFmt, path)
-						return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
-					},
-				}
-			}
+			opts.Prompter = buildUpgradePrompter(cmd, policy)
 			if err := installRun(root, opts); err != nil {
 				return err
 			}
 			return nil
 		},
 	}
-	cmd.AddCommand(newUpgradePlanCmd(&diffLines))
+	cmd.AddCommand(newUpgradePlanCmd(&diffLines), newUpgradeRollbackCmd())
 
-	cmd.Flags().BoolVar(&force, "force", false, messages.UpgradeFlagForce)
+	cmd.Flags().BoolVar(&yes, "yes", false, messages.UpgradeFlagYes)
+	cmd.Flags().BoolVar(&applyManagedUpdates, "apply-managed-updates", false, messages.UpgradeFlagApplyManagedUpdates)
+	cmd.Flags().BoolVar(&applyMemoryUpdates, "apply-memory-updates", false, messages.UpgradeFlagApplyMemoryUpdates)
+	cmd.Flags().BoolVar(&applyDeletions, "apply-deletions", false, messages.UpgradeFlagApplyDeletions)
 	cmd.PersistentFlags().IntVar(&diffLines, "diff-lines", install.DefaultDiffMaxLines, messages.UpgradeFlagDiffLines)
 	return cmd
+}
+
+func newUpgradeRollbackCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   messages.UpgradeRollbackUse,
+		Short: messages.UpgradeRollbackShort,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return fmt.Errorf(messages.UpgradeRollbackRequiresSnapshotID)
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			snapshotID := strings.TrimSpace(args[0])
+			if err := installRollbackUpgradeSnapshot(root, snapshotID, install.RollbackUpgradeSnapshotOptions{
+				System: install.RealSystem{},
+			}); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradeRollbackSuccessFmt, snapshotID)
+			return err
+		},
+	}
+}
+
+type upgradeApplyInputs struct {
+	interactive    bool
+	yes            bool
+	applyManaged   bool
+	applyMemory    bool
+	applyDeletions bool
+}
+
+func (in upgradeApplyInputs) hasAnyApply() bool {
+	return in.applyManaged || in.applyMemory || in.applyDeletions
+}
+
+type upgradeApplyPolicy struct {
+	interactive      bool
+	yes              bool
+	explicitCategory bool
+	applyManaged     bool
+	applyMemory      bool
+	applyDeletions   bool
+}
+
+func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error) {
+	if in.yes && !in.hasAnyApply() {
+		return upgradeApplyPolicy{}, fmt.Errorf(messages.UpgradeYesRequiresApply)
+	}
+	if !in.interactive && !in.hasAnyApply() {
+		return upgradeApplyPolicy{}, fmt.Errorf(messages.UpgradeRequiresTerminal)
+	}
+	if !in.interactive && !in.yes {
+		return upgradeApplyPolicy{}, fmt.Errorf(messages.UpgradeNonInteractiveRequiresYesApply)
+	}
+	return upgradeApplyPolicy{
+		interactive:      in.interactive,
+		yes:              in.yes,
+		explicitCategory: in.hasAnyApply(),
+		applyManaged:     in.applyManaged,
+		applyMemory:      in.applyMemory,
+		applyDeletions:   in.applyDeletions,
+	}, nil
+}
+
+func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) install.PromptFuncs {
+	return install.PromptFuncs{
+		OverwriteAllPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
+			if policy.explicitCategory {
+				return policy.applyManaged, nil
+			}
+			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews); err != nil {
+				return false, err
+			}
+			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+		},
+		OverwriteAllMemoryPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
+			if policy.explicitCategory {
+				return policy.applyMemory, nil
+			}
+			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews); err != nil {
+				return false, err
+			}
+			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+		},
+		OverwritePreviewFunc: func(preview install.DiffPreview) (bool, error) {
+			if policy.explicitCategory {
+				if isMemoryPreviewPath(preview.Path) {
+					return policy.applyMemory, nil
+				}
+				return policy.applyManaged, nil
+			}
+			if err := printDiffPreviews(cmd.OutOrStdout(), "", []install.DiffPreview{preview}); err != nil {
+				return false, err
+			}
+			prompt := fmt.Sprintf(messages.UpgradeOverwritePromptFmt, preview.Path)
+			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
+		},
+		DeleteUnknownAllFunc: func(paths []string) (bool, error) {
+			if policy.explicitCategory {
+				// Explicit deletion policy has three states:
+				// 1) no --apply-deletions: skip all deletions,
+				// 2) --apply-deletions --yes: auto-approve deletions,
+				// 3) --apply-deletions without --yes: still prompt in interactive mode.
+				if !policy.applyDeletions {
+					return false, nil
+				}
+				if policy.yes {
+					return true, nil
+				}
+			}
+			if err := printFilePaths(cmd.OutOrStdout(), messages.InstallUnknownHeader, paths); err != nil {
+				return false, err
+			}
+			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeDeleteUnknownAllPrompt, false)
+		},
+		DeleteUnknownFunc: func(path string) (bool, error) {
+			if policy.explicitCategory {
+				// Mirror DeleteUnknownAllFunc so per-path prompts follow the same
+				// explicit-category behavior (skip/auto-approve/prompt).
+				if !policy.applyDeletions {
+					return false, nil
+				}
+				if policy.yes {
+					return true, nil
+				}
+			}
+			prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownPromptFmt, path)
+			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
+		},
+	}
+}
+
+func isMemoryPreviewPath(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "docs/agent-layer" {
+		return true
+	}
+	return strings.HasPrefix(path, "docs/agent-layer/")
+}
+
+func writeUpgradeSkippedCategoryNotes(out io.Writer, policy upgradeApplyPolicy) error {
+	if !policy.explicitCategory {
+		return nil
+	}
+	if !policy.applyManaged {
+		if _, err := fmt.Fprintln(out, messages.UpgradeSkipManagedUpdatesInfo); err != nil {
+			return err
+		}
+	}
+	if !policy.applyMemory {
+		if _, err := fmt.Fprintln(out, messages.UpgradeSkipMemoryUpdatesInfo); err != nil {
+			return err
+		}
+	}
+	if !policy.applyDeletions {
+		if _, err := fmt.Fprintln(out, messages.UpgradeSkipDeletionsInfo); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func newUpgradePlanCmd(diffLines *int) *cobra.Command {
@@ -119,6 +269,9 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 			}
 
 			if outputJSON {
+				if _, err := fmt.Fprintln(cmd.ErrOrStderr(), messages.UpgradePlanJSONDeprecated); err != nil {
+					return err
+				}
 				encoder := json.NewEncoder(cmd.OutOrStdout())
 				encoder.SetIndent("", "  ")
 				return encoder.Encode(plan)
@@ -135,7 +288,6 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&outputJSON, "json", false, messages.UpgradePlanJSON)
 	_ = cmd.Flags().MarkHidden("json")
-	_ = cmd.Flags().MarkDeprecated("json", messages.UpgradePlanJSONDeprecated)
 	return cmd
 }
 

@@ -27,6 +27,32 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-14 upg-snapshot-scope: Upgrade snapshot captures all unknowns before deletion approval
+    Priority: Low. Area: install / efficiency.
+    Description: `createUpgradeSnapshot` in `upgrade_snapshot.go` captures all unknown files under `.agent-layer` before the upgrade transaction begins, regardless of whether the user later approves or rejects deletion. This is by design — the snapshot must exist before the transaction starts — but means snapshots may include files that were never at risk of deletion.
+    Next step: Consider a two-phase approach where deletion-eligible unknowns are snapshotted lazily at deletion-prompt time, or document current behavior as intentional in upgrade docs.
+
+- Issue 2026-02-14 upg-scoped-restore: Automatic rollback restores all snapshot entries instead of scoped targets
+    Priority: Low. Area: install / correctness.
+    Description: `rollbackUpgradeSnapshotState` computes scoped targets for the delete phase but `restoreUpgradeSnapshotEntriesAtRoot` restores all snapshot entries unfiltered. If a write fails on an unrelated entry during restore, the snapshot is marked `rollback_failed` even though that path was never part of the failed transaction scope. In practice this is safe (unmodified files are rewritten with identical content) but is an inconsistency.
+    Next step: Filter the restore phase to entries covered by scoped targets, or document current full-restore behavior as intentional.
+
+- Issue 2026-02-14 upg-rollback-audit-v1: Manual rollback success is not represented in snapshot status
+    Priority: Low. Area: install / observability.
+    Description: `al upgrade rollback <snapshot-id>` intentionally leaves successful rollbacks at `status: applied` because schema v1 has no dedicated manual-rollback-complete status.
+    Next step: Add a schema/status extension for manual rollback auditability and update rollback/docs/tests accordingly.
+    Notes: Current behavior still records manual rollback failures as `rollback_failed` with `failure_step=manual_rollback`.
+
+- Issue 2026-02-14 upg-force-api: install.Options.Force is now dead for production upgrade path
+    Priority: Low. Area: install / API hygiene.
+    Description: `cmd/al/upgrade.go` always passes `Force: false` and drives apply behavior through category-aware prompts, while `install.Options.Force` remains in the public install API and is still used mostly by tests.
+    Next step: Decide whether to remove `Force` from `install.Options` (with test helper replacements) or explicitly document it as legacy/internal-only.
+
+- Issue 2026-02-14 upg-snapshot-size: No per-snapshot size guard for upgrade snapshots
+    Priority: Low. Area: install / storage.
+    Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
+    Next step: Add snapshot-size budget checks (warning and/or configurable cap) and document retention sizing guidance.
+
 - Issue 2026-02-12 mcp-env: os.Environ() leaks credentials to MCP child processes
     Priority: Critical. Area: doctor / security.
     Description: `internal/doctor/mcp_connector.go:90-93` passes `os.Environ()` to MCP child processes, leaking all parent env vars (API keys, tokens, credentials) to potentially untrusted MCP servers.

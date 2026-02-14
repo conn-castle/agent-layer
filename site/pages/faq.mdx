@@ -94,4 +94,4 @@ Yes, if you configure it accordingly. Set `approvals.mode` to limit automatic ap
 Agent Layer does not install or sandbox MCP servers. It runs exactly what you configure, which makes review and auditing straightforward.
 
 ## Does Agent Layer ever delete files?
-Only if you explicitly run `al upgrade --force`. That mode overwrites managed files and deletes unknown files under `.agent-layer` without prompts. Normal `al upgrade` will prompt before changes.
+In the default interactive `al upgrade` flow, Agent Layer may prompt about unknown files under `.agent-layer` and will only delete them if you explicitly approve. For non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), unknown-file deletions require the separate `--apply-deletions` flag.

@@ -184,3 +184,18 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al upgrade plan` default text output now prioritizes plain-language summaries/actions and no longer surfaces ownership reason codes, confidence/detection metadata, or readiness IDs; `--json` remains only as a hidden deprecated compatibility path (supersedes the user-facing part of `p1d-json-contract`).
     Reason: Everyday users need low-jargon guidance, while existing automation needs a short migration window instead of immediate JSON removal.
     Tradeoffs: Power users lose internal diagnostics in the default path and must rely on the temporary deprecated JSON mode or source-level inspection during the transition.
+
+- Decision 2026-02-14 p2a-upgrade-snapshot-transaction: Upgrade snapshot/rollback boundary and retention policy
+    Decision: `al upgrade` now captures full-byte snapshots for the transactional upgrade mutation set (managed files/dirs, memory files, `.gitignore`, launcher outputs, and scanned unknown deletion targets), runs rollback on transactional-step failure, and retains the newest 20 snapshots under `.agent-layer/state/upgrade-snapshots/`.
+    Reason: Deliver Phase 11 safety guarantees now while keeping snapshot artifacts available for the upcoming explicit rollback command.
+    Tradeoffs: Snapshot files can grow in large repos because payloads are full-content; retention is bounded but no per-snapshot size budget is enforced yet.
+
+- Decision 2026-02-14 p2b-upgrade-apply-flags: Remove `--force`; require explicit apply categories
+    Decision: `al upgrade` no longer supports `--force`. Non-interactive runs require `--yes` plus one or more explicit apply flags (`--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`), and deletion remains gated behind explicit `--apply-deletions`.
+    Reason: Prevent accidental destructive upgrades and make non-interactive intent explicit per mutation category.
+    Tradeoffs: Existing `al upgrade --force` automation breaks and must be migrated to explicit apply flags.
+
+- Decision 2026-02-14 p2c-manual-rollback-status: Manual rollback eligibility and status handling
+    Decision: `al upgrade rollback <snapshot-id>` accepts only snapshots in `applied` status; successful manual rollback preserves `applied`, while manual rollback failures set `rollback_failed` with `failure_step=manual_rollback`.
+    Reason: Keep rollback semantics deterministic with the current snapshot schema while preserving a clear failure trail for failed manual restores.
+    Tradeoffs: Snapshot metadata cannot currently distinguish "applied and later manually restored" from "applied and never manually restored" without a future schema extension.

@@ -89,5 +89,5 @@ For the complete upgrade contract (event model, compatibility guarantees, migrat
 
 :::caution
 To upgrade a repo safely, use `al upgrade plan` (dry-run) and then `al upgrade` (apply).
-If you use `al upgrade --force`, it overwrites managed files and deletes unknown files under `.agent-layer` without prompts.
+For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Include `--apply-memory-updates` and/or `--apply-deletions` only when explicitly intended.
 :::

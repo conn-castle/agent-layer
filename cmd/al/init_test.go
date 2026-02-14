@@ -526,8 +526,8 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 	if !strings.Contains(output, "al upgrade plan") {
 		t.Fatalf("expected upgrade plan guidance, got %q", output)
 	}
-	if !strings.Contains(output, "al upgrade --force") {
-		t.Fatalf("expected --force safety note, got %q", output)
+	if !strings.Contains(output, "al upgrade --yes --apply-managed-updates") {
+		t.Fatalf("expected non-interactive apply safety note, got %q", output)
 	}
 }
 

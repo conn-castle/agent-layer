@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-14 upg-snapshot-list: Add snapshot discovery command for upgrade rollback
+    Priority: Medium. Area: upgrade UX
+    Description: Provide a first-class command to list available upgrade snapshots so users do not need to inspect `.agent-layer/state/upgrade-snapshots/` manually before running `al upgrade rollback`.
+    Acceptance criteria: `al upgrade rollback --list` (or equivalent `al upgrade snapshots`) shows snapshot IDs, timestamps, and statuses in a stable human-readable format.
+    Notes: Should include guidance for selecting rollbackable snapshots (`status=applied`).
+
 - Backlog 2026-02-13 launch-plan-revisit: Reevaluate dedicated launch-impact preview command
     Priority: Medium. Area: launch UX
     Description: Reconsider whether a standalone `al launch-plan <client>` command is needed, versus integrating preview behavior into launch/sync mode UX.
