@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-14 upg-snapshot-scope: Upgrade snapshot captures all unknowns before deletion approval
+    Priority: Low. Area: install / efficiency.
+    Description: `createUpgradeSnapshot` in `upgrade_snapshot.go` captures all unknown files under `.agent-layer` before the upgrade transaction begins, regardless of whether the user later approves or rejects deletion. This is by design — the snapshot must exist before the transaction starts — but means snapshots may include files that were never at risk of deletion.
+    Next step: Consider a two-phase approach where deletion-eligible unknowns are snapshotted lazily at deletion-prompt time, or document current behavior as intentional in upgrade docs.
+
 - Issue 2026-02-14 upg-scoped-restore: Automatic rollback restores all snapshot entries instead of scoped targets
     Priority: Low. Area: install / correctness.
     Description: `rollbackUpgradeSnapshotState` computes scoped targets for the delete phase but `restoreUpgradeSnapshotEntriesAtRoot` restores all snapshot entries unfiltered. If a write fails on an unrelated entry during restore, the snapshot is marked `rollback_failed` even though that path was never part of the failed transaction scope. In practice this is safe (unmodified files are rewritten with identical content) but is an inconsistency.

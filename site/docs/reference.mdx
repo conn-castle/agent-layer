@@ -336,8 +336,8 @@ In non-interactive environments, the wizard is skipped.
 - Updates `.agent-layer/al.version` to match the currently running `al` binary
 - Prompts before overwriting managed template files unless apply flags are explicitly selected
 - Shows line-level diff previews before overwrite decisions by default
-- Requires explicit `--apply-deletions` before unknown files under `.agent-layer` are eligible for deletion
-- Requires explicit confirmation for deletions unless `--yes --apply-deletions` is used
+- In the default interactive flow, prompts about unknown files under `.agent-layer` and only deletes them if you explicitly approve
+- In non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), requires the separate `--apply-deletions` flag before unknown files are eligible for deletion
 - Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
 - Creates an automatic snapshot for managed upgrade targets and auto-rolls back if an upgrade step fails
 - Stores snapshots under `.agent-layer/state/upgrade-snapshots/`
