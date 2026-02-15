@@ -119,15 +119,15 @@ Incomplete:
 - Website documentation is searchable from a global header search bar.
 
 ### Tasks
-- [ ] Backlog 2026-02-06 vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
-- [ ] Backlog 2026-02-06 websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
+- [ ] vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
+- [ ] websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
 
 ### Task details
-- Backlog 2026-02-06 vsc-launch
+- vsc-launch
   Description: Document how VS Code is launched by the CLI, especially the unique/odd path that is currently undocumented.
   Acceptance criteria: Docs are added or updated (for example `docs/DEVELOPMENT.md` or a new architecture doc) and clearly explain launch flow/design choices.
   Notes: User identified this as the least documented and most non-obvious part of the system.
-- Backlog 2026-02-06 websearch
+- websearch
   Description: Add global docs search on the website to improve navigation and discovery of guides/features/reference content.
   Acceptance criteria: Search bar is integrated in site header and returns relevant results from documentation pages.
   Notes: Consider client-side indexing (for example FlexSearch) versus managed services (for example Algolia).

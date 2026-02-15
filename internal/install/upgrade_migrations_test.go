@@ -38,6 +38,14 @@ func TestLoadUpgradeMigrationManifestByVersion_Missing(t *testing.T) {
 
 func TestPlanUpgradeMigrations_UnknownSourceSkipsSourceDependent(t *testing.T) {
 	root := t.TempDir()
+	// Create the target file so the agnostic delete migration covers it.
+	legacyJSON := filepath.Join(root, ".vscode", "legacy.json")
+	if err := os.MkdirAll(filepath.Dir(legacyJSON), 0o755); err != nil {
+		t.Fatalf("mkdir .vscode: %v", err)
+	}
+	if err := os.WriteFile(legacyJSON, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("write legacy.json: %v", err)
+	}
 	withMigrationManifestOverride(t, "0.7.0", `{
   "schema_version": 1,
   "target_version": "0.7.0",
@@ -315,6 +323,47 @@ func TestBuildUpgradePlan_ManifestCoverageFiltersTemplateUpdates(t *testing.T) {
 	}
 	if findUpgradeChange(plan.TemplateUpdates, ".agent-layer/commands.allow") != nil {
 		t.Fatalf("expected manifest-covered update to be filtered from template updates: %#v", plan.TemplateUpdates)
+	}
+}
+
+func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.6.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	// Remove find-issues.md so the template system would add it back.
+	findIssuesPath := filepath.Join(root, ".agent-layer", "slash-commands", "find-issues.md")
+	if err := os.Remove(findIssuesPath); err != nil {
+		t.Fatalf("remove find-issues: %v", err)
+	}
+	// Do NOT create the legacy source file — the rename will no-op because
+	// the source is absent. The plan must still show find-issues.md as an
+	// addition so the user knows the template writer will create it.
+	withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "rename_find_issues",
+      "kind": "rename_file",
+      "rationale": "Move legacy slash command path",
+      "source_agnostic": true,
+      "from": ".agent-layer/slash-commands/find-issues-legacy.md",
+      "to": ".agent-layer/slash-commands/find-issues.md"
+    }
+  ]
+}`)
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{TargetPinVersion: "0.7.0", System: RealSystem{}})
+	if err != nil {
+		t.Fatalf("build upgrade plan: %v", err)
+	}
+	// The rename source doesn't exist, so the migration will no-op. The
+	// destination path must NOT be filtered from additions.
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/slash-commands/find-issues.md") == nil {
+		t.Fatal("expected no-op migration destination to appear as template addition in plan")
 	}
 }
 

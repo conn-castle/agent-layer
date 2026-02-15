@@ -365,50 +365,56 @@ func writeConfigMigrationSection(out io.Writer, title string, migrations []insta
 	return nil
 }
 
+// errWriter wraps an io.Writer and accumulates the first error encountered,
+// allowing sequential writes without per-call error checks.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (ew *errWriter) printf(format string, args ...any) {
+	if ew.err != nil {
+		return
+	}
+	_, ew.err = fmt.Fprintf(ew.w, format, args...)
+}
+
+func (ew *errWriter) println(args ...any) {
+	if ew.err != nil {
+		return
+	}
+	_, ew.err = fmt.Fprintln(ew.w, args...)
+}
+
 func writeMigrationReportSection(out io.Writer, title string, report install.UpgradeMigrationReport) error {
-	if _, err := fmt.Fprintf(out, "\n%s:\n", title); err != nil {
-		return err
-	}
+	ew := &errWriter{w: out}
+	ew.printf("\n%s:\n", title)
 	if len(report.Entries) == 0 {
-		_, err := fmt.Fprintln(out, "  - (none)")
-		return err
+		ew.println("  - (none)")
+		return ew.err
 	}
-	if _, err := fmt.Fprintf(out, "  - target version: %s\n", report.TargetVersion); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "  - source version: %s (%s)\n", report.SourceVersion, report.SourceVersionOrigin); err != nil {
-		return err
-	}
+	ew.printf("  - target version: %s\n", report.TargetVersion)
+	ew.printf("  - source version: %s (%s)\n", report.SourceVersion, report.SourceVersionOrigin)
 	for _, note := range report.SourceResolutionNotes {
-		if _, err := fmt.Fprintf(out, "  - source note: %s\n", note); err != nil {
-			return err
-		}
+		ew.printf("  - source note: %s\n", note)
 	}
 	for _, entry := range report.Entries {
-		if _, err := fmt.Fprintf(out, "  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale); err != nil {
-			return err
-		}
+		ew.printf("  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale)
 		if entry.SkipReason != "" {
-			if _, err := fmt.Fprintf(out, "    reason: %s\n", entry.SkipReason); err != nil {
-				return err
-			}
+			ew.printf("    reason: %s\n", entry.SkipReason)
 		}
 	}
-	return nil
+	return ew.err
 }
 
 func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff, previews map[string]install.DiffPreview) error {
-	if _, err := fmt.Fprintln(out, "\nPin version change:"); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "  - current: %q\n", pin.Current); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "  - target: %q\n", pin.Target); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "  - action: %s\n", pin.Action); err != nil {
-		return err
+	ew := &errWriter{w: out}
+	ew.println("\nPin version change:")
+	ew.printf("  - current: %q\n", pin.Current)
+	ew.printf("  - target: %q\n", pin.Target)
+	ew.printf("  - action: %s\n", pin.Action)
+	if ew.err != nil {
+		return ew.err
 	}
 	if pin.Action != install.UpgradePinActionNone {
 		if err := writeSinglePreviewBlock(out, previews[".agent-layer/al.version"]); err != nil {

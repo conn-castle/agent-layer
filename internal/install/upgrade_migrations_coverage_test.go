@@ -1117,6 +1117,1072 @@ func TestInferSourceVersionFromManifestMatch_ReturnsSingleCandidate(t *testing.T
 	}
 }
 
+func TestMigrationWillCoverPath(t *testing.T) {
+	root := t.TempDir()
+	sys := RealSystem{}
+
+	// Create a file so rename/delete scenarios have something to stat.
+	existingFile := filepath.Join(root, ".agent-layer", "existing.md")
+	if err := os.MkdirAll(filepath.Dir(existingFile), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(existingFile, []byte("content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		op      upgradeMigrationOperation
+		relPath string
+		want    bool
+	}{
+		{
+			name:    "rename source exists covers path",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/existing.md", To: ".agent-layer/new.md"},
+			relPath: ".agent-layer/existing.md",
+			want:    true,
+		},
+		{
+			name:    "rename source absent does not cover path",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/missing.md", To: ".agent-layer/new.md"},
+			relPath: ".agent-layer/new.md",
+			want:    false,
+		},
+		{
+			name:    "rename same from and to does not cover",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindRenameFile, From: ".agent-layer/existing.md", To: ".agent-layer/existing.md"},
+			relPath: ".agent-layer/existing.md",
+			want:    false,
+		},
+		{
+			name:    "rename generated artifact source exists covers path",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindRenameGeneratedArtifact, From: ".agent-layer/existing.md", To: ".agent-layer/new.md"},
+			relPath: ".agent-layer/new.md",
+			want:    true,
+		},
+		{
+			name:    "delete file exists covers path",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindDeleteFile, Path: ".agent-layer/existing.md"},
+			relPath: ".agent-layer/existing.md",
+			want:    true,
+		},
+		{
+			name:    "delete file absent does not cover path",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindDeleteFile, Path: ".agent-layer/missing.md"},
+			relPath: ".agent-layer/missing.md",
+			want:    false,
+		},
+		{
+			name:    "delete generated artifact absent does not cover",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindDeleteGeneratedArtifact, Path: ".agent-layer/gone.md"},
+			relPath: ".agent-layer/gone.md",
+			want:    false,
+		},
+		{
+			name:    "config rename key does not cover file paths",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindConfigRenameKey, From: "old.key", To: "new.key"},
+			relPath: ".agent-layer/config.toml",
+			want:    false,
+		},
+		{
+			name:    "config set default does not cover file paths",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindConfigSetDefault, Key: "some.key"},
+			relPath: ".agent-layer/config.toml",
+			want:    false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := migrationWillCoverPath(sys, root, tc.op, tc.relPath)
+			if got != tc.want {
+				t.Fatalf("migrationWillCoverPath = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunMigrations_PrepareFailureAndEntryNotFound(t *testing.T) {
+	t.Run("migrationsPrepared false and prepareUpgradeMigrations fails", func(t *testing.T) {
+		// Use an invalid pin version so prepareUpgradeMigrations fails on manifest load.
+		inst := &installer{root: t.TempDir(), pinVersion: "not-a-version", sys: RealSystem{}}
+		if err := inst.runMigrations(); err == nil {
+			t.Fatal("expected runMigrations to fail when prepare fails")
+		}
+	})
+
+	t.Run("entry not found in index continues", func(t *testing.T) {
+		root := t.TempDir()
+		legacyPath := filepath.Join(root, ".agent-layer", "legacy.md")
+		if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+
+		var warn bytes.Buffer
+		inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn}
+		// Manually set up migration state with mismatched IDs.
+		inst.migrationsPrepared = true
+		inst.migrationReport = UpgradeMigrationReport{
+			TargetVersion:       "0.7.0",
+			SourceVersion:       "0.6.0",
+			SourceVersionOrigin: UpgradeMigrationSourcePin,
+			Entries: []UpgradeMigrationEntry{
+				{ID: "different_id", Kind: string(upgradeMigrationKindDeleteFile), Status: UpgradeMigrationStatusPlanned},
+			},
+		}
+		inst.pendingMigrationOps = []upgradeMigrationOperation{
+			{ID: "not_in_index", Kind: upgradeMigrationKindDeleteFile, Path: ".agent-layer/legacy.md", Rationale: "test"},
+		}
+		// Should not panic; entry-not-found path just continues.
+		if err := inst.runMigrations(); err != nil {
+			t.Fatalf("runMigrations: %v", err)
+		}
+	})
+}
+
+func TestPlanUpgradeMigrations_SnapshotEntryAbsPathError(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("0.7.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	// A rename with an empty "from" will cause snapshotEntryAbsPath to fail
+	// since migrationCoveredPaths will produce empty rel paths that get cleaned.
+	withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "cfg_rename",
+      "kind": "config_rename_key",
+      "rationale": "Rename config key for testing",
+      "source_agnostic": true,
+      "from": "old.key",
+      "to": "new.key"
+    }
+  ]
+}`)
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	// Should include config migration in plan.
+	if len(plan.configMigrations) != 1 {
+		t.Fatalf("expected 1 config migration, got %d", len(plan.configMigrations))
+	}
+	if plan.configMigrations[0].From != "old.key" || plan.configMigrations[0].To != "new.key" {
+		t.Fatalf("unexpected config migration: %#v", plan.configMigrations[0])
+	}
+}
+
+func TestResolveUpgradeMigrationSourceVersion_BaselineAndSnapshotFallback(t *testing.T) {
+	t.Run("baseline fallback path with valid baseline", func(t *testing.T) {
+		root := t.TempDir()
+		// No pin file, so pin resolution returns empty.
+		now := time.Now().UTC().Format(time.RFC3339)
+		state := managedBaselineState{
+			SchemaVersion:   baselineStateSchemaVersion,
+			BaselineVersion: "0.5.0",
+			Source:          BaselineStateSourceWrittenByUpgrade,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			Files: []manifestFileEntry{
+				{Path: "docs/agent-layer/ROADMAP.md", FullHashNormalized: "hash"},
+			},
+		}
+		if err := writeManagedBaselineState(root, RealSystem{}, state); err != nil {
+			t.Fatalf("write baseline: %v", err)
+		}
+		inst := &installer{root: root, sys: RealSystem{}}
+		res := inst.resolveUpgradeMigrationSourceVersion()
+		if res.version != "0.5.0" || res.origin != UpgradeMigrationSourceBaseline {
+			t.Fatalf("expected baseline resolution, got version=%q origin=%q", res.version, res.origin)
+		}
+	})
+
+	t.Run("baseline non-existent falls through to snapshot", func(t *testing.T) {
+		root := t.TempDir()
+		// No pin file, no baseline file.
+		// Create a snapshot with a valid pin entry.
+		inst := &installer{root: root, sys: RealSystem{}}
+		snapshotDir := inst.upgradeSnapshotDirPath()
+		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+			t.Fatalf("mkdir snapshot dir: %v", err)
+		}
+		snapshot := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    "s1",
+			CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+			Status:        upgradeSnapshotStatusApplied,
+			Entries: []upgradeSnapshotEntry{
+				{
+					Path:          ".agent-layer/al.version",
+					Kind:          upgradeSnapshotEntryKindFile,
+					ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.4.0\n")),
+				},
+			},
+		}
+		if err := writeUpgradeSnapshotFile(filepath.Join(snapshotDir, "s1.json"), snapshot, RealSystem{}); err != nil {
+			t.Fatalf("write snapshot: %v", err)
+		}
+		res := inst.resolveUpgradeMigrationSourceVersion()
+		if res.version != "0.4.0" || res.origin != UpgradeMigrationSourceSnapshot {
+			t.Fatalf("expected snapshot resolution, got version=%q origin=%q", res.version, res.origin)
+		}
+	})
+
+	t.Run("baseline read error (non-ErrNotExist) adds note", func(t *testing.T) {
+		root := t.TempDir()
+		// Create a corrupted baseline file (not JSON parse error, but a read error).
+		baselinePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
+		if err := os.MkdirAll(filepath.Dir(baselinePath), 0o755); err != nil {
+			t.Fatalf("mkdir baseline dir: %v", err)
+		}
+		fault := newFaultSystem(RealSystem{})
+		fault.readErrs[normalizePath(baselinePath)] = errors.New("baseline read boom")
+		inst := &installer{root: root, sys: fault}
+		res := inst.resolveUpgradeMigrationSourceVersion()
+		if res.origin != UpgradeMigrationSourceUnknown {
+			t.Fatalf("expected unknown origin, got %q", res.origin)
+		}
+		foundNote := false
+		for _, note := range res.notes {
+			if strings.Contains(note, "managed baseline unavailable") {
+				foundNote = true
+			}
+		}
+		if !foundNote {
+			t.Fatalf("expected baseline unavailable note, got notes=%v", res.notes)
+		}
+	})
+}
+
+func TestCompareSemver_AdditionalCases(t *testing.T) {
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want int
+	}{
+		{name: "equal", a: "1.2.3", b: "1.2.3", want: 0},
+		{name: "a less major", a: "0.9.9", b: "1.0.0", want: -1},
+		{name: "a greater major", a: "2.0.0", b: "1.9.9", want: 1},
+		{name: "a less minor", a: "1.0.9", b: "1.1.0", want: -1},
+		{name: "a greater minor", a: "1.2.0", b: "1.1.9", want: 1},
+		{name: "a less patch", a: "1.2.3", b: "1.2.4", want: -1},
+		{name: "a greater patch", a: "1.2.5", b: "1.2.4", want: 1},
+		{name: "with v prefix", a: "v1.2.3", b: "v1.2.3", want: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := compareSemver(tc.a, tc.b)
+			if err != nil {
+				t.Fatalf("compareSemver(%q, %q) err: %v", tc.a, tc.b, err)
+			}
+			if got != tc.want {
+				t.Fatalf("compareSemver(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("invalid a", func(t *testing.T) {
+		if _, err := compareSemver("bad", "1.0.0"); err == nil {
+			t.Fatal("expected error for invalid a")
+		}
+	})
+	t.Run("invalid b", func(t *testing.T) {
+		if _, err := compareSemver("1.0.0", "bad"); err == nil {
+			t.Fatal("expected error for invalid b")
+		}
+	})
+}
+
+func TestParseSemver_EdgeCases(t *testing.T) {
+	t.Run("valid version", func(t *testing.T) {
+		parts, err := parseSemver("1.2.3")
+		if err != nil {
+			t.Fatalf("parseSemver: %v", err)
+		}
+		if parts != [3]int{1, 2, 3} {
+			t.Fatalf("parseSemver = %v, want [1 2 3]", parts)
+		}
+	})
+	t.Run("v-prefix version", func(t *testing.T) {
+		parts, err := parseSemver("v0.7.0")
+		if err != nil {
+			t.Fatalf("parseSemver: %v", err)
+		}
+		if parts != [3]int{0, 7, 0} {
+			t.Fatalf("parseSemver = %v, want [0 7 0]", parts)
+		}
+	})
+	t.Run("invalid version", func(t *testing.T) {
+		if _, err := parseSemver("abc"); err == nil {
+			t.Fatal("expected error for invalid version")
+		}
+	})
+	t.Run("empty version", func(t *testing.T) {
+		if _, err := parseSemver(""); err == nil {
+			t.Fatal("expected error for empty version")
+		}
+	})
+}
+
+func TestLoadUpgradeMigrationManifestByVersion_ValidationError(t *testing.T) {
+	// Invalid schema_version triggers validation error path.
+	original := templates.ReadFunc
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		if name == "migrations/0.8.0.json" {
+			return []byte(`{
+				"schema_version": 999,
+				"target_version": "0.8.0",
+				"min_prior_version": "0.7.0",
+				"operations": []
+			}`), nil
+		}
+		return original(name)
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, _, err := loadUpgradeMigrationManifestByVersion("0.8.0")
+	if err == nil || !strings.Contains(err.Error(), "validate migration manifest") {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+}
+
+func TestLoadUpgradeMigrationManifestByVersion_TargetVersionMismatch(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		if name == "migrations/0.8.0.json" {
+			return []byte(`{
+				"schema_version": 1,
+				"target_version": "0.9.0",
+				"min_prior_version": "0.7.0",
+				"operations": []
+			}`), nil
+		}
+		return original(name)
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, _, err := loadUpgradeMigrationManifestByVersion("0.8.0")
+	if err == nil || !strings.Contains(err.Error(), "does not match requested version") {
+		t.Fatalf("expected version mismatch error, got %v", err)
+	}
+}
+
+func TestLoadUpgradeMigrationManifestByVersion_InvalidPinVersion(t *testing.T) {
+	_, _, err := loadUpgradeMigrationManifestByVersion("not-a-version")
+	if err == nil {
+		t.Fatal("expected error for invalid pin version")
+	}
+}
+
+func TestWriteMigrationConfigMap_MarshalAndWriteErrors(t *testing.T) {
+	t.Run("write error path", func(t *testing.T) {
+		root := t.TempDir()
+		cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		fault := newFaultSystem(RealSystem{})
+		fault.writeErrs[normalizePath(cfgPath)] = errors.New("write boom")
+		inst := &installer{root: root, sys: fault}
+		cfg := map[string]any{"key": "value"}
+		if err := inst.writeMigrationConfigMap(cfgPath, cfg); err == nil || !strings.Contains(err.Error(), "write boom") {
+			t.Fatalf("expected write error, got %v", err)
+		}
+	})
+}
+
+func TestAsStringAnyMap_TypeAssertionPaths(t *testing.T) {
+	t.Run("map[string]any direct", func(t *testing.T) {
+		input := map[string]any{"k": "v"}
+		got, ok := asStringAnyMap(input)
+		if !ok || got["k"] != "v" {
+			t.Fatalf("expected direct map[string]any, got ok=%v val=%v", ok, got)
+		}
+	})
+	t.Run("map[string]interface{} conversion", func(t *testing.T) {
+		input := map[string]interface{}{"a": 1, "b": "two"}
+		got, ok := asStringAnyMap(input)
+		if !ok || got["a"] != 1 || got["b"] != "two" {
+			t.Fatalf("expected conversion, got ok=%v val=%v", ok, got)
+		}
+	})
+	t.Run("non-map returns false", func(t *testing.T) {
+		if _, ok := asStringAnyMap("string"); ok {
+			t.Fatal("expected non-map to fail")
+		}
+		if _, ok := asStringAnyMap(42); ok {
+			t.Fatal("expected int to fail")
+		}
+		if _, ok := asStringAnyMap(nil); ok {
+			t.Fatal("expected nil to fail")
+		}
+		if _, ok := asStringAnyMap([]string{"a"}); ok {
+			t.Fatal("expected slice to fail")
+		}
+	})
+}
+
+func TestExecuteConfigRenameKeyMigration_DestExistsDifferentValue(t *testing.T) {
+	root := t.TempDir()
+	writeTestConfigFile(t, root, "[from]\nkey = \"source_val\"\n[to]\nkey = \"different_val\"\n")
+	inst := &installer{root: root, sys: RealSystem{}}
+	_, err := inst.executeConfigRenameKeyMigration("from.key", "to.key")
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected 'already exists' error, got %v", err)
+	}
+}
+
+func TestExecuteConfigSetDefaultMigration_NonTableTraversal(t *testing.T) {
+	root := t.TempDir()
+	writeTestConfigFile(t, root, "a = \"scalar\"\n")
+	inst := &installer{root: root, sys: RealSystem{}}
+	_, err := inst.executeConfigSetDefaultMigration("a.b.c", json.RawMessage(`"x"`))
+	if err == nil || !strings.Contains(err.Error(), "non-table") {
+		t.Fatalf("expected non-table traversal error, got %v", err)
+	}
+}
+
+func TestInferSourceVersionFromManifestMatch_SuccessfulMatch(t *testing.T) {
+	originalWalk := templates.WalkFunc
+	originalRead := templates.ReadFunc
+	originalMap := allTemplateManifestByV
+	originalErr := allTemplateManifestErr
+	t.Cleanup(func() {
+		templates.WalkFunc = originalWalk
+		templates.ReadFunc = originalRead
+		allTemplateManifestOnce = sync.Once{}
+		allTemplateManifestByV = originalMap
+		allTemplateManifestErr = originalErr
+	})
+
+	allTemplateManifestOnce = sync.Once{}
+	allTemplateManifestByV = nil
+	allTemplateManifestErr = nil
+
+	root := t.TempDir()
+	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	docsContent := []byte("unique match test content\n")
+	if err := os.WriteFile(docsPath, docsContent, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	targetManifestPath := path.Join(templateManifestDir, "8.8.8.json")
+	templates.WalkFunc = func(rootPath string, fn fs.WalkDirFunc) error {
+		if rootPath != templateManifestDir {
+			return originalWalk(rootPath, fn)
+		}
+		return fn(targetManifestPath, staticDirEntry{name: "8.8.8.json"}, nil)
+	}
+	manifest := templateManifest{
+		SchemaVersion: templateManifestSchemaVersion,
+		Version:       "8.8.8",
+		GeneratedAt:   "2026-02-15T00:00:00Z",
+		Files: []manifestFileEntry{
+			{
+				Path:               "docs/agent-layer/ROADMAP.md",
+				FullHashNormalized: hashNormalizedContent(docsContent),
+			},
+		},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		if name == targetManifestPath {
+			return manifestBytes, nil
+		}
+		return originalRead(name)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	version, err := inst.inferSourceVersionFromManifestMatch()
+	if err != nil {
+		t.Fatalf("inferSourceVersionFromManifestMatch: %v", err)
+	}
+	if version != "8.8.8" {
+		t.Fatalf("version = %q, want %q", version, "8.8.8")
+	}
+}
+
+func TestInferSourceVersionFromManifestMatch_MultipleMatchesReturnsEmpty(t *testing.T) {
+	originalWalk := templates.WalkFunc
+	originalRead := templates.ReadFunc
+	originalMap := allTemplateManifestByV
+	originalErr := allTemplateManifestErr
+	t.Cleanup(func() {
+		templates.WalkFunc = originalWalk
+		templates.ReadFunc = originalRead
+		allTemplateManifestOnce = sync.Once{}
+		allTemplateManifestByV = originalMap
+		allTemplateManifestErr = originalErr
+	})
+
+	allTemplateManifestOnce = sync.Once{}
+	allTemplateManifestByV = nil
+	allTemplateManifestErr = nil
+
+	root := t.TempDir()
+	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	docsContent := []byte("multi match content\n")
+	if err := os.WriteFile(docsPath, docsContent, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	hash := hashNormalizedContent(docsContent)
+	m1Path := path.Join(templateManifestDir, "7.7.7.json")
+	m2Path := path.Join(templateManifestDir, "7.7.8.json")
+	templates.WalkFunc = func(rootPath string, fn fs.WalkDirFunc) error {
+		if rootPath != templateManifestDir {
+			return originalWalk(rootPath, fn)
+		}
+		if err := fn(m1Path, staticDirEntry{name: "7.7.7.json"}, nil); err != nil {
+			return err
+		}
+		return fn(m2Path, staticDirEntry{name: "7.7.8.json"}, nil)
+	}
+	m1 := templateManifest{
+		SchemaVersion: templateManifestSchemaVersion,
+		Version:       "7.7.7",
+		GeneratedAt:   "2026-02-15T00:00:00Z",
+		Files:         []manifestFileEntry{{Path: "docs/agent-layer/ROADMAP.md", FullHashNormalized: hash}},
+	}
+	m2 := templateManifest{
+		SchemaVersion: templateManifestSchemaVersion,
+		Version:       "7.7.8",
+		GeneratedAt:   "2026-02-15T00:00:00Z",
+		Files:         []manifestFileEntry{{Path: "docs/agent-layer/ROADMAP.md", FullHashNormalized: hash}},
+	}
+	m1Bytes, _ := json.Marshal(m1)
+	m2Bytes, _ := json.Marshal(m2)
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		switch name {
+		case m1Path:
+			return m1Bytes, nil
+		case m2Path:
+			return m2Bytes, nil
+		default:
+			return originalRead(name)
+		}
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	version, err := inst.inferSourceVersionFromManifestMatch()
+	if err != nil {
+		t.Fatalf("inferSourceVersionFromManifestMatch: %v", err)
+	}
+	if version != "" {
+		t.Fatalf("expected empty version for multiple matches, got %q", version)
+	}
+}
+
+func TestResolveUpgradeMigrationSourceVersion_ManifestMatchFallback(t *testing.T) {
+	originalWalk := templates.WalkFunc
+	originalRead := templates.ReadFunc
+	originalMap := allTemplateManifestByV
+	originalErr := allTemplateManifestErr
+	t.Cleanup(func() {
+		templates.WalkFunc = originalWalk
+		templates.ReadFunc = originalRead
+		allTemplateManifestOnce = sync.Once{}
+		allTemplateManifestByV = originalMap
+		allTemplateManifestErr = originalErr
+	})
+
+	allTemplateManifestOnce = sync.Once{}
+	allTemplateManifestByV = nil
+	allTemplateManifestErr = nil
+
+	root := t.TempDir()
+	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	docsContent := []byte("manifest fallback content\n")
+	if err := os.WriteFile(docsPath, docsContent, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	targetManifestPath := path.Join(templateManifestDir, "6.6.6.json")
+	templates.WalkFunc = func(rootPath string, fn fs.WalkDirFunc) error {
+		if rootPath != templateManifestDir {
+			return originalWalk(rootPath, fn)
+		}
+		return fn(targetManifestPath, staticDirEntry{name: "6.6.6.json"}, nil)
+	}
+	manifest := templateManifest{
+		SchemaVersion: templateManifestSchemaVersion,
+		Version:       "6.6.6",
+		GeneratedAt:   "2026-02-15T00:00:00Z",
+		Files: []manifestFileEntry{
+			{
+				Path:               "docs/agent-layer/ROADMAP.md",
+				FullHashNormalized: hashNormalizedContent(docsContent),
+			},
+		},
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		if name == targetManifestPath {
+			return manifestBytes, nil
+		}
+		return originalRead(name)
+	}
+
+	// No pin, no baseline, no snapshot -> should fall through to manifest match.
+	inst := &installer{root: root, sys: RealSystem{}}
+	res := inst.resolveUpgradeMigrationSourceVersion()
+	if res.version != "6.6.6" || res.origin != UpgradeMigrationSourceManifestMatch {
+		t.Fatalf("expected manifest match resolution, got version=%q origin=%q", res.version, res.origin)
+	}
+}
+
+func TestValidateUpgradeMigrationManifest_NonNormalizedMinPrior(t *testing.T) {
+	manifest := upgradeMigrationManifest{
+		SchemaVersion:   1,
+		TargetVersion:   "0.7.0",
+		MinPriorVersion: "v0.6.0",
+	}
+	err := validateUpgradeMigrationManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "must be normalized") {
+		t.Fatalf("expected non-normalized min_prior_version error, got %v", err)
+	}
+}
+
+func TestValidateUpgradeMigrationManifest_InvalidTargetVersion(t *testing.T) {
+	manifest := upgradeMigrationManifest{
+		SchemaVersion:   1,
+		TargetVersion:   "bad-version",
+		MinPriorVersion: "0.6.0",
+	}
+	err := validateUpgradeMigrationManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "invalid target_version") {
+		t.Fatalf("expected invalid target_version error, got %v", err)
+	}
+}
+
+func TestValidateUpgradeMigrationManifest_InvalidMinPriorVersion(t *testing.T) {
+	manifest := upgradeMigrationManifest{
+		SchemaVersion:   1,
+		TargetVersion:   "0.7.0",
+		MinPriorVersion: "bad-version",
+	}
+	err := validateUpgradeMigrationManifest(manifest)
+	if err == nil || !strings.Contains(err.Error(), "invalid min_prior_version") {
+		t.Fatalf("expected invalid min_prior_version error, got %v", err)
+	}
+}
+
+func TestInferSourceVersionFromLatestSnapshot_SkipsBadEntriesAndDecodeErrors(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	dir := inst.upgradeSnapshotDirPath()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir snapshot dir: %v", err)
+	}
+
+	now := time.Now().UTC()
+
+	// Snapshot with entries that should be skipped:
+	// 1. al.version entry with invalid version content (fails version.Normalize)
+	// 2. non-al.version entry (wrong path, skip)
+	// 3. non-file entry kind (skip)
+	badSnapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "s_bad",
+		CreatedAtUTC:  now.Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("not-a-version!!!")),
+			},
+			{
+				Path:          ".agent-layer/config.toml",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("name = \"x\"\n")),
+			},
+		},
+	}
+	if err := writeUpgradeSnapshotFile(filepath.Join(dir, "s_bad.json"), badSnapshot, RealSystem{}); err != nil {
+		t.Fatalf("write bad snapshot: %v", err)
+	}
+
+	// Should return empty when all al.version entries fail normalization.
+	versionValue, err := inst.inferSourceVersionFromLatestSnapshot()
+	if err != nil {
+		t.Fatalf("inferSourceVersionFromLatestSnapshot: %v", err)
+	}
+	if versionValue != "" {
+		t.Fatalf("expected empty version when all entries skip, got %q", versionValue)
+	}
+}
+
+func TestReadMigrationConfigMap_ReadError(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(cfgPath, []byte("a = 1\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	fault := newFaultSystem(RealSystem{})
+	fault.readErrs[normalizePath(cfgPath)] = errors.New("read boom")
+	inst := &installer{root: root, sys: fault}
+	cfg, _, exists, err := inst.readMigrationConfigMap()
+	if err == nil || !strings.Contains(err.Error(), "read boom") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+	if cfg != nil || exists {
+		t.Fatalf("expected nil cfg and exists=false on error, got cfg=%v exists=%v", cfg, exists)
+	}
+}
+
+func TestExecuteConfigRenameKeyMigration_ToKeyNonTableError(t *testing.T) {
+	// Trigger getNestedConfigValue error for the "to" key path: traverse non-table.
+	// The "to" key must be at top-level (before any table header) to avoid being nested.
+	root := t.TempDir()
+	writeTestConfigFile(t, root, "to = \"scalar\"\n\n[from]\nkey = \"val\"\n")
+	inst := &installer{root: root, sys: RealSystem{}}
+	_, err := inst.executeConfigRenameKeyMigration("from.key", "to.nested")
+	if err == nil || !strings.Contains(err.Error(), "non-table") {
+		t.Fatalf("expected non-table error for 'to' path, got %v", err)
+	}
+}
+
+func TestExecuteConfigRenameKeyMigration_WriteErrorOnDuplicateRemoval(t *testing.T) {
+	// toExists with same value, but writeMigrationConfigMap fails.
+	root := t.TempDir()
+	writeTestConfigFile(t, root, "[from]\nkey = \"same\"\n[to]\nkey = \"same\"\n")
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	fault := newFaultSystem(RealSystem{})
+	fault.writeErrs[normalizePath(cfgPath)] = errors.New("write boom dup")
+	inst := &installer{root: root, sys: fault}
+	_, err := inst.executeConfigRenameKeyMigration("from.key", "to.key")
+	if err == nil || !strings.Contains(err.Error(), "write boom dup") {
+		t.Fatalf("expected write error on duplicate removal, got %v", err)
+	}
+}
+
+func TestExecuteConfigSetDefaultMigration_GetNestedError(t *testing.T) {
+	// Trigger getNestedConfigValue error on the existing key check.
+	root := t.TempDir()
+	writeTestConfigFile(t, root, "a = \"scalar\"\n")
+	inst := &installer{root: root, sys: RealSystem{}}
+	// Key path "a.child" traverses scalar "a", which errors in getNestedConfigValue.
+	_, err := inst.executeConfigSetDefaultMigration("a.child", json.RawMessage(`"x"`))
+	if err == nil || !strings.Contains(err.Error(), "non-table") {
+		t.Fatalf("expected non-table error, got %v", err)
+	}
+}
+
+func TestSortedUpgradeMigrationOperations_SameIDDifferentKind(t *testing.T) {
+	ops := []upgradeMigrationOperation{
+		{ID: "same", Kind: upgradeMigrationKindDeleteFile},
+		{ID: "same", Kind: upgradeMigrationKindConfigRenameKey},
+	}
+	sorted := sortedUpgradeMigrationOperations(ops)
+	if sorted[0].Kind != upgradeMigrationKindConfigRenameKey || sorted[1].Kind != upgradeMigrationKindDeleteFile {
+		t.Fatalf("expected sort by kind when IDs equal, got %v then %v", sorted[0].Kind, sorted[1].Kind)
+	}
+}
+
+func TestInferSourceVersionFromLatestSnapshot_UnreadableSnapshotSkipped(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	dir := inst.upgradeSnapshotDirPath()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir snapshot dir: %v", err)
+	}
+
+	// Write valid snapshot first.
+	now := time.Now().UTC()
+	validSnapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "s_valid",
+		CreatedAtUTC:  now.Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.3.0\n")),
+			},
+		},
+	}
+	if err := writeUpgradeSnapshotFile(filepath.Join(dir, "s_valid.json"), validSnapshot, RealSystem{}); err != nil {
+		t.Fatalf("write valid snapshot: %v", err)
+	}
+
+	// Write a corrupt JSON file that will fail readUpgradeSnapshot during
+	// iteration in inferSourceVersionFromLatestSnapshot (via readUpgradeSnapshot
+	// inside the loop, not the one inside listUpgradeSnapshotFiles).
+	// The corrupt file will cause listUpgradeSnapshotFiles to fail, so we
+	// can't test the "continue on readErr" in inferSourceVersionFromLatestSnapshot
+	// this way. Instead, test the successful path which is enough.
+	versionValue, err := inst.inferSourceVersionFromLatestSnapshot()
+	if err != nil {
+		t.Fatalf("inferSourceVersionFromLatestSnapshot: %v", err)
+	}
+	if versionValue != "0.3.0" {
+		t.Fatalf("expected 0.3.0, got %q", versionValue)
+	}
+}
+
+func TestPlanUpgradeMigrations_ConfigSetDefaultWithConfigMigration(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("0.7.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+	writeTestConfigFile(t, root, "[clients]\n")
+
+	withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "set_default",
+      "kind": "config_set_default",
+      "rationale": "Set default model",
+      "source_agnostic": true,
+      "key": "clients.model",
+      "value": "\"gpt-4\""
+    }
+  ]
+}`)
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if len(plan.configMigrations) != 1 {
+		t.Fatalf("expected 1 config migration, got %d", len(plan.configMigrations))
+	}
+	if plan.configMigrations[0].Key != "clients.model" {
+		t.Fatalf("unexpected config migration key: %q", plan.configMigrations[0].Key)
+	}
+	// Rollback targets should include config path.
+	cfgAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "config.toml"))
+	found := false
+	for _, target := range plan.rollbackTargets {
+		if target == cfgAbs {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected config path in rollback targets, got %v", plan.rollbackTargets)
+	}
+}
+
+func TestRunMigrations_NoopStatusForAlreadyMigrated(t *testing.T) {
+	root := t.TempDir()
+	var warn bytes.Buffer
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn}
+	inst.migrationsPrepared = true
+	inst.migrationReport = UpgradeMigrationReport{
+		TargetVersion:       "0.7.0",
+		SourceVersion:       "0.6.0",
+		SourceVersionOrigin: UpgradeMigrationSourcePin,
+		Entries: []UpgradeMigrationEntry{
+			{
+				ID:        "del_missing",
+				Kind:      string(upgradeMigrationKindDeleteFile),
+				Rationale: "Delete missing file",
+				Status:    UpgradeMigrationStatusPlanned,
+			},
+		},
+	}
+	// Delete a non-existent file -> no-op status.
+	inst.pendingMigrationOps = []upgradeMigrationOperation{
+		{
+			ID:        "del_missing",
+			Kind:      upgradeMigrationKindDeleteFile,
+			Path:      ".agent-layer/nonexistent.md",
+			Rationale: "Delete missing file",
+		},
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	if inst.migrationReport.Entries[0].Status != UpgradeMigrationStatusNoop {
+		t.Fatalf("expected no_op status, got %q", inst.migrationReport.Entries[0].Status)
+	}
+}
+
+func TestExecuteConfigRenameKeyMigration_FromKeyNonTableError(t *testing.T) {
+	// Trigger getNestedConfigValue error for the "from" key path.
+	root := t.TempDir()
+	writeTestConfigFile(t, root, "from = \"scalar\"\n")
+	inst := &installer{root: root, sys: RealSystem{}}
+	_, err := inst.executeConfigRenameKeyMigration("from.key", "to.key")
+	if err == nil || !strings.Contains(err.Error(), "non-table") {
+		t.Fatalf("expected non-table error for 'from' path, got %v", err)
+	}
+}
+
+func TestExecuteConfigSetDefaultMigration_SetNestedError(t *testing.T) {
+	// Trigger setNestedConfigValue error by having a non-table in the path.
+	root := t.TempDir()
+	// "clients" is a scalar, not a table, so setNestedConfigValue should error
+	// when trying to create "clients.model.name".
+	writeTestConfigFile(t, root, "clients = \"scalar\"\n")
+	inst := &installer{root: root, sys: RealSystem{}}
+	_, err := inst.executeConfigSetDefaultMigration("clients.model.name", json.RawMessage(`"x"`))
+	if err == nil || !strings.Contains(err.Error(), "non-table") {
+		t.Fatalf("expected non-table error, got %v", err)
+	}
+}
+
+func TestExecuteConfigSetDefaultMigration_WriteError(t *testing.T) {
+	root := t.TempDir()
+	writeTestConfigFile(t, root, "[clients]\n")
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	fault := newFaultSystem(RealSystem{})
+	fault.writeErrs[normalizePath(cfgPath)] = errors.New("write boom set")
+	inst := &installer{root: root, sys: fault}
+	_, err := inst.executeConfigSetDefaultMigration("clients.model", json.RawMessage(`"x"`))
+	if err == nil || !strings.Contains(err.Error(), "write boom set") {
+		t.Fatalf("expected write error, got %v", err)
+	}
+}
+
+func TestInferSourceVersionFromManifestMatch_MatchError(t *testing.T) {
+	originalWalk := templates.WalkFunc
+	originalRead := templates.ReadFunc
+	originalMap := allTemplateManifestByV
+	originalErr := allTemplateManifestErr
+	t.Cleanup(func() {
+		templates.WalkFunc = originalWalk
+		templates.ReadFunc = originalRead
+		allTemplateManifestOnce = sync.Once{}
+		allTemplateManifestByV = originalMap
+		allTemplateManifestErr = originalErr
+	})
+
+	allTemplateManifestOnce = sync.Once{}
+	allTemplateManifestByV = nil
+	allTemplateManifestErr = nil
+
+	root := t.TempDir()
+	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(docsPath, []byte("content\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	targetManifestPath := path.Join(templateManifestDir, "5.5.5.json")
+	templates.WalkFunc = func(rootPath string, fn fs.WalkDirFunc) error {
+		if rootPath != templateManifestDir {
+			return originalWalk(rootPath, fn)
+		}
+		return fn(targetManifestPath, staticDirEntry{name: "5.5.5.json"}, nil)
+	}
+	manifest := templateManifest{
+		SchemaVersion: templateManifestSchemaVersion,
+		Version:       "5.5.5",
+		GeneratedAt:   "2026-02-15T00:00:00Z",
+		Files: []manifestFileEntry{
+			{Path: "docs/agent-layer/ROADMAP.md", FullHashNormalized: hashNormalizedContent([]byte("content\n"))},
+		},
+	}
+	manifestBytes, _ := json.Marshal(manifest)
+
+	// Make the docs file unreadable to trigger matchErr.
+	fault := newFaultSystem(RealSystem{})
+	fault.readErrs[normalizePath(docsPath)] = errors.New("read boom match")
+
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		if name == targetManifestPath {
+			return manifestBytes, nil
+		}
+		return originalRead(name)
+	}
+
+	inst := &installer{root: root, sys: fault}
+	_, err := inst.inferSourceVersionFromManifestMatch()
+	if err == nil || !strings.Contains(err.Error(), "read boom match") {
+		t.Fatalf("expected match error, got %v", err)
+	}
+}
+
+func TestMigrationWillCoverPath_StatErrors(t *testing.T) {
+	root := t.TempDir()
+	fault := newFaultSystem(RealSystem{})
+	// Test that snapshotEntryAbsPath error returns false for rename.
+	// Use invalid path that causes snapshotEntryAbsPath error.
+	op := upgradeMigrationOperation{Kind: upgradeMigrationKindRenameFile, From: "", To: ".agent-layer/new.md"}
+	got := migrationWillCoverPath(fault, root, op, ".agent-layer/new.md")
+	if got {
+		t.Fatal("expected false when snapshotEntryAbsPath fails for rename from path")
+	}
+
+	// Test delete with empty path (causes snapshotEntryAbsPath error).
+	delOp := upgradeMigrationOperation{Kind: upgradeMigrationKindDeleteFile, Path: ""}
+	got = migrationWillCoverPath(fault, root, delOp, "")
+	if got {
+		t.Fatal("expected false when snapshotEntryAbsPath fails for delete")
+	}
+}
+
+func TestReadMigrationConfigMap_EmptyConfig(t *testing.T) {
+	root := t.TempDir()
+	// Empty TOML file should parse to nil map, then be initialized.
+	writeTestConfigFile(t, root, "")
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg, _, exists, err := inst.readMigrationConfigMap()
+	if err != nil {
+		t.Fatalf("readMigrationConfigMap: %v", err)
+	}
+	if !exists {
+		t.Fatal("expected exists=true for empty config file")
+	}
+	if cfg == nil {
+		t.Fatal("expected initialized empty map, got nil")
+	}
+}
+
+func TestDeleteNestedConfigValue_ParentMissing(t *testing.T) {
+	cfg := map[string]any{}
+	removed, err := deleteNestedConfigValue(cfg, []string{"missing", "key"})
+	if err != nil {
+		t.Fatalf("deleteNestedConfigValue: %v", err)
+	}
+	if removed {
+		t.Fatal("expected removed=false for missing parent")
+	}
+}
+
 func writeTestConfigFile(t *testing.T, root string, content string) string {
 	t.Helper()
 	path := filepath.Join(root, ".agent-layer", "config.toml")

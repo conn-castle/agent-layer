@@ -55,7 +55,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 mcp-env: os.Environ() leaks credentials to MCP child processes
     Priority: Critical. Area: doctor / security.
-    Description: `internal/doctor/mcp_connector.go:90-93` passes `os.Environ()` to MCP child processes, leaking all parent env vars (API keys, tokens, credentials) to potentially untrusted MCP servers.
+    Description: `internal/warnings/mcp_connector.go:90-93` passes `os.Environ()` to MCP child processes, leaking all parent env vars (API keys, tokens, credentials) to potentially untrusted MCP servers.
     Next step: Replace `os.Environ()` with an explicit allowlist of safe environment variables, filtering out sensitive prefixes.
 
 - Issue 2026-02-12 wiz-rollback: Incomplete rollback in wizard apply.go on partial write failure
@@ -90,7 +90,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 rt-mutate: headerTransport.RoundTrip mutates original request
     Priority: Medium. Area: doctor / correctness.
-    Description: `internal/doctor/mcp_connector.go:201-208` modifies `req.Header` directly instead of cloning the request first, violating the `http.RoundTripper` contract.
+    Description: `internal/warnings/mcp_connector.go:201-208` modifies `req.Header` directly instead of cloning the request first, violating the `http.RoundTripper` contract.
     Next step: Clone request via `req.Clone(req.Context())` before setting headers.
 
 - Issue 2026-02-12 resolve-default: resolveSingleServer switch missing default branch
@@ -165,7 +165,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
     Priority: Low. Area: install / maintainability.
-    Description: The `installer` struct in `internal/install/` has 14 fields and 57 methods spread across 8 files. While logically grouped, this concentration increases coupling risk as Phase 11 continues adding features (snapshot/rollback, migration engine).
+    Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added (snapshot/rollback, migration engine).
     Next step: Monitor during Phase 11 Phase 2 work. If method count exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`).
 
 - Issue 2026-02-10 wiz-run: Wizard Run() is a god function

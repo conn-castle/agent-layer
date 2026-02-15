@@ -202,12 +202,14 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 
 		plan.executable = append(plan.executable, op)
 		for _, relPath := range migrationCoveredPaths(op) {
-			plan.coveredPaths[relPath] = struct{}{}
 			absPath, absErr := snapshotEntryAbsPath(inst.root, relPath)
 			if absErr != nil {
 				return migrationPlan{}, absErr
 			}
 			rollbackTargets = append(rollbackTargets, absPath)
+			if migrationWillCoverPath(inst.sys, inst.root, op, relPath) {
+				plan.coveredPaths[relPath] = struct{}{}
+			}
 		}
 		if isConfigMigrationKind(op.Kind) {
 			configPath, cfgErr := snapshotEntryAbsPath(inst.root, upgradeMigrationConfigPath)
@@ -261,56 +263,58 @@ func (inst *installer) runMigrations() error {
 	return writeUpgradeMigrationReport(inst.warnOutput(), inst.migrationReport)
 }
 
+// errWriter wraps an io.Writer and accumulates the first error encountered,
+// allowing sequential writes without per-call error checks.
+type errWriter struct {
+	w   io.Writer
+	err error
+}
+
+func (ew *errWriter) printf(format string, args ...any) {
+	if ew.err != nil {
+		return
+	}
+	_, ew.err = fmt.Fprintf(ew.w, format, args...)
+}
+
+func (ew *errWriter) println(args ...any) {
+	if ew.err != nil {
+		return
+	}
+	_, ew.err = fmt.Fprintln(ew.w, args...)
+}
+
 func writeUpgradeMigrationReport(out io.Writer, report UpgradeMigrationReport) error {
 	if len(report.Entries) == 0 {
 		return nil
 	}
-	if _, err := fmt.Fprintln(out, "Migration report:"); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "  - target version: %s\n", report.TargetVersion); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(out, "  - source version: %s (%s)\n", report.SourceVersion, report.SourceVersionOrigin); err != nil {
-		return err
-	}
+	ew := &errWriter{w: out}
+	ew.println("Migration report:")
+	ew.printf("  - target version: %s\n", report.TargetVersion)
+	ew.printf("  - source version: %s (%s)\n", report.SourceVersion, report.SourceVersionOrigin)
 	for _, note := range report.SourceResolutionNotes {
-		if _, err := fmt.Fprintf(out, "  - source note: %s\n", note); err != nil {
-			return err
-		}
+		ew.printf("  - source note: %s\n", note)
 	}
 	for _, entry := range report.Entries {
-		if _, err := fmt.Fprintf(out, "  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale); err != nil {
-			return err
-		}
+		ew.printf("  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale)
 		if entry.SkipReason != "" {
-			if _, err := fmt.Fprintf(out, "    reason: %s\n", entry.SkipReason); err != nil {
-				return err
-			}
+			ew.printf("    reason: %s\n", entry.SkipReason)
 		}
 		if entry.From != "" {
-			if _, err := fmt.Fprintf(out, "    from: %s\n", entry.From); err != nil {
-				return err
-			}
+			ew.printf("    from: %s\n", entry.From)
 		}
 		if entry.To != "" {
-			if _, err := fmt.Fprintf(out, "    to: %s\n", entry.To); err != nil {
-				return err
-			}
+			ew.printf("    to: %s\n", entry.To)
 		}
 		if entry.Path != "" {
-			if _, err := fmt.Fprintf(out, "    path: %s\n", entry.Path); err != nil {
-				return err
-			}
+			ew.printf("    path: %s\n", entry.Path)
 		}
 		if entry.Key != "" {
-			if _, err := fmt.Fprintf(out, "    key: %s\n", entry.Key); err != nil {
-				return err
-			}
+			ew.printf("    key: %s\n", entry.Key)
 		}
 	}
-	_, err := fmt.Fprintln(out)
-	return err
+	ew.println()
+	return ew.err
 }
 
 func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOperation) (bool, error) {
@@ -654,6 +658,45 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 		}
 	}
 	return dedupSortedStrings(paths)
+}
+
+// migrationWillCoverPath returns true when the planned operation will actually
+// handle relPath at execution time. This prevents filterCoveredUpgradeChanges
+// from hiding template changes in the plan when a migration would no-op (e.g.,
+// rename source already absent).
+func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperation, relPath string) bool {
+	switch op.Kind {
+	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+		fromRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
+		toRel := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+		if fromRel == toRel {
+			return false
+		}
+		fromAbs, err := snapshotEntryAbsPath(root, fromRel)
+		if err != nil {
+			return false
+		}
+		if _, statErr := sys.Stat(fromAbs); statErr != nil {
+			// Source doesn't exist — rename will no-op, so the template
+			// writer may still need to handle the destination path.
+			return false
+		}
+		// Source exists: rename will execute and cover both paths.
+		return true
+	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
+		absPath, err := snapshotEntryAbsPath(root, relPath)
+		if err != nil {
+			return false
+		}
+		if _, statErr := sys.Stat(absPath); statErr != nil {
+			// File doesn't exist — delete will no-op.
+			return false
+		}
+		return true
+	default:
+		// Config migrations don't cover file paths in the template sense.
+		return false
+	}
 }
 
 func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigration, bool) {
