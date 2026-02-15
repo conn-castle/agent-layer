@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,12 @@ import (
 // MockConnector implements Connector for testing.
 type MockConnector struct {
 	Results map[string]DiscoveryResult
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func (m *MockConnector) ConnectAndDiscover(ctx context.Context, server projection.ResolvedMCPServer) DiscoveryResult {
@@ -469,6 +476,57 @@ func TestHeaderTransport_NilBase(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "Bearer test-token", resp.Header.Get("X-Received-Auth"))
+}
+
+func TestHeaderTransport_DoesNotMutateOriginalRequest(t *testing.T) {
+	transport := &headerTransport{
+		base: roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       http.NoBody,
+				Request:    req,
+				Header:     make(http.Header),
+			}, nil
+		}),
+		headers: map[string]string{"Authorization": "Bearer token"},
+	}
+
+	req, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
+	require.NoError(t, err)
+	req.Header.Set("X-Existing", "value")
+
+	resp, err := transport.RoundTrip(req)
+	require.NoError(t, err)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	assert.Equal(t, "", req.Header.Get("Authorization"))
+	assert.Equal(t, "value", req.Header.Get("X-Existing"))
+}
+
+func TestBuildMCPCommandEnv_AllowlistsBaseEnv(t *testing.T) {
+	base := []string{
+		"PATH=/usr/bin",
+		"HOME=/tmp/home",
+		"AL_TAVILY_API_KEY=abc123",
+		"GITHUB_TOKEN=should-not-pass",
+		"AWS_SECRET_ACCESS_KEY=should-not-pass",
+	}
+	serverEnv := map[string]string{
+		"CUSTOM_TOKEN": "server-value",
+		"PATH":         "/custom/bin",
+	}
+
+	env := buildMCPCommandEnv(base, serverEnv)
+	joined := strings.Join(env, "\n")
+
+	assert.Contains(t, joined, "PATH=/custom/bin")
+	assert.Contains(t, joined, "HOME=/tmp/home")
+	assert.Contains(t, joined, "AL_TAVILY_API_KEY=abc123")
+	assert.Contains(t, joined, "CUSTOM_TOKEN=server-value")
+	assert.NotContains(t, joined, "GITHUB_TOKEN=should-not-pass")
+	assert.NotContains(t, joined, "AWS_SECRET_ACCESS_KEY=should-not-pass")
 }
 
 func TestRealConnector_UnsupportedTransport(t *testing.T) {

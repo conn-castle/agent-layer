@@ -49,7 +49,7 @@ func SubstituteEnvVarsWith(input string, env map[string]string, replacer EnvVarR
 	result := envVarPattern.ReplaceAllStringFunc(input, func(match string) string {
 		varName := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
 		value, ok := env[varName]
-		if !ok || value == "" {
+		if !ok {
 			missing[varName] = struct{}{}
 			return match
 		}

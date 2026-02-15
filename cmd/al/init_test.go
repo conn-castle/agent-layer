@@ -514,7 +514,7 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 		t.Fatalf("init failed: %v", err)
 	}
 	output := stderr.String()
-	if !strings.Contains(output, "Warning: update available") {
+	if !strings.Contains(output, "Warning: agent-layer update available") {
 		t.Fatalf("expected update warning, got %q", output)
 	}
 	if !strings.Contains(output, "Homebrew: brew upgrade conn-castle/tap/agent-layer") {

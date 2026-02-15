@@ -1,8 +1,10 @@
 package dispatch
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -15,6 +17,13 @@ type fileLock struct {
 
 var lockFileFn = lockFile
 var unlockFileFn = unlockFile
+var flockFn = unix.Flock
+var lockSleep = time.Sleep
+
+var (
+	lockWaitTimeout = 30 * time.Second
+	lockPollEvery   = 100 * time.Millisecond
+)
 
 // withFileLock acquires a lock for path, runs fn, and releases the lock.
 func withFileLock(path string, fn func() error) error {
@@ -55,10 +64,23 @@ func (l *fileLock) release() error {
 
 // lockFile acquires an exclusive advisory lock on the file.
 func lockFile(file *os.File) error {
-	return unix.Flock(int(file.Fd()), unix.LOCK_EX)
+	deadline := time.Now().Add(lockWaitTimeout)
+	for {
+		err := flockFn(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf(messages.DispatchLockTimeoutFmt, lockWaitTimeout)
+		}
+		lockSleep(lockPollEvery)
+	}
 }
 
 // unlockFile releases the advisory lock on the file.
 func unlockFile(file *os.File) error {
-	return unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	return flockFn(int(file.Fd()), unix.LOCK_UN)
 }

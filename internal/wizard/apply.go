@@ -70,6 +70,9 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) 
 	}
 	newEnv := envfile.Patch(string(rawEnv), c.Secrets)
 	if err := writeFileAtomic(envPath, []byte(newEnv), envPerm); err != nil {
+		if rollbackErr := writeFileAtomic(configPath, rawConfig, configPerm); rollbackErr != nil {
+			return fmt.Errorf(messages.WizardWriteEnvRollbackConfigFailedFmt, err, rollbackErr)
+		}
 		return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
 	}
 

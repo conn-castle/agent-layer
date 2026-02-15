@@ -57,12 +57,27 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 		return err
 	}
 
-	requested, _, warning, err := resolveRequestedVersion(sys, rootDir, found, current)
+	requested, source, warning, err := resolveRequestedVersion(sys, rootDir, found, current)
 	if err != nil {
 		return err
 	}
 	if warning != "" {
 		_, _ = fmt.Fprint(sys.Stderr(), warning)
+	}
+	if source != sourceCurrent {
+		_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchVersionSourceFmt, requested, source)
+	}
+	if source == EnvVersionOverride && found {
+		pinned, ok, pinWarning, pinErr := readPinnedVersion(sys, rootDir)
+		if pinErr != nil {
+			return pinErr
+		}
+		if pinWarning != "" {
+			_, _ = fmt.Fprint(sys.Stderr(), pinWarning)
+		}
+		if ok {
+			_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchVersionOverrideWarningFmt, EnvVersionOverride, pinned)
+		}
 	}
 	if requested == current {
 		return nil
@@ -78,7 +93,7 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 	if err != nil {
 		return err
 	}
-	path, err := ensureCachedBinary(cacheRoot, requested, sys.Stderr())
+	path, err := ensureCachedBinaryWithSystem(sys, cacheRoot, requested, sys.Stderr())
 	if err != nil {
 		return err
 	}

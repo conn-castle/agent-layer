@@ -231,6 +231,31 @@ mode = "none"
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to write .env")
+
+		rolledBackConfig, readErr := os.ReadFile(configPath)
+		require.NoError(t, readErr)
+		assert.Equal(t, initialConfig, string(rolledBackConfig))
+	})
+
+	t.Run("env write error and config rollback failure", func(t *testing.T) {
+		tmpDir, configPath, envPath := setup(t)
+
+		origWrite := writeFileAtomic
+		t.Cleanup(func() { writeFileAtomic = origWrite })
+		writeFileAtomic = func(path string, data []byte, perm os.FileMode) error {
+			if path == envPath {
+				return errors.New("write env failed")
+			}
+			if path == configPath && string(data) == initialConfig {
+				return errors.New("rollback failed")
+			}
+			return origWrite(path, data, perm)
+		}
+
+		mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
+		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "also failed to rollback config")
 	})
 
 	t.Run("env perm error cleans config backup", func(t *testing.T) {

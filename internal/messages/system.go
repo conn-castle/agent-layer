@@ -27,6 +27,7 @@ const (
 	DispatchUnsupportedArchFmt          = "unsupported architecture %q"
 	DispatchDownloadFailedFmt           = "download %s: %w"
 	DispatchDownloadUnexpectedStatusFmt = "download %s: unexpected status %s"
+	DispatchDownloadTooLargeFmt         = "download %s: response too large (%d bytes > limit %d bytes)"
 	DispatchReadFailedFmt               = "read %s: %w"
 	DispatchChecksumNotFoundFmt         = "checksum for %s not found in %s"
 	DispatchOpenFileFmt                 = "open %s: %w"
@@ -41,10 +42,13 @@ const (
 
 	DispatchOpenLockFmt      = "open lock %s: %w"
 	DispatchLockFmt          = "lock %s: %w"
+	DispatchLockTimeoutFmt   = "timed out waiting for lock after %s"
 	DispatchReadPinFailedFmt = "read %s: %w"
 
 	DispatchPinFileEmptyWarningFmt         = "warning: pin file %s is empty; ignoring (run al upgrade to repair)\n"
 	DispatchInvalidPinnedVersionWarningFmt = "warning: invalid pinned version in %s: %v; ignoring (run al upgrade to repair)\n"
+	DispatchVersionSourceFmt               = "Agent Layer version source: %s (%s)\n"
+	DispatchVersionOverrideWarningFmt      = "warning: %s overrides repo pin %s from .agent-layer/al.version\n"
 
 	// RootStartPathRequired indicates start path is required for root resolution.
 	RootStartPathRequired   = "start path is required"

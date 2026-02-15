@@ -31,7 +31,7 @@ func WriteCodexConfig(sys System, root string, project *config.ProjectConfig) er
 	}
 
 	path := filepath.Join(codexDir, "config.toml")
-	if err := sys.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
+	if err := sys.WriteFileAtomic(path, []byte(content), 0o600); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 

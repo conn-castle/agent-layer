@@ -40,6 +40,33 @@ func TestReadPinnedVersion(t *testing.T) {
 	}
 }
 
+func TestReadPinnedVersion_CommentsAndBlankLines(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "al.version")
+	content := "\n# repo pin\n\nv0.6.1\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got, ok, warning, err := readPinnedVersion(RealSystem{}, root)
+	if err != nil {
+		t.Fatalf("readPinnedVersion error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected pinned version")
+	}
+	if got != "0.6.1" {
+		t.Fatalf("expected 0.6.1, got %q", got)
+	}
+	if warning != "" {
+		t.Fatalf("unexpected warning: %q", warning)
+	}
+}
+
 func TestReadPinnedVersionEmptyFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
@@ -95,6 +122,32 @@ func TestReadPinnedVersion_InvalidContent_ReturnsWarning(t *testing.T) {
 	}
 	if !strings.Contains(warning, "invalid pinned version") {
 		t.Fatalf("expected warning to contain 'invalid pinned version', got %q", warning)
+	}
+}
+
+func TestReadPinnedVersion_MultipleVersionLines_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "al.version")
+	if err := os.WriteFile(path, []byte("0.5.0\n0.5.1\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	ver, ok, warning, err := readPinnedVersion(RealSystem{}, root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected found=false for invalid pin")
+	}
+	if ver != "" {
+		t.Fatalf("expected empty version, got %q", ver)
+	}
+	if !strings.Contains(warning, "multiple version lines") {
+		t.Fatalf("expected warning to mention multiple lines, got %q", warning)
 	}
 }
 
@@ -312,6 +365,41 @@ func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
 	err := MaybeExecWithSystem(RealSystem{}, []string{"cmd"}, "1.0.0", ".", func(int) {})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestMaybeExec_OverrideWarnsWhenPinExists(t *testing.T) {
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("0.9.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	t.Setenv(EnvVersionOverride, "1.0.0")
+	var stderr bytes.Buffer
+	sys := &testSystem{
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			return root, true, nil
+		},
+		StderrFunc: func() io.Writer {
+			return &stderr
+		},
+	}
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	output := stderr.String()
+	if !strings.Contains(output, "version source: 1.0.0 (AL_VERSION)") {
+		t.Fatalf("expected version source output, got %q", output)
+	}
+	if !strings.Contains(output, "overrides repo pin 0.9.0") {
+		t.Fatalf("expected override warning, got %q", output)
 	}
 }
 

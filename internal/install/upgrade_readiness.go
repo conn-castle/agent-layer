@@ -40,6 +40,10 @@ type UpgradeReadinessCheck struct {
 	Details []string `json:"details"`
 }
 
+func readinessErr(action string, path string, err error) error {
+	return fmt.Errorf("readiness check failed to %s %s: %w", action, path, err)
+}
+
 func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, error) {
 	configPath := filepath.Join(inst.root, ".agent-layer", "config.toml")
 	configInfo, err := inst.sys.Stat(configPath)
@@ -51,12 +55,12 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 				Details: []string{filepath.ToSlash(inst.relativePath(configPath))},
 			}}, nil
 		}
-		return nil, fmt.Errorf("readiness check failed to stat %s: %w", configPath, err)
+		return nil, readinessErr("stat", configPath, err)
 	}
 
 	configBytes, err := inst.sys.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("readiness check failed to read %s: %w", configPath, err)
+		return nil, readinessErr("read", configPath, err)
 	}
 
 	checks := make([]UpgradeReadinessCheck, 0, 4)
@@ -128,7 +132,7 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		if errors.Is(err, os.ErrNotExist) {
 			details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(mcpPath))))
 		} else {
-			return nil, fmt.Errorf("readiness check failed to stat %s: %w", mcpPath, err)
+			return nil, readinessErr("stat", mcpPath, err)
 		}
 	} else if !mcpInfo.IsDir() {
 		latestGenerated = maxModTime(latestGenerated, mcpInfo.ModTime())
@@ -140,12 +144,12 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		if errors.Is(err, os.ErrNotExist) {
 			details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(settingsPath))))
 		} else {
-			return nil, fmt.Errorf("readiness check failed to stat %s: %w", settingsPath, err)
+			return nil, readinessErr("stat", settingsPath, err)
 		}
 	} else if !settingsInfo.IsDir() {
 		settingsData, readErr := inst.sys.ReadFile(settingsPath)
 		if readErr != nil {
-			return nil, fmt.Errorf("readiness check failed to read %s: %w", settingsPath, readErr)
+			return nil, readinessErr("read", settingsPath, readErr)
 		}
 		if strings.Contains(string(settingsData), vscodeManagedStart) && strings.Contains(string(settingsData), vscodeManagedEnd) {
 			latestGenerated = maxModTime(latestGenerated, settingsInfo.ModTime())
@@ -227,108 +231,95 @@ func floatingDetails(serverIndex int, serverID string, field string, value strin
 	return []string{fmt.Sprintf("mcp.servers[%d] id=%q %s=%q", serverIndex, serverID, field, value)}
 }
 
+type disabledArtifactFileSpec struct {
+	path     string
+	evidence func([]byte) (bool, error)
+}
+
+type disabledArtifactDirSpec struct {
+	root   string
+	suffix string
+}
+
+type disabledAgentArtifactRule struct {
+	agent   string
+	enabled *bool
+	files   []disabledArtifactFileSpec
+	dirs    []disabledArtifactDirSpec
+}
+
 func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*UpgradeReadinessCheck, error) {
+	launcherPaths := launchers.VSCodePaths(inst.root)
+	rules := []disabledAgentArtifactRule{
+		{
+			agent:   "gemini",
+			enabled: cfg.Agents.Gemini.Enabled,
+			files: []disabledArtifactFileSpec{{
+				path:     filepath.Join(inst.root, ".gemini", "settings.json"),
+				evidence: hasAgentLayerMCPSignature,
+			}},
+		},
+		{
+			agent:   "claude",
+			enabled: cfg.Agents.Claude.Enabled,
+			files: []disabledArtifactFileSpec{{
+				path:     filepath.Join(inst.root, ".mcp.json"),
+				evidence: hasAgentLayerMCPSignature,
+			}},
+		},
+		{
+			agent:   "codex",
+			enabled: cfg.Agents.Codex.Enabled,
+			files: []disabledArtifactFileSpec{
+				{path: filepath.Join(inst.root, ".codex", "AGENTS.md"), evidence: hasGeneratedFileMarker},
+				{path: filepath.Join(inst.root, ".codex", "config.toml"), evidence: hasGeneratedFileMarker},
+				{path: filepath.Join(inst.root, ".codex", "rules", "default.rules"), evidence: hasGeneratedFileMarker},
+			},
+			dirs: []disabledArtifactDirSpec{
+				{root: filepath.Join(inst.root, ".codex", "skills"), suffix: "SKILL.md"},
+			},
+		},
+		{
+			agent:   "antigravity",
+			enabled: cfg.Agents.Antigravity.Enabled,
+			dirs: []disabledArtifactDirSpec{
+				{root: filepath.Join(inst.root, ".agent", "skills"), suffix: "SKILL.md"},
+			},
+		},
+		{
+			agent:   "vscode",
+			enabled: cfg.Agents.VSCode.Enabled,
+			files: []disabledArtifactFileSpec{
+				{path: filepath.Join(inst.root, ".vscode", "settings.json"), evidence: hasVSCodeManagedBlock},
+				{path: launcherPaths.Command, evidence: exactTemplateMatcher("launchers/open-vscode.command")},
+				{path: launcherPaths.Shell, evidence: exactTemplateMatcher("launchers/open-vscode.sh")},
+				{path: launcherPaths.Desktop, evidence: exactTemplateMatcher("launchers/open-vscode.desktop")},
+				{path: launcherPaths.AppInfoPlist, evidence: exactTemplateMatcher("launchers/open-vscode.app/Contents/Info.plist")},
+				{path: launcherPaths.AppExec, evidence: exactTemplateMatcher("launchers/open-vscode.app/Contents/MacOS/open-vscode")},
+			},
+			dirs: []disabledArtifactDirSpec{
+				{root: filepath.Join(inst.root, ".vscode", "prompts"), suffix: ".prompt.md"},
+			},
+		},
+	}
+
 	details := make([]string, 0)
-	appendIfEvidence := func(agent string, absPath string, evidence func([]byte) (bool, error)) error {
-		info, err := inst.sys.Stat(absPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return nil
-			}
-			return fmt.Errorf("readiness check failed to stat %s: %w", absPath, err)
+	for _, rule := range rules {
+		if rule.enabled != nil && *rule.enabled {
+			continue
 		}
-		if info.IsDir() {
-			return nil
-		}
-		if evidence != nil {
-			data, readErr := inst.sys.ReadFile(absPath)
-			if readErr != nil {
-				return fmt.Errorf("readiness check failed to read %s: %w", absPath, readErr)
-			}
-			matched, evidenceErr := evidence(data)
-			if evidenceErr != nil {
-				return evidenceErr
-			}
-			if !matched {
-				return nil
-			}
-		}
-		details = append(details, fmt.Sprintf("%s: %s", agent, filepath.ToSlash(inst.relativePath(absPath))))
-		return nil
-	}
-
-	if cfg.Agents.Gemini.Enabled == nil || !*cfg.Agents.Gemini.Enabled {
-		if err := appendIfEvidence("gemini", filepath.Join(inst.root, ".gemini", "settings.json"), hasAgentLayerMCPSignature); err != nil {
-			return nil, err
-		}
-	}
-	if cfg.Agents.Claude.Enabled == nil || !*cfg.Agents.Claude.Enabled {
-		if err := appendIfEvidence("claude", filepath.Join(inst.root, ".mcp.json"), hasAgentLayerMCPSignature); err != nil {
-			return nil, err
-		}
-	}
-	if cfg.Agents.Codex.Enabled == nil || !*cfg.Agents.Codex.Enabled {
-		for _, absPath := range []string{
-			filepath.Join(inst.root, ".codex", "AGENTS.md"),
-			filepath.Join(inst.root, ".codex", "config.toml"),
-			filepath.Join(inst.root, ".codex", "rules", "default.rules"),
-		} {
-			if err := appendIfEvidence("codex", absPath, hasGeneratedFileMarker); err != nil {
+		for _, file := range rule.files {
+			if err := appendDisabledArtifactDetail(inst, &details, rule.agent, file.path, file.evidence); err != nil {
 				return nil, err
 			}
 		}
-		skillFiles, _, err := listGeneratedFilesWithSuffix(inst, filepath.Join(inst.root, ".codex", "skills"), "SKILL.md")
-		if err != nil {
-			return nil, err
-		}
-		for _, skillFile := range skillFiles {
-			details = append(details, fmt.Sprintf("codex: %s", filepath.ToSlash(inst.relativePath(skillFile))))
-		}
-	}
-	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
-		skillFiles, _, err := listGeneratedFilesWithSuffix(inst, filepath.Join(inst.root, ".agent", "skills"), "SKILL.md")
-		if err != nil {
-			return nil, err
-		}
-		for _, skillFile := range skillFiles {
-			details = append(details, fmt.Sprintf("antigravity: %s", filepath.ToSlash(inst.relativePath(skillFile))))
-		}
-	}
-	if cfg.Agents.VSCode.Enabled == nil || !*cfg.Agents.VSCode.Enabled {
-		settingsPath := filepath.Join(inst.root, ".vscode", "settings.json")
-		settingsInfo, err := inst.sys.Stat(settingsPath)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("readiness check failed to stat %s: %w", settingsPath, err)
-		}
-		if err == nil && !settingsInfo.IsDir() {
-			settingsData, readErr := inst.sys.ReadFile(settingsPath)
-			if readErr != nil {
-				return nil, fmt.Errorf("readiness check failed to read %s: %w", settingsPath, readErr)
-			}
-			if strings.Contains(string(settingsData), vscodeManagedStart) && strings.Contains(string(settingsData), vscodeManagedEnd) {
-				details = append(details, fmt.Sprintf("vscode: %s", filepath.ToSlash(inst.relativePath(settingsPath))))
-			}
-		}
-
-		promptFiles, _, promptErr := listGeneratedFilesWithSuffix(inst, filepath.Join(inst.root, ".vscode", "prompts"), ".prompt.md")
-		if promptErr != nil {
-			return nil, promptErr
-		}
-		for _, promptFile := range promptFiles {
-			details = append(details, fmt.Sprintf("vscode: %s", filepath.ToSlash(inst.relativePath(promptFile))))
-		}
-
-		launcherPaths := launchers.VSCodePaths(inst.root)
-		for launcherPath, templatePath := range map[string]string{
-			launcherPaths.Command:      "launchers/open-vscode.command",
-			launcherPaths.Shell:        "launchers/open-vscode.sh",
-			launcherPaths.Desktop:      "launchers/open-vscode.desktop",
-			launcherPaths.AppInfoPlist: "launchers/open-vscode.app/Contents/Info.plist",
-			launcherPaths.AppExec:      "launchers/open-vscode.app/Contents/MacOS/open-vscode",
-		} {
-			matcher := exactTemplateMatcher(templatePath)
-			if err := appendIfEvidence("vscode", launcherPath, matcher); err != nil {
+		for _, dir := range rule.dirs {
+			paths, _, err := listGeneratedFilesWithSuffix(inst, dir.root, dir.suffix)
+			if err != nil {
 				return nil, err
+			}
+			for _, path := range paths {
+				details = append(details, fmt.Sprintf("%s: %s", rule.agent, filepath.ToSlash(inst.relativePath(path))))
 			}
 		}
 	}
@@ -344,8 +335,41 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 	}, nil
 }
 
+func appendDisabledArtifactDetail(inst *installer, details *[]string, agent string, absPath string, evidence func([]byte) (bool, error)) error {
+	info, err := inst.sys.Stat(absPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return readinessErr("stat", absPath, err)
+	}
+	if info.IsDir() {
+		return nil
+	}
+	if evidence != nil {
+		data, readErr := inst.sys.ReadFile(absPath)
+		if readErr != nil {
+			return readinessErr("read", absPath, readErr)
+		}
+		matched, evidenceErr := evidence(data)
+		if evidenceErr != nil {
+			return evidenceErr
+		}
+		if !matched {
+			return nil
+		}
+	}
+	*details = append(*details, fmt.Sprintf("%s: %s", agent, filepath.ToSlash(inst.relativePath(absPath))))
+	return nil
+}
+
 func hasGeneratedFileMarker(data []byte) (bool, error) {
 	return strings.Contains(string(data), generatedFileMarker), nil
+}
+
+func hasVSCodeManagedBlock(data []byte) (bool, error) {
+	content := string(data)
+	return strings.Contains(content, vscodeManagedStart) && strings.Contains(content, vscodeManagedEnd), nil
 }
 
 func hasAgentLayerMCPSignature(data []byte) (bool, error) {
@@ -359,7 +383,7 @@ func exactTemplateMatcher(templatePath string) func([]byte) (bool, error) {
 	return func(content []byte) (bool, error) {
 		templateData, err := templates.Read(templatePath)
 		if err != nil {
-			return false, fmt.Errorf("readiness check failed to read embedded template %s: %w", templatePath, err)
+			return false, readinessErr("read embedded template", templatePath, err)
 		}
 		return bytes.Equal(content, templateData), nil
 	}
@@ -376,7 +400,7 @@ func countMarkdownFiles(inst *installer, root string) (int, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return 0, nil
 		}
-		return 0, fmt.Errorf("readiness check failed to stat %s: %w", root, err)
+		return 0, readinessErr("stat", root, err)
 	}
 
 	count := 0
@@ -393,7 +417,7 @@ func countMarkdownFiles(inst *installer, root string) (int, error) {
 		return nil
 	})
 	if err != nil {
-		return 0, fmt.Errorf("readiness check failed to walk %s: %w", root, err)
+		return 0, readinessErr("walk", root, err)
 	}
 	return count, nil
 }
@@ -403,7 +427,7 @@ func listGeneratedFilesWithSuffix(inst *installer, root string, suffix string) (
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, time.Time{}, nil
 		}
-		return nil, time.Time{}, fmt.Errorf("readiness check failed to stat %s: %w", root, err)
+		return nil, time.Time{}, readinessErr("stat", root, err)
 	}
 
 	paths := make([]string, 0)
@@ -420,21 +444,21 @@ func listGeneratedFilesWithSuffix(inst *installer, root string, suffix string) (
 		}
 		data, err := inst.sys.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("readiness check failed to read %s: %w", path, err)
+			return readinessErr("read", path, err)
 		}
 		if !strings.Contains(string(data), generatedFileMarker) {
 			return nil
 		}
 		info, err := inst.sys.Stat(path)
 		if err != nil {
-			return fmt.Errorf("readiness check failed to stat %s: %w", path, err)
+			return readinessErr("stat", path, err)
 		}
 		paths = append(paths, path)
 		latest = maxModTime(latest, info.ModTime())
 		return nil
 	})
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("readiness check failed to walk %s: %w", root, err)
+		return nil, time.Time{}, readinessErr("walk", root, err)
 	}
 	sort.Strings(paths)
 	return paths, latest, nil

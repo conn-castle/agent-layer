@@ -8,11 +8,12 @@ const (
 
 	DoctorHealthCheckFmt = "🏥 Checking Agent Layer health in %s...\n"
 
-	DoctorCheckNameStructure = "Structure"
-	DoctorCheckNameConfig    = "Config"
-	DoctorCheckNameSecrets   = "Secrets"
-	DoctorCheckNameAgents    = "Agents"
-	DoctorCheckNameUpdate    = "Update"
+	DoctorCheckNameStructure  = "Structure"
+	DoctorCheckNameConfig     = "Config"
+	DoctorCheckNameSecrets    = "Secrets"
+	DoctorCheckNameSecretRisk = "SecretRisk"
+	DoctorCheckNameAgents     = "Agents"
+	DoctorCheckNameUpdate     = "Update"
 
 	DoctorMissingRequiredDirFmt       = "Missing required directory: %s"
 	DoctorMissingRequiredDirRecommend = "Run `al init` to initialize this repository."
@@ -29,6 +30,9 @@ const (
 	DoctorSecretFoundEnvFmt         = "Secret found in environment: %s"
 	DoctorSecretFoundEnvFileFmt     = "Secret found in .agent-layer/.env: %s"
 	DoctorNoRequiredSecrets         = "No required secrets found in configuration."
+	DoctorSecretRiskDetectedFmt     = "Potential secret literal detected in %s"
+	DoctorSecretRiskRecommend       = "Keep secrets only in .agent-layer/.env (AL_* keys) or process environment. Ensure generated files containing resolved values are not committed."
+	DoctorSecretRiskNone            = "No obvious secret literals detected in generated artifact surfaces."
 
 	DoctorAgentEnabledFmt  = "Agent enabled: %s"
 	DoctorAgentDisabledFmt = "Agent disabled: %s"
@@ -40,7 +44,7 @@ const (
 	DoctorUpdateFailedRecommend     = "Verify network access and try again."
 	DoctorUpdateDevBuildFmt         = "Running dev build; latest release is %s"
 	DoctorUpdateDevBuildRecommend   = "Install a release build to use version pinning and dispatch."
-	DoctorUpdateAvailableFmt        = "Update available: %s (current %s)"
+	DoctorUpdateAvailableFmt        = "Agent Layer update available: %s (current %s)"
 	DoctorUpdateAvailableRecommend  = UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock
 	DoctorUpToDateFmt               = "Agent Layer is up to date (%s)"
 

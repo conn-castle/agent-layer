@@ -132,6 +132,8 @@ func resolveSingleServer(server config.MCPServer, env map[string]string, resolve
 			}
 			entry.Env = envMap
 		}
+	default:
+		return entry, fmt.Errorf("unsupported transport %s", server.Transport)
 	}
 
 	return entry, nil

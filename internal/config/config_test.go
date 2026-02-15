@@ -118,6 +118,19 @@ func TestSubstituteEnvVars(t *testing.T) {
 	}
 }
 
+func TestSubstituteEnvVars_EmptyValueIsAllowed(t *testing.T) {
+	env := map[string]string{
+		"TOKEN": "",
+	}
+	value, err := SubstituteEnvVars("Bearer ${TOKEN}", env)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if value != "Bearer " {
+		t.Fatalf("unexpected value: %q", value)
+	}
+}
+
 func TestLoadConfigReservedMCPID(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")

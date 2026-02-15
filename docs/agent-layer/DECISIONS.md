@@ -219,3 +219,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Agent Layer upgrade/init workflows support embedded templates only; non-default template repositories and template-source pinning metadata are out of scope.
     Reason: Keep upgrade behavior clear, deterministic, and maintainable by avoiding parallel template-source paths.
     Tradeoffs: Teams cannot use first-class custom template repositories in this release line and must revisit this in a future scoped backlog item if needed.
+
+- Decision 2026-02-15 p6a-mcp-default-version-lane: Default MCP template dependencies are pinned with explicit floating opt-in
+    Decision: Seeded MCP server commands now pin concrete dependency versions by default (`npx` and `uvx` surfaces), with inline commented examples showing the explicit floating/latest opt-in lane.
+    Reason: Keep default sync/upgrade behavior deterministic while preserving an intentional path for teams that want fastest-updating external MCP tools.
+    Tradeoffs: Pinned defaults can lag upstream MCP releases until Agent Layer updates the template versions.

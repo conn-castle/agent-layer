@@ -598,6 +598,7 @@ func TestDoctorCommand_MCPError(t *testing.T) {
 }
 
 func TestPrintResult_AllStatuses(t *testing.T) {
+	var out bytes.Buffer
 	// Test all status types to ensure coverage
 	results := []doctor.Result{
 		{Status: doctor.StatusOK, CheckName: "test-ok", Message: "OK message"},
@@ -605,16 +606,14 @@ func TestPrintResult_AllStatuses(t *testing.T) {
 		{Status: doctor.StatusFail, CheckName: "test-fail", Message: "Fail message"},
 	}
 	for _, r := range results {
-		// printResult prints to stdout, just verify it doesn't panic
-		printResult(r)
+		printResult(&out, r)
 	}
 }
 
 func TestPrintRecommendation_MultiLineIndent(t *testing.T) {
-	output := captureStdout(t, func() {
-		printRecommendation("Line one\nLine two\n\nLine four")
-	})
-	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
+	var out bytes.Buffer
+	printRecommendation(&out, "Line one\nLine two\n\nLine four")
+	lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
 	expected := []string{
 		messages.DoctorRecommendationPrefix + "Line one",
 		messages.DoctorRecommendationIndent + "Line two",
@@ -622,7 +621,7 @@ func TestPrintRecommendation_MultiLineIndent(t *testing.T) {
 		messages.DoctorRecommendationIndent + "Line four",
 	}
 	if len(lines) != len(expected) {
-		t.Fatalf("unexpected line count: got %d, want %d\noutput:\n%s", len(lines), len(expected), output)
+		t.Fatalf("unexpected line count: got %d, want %d\noutput:\n%s", len(lines), len(expected), out.String())
 	}
 	for i, want := range expected {
 		if lines[i] != want {
@@ -647,16 +646,15 @@ func TestCountEnabledMCPServers(t *testing.T) {
 }
 
 func TestStartMCPDiscoveryReporterZero(t *testing.T) {
-	output := captureStdout(t, func() {
-		reporter, stop := startMCPDiscoveryReporter(nil)
-		if reporter != nil {
-			t.Fatalf("expected nil reporter when no MCP servers are enabled")
-		}
-		stop()
-	})
+	var output bytes.Buffer
+	reporter, stop := startMCPDiscoveryReporter(nil, &output)
+	if reporter != nil {
+		t.Fatalf("expected nil reporter when no MCP servers are enabled")
+	}
+	stop()
 	expected := fmt.Sprintf(messages.DoctorMCPCheckStartFmt, 0) + messages.DoctorMCPCheckDone + "\n"
-	if output != expected {
-		t.Fatalf("unexpected output: got %q, want %q", output, expected)
+	if output.String() != expected {
+		t.Fatalf("unexpected output: got %q, want %q", output.String(), expected)
 	}
 }
 
@@ -677,31 +675,6 @@ func TestSyncCommand_WithWarnings(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
-}
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-
-	original := os.Stdout
-	os.Stdout = writer
-
-	fn()
-
-	_ = writer.Close()
-	os.Stdout = original
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, reader); err != nil {
-		t.Fatalf("read stdout: %v", err)
-	}
-	_ = reader.Close()
-
-	return buf.String()
 }
 
 func TestWizardCommand(t *testing.T) {

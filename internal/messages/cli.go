@@ -67,8 +67,8 @@ const (
 	InitReleaseVersionNotFoundFmt         = "requested release v%s not found; check available versions at %s"
 
 	UpdateUpgradeBlock         = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  2) Upgrade this repo:\n     al upgrade plan\n     al upgrade"
-	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade` is the recommended default path.\n  - Non-interactive managed-only apply: `al upgrade --yes --apply-managed-updates`.\n  - Include memory updates/deletions only when explicitly selected with apply flags."
-	InitWarnUpdateAvailableFmt = "Warning: update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
+	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade` is the recommended default path.\n  - Non-interactive managed-only apply: `al upgrade --yes --apply-managed-updates`.\n  - Include memory updates/deletions only when explicitly selected with apply flags.\n  - Keep secrets only in `.agent-layer/.env` (AL_* keys) or process environment; do not commit generated files with resolved secrets."
+	InitWarnUpdateAvailableFmt = "Warning: agent-layer update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
 
 	// CompletionUse is the completion command usage.
 	CompletionUse                 = "completion [bash|zsh|fish]"

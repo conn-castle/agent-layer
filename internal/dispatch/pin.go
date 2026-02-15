@@ -23,15 +23,35 @@ func readPinnedVersion(sys System, rootDir string) (string, bool, string, error)
 		}
 		return "", false, "", fmt.Errorf(messages.DispatchReadPinFailedFmt, path, err)
 	}
-	raw := strings.TrimSpace(string(data))
-	if raw == "" {
-		warning := fmt.Sprintf(messages.DispatchPinFileEmptyWarningFmt, path)
-		return "", false, warning, nil
+
+	var (
+		versionLine       string
+		versionLineNumber int
+	)
+	for idx, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if versionLineNumber != 0 {
+			return "", false, fmt.Sprintf(
+				messages.DispatchInvalidPinnedVersionWarningFmt,
+				path,
+				fmt.Sprintf("multiple version lines (%d and %d)", versionLineNumber, idx+1),
+			), nil
+		}
+		versionLine = trimmed
+		versionLineNumber = idx + 1
 	}
-	normalized, err := version.Normalize(raw)
+
+	if versionLineNumber == 0 {
+		return "", false, fmt.Sprintf(messages.DispatchPinFileEmptyWarningFmt, path), nil
+	}
+
+	normalized, err := version.Normalize(versionLine)
 	if err != nil {
-		warning := fmt.Sprintf(messages.DispatchInvalidPinnedVersionWarningFmt, path, err)
-		return "", false, warning, nil
+		warningDetail := fmt.Sprintf("line %d: %v", versionLineNumber, err)
+		return "", false, fmt.Sprintf(messages.DispatchInvalidPinnedVersionWarningFmt, path, warningDetail), nil
 	}
 	return normalized, true, "", nil
 }

@@ -57,6 +57,14 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "enabled is required",
 		},
 		{
+			name: "duplicate server id",
+			cfg: withServers(valid, []MCPServer{
+				{ID: "dup", Enabled: &trueVal, Transport: "http", URL: "https://example.com/one"},
+				{ID: "dup", Enabled: &trueVal, Transport: "http", URL: "https://example.com/two"},
+			}),
+			wantErr: "duplicates",
+		},
+		{
 			name: "invalid transport",
 			cfg: withServers(valid, []MCPServer{
 				{ID: "x", Enabled: &trueVal, Transport: "ftp"},

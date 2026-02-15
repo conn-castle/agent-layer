@@ -243,3 +243,49 @@ func TestCheckAgents(t *testing.T) {
 		t.Error("Codex should be disabled (nil)")
 	}
 }
+
+func TestCheckSecretRisk(t *testing.T) {
+	root := t.TempDir()
+	codexDir := filepath.Join(root, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer supersecrettoken\""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckSecretRisk(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusWarn {
+		t.Fatalf("expected warning status, got %s", results[0].Status)
+	}
+	if results[0].CheckName != messages.DoctorCheckNameSecretRisk {
+		t.Fatalf("unexpected check name: %s", results[0].CheckName)
+	}
+}
+
+func TestCheckSecretRisk_PlaceholderNotFlagged(t *testing.T) {
+	root := t.TempDir()
+	codexDir := filepath.Join(root, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer ${AL_TOKEN}\""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckSecretRisk(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusOK {
+		t.Fatalf("expected OK status, got %s", results[0].Status)
+	}
+	if results[0].Message != messages.DoctorSecretRiskNone {
+		t.Fatalf("unexpected message: %s", results[0].Message)
+	}
+}

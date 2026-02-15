@@ -13,6 +13,9 @@ type MockSystem struct {
 	WriteFileAtomicFunc func(filename string, data []byte, perm os.FileMode) error
 	MarshalIndentFunc   func(v any, prefix, indent string) ([]byte, error)
 	ReadFileFunc        func(name string) ([]byte, error)
+	ReadDirFunc         func(name string) ([]os.DirEntry, error)
+	RemoveFunc          func(name string) error
+	RemoveAllFunc       func(path string) error
 }
 
 func (m *MockSystem) LookPath(file string) (string, error) {
@@ -73,4 +76,34 @@ func (m *MockSystem) ReadFile(name string) ([]byte, error) {
 		return m.Fallback.ReadFile(name)
 	}
 	return nil, os.ErrNotExist
+}
+
+func (m *MockSystem) ReadDir(name string) ([]os.DirEntry, error) {
+	if m.ReadDirFunc != nil {
+		return m.ReadDirFunc(name)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.ReadDir(name)
+	}
+	return nil, os.ErrNotExist
+}
+
+func (m *MockSystem) Remove(name string) error {
+	if m.RemoveFunc != nil {
+		return m.RemoveFunc(name)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Remove(name)
+	}
+	return os.ErrNotExist
+}
+
+func (m *MockSystem) RemoveAll(path string) error {
+	if m.RemoveAllFunc != nil {
+		return m.RemoveAllFunc(path)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.RemoveAll(path)
+	}
+	return os.ErrNotExist
 }

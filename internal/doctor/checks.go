@@ -4,9 +4,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+)
+
+var (
+	secretAssignmentPattern = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*["'][^"']{8,}["']`)
+	bearerPattern           = regexp.MustCompile(`(?i)bearer\s+[a-z0-9_\-\.]{8,}`)
 )
 
 // CheckStructure verifies that the required project directories exist.
@@ -140,4 +147,64 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 		}
 	}
 	return results
+}
+
+// CheckSecretRisk scans generated artifact surfaces for likely secret literals.
+func CheckSecretRisk(root string) []Result {
+	candidates := []string{
+		filepath.Join(root, ".codex", "config.toml"),
+		filepath.Join(root, ".mcp.json"),
+		filepath.Join(root, ".claude", "settings.json"),
+		filepath.Join(root, ".gemini", "settings.json"),
+		filepath.Join(root, ".vscode", "mcp.json"),
+	}
+
+	var results []Result
+	for _, path := range candidates {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			continue
+		}
+		if !containsPotentialSecretLiteral(string(data)) {
+			continue
+		}
+		rel := path
+		if relPath, relErr := filepath.Rel(root, path); relErr == nil {
+			rel = relPath
+		}
+		results = append(results, Result{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameSecretRisk,
+			Message:        fmt.Sprintf(messages.DoctorSecretRiskDetectedFmt, rel),
+			Recommendation: messages.DoctorSecretRiskRecommend,
+		})
+	}
+
+	if len(results) == 0 {
+		results = append(results, Result{
+			Status:    StatusOK,
+			CheckName: messages.DoctorCheckNameSecretRisk,
+			Message:   messages.DoctorSecretRiskNone,
+		})
+	}
+	return results
+}
+
+func containsPotentialSecretLiteral(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(trimmed, "${") {
+			continue
+		}
+		if secretAssignmentPattern.MatchString(trimmed) || bearerPattern.MatchString(trimmed) {
+			return true
+		}
+	}
+	return false
 }

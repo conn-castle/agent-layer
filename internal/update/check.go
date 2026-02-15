@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,9 @@ const ReleasesBaseURL = "https://github.com/" + Repo + "/releases"
 
 var latestReleaseURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 var httpClient = &http.Client{Timeout: 10 * time.Second}
+var retryDelay = 250 * time.Millisecond
+
+const fetchLatestRetryCount = 1
 
 // RateLimitError indicates GitHub's API rate limit was hit while checking for updates.
 //
@@ -92,38 +96,55 @@ type latestReleaseResponse struct {
 
 // fetchLatestReleaseVersion returns the normalized latest release tag.
 func fetchLatestReleaseVersion(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, latestReleaseURL, nil)
-	if err != nil {
-		return "", fmt.Errorf(messages.UpdateCreateRequestErrFmt, err)
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "agent-layer")
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf(messages.UpdateFetchLatestReleaseErrFmt, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		if rateLimitErr := rateLimitErrorFromResponse(resp); rateLimitErr != nil {
-			return "", rateLimitErr
+	for attempt := 0; attempt <= fetchLatestRetryCount; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, latestReleaseURL, nil)
+		if err != nil {
+			return "", fmt.Errorf(messages.UpdateCreateRequestErrFmt, err)
 		}
-		return "", fmt.Errorf(messages.UpdateFetchLatestReleaseStatusFmt, resp.Status)
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "agent-layer")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			if shouldRetryLatestCheck(err, 0, attempt) {
+				time.Sleep(retryDelay)
+				continue
+			}
+			return "", fmt.Errorf(messages.UpdateFetchLatestReleaseErrFmt, err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			if rateLimitErr := rateLimitErrorFromResponse(resp); rateLimitErr != nil {
+				_ = resp.Body.Close()
+				return "", rateLimitErr
+			}
+			status := resp.StatusCode
+			statusText := resp.Status
+			_ = resp.Body.Close()
+			if shouldRetryLatestCheck(nil, status, attempt) {
+				time.Sleep(retryDelay)
+				continue
+			}
+			return "", fmt.Errorf(messages.UpdateFetchLatestReleaseStatusFmt, statusText)
+		}
+
+		var payload latestReleaseResponse
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			_ = resp.Body.Close()
+			return "", fmt.Errorf(messages.UpdateDecodeLatestReleaseErrFmt, err)
+		}
+		_ = resp.Body.Close()
+		if strings.TrimSpace(payload.TagName) == "" {
+			return "", fmt.Errorf(messages.UpdateLatestReleaseMissingTag)
+		}
+		normalized, err := version.Normalize(payload.TagName)
+		if err != nil {
+			return "", fmt.Errorf(messages.UpdateInvalidLatestReleaseTagFmt, payload.TagName, err)
+		}
+		return normalized, nil
 	}
 
-	var payload latestReleaseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return "", fmt.Errorf(messages.UpdateDecodeLatestReleaseErrFmt, err)
-	}
-	if strings.TrimSpace(payload.TagName) == "" {
-		return "", fmt.Errorf(messages.UpdateLatestReleaseMissingTag)
-	}
-	normalized, err := version.Normalize(payload.TagName)
-	if err != nil {
-		return "", fmt.Errorf(messages.UpdateInvalidLatestReleaseTagFmt, payload.TagName, err)
-	}
-	return normalized, nil
+	return "", fmt.Errorf(messages.UpdateFetchLatestReleaseErrFmt, errors.New("retry budget exhausted"))
 }
 
 func rateLimitErrorFromResponse(resp *http.Response) *RateLimitError {
@@ -148,6 +169,20 @@ func rateLimitErrorFromResponse(resp *http.Response) *RateLimitError {
 		}
 	}
 	return nil
+}
+
+func shouldRetryLatestCheck(err error, statusCode int, attempt int) bool {
+	if attempt >= fetchLatestRetryCount {
+		return false
+	}
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return false
+		}
+		var netErr net.Error
+		return errors.As(err, &netErr)
+	}
+	return statusCode >= 500 && statusCode <= 599
 }
 
 // normalizeCurrentVersion validates the current version and reports dev builds.

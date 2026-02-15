@@ -14,6 +14,7 @@ const (
 	WizardBackupEnvFailedFmt              = "failed to backup .env: %w"
 	WizardWriteConfigFailedFmt            = "failed to write config: %w"
 	WizardWriteEnvFailedFmt               = "failed to write .env: %w"
+	WizardWriteEnvRollbackConfigFailedFmt = "failed to write .env: %v (also failed to rollback config: %w)"
 	WizardCustomValueRequiredFmt          = "custom value required for %s"
 	WizardPositiveIntRequiredFmt          = "%s must be a positive integer"
 	WizardParseConfigFailedFmt            = "parse config: %w"

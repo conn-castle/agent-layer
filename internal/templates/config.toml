@@ -41,7 +41,9 @@ id = "context7"
 enabled = false
 transport = "stdio"
 command = "npx"
-args = ["-y", "@upstash/context7-mcp"]
+args = ["-y", "@upstash/context7-mcp@2.1.1"]
+# Opt in to floating updates:
+# args = ["-y", "@upstash/context7-mcp@latest"]
 env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 
 [[mcp.servers]]
@@ -67,7 +69,9 @@ id = "fetch"
 enabled = false
 transport = "stdio"
 command = "uvx"
-args = ["mcp-server-fetch"]
+args = ["mcp-server-fetch==2025.4.7"]
+# Opt in to floating updates:
+# args = ["mcp-server-fetch"]
 
 [[mcp.servers]]
 # Playwright browser automation (requires Node/npx).
@@ -75,7 +79,9 @@ id = "playwright"
 enabled = false
 transport = "stdio"
 command = "npx"
-args = ["-y", "@playwright/mcp@latest"]
+args = ["-y", "@playwright/mcp@0.0.68"]
+# Opt in to floating updates:
+# args = ["-y", "@playwright/mcp@latest"]
 
 [[mcp.servers]]
 # Ripgrep fast repo search (requires Node/npx).
@@ -84,7 +90,9 @@ enabled = false
 clients = ["gemini", "claude", "codex"]
 transport = "stdio"
 command = "npx"
-args = ["-y", "mcp-ripgrep@latest"]
+args = ["-y", "mcp-ripgrep@0.4.0"]
+# Opt in to floating updates:
+# args = ["-y", "mcp-ripgrep@latest"]
 
 [[mcp.servers]]
 # Filesystem access scoped to this repo (requires Node/npx).
@@ -95,7 +103,9 @@ transport = "stdio"
 command = "npx"
 # Restrict access to the current repo; paths may be absolute or relative.
 # Use ${AL_REPO_ROOT} (or ~/...) to expand to an absolute path when run.
-args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
+# Opt in to floating updates:
+# args = ["-y", "@modelcontextprotocol/server-filesystem@latest", "${AL_REPO_ROOT}"]
 
 [warnings]
 # Optional warning defaults.

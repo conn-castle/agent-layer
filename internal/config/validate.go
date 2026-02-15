@@ -54,6 +54,7 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
 
+	seenServerIDs := make(map[string]int, len(c.MCP.Servers))
 	for i, server := range c.MCP.Servers {
 		if server.ID == "" {
 			return fmt.Errorf(messages.ConfigMcpServerIDRequiredFmt, path, i)
@@ -61,6 +62,10 @@ func (c *Config) Validate(path string) error {
 		if server.ID == "agent-layer" {
 			return fmt.Errorf(messages.ConfigMcpServerIDReservedFmt, path, i)
 		}
+		if firstIndex, ok := seenServerIDs[server.ID]; ok {
+			return fmt.Errorf(messages.ConfigMcpServerIDDuplicateFmt, path, i, server.ID, firstIndex)
+		}
+		seenServerIDs[server.ID] = i
 		if server.Enabled == nil {
 			return fmt.Errorf(messages.ConfigMcpServerEnabledRequiredFmt, path, i)
 		}

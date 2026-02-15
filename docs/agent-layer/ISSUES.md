@@ -53,66 +53,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
     Next step: Add snapshot-size budget checks (warning and/or configurable cap) and document retention sizing guidance.
 
-- Issue 2026-02-12 mcp-env: os.Environ() leaks credentials to MCP child processes
-    Priority: Critical. Area: doctor / security.
-    Description: `internal/warnings/mcp_connector.go:90-93` passes `os.Environ()` to MCP child processes, leaking all parent env vars (API keys, tokens, credentials) to potentially untrusted MCP servers.
-    Next step: Replace `os.Environ()` with an explicit allowlist of safe environment variables, filtering out sensitive prefixes.
-
-- Issue 2026-02-12 wiz-rollback: Incomplete rollback in wizard apply.go on partial write failure
-    Priority: High. Area: wizard / data integrity.
-    Description: `internal/wizard/apply.go:68-74` — if config write succeeds but env write fails, config is left modified with no rollback despite backups being in place. User is left in inconsistent state.
-    Next step: Add config restore from backup in the env-write error path.
-
-- Issue 2026-02-12 sys-bypass: System interface bypassed in dispatch and sync packages
-    Priority: Medium. Area: dispatch, sync / testability.
-    Description: `internal/dispatch/cache.go:140-142` (`noNetwork()` calls `os.Getenv` directly) and `internal/sync/prompts.go` (`os.ReadDir`/`os.Remove` directly) bypass their respective System interfaces, making these paths harder to test.
-    Next step: Route through the System interface in both locations.
-
-- Issue 2026-02-12 dl-unbounded: Unbounded download size in dispatch cache
-    Priority: Medium. Area: dispatch / reliability.
-    Description: `internal/dispatch/cache.go:160` uses `io.Copy` with no size limit. A malicious or misconfigured server could serve an arbitrarily large response. Mitigated partially by 30-second HTTP timeout.
-    Next step: Wrap with `io.LimitReader(resp.Body, maxDownloadSize)`.
-
-- Issue 2026-02-12 flock-hang: Blocking flock with no timeout in dispatch lock
-    Priority: Medium. Area: dispatch / reliability.
-    Description: `internal/dispatch/lock.go:57-58` uses `unix.Flock(LOCK_EX)` with no timeout. A crashed process holding the lock causes the caller to hang indefinitely with no diagnostic output.
-    Next step: Switch to non-blocking `LOCK_NB` in a polling loop with timeout and status messages.
-
-- Issue 2026-02-12 mcp-dup-id: Duplicate MCP server IDs not validated
-    Priority: Medium. Area: config / correctness.
-    Description: `internal/config/validate.go:57-104` checks for empty and reserved MCP server IDs but not duplicates. Multiple servers with the same ID silently overwrite each other in downstream map-keyed code.
-    Next step: Add a seen-ID set in the validation loop and return an error on duplicates.
-
-- Issue 2026-02-12 codex-perm: Codex config written 0644 with resolved secrets
-    Priority: Medium. Area: sync / security.
-    Description: `internal/sync/codex.go:34` writes the Codex config (header says "MAY CONTAIN SECRETS") with 0644 (world-readable) permissions. Should be 0600, consistent with env file handling elsewhere.
-    Next step: Change permission to 0600.
-
-- Issue 2026-02-12 rt-mutate: headerTransport.RoundTrip mutates original request
-    Priority: Medium. Area: doctor / correctness.
-    Description: `internal/warnings/mcp_connector.go:201-208` modifies `req.Header` directly instead of cloning the request first, violating the `http.RoundTripper` contract.
-    Next step: Clone request via `req.Clone(req.Context())` before setting headers.
-
-- Issue 2026-02-12 resolve-default: resolveSingleServer switch missing default branch
-    Priority: Medium. Area: clients / correctness.
-    Description: `internal/clients/resolvers.go:72-135` handles only `TransportHTTP` and `TransportStdio`. Unknown transport types silently fall through, returning an entry with empty Transport.
-    Next step: Add a default case that returns an error for unknown transport types.
-
-- Issue 2026-02-12 gen-marker: Broad "GENERATED FILE" marker match in sync
-    Priority: Medium. Area: sync / reliability.
-    Description: `internal/sync/prompts.go:241-250` uses a broad substring match for detecting generated files that could match non-agent-layer files containing similar text.
-    Next step: Use a more specific marker that includes "agent-layer" or "al sync".
-
-- Issue 2026-02-12 cli-cobra: CLI commands bypass Cobra patterns (stdout and context)
-    Priority: Medium. Area: CLI / testability.
-    Description: `cmd/al/doctor.go` writes to global `fmt.Println`/`os.Stdout` instead of `cmd.OutOrStdout()`, and multiple commands (`doctor.go`, `mcp_prompts.go`) use `context.Background()` instead of `cmd.Context()`, preventing graceful cancellation.
-    Next step: Replace global stdout with `cmd.OutOrStdout()` and `context.Background()` with `cmd.Context()`.
-
-- Issue 2026-02-12 env-empty: Empty string treated as missing env var
-    Priority: Medium. Area: config / correctness.
-    Description: `internal/config/env_subst.go:49-56` treats `AL_SECRET_FOO=""` (explicitly set to empty) the same as an unset variable, preventing users from intentionally setting a secret to an empty string.
-    Next step: Distinguish between unset and empty-string env vars.
-
 - Issue 2026-02-12 wiz-globals: Mutable exported globals and dead code in wizard package
     Priority: Low. Area: wizard / maintainability.
     Description: `internal/wizard/catalog.go:15-95` has mutable exported slice variables (e.g., `MCPServerCatalog`) that any caller can modify. Also, `approval_modes.go` and `helpers.go` contain unreferenced functions (`ApprovalModes`, `approvalModeHelpText`, `commentForLine`, `inlineCommentForLine`).
@@ -132,26 +72,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: envfile / correctness.
     Description: `internal/envfile/envfile.go:113-130` handles quoting and escaping differently on encode vs. decode paths, meaning a round-trip (write then read) may not preserve values with embedded quotes, newlines, or special characters.
     Next step: Add round-trip property tests and align encode/decode paths.
-
-- Issue 2026-02-12 pin-silent: Corrupt pin file silent fallback in dispatch
-    Priority: Low. Area: dispatch / observability.
-    Description: When the pin version file contains invalid or corrupt content, dispatch silently falls back to default behavior instead of reporting the malformed file, violating the "fail loudly" principle.
-    Next step: Return an explicit error or warning when pin file content is unparseable.
-
-- Issue 2026-02-12 gh-retry: No retry for transient GitHub API failures in update check
-    Priority: Low. Area: doctor / reliability.
-    Description: GitHub API calls for update checks have no retry logic. Transient network errors cause the check to fail silently. Recent work (commit 39fab73) added graceful degradation for rate limits, but transient connection errors still go unretried.
-    Next step: Add a single retry with short backoff for transient HTTP errors.
-
-- Issue 2026-02-12 3c5f958: Repetitive error-wrapping in upgrade readiness checks
-    Priority: Medium. Area: install / maintainability.
-    Description: `internal/install/upgrade_readiness.go` contains 16 nearly identical `fmt.Errorf("readiness check failed to <verb> %s: %w", ...)` calls. A small `readinessErr(verb, path, err)` helper would reduce duplication and prevent format-string drift.
-    Next step: Extract helper function and update all 16 call sites.
-
-- Issue 2026-02-12 3c5f958b: detectDisabledAgentArtifacts is a god function
-    Priority: Medium. Area: install / extensibility.
-    Description: `detectDisabledAgentArtifacts` in `upgrade_readiness.go` (115 lines) handles 6 agent types with per-agent evidence strategies in deeply nested conditionals. Adding a new agent requires inserting a new code block rather than a table entry.
-    Next step: Refactor to table-driven per-agent artifact definitions with a shared iteration loop.
 
 - Issue 2026-02-12 3c5f958c: Duplicated boolPtr test helper across packages
     Priority: Low. Area: testing / DRY.
@@ -182,11 +102,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Medium. Area: website / marketing.
     Description: The website needs professional metadata, SEO optimization, and a proper favicon to improve visibility and professional appearance.
     Next step: Audit `site/` for missing meta tags and favicon, then implement them.
-
-- Issue 2026-02-08 upd-msg: Ambiguous update available warning message
-    Priority: Medium. Area: CLI / update / UX.
-    Description: The warning message "Warning: update available: %s (current %s)" does not specify that the update is for `agent-layer`, which can be confusing to users.
-    Next step: Update `internal/messages/cli.go` and `internal/messages/doctor.go` to include "agent-layer" in the message (e.g., "Warning: agent-layer update available: ...").
 
 - Issue 2026-02-08 tmpl-mk: Slash-command templates reference non-existent Makefile targets
     Priority: Low. Area: templates / developer experience.

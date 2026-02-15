@@ -3,8 +3,11 @@ package update
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -146,6 +149,40 @@ func TestFetchLatestReleaseVersion_DoError(t *testing.T) {
 
 	if _, err := fetchLatestReleaseVersion(context.Background()); err == nil {
 		t.Fatal("expected error for failed latest release request")
+	}
+}
+
+func TestFetchLatestReleaseVersion_RetryOnTransientError(t *testing.T) {
+	origDelay := retryDelay
+	retryDelay = 0
+	t.Cleanup(func() { retryDelay = origDelay })
+
+	attempt := 0
+	client := &http.Client{
+		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+			attempt++
+			if attempt == 1 {
+				return nil, &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("temporary")}
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"tag_name":"v1.2.3"}`)),
+			}, nil
+		}),
+	}
+	withLatestReleaseClient(t, "https://example.com", client)
+
+	got, err := fetchLatestReleaseVersion(context.Background())
+	if err != nil {
+		t.Fatalf("expected success after retry, got %v", err)
+	}
+	if got != "1.2.3" {
+		t.Fatalf("expected 1.2.3, got %s", got)
+	}
+	if attempt != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempt)
 	}
 }
 

@@ -103,6 +103,10 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	if updated == string(cfg) {
 		t.Fatal("failed to enable ripgrep server in test config")
 	}
+	updated = strings.Replace(updated, "mcp-ripgrep@0.4.0", "mcp-ripgrep@latest", 1)
+	if !strings.Contains(updated, "mcp-ripgrep@latest") {
+		t.Fatal("failed to set floating ripgrep dependency in test config")
+	}
 	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

@@ -16,6 +16,9 @@ type System interface {
 	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
 	MarshalIndent(v any, prefix, indent string) ([]byte, error)
 	ReadFile(name string) ([]byte, error)
+	ReadDir(name string) ([]os.DirEntry, error)
+	Remove(name string) error
+	RemoveAll(path string) error
 }
 
 // RealSystem implements System using actual system calls.
@@ -49,4 +52,19 @@ func (RealSystem) MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 // ReadFile reads the named file and returns the contents.
 func (RealSystem) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(name)
+}
+
+// ReadDir reads the named directory and returns all directory entries.
+func (RealSystem) ReadDir(name string) ([]os.DirEntry, error) {
+	return os.ReadDir(name)
+}
+
+// Remove removes the named file or empty directory.
+func (RealSystem) Remove(name string) error {
+	return os.Remove(name)
+}
+
+// RemoveAll removes path and any children it contains.
+func (RealSystem) RemoveAll(path string) error {
+	return os.RemoveAll(path)
 }

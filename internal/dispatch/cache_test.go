@@ -24,6 +24,12 @@ func (f failingRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) 
 	return nil, f.err
 }
 
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 func TestEnsureCachedBinary(t *testing.T) {
 	// 1. Setup mock server
 	version := "1.0.0"
@@ -983,5 +989,68 @@ func TestFetchChecksum_Timeout_ActionableMessage(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Remediation") {
 		t.Errorf("expected Remediation guidance in error, got: %s", msg)
+	}
+}
+
+func TestDownloadToFile_TooLarge(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("0123456789")) // 10 bytes
+	}))
+	defer server.Close()
+
+	t.Setenv("AL_MAX_DOWNLOAD_BYTES", "5")
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	err = downloadToFile(server.URL, f)
+	if err == nil {
+		t.Fatal("expected size-limit error")
+	}
+	if !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("expected size-limit message, got %v", err)
+	}
+}
+
+func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
+	origClient := httpClient
+	origSleep := dispatchSleep
+	t.Cleanup(func() {
+		httpClient = origClient
+		dispatchSleep = origSleep
+	})
+	dispatchSleep = func(time.Duration) {}
+
+	attempt := 0
+	httpClient = &http.Client{
+		Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+			attempt++
+			if attempt == 1 {
+				return nil, &net.OpError{Op: "dial", Net: "tcp", Err: &timeoutErr{}}
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(strings.NewReader("ok")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := downloadToFile("https://example.invalid/file", f); err != nil {
+		t.Fatalf("expected retry to succeed, got %v", err)
+	}
+	if attempt != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempt)
 	}
 }

@@ -143,12 +143,11 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 1. `1B`: Implement real `al init --version latest` support by resolving latest release to semver before writing `.agent-layer/al.version`.
 2. `2A`: `al init` auto-recovers empty/corrupt pin file states instead of requiring manual deletion.
 3. `3B`: Launch commands use sync mode `check` by default (no implicit mutation during launch; users can opt into apply/off modes). **Breaking change:** users who rely on `al gemini`/`al claude`/etc. to auto-sync generated files will need to explicitly use `apply` mode or run `al sync` first. Requires a migration manifest entry (Phase 3) and explicit migration guidance.
-4. `4C`: `al sync`/`al doctor` warning exit behavior is configurable (`strict`, `warn`, `report`) rather than one fixed policy.
-5. `5B`: Pin-file parsing supports comments and blank lines.
-6. `6B`: Default template MCP dependencies are version-pinned, with explicit opt-in for floating/latest update lanes.
-7. `7A`: `al init` is scaffolding only: it errors if `.agent-layer/` already exists and does not perform upgrades. Use `al upgrade plan` and `al upgrade`.
-8. `7B`: `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned: seeded only when missing; never overwritten by init/upgrade.
-9. `7C`: `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plan/diffs.
+4. `5B`: Pin-file parsing supports comments and blank lines.
+5. `6B`: Default template MCP dependencies are version-pinned, with explicit opt-in for floating/latest update lanes.
+6. `7A`: `al init` is scaffolding only: it errors if `.agent-layer/` already exists and does not perform upgrades. Use `al upgrade plan` and `al upgrade`.
+7. `7B`: `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned: seeded only when missing; never overwritten by init/upgrade.
+8. `7C`: `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plan/diffs.
 
 ## Plan to Minimize Pain (UX-first, “works like users expect”)
 
@@ -236,40 +235,33 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 
 ### Phase 6: Close remaining high/medium long-tail UX gaps
 
-1. Installation and environment preflight:
-   - Add `al doctor --upgrade-preflight` checks for unsupported platform/arch, missing installer prerequisites, PATH setup, shell completion support, and proxy/mirror readiness.
-   - Provide copy-paste remediation commands for each failed check.
-2. Dispatch and pinning resilience:
+1. Dispatch and pinning resilience:
    - Add explicit effective-version/source output (`pin`, `AL_VERSION`, `current`) and a warning when `AL_VERSION` overrides the repo pin.
    - Add offline/cache remediation hints, optional version prefetch, retry/backoff, and tunable download timeout.
    - Implement pin-file parsing that supports comments/blank lines and preserve actionable auto-fix diagnostics for malformed version lines.
-3. Init and template lifecycle ergonomics:
+2. Init and template lifecycle ergonomics:
    - Unify managed + memory overwrite prompts into one categorized review screen.
    - Extend stale-file detection reporting to managed docs/memory outputs, not only `.agent-layer`.
    - Add `al upgrade --repair-gitignore-block` (or equivalent) to self-heal invalid block state.
-4. Config/env preflight and migration guards:
+3. Config/env preflight and migration guards:
    - Add checks for unresolved placeholders, process-env/.env collisions, ignored-empty env assignments, and path expansion anomalies.
    - Add strict unknown-key detection mode with actionable diagnostics.
-5. Sync/doctor control and signal quality:
-   - Add configurable exit policy (`strict`, `warn`, `report`) for sync/doctor; default to `strict` for backward compatibility.
-   - Improve MCP discovery with caching, parallelism, and tunable timeouts.
-6. Security/trust and documentation consolidation:
+4. Security/trust and documentation consolidation:
    - Add secret-risk lint/scan for generated artifacts before commit.
    - Add explicit safe-secret-placement onboarding in upgrade flow.
    - Add docs consistency checks so upgrade guidance and accepted CLI syntax cannot drift.
 
 ### Phase 7: Deferred lowest-priority UX refinements (absolute last)
 
-1. Add per-client projection preview in the upgrade plan.
-2. Add policy lints for risky patterns:
+1. Add policy lints for risky patterns:
    - secrets in URLs
    - unsupported Codex header placeholder forms
    - client capability mismatch for enabled features
-3. Add warning-source classification (`internal`, `external dependency`, `network`) and noise controls.
-4. VS Code and launcher hardening:
+2. Add warning-source classification (`internal`, `external dependency`, `network`) and noise controls.
+3. VS Code and launcher hardening:
    - Add launcher preflight for `al`/`code`, `CODEX_HOME` behavior messaging, and managed-block conflict diagnostics.
    - Add first-launch performance profiling and optimization work.
-5. Wizard hardening:
+4. Wizard hardening:
    - Add non-interactive wizard profile mode.
    - Preserve comments where possible or show rewrite preview before apply.
    - Show explicit "servers that will be disabled due to missing secrets" summary before save.
