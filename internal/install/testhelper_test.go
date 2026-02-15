@@ -1,9 +1,13 @@
 package install
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // faultSystem is a test helper that allows deterministic error injection for the
@@ -15,6 +19,7 @@ type faultSystem struct {
 	walkErrs   map[string]error
 	mkdirErrs  map[string]error
 	removeErrs map[string]error
+	renameErrs map[string]error
 	writeErrs  map[string]error
 }
 
@@ -26,6 +31,7 @@ func newFaultSystem(base System) *faultSystem {
 		walkErrs:   map[string]error{},
 		mkdirErrs:  map[string]error{},
 		removeErrs: map[string]error{},
+		renameErrs: map[string]error{},
 		writeErrs:  map[string]error{},
 	}
 }
@@ -62,6 +68,13 @@ func (f *faultSystem) RemoveAll(path string) error {
 	return f.base.RemoveAll(path)
 }
 
+func (f *faultSystem) Rename(oldpath string, newpath string) error {
+	if err, ok := f.renameErrs[normalizePath(oldpath)]; ok {
+		return err
+	}
+	return f.base.Rename(oldpath, newpath)
+}
+
 func (f *faultSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
 	if err, ok := f.walkErrs[normalizePath(root)]; ok {
 		return err
@@ -74,4 +87,17 @@ func (f *faultSystem) WriteFileAtomic(filename string, data []byte, perm os.File
 		return err
 	}
 	return f.base.WriteFileAtomic(filename, data, perm)
+}
+
+func withMigrationManifestOverride(t *testing.T, targetVersion string, manifestJSON string) {
+	t.Helper()
+	manifestPath := fmt.Sprintf("migrations/%s.json", targetVersion)
+	original := templates.ReadFunc
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		if name == manifestPath {
+			return []byte(manifestJSON), nil
+		}
+		return original(name)
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
 }

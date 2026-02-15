@@ -54,6 +54,7 @@ type UpgradePlan struct {
 	TemplateRenames           []UpgradeRename         `json:"template_renames"`
 	TemplateRemovalsOrOrphans []UpgradeChange         `json:"template_removals_or_orphans"`
 	ConfigKeyMigrations       []ConfigKeyMigration    `json:"config_key_migrations"`
+	MigrationReport           UpgradeMigrationReport  `json:"migration_report"`
 	PinVersionChange          UpgradePinVersionDiff   `json:"pin_version_change"`
 	ReadinessChecks           []UpgradeReadinessCheck `json:"readiness_checks"`
 }
@@ -129,6 +130,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		pinVersion: targetPinVersion,
 		sys:        opts.System,
 	}
+	migrationPlan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		return UpgradePlan{}, err
+	}
 
 	templateEntries, err := inst.currentTemplateEntries()
 	if err != nil {
@@ -182,6 +187,9 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
+	additions = filterCoveredUpgradeChanges(additions, migrationPlan.coveredPaths)
+	updates = filterCoveredUpgradeChanges(updates, migrationPlan.coveredPaths)
+	orphans = filterCoveredUpgradeChanges(orphans, migrationPlan.coveredPaths)
 
 	renames, additions, orphans, err := detectUpgradeRenames(inst, additions, orphans)
 	if err != nil {
@@ -207,10 +215,28 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		SectionAwareUpdates:       toUpgradeChanges(sectionUpdates),
 		TemplateRenames:           renames,
 		TemplateRemovalsOrOrphans: toUpgradeChanges(orphans),
-		ConfigKeyMigrations:       []ConfigKeyMigration{},
+		ConfigKeyMigrations:       migrationPlan.configMigrations,
+		MigrationReport:           migrationPlan.report,
 		PinVersionChange:          pinDiff,
 		ReadinessChecks:           readinessChecks,
 	}, nil
+}
+
+func filterCoveredUpgradeChanges(
+	changes []upgradeChangeWithTemplate,
+	covered map[string]struct{},
+) []upgradeChangeWithTemplate {
+	if len(changes) == 0 || len(covered) == 0 {
+		return changes
+	}
+	filtered := make([]upgradeChangeWithTemplate, 0, len(changes))
+	for _, change := range changes {
+		if _, ok := covered[change.path]; ok {
+			continue
+		}
+		filtered = append(filtered, change)
+	}
+	return filtered
 }
 
 func toUpgradeChanges(changes []upgradeChangeWithTemplate) []UpgradeChange {

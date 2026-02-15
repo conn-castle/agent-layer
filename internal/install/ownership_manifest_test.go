@@ -274,7 +274,7 @@ func TestRun_WritesManagedBaselineSourceUpgrade(t *testing.T) {
 	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
 		t.Fatalf("write custom allow: %v", err)
 	}
-	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Force: true}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter()}); err != nil {
 		t.Fatalf("overwrite run: %v", err)
 	}
 	state, err := readManagedBaselineState(root, RealSystem{})

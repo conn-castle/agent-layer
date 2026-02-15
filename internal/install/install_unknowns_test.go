@@ -82,9 +82,12 @@ func TestHandleUnknowns_DeleteError(t *testing.T) {
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		force:     true,
 		unknowns:  []string{file},
 		sys:       RealSystem{},
+		prompter: PromptFuncs{
+			DeleteUnknownAllFunc: func([]string) (bool, error) { return true, nil },
+			DeleteUnknownFunc:    func(string) (bool, error) { return true, nil },
+		},
 	}
 	if err := inst.handleUnknowns(); err == nil {
 		t.Fatalf("expected error for delete failure")

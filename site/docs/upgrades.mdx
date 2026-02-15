@@ -35,7 +35,11 @@ Agent Layer classifies upgrade-impact changes into three categories:
 Qualification guidance:
 - `safe auto`: formatting-only docs changes, additive defaults, or internal behavior fixes that do not require user input.
 - `needs review`: template updates where local edits may conflict, workflow/instruction rewrites, generated file ownership boundary changes.
-- `breaking/manual`: command/flag deprecations, required config schema moves, or behavior changes that require an explicit user-controlled migration step.
+- `breaking/manual`: command/flag removals, required config schema moves, or behavior changes that require an explicit user-controlled migration step.
+
+Breaking-change policy:
+- Agent Layer uses clean breaks for breaking/manual changes. Removed commands/flags fail immediately in the target release.
+- We document exact migration actions in release notes and migration guidance instead of keeping compatibility shims.
 
 Current enforcement status:
 - In Phase 10, this model is a published contract and release-labeling policy.
@@ -66,6 +70,12 @@ Migration rules are published per release and versioned with docs/release notes.
 | --- | --- | --- | --- | --- |
 | `unreleased` | `0.7.x` | `breaking/manual`: `al init` is now one-time scaffolding and no longer supports upgrade/repair; `al init --overwrite` and `al init --force` removed. `needs review`: `al upgrade` no longer supports a single destructive `--force` mode and now requires explicit apply categories. `safe auto`: `al upgrade` now creates automatic managed-file snapshots, auto-rolls back on upgrade-step failures, and supports manual restore via `al upgrade rollback <snapshot-id>`. | Replace any automation that runs `al init --force` or `al upgrade --force` with explicit apply flags (for example `al upgrade --yes --apply-managed-updates`). Include `--apply-memory-updates` and/or `--apply-deletions` only when intentionally applying those categories. For interactive flows, run `al upgrade plan` then `al upgrade`. Use `al upgrade rollback <snapshot-id>` only when you need to restore a previously applied snapshot. | `al upgrade` never overwrites `.agent-layer/.env` or `.agent-layer/config.toml`. Root `.gitignore` managed block is still updated automatically and is excluded from upgrade plans. Snapshots are stored under `.agent-layer/state/upgrade-snapshots/`. |
 | `v0.7.0` | `0.6.x` | `breaking/manual`: Windows support removed (installer, launcher, release targets, code paths). `safe auto`: upgrade path hardening (pin recovery, init dispatch bypass, download progress/errors), upgrade contract published. | **Windows users:** Windows is no longer supported; remove `al-install.ps1` and `open-vscode.bat` if present and migrate to macOS or Linux. **All other users:** No manual action required; run `al upgrade plan` and `al upgrade`. | First release with published upgrade contract. |
+
+Migration execution rules for supported release-line upgrades:
+- Each supported target release ships an embedded migration manifest at `internal/templates/migrations/<target>.json`, including `min_prior_version`.
+- `al upgrade` executes migration operations before template writes and emits a deterministic migration report.
+- If source version resolution fails, source-agnostic operations still run; source-gated operations are skipped and reported.
+- `.agent-layer/.env` is namespace-scoped: only keys prefixed with `AL_` are loaded. Non-`AL_` keys are ignored and there is no env-key migration path.
 
 How this table is maintained:
 - Add or update a row for every release.

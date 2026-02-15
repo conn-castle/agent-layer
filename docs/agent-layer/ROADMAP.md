@@ -105,60 +105,12 @@ Incomplete:
 - Published the canonical upgrade contract in `site/docs/upgrades.mdx` with event categories, sequential compatibility guarantees (`N-1` to `N`), release-versioned migration rules, and macOS/Linux shell capability matrix.
 - Linked the upgrade contract from user and contributor docs (`README.md`, site docs, `docs/DEVELOPMENT.md`, `docs/RELEASE.md`, and `docs/UPGRADE_PLAN.md`).
 
-## Phase 11 — Upgrade lifecycle (explainability, safety, and migration engine)
-
-Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
-
-### Goal
-- Users can preview upgrade changes before any file is written, using plain-language summaries plus line-level diffs.
-- Upgrades are reversible via automatic snapshots, and destructive operations require explicit, granular opt-in.
-- Each release ships a migration manifest that handles file renames, deletions, and config transitions idempotently.
-- Upgrade planning remains explainable in human-readable output while keeping internal diagnostics out of the default UX path.
-
-### Tasks
-
-**Explainability (Upgrade Plan Phase 1)**
-- [x] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
-- [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer ownership states), while keeping ownership diagnostics out of default upgrade-plan text output.
-- [x] Keep `al upgrade plan --json` as compatibility-only output during cleanup transition; hide it from help and mark it deprecated for eventual removal.
-- [x] Validate GitHub issue #30 (j4k5l6: managed file diff visibility) closure criteria; close only after line-level diff visibility is shipped, otherwise record the remaining gap.
-- [x] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
-- [x] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
-- [x] Simplify default `al upgrade plan` text output to plain-language sections/actions and remove default exposure of ownership reason codes, confidence, and detection metadata.
-
-**Safety and reversibility (Upgrade Plan Phase 2)**
-- [x] Add automatic snapshot/rollback for managed files during upgrade operations.
-- [x] Replace binary `--force` semantics with explicit flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`.
-- [x] Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
-- [x] Add `al upgrade rollback <snapshot-id>` command to restore a previous managed-file snapshot.
-- [x] Add CI-safe non-interactive apply mode (for example `al upgrade --yes --apply-managed-updates`) that applies managed template updates without deleting unknowns, bridging the gap between interactive upgrades and all-in destructive apply behavior.
-
-**Migration engine (Upgrade Plan Phase 3)**
-- [ ] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Implement migration manifests per release for file rename/delete mapping, config key rename/default transform, and generated artifact transitions.
-- [ ] Execute migrations idempotently before template write; emit deterministic migration report with before/after rationale.
-- [ ] Add compatibility shims plus deprecation periods for renamed commands/flags.
-- [ ] Add migration guidance/rules for env key transitions (e.g., non-`AL_` to `AL_`).
-- [ ] Backlog 2026-02-03 b4c5d6e (Priority: Medium, Area: lifecycle management): Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
-
-### Task details
-- Backlog 2026-01-25 8b9c2d1
-  Description: Define how to handle renamed/deleted template files so stale orphans are not left behind in user repos. Migration manifests codify the mapping per release.
-  Acceptance criteria: Each release includes a manifest; `al upgrade` executes manifest migrations idempotently before template write; stale managed files are detected and handled.
-  Notes: Current behavior adds/updates files but does not remove files that vanished from templates.
-- Backlog 2026-02-03 b4c5d6e
-  Description: Allow teams to specify a custom Git repository as template source during `al init`.
-  Acceptance criteria: `al init` (or a dedicated command) accepts a Git URL and instantiates templates correctly with repeatable upgrade behavior.
-  Notes: Requires secure fetch + cache strategy and compatibility with pinning/update notifications.
-
-### Exit criteria
-- `al upgrade plan` exists and shows plain-language categorized changes without writing files.
-- `al upgrade plan --json` is hidden/deprecated compatibility output (no stable schema contract) and is no longer in the default user guidance path.
-- Every upgrade operation creates a snapshot that can be rolled back via `al upgrade rollback`.
-- `--force` is replaced by granular flags; no single flag can silently delete unknowns.
-- `al upgrade --yes --apply-managed-updates` is CI-safe and does not delete unknown files.
-- Migration manifests ship with each release and handle renames, deletions, and config transitions.
-- Breaking changes follow a documented deprecation period with compatibility shims.
-- Custom template repositories upgrade deterministically with pinning rules.
+## Phase 11 ✅ — Upgrade lifecycle (explainability, safety, and migration engine)
+- Delivered explainable, plain-language `al upgrade plan` output with line-level diffs, ownership labeling, and readiness checks.
+- Completed upgrade safety/reversibility with automatic snapshots, `al upgrade rollback`, granular apply flags, and CI-safe managed-only apply mode.
+- Implemented release migration manifests with idempotent execution and deterministic migration reporting, including hard removals for breaking upgrade surfaces.
+- Enforced `.agent-layer/.env` namespace policy (`AL_`-only) and removed the legacy install `Force` path to keep one explicit apply/prompt flow.
+- Superseded Backlog 2026-02-03 `b4c5d6e` in this roadmap phase: embedded templates remain the sole supported template source for deterministic upgrades in this release line.
 
 ## Phase 12 — Documentation and website improvements
 
@@ -167,15 +119,15 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - Website documentation is searchable from a global header search bar.
 
 ### Tasks
-- [ ] Backlog 2026-02-06 vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
-- [ ] Backlog 2026-02-06 websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
+- [ ] vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
+- [ ] websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
 
 ### Task details
-- Backlog 2026-02-06 vsc-launch
+- vsc-launch
   Description: Document how VS Code is launched by the CLI, especially the unique/odd path that is currently undocumented.
   Acceptance criteria: Docs are added or updated (for example `docs/DEVELOPMENT.md` or a new architecture doc) and clearly explain launch flow/design choices.
   Notes: User identified this as the least documented and most non-obvious part of the system.
-- Backlog 2026-02-06 websearch
+- websearch
   Description: Add global docs search on the website to improve navigation and discovery of guides/features/reference content.
   Acceptance criteria: Search bar is integrated in site header and returns relevant results from documentation pages.
   Notes: Consider client-side indexing (for example FlexSearch) versus managed services (for example Algolia).

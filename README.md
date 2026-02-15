@@ -160,6 +160,8 @@ Run `al upgrade plan` and then `al upgrade` inside the repo to apply template-ma
 Each `al upgrade` run writes an automatic snapshot of managed upgrade targets and auto-rolls back if an upgrade step fails. Snapshots are retained under `.agent-layer/state/upgrade-snapshots/` for rollback history.
 To manually restore an applied snapshot, run `al upgrade rollback <snapshot-id>` (use the JSON filename stem from `.agent-layer/state/upgrade-snapshots/` as `<snapshot-id>`).
 
+`al upgrade` also executes embedded per-release migration manifests before template writes (for example file renames/deletes and config key transitions). If the prior source version cannot be resolved, source-agnostic migrations still run and source-gated migrations are skipped with explicit report output.
+
 Upgrade previews now include line-level diffs in both `al upgrade plan` and interactive `al upgrade` prompts. By default, each file preview is truncated to 40 lines; raise this with `--diff-lines N` when needed.
 
 

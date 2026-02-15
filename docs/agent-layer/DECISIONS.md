@@ -160,7 +160,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Unpinned repos can silently drift when developers upgrade the global `al` install, causing hard-to-debug mismatches.
     Tradeoffs: Advanced users can still delete the pin file manually, but that is unsupported and reduces reproducibility.
 
-- Decision 2026-02-11 p1d-json-contract: Upgrade-plan JSON is diagnostic, not a stable public schema contract (superseded in user-facing UX by `p1g-upgrade-everyday-output`)
+- Decision 2026-02-11 p1d-json-contract: Upgrade-plan JSON is diagnostic, not a stable public schema contract (superseded by `p3b-hard-removals`)
     Decision: Keep `al upgrade plan --json` as optional diagnostic output, but do not guarantee a stable field-level schema for CI automation.
     Reason: There are currently no first-party automation consumers; locking the schema now would add compatibility burden without immediate product value.
     Tradeoffs: External automation must pin CLI versions (or parse defensively) if it chooses to consume `--json` output.
@@ -180,10 +180,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Issue #30 required users to see specific line changes before accepting/rejecting overwrite decisions; always-on previews remove blind yes/no prompts.
     Tradeoffs: Default output is noisier for large files; users who need deeper context must opt in with a larger `--diff-lines` value.
 
-- Decision 2026-02-14 p1g-upgrade-everyday-output: Default upgrade UX is plain-language; JSON is compatibility-only
-    Decision: `al upgrade plan` default text output now prioritizes plain-language summaries/actions and no longer surfaces ownership reason codes, confidence/detection metadata, or readiness IDs; `--json` remains only as a hidden deprecated compatibility path (supersedes the user-facing part of `p1d-json-contract`).
-    Reason: Everyday users need low-jargon guidance, while existing automation needs a short migration window instead of immediate JSON removal.
-    Tradeoffs: Power users lose internal diagnostics in the default path and must rely on the temporary deprecated JSON mode or source-level inspection during the transition.
+- Decision 2026-02-14 p1g-upgrade-everyday-output: Default upgrade UX is plain-language; JSON retained temporarily (superseded by `p3b-hard-removals`)
+    Decision: `al upgrade plan` default text output now prioritizes plain-language summaries/actions and no longer surfaces ownership reason codes, confidence/detection metadata, or readiness IDs; at that time `--json` remained only as a hidden temporary compatibility path (supersedes the user-facing part of `p1d-json-contract`).
+    Reason: Everyday users needed low-jargon guidance while existing automation had a short transition window before full JSON removal.
+    Tradeoffs: Power users lost internal diagnostics in the default path and had to use the temporary hidden JSON mode or source-level inspection during the transition.
 
 - Decision 2026-02-14 p2a-upgrade-snapshot-transaction: Upgrade snapshot/rollback boundary and retention policy
     Decision: `al upgrade` now captures full-byte snapshots for the transactional upgrade mutation set (managed files/dirs, memory files, `.gitignore`, launcher outputs, and scanned unknown deletion targets), runs rollback on transactional-step failure, and retains the newest 20 snapshots under `.agent-layer/state/upgrade-snapshots/`.
@@ -199,3 +199,23 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al upgrade rollback <snapshot-id>` accepts only snapshots in `applied` status; successful manual rollback preserves `applied`, while manual rollback failures set `rollback_failed` with `failure_step=manual_rollback`.
     Reason: Keep rollback semantics deterministic with the current snapshot schema while preserving a clear failure trail for failed manual restores.
     Tradeoffs: Snapshot metadata cannot currently distinguish "applied and later manually restored" from "applied and never manually restored" without a future schema extension.
+
+- Decision 2026-02-15 p3a-migration-source-fallback: Upgrade migrations run source-agnostic operations when source version cannot be resolved
+    Decision: Release migration manifests are required per supported target version (`internal/templates/migrations/<target>.json`) with `min_prior_version`. During `al upgrade`, source-agnostic operations still execute when source version resolution fails; source-gated operations are skipped with deterministic report entries.
+    Reason: Users expect upgrades to continue to the latest version even when legacy repos lack reliable source-version evidence.
+    Tradeoffs: Some source-dependent migrations may be deferred in ambiguous repos and require explicit follow-up if skip reports indicate missed transitions.
+
+- Decision 2026-02-15 p3b-hard-removals: Breaking surfaces are removed immediately without compatibility shims
+    Decision: Upgrade-related command/flag removals use clean breaks with explicit migration guidance; no deprecation windows or compatibility shims are kept. `al upgrade plan --json` is removed, and text output is the only supported plan interface.
+    Reason: Reduces long-term maintenance burden and avoids carrying legacy compatibility branches.
+    Tradeoffs: Existing automation that depended on removed surfaces must migrate in the same release window.
+
+- Decision 2026-02-15 p3c-env-namespace: `.agent-layer/.env` is AL_-only with no key-migration path
+    Decision: Only `AL_`-prefixed keys are loaded from `.agent-layer/.env`. Non-`AL_` keys are intentionally ignored, and upgrades do not provide env-key namespace migration.
+    Reason: Keeps secret loading deterministic and avoids perpetually supporting mixed env-key conventions.
+    Tradeoffs: Repositories that previously used non-`AL_` keys must rename them manually when adopting Agent Layer conventions.
+
+- Decision 2026-02-15 p3d-embedded-template-source: Embedded templates are the only supported template source in this release line
+    Decision: Agent Layer upgrade/init workflows support embedded templates only; non-default template repositories and template-source pinning metadata are out of scope.
+    Reason: Keep upgrade behavior clear, deterministic, and maintainable by avoiding parallel template-source paths.
+    Tradeoffs: Teams cannot use first-class custom template repositories in this release line and must revisit this in a future scoped backlog item if needed.

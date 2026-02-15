@@ -35,8 +35,6 @@ const (
 	UpgradeRollbackShort                  = "Restore a managed-file upgrade snapshot"
 	UpgradeRollbackRequiresSnapshotID     = "rollback requires a snapshot id: `al upgrade rollback <snapshot-id>`"
 	UpgradeRollbackSuccessFmt             = "Restored snapshot %s.\n"
-	UpgradePlanJSON                       = "DEPRECATED: output machine-readable JSON"
-	UpgradePlanJSONDeprecated             = "deprecated: --json will be removed in a future release; use default text output"
 	UpgradeRequiresTerminal               = "upgrade prompts require an interactive terminal; re-run `al upgrade` in a terminal, or run non-interactively with `--yes` and one or more apply flags"
 	UpgradeNonInteractiveRequiresYesApply = "non-interactive upgrade requires `--yes` and one or more apply flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`"
 	UpgradeYesRequiresApply               = "`--yes` requires one or more apply flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`"

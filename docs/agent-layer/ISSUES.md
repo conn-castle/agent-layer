@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-15 upg-config-toml-roundtrip: Config migrations strip user TOML comments/formatting
+    Priority: Medium. Area: install / UX.
+    Description: `upgrade_migrations.go` decodes `.agent-layer/config.toml` into a map and re-marshals after key/default migrations, which removes user comments and original key ordering.
+    Next step: Preserve comments/order for simple key migrations (line-level edit or AST-preserving strategy), or explicitly document this destructive formatting side effect.
+
 - Issue 2026-02-14 upg-snapshot-scope: Upgrade snapshot captures all unknowns before deletion approval
     Priority: Low. Area: install / efficiency.
     Description: `createUpgradeSnapshot` in `upgrade_snapshot.go` captures all unknown files under `.agent-layer` before the upgrade transaction begins, regardless of whether the user later approves or rejects deletion. This is by design — the snapshot must exist before the transaction starts — but means snapshots may include files that were never at risk of deletion.
@@ -43,11 +48,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Add a schema/status extension for manual rollback auditability and update rollback/docs/tests accordingly.
     Notes: Current behavior still records manual rollback failures as `rollback_failed` with `failure_step=manual_rollback`.
 
-- Issue 2026-02-14 upg-force-api: install.Options.Force is now dead for production upgrade path
-    Priority: Low. Area: install / API hygiene.
-    Description: `cmd/al/upgrade.go` always passes `Force: false` and drives apply behavior through category-aware prompts, while `install.Options.Force` remains in the public install API and is still used mostly by tests.
-    Next step: Decide whether to remove `Force` from `install.Options` (with test helper replacements) or explicitly document it as legacy/internal-only.
-
 - Issue 2026-02-14 upg-snapshot-size: No per-snapshot size guard for upgrade snapshots
     Priority: Low. Area: install / storage.
     Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
@@ -55,7 +55,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 mcp-env: os.Environ() leaks credentials to MCP child processes
     Priority: Critical. Area: doctor / security.
-    Description: `internal/doctor/mcp_connector.go:90-93` passes `os.Environ()` to MCP child processes, leaking all parent env vars (API keys, tokens, credentials) to potentially untrusted MCP servers.
+    Description: `internal/warnings/mcp_connector.go:90-93` passes `os.Environ()` to MCP child processes, leaking all parent env vars (API keys, tokens, credentials) to potentially untrusted MCP servers.
     Next step: Replace `os.Environ()` with an explicit allowlist of safe environment variables, filtering out sensitive prefixes.
 
 - Issue 2026-02-12 wiz-rollback: Incomplete rollback in wizard apply.go on partial write failure
@@ -90,7 +90,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 rt-mutate: headerTransport.RoundTrip mutates original request
     Priority: Medium. Area: doctor / correctness.
-    Description: `internal/doctor/mcp_connector.go:201-208` modifies `req.Header` directly instead of cloning the request first, violating the `http.RoundTripper` contract.
+    Description: `internal/warnings/mcp_connector.go:201-208` modifies `req.Header` directly instead of cloning the request first, violating the `http.RoundTripper` contract.
     Next step: Clone request via `req.Clone(req.Context())` before setting headers.
 
 - Issue 2026-02-12 resolve-default: resolveSingleServer switch missing default branch
@@ -165,7 +165,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
     Priority: Low. Area: install / maintainability.
-    Description: The `installer` struct in `internal/install/` has 14 fields and 57 methods spread across 8 files. While logically grouped, this concentration increases coupling risk as Phase 11 continues adding features (snapshot/rollback, migration engine).
+    Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added (snapshot/rollback, migration engine).
     Next step: Monitor during Phase 11 Phase 2 work. If method count exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`).
 
 - Issue 2026-02-10 wiz-run: Wizard Run() is a god function

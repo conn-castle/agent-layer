@@ -43,6 +43,16 @@ func TestReadManifestTemplate(t *testing.T) {
 	}
 }
 
+func TestReadMigrationManifestTemplate(t *testing.T) {
+	data, err := Read("migrations/0.7.0.json")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected migration manifest content")
+	}
+}
+
 func TestWalkTemplates(t *testing.T) {
 	var seen bool
 	err := Walk("instructions", func(path string, d fs.DirEntry, err error) error {

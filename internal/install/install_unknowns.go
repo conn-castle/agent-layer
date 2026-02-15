@@ -59,9 +59,6 @@ func (inst *installer) handleUnknowns() error {
 	if len(inst.unknowns) == 0 || !inst.overwrite {
 		return nil
 	}
-	if inst.force {
-		return inst.deleteUnknowns(inst.unknowns)
-	}
 	if inst.prompter == nil {
 		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
 	}

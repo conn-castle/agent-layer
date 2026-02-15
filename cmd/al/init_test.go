@@ -175,9 +175,6 @@ func TestInitCmd(t *testing.T) {
 				if opts.Overwrite {
 					t.Errorf("installRun opts.Overwrite = true, want false")
 				}
-				if opts.Force {
-					t.Errorf("installRun opts.Force = true, want false")
-				}
 				if opts.Prompter != nil {
 					t.Errorf("installRun opts.Prompter = %T, want nil", opts.Prompter)
 				}

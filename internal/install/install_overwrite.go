@@ -16,9 +16,6 @@ func (inst *installer) shouldOverwrite(path string) (bool, error) {
 	if !inst.overwrite {
 		return false, nil
 	}
-	if inst.force {
-		return true, nil
-	}
 	if inst.isMemoryPath(path) {
 		overwriteAll, err := inst.shouldOverwriteAllMemory()
 		if err != nil {

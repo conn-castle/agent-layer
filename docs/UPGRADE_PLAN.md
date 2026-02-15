@@ -68,7 +68,7 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 7. Unknown-file cleanup only applies under `.agent-layer`; stale docs/memory files can still drift.
 8. Invalid `gitignore.block` format (managed markers/hash present) hard-fails sync.
 9. Users can customize `.agent-layer/gitignore.block` but may not realize re-running `al sync` is required to apply it to the root `.gitignore`.
-10. There is no first-class template source/pinning workflow for alternate template repositories, so teams can struggle to keep forked templates deterministic across upgrades.
+10. **[Superseded by embedded-only policy]** Non-default template repository/pinning workflow is intentionally out of scope for this release line; deterministic upgrades are guaranteed for embedded templates only.
 11. **[Resolved in Phase 10 work]** `al init --version X.Y.Z` now validates the release exists on GitHub before writing the pin, returning a clear not-found message instead of silently writing a bad pin.
 
 ### 4. Config and env compatibility over time
@@ -76,7 +76,7 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 1. Required booleans (`enabled`) and strict transport rules cause fail-fast breakage when legacy files are incomplete.
 2. Small schema changes (approval values, transport fields, client IDs) can block all commands.
 3. Reserved MCP id (`agent-layer`) is forbidden; collisions fail hard.
-4. Only `AL_` keys are loaded from `.agent-layer/.env`; historical non-prefixed keys stop working.
+4. Only `AL_` keys are loaded from `.agent-layer/.env`; non-`AL_` keys are ignored.
 5. Missing env placeholders fail hard on substitution.
 6. Process env overrides `.env`, which can create “works on my machine” drift across teammates/CI.
 7. Empty env values are ignored; users may think they cleared a secret but runtime still uses process env.
@@ -142,7 +142,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 
 1. `1B`: Implement real `al init --version latest` support by resolving latest release to semver before writing `.agent-layer/al.version`.
 2. `2A`: `al init` auto-recovers empty/corrupt pin file states instead of requiring manual deletion.
-3. `3B`: Launch commands use sync mode `check` by default (no implicit mutation during launch; users can opt into apply/off modes). **Breaking change:** users who rely on `al gemini`/`al claude`/etc. to auto-sync generated files will need to explicitly use `apply` mode or run `al sync` first. Requires a migration manifest entry (Phase 3) and deprecation period.
+3. `3B`: Launch commands use sync mode `check` by default (no implicit mutation during launch; users can opt into apply/off modes). **Breaking change:** users who rely on `al gemini`/`al claude`/etc. to auto-sync generated files will need to explicitly use `apply` mode or run `al sync` first. Requires a migration manifest entry (Phase 3) and explicit migration guidance.
 4. `4C`: `al sync`/`al doctor` warning exit behavior is configurable (`strict`, `warn`, `report`) rather than one fixed policy.
 5. `5B`: Pin-file parsing supports comments and blank lines.
 6. `6B`: Default template MCP dependencies are version-pinned, with explicit opt-in for floating/latest update lanes.
@@ -178,7 +178,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - config key migrations
    - pin version changes (current → target)
 2. Keep ownership classification for internal safety decisions, but prefer plain-language default output over ownership-jargon-heavy rendering.
-3. Keep machine-readable output (`--json`) only as a temporary compatibility path; hide/deprecate it in default UX and remove after migration window.
+3. Remove machine-readable `al upgrade plan --json` output; keep plain-language text output as the only supported interface.
 4. Add upgrade-readiness checks in dry-run output:
    - flag suspicious/unrecognized config keys
    - flag stale generated outputs when launch path uses `--no-sync`
@@ -208,10 +208,10 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - generated artifact transitions
 2. Execute migrations idempotently before template write.
 3. Emit deterministic migration report with before/after rationale.
-4. Add compatibility shims plus deprecation periods for renamed commands/flags.
+4. Use hard removal for renamed commands/flags (no compatibility shims, no deprecation periods) and require explicit migration guidance in release notes/docs.
 5. Remove migration dependencies on launch sync-mode matrix changes.
-6. Add migration guidance/rules for env key transitions (for example non-`AL_` to `AL_`).
-7. Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
+6. Document and enforce env namespace policy: only `AL_` keys are loaded from `.agent-layer/.env`; non-`AL_` keys are ignored and no env-key migration path is provided.
+7. **[Superseded by embedded-only policy]** Keep embedded templates as the sole supported template source; do not introduce alternate template-source metadata/pinning in this phase.
 
 ### Phase 4: Reduce cross-client surprise
 

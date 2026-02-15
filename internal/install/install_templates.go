@@ -93,14 +93,7 @@ func (inst *installer) listManagedDiffs() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(labeled) == 0 {
-		return nil, nil
-	}
-	paths := make([]string, 0, len(labeled))
-	for _, entry := range labeled {
-		paths = append(paths, entry.Path)
-	}
-	return paths, nil
+	return labeledDiffPaths(labeled), nil
 }
 
 // listManagedLabeledDiffs returns managed diffs with ownership labels.
@@ -130,14 +123,18 @@ func (inst *installer) listMemoryDiffs() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	return labeledDiffPaths(labeled), nil
+}
+
+func labeledDiffPaths(labeled []LabeledPath) []string {
 	if len(labeled) == 0 {
-		return nil, nil
+		return nil
 	}
 	paths := make([]string, 0, len(labeled))
 	for _, entry := range labeled {
 		paths = append(paths, entry.Path)
 	}
-	return paths, nil
+	return paths
 }
 
 // listMemoryLabeledDiffs returns memory diffs with ownership labels.
@@ -282,27 +279,22 @@ func (inst *installer) buildLabeledDiffs(paths []string, templatePathByRel map[s
 }
 
 func (inst *installer) managedTemplatePathByRel() (map[string]string, error) {
-	m := make(map[string]string)
-	for _, file := range inst.managedTemplateFiles() {
-		rel := normalizeRelPath(inst.relativePath(file.path))
-		m[rel] = file.template
-	}
-	for _, dir := range inst.managedTemplateDirs() {
-		entries, err := inst.templateDirEntries(dir)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range entries {
-			rel := normalizeRelPath(inst.relativePath(entry.destPath))
-			m[rel] = entry.templatePath
-		}
-	}
-	return m, nil
+	return inst.templatePathByRel(inst.managedTemplateDirs(), true)
 }
 
 func (inst *installer) memoryTemplatePathByRel() (map[string]string, error) {
+	return inst.templatePathByRel(inst.memoryTemplateDirs(), false)
+}
+
+func (inst *installer) templatePathByRel(dirs []templateDir, includeManagedFiles bool) (map[string]string, error) {
 	m := make(map[string]string)
-	for _, dir := range inst.memoryTemplateDirs() {
+	if includeManagedFiles {
+		for _, file := range inst.managedTemplateFiles() {
+			rel := normalizeRelPath(inst.relativePath(file.path))
+			m[rel] = file.template
+		}
+	}
+	for _, dir := range dirs {
 		entries, err := inst.templateDirEntries(dir)
 		if err != nil {
 			return nil, err

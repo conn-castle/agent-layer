@@ -27,7 +27,6 @@ type PromptDeleteUnknownFunc func(path string) (bool, error)
 // Options controls installer behavior.
 type Options struct {
 	Overwrite    bool
-	Force        bool
 	Prompter     Prompter
 	WarnWriter   io.Writer
 	PinVersion   string
@@ -42,7 +41,6 @@ type installer struct {
 	overwriteAllDecided       bool
 	overwriteMemoryAll        bool
 	overwriteMemoryAllDecided bool
-	force                     bool
 	prompter                  Prompter
 	warnWriter                io.Writer
 	diffs                     []string
@@ -53,6 +51,12 @@ type installer struct {
 	diffMaxLines              int
 	managedDiffPreviews       map[string]DiffPreview
 	memoryDiffPreviews        map[string]DiffPreview
+	pendingMigrationOps       []upgradeMigrationOperation
+	migrationRollbackTargets  []string
+	migrationManifestCoverage map[string]struct{}
+	migrationConfigMigrations []ConfigKeyMigration
+	migrationReport           UpgradeMigrationReport
+	migrationsPrepared        bool
 	sys                       System
 }
 
@@ -85,8 +89,8 @@ func Run(root string, opts Options) error {
 		return fmt.Errorf(messages.InstallRootRequired)
 	}
 
-	overwrite := opts.Overwrite || opts.Force
-	if err := validatePrompter(opts.Prompter, overwrite, opts.Force); err != nil {
+	overwrite := opts.Overwrite
+	if err := validatePrompter(opts.Prompter, overwrite); err != nil {
 		return err
 	}
 
@@ -101,7 +105,6 @@ func Run(root string, opts Options) error {
 	inst := &installer{
 		root:         root,
 		overwrite:    overwrite,
-		force:        opts.Force,
 		prompter:     opts.Prompter,
 		warnWriter:   warnWriter,
 		diffMaxLines: normalizeDiffMaxLines(opts.DiffMaxLines),
@@ -121,6 +124,9 @@ func Run(root string, opts Options) error {
 		// Overwrite upgrades need unknowns scanned before snapshot capture so the
 		// snapshot can restore unknown paths that handleUnknowns may delete.
 		if err := inst.scanUnknowns(); err != nil {
+			return err
+		}
+		if err := inst.prepareUpgradeMigrations(); err != nil {
 			return err
 		}
 		snapshot, err := inst.createUpgradeSnapshot()
@@ -169,6 +175,7 @@ type transactionStep struct {
 func (inst *installer) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
 	steps := []transactionStep{
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
+		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
 		{name: "writeTemplateFiles", run: inst.writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
 		{name: "writeTemplateDirs", run: inst.writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
 		{name: "updateGitignore", run: inst.updateGitignore, rollbackTargets: inst.updateGitignoreTargetPaths},
@@ -238,8 +245,8 @@ func runSteps(steps []func() error) error {
 	return nil
 }
 
-func validatePrompter(prompter Prompter, overwrite bool, force bool) error {
-	if !overwrite || force {
+func validatePrompter(prompter Prompter, overwrite bool) error {
+	if !overwrite {
 		return nil
 	}
 	if prompter == nil {
