@@ -21,7 +21,7 @@ func TestRunWithOverwrite_WritesAppliedUpgradeSnapshot(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Force: true, PinVersion: "0.6.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"}); err != nil {
 		t.Fatalf("overwrite run: %v", err)
 	}
 
@@ -66,7 +66,7 @@ func TestRunWithOverwrite_RollbackRestoresGitignoreOnFailure(t *testing.T) {
 		err:      errors.New("launcher write failed"),
 	}
 
-	err := Run(root, Options{System: faultsOnce, Overwrite: true, Force: true, PinVersion: "0.6.0"})
+	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
 	}
@@ -160,7 +160,7 @@ func TestRunWithOverwrite_SnapshotMarksRollbackFailed(t *testing.T) {
 	faults.writeErrs[normalizePath(managedFile)] = errors.New("write failure")
 	faults.removeErrs[normalizePath(managedFile)] = errors.New("rollback remove failure")
 
-	err := Run(root, Options{System: faults, Overwrite: true, Force: true, PinVersion: "0.6.0"})
+	err := Run(root, Options{System: faults, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
 	}
@@ -190,7 +190,7 @@ func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
 		err:      errors.New("version write failure"),
 	}
 
-	err := Run(root, Options{System: faultsOnce, Overwrite: true, Force: true, PinVersion: "0.6.0"})
+	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
 	if err == nil {
 		t.Fatal("expected upgrade failure")
 	}

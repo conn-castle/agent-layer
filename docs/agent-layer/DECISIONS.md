@@ -214,3 +214,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Only `AL_`-prefixed keys are loaded from `.agent-layer/.env`. Non-`AL_` keys are intentionally ignored, and upgrades do not provide env-key namespace migration.
     Reason: Keeps secret loading deterministic and avoids perpetually supporting mixed env-key conventions.
     Tradeoffs: Repositories that previously used non-`AL_` keys must rename them manually when adopting Agent Layer conventions.
+
+- Decision 2026-02-15 p3d-embedded-template-source: Embedded templates are the only supported template source in this release line
+    Decision: Agent Layer upgrade/init workflows support embedded templates only; non-default template repositories and template-source pinning metadata are out of scope.
+    Reason: Keep upgrade behavior clear, deterministic, and maintainable by avoiding parallel template-source paths.
+    Tradeoffs: Teams cannot use first-class custom template repositories in this release line and must revisit this in a future scoped backlog item if needed.

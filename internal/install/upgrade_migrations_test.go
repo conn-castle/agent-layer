@@ -352,7 +352,7 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
   ]
 }`)
 
-	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Force: true, PinVersion: "0.7.0"}); err != nil {
+	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.7.0"}); err != nil {
 		t.Fatalf("upgrade run: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "slash-commands", "find-issues.md")); err != nil {

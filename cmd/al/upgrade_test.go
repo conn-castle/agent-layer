@@ -195,9 +195,6 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 	if !captured.Overwrite {
 		t.Fatalf("captured opts.Overwrite = false, want true")
 	}
-	if captured.Force {
-		t.Fatalf("captured opts.Force = true, want false")
-	}
 	if captured.Prompter == nil {
 		t.Fatal("captured opts.Prompter = nil, want non-nil")
 	}
@@ -263,9 +260,6 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 
 	if !captured.Overwrite {
 		t.Fatalf("captured opts.Overwrite = false, want true")
-	}
-	if captured.Force {
-		t.Fatalf("captured opts.Force = true, want false")
 	}
 	if captured.Prompter == nil {
 		t.Fatal("captured opts.Prompter = nil, want non-nil")

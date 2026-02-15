@@ -629,10 +629,11 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) })
 
 	inst := &installer{
-		root:      root,
-		sys:       RealSystem{},
-		overwrite: true,
-		force:     true,
+		root:                root,
+		sys:                 RealSystem{},
+		overwrite:           true,
+		overwriteAllDecided: true,
+		overwriteAll:        true,
 	}
 	dir := templateDir{
 		templateRoot: "instructions",

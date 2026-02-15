@@ -68,7 +68,7 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 7. Unknown-file cleanup only applies under `.agent-layer`; stale docs/memory files can still drift.
 8. Invalid `gitignore.block` format (managed markers/hash present) hard-fails sync.
 9. Users can customize `.agent-layer/gitignore.block` but may not realize re-running `al sync` is required to apply it to the root `.gitignore`.
-10. There is no first-class template source/pinning workflow for alternate template repositories, so teams can struggle to keep forked templates deterministic across upgrades.
+10. **[Superseded by embedded-only policy]** Non-default template repository/pinning workflow is intentionally out of scope for this release line; deterministic upgrades are guaranteed for embedded templates only.
 11. **[Resolved in Phase 10 work]** `al init --version X.Y.Z` now validates the release exists on GitHub before writing the pin, returning a clear not-found message instead of silently writing a bad pin.
 
 ### 4. Config and env compatibility over time
@@ -211,7 +211,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 4. Use hard removal for renamed commands/flags (no compatibility shims, no deprecation periods) and require explicit migration guidance in release notes/docs.
 5. Remove migration dependencies on launch sync-mode matrix changes.
 6. Document and enforce env namespace policy: only `AL_` keys are loaded from `.agent-layer/.env`; non-`AL_` keys are ignored and no env-key migration path is provided.
-7. Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
+7. **[Superseded by embedded-only policy]** Keep embedded templates as the sole supported template source; do not introduce alternate template-source metadata/pinning in this phase.
 
 ### Phase 4: Reduce cross-client surprise
 

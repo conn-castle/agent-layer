@@ -48,11 +48,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Add a schema/status extension for manual rollback auditability and update rollback/docs/tests accordingly.
     Notes: Current behavior still records manual rollback failures as `rollback_failed` with `failure_step=manual_rollback`.
 
-- Issue 2026-02-14 upg-force-api: install.Options.Force is now dead for production upgrade path
-    Priority: Low. Area: install / API hygiene.
-    Description: `cmd/al/upgrade.go` always passes `Force: false` and drives apply behavior through category-aware prompts, while `install.Options.Force` remains in the public install API and is still used mostly by tests.
-    Next step: Decide whether to remove `Force` from `install.Options` (with test helper replacements) or explicitly document it as legacy/internal-only.
-
 - Issue 2026-02-14 upg-snapshot-size: No per-snapshot size guard for upgrade snapshots
     Priority: Low. Area: install / storage.
     Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.

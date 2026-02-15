@@ -27,13 +27,14 @@ func TestShouldOverwrite_OverwriteFalse(t *testing.T) {
 	}
 }
 
-func TestShouldOverwrite_Force(t *testing.T) {
+func TestShouldOverwrite_OverwriteAllDecided(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{
-		root:      root,
-		overwrite: true,
-		force:     true,
-		sys:       RealSystem{},
+		root:                root,
+		overwrite:           true,
+		overwriteAllDecided: true,
+		overwriteAll:        true,
+		sys:                 RealSystem{},
 	}
 
 	ok, err := inst.shouldOverwrite(filepath.Join(root, "any-path"))
@@ -41,7 +42,7 @@ func TestShouldOverwrite_Force(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !ok {
-		t.Fatalf("expected true when force is true")
+		t.Fatalf("expected true when overwrite-all is accepted")
 	}
 }
 

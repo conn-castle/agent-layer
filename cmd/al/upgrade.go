@@ -50,7 +50,6 @@ func newUpgradeCmd() *cobra.Command {
 			}
 			opts := install.Options{
 				Overwrite:    true,
-				Force:        false,
 				PinVersion:   targetPin,
 				DiffMaxLines: diffLines,
 				System:       install.RealSystem{},

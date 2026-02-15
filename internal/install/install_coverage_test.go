@@ -39,13 +39,13 @@ func TestRun_WriteManagedBaselineIfConsistentError_Propagates(t *testing.T) {
 }
 
 func TestValidatePrompter_MissingOverwriteAll_ReturnsError(t *testing.T) {
-	if err := validatePrompter(PromptFuncs{}, true, false); err == nil {
+	if err := validatePrompter(PromptFuncs{}, true); err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
 func TestValidatePrompter_MissingOverwriteAllMemory_ReturnsError(t *testing.T) {
-	if err := validatePrompter(PromptFuncs{OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil }}, true, false); err == nil {
+	if err := validatePrompter(PromptFuncs{OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil }}, true); err == nil {
 		t.Fatalf("expected error")
 	}
 }

@@ -81,7 +81,6 @@ func newInitCmd() *cobra.Command {
 			warnInitUpdate(cmd, pinVersion)
 			opts := install.Options{
 				Overwrite:  false,
-				Force:      false,
 				PinVersion: pinned,
 				System:     install.RealSystem{},
 			}

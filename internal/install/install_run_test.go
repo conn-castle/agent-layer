@@ -166,7 +166,7 @@ func TestRunWithOverwrite(t *testing.T) {
 	}
 
 	// Run with overwrite - managed files should be replaced, user-owned files preserved.
-	if err := Run(root, Options{Overwrite: true, Force: true, System: RealSystem{}}); err != nil {
+	if err := Run(root, Options{Overwrite: true, Prompter: autoApprovePrompter(), System: RealSystem{}}); err != nil {
 		t.Fatalf("overwrite Run error: %v", err)
 	}
 
@@ -197,7 +197,7 @@ func TestRunWithOverwrite(t *testing.T) {
 	}
 }
 
-func TestRunWithOverwriteForceDeletesUnknowns(t *testing.T) {
+func TestRunWithOverwriteDeletesUnknownsWhenApproved(t *testing.T) {
 	root := t.TempDir()
 
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
@@ -209,7 +209,7 @@ func TestRunWithOverwriteForceDeletesUnknowns(t *testing.T) {
 		t.Fatalf("write unknown: %v", err)
 	}
 
-	if err := Run(root, Options{Overwrite: true, Force: true, System: RealSystem{}}); err != nil {
+	if err := Run(root, Options{Overwrite: true, Prompter: autoApprovePrompter(), System: RealSystem{}}); err != nil {
 		t.Fatalf("overwrite Run error: %v", err)
 	}
 
@@ -692,7 +692,7 @@ func TestRun_SuccessfulWithAllOptions(t *testing.T) {
 	root := t.TempDir()
 	err := Run(root, Options{
 		Overwrite:  true,
-		Force:      true,
+		Prompter:   autoApprovePrompter(),
 		PinVersion: "0.7.0",
 		System:     RealSystem{},
 	})
@@ -712,7 +712,7 @@ func TestRun_OverwriteExisting(t *testing.T) {
 	// Second installation with overwrite
 	err = Run(root, Options{
 		Overwrite: true,
-		Force:     true,
+		Prompter:  autoApprovePrompter(),
 		System:    RealSystem{},
 	})
 	if err != nil {
@@ -738,7 +738,7 @@ func TestRun_SectionAwareOverwritePreservesUserEntries(t *testing.T) {
 		t.Fatalf("write custom issues: %v", err)
 	}
 
-	if err := Run(root, Options{Overwrite: true, Force: true, System: RealSystem{}}); err != nil {
+	if err := Run(root, Options{Overwrite: true, Prompter: autoApprovePrompter(), System: RealSystem{}}); err != nil {
 		t.Fatalf("overwrite run: %v", err)
 	}
 

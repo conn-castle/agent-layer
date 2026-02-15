@@ -27,7 +27,6 @@ type PromptDeleteUnknownFunc func(path string) (bool, error)
 // Options controls installer behavior.
 type Options struct {
 	Overwrite    bool
-	Force        bool
 	Prompter     Prompter
 	WarnWriter   io.Writer
 	PinVersion   string
@@ -42,7 +41,6 @@ type installer struct {
 	overwriteAllDecided       bool
 	overwriteMemoryAll        bool
 	overwriteMemoryAllDecided bool
-	force                     bool
 	prompter                  Prompter
 	warnWriter                io.Writer
 	diffs                     []string
@@ -91,8 +89,8 @@ func Run(root string, opts Options) error {
 		return fmt.Errorf(messages.InstallRootRequired)
 	}
 
-	overwrite := opts.Overwrite || opts.Force
-	if err := validatePrompter(opts.Prompter, overwrite, opts.Force); err != nil {
+	overwrite := opts.Overwrite
+	if err := validatePrompter(opts.Prompter, overwrite); err != nil {
 		return err
 	}
 
@@ -107,7 +105,6 @@ func Run(root string, opts Options) error {
 	inst := &installer{
 		root:         root,
 		overwrite:    overwrite,
-		force:        opts.Force,
 		prompter:     opts.Prompter,
 		warnWriter:   warnWriter,
 		diffMaxLines: normalizeDiffMaxLines(opts.DiffMaxLines),
@@ -248,8 +245,8 @@ func runSteps(steps []func() error) error {
 	return nil
 }
 
-func validatePrompter(prompter Prompter, overwrite bool, force bool) error {
-	if !overwrite || force {
+func validatePrompter(prompter Prompter, overwrite bool) error {
+	if !overwrite {
 		return nil
 	}
 	if prompter == nil {
