@@ -35,7 +35,11 @@ Agent Layer classifies upgrade-impact changes into three categories:
 Qualification guidance:
 - `safe auto`: formatting-only docs changes, additive defaults, or internal behavior fixes that do not require user input.
 - `needs review`: template updates where local edits may conflict, workflow/instruction rewrites, generated file ownership boundary changes.
-- `breaking/manual`: command/flag deprecations, required config schema moves, or behavior changes that require an explicit user-controlled migration step.
+- `breaking/manual`: command/flag removals, required config schema moves, or behavior changes that require an explicit user-controlled migration step.
+
+Breaking-change policy:
+- Agent Layer uses clean breaks for breaking/manual changes. Removed commands/flags fail immediately in the target release.
+- We document exact migration actions in release notes and migration guidance instead of keeping compatibility shims.
 
 Current enforcement status:
 - In Phase 10, this model is a published contract and release-labeling policy.
@@ -71,6 +75,7 @@ Migration execution rules for supported release-line upgrades:
 - Each supported target release ships an embedded migration manifest at `internal/templates/migrations/<target>.json`, including `min_prior_version`.
 - `al upgrade` executes migration operations before template writes and emits a deterministic migration report.
 - If source version resolution fails, source-agnostic operations still run; source-gated operations are skipped and reported.
+- `.agent-layer/.env` is namespace-scoped: only keys prefixed with `AL_` are loaded. Non-`AL_` keys are ignored and there is no env-key migration path.
 
 How this table is maintained:
 - Add or update a row for every release.

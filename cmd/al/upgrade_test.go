@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -396,75 +395,6 @@ func TestUpgradeCmd_MissingAgentLayerErrors(t *testing.T) {
 	})
 }
 
-func TestUpgradePlanCmd_JSONOutput(t *testing.T) {
-	root := prepareUpgradeTestRepo(t)
-	withWorkingDir(t, root, func() {
-		diffLines := install.DefaultDiffMaxLines
-		cmd := newUpgradePlanCmd(&diffLines)
-		cmd.SetArgs([]string{"--json"})
-		var out bytes.Buffer
-		var errOut bytes.Buffer
-		cmd.SetOut(&out)
-		cmd.SetErr(&errOut)
-
-		if err := cmd.Execute(); err != nil {
-			t.Fatalf("execute upgrade plan --json: %v", err)
-		}
-		if !strings.Contains(errOut.String(), "deprecated") {
-			t.Fatalf("expected deprecation warning on stderr for --json, got stderr=%q", errOut.String())
-		}
-		jsonPayload := bytes.TrimSpace(out.Bytes())
-		if len(jsonPayload) == 0 || jsonPayload[0] != '{' {
-			t.Fatalf("expected pure json object in stdout, got: %q", out.String())
-		}
-
-		var raw map[string]json.RawMessage
-		if err := json.Unmarshal(jsonPayload, &raw); err != nil {
-			t.Fatalf("decode raw json: %v\noutput: %s", err, out.String())
-		}
-		readinessJSON, ok := raw["readiness_checks"]
-		if !ok {
-			t.Fatalf("expected readiness_checks in json output\noutput: %s", out.String())
-		}
-		var readinessChecks []install.UpgradeReadinessCheck
-		if err := json.Unmarshal(readinessJSON, &readinessChecks); err != nil {
-			t.Fatalf("decode readiness_checks: %v\njson: %s", err, string(readinessJSON))
-		}
-
-		var plan install.UpgradePlan
-		if err := json.Unmarshal(jsonPayload, &plan); err != nil {
-			t.Fatalf("decode json: %v\noutput: %s", err, out.String())
-		}
-		if !plan.DryRun {
-			t.Fatalf("expected dry-run plan")
-		}
-		if plan.SchemaVersion != install.UpgradePlanSchemaVersion {
-			t.Fatalf("expected schema version %d, got %d", install.UpgradePlanSchemaVersion, plan.SchemaVersion)
-		}
-		if len(plan.TemplateRenames) == 0 {
-			t.Fatalf("expected rename detection in plan output")
-		}
-		if plan.PinVersionChange.Action != install.UpgradePinActionRemove {
-			t.Fatalf("expected pin removal action for dev target, got %s", plan.PinVersionChange.Action)
-		}
-		for _, change := range plan.TemplateUpdates {
-			if change.OwnershipState == "" {
-				t.Fatalf("expected ownership_state for update %s", change.Path)
-			}
-		}
-		for _, change := range plan.SectionAwareUpdates {
-			if change.OwnershipState == "" {
-				t.Fatalf("expected ownership_state for section-aware update %s", change.Path)
-			}
-		}
-		for _, rename := range plan.TemplateRenames {
-			if rename.OwnershipState == "" {
-				t.Fatalf("expected ownership_state for rename %s -> %s", rename.From, rename.To)
-			}
-		}
-	})
-}
-
 func TestUpgradePlanCmd_TextOutputIncludesPlainSections(t *testing.T) {
 	root := prepareUpgradeTestRepo(t)
 	withWorkingDir(t, root, func() {
@@ -552,6 +482,25 @@ func TestUpgradePlanCmd_HelpHidesJSONFlag(t *testing.T) {
 	if strings.Contains(out.String(), "--json") {
 		t.Fatalf("expected --json to be hidden from help output:\n%s", out.String())
 	}
+}
+
+func TestUpgradePlanCmd_JSONFlagRemoved(t *testing.T) {
+	root := prepareUpgradeTestRepo(t)
+	withWorkingDir(t, root, func() {
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
+		cmd.SetArgs([]string{"--json"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected unknown flag error for removed --json")
+		}
+		if !strings.Contains(err.Error(), "unknown flag: --json") {
+			t.Fatalf("unexpected error for removed --json flag: %v", err)
+		}
+	})
 }
 
 func TestUpgradePlanCmd_TextOutputIncludesDiffPreviewAndTruncation(t *testing.T) {

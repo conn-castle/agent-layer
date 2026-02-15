@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -240,7 +239,6 @@ func writeUpgradeSkippedCategoryNotes(out io.Writer, policy upgradeApplyPolicy) 
 }
 
 func newUpgradePlanCmd(diffLines *int) *cobra.Command {
-	var outputJSON bool
 	cmd := &cobra.Command{
 		Use:   messages.UpgradePlanUse,
 		Short: messages.UpgradePlanShort,
@@ -267,15 +265,6 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			if outputJSON {
-				if _, err := fmt.Fprintln(cmd.ErrOrStderr(), messages.UpgradePlanJSONDeprecated); err != nil {
-					return err
-				}
-				encoder := json.NewEncoder(cmd.OutOrStdout())
-				encoder.SetIndent("", "  ")
-				return encoder.Encode(plan)
-			}
 			previews, err := install.BuildUpgradePlanDiffPreviews(root, plan, install.UpgradePlanDiffPreviewOptions{
 				System:       install.RealSystem{},
 				MaxDiffLines: *diffLines,
@@ -286,8 +275,6 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 			return renderUpgradePlanText(cmd.OutOrStdout(), plan, previews)
 		},
 	}
-	cmd.Flags().BoolVar(&outputJSON, "json", false, messages.UpgradePlanJSON)
-	_ = cmd.Flags().MarkHidden("json")
 	return cmd
 }
 

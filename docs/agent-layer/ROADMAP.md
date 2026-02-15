@@ -120,7 +120,7 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 **Explainability (Upgrade Plan Phase 1)**
 - [x] Implement `al upgrade plan` dry-run command showing categorized changes: template additions, updates, renames, removals/orphans, config key migrations, and pin version changes (current → target).
 - [x] Issue 2026-01-26 j4k5l6 (Priority: Medium, Area: install / UX): Add ownership labels per diff in upgrade and overwrite flows (`upstream template delta`, `local customization`, plus richer ownership states), while keeping ownership diagnostics out of default upgrade-plan text output.
-- [x] Keep `al upgrade plan --json` as compatibility-only output during cleanup transition; hide it from help and mark it deprecated for eventual removal.
+- [x] Remove `al upgrade plan --json` from the CLI surface so upgrade planning uses only plain-language text output.
 - [x] Validate GitHub issue #30 (j4k5l6: managed file diff visibility) closure criteria; close only after line-level diff visibility is shipped, otherwise record the remaining gap.
 - [x] Add upgrade-readiness checks in dry-run output: flag unrecognized config keys, stale `--no-sync` generated outputs, floating `@latest` external dependency specs, and stale disabled-agent artifacts.
 - [x] Gracefully degrade GitHub API update checks: suppress or minimize output on HTTP 403/429 rate limits instead of emitting multi-line warning blocks.
@@ -136,8 +136,8 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 **Migration engine (Upgrade Plan Phase 3)**
 - [x] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Implement migration manifests per release for file rename/delete mapping, config key rename/default transform, and generated artifact transitions.
 - [x] Execute migrations idempotently before template write; emit deterministic migration report with before/after rationale.
-- [ ] Add compatibility shims plus deprecation periods for renamed commands/flags.
-- [ ] Add migration guidance/rules for env key transitions (e.g., non-`AL_` to `AL_`).
+- [x] Enforce hard removal for renamed commands/flags (no compatibility shims or deprecation periods), with explicit migration guidance in release/docs.
+- [x] Document and enforce the `.agent-layer/.env` namespace policy: only `AL_` keys are loaded; non-`AL_` keys are ignored and no env-key migration path is provided.
 - [ ] Backlog 2026-02-03 b4c5d6e (Priority: Medium, Area: lifecycle management): Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
 
 ### Task details
@@ -152,12 +152,13 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 
 ### Exit criteria
 - `al upgrade plan` exists and shows plain-language categorized changes without writing files.
-- `al upgrade plan --json` is hidden/deprecated compatibility output (no stable schema contract) and is no longer in the default user guidance path.
+- `al upgrade plan` has no machine-readable compatibility mode; plain-language text output is the supported interface.
 - Every upgrade operation creates a snapshot that can be rolled back via `al upgrade rollback`.
 - `--force` is replaced by granular flags; no single flag can silently delete unknowns.
 - `al upgrade --yes --apply-managed-updates` is CI-safe and does not delete unknown files.
 - Migration manifests ship with each release and handle renames, deletions, and config transitions.
-- Breaking changes follow a documented deprecation period with compatibility shims.
+- Breaking changes are removed in-release with explicit migration guidance and release notes.
+- Upgrade docs define `.agent-layer/.env` as `AL_`-only; non-`AL_` keys are ignored with no migration path.
 - Custom template repositories upgrade deterministically with pinning rules.
 
 ## Phase 12 — Documentation and website improvements

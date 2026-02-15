@@ -142,7 +142,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 
 1. `1B`: Implement real `al init --version latest` support by resolving latest release to semver before writing `.agent-layer/al.version`.
 2. `2A`: `al init` auto-recovers empty/corrupt pin file states instead of requiring manual deletion.
-3. `3B`: Launch commands use sync mode `check` by default (no implicit mutation during launch; users can opt into apply/off modes). **Breaking change:** users who rely on `al gemini`/`al claude`/etc. to auto-sync generated files will need to explicitly use `apply` mode or run `al sync` first. Requires a migration manifest entry (Phase 3) and deprecation period.
+3. `3B`: Launch commands use sync mode `check` by default (no implicit mutation during launch; users can opt into apply/off modes). **Breaking change:** users who rely on `al gemini`/`al claude`/etc. to auto-sync generated files will need to explicitly use `apply` mode or run `al sync` first. Requires a migration manifest entry (Phase 3) and explicit migration guidance.
 4. `4C`: `al sync`/`al doctor` warning exit behavior is configurable (`strict`, `warn`, `report`) rather than one fixed policy.
 5. `5B`: Pin-file parsing supports comments and blank lines.
 6. `6B`: Default template MCP dependencies are version-pinned, with explicit opt-in for floating/latest update lanes.
@@ -178,7 +178,7 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - config key migrations
    - pin version changes (current → target)
 2. Keep ownership classification for internal safety decisions, but prefer plain-language default output over ownership-jargon-heavy rendering.
-3. Keep machine-readable output (`--json`) only as a temporary compatibility path; hide/deprecate it in default UX and remove after migration window.
+3. Remove machine-readable `al upgrade plan --json` output; keep plain-language text output as the only supported interface.
 4. Add upgrade-readiness checks in dry-run output:
    - flag suspicious/unrecognized config keys
    - flag stale generated outputs when launch path uses `--no-sync`
@@ -208,9 +208,9 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - generated artifact transitions
 2. Execute migrations idempotently before template write.
 3. Emit deterministic migration report with before/after rationale.
-4. Add compatibility shims plus deprecation periods for renamed commands/flags.
+4. Use hard removal for renamed commands/flags (no compatibility shims, no deprecation periods) and require explicit migration guidance in release notes/docs.
 5. Remove migration dependencies on launch sync-mode matrix changes.
-6. Add migration guidance/rules for env key transitions (for example non-`AL_` to `AL_`).
+6. Document and enforce env namespace policy: only `AL_` keys are loaded from `.agent-layer/.env`; non-`AL_` keys are ignored and no env-key migration path is provided.
 7. Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.
 
 ### Phase 4: Reduce cross-client surprise
