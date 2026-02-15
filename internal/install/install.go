@@ -53,6 +53,12 @@ type installer struct {
 	diffMaxLines              int
 	managedDiffPreviews       map[string]DiffPreview
 	memoryDiffPreviews        map[string]DiffPreview
+	pendingMigrationOps       []upgradeMigrationOperation
+	migrationRollbackTargets  []string
+	migrationManifestCoverage map[string]struct{}
+	migrationConfigMigrations []ConfigKeyMigration
+	migrationReport           UpgradeMigrationReport
+	migrationsPrepared        bool
 	sys                       System
 }
 
@@ -123,6 +129,9 @@ func Run(root string, opts Options) error {
 		if err := inst.scanUnknowns(); err != nil {
 			return err
 		}
+		if err := inst.prepareUpgradeMigrations(); err != nil {
+			return err
+		}
 		snapshot, err := inst.createUpgradeSnapshot()
 		if err != nil {
 			return err
@@ -169,6 +178,7 @@ type transactionStep struct {
 func (inst *installer) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
 	steps := []transactionStep{
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
+		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
 		{name: "writeTemplateFiles", run: inst.writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
 		{name: "writeTemplateDirs", run: inst.writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
 		{name: "updateGitignore", run: inst.updateGitignore, rollbackTargets: inst.updateGitignoreTargetPaths},

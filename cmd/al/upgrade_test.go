@@ -948,6 +948,40 @@ func TestWriteConfigMigrationSection_WithEntries(t *testing.T) {
 	}
 }
 
+func TestWriteMigrationReportSection_WithEntries(t *testing.T) {
+	var buf bytes.Buffer
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.7.0",
+		SourceVersion:       "unknown",
+		SourceVersionOrigin: install.UpgradeMigrationSourceUnknown,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:         "rename_find_issues",
+				Kind:       "rename_file",
+				Rationale:  "Move legacy slash command path",
+				Status:     install.UpgradeMigrationStatusSkippedUnknownSource,
+				SkipReason: "source version is unknown",
+			},
+		},
+	}
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "Migrations:") {
+		t.Fatalf("expected section title in output:\n%s", output)
+	}
+	if !strings.Contains(output, "source version: unknown") {
+		t.Fatalf("expected source version in output:\n%s", output)
+	}
+	if !strings.Contains(output, "[skipped_unknown_source] rename_find_issues") {
+		t.Fatalf("expected migration status line in output:\n%s", output)
+	}
+	if !strings.Contains(output, "reason: source version is unknown") {
+		t.Fatalf("expected skip reason in output:\n%s", output)
+	}
+}
+
 func TestWriteUpgradeSkippedCategoryNotes_AllSkipped(t *testing.T) {
 	var buf bytes.Buffer
 	policy := upgradeApplyPolicy{

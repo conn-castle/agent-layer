@@ -1257,6 +1257,10 @@ func (s *writeFailOnceSystem) RemoveAll(path string) error {
 	return s.base.RemoveAll(path)
 }
 
+func (s *writeFailOnceSystem) Rename(oldpath string, newpath string) error {
+	return s.base.Rename(oldpath, newpath)
+}
+
 func (s *writeFailOnceSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
 	return s.base.WalkDir(root, fn)
 }

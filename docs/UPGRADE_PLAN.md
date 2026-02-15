@@ -76,7 +76,7 @@ The canonical user-facing upgrade contract now lives in `site/docs/upgrades.mdx`
 1. Required booleans (`enabled`) and strict transport rules cause fail-fast breakage when legacy files are incomplete.
 2. Small schema changes (approval values, transport fields, client IDs) can block all commands.
 3. Reserved MCP id (`agent-layer`) is forbidden; collisions fail hard.
-4. Only `AL_` keys are loaded from `.agent-layer/.env`; historical non-prefixed keys stop working.
+4. Only `AL_` keys are loaded from `.agent-layer/.env`; non-`AL_` keys are ignored.
 5. Missing env placeholders fail hard on substitution.
 6. Process env overrides `.env`, which can create “works on my machine” drift across teammates/CI.
 7. Empty env values are ignored; users may think they cleared a secret but runtime still uses process env.

@@ -693,7 +693,7 @@ func TestRun_SuccessfulWithAllOptions(t *testing.T) {
 	err := Run(root, Options{
 		Overwrite:  true,
 		Force:      true,
-		PinVersion: "1.0.0",
+		PinVersion: "0.7.0",
 		System:     RealSystem{},
 	})
 	if err != nil {

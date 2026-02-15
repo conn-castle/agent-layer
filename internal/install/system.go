@@ -17,6 +17,7 @@ type System interface {
 	ReadFile(name string) ([]byte, error)
 	MkdirAll(path string, perm os.FileMode) error
 	RemoveAll(path string) error
+	Rename(oldpath string, newpath string) error
 	WalkDir(root string, fn fs.WalkDirFunc) error
 	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
 }
@@ -42,6 +43,11 @@ func (RealSystem) MkdirAll(path string, perm os.FileMode) error {
 // RemoveAll removes path and any children it contains.
 func (RealSystem) RemoveAll(path string) error {
 	return os.RemoveAll(path)
+}
+
+// Rename renames (moves) oldpath to newpath.
+func (RealSystem) Rename(oldpath string, newpath string) error {
+	return os.Rename(oldpath, newpath)
 }
 
 // WalkDir walks the file tree rooted at root.

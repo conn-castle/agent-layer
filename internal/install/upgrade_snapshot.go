@@ -396,6 +396,10 @@ func (inst *installer) writeTemplateDirsTargetPaths() []string {
 	return uniqueNormalizedPaths(paths)
 }
 
+func (inst *installer) runMigrationsTargetPaths() []string {
+	return uniqueNormalizedPaths(inst.migrationRollbackTargets)
+}
+
 func (inst *installer) updateGitignoreTargetPaths() []string {
 	return []string{filepath.Join(inst.root, ".gitignore")}
 }
@@ -428,6 +432,9 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	}
 	add(filepath.Join(root, ".gitignore"))
 	for _, path := range launchers.VSCodePaths(root).All() {
+		add(path)
+	}
+	for _, path := range inst.runMigrationsTargetPaths() {
 		add(path)
 	}
 	// Snapshot capture depends on scanUnknowns() having populated inst.unknowns

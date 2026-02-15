@@ -316,6 +316,9 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map
 	if err := writeConfigMigrationSection(out, "Config updates", plan.ConfigKeyMigrations); err != nil {
 		return err
 	}
+	if err := writeMigrationReportSection(out, "Migrations", plan.MigrationReport); err != nil {
+		return err
+	}
 	if err := writePinVersionSection(out, plan.PinVersionChange, previews); err != nil {
 		return err
 	}
@@ -371,6 +374,38 @@ func writeConfigMigrationSection(out io.Writer, title string, migrations []insta
 	for _, migration := range migrations {
 		if _, err := fmt.Fprintf(out, "  - %s: %s -> %s\n", migration.Key, migration.From, migration.To); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func writeMigrationReportSection(out io.Writer, title string, report install.UpgradeMigrationReport) error {
+	if _, err := fmt.Fprintf(out, "\n%s:\n", title); err != nil {
+		return err
+	}
+	if len(report.Entries) == 0 {
+		_, err := fmt.Fprintln(out, "  - (none)")
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - target version: %s\n", report.TargetVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - source version: %s (%s)\n", report.SourceVersion, report.SourceVersionOrigin); err != nil {
+		return err
+	}
+	for _, note := range report.SourceResolutionNotes {
+		if _, err := fmt.Fprintf(out, "  - source note: %s\n", note); err != nil {
+			return err
+		}
+	}
+	for _, entry := range report.Entries {
+		if _, err := fmt.Fprintf(out, "  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale); err != nil {
+			return err
+		}
+		if entry.SkipReason != "" {
+			if _, err := fmt.Fprintf(out, "    reason: %s\n", entry.SkipReason); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -488,6 +523,12 @@ func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck
 
 func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 	filesToUpdate := len(plan.TemplateUpdates) + len(plan.SectionAwareUpdates)
+	migrationsPlanned := 0
+	for _, entry := range plan.MigrationReport.Entries {
+		if entry.Status == install.UpgradeMigrationStatusPlanned {
+			migrationsPlanned++
+		}
+	}
 	needsReview := len(plan.ReadinessChecks) > 0
 	reviewState := "yes"
 	if !needsReview {
@@ -509,6 +550,9 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 		return err
 	}
 	if _, err := fmt.Fprintf(out, "  - config updates: %d\n", len(plan.ConfigKeyMigrations)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - migrations planned: %d\n", migrationsPlanned); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(out, "  - readiness warnings: %d\n", len(plan.ReadinessChecks)); err != nil {

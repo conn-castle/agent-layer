@@ -1,0 +1,1002 @@
+package install
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strconv"
+	"strings"
+
+	tomlv2 "github.com/pelletier/go-toml/v2"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/version"
+)
+
+const (
+	upgradeMigrationManifestSchemaVersion = 1
+	upgradeMigrationManifestDir           = "migrations"
+	upgradeMigrationConfigPath            = ".agent-layer/config.toml"
+)
+
+// UpgradeMigrationSourceOrigin identifies where migration source-version evidence came from.
+type UpgradeMigrationSourceOrigin string
+
+const (
+	// UpgradeMigrationSourceUnknown means source version could not be determined.
+	UpgradeMigrationSourceUnknown UpgradeMigrationSourceOrigin = "unknown"
+	// UpgradeMigrationSourcePin means source version came from .agent-layer/al.version.
+	UpgradeMigrationSourcePin UpgradeMigrationSourceOrigin = "pin_file"
+	// UpgradeMigrationSourceBaseline means source version came from managed baseline state.
+	UpgradeMigrationSourceBaseline UpgradeMigrationSourceOrigin = "managed_baseline"
+	// UpgradeMigrationSourceSnapshot means source version came from latest upgrade snapshot pin entry.
+	UpgradeMigrationSourceSnapshot UpgradeMigrationSourceOrigin = "upgrade_snapshot"
+	// UpgradeMigrationSourceManifestMatch means source version was inferred from embedded manifest fingerprint matching.
+	UpgradeMigrationSourceManifestMatch UpgradeMigrationSourceOrigin = "manifest_match"
+)
+
+// UpgradeMigrationStatus describes migration execution/planning status.
+type UpgradeMigrationStatus string
+
+const (
+	// UpgradeMigrationStatusPlanned means migration is eligible to run.
+	UpgradeMigrationStatusPlanned UpgradeMigrationStatus = "planned"
+	// UpgradeMigrationStatusApplied means migration mutated repository state during apply.
+	UpgradeMigrationStatusApplied UpgradeMigrationStatus = "applied"
+	// UpgradeMigrationStatusNoop means migration ran but made no changes (already migrated/idempotent).
+	UpgradeMigrationStatusNoop UpgradeMigrationStatus = "no_op"
+	// UpgradeMigrationStatusSkippedUnknownSource means migration requires a known source version but source is unknown.
+	UpgradeMigrationStatusSkippedUnknownSource UpgradeMigrationStatus = "skipped_unknown_source"
+	// UpgradeMigrationStatusSkippedSourceTooOld means migration requires a newer prior version than the resolved source.
+	UpgradeMigrationStatusSkippedSourceTooOld UpgradeMigrationStatus = "skipped_source_too_old"
+)
+
+// UpgradeMigrationEntry is a deterministic migration-plan/apply record.
+type UpgradeMigrationEntry struct {
+	ID             string                 `json:"id"`
+	Kind           string                 `json:"kind"`
+	Rationale      string                 `json:"rationale"`
+	SourceAgnostic bool                   `json:"source_agnostic"`
+	Status         UpgradeMigrationStatus `json:"status"`
+	SkipReason     string                 `json:"skip_reason,omitempty"`
+	From           string                 `json:"from,omitempty"`
+	To             string                 `json:"to,omitempty"`
+	Path           string                 `json:"path,omitempty"`
+	Key            string                 `json:"key,omitempty"`
+	Value          json.RawMessage        `json:"value,omitempty"`
+}
+
+// UpgradeMigrationReport contains deterministic migration planning/execution data for upgrade output.
+type UpgradeMigrationReport struct {
+	TargetVersion         string                       `json:"target_version,omitempty"`
+	MinPriorVersion       string                       `json:"min_prior_version,omitempty"`
+	ManifestPath          string                       `json:"manifest_path,omitempty"`
+	SourceVersion         string                       `json:"source_version"`
+	SourceVersionOrigin   UpgradeMigrationSourceOrigin `json:"source_version_origin"`
+	SourceResolutionNotes []string                     `json:"source_resolution_notes,omitempty"`
+	Entries               []UpgradeMigrationEntry      `json:"entries"`
+}
+
+type upgradeMigrationOperationKind string
+
+const (
+	upgradeMigrationKindRenameFile              upgradeMigrationOperationKind = "rename_file"
+	upgradeMigrationKindDeleteFile              upgradeMigrationOperationKind = "delete_file"
+	upgradeMigrationKindRenameGeneratedArtifact upgradeMigrationOperationKind = "rename_generated_artifact"
+	upgradeMigrationKindDeleteGeneratedArtifact upgradeMigrationOperationKind = "delete_generated_artifact"
+	upgradeMigrationKindConfigRenameKey         upgradeMigrationOperationKind = "config_rename_key"
+	upgradeMigrationKindConfigSetDefault        upgradeMigrationOperationKind = "config_set_default"
+)
+
+type upgradeMigrationOperation struct {
+	ID             string                        `json:"id"`
+	Kind           upgradeMigrationOperationKind `json:"kind"`
+	Rationale      string                        `json:"rationale"`
+	SourceAgnostic bool                          `json:"source_agnostic,omitempty"`
+	From           string                        `json:"from,omitempty"`
+	To             string                        `json:"to,omitempty"`
+	Path           string                        `json:"path,omitempty"`
+	Key            string                        `json:"key,omitempty"`
+	Value          json.RawMessage               `json:"value,omitempty"`
+}
+
+type upgradeMigrationManifest struct {
+	SchemaVersion   int                         `json:"schema_version"`
+	TargetVersion   string                      `json:"target_version"`
+	MinPriorVersion string                      `json:"min_prior_version"`
+	Operations      []upgradeMigrationOperation `json:"operations"`
+}
+
+type sourceVersionResolution struct {
+	version string
+	origin  UpgradeMigrationSourceOrigin
+	notes   []string
+}
+
+type migrationPlan struct {
+	report           UpgradeMigrationReport
+	executable       []upgradeMigrationOperation
+	rollbackTargets  []string
+	coveredPaths     map[string]struct{}
+	configMigrations []ConfigKeyMigration
+}
+
+func (inst *installer) prepareUpgradeMigrations() error {
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		return err
+	}
+	inst.pendingMigrationOps = plan.executable
+	inst.migrationRollbackTargets = plan.rollbackTargets
+	inst.migrationManifestCoverage = plan.coveredPaths
+	inst.migrationConfigMigrations = plan.configMigrations
+	inst.migrationReport = plan.report
+	inst.migrationsPrepared = true
+	return nil
+}
+
+func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
+	plan := migrationPlan{
+		report: UpgradeMigrationReport{
+			SourceVersion:       string(UpgradeMigrationSourceUnknown),
+			SourceVersionOrigin: UpgradeMigrationSourceUnknown,
+			Entries:             []UpgradeMigrationEntry{},
+		},
+		coveredPaths: make(map[string]struct{}),
+	}
+	if strings.TrimSpace(inst.pinVersion) == "" {
+		return plan, nil
+	}
+
+	manifest, manifestPath, err := loadUpgradeMigrationManifestByVersion(inst.pinVersion)
+	if err != nil {
+		return migrationPlan{}, err
+	}
+	resolution := inst.resolveUpgradeMigrationSourceVersion()
+	plan.report.TargetVersion = manifest.TargetVersion
+	plan.report.MinPriorVersion = manifest.MinPriorVersion
+	plan.report.ManifestPath = manifestPath
+	plan.report.SourceVersion = resolution.version
+	plan.report.SourceVersionOrigin = resolution.origin
+	plan.report.SourceResolutionNotes = dedupSortedStrings(resolution.notes)
+
+	operations := sortedUpgradeMigrationOperations(manifest.Operations)
+	entries := make([]UpgradeMigrationEntry, 0, len(operations))
+	rollbackTargets := make([]string, 0)
+	configMigrations := make([]ConfigKeyMigration, 0)
+
+	for _, op := range operations {
+		entry := migrationEntryFromOperation(op)
+		status := UpgradeMigrationStatusPlanned
+		skipReason := ""
+		if !op.SourceAgnostic {
+			if resolution.version == string(UpgradeMigrationSourceUnknown) {
+				status = UpgradeMigrationStatusSkippedUnknownSource
+				skipReason = "source version is unknown"
+			} else {
+				cmp, cmpErr := compareSemver(resolution.version, manifest.MinPriorVersion)
+				if cmpErr != nil {
+					return migrationPlan{}, fmt.Errorf("compare source version %s with min_prior_version %s: %w", resolution.version, manifest.MinPriorVersion, cmpErr)
+				}
+				if cmp < 0 {
+					status = UpgradeMigrationStatusSkippedSourceTooOld
+					skipReason = fmt.Sprintf("source version %s is older than min prior version %s", resolution.version, manifest.MinPriorVersion)
+				}
+			}
+		}
+		entry.Status = status
+		entry.SkipReason = skipReason
+		entries = append(entries, entry)
+		if status != UpgradeMigrationStatusPlanned {
+			continue
+		}
+
+		plan.executable = append(plan.executable, op)
+		for _, relPath := range migrationCoveredPaths(op) {
+			plan.coveredPaths[relPath] = struct{}{}
+			absPath, absErr := snapshotEntryAbsPath(inst.root, relPath)
+			if absErr != nil {
+				return migrationPlan{}, absErr
+			}
+			rollbackTargets = append(rollbackTargets, absPath)
+		}
+		if isConfigMigrationKind(op.Kind) {
+			configPath, cfgErr := snapshotEntryAbsPath(inst.root, upgradeMigrationConfigPath)
+			if cfgErr != nil {
+				return migrationPlan{}, cfgErr
+			}
+			rollbackTargets = append(rollbackTargets, configPath)
+			if cfgMigration, ok := configMigrationFromOperation(op); ok {
+				configMigrations = append(configMigrations, cfgMigration)
+			}
+		}
+	}
+
+	plan.report.Entries = entries
+	plan.rollbackTargets = uniqueNormalizedPaths(rollbackTargets)
+	plan.configMigrations = configMigrations
+	return plan, nil
+}
+
+func (inst *installer) runMigrations() error {
+	if !inst.migrationsPrepared {
+		if err := inst.prepareUpgradeMigrations(); err != nil {
+			return err
+		}
+	}
+	if len(inst.migrationReport.Entries) == 0 {
+		return nil
+	}
+
+	entryIndex := make(map[string]int, len(inst.migrationReport.Entries))
+	for idx, entry := range inst.migrationReport.Entries {
+		entryIndex[entry.ID] = idx
+	}
+
+	for _, op := range inst.pendingMigrationOps {
+		changed, err := inst.executeUpgradeMigrationOperation(op)
+		if err != nil {
+			return fmt.Errorf("execute migration %s (%s): %w", op.ID, op.Kind, err)
+		}
+		idx, ok := entryIndex[op.ID]
+		if !ok {
+			continue
+		}
+		if changed {
+			inst.migrationReport.Entries[idx].Status = UpgradeMigrationStatusApplied
+			continue
+		}
+		inst.migrationReport.Entries[idx].Status = UpgradeMigrationStatusNoop
+	}
+
+	return writeUpgradeMigrationReport(inst.warnOutput(), inst.migrationReport)
+}
+
+func writeUpgradeMigrationReport(out io.Writer, report UpgradeMigrationReport) error {
+	if len(report.Entries) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(out, "Migration report:"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - target version: %s\n", report.TargetVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "  - source version: %s (%s)\n", report.SourceVersion, report.SourceVersionOrigin); err != nil {
+		return err
+	}
+	for _, note := range report.SourceResolutionNotes {
+		if _, err := fmt.Fprintf(out, "  - source note: %s\n", note); err != nil {
+			return err
+		}
+	}
+	for _, entry := range report.Entries {
+		if _, err := fmt.Fprintf(out, "  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale); err != nil {
+			return err
+		}
+		if entry.SkipReason != "" {
+			if _, err := fmt.Fprintf(out, "    reason: %s\n", entry.SkipReason); err != nil {
+				return err
+			}
+		}
+		if entry.From != "" {
+			if _, err := fmt.Fprintf(out, "    from: %s\n", entry.From); err != nil {
+				return err
+			}
+		}
+		if entry.To != "" {
+			if _, err := fmt.Fprintf(out, "    to: %s\n", entry.To); err != nil {
+				return err
+			}
+		}
+		if entry.Path != "" {
+			if _, err := fmt.Fprintf(out, "    path: %s\n", entry.Path); err != nil {
+				return err
+			}
+		}
+		if entry.Key != "" {
+			if _, err := fmt.Fprintf(out, "    key: %s\n", entry.Key); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := fmt.Fprintln(out)
+	return err
+}
+
+func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOperation) (bool, error) {
+	switch op.Kind {
+	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+		return inst.executeRenameMigration(op.From, op.To)
+	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
+		return inst.executeDeleteMigration(op.Path)
+	case upgradeMigrationKindConfigRenameKey:
+		return inst.executeConfigRenameKeyMigration(op.From, op.To)
+	case upgradeMigrationKindConfigSetDefault:
+		return inst.executeConfigSetDefaultMigration(op.Key, op.Value)
+	default:
+		return false, fmt.Errorf("unsupported migration kind %q", op.Kind)
+	}
+}
+
+func (inst *installer) executeRenameMigration(fromRel string, toRel string) (bool, error) {
+	fromPath, err := snapshotEntryAbsPath(inst.root, fromRel)
+	if err != nil {
+		return false, err
+	}
+	toPath, err := snapshotEntryAbsPath(inst.root, toRel)
+	if err != nil {
+		return false, err
+	}
+	if filepath.Clean(fromPath) == filepath.Clean(toPath) {
+		return false, nil
+	}
+
+	fromInfo, err := inst.sys.Stat(fromPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			_, statErr := inst.sys.Stat(toPath)
+			if statErr == nil || errors.Is(statErr, os.ErrNotExist) {
+				return false, nil
+			}
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, toPath, statErr)
+		}
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, fromPath, err)
+	}
+
+	toInfo, err := inst.sys.Stat(toPath)
+	if err == nil {
+		if fromInfo.Mode().IsRegular() && toInfo.Mode().IsRegular() {
+			fromBytes, readFromErr := inst.sys.ReadFile(fromPath)
+			if readFromErr != nil {
+				return false, fmt.Errorf(messages.InstallFailedReadFmt, fromPath, readFromErr)
+			}
+			toBytes, readToErr := inst.sys.ReadFile(toPath)
+			if readToErr != nil {
+				return false, fmt.Errorf(messages.InstallFailedReadFmt, toPath, readToErr)
+			}
+			if normalizeTemplateContent(string(fromBytes)) == normalizeTemplateContent(string(toBytes)) {
+				if removeErr := inst.sys.RemoveAll(fromPath); removeErr != nil {
+					return false, fmt.Errorf("remove duplicate rename source %s: %w", fromRel, removeErr)
+				}
+				return true, nil
+			}
+		}
+		return false, fmt.Errorf("rename migration target already exists: %s", toRel)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, toPath, err)
+	}
+
+	if mkErr := inst.sys.MkdirAll(filepath.Dir(toPath), 0o755); mkErr != nil {
+		return false, fmt.Errorf(messages.InstallFailedCreateDirForFmt, toPath, mkErr)
+	}
+	if renameErr := inst.sys.Rename(fromPath, toPath); renameErr != nil {
+		return false, fmt.Errorf("rename %s -> %s: %w", fromRel, toRel, renameErr)
+	}
+	return true, nil
+}
+
+func (inst *installer) executeDeleteMigration(relPath string) (bool, error) {
+	absPath, err := snapshotEntryAbsPath(inst.root, relPath)
+	if err != nil {
+		return false, err
+	}
+	if _, statErr := inst.sys.Stat(absPath); statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, absPath, statErr)
+	}
+	if removeErr := inst.sys.RemoveAll(absPath); removeErr != nil {
+		return false, fmt.Errorf("delete migration path %s: %w", relPath, removeErr)
+	}
+	return true, nil
+}
+
+func (inst *installer) executeConfigRenameKeyMigration(fromKey string, toKey string) (bool, error) {
+	if strings.TrimSpace(fromKey) == strings.TrimSpace(toKey) {
+		return false, nil
+	}
+	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	fromParts, err := splitMigrationKeyPath(fromKey)
+	if err != nil {
+		return false, err
+	}
+	toParts, err := splitMigrationKeyPath(toKey)
+	if err != nil {
+		return false, err
+	}
+	fromValue, fromExists, err := getNestedConfigValue(cfg, fromParts)
+	if err != nil {
+		return false, err
+	}
+	toValue, toExists, err := getNestedConfigValue(cfg, toParts)
+	if err != nil {
+		return false, err
+	}
+	if !fromExists {
+		return false, nil
+	}
+	if toExists {
+		if reflect.DeepEqual(fromValue, toValue) {
+			removed, removeErr := deleteNestedConfigValue(cfg, fromParts)
+			if removeErr != nil {
+				return false, removeErr
+			}
+			if !removed {
+				return false, nil
+			}
+			if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
+				return false, writeErr
+			}
+			return true, nil
+		}
+		return false, fmt.Errorf("config key rename conflict: destination key %s already exists", toKey)
+	}
+	if setErr := setNestedConfigValue(cfg, toParts, fromValue, true); setErr != nil {
+		return false, setErr
+	}
+	if _, removeErr := deleteNestedConfigValue(cfg, fromParts); removeErr != nil {
+		return false, removeErr
+	}
+	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
+		return false, writeErr
+	}
+	return true, nil
+}
+
+func (inst *installer) executeConfigSetDefaultMigration(keyPath string, rawValue json.RawMessage) (bool, error) {
+	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	parts, err := splitMigrationKeyPath(keyPath)
+	if err != nil {
+		return false, err
+	}
+	if _, keyExists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
+		return false, getErr
+	} else if keyExists {
+		return false, nil
+	}
+	var decoded any
+	if unmarshalErr := json.Unmarshal(rawValue, &decoded); unmarshalErr != nil {
+		return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
+	}
+	if setErr := setNestedConfigValue(cfg, parts, decoded, true); setErr != nil {
+		return false, setErr
+	}
+	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
+		return false, writeErr
+	}
+	return true, nil
+}
+
+func (inst *installer) readMigrationConfigMap() (map[string]any, string, bool, error) {
+	cfgPath := filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath))
+	data, err := inst.sys.ReadFile(cfgPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, cfgPath, false, nil
+		}
+		return nil, cfgPath, false, fmt.Errorf(messages.InstallFailedReadFmt, cfgPath, err)
+	}
+	var cfg map[string]any
+	if unmarshalErr := tomlv2.Unmarshal(data, &cfg); unmarshalErr != nil {
+		return nil, cfgPath, false, fmt.Errorf("decode config %s for migration: %w", cfgPath, unmarshalErr)
+	}
+	if cfg == nil {
+		cfg = make(map[string]any)
+	}
+	return cfg, cfgPath, true, nil
+}
+
+func (inst *installer) writeMigrationConfigMap(cfgPath string, cfg map[string]any) error {
+	encoded, err := tomlv2.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("encode config migration output: %w", err)
+	}
+	if len(encoded) == 0 || encoded[len(encoded)-1] != '\n' {
+		encoded = append(encoded, '\n')
+	}
+	if writeErr := inst.sys.WriteFileAtomic(cfgPath, encoded, 0o644); writeErr != nil {
+		return fmt.Errorf(messages.InstallFailedWriteFmt, cfgPath, writeErr)
+	}
+	return nil
+}
+
+func getNestedConfigValue(cfg map[string]any, parts []string) (any, bool, error) {
+	if len(parts) == 0 {
+		return nil, false, fmt.Errorf("config key path is required")
+	}
+	current := cfg
+	for idx := 0; idx < len(parts)-1; idx++ {
+		value, ok := current[parts[idx]]
+		if !ok {
+			return nil, false, nil
+		}
+		nested, nestedOK := asStringAnyMap(value)
+		if !nestedOK {
+			return nil, false, fmt.Errorf("config key path %s traverses non-table value", strings.Join(parts[:idx+1], "."))
+		}
+		current = nested
+	}
+	value, ok := current[parts[len(parts)-1]]
+	if !ok {
+		return nil, false, nil
+	}
+	return value, true, nil
+}
+
+func setNestedConfigValue(cfg map[string]any, parts []string, value any, create bool) error {
+	if len(parts) == 0 {
+		return fmt.Errorf("config key path is required")
+	}
+	current := cfg
+	for idx := 0; idx < len(parts)-1; idx++ {
+		segment := parts[idx]
+		existing, ok := current[segment]
+		if !ok {
+			if !create {
+				return fmt.Errorf("missing config table %s", strings.Join(parts[:idx+1], "."))
+			}
+			next := make(map[string]any)
+			current[segment] = next
+			current = next
+			continue
+		}
+		nested, nestedOK := asStringAnyMap(existing)
+		if !nestedOK {
+			return fmt.Errorf("config key path %s traverses non-table value", strings.Join(parts[:idx+1], "."))
+		}
+		current = nested
+	}
+	current[parts[len(parts)-1]] = value
+	return nil
+}
+
+func deleteNestedConfigValue(cfg map[string]any, parts []string) (bool, error) {
+	if len(parts) == 0 {
+		return false, fmt.Errorf("config key path is required")
+	}
+	current := cfg
+	for idx := 0; idx < len(parts)-1; idx++ {
+		value, ok := current[parts[idx]]
+		if !ok {
+			return false, nil
+		}
+		nested, nestedOK := asStringAnyMap(value)
+		if !nestedOK {
+			return false, fmt.Errorf("config key path %s traverses non-table value", strings.Join(parts[:idx+1], "."))
+		}
+		current = nested
+	}
+	leaf := parts[len(parts)-1]
+	if _, ok := current[leaf]; !ok {
+		return false, nil
+	}
+	delete(current, leaf)
+	return true, nil
+}
+
+func asStringAnyMap(value any) (map[string]any, bool) {
+	asAny, ok := value.(map[string]any)
+	if ok {
+		return asAny, true
+	}
+	asInterface, ok := value.(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	converted := make(map[string]any, len(asInterface))
+	for key, val := range asInterface {
+		converted[key] = val
+	}
+	return converted, true
+}
+
+func splitMigrationKeyPath(raw string) ([]string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, fmt.Errorf("migration config key path is required")
+	}
+	parts := strings.Split(trimmed, ".")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		segment := strings.TrimSpace(part)
+		if segment == "" {
+			return nil, fmt.Errorf("invalid migration config key path %q", raw)
+		}
+		out = append(out, segment)
+	}
+	return out, nil
+}
+
+func isConfigMigrationKind(kind upgradeMigrationOperationKind) bool {
+	return kind == upgradeMigrationKindConfigRenameKey || kind == upgradeMigrationKindConfigSetDefault
+}
+
+func migrationCoveredPaths(op upgradeMigrationOperation) []string {
+	paths := make([]string, 0, 2)
+	switch op.Kind {
+	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+		from := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From)))
+		to := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To)))
+		if strings.TrimSpace(from) != "" {
+			paths = append(paths, from)
+		}
+		if strings.TrimSpace(to) != "" {
+			paths = append(paths, to)
+		}
+	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
+		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		if strings.TrimSpace(pathValue) != "" {
+			paths = append(paths, pathValue)
+		}
+	}
+	return dedupSortedStrings(paths)
+}
+
+func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigration, bool) {
+	switch op.Kind {
+	case upgradeMigrationKindConfigRenameKey:
+		return ConfigKeyMigration{Key: op.From, From: op.From, To: op.To}, true
+	case upgradeMigrationKindConfigSetDefault:
+		to := strings.TrimSpace(string(op.Value))
+		if to == "" {
+			to = "null"
+		}
+		return ConfigKeyMigration{Key: op.Key, From: "(unset)", To: to}, true
+	default:
+		return ConfigKeyMigration{}, false
+	}
+}
+
+func migrationEntryFromOperation(op upgradeMigrationOperation) UpgradeMigrationEntry {
+	return UpgradeMigrationEntry{
+		ID:             op.ID,
+		Kind:           string(op.Kind),
+		Rationale:      op.Rationale,
+		SourceAgnostic: op.SourceAgnostic,
+		From:           op.From,
+		To:             op.To,
+		Path:           op.Path,
+		Key:            op.Key,
+		Value:          op.Value,
+	}
+}
+
+func sortedUpgradeMigrationOperations(in []upgradeMigrationOperation) []upgradeMigrationOperation {
+	if len(in) == 0 {
+		return []upgradeMigrationOperation{}
+	}
+	out := make([]upgradeMigrationOperation, len(in))
+	copy(out, in)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ID == out[j].ID {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+func (inst *installer) resolveUpgradeMigrationSourceVersion() sourceVersionResolution {
+	resolution := sourceVersionResolution{
+		version: string(UpgradeMigrationSourceUnknown),
+		origin:  UpgradeMigrationSourceUnknown,
+		notes:   []string{},
+	}
+
+	pinVersion, pinErr := readCurrentPinVersion(inst.root, inst.sys)
+	if pinErr != nil {
+		resolution.notes = append(resolution.notes, fmt.Sprintf("pin version unavailable: %v", pinErr))
+	} else if strings.TrimSpace(pinVersion) != "" {
+		resolution.version = pinVersion
+		resolution.origin = UpgradeMigrationSourcePin
+		return resolution
+	}
+
+	state, baselineErr := readManagedBaselineState(inst.root, inst.sys)
+	if baselineErr == nil {
+		normalized, normalizeErr := version.Normalize(strings.TrimSpace(state.BaselineVersion))
+		if normalizeErr == nil {
+			resolution.version = normalized
+			resolution.origin = UpgradeMigrationSourceBaseline
+			return resolution
+		}
+		resolution.notes = append(resolution.notes, fmt.Sprintf("managed baseline version invalid: %v", normalizeErr))
+	} else if !errors.Is(baselineErr, os.ErrNotExist) {
+		resolution.notes = append(resolution.notes, fmt.Sprintf("managed baseline unavailable: %v", baselineErr))
+	}
+
+	snapshotVersion, snapshotErr := inst.inferSourceVersionFromLatestSnapshot()
+	if snapshotErr != nil {
+		resolution.notes = append(resolution.notes, fmt.Sprintf("snapshot source inference failed: %v", snapshotErr))
+	} else if strings.TrimSpace(snapshotVersion) != "" {
+		resolution.version = snapshotVersion
+		resolution.origin = UpgradeMigrationSourceSnapshot
+		return resolution
+	}
+
+	manifestVersion, manifestErr := inst.inferSourceVersionFromManifestMatch()
+	if manifestErr != nil {
+		resolution.notes = append(resolution.notes, fmt.Sprintf("manifest source inference failed: %v", manifestErr))
+	} else if strings.TrimSpace(manifestVersion) != "" {
+		resolution.version = manifestVersion
+		resolution.origin = UpgradeMigrationSourceManifestMatch
+		return resolution
+	}
+
+	resolution.notes = dedupSortedStrings(resolution.notes)
+	return resolution
+}
+
+func (inst *installer) inferSourceVersionFromLatestSnapshot() (string, error) {
+	snapshotDir := inst.upgradeSnapshotDirPath()
+	if _, err := inst.sys.Stat(snapshotDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf(messages.InstallFailedStatFmt, snapshotDir, err)
+	}
+	files, err := inst.listUpgradeSnapshotFiles()
+	if err != nil {
+		return "", err
+	}
+	for idx := len(files) - 1; idx >= 0; idx-- {
+		snapshot, readErr := readUpgradeSnapshot(files[idx].path, inst.sys)
+		if readErr != nil {
+			continue
+		}
+		for _, entry := range snapshot.Entries {
+			if entry.Path != ".agent-layer/al.version" || entry.Kind != upgradeSnapshotEntryKindFile {
+				continue
+			}
+			decoded, decodeErr := base64.StdEncoding.DecodeString(entry.ContentBase64)
+			if decodeErr != nil {
+				continue
+			}
+			normalized, normalizeErr := version.Normalize(strings.TrimSpace(string(decoded)))
+			if normalizeErr != nil {
+				continue
+			}
+			return normalized, nil
+		}
+	}
+	return "", nil
+}
+
+func (inst *installer) inferSourceVersionFromManifestMatch() (string, error) {
+	manifests, err := loadAllTemplateManifests()
+	if err != nil {
+		return "", err
+	}
+	candidates := make([]string, 0, len(manifests))
+	for versionValue, manifest := range manifests {
+		match, matchErr := inst.matchesTemplateDocsManifest(manifest)
+		if matchErr != nil {
+			return "", matchErr
+		}
+		if match {
+			candidates = append(candidates, versionValue)
+		}
+	}
+	sort.Strings(candidates)
+	if len(candidates) == 1 {
+		return candidates[0], nil
+	}
+	return "", nil
+}
+
+func (inst *installer) matchesTemplateDocsManifest(manifest templateManifest) (bool, error) {
+	entries := make([]manifestFileEntry, 0)
+	for _, entry := range manifest.Files {
+		if strings.HasPrefix(entry.Path, "docs/agent-layer/") {
+			entries = append(entries, entry)
+		}
+	}
+	if len(entries) == 0 {
+		return false, nil
+	}
+	for _, entry := range entries {
+		absPath := filepath.Join(inst.root, filepath.FromSlash(entry.Path))
+		content, err := inst.sys.ReadFile(absPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return false, nil
+			}
+			return false, fmt.Errorf(messages.InstallFailedReadFmt, absPath, err)
+		}
+		if hashNormalizedContent(content) != entry.FullHashNormalized {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func dedupSortedStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		set[trimmed] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for value := range set {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func compareSemver(a string, b string) (int, error) {
+	aParts, err := parseSemver(a)
+	if err != nil {
+		return 0, err
+	}
+	bParts, err := parseSemver(b)
+	if err != nil {
+		return 0, err
+	}
+	for idx := 0; idx < len(aParts); idx++ {
+		if aParts[idx] < bParts[idx] {
+			return -1, nil
+		}
+		if aParts[idx] > bParts[idx] {
+			return 1, nil
+		}
+	}
+	return 0, nil
+}
+
+func parseSemver(raw string) ([3]int, error) {
+	normalized, err := version.Normalize(raw)
+	if err != nil {
+		return [3]int{}, err
+	}
+	parts := strings.Split(normalized, ".")
+	if len(parts) != 3 {
+		return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionFmt, raw)
+	}
+	var out [3]int
+	for idx, part := range parts {
+		value, atoiErr := strconv.Atoi(part)
+		if atoiErr != nil {
+			return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionSegmentFmt, part, atoiErr)
+		}
+		out[idx] = value
+	}
+	return out, nil
+}
+
+func loadUpgradeMigrationManifestByVersion(versionRaw string) (upgradeMigrationManifest, string, error) {
+	normalized, err := version.Normalize(versionRaw)
+	if err != nil {
+		return upgradeMigrationManifest{}, "", fmt.Errorf(messages.InstallInvalidPinVersionFmt, err)
+	}
+	manifestPath := path.Join(upgradeMigrationManifestDir, normalized+".json")
+	data, err := templates.Read(manifestPath)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return upgradeMigrationManifest{}, manifestPath, fmt.Errorf("missing migration manifest for target version %s at template path %s", normalized, manifestPath)
+		}
+		return upgradeMigrationManifest{}, manifestPath, err
+	}
+	var manifest upgradeMigrationManifest
+	if unmarshalErr := json.Unmarshal(data, &manifest); unmarshalErr != nil {
+		return upgradeMigrationManifest{}, manifestPath, fmt.Errorf("decode migration manifest %s: %w", manifestPath, unmarshalErr)
+	}
+	if validateErr := validateUpgradeMigrationManifest(manifest); validateErr != nil {
+		return upgradeMigrationManifest{}, manifestPath, fmt.Errorf("validate migration manifest %s: %w", manifestPath, validateErr)
+	}
+	if manifest.TargetVersion != normalized {
+		return upgradeMigrationManifest{}, manifestPath, fmt.Errorf("migration manifest %s target_version %q does not match requested version %q", manifestPath, manifest.TargetVersion, normalized)
+	}
+	return manifest, manifestPath, nil
+}
+
+func validateUpgradeMigrationManifest(manifest upgradeMigrationManifest) error {
+	if manifest.SchemaVersion != upgradeMigrationManifestSchemaVersion {
+		return fmt.Errorf("unsupported schema_version %d", manifest.SchemaVersion)
+	}
+	if strings.TrimSpace(manifest.TargetVersion) == "" {
+		return fmt.Errorf("target_version is required")
+	}
+	normalizedTarget, err := version.Normalize(manifest.TargetVersion)
+	if err != nil {
+		return fmt.Errorf("invalid target_version %q: %w", manifest.TargetVersion, err)
+	}
+	if normalizedTarget != manifest.TargetVersion {
+		return fmt.Errorf("target_version %q must be normalized to X.Y.Z", manifest.TargetVersion)
+	}
+	if strings.TrimSpace(manifest.MinPriorVersion) == "" {
+		return fmt.Errorf("min_prior_version is required")
+	}
+	normalizedMin, err := version.Normalize(manifest.MinPriorVersion)
+	if err != nil {
+		return fmt.Errorf("invalid min_prior_version %q: %w", manifest.MinPriorVersion, err)
+	}
+	if normalizedMin != manifest.MinPriorVersion {
+		return fmt.Errorf("min_prior_version %q must be normalized to X.Y.Z", manifest.MinPriorVersion)
+	}
+
+	seenIDs := make(map[string]struct{}, len(manifest.Operations))
+	for _, op := range manifest.Operations {
+		if validateErr := validateUpgradeMigrationOperation(op); validateErr != nil {
+			return validateErr
+		}
+		if _, exists := seenIDs[op.ID]; exists {
+			return fmt.Errorf("duplicate migration id %q", op.ID)
+		}
+		seenIDs[op.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
+	if strings.TrimSpace(op.ID) == "" {
+		return fmt.Errorf("migration id is required")
+	}
+	if strings.TrimSpace(op.Rationale) == "" {
+		return fmt.Errorf("migration %s rationale is required", op.ID)
+	}
+	switch op.Kind {
+	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
+		if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
+			return fmt.Errorf("migration %s (%s) requires from and to", op.ID, op.Kind)
+		}
+		if normalizeRelPath(filepath.Clean(filepath.FromSlash(op.From))) == normalizeRelPath(filepath.Clean(filepath.FromSlash(op.To))) {
+			return fmt.Errorf("migration %s (%s) requires distinct from/to", op.ID, op.Kind)
+		}
+	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
+		if strings.TrimSpace(op.Path) == "" {
+			return fmt.Errorf("migration %s (%s) requires path", op.ID, op.Kind)
+		}
+	case upgradeMigrationKindConfigRenameKey:
+		if _, err := splitMigrationKeyPath(op.From); err != nil {
+			return fmt.Errorf("migration %s invalid from key: %w", op.ID, err)
+		}
+		if _, err := splitMigrationKeyPath(op.To); err != nil {
+			return fmt.Errorf("migration %s invalid to key: %w", op.ID, err)
+		}
+	case upgradeMigrationKindConfigSetDefault:
+		if _, err := splitMigrationKeyPath(op.Key); err != nil {
+			return fmt.Errorf("migration %s invalid key: %w", op.ID, err)
+		}
+		if len(op.Value) == 0 {
+			return fmt.Errorf("migration %s (%s) requires value", op.ID, op.Kind)
+		}
+		var decoded any
+		if err := json.Unmarshal(op.Value, &decoded); err != nil {
+			return fmt.Errorf("migration %s (%s) has invalid value: %w", op.ID, op.Kind, err)
+		}
+	default:
+		return fmt.Errorf("migration %s has unsupported kind %q", op.ID, op.Kind)
+	}
+	return nil
+}

@@ -134,8 +134,8 @@ Covers Upgrade Plan Phases 1–3. Depends on Phase 10 (Upgrade Plan Phase 0).
 - [x] Add CI-safe non-interactive apply mode (for example `al upgrade --yes --apply-managed-updates`) that applies managed template updates without deleting unknowns, bridging the gap between interactive upgrades and all-in destructive apply behavior.
 
 **Migration engine (Upgrade Plan Phase 3)**
-- [ ] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Implement migration manifests per release for file rename/delete mapping, config key rename/default transform, and generated artifact transitions.
-- [ ] Execute migrations idempotently before template write; emit deterministic migration report with before/after rationale.
+- [x] Backlog 2026-01-25 8b9c2d1 (Priority: High, Area: lifecycle management): Implement migration manifests per release for file rename/delete mapping, config key rename/default transform, and generated artifact transitions.
+- [x] Execute migrations idempotently before template write; emit deterministic migration report with before/after rationale.
 - [ ] Add compatibility shims plus deprecation periods for renamed commands/flags.
 - [ ] Add migration guidance/rules for env key transitions (e.g., non-`AL_` to `AL_`).
 - [ ] Backlog 2026-02-03 b4c5d6e (Priority: Medium, Area: lifecycle management): Add template-source metadata and pinning rules so non-default template repositories can be upgraded deterministically.

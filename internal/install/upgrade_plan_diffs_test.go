@@ -22,7 +22,7 @@ func TestBuildUpgradePlanDiffPreviews_GeneratesChangedFileAndPinDiffs(t *testing
 	}
 
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{
-		TargetPinVersion: "1.1.0",
+		TargetPinVersion: "0.7.0",
 		System:           RealSystem{},
 	})
 	if err != nil {

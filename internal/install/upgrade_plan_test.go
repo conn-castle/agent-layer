@@ -57,7 +57,7 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	}
 
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{
-		TargetPinVersion: "2.0.0",
+		TargetPinVersion: "0.7.0",
 		System:           RealSystem{},
 	})
 	if err != nil {
@@ -76,7 +76,7 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	if plan.PinVersionChange.Action != UpgradePinActionUpdate {
 		t.Fatalf("expected pin update action, got %s", plan.PinVersionChange.Action)
 	}
-	if plan.PinVersionChange.Current != "1.2.3" || plan.PinVersionChange.Target != "2.0.0" {
+	if plan.PinVersionChange.Current != "1.2.3" || plan.PinVersionChange.Target != "0.7.0" {
 		t.Fatalf("unexpected pin transition: %#v", plan.PinVersionChange)
 	}
 
@@ -264,7 +264,7 @@ func TestBuildUpgradePlan_StatErrorOnTemplateEntry(t *testing.T) {
 	sys.statErrs[normalizePath(allowPath)] = errors.New("stat boom")
 
 	_, err := BuildUpgradePlan(root, UpgradePlanOptions{
-		TargetPinVersion: "1.2.3",
+		TargetPinVersion: "0.7.0",
 		System:           sys,
 	})
 	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
@@ -278,7 +278,7 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 
 	instructionsRoot := filepath.Join(root, ".agent-layer", "instructions")
 	sys.statErrs[normalizePath(instructionsRoot)] = errors.New("permission denied")
-	_, err := BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "1.2.3"})
+	_, err := BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
 	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
 		t.Fatalf("expected stat error from orphan root, got %v", err)
 	}
@@ -288,7 +288,7 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
 	sys.walkErrs[normalizePath(instructionsRoot)] = errors.New("walk failed")
-	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "1.2.3"})
+	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
 	if err == nil || !strings.Contains(err.Error(), "walk failed") {
 		t.Fatalf("expected walk error, got %v", err)
 	}
