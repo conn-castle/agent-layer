@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-16 upg-ver-diff-ignore: Ignore diffs for al.version during upgrades
+    Priority: Low. Area: install / UX.
+    Description: Upgrades currently show or warn about diffs for the `al.version` file. Since updating the version is the primary goal of an upgrade, this warning is redundant and potentially confusing for users.
+    Next step: Modify the upgrade logic to specifically ignore the `al.version` file when calculating or presenting file diffs to the user.
+
 - Issue 2026-02-15 upg-config-toml-roundtrip: Config migrations strip user TOML comments/formatting
     Priority: Medium. Area: install / UX.
     Description: `upgrade_migrations.go` decodes `.agent-layer/config.toml` into a map and re-marshals after key/default migrations, which removes user comments and original key ordering.
