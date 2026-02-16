@@ -2,6 +2,7 @@ package install
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,6 +36,150 @@ func TestRun_WriteManagedBaselineIfConsistentError_Propagates(t *testing.T) {
 
 	if err := Run(root, Options{System: fs}); err == nil || !strings.Contains(err.Error(), "write boom") {
 		t.Fatalf("expected write boom error, got %v", err)
+	}
+}
+
+func TestRun_OverwriteScanUnknownsError_Propagates(t *testing.T) {
+	root := t.TempDir()
+	fs := newFaultSystem(RealSystem{})
+	fs.walkErrs[normalizePath(filepath.Join(root, ".agent-layer"))] = errors.New("walk boom")
+
+	err := Run(root, Options{
+		Overwrite: true,
+		Prompter:  autoApprovePrompter(),
+		System:    fs,
+	})
+	if err == nil || !strings.Contains(err.Error(), "walk boom") {
+		t.Fatalf("expected scan unknowns error, got %v", err)
+	}
+}
+
+func TestRun_OverwritePrepareMigrationsError_Propagates(t *testing.T) {
+	root := t.TempDir()
+
+	err := Run(root, Options{
+		Overwrite:  true,
+		Prompter:   autoApprovePrompter(),
+		PinVersion: "9.9.9",
+		System:     RealSystem{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing migration manifest") {
+		t.Fatalf("expected missing migration manifest error, got %v", err)
+	}
+}
+
+func TestRun_OverwriteCreateUpgradeSnapshotError_Propagates(t *testing.T) {
+	root := t.TempDir()
+	fs := newFaultSystem(RealSystem{})
+	snapshotDir := filepath.Join(root, ".agent-layer", "state", "upgrade-snapshots")
+	fs.mkdirErrs[normalizePath(snapshotDir)] = errors.New("snapshot mkdir boom")
+
+	err := Run(root, Options{
+		Overwrite: true,
+		Prompter:  autoApprovePrompter(),
+		System:    fs,
+	})
+	if err == nil || !strings.Contains(err.Error(), "snapshot mkdir boom") {
+		t.Fatalf("expected create snapshot error, got %v", err)
+	}
+}
+
+func TestRun_NonOverwriteScanUnknownsError_Propagates(t *testing.T) {
+	root := t.TempDir()
+	fs := newFaultSystem(RealSystem{})
+	fs.walkErrs[normalizePath(filepath.Join(root, ".agent-layer"))] = errors.New("walk boom")
+
+	err := Run(root, Options{System: fs})
+	if err == nil || !strings.Contains(err.Error(), "walk boom") {
+		t.Fatalf("expected scan unknowns error, got %v", err)
+	}
+}
+
+func TestRun_NonOverwriteRunStepsError_Propagates(t *testing.T) {
+	root := t.TempDir()
+	fs := newFaultSystem(RealSystem{})
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	fs.writeErrs[normalizePath(configPath)] = errors.New("write config boom")
+
+	err := Run(root, Options{System: fs})
+	if err == nil || !strings.Contains(err.Error(), "write config boom") {
+		t.Fatalf("expected run steps error, got %v", err)
+	}
+}
+
+func TestRunWithOverwrite_AppliedSnapshotWriteFailure_Propagates(t *testing.T) {
+	root := t.TempDir()
+	sys := &snapshotWriteFailOnNthSystem{
+		base:     RealSystem{},
+		failOn:   2,
+		failErr:  errors.New("snapshot write boom"),
+		failRoot: root,
+	}
+
+	err := Run(root, Options{
+		Overwrite: true,
+		Prompter:  autoApprovePrompter(),
+		System:    sys,
+	})
+	if err == nil || !strings.Contains(err.Error(), "mark upgrade snapshot") || !strings.Contains(err.Error(), "snapshot write boom") {
+		t.Fatalf("expected applied snapshot write failure, got %v", err)
+	}
+}
+
+func TestRunWithOverwrite_RollbackSucceededSnapshotWriteFailure_Propagates(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	unknownPath := filepath.Join(root, ".agent-layer", "custom.txt")
+	if err := os.WriteFile(unknownPath, []byte("custom"), 0o644); err != nil {
+		t.Fatalf("write unknown file: %v", err)
+	}
+
+	sys := &snapshotWriteFailOnNthSystem{
+		base:     RealSystem{},
+		failOn:   2,
+		failErr:  errors.New("snapshot write boom"),
+		failRoot: root,
+	}
+
+	err := Run(root, Options{
+		Overwrite: true,
+		Prompter: PromptFuncs{
+			OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+			OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
+			DeleteUnknownAllFunc:          func([]string) (bool, error) { return false, nil },
+			DeleteUnknownFunc:             func(string) (bool, error) { return false, errors.New("delete prompt boom") },
+		},
+		System: sys,
+	})
+	if err == nil || !strings.Contains(err.Error(), "rollback succeeded; failed to write snapshot state") {
+		t.Fatalf("expected rollback-success snapshot write failure, got %v", err)
+	}
+}
+
+func TestRunWithOverwrite_RollbackFailedSnapshotWriteFailure_Propagates(t *testing.T) {
+	root := t.TempDir()
+	base := newFaultSystem(RealSystem{})
+	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	base.writeErrs[normalizePath(managedPath)] = errors.New("write managed boom")
+	base.removeErrs[normalizePath(managedPath)] = errors.New("rollback remove boom")
+
+	sys := &snapshotWriteFailOnNthSystem{
+		base:     base,
+		failOn:   2,
+		failErr:  errors.New("snapshot write boom"),
+		failRoot: root,
+	}
+
+	err := Run(root, Options{
+		Overwrite: true,
+		Prompter:  autoApprovePrompter(),
+		System:    sys,
+	})
+	if err == nil || !strings.Contains(err.Error(), "rollback failed") || !strings.Contains(err.Error(), "failed to write snapshot state") {
+		t.Fatalf("expected rollback-failed snapshot write failure, got %v", err)
 	}
 }
 
@@ -133,4 +278,51 @@ func TestWriteVersionFile_MkdirAllError_Propagates(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "mkdir boom") {
 		t.Fatalf("expected mkdir boom error, got %v", err)
 	}
+}
+
+type snapshotWriteFailOnNthSystem struct {
+	base     System
+	failOn   int
+	failErr  error
+	failRoot string
+	writes   int
+}
+
+func (s *snapshotWriteFailOnNthSystem) Stat(name string) (os.FileInfo, error) {
+	return s.base.Stat(name)
+}
+
+func (s *snapshotWriteFailOnNthSystem) ReadFile(name string) ([]byte, error) {
+	return s.base.ReadFile(name)
+}
+
+func (s *snapshotWriteFailOnNthSystem) LookupEnv(key string) (string, bool) {
+	return s.base.LookupEnv(key)
+}
+
+func (s *snapshotWriteFailOnNthSystem) MkdirAll(path string, perm os.FileMode) error {
+	return s.base.MkdirAll(path, perm)
+}
+
+func (s *snapshotWriteFailOnNthSystem) RemoveAll(path string) error {
+	return s.base.RemoveAll(path)
+}
+
+func (s *snapshotWriteFailOnNthSystem) Rename(oldpath string, newpath string) error {
+	return s.base.Rename(oldpath, newpath)
+}
+
+func (s *snapshotWriteFailOnNthSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
+	return s.base.WalkDir(root, fn)
+}
+
+func (s *snapshotWriteFailOnNthSystem) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
+	snapshotPrefix := filepath.ToSlash(filepath.Join(s.failRoot, ".agent-layer", "state", "upgrade-snapshots")) + "/"
+	if strings.HasPrefix(filepath.ToSlash(normalizePath(filename)), snapshotPrefix) {
+		s.writes++
+		if s.writes == s.failOn {
+			return s.failErr
+		}
+	}
+	return s.base.WriteFileAtomic(filename, data, perm)
 }

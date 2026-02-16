@@ -3,6 +3,7 @@ package root
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,28 @@ func TestFindRepoRoot_StatError(t *testing.T) {
 		// Error at line 76: RootCheckPathFmt
 	} else {
 		t.Logf("Got expected error: %v", err)
+	}
+}
+
+func TestFindRoots_CheckPathErrorViaSymlinkLoop(t *testing.T) {
+	root := t.TempDir()
+
+	agentLayerPath := filepath.Join(root, ".agent-layer")
+	if err := os.Symlink(".agent-layer", agentLayerPath); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+	if _, _, err := FindAgentLayerRoot(root); err == nil || !strings.Contains(strings.ToLower(err.Error()), "check") {
+		t.Fatalf("expected check-path error for .agent-layer symlink loop, got %v", err)
+	}
+
+	gitPath := filepath.Join(root, ".git")
+	if err := os.Remove(agentLayerPath); err != nil {
+		t.Fatalf("remove .agent-layer symlink: %v", err)
+	}
+	if err := os.Symlink(".git", gitPath); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+	if _, err := FindRepoRoot(root); err == nil || !strings.Contains(strings.ToLower(err.Error()), "check") {
+		t.Fatalf("expected check-path error for .git symlink loop, got %v", err)
 	}
 }

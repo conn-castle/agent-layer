@@ -480,6 +480,101 @@ func TestRollbackUpgradeSnapshotState_NoTargets(t *testing.T) {
 	}
 }
 
+func TestRollbackUpgradeSnapshotState_RemoveErrorFallbackRelativePath(t *testing.T) {
+	root := string([]byte{0})
+	target := filepath.Join(t.TempDir(), "target.txt")
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "remove-error-fallback",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+	}
+
+	faults := newFaultSystem(RealSystem{})
+	faults.removeErrs[normalizePath(target)] = errors.New("remove boom")
+
+	err := rollbackUpgradeSnapshotState(root, faults, snapshot, []string{target})
+	if err == nil {
+		t.Fatal("expected remove error")
+	}
+	if !strings.Contains(err.Error(), "reset path") || !strings.Contains(err.Error(), target) {
+		t.Fatalf("expected fallback target path in error, got %v", err)
+	}
+}
+
+func TestRestoreUpgradeSnapshotEntriesAtRoot_ErrorBranches(t *testing.T) {
+	t.Run("snapshotEntryAbsPath error", func(t *testing.T) {
+		root := t.TempDir()
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, []upgradeSnapshotEntry{
+			{Path: "../../outside", Kind: upgradeSnapshotEntryKindDir},
+		})
+		if err == nil || !strings.Contains(err.Error(), "outside repo root") {
+			t.Fatalf("expected snapshotEntryAbsPath error, got %v", err)
+		}
+	})
+
+	t.Run("restore directory mkdir error", func(t *testing.T) {
+		root := t.TempDir()
+		dirPath := filepath.Join(root, "docs", "agent-layer")
+		faults := newFaultSystem(RealSystem{})
+		faults.mkdirErrs[normalizePath(dirPath)] = errors.New("mkdir boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{Path: "docs/agent-layer", Kind: upgradeSnapshotEntryKindDir},
+		})
+		if err == nil || !strings.Contains(err.Error(), "mkdir boom") {
+			t.Fatalf("expected mkdir error, got %v", err)
+		}
+	})
+
+	t.Run("file decode error", func(t *testing.T) {
+		root := t.TempDir()
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: "!!!",
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "decode content") {
+			t.Fatalf("expected decode error, got %v", err)
+		}
+	})
+
+	t.Run("file parent mkdir error", func(t *testing.T) {
+		root := t.TempDir()
+		filePath := filepath.Join(root, ".agent-layer", "al.version")
+		faults := newFaultSystem(RealSystem{})
+		faults.mkdirErrs[normalizePath(filepath.Dir(filePath))] = errors.New("mkdir boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.1.0\n")),
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "mkdir boom") {
+			t.Fatalf("expected parent mkdir error, got %v", err)
+		}
+	})
+
+	t.Run("file write error", func(t *testing.T) {
+		root := t.TempDir()
+		filePath := filepath.Join(root, ".agent-layer", "al.version")
+		faults := newFaultSystem(RealSystem{})
+		faults.writeErrs[normalizePath(filePath)] = errors.New("write boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.1.0\n")),
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "write boom") {
+			t.Fatalf("expected write error, got %v", err)
+		}
+	})
+}
+
 func TestRollbackUpgradeSnapshot_MalformedSnapshotFailsLoudly(t *testing.T) {
 	root := t.TempDir()
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))

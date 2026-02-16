@@ -286,6 +286,35 @@ func TestValidateRepoBRoot_StatError(t *testing.T) {
 	}
 }
 
+func TestValidateRepoBRoot_GitAndRequiredPathStatErrors(t *testing.T) {
+	t.Run("git stat error", func(t *testing.T) {
+		repo := t.TempDir()
+		withStatError(t, filepath.Join(repo, ".git"), os.ErrPermission)
+		err := validateRepoBRoot(repo)
+		if err == nil || !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("expected .git stat error, got %v", err)
+		}
+	})
+
+	t.Run("required path stat error", func(t *testing.T) {
+		repo := setupRepoB(t)
+		withStatError(t, filepath.Join(repo, "package.json"), os.ErrPermission)
+		err := validateRepoBRoot(repo)
+		if err == nil || !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("expected required-path stat error, got %v", err)
+		}
+	})
+
+	t.Run("src/pages stat error", func(t *testing.T) {
+		repo := setupRepoB(t)
+		withStatError(t, filepath.Join(repo, "src", "pages"), os.ErrPermission)
+		err := validateRepoBRoot(repo)
+		if err == nil || !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("expected src/pages stat error, got %v", err)
+		}
+	})
+}
+
 func TestRepoRoot(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o644); err != nil {
@@ -386,6 +415,17 @@ func TestRun_RepoRootMissing(t *testing.T) {
 	})
 }
 
+func TestRun_RepoBDirAbsError(t *testing.T) {
+	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
+
+	withWorkingDir(t, repoA, func() {
+		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", "bad\x00path")
+		if err := run(); err == nil || !strings.Contains(err.Error(), "stat --repo-b-dir") {
+			t.Fatalf("expected repo-b-dir stat error, got %v", err)
+		}
+	})
+}
+
 func TestRun_ValidateRepoBRootError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 	repoB := t.TempDir() // missing .git and required files
@@ -479,6 +519,39 @@ func TestRun_CopyDocsError(t *testing.T) {
 	})
 }
 
+func TestRun_CopyPagesCreateSrcDirError(t *testing.T) {
+	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
+	repoB := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	for _, name := range []string{"package.json", "docusaurus.config.js", "sidebars.js"} {
+		if err := os.WriteFile(filepath.Join(repoB, name), []byte("{}"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	srcPath := filepath.Join(repoB, "src")
+	if err := os.WriteFile(srcPath, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatalf("write src file: %v", err)
+	}
+
+	originalStat := osStatFunc
+	osStatFunc = func(name string) (os.FileInfo, error) {
+		if filepath.Clean(name) == filepath.Clean(filepath.Join(repoB, "src", "pages")) {
+			return originalStat(srcPath)
+		}
+		return originalStat(name)
+	}
+	t.Cleanup(func() { osStatFunc = originalStat })
+
+	withWorkingDir(t, repoA, func() {
+		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
+		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to create src dir") {
+			t.Fatalf("expected src mkdir error, got %v", err)
+		}
+	})
+}
+
 func TestRepoRoot_GetwdError(t *testing.T) {
 	orig, err := os.Getwd()
 	if err != nil {
@@ -525,6 +598,45 @@ func TestCopyTree_WalkError(t *testing.T) {
 	dst := t.TempDir()
 	if err := copyTree(src, filepath.Join(dst, "out")); err == nil {
 		t.Fatal("expected walk error")
+	}
+}
+
+func TestCopyTree_CallbackErrParameterPropagates(t *testing.T) {
+	originalWalk := filepathWalkFunc
+	filepathWalkFunc = func(root string, fn filepath.WalkFunc) error {
+		return fn(root, nil, errors.New("walk callback boom"))
+	}
+	t.Cleanup(func() { filepathWalkFunc = originalWalk })
+
+	if err := copyTree(t.TempDir(), filepath.Join(t.TempDir(), "out")); err == nil || !strings.Contains(err.Error(), "walk callback boom") {
+		t.Fatalf("expected callback err propagation, got %v", err)
+	}
+}
+
+func TestCopyTree_RelPathErrorPropagates(t *testing.T) {
+	originalWalk := filepathWalkFunc
+	filepathWalkFunc = func(root string, fn filepath.WalkFunc) error {
+		return fn("bad\x00path", nil, nil)
+	}
+	t.Cleanup(func() { filepathWalkFunc = originalWalk })
+
+	if err := copyTree(t.TempDir(), filepath.Join(t.TempDir(), "out")); err == nil {
+		t.Fatal("expected filepath.Rel error")
+	}
+}
+
+func TestCopyTree_WriteError(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write src file: %v", err)
+	}
+
+	target := filepath.Join(dst, "out", "file.txt")
+	withWriteFileError(t, target, os.ErrPermission)
+
+	if err := copyTree(src, filepath.Join(dst, "out")); err == nil || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected write error, got %v", err)
 	}
 }
 
@@ -577,6 +689,29 @@ func TestEnsureIdempotentVersion_WriteError(t *testing.T) {
 	if err := ensureIdempotentVersion(repo, "1.2.3"); err == nil {
 		t.Fatal("expected write error")
 	}
+}
+
+func TestEnsureIdempotentVersion_AdditionalErrorBranches(t *testing.T) {
+	t.Run("remove versioned docs error", func(t *testing.T) {
+		repo := t.TempDir()
+		if err := ensureIdempotentVersion(repo, "bad\x00version"); err == nil {
+			t.Fatal("expected remove-all error for invalid docsVersion path")
+		}
+	})
+
+	t.Run("remove sidebar error", func(t *testing.T) {
+		repo := t.TempDir()
+		sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.2.3-sidebars.json")
+		if err := os.MkdirAll(sidebarPath, 0o755); err != nil {
+			t.Fatalf("mkdir sidebar path as directory: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write nested file: %v", err)
+		}
+		if err := ensureIdempotentVersion(repo, "1.2.3"); err == nil {
+			t.Fatal("expected remove sidebar error when sidebar path is a directory")
+		}
+	})
 }
 
 func TestRun_EnsureIdempotentVersionError(t *testing.T) {
@@ -706,6 +841,18 @@ func TestNormalizeVersionsJSON_ReadError(t *testing.T) {
 	}
 	if err := normalizeVersionsJSON(repo); err == nil {
 		t.Fatal("expected read error for versions.json directory")
+	}
+}
+
+func TestNormalizeVersionsJSON_WriteError(t *testing.T) {
+	repo := t.TempDir()
+	versionsPath := filepath.Join(repo, "versions.json")
+	if err := os.WriteFile(versionsPath, []byte("[\"1.0.0\"]"), 0o644); err != nil {
+		t.Fatalf("write versions.json: %v", err)
+	}
+	withWriteFileError(t, versionsPath, os.ErrPermission)
+	if err := normalizeVersionsJSON(repo); err == nil || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected write error, got %v", err)
 	}
 }
 
