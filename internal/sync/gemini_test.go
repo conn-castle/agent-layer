@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -215,5 +216,32 @@ func TestBuildGeminiSettingsMissingEnv(t *testing.T) {
 	_, err := buildGeminiSettings(sys, project)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteGeminiSettingsMarshalError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		LookPathFunc: func(file string) (string, error) {
+			if file == "al" {
+				return "/usr/local/bin/al", nil
+			}
+			return "", os.ErrNotExist
+		},
+		MarshalIndentFunc: func(v any, prefix, indent string) ([]byte, error) {
+			return nil, errors.New("marshal failed")
+		},
+	}
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+		},
+		Root: root,
+	}
+
+	if err := WriteGeminiSettings(sys, root, project); err == nil {
+		t.Fatal("expected marshal error")
 	}
 }

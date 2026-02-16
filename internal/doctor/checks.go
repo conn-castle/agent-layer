@@ -4,17 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 var (
-	secretAssignmentPattern = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*["'][^"']{8,}["']`)
-	bearerPattern           = regexp.MustCompile(`(?i)bearer\s+[a-z0-9_\-\.\/+=]{8,}`)
-	readFile                = os.ReadFile
+	readFile = os.ReadFile
 )
 
 // CheckStructure verifies that the required project directories exist.
@@ -180,7 +176,7 @@ func CheckSecretRisk(root string) []Result {
 			})
 			continue
 		}
-		if !containsPotentialSecretLiteral(string(data)) {
+		if !config.ContainsPotentialSecretLiteral(string(data)) {
 			continue
 		}
 		results = append(results, Result{
@@ -199,20 +195,4 @@ func CheckSecretRisk(root string) []Result {
 		})
 	}
 	return results
-}
-
-func containsPotentialSecretLiteral(content string) bool {
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if strings.Contains(trimmed, "${") {
-			continue
-		}
-		if secretAssignmentPattern.MatchString(trimmed) || bearerPattern.MatchString(trimmed) {
-			return true
-		}
-	}
-	return false
 }

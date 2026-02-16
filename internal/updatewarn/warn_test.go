@@ -102,3 +102,13 @@ func TestWarnIfOutdated_NoOutputWhenUpToDate(t *testing.T) {
 		t.Fatalf("expected no output, got %q", stderr.String())
 	}
 }
+
+func TestWarnIfOutdated_NilWriterDoesNotPanic(t *testing.T) {
+	orig := CheckForUpdate
+	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{Outdated: true, Current: "1.0.0", Latest: "2.0.0"}, nil
+	}
+	t.Cleanup(func() { CheckForUpdate = orig })
+
+	WarnIfOutdated(context.Background(), "v1.0.0", nil)
+}

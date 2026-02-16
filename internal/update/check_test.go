@@ -132,6 +132,21 @@ func TestCheckNewerThanLatest(t *testing.T) {
 	}
 }
 
+func TestCheckNilContext(t *testing.T) {
+	withLatestReleaseServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tag_name":"v1.0.0"}`))
+	})
+
+	result, err := Check(context.TODO(), "1.0.0")
+	if err != nil {
+		t.Fatalf("expected nil context to be handled, got %v", err)
+	}
+	if result.Outdated {
+		t.Fatalf("expected not outdated, got %+v", result)
+	}
+}
+
 func TestFetchLatestReleaseVersion_RequestError(t *testing.T) {
 	withLatestReleaseClient(t, "http://[::1", http.DefaultClient)
 
@@ -327,4 +342,56 @@ func TestParseSemverOverflow(t *testing.T) {
 	if _, err := parseSemver("9999999999999999999999999.0.0"); err == nil {
 		t.Fatal("expected error for overflowed version segment")
 	}
+}
+
+func TestRateLimitErrorError(t *testing.T) {
+	withRemaining := &RateLimitError{StatusCode: http.StatusForbidden, Status: "403 Forbidden", Remaining: intPtr(0)}
+	if got := withRemaining.Error(); !strings.Contains(got, "remaining=0") {
+		t.Fatalf("expected remaining value in error, got %q", got)
+	}
+
+	withoutRemaining := &RateLimitError{StatusCode: http.StatusTooManyRequests, Status: "429 Too Many Requests"}
+	if got := withoutRemaining.Error(); !strings.Contains(got, "remaining=unknown") {
+		t.Fatalf("expected unknown remaining in error, got %q", got)
+	}
+}
+
+func TestRateLimitErrorFromResponseNil(t *testing.T) {
+	if got := rateLimitErrorFromResponse(nil); got != nil {
+		t.Fatalf("expected nil for nil response, got %#v", got)
+	}
+}
+
+func TestShouldRetryLatestCheck(t *testing.T) {
+	if shouldRetryLatestCheck(nil, http.StatusInternalServerError, fetchLatestRetryCount) {
+		t.Fatal("should not retry when attempt budget is exhausted")
+	}
+
+	if shouldRetryLatestCheck(context.Canceled, 0, 0) {
+		t.Fatal("should not retry on context cancellation")
+	}
+
+	if shouldRetryLatestCheck(context.DeadlineExceeded, 0, 0) {
+		t.Fatal("should not retry on context deadline exceeded")
+	}
+
+	if !shouldRetryLatestCheck(&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("temporary")}, 0, 0) {
+		t.Fatal("expected retry for transient network error")
+	}
+
+	if shouldRetryLatestCheck(errors.New("non-network"), 0, 0) {
+		t.Fatal("should not retry non-network errors")
+	}
+
+	if !shouldRetryLatestCheck(nil, http.StatusBadGateway, 0) {
+		t.Fatal("expected retry for 5xx status")
+	}
+
+	if shouldRetryLatestCheck(nil, http.StatusBadRequest, 0) {
+		t.Fatal("should not retry for non-5xx status")
+	}
+}
+
+func intPtr(v int) *int {
+	return &v
 }

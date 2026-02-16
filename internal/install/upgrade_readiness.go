@@ -38,10 +38,6 @@ const (
 )
 
 var floatingDependencyPattern = regexp.MustCompile(`(?i)@(latest|next|canary)\b`)
-var (
-	secretAssignmentPattern = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*["'][^"']{8,}["']`)
-	bearerPattern           = regexp.MustCompile(`(?i)bearer\s+[a-z0-9_\-\.\/+=]{8,}`)
-)
 
 // UpgradeReadinessCheck captures a non-fatal pre-upgrade readiness finding for text output.
 type UpgradeReadinessCheck struct {
@@ -204,7 +200,7 @@ func detectProcessEnvOverridesDotenv(cfg *config.Config, env map[string]string, 
 			continue
 		}
 		processValue, processSet := processEnvValue(sys, key)
-		if !processSet || processValue == "" || processValue == fileValue {
+		if !processSet || processValue == fileValue {
 			continue
 		}
 		details = append(details, fmt.Sprintf("%s differs between process env and `.agent-layer/.env`", key))
@@ -228,8 +224,8 @@ func detectIgnoredEmptyDotenvAssignments(cfg *config.Config, env map[string]stri
 		if !exists || fileValue != "" {
 			continue
 		}
-		processValue, processSet := processEnvValue(sys, key)
-		if !processSet || processValue == "" {
+		_, processSet := processEnvValue(sys, key)
+		if !processSet {
 			continue
 		}
 		details = append(details, fmt.Sprintf("%s is empty in `.agent-layer/.env` and falls back to process env", key))
@@ -518,7 +514,7 @@ func detectGeneratedSecretRisk(inst *installer) (*UpgradeReadinessCheck, error) 
 		if err != nil {
 			return nil, readinessErr("read", path, err)
 		}
-		if !containsPotentialSecretLiteral(string(data)) {
+		if !config.ContainsPotentialSecretLiteral(string(data)) {
 			continue
 		}
 		details = append(details, filepath.ToSlash(inst.relativePath(path)))
@@ -533,22 +529,6 @@ func detectGeneratedSecretRisk(inst *installer) (*UpgradeReadinessCheck, error) 
 		Summary: "Generated files appear to contain secret-like literals.",
 		Details: details,
 	}, nil
-}
-
-func containsPotentialSecretLiteral(content string) bool {
-	for _, line := range strings.Split(content, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		if strings.Contains(trimmed, "${") {
-			continue
-		}
-		if secretAssignmentPattern.MatchString(trimmed) || bearerPattern.MatchString(trimmed) {
-			return true
-		}
-	}
-	return false
 }
 
 func floatingDetails(serverIndex int, serverID string, field string, value string) []string {

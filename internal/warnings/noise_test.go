@@ -44,3 +44,7 @@ func TestApplyNoiseControl_UnknownModeNoItemsStillWarns(t *testing.T) {
 	require.Len(t, filtered, 1)
 	require.Equal(t, CodeWarningNoiseModeInvalid, filtered[0].Code)
 }
+
+func TestApplyNoiseControl_DefaultNoItemsReturnsNil(t *testing.T) {
+	require.Nil(t, ApplyNoiseControl(nil, NoiseModeDefault))
+}

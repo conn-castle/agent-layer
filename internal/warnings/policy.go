@@ -90,7 +90,7 @@ func isEnabled(enabled *bool) bool {
 	return enabled != nil && *enabled
 }
 
-func isClientTargeted(clients []string, target string) bool {
+func isClientTargeted(clients []string, target string) bool { //nolint:unparam // target is intentionally a parameter for readability and future extensibility
 	if len(clients) == 0 {
 		return true
 	}

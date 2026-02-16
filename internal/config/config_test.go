@@ -118,16 +118,31 @@ func TestSubstituteEnvVars(t *testing.T) {
 	}
 }
 
-func TestSubstituteEnvVars_EmptyValueIsAllowed(t *testing.T) {
+func TestSubstituteEnvVars_EmptyValueReturnsMissingError(t *testing.T) {
 	env := map[string]string{
 		"TOKEN": "",
 	}
-	value, err := SubstituteEnvVars("Bearer ${TOKEN}", env)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := SubstituteEnvVars("Bearer ${TOKEN}", env)
+	if err == nil {
+		t.Fatalf("expected error")
 	}
-	if value != "Bearer " {
-		t.Fatalf("unexpected value: %q", value)
+	if !strings.Contains(err.Error(), "TOKEN") {
+		t.Fatalf("expected TOKEN in error, got %v", err)
+	}
+}
+
+func TestContainsPotentialSecretLiteral(t *testing.T) {
+	if !ContainsPotentialSecretLiteral("Authorization = \"Bearer supersecretvalue12345\"") {
+		t.Fatal("expected bearer token literal to be detected")
+	}
+	if !ContainsPotentialSecretLiteral("\napi_key = \"abcdefgh12345678\"\n") {
+		t.Fatal("expected assignment-style secret literal to be detected")
+	}
+	if ContainsPotentialSecretLiteral("Authorization = \"Bearer ${AL_TOKEN}\"") {
+		t.Fatal("expected placeholder to be ignored")
+	}
+	if ContainsPotentialSecretLiteral("token = \"short\"") {
+		t.Fatal("expected short token-like value to be ignored")
 	}
 }
 

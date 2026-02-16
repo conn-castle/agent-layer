@@ -560,3 +560,28 @@ func TestRepairGitignoreBlock_RequiresRootAndSystem(t *testing.T) {
 		t.Fatal("expected error when system is nil")
 	}
 }
+
+func TestRepairGitignoreBlock_TemplateReadError(t *testing.T) {
+	origRead := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		return nil, errors.New("template read failed")
+	}
+	t.Cleanup(func() { templates.ReadFunc = origRead })
+
+	root := t.TempDir()
+	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err == nil {
+		t.Fatal("expected template read error")
+	}
+}
+
+func TestRepairGitignoreBlock_WriteBlockError(t *testing.T) {
+	root := t.TempDir()
+	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.MkdirAll(blockPath, 0o755); err != nil {
+		t.Fatalf("mkdir block path as dir: %v", err)
+	}
+
+	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err == nil {
+		t.Fatal("expected write error when block path is a directory")
+	}
+}

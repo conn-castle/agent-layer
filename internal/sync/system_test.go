@@ -55,3 +55,19 @@ func TestRunWithSystemFS_InvalidConfig(t *testing.T) {
 		t.Fatalf("expected error for missing config")
 	}
 }
+
+func TestRunWithSystemFS_Success(t *testing.T) {
+	fixtureRoot := filepath.Join("testdata", "fixture-repo")
+	root := t.TempDir()
+	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
+		t.Fatalf("copy fixture: %v", err)
+	}
+	envPath := filepath.Join(root, ".agent-layer", ".env")
+	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	if _, err := RunWithSystemFS(RealSystem{}, os.DirFS(root), root); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+}

@@ -69,6 +69,42 @@ func TestRunStepsError(t *testing.T) {
 	}
 }
 
+func TestCollectWarningsInstructionsError(t *testing.T) {
+	root := t.TempDir()
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	if err := os.MkdirAll(agentsPath, 0o755); err != nil {
+		t.Fatalf("mkdir AGENTS.md dir: %v", err)
+	}
+	threshold := 1
+
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Warnings: config.WarningsConfig{InstructionTokenThreshold: &threshold},
+		},
+		Root: root,
+	}
+
+	if _, err := collectWarnings(project); err == nil {
+		t.Fatal("expected collectWarnings to fail when AGENTS.md cannot be read as a file")
+	}
+}
+
+func TestUpdateGitignoreValidationError(t *testing.T) {
+	root := t.TempDir()
+	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
+	if err := os.MkdirAll(filepath.Dir(blockPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	invalid := "# >>> agent-layer\n.agent-layer/\n"
+	if err := os.WriteFile(blockPath, []byte(invalid), 0o644); err != nil {
+		t.Fatalf("write gitignore.block: %v", err)
+	}
+
+	if err := updateGitignore(RealSystem{}, root); err == nil {
+		t.Fatal("expected updateGitignore validation error")
+	}
+}
+
 func boolPtr(v bool) *bool {
 	return &v
 }
