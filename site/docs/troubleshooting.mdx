@@ -167,14 +167,14 @@ Workflow (best-effort; depends on your Codex client version):
    ```toml
    [mcp_servers.ripgrep]
    command = "npx"
-   args = ["-y", "mcp-ripgrep@latest"]
+   args = ["-y", "mcp-ripgrep@0.4.0"]
 
    [mcp_servers.fetch]
    command = "uvx"
-   args = ["mcp-server-fetch"]
+   args = ["mcp-server-fetch==2025.4.7"]
    ```
 
-   Note: for servers that require API keys, prefer environment variables and avoid hardcoding secrets into your global config.
+   Note: for servers that require API keys, prefer environment variables and avoid hardcoding secrets into your global config. If you intentionally prefer floating dependencies, switch to `@latest`/unpinned args explicitly.
 2. Launch VS Code without Agent Layer's `CODEX_HOME` launcher so the extension uses the global config.
 3. Keep using Agent Layer for repo-local prompts/skills and slash commands.
 

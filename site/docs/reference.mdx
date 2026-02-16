@@ -66,7 +66,7 @@ id = "filesystem"
 enabled = false
 transport = "stdio"
 command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.
@@ -166,7 +166,7 @@ id = "ripgrep"
 enabled = true
 transport = "stdio"
 command = "npx"
-args = ["-y", "mcp-ripgrep@latest"]
+args = ["-y", "mcp-ripgrep@0.4.0"]
 ```
 
 ### Warnings
@@ -258,7 +258,7 @@ id = "filesystem"
 enabled = true
 transport = "stdio"
 command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
 ```
 
 ## CLI guide
@@ -282,7 +282,6 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
-| `al mcp-prompts` | Run the internal MCP prompt server over stdio. |
 | `al --version` | Print the installed Agent Layer version. |
 | `al help` | Show help for any command. |
 
@@ -530,10 +529,6 @@ al completion zsh --install
 ```
 
 Supported shells: `bash`, `zsh`, `fish`.
-
-### MCP prompt server
-
-`al mcp-prompts` runs the internal MCP prompt server over stdio. This is normally launched automatically by the client, so you rarely need to run it directly.
 
 ### Help and version
 
