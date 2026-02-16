@@ -22,6 +22,7 @@ import (
 var (
 	checkInstructions = warnings.CheckInstructions
 	checkMCPServers   = warnings.CheckMCPServers
+	checkPolicy       = warnings.CheckPolicy
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -119,6 +120,9 @@ func newDoctorCmd() *cobra.Command {
 				} else {
 					warningList = append(warningList, mcpWarnings...)
 				}
+
+				warningList = append(warningList, checkPolicy(cfg)...)
+				warningList = warnings.ApplyNoiseControl(warningList, cfg.Config.Warnings.NoiseMode)
 			}
 
 			if len(warningList) > 0 {

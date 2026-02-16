@@ -10,6 +10,7 @@ Description:
   Validates upgrade-contract documentation for a target release tag.
   - Fails if site/docs/upgrades.mdx has no migration-table row for the release tag.
   - Fails if CHANGELOG indicates breaking/manual migration impact while the matching row still uses placeholder text.
+  - Fails if upgrade CTA syntax drifts in core docs/message surfaces.
 
 Options:
   --tag TAG               Release tag (required), for example: v0.7.0
@@ -27,6 +28,7 @@ die() {
 release_tag=""
 upgrades_file="site/docs/upgrades.mdx"
 changelog_file="CHANGELOG.md"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,5 +92,7 @@ placeholder_pattern='No additional migration rules yet|None currently|Update thi
 if [[ "$has_breaking_or_manual" == "1" ]] && printf '%s\n' "$row" | grep -Eqi "$placeholder_pattern"; then
   die "row for $release_tag in $upgrades_file contains placeholder text, but $changelog_file indicates breaking/manual migration impact"
 fi
+
+"$script_dir/check-upgrade-ctas.sh"
 
 echo "Upgrade docs check passed for $release_tag"

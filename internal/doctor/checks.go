@@ -13,7 +13,8 @@ import (
 
 var (
 	secretAssignmentPattern = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*["'][^"']{8,}["']`)
-	bearerPattern           = regexp.MustCompile(`(?i)bearer\s+[a-z0-9_\-\.]{8,}`)
+	bearerPattern           = regexp.MustCompile(`(?i)bearer\s+[a-z0-9_\-\.\/+=]{8,}`)
+	readFile                = os.ReadFile
 )
 
 // CheckStructure verifies that the required project directories exist.
@@ -161,19 +162,26 @@ func CheckSecretRisk(root string) []Result {
 
 	var results []Result
 	for _, path := range candidates {
-		data, err := os.ReadFile(path)
+		rel := path
+		if relPath, relErr := filepath.Rel(root, path); relErr == nil {
+			rel = relPath
+		}
+
+		data, err := readFile(path)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
+			results = append(results, Result{
+				Status:         StatusWarn,
+				CheckName:      messages.DoctorCheckNameSecretRisk,
+				Message:        fmt.Sprintf(messages.DoctorSecretRiskReadFailedFmt, rel, err),
+				Recommendation: messages.DoctorSecretRiskReadRecommend,
+			})
 			continue
 		}
 		if !containsPotentialSecretLiteral(string(data)) {
 			continue
-		}
-		rel := path
-		if relPath, relErr := filepath.Rel(root, path); relErr == nil {
-			rel = relPath
 		}
 		results = append(results, Result{
 			Status:         StatusWarn,

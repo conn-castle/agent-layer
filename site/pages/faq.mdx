@@ -76,7 +76,7 @@ See [/docs/concepts#version-pinning](/docs/concepts#version-pinning) for the ful
 ## How do I upgrade a repo?
 Upgrade the global CLI first, then run `al upgrade plan` and `al upgrade` inside the repo. This updates the repo pin (`.agent-layer/al.version`) to match the currently installed `al` version.
 
-For the full upgrade contract, compatibility guarantees, and release migration rules, see [/docs/upgrades](/docs/upgrades).
+For the full upgrade contract, compatibility guarantees, and release migration rules, see [/docs/upgrades](/docs/upgrades). For a one-page runbook, use [/docs/upgrade-checklist](/docs/upgrade-checklist).
 
 ## What happens if I edit a generated file?
 It will be overwritten the next time you run `al sync` or `al <client>`. Always edit the source files in `.agent-layer/` instead.

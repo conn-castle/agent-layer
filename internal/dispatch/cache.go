@@ -44,6 +44,9 @@ func ensureCachedBinary(cacheRoot string, version string, progressOut io.Writer)
 }
 
 func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, progressOut io.Writer) (string, error) {
+	if sys == nil {
+		return "", fmt.Errorf(messages.DispatchSystemRequired)
+	}
 	osName, arch, err := platformStringsFunc()
 	if err != nil {
 		return "", err
@@ -86,7 +89,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 
 		_, _ = fmt.Fprintf(progressOut, messages.DispatchDownloadingFmt, version)
 		url := fmt.Sprintf("%s/download/v%s/%s", releaseBaseURL, version, asset)
-		if err := downloadToFile(url, tmp); err != nil {
+		if err := downloadToFileWithSystem(sys, url, tmp); err != nil {
 			_ = tmp.Close()
 			return err
 		}
@@ -150,15 +153,19 @@ func assetName(osName string, arch string) string {
 
 // noNetworkWithSystem reports whether downloads are disabled via AL_NO_NETWORK.
 func noNetworkWithSystem(sys System) bool {
-	if sys == nil {
-		return strings.TrimSpace(os.Getenv(EnvNoNetwork)) != ""
-	}
 	return strings.TrimSpace(sys.Getenv(EnvNoNetwork)) != ""
 }
 
 // downloadToFile fetches url and writes it to dest.
 func downloadToFile(url string, dest *os.File) error {
-	maxBytes := maxDownloadBytes()
+	return downloadToFileWithSystem(RealSystem{}, url, dest)
+}
+
+func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
+	if sys == nil {
+		return fmt.Errorf(messages.DispatchSystemRequired)
+	}
+	maxBytes := maxDownloadBytesWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
 		resp, err := httpClient.Get(url)
 		if err != nil {
@@ -185,6 +192,15 @@ func downloadToFile(url string, dest *os.File) error {
 				continue
 			}
 			return fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, statusText)
+		}
+
+		if err := dest.Truncate(0); err != nil {
+			_ = resp.Body.Close()
+			return fmt.Errorf(messages.DispatchTruncateTempFileFmt, err)
+		}
+		if _, err := dest.Seek(0, io.SeekStart); err != nil {
+			_ = resp.Body.Close()
+			return fmt.Errorf(messages.DispatchResetTempFileOffsetFmt, err)
 		}
 
 		n, copyErr := io.Copy(dest, io.LimitReader(resp.Body, maxBytes+1))
@@ -285,8 +301,8 @@ func shouldRetryDownload(attempt int, err error, statusCode int) bool {
 	return statusCode >= 500 && statusCode <= 599
 }
 
-func maxDownloadBytes() int64 {
-	raw := strings.TrimSpace(os.Getenv("AL_MAX_DOWNLOAD_BYTES"))
+func maxDownloadBytesWithSystem(sys System) int64 {
+	raw := strings.TrimSpace(sys.Getenv("AL_MAX_DOWNLOAD_BYTES"))
 	if raw == "" {
 		return defaultMaxDownloadBytes
 	}

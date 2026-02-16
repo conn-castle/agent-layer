@@ -31,7 +31,9 @@ const (
 	DoctorSecretFoundEnvFileFmt     = "Secret found in .agent-layer/.env: %s"
 	DoctorNoRequiredSecrets         = "No required secrets found in configuration."
 	DoctorSecretRiskDetectedFmt     = "Potential secret literal detected in %s"
+	DoctorSecretRiskReadFailedFmt   = "Could not inspect %s for secret literals: %v"
 	DoctorSecretRiskRecommend       = "Keep secrets only in .agent-layer/.env (AL_* keys) or process environment. Ensure generated files containing resolved values are not committed."
+	DoctorSecretRiskReadRecommend   = "Ensure the file is readable, then rerun `al doctor`."
 	DoctorSecretRiskNone            = "No obvious secret literals detected in generated artifact surfaces."
 
 	DoctorAgentEnabledFmt  = "Agent enabled: %s"

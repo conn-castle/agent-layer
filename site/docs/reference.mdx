@@ -72,6 +72,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
 # Optional thresholds for warning checks. Omit or comment out to disable.
 # Warn when a newer Agent Layer version is available during sync runs.
 version_update_on_sync = true
+# Warning output noise control: "default" keeps all warnings, "reduce" hides suppressible non-critical warnings.
+noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60
@@ -176,7 +178,14 @@ Warnings are used by:
 - `al sync` for instruction token thresholds (and optional update warnings)
 - `al doctor` for MCP server and schema thresholds
 
+Warning output now includes source and severity labels so operators can distinguish internal/config issues from network or external-dependency issues.
+
 Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
+
+Set `noise_mode` to control warning verbosity:
+
+- `default`: keep all warnings (recommended)
+- `reduce`: hide only suppressible non-critical warnings
 
 ### Validation rules
 
@@ -266,7 +275,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al upgrade` | Apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, configurable with `--diff-lines`). |
 | `al upgrade plan` | Show a dry-run, plain-language categorized upgrade plan with line-level diff previews (configurable with `--diff-lines`). |
 | `al upgrade rollback <snapshot-id>` | Restore an applied upgrade snapshot by ID (snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`). |
-| `al wizard` | Interactive configuration for approvals, agents, MCP servers, and warnings. |
+| `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
@@ -344,6 +353,7 @@ In non-interactive environments, the wizard is skipped.
 - Supports manual restore of applied snapshots via `al upgrade rollback <snapshot-id>`
 
 Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
+For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
 
 ### Upgrade rollback
 
@@ -394,6 +404,17 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 - `.agent-layer/.env`
 
 The wizard rewrites `config.toml` in the template-defined order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
+
+Additional modes:
+
+- `al wizard --profile /path/to/profile.toml`: preview-only profile rewrite diff
+- `al wizard --profile /path/to/profile.toml --yes`: apply profile and run sync
+- `al wizard --cleanup-backups`: delete `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak`
+
+Secret prompt controls:
+
+- `skip`: disable the current default MCP server for this run
+- `cancel`: exit without applying changes
 
 It is safe to re-run when you want to revisit settings.
 
@@ -449,6 +470,11 @@ These commands read `.agent-layer/`, regenerate client outputs, and then launch 
 This is the default workflow for day-to-day use: you get a clean regenerate and a launch in one command, which keeps behavior consistent even when you switch tools.
 
 `al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is supported only by `al vscode` and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
+
+`al vscode` preflight now fails fast with clear guidance when:
+
+- `code` is missing on `PATH`
+- `.vscode/settings.json` has a malformed managed block marker state
 
 Examples:
 

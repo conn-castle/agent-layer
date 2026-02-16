@@ -119,7 +119,7 @@ Incomplete:
 - Website documentation is searchable from a global header search bar.
 
 ### Tasks
-- [ ] vsc-launch (Priority: High, Area: documentation / launchers): Produce detailed architecture documentation for the VS Code launch mechanism, including non-obvious launch flow and design decisions.
+- [x] vsc-launch (Priority: High, Area: documentation / launchers): Produced architecture documentation in `docs/architecture/vscode-launch.md`, linked from contributor docs.
 - [ ] websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
 
 ### Task details

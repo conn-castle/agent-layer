@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // MCPServerResolveError wraps a server-specific resolve error.
@@ -133,7 +134,7 @@ func resolveSingleServer(server config.MCPServer, env map[string]string, resolve
 			entry.Env = envMap
 		}
 	default:
-		return entry, fmt.Errorf("unsupported transport %s", server.Transport)
+		return entry, fmt.Errorf(messages.MCPUnsupportedTransportFmt, server.Transport)
 	}
 
 	return entry, nil

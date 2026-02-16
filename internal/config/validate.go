@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -30,6 +31,12 @@ var validClients = map[string]struct{}{
 var validHTTPTransports = map[string]struct{}{
 	"sse":        {},
 	"streamable": {},
+}
+
+var validWarningNoiseModes = map[string]struct{}{
+	"":        {},
+	"default": {},
+	"reduce":  {},
 }
 
 // Validate ensures the config is complete and consistent.
@@ -119,6 +126,11 @@ func (c *Config) Validate(path string) error {
 // validateWarnings validates optional warning thresholds.
 // path is used for error context; warnings carries the thresholds; returns an error when a threshold is non-positive.
 func validateWarnings(path string, warnings WarningsConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(warnings.NoiseMode))
+	if _, ok := validWarningNoiseModes[mode]; !ok {
+		return fmt.Errorf(messages.ConfigWarningNoiseModeInvalidFmt, path, warnings.NoiseMode)
+	}
+
 	thresholds := []struct {
 		name  string
 		value *int

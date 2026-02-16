@@ -31,6 +31,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Medium. Area: install / UX.
     Description: `upgrade_migrations.go` decodes `.agent-layer/config.toml` into a map and re-marshals after key/default migrations, which removes user comments and original key ordering.
     Next step: Preserve comments/order for simple key migrations (line-level edit or AST-preserving strategy), or explicitly document this destructive formatting side effect.
+    Notes: Explicitly deferred in the Upgrade continuation scope; wizard/profile flows now show rewrite previews and backup files before write.
 
 - Issue 2026-02-14 upg-snapshot-scope: Upgrade snapshot captures all unknowns before deletion approval
     Priority: Low. Area: install / efficiency.
@@ -58,11 +59,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `internal/wizard/catalog.go:15-95` has mutable exported slice variables (e.g., `MCPServerCatalog`) that any caller can modify. Also, `approval_modes.go` and `helpers.go` contain unreferenced functions (`ApprovalModes`, `approvalModeHelpText`, `commentForLine`, `inlineCommentForLine`).
     Next step: Convert exported catalog variables to functions returning fresh copies; remove confirmed dead code.
 
-- Issue 2026-02-12 wiz-secret-loop: No escape from secret input loop in wizard
-    Priority: Low. Area: wizard / UX.
-    Description: `internal/wizard/wizard.go:262-280` prompts for secrets in a retry loop with no mechanism for the user to skip or cancel. If a secret fails validation, the user is stuck until Ctrl+C.
-    Next step: Add a "skip" or "cancel" option to the secret prompt loop.
-
 - Issue 2026-02-12 stub-dup: writeStubWithExit test helper duplicated across 5+ packages
     Priority: Low. Area: testing / DRY.
     Description: The `writeStubWithExit` test helper (writes an executable stub script) is duplicated across `cmd/al`, `cmd/publish-site`, and other test packages with minor variations.
@@ -88,11 +84,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added (snapshot/rollback, migration engine).
     Next step: Monitor during Phase 11 Phase 2 work. If method count exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`).
 
-- Issue 2026-02-10 wiz-run: Wizard Run() is a god function
-    Priority: Medium. Area: wizard / maintainability.
-    Description: `internal/wizard/wizard.go` is ~337 lines total, with `Run()` mixing install gating, config loading, choice initialization, UI flow, and apply logic, making it hard to test and extend safely.
-    Next step: Extract focused helpers (init choices from config, prompt secrets, prompt warnings) and keep `Run()` as a small orchestrator.
-
 - Issue 2026-02-10 upg-ver: Cannot apply a specific intermediate release during upgrade
     Priority: Medium. Area: upgrade / version pinning / UX.
     Description: With `al upgrade` always running the currently installed binary (dispatch bypass) and no `al upgrade --version`, there is no supported way to upgrade a repo from an older pin to an intermediate version (for example 0.6.0 -> 0.6.1) when a newer version is installed (for example 0.7.0); the repo is forced to upgrade to the installed version or rely on manual pin edits/reinstalling.
@@ -107,9 +98,3 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: templates / developer experience.
     Description: `finish-task.md`, `fix-issues.md`, and `cleanup-code.md` templates reference `make test-fast` and `make dead-code`. The templates already guard these with conditional language ("preferred when available", "only if already present"), but agents may still attempt them in repos that do not provide them.
     Next step: Consider whether the conditional language is sufficient, or whether a stronger guard (e.g., checking target existence before invocation) would reduce noise.
-
-- Issue 2026-01-24 a1b2c3: VS Code slow first launch in agent-layer folder
-    Priority: Low. Area: developer experience.
-    GitHub: https://github.com/conn-castle/agent-layer/issues/39
-    Description: Launching VS Code in the agent-layer folder takes a very long time on first use, likely due to extension initialization, indexing, or MCP server startup.
-    Next step: Profile VS Code startup to identify the bottleneck (extensions, language servers, MCP servers, or workspace indexing).

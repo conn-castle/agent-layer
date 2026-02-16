@@ -53,6 +53,31 @@ enabled = true
 	}
 }
 
+func TestRunVSCodeNoSyncManagedBlockConflict(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepo(t, root)
+
+	settingsPath := filepath.Join(root, ".vscode", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir .vscode: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte("{\n// >>> agent-layer\n}\n"), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	binDir := t.TempDir()
+	writeStub(t, binDir, "code")
+	t.Setenv("PATH", binDir)
+
+	err := runVSCodeNoSync(root, nil)
+	if err == nil {
+		t.Fatal("expected managed-block conflict error")
+	}
+	if !strings.Contains(err.Error(), "managed settings block conflict") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestSplitVSCodeArgs(t *testing.T) {
 	tests := []struct {
 		name       string

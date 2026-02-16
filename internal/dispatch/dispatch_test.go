@@ -178,7 +178,7 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "v1.2.3")
 	t.Setenv(EnvNoNetwork, "")
 
-	got, source, warning, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
+	got, source, warning, overridePinned, hasOverridePinned, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -190,6 +190,9 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	}
 	if warning != "" {
 		t.Fatalf("unexpected warning: %q", warning)
+	}
+	if hasOverridePinned {
+		t.Fatalf("expected override pin flag false, got true with %q", overridePinned)
 	}
 }
 
@@ -203,7 +206,7 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	got, source, warning, err := resolveRequestedVersion(RealSystem{}, root, true, "0.5.0")
+	got, source, warning, overridePinned, hasOverridePinned, err := resolveRequestedVersion(RealSystem{}, root, true, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -216,10 +219,13 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 	if warning != "" {
 		t.Fatalf("unexpected warning: %q", warning)
 	}
+	if hasOverridePinned {
+		t.Fatalf("expected override pin flag false, got true with %q", overridePinned)
+	}
 }
 
 func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
-	got, source, warning, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
+	got, source, warning, overridePinned, hasOverridePinned, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -231,6 +237,9 @@ func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
 	}
 	if warning != "" {
 		t.Fatalf("unexpected warning: %q", warning)
+	}
+	if hasOverridePinned {
+		t.Fatalf("expected override pin flag false, got true with %q", overridePinned)
 	}
 }
 
@@ -400,6 +409,42 @@ func TestMaybeExec_OverrideWarnsWhenPinExists(t *testing.T) {
 	}
 	if !strings.Contains(output, "overrides repo pin 0.9.0") {
 		t.Fatalf("expected override warning, got %q", output)
+	}
+}
+
+func TestMaybeExec_OverrideReadsPinOnce(t *testing.T) {
+	root := t.TempDir()
+	var stderr bytes.Buffer
+	readCount := 0
+
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == EnvVersionOverride {
+				return "1.0.0"
+			}
+			return ""
+		},
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			return root, true, nil
+		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			readCount++
+			return []byte("0.9.0\n"), nil
+		},
+		StderrFunc: func() io.Writer {
+			return &stderr
+		},
+	}
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if readCount != 1 {
+		t.Fatalf("expected pin to be read once, got %d reads", readCount)
+	}
+	if !strings.Contains(stderr.String(), "overrides repo pin 0.9.0") {
+		t.Fatalf("expected override warning, got %q", stderr.String())
 	}
 }
 

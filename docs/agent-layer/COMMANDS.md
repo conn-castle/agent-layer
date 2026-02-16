@@ -162,8 +162,16 @@ Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new releas
 make docs-upgrade-check RELEASE_TAG=vX.Y.Z
 ```
 Run from: repo root
-Prerequisites: `site/docs/upgrades.mdx` and `CHANGELOG.md` include the target release tag
-Notes: Fails when the migration table row is missing for the tag, or when placeholder migration text is used while changelog indicates breaking/manual migration impact.
+Prerequisites: `site/docs/upgrades.mdx` and `CHANGELOG.md` include the target release tag; `rg` (ripgrep) available on PATH
+Notes: Also runs upgrade CTA syntax checks across core docs/message surfaces.
+
+- Validate upgrade CTA syntax drift in core docs/messages
+```bash
+make docs-cta-check
+```
+Run from: repo root
+Prerequisites: `rg` (ripgrep) available on PATH
+Notes: Fails on removed/invalid upgrade command surfaces (for example `--force` or `upgrade plan --json`) and on `al upgrade --yes` guidance that omits required apply flags.
 
 - Build release artifacts locally (cross-compile)
 ```bash

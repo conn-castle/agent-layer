@@ -40,6 +40,7 @@ const (
 	ConfigMcpServerHeadersNotAllowedFmt       = "%s: mcp.servers[%d].headers are not allowed for stdio transport"
 	ConfigMcpServerTransportInvalidFmt        = "%s: mcp.servers[%d].transport must be http or stdio"
 	ConfigMcpServerClientInvalidFmt           = "%s: mcp.servers[%d].clients contains invalid client %q"
+	ConfigWarningNoiseModeInvalidFmt          = "%s: warnings.noise_mode %q is invalid (allowed: default, reduce)"
 	ConfigWarningThresholdInvalidFmt          = "%s: %s must be greater than zero"
 
 	ConfigMissingSlashCommandsDirFmt          = "missing slash commands directory %s: %w"

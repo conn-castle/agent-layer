@@ -231,12 +231,17 @@ func buildMCPCommandEnv(baseEnv []string, serverEnv map[string]string) []string 
 		if !ok {
 			continue
 		}
-		if !isAllowedMCPEnvKey(key) {
+		normalized, allowed := normalizeAllowedMCPEnvKey(key)
+		if !allowed {
 			continue
 		}
-		values[key] = value
+		values[normalized] = value
 	}
 	for key, value := range serverEnv {
+		if normalized, allowed := normalizeAllowedMCPEnvKey(key); allowed {
+			values[normalized] = value
+			continue
+		}
 		values[key] = value
 	}
 
@@ -253,9 +258,13 @@ func buildMCPCommandEnv(baseEnv []string, serverEnv map[string]string) []string 
 	return env
 }
 
-func isAllowedMCPEnvKey(key string) bool {
-	if _, ok := mcpAllowedEnvKeys[strings.ToUpper(key)]; ok {
-		return true
+func normalizeAllowedMCPEnvKey(key string) (string, bool) {
+	upper := strings.ToUpper(key)
+	if _, ok := mcpAllowedEnvKeys[upper]; ok {
+		return upper, true
 	}
-	return strings.HasPrefix(strings.ToUpper(key), "AL_")
+	if strings.HasPrefix(upper, "AL_") {
+		return upper, true
+	}
+	return "", false
 }

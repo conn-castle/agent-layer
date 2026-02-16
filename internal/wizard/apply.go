@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/fatih/color"
@@ -18,7 +19,11 @@ var writeFileAtomic = fsutil.WriteFileAtomic
 
 // applyChanges writes config/env updates and runs sync.
 // root/configPath/envPath identify files; c holds wizard selections; runSync is the sync function to call; returns an error on failure.
-func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) error {
+func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, out io.Writer) error {
+	if out == nil {
+		out = os.Stdout
+	}
+
 	// Config
 	rawConfig, err := os.ReadFile(configPath)
 	if err != nil {
@@ -77,19 +82,19 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer) 
 	}
 
 	// Sync
-	fmt.Println(messages.WizardRunningSync)
+	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
 	warnings, err := runSync(root)
 	if err != nil {
 		return err
 	}
 	// Print any warnings from sync
 	if len(warnings) > 0 {
-		fmt.Println()
+		_, _ = fmt.Fprintln(out)
 		warnColor := color.New(color.FgYellow)
 		for _, w := range warnings {
-			_, _ = warnColor.Printf(messages.WizardWarningFmt, w.Message)
+			_, _ = warnColor.Fprintf(out, messages.WizardWarningFmt, w.Message)
 		}
-		fmt.Println()
+		_, _ = fmt.Fprintln(out)
 	}
 	return nil
 }

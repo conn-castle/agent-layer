@@ -42,13 +42,14 @@ type MCPConfig struct {
 
 // WarningsConfig configures optional warning thresholds. Nil fields disable their warnings.
 type WarningsConfig struct {
-	VersionUpdateOnSync            *bool `toml:"version_update_on_sync"`
-	InstructionTokenThreshold      *int  `toml:"instruction_token_threshold"`
-	MCPServerThreshold             *int  `toml:"mcp_server_threshold"`
-	MCPToolsTotalThreshold         *int  `toml:"mcp_tools_total_threshold"`
-	MCPServerToolsThreshold        *int  `toml:"mcp_server_tools_threshold"`
-	MCPSchemaTokensTotalThreshold  *int  `toml:"mcp_schema_tokens_total_threshold"`
-	MCPSchemaTokensServerThreshold *int  `toml:"mcp_schema_tokens_server_threshold"`
+	VersionUpdateOnSync            *bool  `toml:"version_update_on_sync"`
+	NoiseMode                      string `toml:"noise_mode"`
+	InstructionTokenThreshold      *int   `toml:"instruction_token_threshold"`
+	MCPServerThreshold             *int   `toml:"mcp_server_threshold"`
+	MCPToolsTotalThreshold         *int   `toml:"mcp_tools_total_threshold"`
+	MCPServerToolsThreshold        *int   `toml:"mcp_server_tools_threshold"`
+	MCPSchemaTokensTotalThreshold  *int   `toml:"mcp_schema_tokens_total_threshold"`
+	MCPSchemaTokensServerThreshold *int   `toml:"mcp_schema_tokens_server_threshold"`
 }
 
 // MCPServer defines a single MCP server entry.

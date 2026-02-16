@@ -1,6 +1,6 @@
 # Upgrade UX and Risk Plan
 
-As of: 2026-02-10  
+As of: 2026-02-15
 Scope: `conn-castle/agent-layer` (CLI, templates, sync/projection, launchers, docs/release flow)
 
 ## Purpose
@@ -142,12 +142,11 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 
 1. `1B`: Implement real `al init --version latest` support by resolving latest release to semver before writing `.agent-layer/al.version`.
 2. `2A`: `al init` auto-recovers empty/corrupt pin file states instead of requiring manual deletion.
-3. `3B`: Launch commands use sync mode `check` by default (no implicit mutation during launch; users can opt into apply/off modes). **Breaking change:** users who rely on `al gemini`/`al claude`/etc. to auto-sync generated files will need to explicitly use `apply` mode or run `al sync` first. Requires a migration manifest entry (Phase 3) and explicit migration guidance.
-4. `5B`: Pin-file parsing supports comments and blank lines.
-5. `6B`: Default template MCP dependencies are version-pinned, with explicit opt-in for floating/latest update lanes.
-6. `7A`: `al init` is scaffolding only: it errors if `.agent-layer/` already exists and does not perform upgrades. Use `al upgrade plan` and `al upgrade`.
-7. `7B`: `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned: seeded only when missing; never overwritten by init/upgrade.
-8. `7C`: `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plan/diffs.
+3. `5B`: Pin-file parsing supports comments and blank lines.
+4. `6B`: Default template MCP dependencies are version-pinned, with explicit opt-in for floating/latest update lanes.
+5. `7A`: `al init` is scaffolding only: it errors if `.agent-layer/` already exists and does not perform upgrades. Use `al upgrade plan` and `al upgrade`.
+6. `7B`: `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned: seeded only when missing; never overwritten by init/upgrade.
+7. `7C`: `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plan/diffs.
 
 ## Plan to Minimize Pain (UX-first, “works like users expect”)
 
@@ -185,7 +184,6 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - flag stale generated artifacts for disabled agents
 5. Document pinning as required and add clear repair guidance for missing/invalid `.agent-layer/al.version`.
 6. Gracefully degrade GitHub API update checks: when rate-limited (HTTP 403/429), suppress the warning silently or emit a one-line note instead of a multi-line block.
-7. Keep launch-impact preview work optional/deferred; prioritize upgrade UX simplification first.
 
 ### Phase 2: Make upgrades safe and reversible
 
@@ -197,7 +195,6 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 3. **[Done]** Require explicit confirmation for deletions unless `--yes --apply-deletions` is provided.
 4. **[Done]** Add `al upgrade rollback <snapshot-id>`.
 5. **[Done]** Add CI-safe non-interactive apply mode: `al upgrade --yes --apply-managed-updates` applies managed template updates without deleting unknowns.
-6. Keep launch sync behavior simple for everyday users; defer multi-mode launch sync controls.
 
 ### Phase 3: Add real migration support (root cause for long-term pain)
 
@@ -208,9 +205,8 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 2. Execute migrations idempotently before template write.
 3. Emit deterministic migration report with before/after rationale.
 4. Use hard removal for renamed commands/flags (no compatibility shims, no deprecation periods) and require explicit migration guidance in release notes/docs.
-5. Remove migration dependencies on launch sync-mode matrix changes.
-6. Document and enforce env namespace policy: only `AL_` keys are loaded from `.agent-layer/.env`; non-`AL_` keys are ignored and no env-key migration path is provided.
-7. **[Superseded by embedded-only policy]** Keep embedded templates as the sole supported template source; do not introduce alternate template-source metadata/pinning in this phase.
+5. Document and enforce env namespace policy: only `AL_` keys are loaded from `.agent-layer/.env`; non-`AL_` keys are ignored and no env-key migration path is provided.
+6. **[Superseded by embedded-only policy]** Keep embedded templates as the sole supported template source; do not introduce alternate template-source metadata/pinning in this phase.
 
 ### Phase 4: Reduce cross-client surprise
 
@@ -228,9 +224,9 @@ These are confirmed implementation choices (scope), not sequencing decisions:
    - `al upgrade` (interactive apply)
    - `al doctor`
 2. Link this path from README/reference/troubleshooting/changelog.
-3. Provide one-page upgrade checklist for teams/CI, including a non-interactive CI path: `al upgrade --yes --apply-managed-updates && al sync && al doctor`.
-4. Validate all upgrade call-to-action text against real CLI acceptance (Phase 0a ensures initial fix; this phase adds regression tests and a linter for message constants).
-5. Provide platform-specific upgrade quick paths for macOS/Linux shells, including completion expectations.
+3. **[Done]** Provide one-page upgrade checklist for teams/CI, including a non-interactive CI path: `al upgrade --yes --apply-managed-updates && al sync && al doctor`.
+4. **[Done]** Validate all upgrade call-to-action text against real CLI acceptance (Phase 0a ensures initial fix; this phase adds regression tests and a linter for message constants).
+5. **[Done]** Provide platform-specific upgrade quick paths for macOS/Linux shells, including completion expectations.
 6. Document the pin-file format and parser behavior clearly (including support for comment/blank-line handling and auto-fix behavior). Add this to README and reference docs.
 
 ### Phase 6: Close remaining high/medium long-tail UX gaps
@@ -253,15 +249,15 @@ These are confirmed implementation choices (scope), not sequencing decisions:
 
 ### Phase 7: Deferred lowest-priority UX refinements (absolute last)
 
-1. Add policy lints for risky patterns:
+1. **[Done]** Add policy lints for risky patterns:
    - secrets in URLs
    - unsupported Codex header placeholder forms
    - client capability mismatch for enabled features
-2. Add warning-source classification (`internal`, `external dependency`, `network`) and noise controls.
-3. VS Code and launcher hardening:
+2. **[Done]** Add warning-source classification (`internal`, `external dependency`, `network`) and noise controls.
+3. **[Done]** VS Code and launcher hardening:
    - Add launcher preflight for `al`/`code`, `CODEX_HOME` behavior messaging, and managed-block conflict diagnostics.
    - Add first-launch performance profiling and optimization work.
-4. Wizard hardening:
+4. **[Done]** Wizard hardening:
    - Add non-interactive wizard profile mode.
    - Preserve comments where possible or show rewrite preview before apply.
    - Show explicit "servers that will be disabled due to missing secrets" summary before save.

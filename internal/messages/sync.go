@@ -38,5 +38,6 @@ const (
 	MCPServerCommandFmt              = "mcp server %s command: %w"
 	MCPServerArgFmt                  = "mcp server %s arg %s: %w"
 	MCPServerEnvFmt                  = "mcp server %s env %s: %w"
+	MCPUnsupportedTransportFmt       = "unsupported transport %s"
 	MCPServerUnsupportedTransportFmt = "mcp server %s: unsupported transport %s"
 )

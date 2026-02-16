@@ -91,10 +91,16 @@ const (
 	PromptRetryYesNo      = "Please enter y or n."
 
 	// WizardUse is the wizard command name.
-	WizardUse              = "wizard"
-	WizardShort            = "Interactive setup wizard"
-	WizardLong             = "Run the interactive setup wizard for this repository."
-	WizardRequiresTerminal = "wizard requires an interactive terminal"
+	WizardUse                    = "wizard"
+	WizardShort                  = "Interactive setup wizard"
+	WizardLong                   = "Run the interactive setup wizard for this repository."
+	WizardRequiresTerminal       = "wizard requires an interactive terminal"
+	WizardProfileFlagHelp        = "Run wizard in non-interactive profile mode using a profile config TOML file"
+	WizardProfileYesFlagHelp     = "Apply profile-mode changes; without this flag profile mode prints a rewrite preview only"
+	WizardCleanupBackupsFlagHelp = "Delete wizard backup files (.agent-layer/config.toml.bak and .agent-layer/.env.bak)"
+	WizardCleanupBackupsHeader   = "Removed wizard backup files:"
+	WizardCleanupBackupsPathFmt  = "  - %s\n"
+	WizardCleanupBackupsNone     = "No wizard backup files found."
 
 	// GeminiUse is the gemini command name.
 	GeminiUse   = "gemini"
@@ -114,12 +120,14 @@ const (
 	AntigravityShort = "Sync and launch Antigravity"
 
 	// ClientsGeminiExitErrorFmt formats gemini exit errors.
-	ClientsGeminiExitErrorFmt      = "gemini exited with error: %w"
-	ClientsClaudeExitErrorFmt      = "claude exited with error: %w"
-	ClientsCodexExitErrorFmt       = "codex exited with error: %w"
-	ClientsAntigravityExitErrorFmt = "antigravity exited with error: %w"
-	ClientsVSCodeExitErrorFmt      = "vscode exited with error: %w"
-	ClientsCodexHomeWarningFmt     = "Warning: CODEX_HOME is set to %s; expected %s\n"
+	ClientsGeminiExitErrorFmt            = "gemini exited with error: %w"
+	ClientsClaudeExitErrorFmt            = "claude exited with error: %w"
+	ClientsCodexExitErrorFmt             = "codex exited with error: %w"
+	ClientsAntigravityExitErrorFmt       = "antigravity exited with error: %w"
+	ClientsVSCodeExitErrorFmt            = "vscode exited with error: %w"
+	ClientsVSCodeCodeNotFoundFmt         = "vscode preflight failed: 'code' command not found on PATH: %w"
+	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"
+	ClientsCodexHomeWarningFmt           = "Warning: CODEX_HOME is set to %s; expected %s\n"
 
 	// StubShortFmt formats stub command descriptions.
 	StubShortFmt          = "%s (not implemented yet)"

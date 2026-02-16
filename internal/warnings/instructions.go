@@ -25,10 +25,13 @@ func CheckInstructions(rootDir string, threshold *int) ([]Warning, error) {
 	tokens := EstimateTokens(content)
 	if tokens > *threshold {
 		return []Warning{{
-			Code:    CodeInstructionsTooLarge,
-			Subject: subject,
-			Message: fmt.Sprintf(messages.WarningsInstructionsTooLargeFmt, *threshold, tokens, *threshold),
-			Fix:     messages.WarningsInstructionsTooLargeFix,
+			Code:              CodeInstructionsTooLarge,
+			Subject:           subject,
+			Message:           fmt.Sprintf(messages.WarningsInstructionsTooLargeFmt, *threshold, tokens, *threshold),
+			Fix:               messages.WarningsInstructionsTooLargeFix,
+			Source:            SourceInternal,
+			Severity:          SeverityWarning,
+			NoiseSuppressible: true,
 		}}, nil
 	}
 

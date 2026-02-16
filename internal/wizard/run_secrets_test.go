@@ -465,3 +465,83 @@ func TestRun_ExistingSecret_OverrideConfirmError(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "override confirm error")
 }
+
+func TestRun_SecretInputSkip_DisablesServer(t *testing.T) {
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	validConfig := basicAgentConfig()
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
+
+	ui := &MockUI{
+		NoteFunc:   func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == "Enable Default MCP Servers" {
+				*selected = []string{"github"}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			*value = true
+			return nil
+		},
+		SecretInputFunc: func(title string, value *string) error {
+			*value = "skip"
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(string) ([]warnings.Warning, error) { return nil, nil }, "")
+	require.NoError(t, err)
+
+	configData, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(configData), `id = "github"`)
+	assert.Contains(t, string(configData), "enabled = false")
+}
+
+func TestRun_SecretInputCancel_StopsWithoutApply(t *testing.T) {
+	t.Setenv("AL_GITHUB_PERSONAL_ACCESS_TOKEN", "")
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	validConfig := basicAgentConfig()
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
+
+	syncCalled := false
+	ui := &MockUI{
+		NoteFunc:   func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == "Enable Default MCP Servers" {
+				*selected = []string{"github"}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			*value = true
+			return nil
+		},
+		SecretInputFunc: func(title string, value *string) error {
+			*value = "cancel"
+			return nil
+		},
+	}
+
+	originalConfig, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	require.NoError(t, err)
+	err = Run(root, ui, func(string) ([]warnings.Warning, error) {
+		syncCalled = true
+		return nil, nil
+	}, "")
+	require.NoError(t, err)
+	assert.False(t, syncCalled)
+
+	updatedConfig, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	require.NoError(t, err)
+	assert.Equal(t, string(originalConfig), string(updatedConfig))
+}

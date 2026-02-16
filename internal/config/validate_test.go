@@ -222,6 +222,13 @@ func TestValidateWarningsThresholds(t *testing.T) {
 			},
 			errContains: "warnings.mcp_schema_tokens_server_threshold",
 		},
+		{
+			name: "invalid warning noise mode",
+			set: func(cfg *Config) {
+				cfg.Warnings.NoiseMode = "verbose"
+			},
+			errContains: "warnings.noise_mode",
+		},
 	}
 
 	for _, tc := range tests {

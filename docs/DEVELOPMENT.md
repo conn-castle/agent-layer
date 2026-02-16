@@ -34,6 +34,7 @@ This repo is built around determinism: the same inputs should produce the same c
 - If you change installer templates (anything under `internal/templates/`), run `go run ./cmd/al upgrade` in a target repo to apply the updated templates (or `go run ./cmd/al init` for a fresh repo).
 - If template-managed file semantics change for release upgrades, regenerate the release manifest: `./scripts/generate-template-manifest.sh --tag vX.Y.Z`.
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
+- If you change VS Code launch behavior, update `docs/architecture/vscode-launch.md` and keep troubleshooting guidance aligned.
 
 ## Go Tooling & Environment
 Agent Layer uses several light shell wrappers and `make` targets around standard Go commands (`go fmt`, `go test`, etc.). This is intentional to ensure consistent behavior across local development and CI (GitHub Actions). It also keeps tool versions explicit, which makes regressions easier to trace.

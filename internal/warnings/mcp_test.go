@@ -167,6 +167,12 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 	assert.True(t, codes[CodeMCPToolNameCollision], "Expected TOOL_NAME_COLLISION")
 	assert.True(t, codes[CodeMCPTooManyToolsTotal], "Expected TOO_MANY_TOOLS_TOTAL")
 	assert.True(t, codes[CodeMCPToolSchemaBloatTotal], "Expected TOOL_SCHEMA_BLOAT_TOTAL")
+	for _, w := range warnings {
+		if w.Code == CodeMCPServerUnreachable && w.Subject == "s0" {
+			assert.Equal(t, SourceExternalDependency, w.Source)
+			assert.Equal(t, SeverityCritical, w.Severity)
+		}
+	}
 
 	// Verify bloat details
 	assert.NotEmpty(t, bloatWarning.Details)
@@ -265,6 +271,8 @@ func TestCheckMCPServers_ResolveServerError(t *testing.T) {
 	assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)
 	assert.Equal(t, "bad-server", warnings[0].Subject)
 	assert.Contains(t, warnings[0].Message, "Failed to resolve configuration")
+	assert.Equal(t, SourceInternal, warnings[0].Source)
+	assert.Equal(t, SeverityCritical, warnings[0].Severity)
 }
 
 func TestDiscoverTools(t *testing.T) {
@@ -529,6 +537,21 @@ func TestBuildMCPCommandEnv_AllowlistsBaseEnv(t *testing.T) {
 	assert.NotContains(t, joined, "AWS_SECRET_ACCESS_KEY=should-not-pass")
 }
 
+func TestBuildMCPCommandEnv_NormalizesAllowlistedKeyCasing(t *testing.T) {
+	base := []string{
+		"path=/usr/bin",
+	}
+	serverEnv := map[string]string{
+		"PATH": "/custom/bin",
+	}
+
+	env := buildMCPCommandEnv(base, serverEnv)
+	joined := strings.Join(env, "\n")
+
+	assert.Contains(t, joined, "PATH=/custom/bin")
+	assert.NotContains(t, joined, "path=/usr/bin")
+}
+
 func TestRealConnector_UnsupportedTransport(t *testing.T) {
 	connector := &RealConnector{}
 	server := projection.ResolvedMCPServer{
@@ -553,21 +576,27 @@ func TestWarningString(t *testing.T) {
 	s := w.String()
 	assert.Contains(t, s, "WARNING MCP_TOO_MANY_SERVERS_ENABLED")
 	assert.Contains(t, s, "too many servers enabled")
+	assert.Contains(t, s, "source: internal")
+	assert.Contains(t, s, "severity: warning")
 	assert.Contains(t, s, "subject: mcp.servers")
 	assert.Contains(t, s, "fix: disable some servers")
 }
 
 func TestWarningString_WithDetails(t *testing.T) {
 	w := Warning{
-		Code:    CodeMCPToolNameCollision,
-		Subject: "tool1",
-		Message: "name collision",
-		Fix:     "rename tools",
-		Details: []string{"server1", "server2"},
+		Code:     CodeMCPToolNameCollision,
+		Subject:  "tool1",
+		Message:  "name collision",
+		Fix:      "rename tools",
+		Details:  []string{"server1", "server2"},
+		Source:   SourceNetwork,
+		Severity: SeverityCritical,
 	}
 
 	s := w.String()
 	assert.Contains(t, s, "WARNING MCP_TOOL_NAME_COLLISION")
+	assert.Contains(t, s, "source: network")
+	assert.Contains(t, s, "severity: critical")
 	assert.Contains(t, s, "details: server1")
 	assert.Contains(t, s, "details: server2")
 }

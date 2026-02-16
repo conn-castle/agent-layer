@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -153,9 +154,14 @@ func TestFetchLatestReleaseVersion_DoError(t *testing.T) {
 }
 
 func TestFetchLatestReleaseVersion_RetryOnTransientError(t *testing.T) {
-	origDelay := retryDelay
-	retryDelay = 0
-	t.Cleanup(func() { retryDelay = origDelay })
+	origSleep := updateSleep
+	sleepCalls := 0
+	updateSleep = func(time.Duration) {
+		sleepCalls++
+	}
+	t.Cleanup(func() {
+		updateSleep = origSleep
+	})
 
 	attempt := 0
 	client := &http.Client{
@@ -183,6 +189,9 @@ func TestFetchLatestReleaseVersion_RetryOnTransientError(t *testing.T) {
 	}
 	if attempt != 2 {
 		t.Fatalf("expected 2 attempts, got %d", attempt)
+	}
+	if sleepCalls != 1 {
+		t.Fatalf("expected 1 retry sleep, got %d", sleepCalls)
 	}
 }
 

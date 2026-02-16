@@ -111,6 +111,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_RO
 # Optional warning defaults.
 # Wizard now uses these defaults directly when warnings are enabled.
 version_update_on_sync = true
+# warning noise mode: default | reduce
+noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60

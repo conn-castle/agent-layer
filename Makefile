@@ -128,6 +128,10 @@ docs-upgrade-check: ## Validate upgrade contract docs for a release tag (set REL
 	fi
 	@./scripts/check-upgrade-docs.sh --tag "$${RELEASE_TAG}"
 
+.PHONY: docs-cta-check
+docs-cta-check: ## Validate upgrade CTA syntax in core docs/messages
+	@./scripts/check-upgrade-ctas.sh
+
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh
