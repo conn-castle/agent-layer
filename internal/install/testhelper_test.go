@@ -21,6 +21,7 @@ type faultSystem struct {
 	removeErrs map[string]error
 	renameErrs map[string]error
 	writeErrs  map[string]error
+	lookupEnvs map[string]*string
 }
 
 func newFaultSystem(base System) *faultSystem {
@@ -33,6 +34,7 @@ func newFaultSystem(base System) *faultSystem {
 		removeErrs: map[string]error{},
 		renameErrs: map[string]error{},
 		writeErrs:  map[string]error{},
+		lookupEnvs: map[string]*string{},
 	}
 }
 
@@ -52,6 +54,16 @@ func (f *faultSystem) ReadFile(name string) ([]byte, error) {
 		return nil, err
 	}
 	return f.base.ReadFile(name)
+}
+
+func (f *faultSystem) LookupEnv(key string) (string, bool) {
+	if value, ok := f.lookupEnvs[key]; ok {
+		if value == nil {
+			return "", false
+		}
+		return *value, true
+	}
+	return f.base.LookupEnv(key)
 }
 
 func (f *faultSystem) MkdirAll(path string, perm os.FileMode) error {

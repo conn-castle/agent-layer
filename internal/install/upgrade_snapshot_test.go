@@ -1249,6 +1249,10 @@ func (s *writeFailOnceSystem) ReadFile(name string) ([]byte, error) {
 	return s.base.ReadFile(name)
 }
 
+func (s *writeFailOnceSystem) LookupEnv(key string) (string, bool) {
+	return s.base.LookupEnv(key)
+}
+
 func (s *writeFailOnceSystem) MkdirAll(path string, perm os.FileMode) error {
 	return s.base.MkdirAll(path, perm)
 }

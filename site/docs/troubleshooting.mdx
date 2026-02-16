@@ -83,11 +83,24 @@ Run `al sync` (or `al <client>`) to reinstall the managed ignore rules. If the f
 
 ### "gitignore block must not include managed markers or template hash"
 
-`.agent-layer/gitignore.block` should contain only ignore patterns and comments. Agent Layer injects the managed header and template hash only when updating the root `.gitignore`. If your template file contains `# >>> agent-layer`, `# <<< agent-layer`, or `# Template hash: ...`, run `al upgrade` to restore the template file, then re-run `al sync`.
+`.agent-layer/gitignore.block` should contain only ignore patterns and comments. Agent Layer injects the managed header and template hash only when updating the root `.gitignore`. If your template file contains `# >>> agent-layer`, `# <<< agent-layer`, or `# Template hash: ...`, run:
+
+```bash
+al upgrade repair-gitignore-block
+al sync
+```
 
 ### "invalid pinned version" or version format errors
 
-`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`. Fix the file or run `al upgrade` to rewrite it to the current version. See [Version pinning](./concepts#version-pinning) and [Upgrades](./upgrades).
+`.agent-layer/al.version` must be `X.Y.Z` or `vX.Y.Z`.
+
+Parser behavior:
+
+- blank lines and `#` comments are ignored
+- exactly one non-comment version line is expected
+- empty/invalid/multi-version pin files produce a warning and fall back to the current CLI version
+
+Fix the file or run `al upgrade` to rewrite it to the current version. See [Version pinning](./concepts#version-pinning) and [Upgrades](./upgrades).
 
 ### `config.toml` validation failures
 
@@ -99,6 +112,28 @@ Common causes:
 - mixing `url` with `command` in the same MCP server
 
 Run `al doctor` to see structured config errors.
+
+### VS Code settings disappear after sync
+
+Some VS Code extensions (for example Peacock) write settings through the VS Code configuration API in a way that can land inside the Agent Layer-managed block in `.vscode/settings.json`.
+
+If that happens, Agent Layer replaces the managed block on the next `al sync`, so extension-written settings inside that block are removed.
+
+Fix:
+
+1. Manually edit `.vscode/settings.json` and move extension-owned settings outside the managed marker block (`// >>> agent-layer` to `// <<< agent-layer`).
+2. If the managed block is currently the last block in the file, add a user-owned tail anchor key after it:
+
+```jsonc
+{
+  // >>> agent-layer
+  // ... Agent Layer managed settings ...
+  // <<< agent-layer
+  "__settingsTailAnchor": 0
+}
+```
+
+This creates a stable non-managed tail position for extension writes.
 
 ## MCP server issues
 
@@ -155,7 +190,11 @@ For upgrade-policy guarantees and migration expectations, see [Upgrades](./upgra
 
 ### "version is not cached" when offline
 
-If `AL_NO_NETWORK=1` is set and the pinned version is not cached, `al` cannot download the version. Temporarily unset `AL_NO_NETWORK` or pre-populate the cache.
+If `AL_NO_NETWORK=1` is set and the pinned version is not cached, `al` cannot download the version. Temporarily unset `AL_NO_NETWORK` or pre-populate the cache:
+
+```bash
+al upgrade prefetch --version X.Y.Z
+```
 
 ## Still stuck
 

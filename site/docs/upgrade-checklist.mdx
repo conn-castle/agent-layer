@@ -15,20 +15,24 @@ Use this page when you want a repeatable, low-risk upgrade runbook.
    ```bash
    al --version
    ```
-3. Preview changes before any writes:
+3. Optional: pre-warm cache for offline or constrained runners:
+   ```bash
+   al upgrade prefetch --version X.Y.Z
+   ```
+4. Preview changes before any writes:
    ```bash
    al upgrade plan
    ```
-4. Apply changes:
+5. Apply changes:
    ```bash
    al upgrade
    ```
-5. Validate generated outputs and connectivity:
+6. Validate generated outputs and connectivity:
    ```bash
    al sync
    al doctor
    ```
-6. If needed, restore a snapshot:
+7. If needed, restore a snapshot:
    ```bash
    al upgrade rollback <snapshot-id>
    ```
@@ -80,5 +84,6 @@ al upgrade
 ## Notes
 
 - `.agent-layer/al.version` is required for supported usage.
+- `al upgrade prefetch` is the recommended cache warm-up command for offline/air-gapped workflows.
 - Snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`.
 - For policy guarantees and release migration rules, see [Upgrades](./upgrades).

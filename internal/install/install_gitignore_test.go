@@ -511,3 +511,52 @@ func TestWriteGitignoreBlock_OverwriteWriteError(t *testing.T) {
 		t.Fatalf("expected error for write failure")
 	}
 }
+
+func TestRepairGitignoreBlock(t *testing.T) {
+	root := t.TempDir()
+	agentLayerDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	blockPath := filepath.Join(agentLayerDir, "gitignore.block")
+	if err := os.WriteFile(blockPath, []byte("# >>> agent-layer\nbad\n"), 0o644); err != nil {
+		t.Fatalf("write invalid block: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("existing\n"), 0o644); err != nil {
+		t.Fatalf("write root .gitignore: %v", err)
+	}
+
+	if err := RepairGitignoreBlock(root, RepairGitignoreBlockOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("RepairGitignoreBlock: %v", err)
+	}
+
+	templateBytes, err := templates.Read("gitignore.block")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	blockBytes, err := os.ReadFile(blockPath)
+	if err != nil {
+		t.Fatalf("read repaired block: %v", err)
+	}
+	if string(blockBytes) != string(templateBytes) {
+		t.Fatalf("repaired block did not match template")
+	}
+
+	gitignoreBytes, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read root .gitignore: %v", err)
+	}
+	if !strings.Contains(string(gitignoreBytes), "# >>> agent-layer") || !strings.Contains(string(gitignoreBytes), "# <<< agent-layer") {
+		t.Fatalf("expected managed agent-layer block markers in root .gitignore, got:\n%s", string(gitignoreBytes))
+	}
+}
+
+func TestRepairGitignoreBlock_RequiresRootAndSystem(t *testing.T) {
+	if err := RepairGitignoreBlock("", RepairGitignoreBlockOptions{System: RealSystem{}}); err == nil {
+		t.Fatal("expected error when root is empty")
+	}
+	if err := RepairGitignoreBlock(t.TempDir(), RepairGitignoreBlockOptions{}); err == nil {
+		t.Fatal("expected error when system is nil")
+	}
+}

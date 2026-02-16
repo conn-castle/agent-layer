@@ -14,15 +14,21 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/launchers"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 const (
-	readinessCheckUnrecognizedConfigKeys  = "unrecognized_config_keys"
-	readinessCheckVSCodeNoSyncStaleOutput = "vscode_no_sync_outputs_stale"
-	readinessCheckFloatingDependencies    = "floating_external_dependency_specs"
-	readinessCheckDisabledArtifacts       = "stale_disabled_agent_artifacts"
+	readinessCheckUnrecognizedConfigKeys        = "unrecognized_config_keys"
+	readinessCheckUnresolvedPlaceholders        = "unresolved_config_placeholders"
+	readinessCheckProcessEnvOverridesDotenv     = "process_env_overrides_dotenv"
+	readinessCheckIgnoredEmptyDotenvAssignments = "ignored_empty_dotenv_assignments"
+	readinessCheckPathExpansionAnomalies        = "path_expansion_anomalies"
+	readinessCheckVSCodeNoSyncStaleOutput       = "vscode_no_sync_outputs_stale"
+	readinessCheckFloatingDependencies          = "floating_external_dependency_specs"
+	readinessCheckDisabledArtifacts             = "stale_disabled_agent_artifacts"
+	readinessCheckGeneratedSecretRisk           = "generated_secret_risk"
 )
 
 const (
@@ -32,6 +38,10 @@ const (
 )
 
 var floatingDependencyPattern = regexp.MustCompile(`(?i)@(latest|next|canary)\b`)
+var (
+	secretAssignmentPattern = regexp.MustCompile(`(?i)(api[_-]?key|token|secret|authorization)\s*[:=]\s*["'][^"']{8,}["']`)
+	bearerPattern           = regexp.MustCompile(`(?i)bearer\s+[a-z0-9_\-\.\/+=]{8,}`)
+)
 
 // UpgradeReadinessCheck captures a non-fatal pre-upgrade readiness finding for text output.
 type UpgradeReadinessCheck struct {
@@ -63,7 +73,7 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 		return nil, readinessErr("read", configPath, err)
 	}
 
-	checks := make([]UpgradeReadinessCheck, 0, 4)
+	checks := make([]UpgradeReadinessCheck, 0, 9)
 	if strictErr := decodeConfigStrict(configBytes); strictErr != nil {
 		checks = append(checks, UpgradeReadinessCheck{
 			ID:      readinessCheckUnrecognizedConfigKeys,
@@ -83,6 +93,29 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 		return checks, nil
 	}
 
+	envValues, err := readAgentLayerEnvForReadiness(inst)
+	if err != nil {
+		return nil, err
+	}
+
+	if check := detectUnresolvedConfigPlaceholders(&cfg, envValues, inst.root, inst.sys); check != nil {
+		checks = append(checks, *check)
+	}
+
+	if check := detectProcessEnvOverridesDotenv(&cfg, envValues, inst.sys); check != nil {
+		checks = append(checks, *check)
+	}
+
+	if check := detectIgnoredEmptyDotenvAssignments(&cfg, envValues, inst.sys); check != nil {
+		checks = append(checks, *check)
+	}
+
+	if check, err := detectPathExpansionAnomalies(inst, &cfg, envValues); err != nil {
+		return nil, err
+	} else if check != nil {
+		checks = append(checks, *check)
+	}
+
 	if check, err := detectVSCodeNoSyncStaleness(inst, &cfg, configPath, configInfo.ModTime()); err != nil {
 		return nil, err
 	} else if check != nil {
@@ -99,8 +132,244 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 		checks = append(checks, *check)
 	}
 
+	if check, err := detectGeneratedSecretRisk(inst); err != nil {
+		return nil, err
+	} else if check != nil {
+		checks = append(checks, *check)
+	}
+
 	sortReadinessChecks(checks)
 	return checks, nil
+}
+
+func readAgentLayerEnvForReadiness(inst *installer) (map[string]string, error) {
+	envPath := filepath.Join(inst.root, ".agent-layer", ".env")
+	data, err := inst.sys.ReadFile(envPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return map[string]string{}, nil
+		}
+		return nil, readinessErr("read", envPath, err)
+	}
+	parsed, parseErr := envfile.Parse(string(data))
+	if parseErr != nil {
+		return nil, readinessErr("parse", envPath, parseErr)
+	}
+	return filterAgentLayerEnvForReadiness(parsed), nil
+}
+
+func filterAgentLayerEnvForReadiness(env map[string]string) map[string]string {
+	if len(env) == 0 {
+		return map[string]string{}
+	}
+	filtered := make(map[string]string, len(env))
+	for key, value := range env {
+		if strings.HasPrefix(key, "AL_") {
+			filtered[key] = value
+		}
+	}
+	return filtered
+}
+
+func detectUnresolvedConfigPlaceholders(cfg *config.Config, env map[string]string, repoRoot string, sys System) *UpgradeReadinessCheck {
+	details := make([]string, 0)
+	for i, server := range cfg.MCP.Servers {
+		if server.Enabled == nil || !*server.Enabled {
+			continue
+		}
+		for _, name := range config.RequiredEnvVarsForMCPServer(server) {
+			if _, ok := readinessEnvValue(name, env, repoRoot, sys); ok {
+				continue
+			}
+			details = append(details, fmt.Sprintf("mcp.servers[%d] id=%q missing ${%s}", i, server.ID, name))
+		}
+	}
+	if len(details) == 0 {
+		return nil
+	}
+	sort.Strings(details)
+	return &UpgradeReadinessCheck{
+		ID:      readinessCheckUnresolvedPlaceholders,
+		Summary: "Enabled MCP servers reference placeholders not available from env.",
+		Details: details,
+	}
+}
+
+func detectProcessEnvOverridesDotenv(cfg *config.Config, env map[string]string, sys System) *UpgradeReadinessCheck {
+	required := requiredAgentLayerEnvVarsForEnabledServers(cfg)
+	details := make([]string, 0)
+	for _, key := range required {
+		fileValue, exists := env[key]
+		if !exists || fileValue == "" {
+			continue
+		}
+		processValue, processSet := processEnvValue(sys, key)
+		if !processSet || processValue == "" || processValue == fileValue {
+			continue
+		}
+		details = append(details, fmt.Sprintf("%s differs between process env and `.agent-layer/.env`", key))
+	}
+	if len(details) == 0 {
+		return nil
+	}
+	sort.Strings(details)
+	return &UpgradeReadinessCheck{
+		ID:      readinessCheckProcessEnvOverridesDotenv,
+		Summary: "Process environment values override `.agent-layer/.env` for active placeholders.",
+		Details: details,
+	}
+}
+
+func detectIgnoredEmptyDotenvAssignments(cfg *config.Config, env map[string]string, sys System) *UpgradeReadinessCheck {
+	required := requiredAgentLayerEnvVarsForEnabledServers(cfg)
+	details := make([]string, 0)
+	for _, key := range required {
+		fileValue, exists := env[key]
+		if !exists || fileValue != "" {
+			continue
+		}
+		processValue, processSet := processEnvValue(sys, key)
+		if !processSet || processValue == "" {
+			continue
+		}
+		details = append(details, fmt.Sprintf("%s is empty in `.agent-layer/.env` and falls back to process env", key))
+	}
+	if len(details) == 0 {
+		return nil
+	}
+	sort.Strings(details)
+	return &UpgradeReadinessCheck{
+		ID:      readinessCheckIgnoredEmptyDotenvAssignments,
+		Summary: "Empty `.env` assignments are masked by process environment values.",
+		Details: details,
+	}
+}
+
+func detectPathExpansionAnomalies(inst *installer, cfg *config.Config, env map[string]string) (*UpgradeReadinessCheck, error) {
+	details := make([]string, 0)
+	for i, server := range cfg.MCP.Servers {
+		if server.Enabled == nil || !*server.Enabled || server.Transport != config.TransportStdio {
+			continue
+		}
+		commandDetail, err := checkPathExpansionValue(inst, env, i, server.ID, "command", server.Command, true)
+		if err != nil {
+			return nil, err
+		}
+		if commandDetail != "" {
+			details = append(details, commandDetail)
+		}
+		for argIdx, arg := range server.Args {
+			detail, err := checkPathExpansionValue(inst, env, i, server.ID, fmt.Sprintf("args[%d]", argIdx), arg, false)
+			if err != nil {
+				return nil, err
+			}
+			if detail != "" {
+				details = append(details, detail)
+			}
+		}
+	}
+	if len(details) == 0 {
+		return nil, nil
+	}
+	sort.Strings(details)
+	return &UpgradeReadinessCheck{
+		ID:      readinessCheckPathExpansionAnomalies,
+		Summary: "Path-like MCP command values contain expansion anomalies.",
+		Details: details,
+	}, nil
+}
+
+func checkPathExpansionValue(inst *installer, env map[string]string, serverIndex int, serverID string, field string, rawValue string, commandField bool) (string, error) {
+	if !config.ShouldExpandPath(rawValue) {
+		return "", nil
+	}
+	substEnv := readinessSubstitutionEnv(rawValue, env, inst.root, inst.sys)
+	resolved, err := config.SubstituteEnvVars(rawValue, substEnv)
+	if err != nil {
+		return fmt.Sprintf("mcp.servers[%d] id=%q %s has unresolved path placeholder: %v", serverIndex, serverID, field, err), nil
+	}
+	expanded, err := config.ExpandPathIfNeeded(rawValue, resolved, inst.root)
+	if err != nil {
+		return fmt.Sprintf("mcp.servers[%d] id=%q %s failed to expand path %q: %v", serverIndex, serverID, field, rawValue, err), nil
+	}
+	if !filepath.IsAbs(expanded) || strings.Contains(expanded, "${") || strings.HasPrefix(strings.TrimSpace(expanded), "~") {
+		return fmt.Sprintf("mcp.servers[%d] id=%q %s did not expand cleanly: raw=%q expanded=%q", serverIndex, serverID, field, rawValue, expanded), nil
+	}
+	info, statErr := inst.sys.Stat(expanded)
+	if statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Sprintf("mcp.servers[%d] id=%q %s expands to missing path %q", serverIndex, serverID, field, expanded), nil
+		}
+		return "", readinessErr("stat", expanded, statErr)
+	}
+	if commandField && info.IsDir() {
+		return fmt.Sprintf("mcp.servers[%d] id=%q %s expands to a directory, not an executable path: %q", serverIndex, serverID, field, expanded), nil
+	}
+	return "", nil
+}
+
+func requiredAgentLayerEnvVarsForEnabledServers(cfg *config.Config) []string {
+	seen := make(map[string]struct{})
+	for _, server := range cfg.MCP.Servers {
+		if server.Enabled == nil || !*server.Enabled {
+			continue
+		}
+		for _, key := range config.RequiredEnvVarsForMCPServer(server) {
+			if strings.HasPrefix(key, "AL_") {
+				seen[key] = struct{}{}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func readinessSubstitutionEnv(raw string, env map[string]string, repoRoot string, sys System) map[string]string {
+	names := config.ExtractEnvVarNames(raw)
+	if len(names) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(names))
+	for _, name := range names {
+		if value, ok := readinessEnvValue(name, env, repoRoot, sys); ok {
+			out[name] = value
+		}
+	}
+	return out
+}
+
+func readinessEnvValue(name string, env map[string]string, repoRoot string, sys System) (string, bool) {
+	if config.IsBuiltInEnvVar(name) {
+		if repoRoot == "" {
+			return "", false
+		}
+		return repoRoot, true
+	}
+	if value, ok := processEnvValue(sys, name); ok && value != "" {
+		return value, true
+	}
+	if value, ok := env[name]; ok && value != "" {
+		return value, true
+	}
+	return "", false
+}
+
+func processEnvValue(sys System, key string) (string, bool) {
+	if sys == nil {
+		return "", false
+	}
+	value, ok := sys.LookupEnv(key)
+	if !ok || value == "" {
+		return "", false
+	}
+	return value, true
 }
 
 func decodeConfigStrict(data []byte) error {
@@ -222,6 +491,64 @@ func detectFloatingDependencies(cfg *config.Config) *UpgradeReadinessCheck {
 		Summary: "Enabled MCP servers include floating dependency specs.",
 		Details: details,
 	}
+}
+
+func detectGeneratedSecretRisk(inst *installer) (*UpgradeReadinessCheck, error) {
+	paths := []string{
+		filepath.Join(inst.root, ".codex", "config.toml"),
+		filepath.Join(inst.root, ".mcp.json"),
+		filepath.Join(inst.root, ".claude", "settings.json"),
+		filepath.Join(inst.root, ".gemini", "settings.json"),
+		filepath.Join(inst.root, ".vscode", "mcp.json"),
+	}
+
+	details := make([]string, 0)
+	for _, path := range paths {
+		info, err := inst.sys.Stat(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, readinessErr("stat", path, err)
+		}
+		if info.IsDir() {
+			continue
+		}
+		data, err := inst.sys.ReadFile(path)
+		if err != nil {
+			return nil, readinessErr("read", path, err)
+		}
+		if !containsPotentialSecretLiteral(string(data)) {
+			continue
+		}
+		details = append(details, filepath.ToSlash(inst.relativePath(path)))
+	}
+
+	if len(details) == 0 {
+		return nil, nil
+	}
+	sort.Strings(details)
+	return &UpgradeReadinessCheck{
+		ID:      readinessCheckGeneratedSecretRisk,
+		Summary: "Generated files appear to contain secret-like literals.",
+		Details: details,
+	}, nil
+}
+
+func containsPotentialSecretLiteral(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.Contains(trimmed, "${") {
+			continue
+		}
+		if secretAssignmentPattern.MatchString(trimmed) || bearerPattern.MatchString(trimmed) {
+			return true
+		}
+	}
+	return false
 }
 
 func floatingDetails(serverIndex int, serverID string, field string, value string) []string {

@@ -14,6 +14,8 @@ cta_files=(
   "README.md"
   "site/pages/install.mdx"
   "site/pages/faq.mdx"
+  "site/docs/upgrade-checklist.mdx"
+  "site/docs/concepts.mdx"
   "site/docs/reference.mdx"
   "site/docs/troubleshooting.mdx"
   "internal/messages/cli.go"
@@ -48,6 +50,33 @@ for pattern in "${forbidden_patterns[@]}"; do
     die "found forbidden upgrade CTA pattern: $pattern"
   fi
 done
+
+# Check only the current Unreleased changelog section for forbidden CTA drift.
+changelog_unreleased="$(
+  awk '
+    /^## Unreleased/ { in_unreleased=1; next }
+    /^## / { if (in_unreleased) exit }
+    in_unreleased { print }
+  ' CHANGELOG.md
+)"
+
+if [[ -z "$changelog_unreleased" ]]; then
+  die "failed to read CHANGELOG.md Unreleased section for CTA checks"
+fi
+
+for pattern in "${forbidden_patterns[@]}"; do
+  if grep -Fq "$pattern" <<<"$changelog_unreleased"; then
+    die "found forbidden upgrade CTA pattern in CHANGELOG.md Unreleased section: $pattern"
+  fi
+done
+
+while IFS= read -r line; do
+  [[ -n "$line" ]] || continue
+  if [[ "$line" == *"--apply-managed-updates"* ]] || [[ "$line" == *"--apply-memory-updates"* ]] || [[ "$line" == *"--apply-deletions"* ]]; then
+    continue
+  fi
+  die "invalid non-interactive upgrade CTA in CHANGELOG.md Unreleased section: $line"
+done < <(grep -F "al upgrade --yes" <<<"$changelog_unreleased" || true)
 
 bad_yes_lines=0
 while IFS= read -r match; do

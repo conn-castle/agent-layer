@@ -274,7 +274,9 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al init` | Initialize a repo with Agent Layer templates and memory files. |
 | `al upgrade` | Apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, configurable with `--diff-lines`). |
 | `al upgrade plan` | Show a dry-run, plain-language categorized upgrade plan with line-level diff previews (configurable with `--diff-lines`). |
+| `al upgrade prefetch` | Download and cache a release binary ahead of time (use `--version X.Y.Z` explicitly on dev builds). |
 | `al upgrade rollback <snapshot-id>` | Restore an applied upgrade snapshot by ID (snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`). |
+| `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
@@ -333,6 +335,8 @@ In non-interactive environments, the wizard is skipped.
 - If you are running a release build, `al init` writes `.agent-layer/al.version`.
 - You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`).
 - `.agent-layer/al.version` is required for supported usage. If it is missing or invalid, run `al upgrade` to repair it.
+- Pin file parsing ignores blank lines and `#` comments, and expects exactly one version line.
+- If the pin file is empty, invalid, or contains multiple version lines, dispatch warns and falls back to the current CLI version; run `al upgrade` to rewrite a valid pin.
 - Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
 - For upgrade contract details and release-versioned migration notes, see [Upgrades](./upgrades).
 
@@ -363,6 +367,20 @@ For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
 - Only snapshots in `applied` status are rollback-eligible
 - Rollback fails loudly when a snapshot is missing, malformed, or non-rollbackable
 
+### Upgrade prefetch
+
+`al upgrade prefetch` downloads and verifies a release binary into the local Agent Layer cache without applying template updates.
+
+- Use it to pre-warm CI runners or offline environments.
+- In release builds, it defaults to the currently running `al` version.
+- In dev builds, pass `--version X.Y.Z` explicitly.
+
+### Repair gitignore block
+
+`al upgrade repair-gitignore-block` restores `.agent-layer/gitignore.block` to the embedded template and reapplies the root `.gitignore` managed block.
+
+Use this when `.agent-layer/gitignore.block` is invalid (for example it accidentally includes managed markers or template-hash lines).
+
 ### Upgrade plan
 
 `al upgrade plan` is a read-only upgrade preview. It does not write files.
@@ -377,18 +395,11 @@ Use it before `al upgrade` to understand what would change:
 - Template removals/orphans
 - Config key migrations (when migration manifests are present)
 - Pin version change (`current -> target`)
-- Readiness checks (for example unrecognized config keys, potentially stale VS Code `--no-sync` outputs, floating dependency specs, and stale disabled-agent artifacts)
-
-Each diff entry includes an ownership label:
-
-- `upstream template delta`
-- `local customization`
-- `mixed upstream and local`
-- `unknown no baseline`
-
-`unknown no baseline` means Agent Layer cannot prove ownership safely for that file from baseline evidence. In text output, `al upgrade plan` includes an **Ownership warnings** block with actionable guidance.
+- Readiness checks (for example unresolved placeholders, process-env vs `.env` collisions, ignored empty `.env` assignments, path-expansion anomalies, stale VS Code `--no-sync` outputs, floating dependency specs, stale disabled-agent artifacts, and generated-secret risk warnings)
 
 `al upgrade plan` also includes line-level diff previews for changed files. Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
+
+Each diff preview still carries internal ownership metadata (`upstream template delta`, `local customization`, `mixed upstream and local`, `unknown no baseline`) used by upgrade decision logic, but `al upgrade plan` text output intentionally hides ownership diagnostics.
 
 `al upgrade plan` supports plain-language text output only.
 

@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 - `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plans/diffs.
 
 ### Removed
-- **Breaking:** `al init --overwrite` and `al init --force` flags. Use `al upgrade` (interactive) or `al upgrade --force` (non-interactive) instead.
+- **Breaking:** legacy `al init` overwrite/force flags. Use `al upgrade` (interactive) or `al upgrade --yes --apply-managed-updates` (non-interactive managed updates) instead.
 
 ## v0.7.0 - 2026-02-07
 
@@ -28,7 +28,7 @@ All notable changes to this project will be documented in this file.
 - Launcher template writes refactored for reliability with proper macOS path escaping.
 - Codex MCP header projection order corrected.
 - CI workflow caches pinned tools in GitHub Actions for faster builds.
-- Upgrade contract linked from README, site docs, DEVELOPMENT.md, RELEASE.md, and docs/UPGRADE_PLAN.md.
+- Upgrade contract linked from README, site docs, DEVELOPMENT.md, and RELEASE.md.
 
 ### Removed
 - `al-install.ps1` (Windows PowerShell installer).

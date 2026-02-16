@@ -120,6 +120,27 @@ If a server fails to start with “No such file or directory,” verify the `com
 
 If MCP servers that use `npx` are failing in VS Code, your GUI environment may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so VS Code can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
+### Why did some VS Code settings disappear after `al sync`?
+
+Some VS Code extensions (for example Peacock) write settings through the VS Code configuration API in a way that can land inside the Agent Layer-managed block in `.vscode/settings.json`.
+
+If that happens, Agent Layer will replace that managed block on the next `al sync`, and those extension-written settings will be removed.
+
+Fix:
+1. Manually edit `.vscode/settings.json` and move extension-owned settings outside the managed marker block (`// >>> agent-layer` to `// <<< agent-layer`).
+2. If the managed block is currently the last block in the file, add a user-owned tail anchor key after it:
+
+```jsonc
+{
+  // >>> agent-layer
+  // ... Agent Layer managed settings ...
+  // <<< agent-layer
+  "__settingsTailAnchor": 0
+}
+```
+
+This keeps a stable non-managed tail position for extension writes.
+
 ---
 
 ## Version pinning (per repo, required)
@@ -138,6 +159,11 @@ Agent Layer treats `.agent-layer/al.version` as required for supported usage. Do
 
 Pin format:
 - `0.6.0` or `v0.6.0` (both are accepted)
+
+Pin parser behavior:
+- blank lines and `#` comments are ignored
+- exactly one non-comment version line is expected
+- empty/invalid/multi-version pin files produce a warning and dispatch falls back to the current CLI version until repaired
 
 Cache location (per user):
 - default: user cache dir (for example `~/.cache/agent-layer/versions/<version>/<os>-<arch>/al-<os>-<arch>` on Linux)
@@ -160,6 +186,8 @@ For a concise runbook (interactive + CI), use the one-page [upgrade checklist](h
 
 Each `al upgrade` run writes an automatic snapshot of managed upgrade targets and auto-rolls back if an upgrade step fails. Snapshots are retained under `.agent-layer/state/upgrade-snapshots/` for rollback history.
 To manually restore an applied snapshot, run `al upgrade rollback <snapshot-id>` (use the JSON filename stem from `.agent-layer/state/upgrade-snapshots/` as `<snapshot-id>`).
+
+To pre-warm a release binary in cache (for offline/air-gapped runs), use `al upgrade prefetch --version X.Y.Z`.
 
 `al upgrade` also executes embedded per-release migration manifests before template writes (for example file renames/deletes and config key transitions). If the prior source version cannot be resolved, source-agnostic migrations still run and source-gated migrations are skipped with explicit report output.
 
@@ -485,7 +513,9 @@ Other commands:
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
 - `al upgrade` — apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
+- `al upgrade prefetch` — download and cache a release binary (use `--version X.Y.Z` on dev builds; useful for offline/CI cache warm-up)
 - `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`)
+- `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`)

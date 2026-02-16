@@ -33,6 +33,7 @@ var (
 
 const (
 	defaultMaxDownloadBytes = int64(100 * 1024 * 1024) // 100 MiB
+	defaultDownloadTimeout  = 30 * time.Second
 	downloadRetryCount      = 1
 	downloadRetryBackoff    = 250 * time.Millisecond
 )
@@ -101,7 +102,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 			return fmt.Errorf(messages.DispatchCloseTempFileFmt, err)
 		}
 
-		expected, err := fetchChecksum(version, asset)
+		expected, err := fetchChecksumWithSystem(sys, version, asset)
 		if err != nil {
 			return err
 		}
@@ -165,9 +166,10 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 	if sys == nil {
 		return fmt.Errorf(messages.DispatchSystemRequired)
 	}
+	client := downloadHTTPClientWithSystem(sys)
 	maxBytes := maxDownloadBytesWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		resp, err := httpClient.Get(url)
+		resp, err := client.Get(url)
 		if err != nil {
 			if shouldRetryDownload(attempt, err, 0) {
 				dispatchSleep(downloadRetryBackoff)
@@ -222,9 +224,18 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 
 // fetchChecksum retrieves the expected checksum for the asset from checksums.txt.
 func fetchChecksum(version string, asset string) (string, error) {
+	return fetchChecksumWithSystem(RealSystem{}, version, asset)
+}
+
+// fetchChecksumWithSystem retrieves the expected checksum using the provided system for timeout/env resolution.
+func fetchChecksumWithSystem(sys System, version string, asset string) (string, error) {
+	if sys == nil {
+		return "", fmt.Errorf(messages.DispatchSystemRequired)
+	}
 	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
+	client := downloadHTTPClientWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		resp, err := httpClient.Get(url)
+		resp, err := client.Get(url)
 		if err != nil {
 			if shouldRetryDownload(attempt, err, 0) {
 				dispatchSleep(downloadRetryBackoff)
@@ -311,6 +322,31 @@ func maxDownloadBytesWithSystem(sys System) int64 {
 		return defaultMaxDownloadBytes
 	}
 	return v
+}
+
+func downloadTimeoutWithSystem(sys System) time.Duration {
+	raw := strings.TrimSpace(sys.Getenv("AL_DOWNLOAD_TIMEOUT"))
+	if raw == "" {
+		return defaultDownloadTimeout
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return defaultDownloadTimeout
+	}
+	return timeout
+}
+
+func downloadHTTPClientWithSystem(sys System) *http.Client {
+	if sys == nil {
+		return httpClient
+	}
+	timeout := downloadTimeoutWithSystem(sys)
+	if httpClient.Timeout == timeout {
+		return httpClient
+	}
+	clientCopy := *httpClient
+	clientCopy.Timeout = timeout
+	return &clientCopy
 }
 
 // verifyChecksum computes the SHA-256 of path and compares it to expected.

@@ -18,16 +18,20 @@ type Prompter interface {
 // PromptOverwriteAllPreviewFunc asks whether to overwrite all paths in a diff preview batch.
 type PromptOverwriteAllPreviewFunc func(previews []DiffPreview) (bool, error)
 
+// PromptOverwriteAllUnifiedPreviewFunc asks whether to apply managed and memory updates in one pass.
+type PromptOverwriteAllUnifiedPreviewFunc func(managed []DiffPreview, memory []DiffPreview) (bool, bool, error)
+
 // PromptOverwritePreviewFunc asks whether to overwrite a single diff preview path.
 type PromptOverwritePreviewFunc func(preview DiffPreview) (bool, error)
 
 // PromptFuncs adapts optional prompt callbacks into a Prompter.
 type PromptFuncs struct {
-	OverwriteAllPreviewFunc       PromptOverwriteAllPreviewFunc
-	OverwriteAllMemoryPreviewFunc PromptOverwriteAllPreviewFunc
-	OverwritePreviewFunc          PromptOverwritePreviewFunc
-	DeleteUnknownAllFunc          PromptDeleteUnknownAllFunc
-	DeleteUnknownFunc             PromptDeleteUnknownFunc
+	OverwriteAllPreviewFunc        PromptOverwriteAllPreviewFunc
+	OverwriteAllMemoryPreviewFunc  PromptOverwriteAllPreviewFunc
+	OverwriteAllUnifiedPreviewFunc PromptOverwriteAllUnifiedPreviewFunc
+	OverwritePreviewFunc           PromptOverwritePreviewFunc
+	DeleteUnknownAllFunc           PromptDeleteUnknownAllFunc
+	DeleteUnknownFunc              PromptDeleteUnknownFunc
 }
 
 // OverwriteAll prompts the user to confirm overwriting all given paths.
@@ -46,6 +50,15 @@ func (p PromptFuncs) OverwriteAllMemory(previews []DiffPreview) (bool, error) {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
 	return p.OverwriteAllMemoryPreviewFunc(previews)
+}
+
+// OverwriteAllUnified prompts for managed and memory overwrite-all decisions in one pass.
+// Returns an error if no unified callback is configured.
+func (p PromptFuncs) OverwriteAllUnified(managed []DiffPreview, memory []DiffPreview) (bool, bool, error) {
+	if p.OverwriteAllUnifiedPreviewFunc == nil {
+		return false, false, fmt.Errorf(messages.InstallOverwritePromptRequired)
+	}
+	return p.OverwriteAllUnifiedPreviewFunc(managed, memory)
 }
 
 // Overwrite prompts the user to confirm overwriting a single path.
@@ -78,6 +91,7 @@ func (p PromptFuncs) DeleteUnknown(path string) (bool, error) {
 type promptValidator interface {
 	hasOverwriteAll() bool
 	hasOverwriteAllMemory() bool
+	hasOverwriteAllUnified() bool
 	hasOverwrite() bool
 	hasDeleteUnknownAll() bool
 	hasDeleteUnknown() bool
@@ -89,6 +103,10 @@ func (p PromptFuncs) hasOverwriteAll() bool {
 
 func (p PromptFuncs) hasOverwriteAllMemory() bool {
 	return p.OverwriteAllMemoryPreviewFunc != nil
+}
+
+func (p PromptFuncs) hasOverwriteAllUnified() bool {
+	return p.OverwriteAllUnifiedPreviewFunc != nil
 }
 
 func (p PromptFuncs) hasOverwrite() bool {

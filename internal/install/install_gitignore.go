@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // GitignoreSystem is the minimal interface needed for gitignore operations.
@@ -61,4 +62,34 @@ func EnsureGitignore(sys GitignoreSystem, path string, block string) error {
 
 func writeGitignoreBlock(sys System, path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc, recordDiff func(string)) error {
 	return writeTemplateFileWithMatch(sys, path, templatePath, perm, shouldOverwrite, recordDiff, fileMatchesTemplateWithInfo)
+}
+
+// RepairGitignoreBlockOptions controls gitignore-block repair behavior.
+type RepairGitignoreBlockOptions struct {
+	System System
+}
+
+// RepairGitignoreBlock rewrites `.agent-layer/gitignore.block` from embedded templates
+// and then reapplies the managed block to the repository root `.gitignore`.
+func RepairGitignoreBlock(root string, opts RepairGitignoreBlockOptions) error {
+	if root == "" {
+		return fmt.Errorf(messages.InstallRootRequired)
+	}
+	sys := opts.System
+	if sys == nil {
+		return fmt.Errorf(messages.InstallSystemRequired)
+	}
+	blockBytes, err := templates.Read(templateGitignoreBlock)
+	if err != nil {
+		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, templateGitignoreBlock, err)
+	}
+	blockPath := filepath.Join(root, ".agent-layer", templateGitignoreBlock)
+	if err := sys.WriteFileAtomic(blockPath, blockBytes, 0o644); err != nil {
+		return fmt.Errorf(messages.InstallFailedWriteFmt, blockPath, err)
+	}
+	block, err := ValidateGitignoreBlock(string(blockBytes), blockPath)
+	if err != nil {
+		return err
+	}
+	return EnsureGitignore(sys, filepath.Join(root, ".gitignore"), block)
 }

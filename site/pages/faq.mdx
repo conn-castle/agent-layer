@@ -68,6 +68,13 @@ If a server uses `npx` or `uvx`, you must have those tools installed.
 ## Why do MCP servers fail to start in VS Code on macOS?
 If MCP servers that use `npx` fail to start, VS Code may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so GUI apps can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
+## Why did some VS Code settings disappear after `al sync`?
+Some VS Code extensions (for example Peacock) write settings through the VS Code configuration API in a way that can land inside the Agent Layer-managed block in `.vscode/settings.json`.
+
+If that happens, Agent Layer replaces the managed block on the next `al sync`, and those extension-written settings are removed.
+
+Use the full repair steps in [/docs/troubleshooting#vs-code-settings-disappear-after-sync](/docs/troubleshooting#vs-code-settings-disappear-after-sync).
+
 ## Can I pin a repo to a specific version?
 Yes. `.agent-layer/al.version` is the repo pin (required). Set it to `X.Y.Z` or `vX.Y.Z`, or set an initial pin during `al init` with `--version`. You can temporarily override the pin with `AL_VERSION`.
 

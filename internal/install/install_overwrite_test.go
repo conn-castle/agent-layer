@@ -149,6 +149,69 @@ func TestShouldOverwrite_MemoryPathPromptsPerFile(t *testing.T) {
 	}
 }
 
+func TestShouldOverwrite_UsesUnifiedOverwritePrompter(t *testing.T) {
+	root := t.TempDir()
+	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+		t.Fatalf("mkdir managed dir: %v", err)
+	}
+	if err := os.WriteFile(managedPath, []byte("# local override\n"), 0o644); err != nil {
+		t.Fatalf("write managed file: %v", err)
+	}
+
+	unifiedCalled := 0
+	overwriteAllCalled := false
+	overwriteAllMemoryCalled := false
+	perFilePromptCalled := false
+
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: PromptFuncs{
+			OverwriteAllPreviewFunc: func([]DiffPreview) (bool, error) {
+				overwriteAllCalled = true
+				return false, nil
+			},
+			OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) {
+				overwriteAllMemoryCalled = true
+				return false, nil
+			},
+			OverwriteAllUnifiedPreviewFunc: func(managed []DiffPreview, memory []DiffPreview) (bool, bool, error) {
+				unifiedCalled++
+				if len(managed) == 0 {
+					t.Fatal("expected managed previews in unified callback")
+				}
+				return true, false, nil
+			},
+			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
+				perFilePromptCalled = true
+				return false, nil
+			},
+		},
+	}
+
+	ok, err := inst.shouldOverwrite(managedPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected true when unified managed decision is true")
+	}
+	if unifiedCalled != 1 {
+		t.Fatalf("expected unified callback once, got %d", unifiedCalled)
+	}
+	if overwriteAllCalled || overwriteAllMemoryCalled {
+		t.Fatalf("did not expect legacy overwrite-all callbacks when unified callback is configured")
+	}
+	if perFilePromptCalled {
+		t.Fatalf("did not expect per-file prompt when overwrite-all managed is true")
+	}
+	if !inst.overwriteAllDecided || !inst.overwriteMemoryAllDecided {
+		t.Fatalf("expected both overwrite-all decisions to be cached")
+	}
+}
+
 func TestShouldOverwrite_MissingPrompter(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{
@@ -536,6 +599,14 @@ func TestTemplateFileMatches_ReadTemplateError(t *testing.T) {
 func TestPrompterOverwriteAllMemory_NilFunc(t *testing.T) {
 	p := PromptFuncs{}
 	_, err := p.OverwriteAllMemory(nil)
+	if err == nil {
+		t.Fatalf("expected error when func is nil")
+	}
+}
+
+func TestPrompterOverwriteAllUnified_NilFunc(t *testing.T) {
+	p := PromptFuncs{}
+	_, _, err := p.OverwriteAllUnified(nil, nil)
 	if err == nil {
 		t.Fatalf("expected error when func is nil")
 	}

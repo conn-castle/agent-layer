@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,8 @@ func TestNewUpgradeCmd_RegistersPlanSubcommand(t *testing.T) {
 	}
 	foundPlan := false
 	foundRollback := false
+	foundPrefetch := false
+	foundRepairGitignore := false
 	for _, sub := range cmd.Commands() {
 		if sub.Use == "plan" {
 			foundPlan = true
@@ -27,12 +30,24 @@ func TestNewUpgradeCmd_RegistersPlanSubcommand(t *testing.T) {
 		if strings.HasPrefix(sub.Use, "rollback") {
 			foundRollback = true
 		}
+		if sub.Use == "prefetch" {
+			foundPrefetch = true
+		}
+		if sub.Use == "repair-gitignore-block" {
+			foundRepairGitignore = true
+		}
 	}
 	if !foundPlan {
 		t.Fatal("expected upgrade plan subcommand")
 	}
 	if !foundRollback {
 		t.Fatal("expected upgrade rollback subcommand")
+	}
+	if !foundPrefetch {
+		t.Fatal("expected upgrade prefetch subcommand")
+	}
+	if !foundRepairGitignore {
+		t.Fatal("expected upgrade repair-gitignore-block subcommand")
 	}
 }
 
@@ -204,6 +219,7 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 	}
 	if promptFuncs.OverwriteAllPreviewFunc == nil ||
 		promptFuncs.OverwriteAllMemoryPreviewFunc == nil ||
+		promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
 		promptFuncs.OverwritePreviewFunc == nil ||
 		promptFuncs.DeleteUnknownAllFunc == nil ||
 		promptFuncs.DeleteUnknownFunc == nil {
@@ -270,6 +286,7 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 	}
 	if promptFuncs.OverwriteAllPreviewFunc == nil ||
 		promptFuncs.OverwriteAllMemoryPreviewFunc == nil ||
+		promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
 		promptFuncs.OverwritePreviewFunc == nil ||
 		promptFuncs.DeleteUnknownAllFunc == nil ||
 		promptFuncs.DeleteUnknownFunc == nil {
@@ -679,6 +696,93 @@ func TestUpgradeRollbackCmd_PropagatesInstallErrors(t *testing.T) {
 	})
 }
 
+func TestUpgradePrefetchCmd_UsesVersionFlagAndCallsDispatch(t *testing.T) {
+	origPrefetch := dispatchPrefetchVersion
+	var gotVersion string
+	dispatchPrefetchVersion = func(versionInput string, progressOut io.Writer) error {
+		gotVersion = versionInput
+		return nil
+	}
+	t.Cleanup(func() { dispatchPrefetchVersion = origPrefetch })
+
+	cmd := newUpgradeCmd()
+	var out bytes.Buffer
+	cmd.SetArgs([]string{"prefetch", "--version", "1.2.3"})
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute upgrade prefetch: %v", err)
+	}
+	if gotVersion != "1.2.3" {
+		t.Fatalf("prefetch version = %q, want 1.2.3", gotVersion)
+	}
+	if !strings.Contains(out.String(), "1.2.3") {
+		t.Fatalf("expected success output to include version, got %q", out.String())
+	}
+}
+
+func TestUpgradePrefetchCmd_DevBuildRequiresVersion(t *testing.T) {
+	origVersion := Version
+	Version = "dev"
+	t.Cleanup(func() { Version = origVersion })
+
+	cmd := newUpgradeCmd()
+	cmd.SetArgs([]string{"prefetch"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing prefetch --version in dev builds")
+	}
+	if err.Error() != messages.UpgradePrefetchVersionRequired {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpgradeRepairGitignoreBlockCmd_InvokesRepair(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origRepair := installRepairGitignoreBlock
+	called := false
+	installRepairGitignoreBlock = func(gotRoot string, opts install.RepairGitignoreBlockOptions) error {
+		called = true
+		if canonicalPath(gotRoot) != canonicalPath(root) {
+			t.Fatalf("repair root = %q, want %q", gotRoot, root)
+		}
+		if opts.System == nil {
+			t.Fatal("opts.System = nil, want non-nil")
+		}
+		return nil
+	}
+	t.Cleanup(func() { installRepairGitignoreBlock = origRepair })
+
+	withWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var out bytes.Buffer
+		cmd.SetArgs([]string{"repair-gitignore-block"})
+		cmd.SetOut(&out)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade repair-gitignore-block: %v", err)
+		}
+		if !called {
+			t.Fatal("expected installRepairGitignoreBlock to be called")
+		}
+		if !strings.Contains(out.String(), "Repaired") {
+			t.Fatalf("expected repair success output, got %q", out.String())
+		}
+	})
+}
+
 func prepareUpgradeTestRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -750,7 +854,7 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 		explicitCategory: true,
 		applyDeletions:   true,
 		yes:              true,
-	})
+	}, nil)
 	if deleteAll, err := p.DeleteUnknownAll([]string{"/tmp/a"}); err != nil || !deleteAll {
 		t.Fatalf("DeleteUnknownAll(yes+applyDeletions) = (%v, %v), want (true, nil)", deleteAll, err)
 	}
@@ -765,7 +869,7 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 		explicitCategory: true,
 		applyDeletions:   false,
 		yes:              true,
-	})
+	}, nil)
 	if deleteAll, err := p2.DeleteUnknownAll([]string{"/tmp/a"}); err != nil || deleteAll {
 		t.Fatalf("DeleteUnknownAll(!applyDeletions) = (%v, %v), want (false, nil)", deleteAll, err)
 	}
@@ -784,7 +888,7 @@ func TestBuildUpgradePrompter_OverwritePreviewMemoryPath(t *testing.T) {
 		explicitCategory: true,
 		applyManaged:     true,
 		applyMemory:      false,
-	})
+	}, nil)
 	// Memory path should use applyMemory (false).
 	memResult, err := p.Overwrite(install.DiffPreview{Path: "docs/agent-layer/ROADMAP.md"})
 	if err != nil {
@@ -800,6 +904,71 @@ func TestBuildUpgradePrompter_OverwritePreviewMemoryPath(t *testing.T) {
 	}
 	if !managedResult {
 		t.Fatal("expected Overwrite for managed path to return true when applyManaged=true")
+	}
+}
+
+func TestBuildUpgradePrompter_UnifiedReviewStatePromptsOnce(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	// First answer applies managed updates, second declines memory updates.
+	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
+
+	state := &upgradeReviewState{
+		enabled: true,
+		managedPreviews: []install.DiffPreview{
+			{Path: ".agent-layer/config.toml"},
+		},
+		memoryPreviews: []install.DiffPreview{
+			{Path: "docs/agent-layer/ROADMAP.md"},
+		},
+	}
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, state)
+
+	managed, err := p.OverwriteAll(nil)
+	if err != nil {
+		t.Fatalf("OverwriteAll: %v", err)
+	}
+	memory, err := p.OverwriteAllMemory(nil)
+	if err != nil {
+		t.Fatalf("OverwriteAllMemory: %v", err)
+	}
+	if !managed {
+		t.Fatal("expected managed overwrite decision to be true")
+	}
+	if memory {
+		t.Fatal("expected memory overwrite decision to be false")
+	}
+	if !state.prompted {
+		t.Fatal("expected unified review state to be marked prompted")
+	}
+}
+
+func TestBuildUpgradePrompter_UnifiedCallbackPromptsOnce(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	// First answer applies managed updates, second declines memory updates.
+	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
+
+	state := &upgradeReviewState{enabled: true}
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, state)
+
+	managed, memory, err := p.OverwriteAllUnified(
+		[]install.DiffPreview{{Path: ".agent-layer/config.toml"}},
+		[]install.DiffPreview{{Path: "docs/agent-layer/ROADMAP.md"}},
+	)
+	if err != nil {
+		t.Fatalf("OverwriteAllUnified: %v", err)
+	}
+	if !managed {
+		t.Fatal("expected managed overwrite decision to be true")
+	}
+	if memory {
+		t.Fatal("expected memory overwrite decision to be false")
+	}
+	if !state.prompted {
+		t.Fatal("expected unified review state to be marked prompted")
 	}
 }
 
@@ -849,9 +1018,14 @@ func TestPrintDiffPreviews(t *testing.T) {
 func TestReadinessSummaryAndAction(t *testing.T) {
 	ids := []string{
 		"unrecognized_config_keys",
+		"unresolved_config_placeholders",
+		"process_env_overrides_dotenv",
+		"ignored_empty_dotenv_assignments",
+		"path_expansion_anomalies",
 		"vscode_no_sync_outputs_stale",
 		"floating_external_dependency_specs",
 		"stale_disabled_agent_artifacts",
+		"generated_secret_risk",
 		"unknown_id",
 	}
 	for _, id := range ids {

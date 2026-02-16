@@ -531,6 +531,47 @@ func TestFetchChecksum_StatusError(t *testing.T) {
 	}
 }
 
+func TestEnsureCachedBinaryWithSystem_ChecksumUsesProvidedSystemTimeout(t *testing.T) {
+	version := "1.0.0"
+	content := "binary-content"
+	sum := sha256.Sum256([]byte(content))
+	checksum := fmt.Sprintf("%x", sum)
+	osName, arch, _ := platformStrings()
+	asset := assetName(osName, arch)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case fmt.Sprintf("/download/v%s/%s", version, asset):
+			_, _ = w.Write([]byte(content))
+		case fmt.Sprintf("/download/v%s/checksums.txt", version):
+			time.Sleep(20 * time.Millisecond)
+			_, _ = fmt.Fprintf(w, "%s %s\n", checksum, asset)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	t.Setenv("AL_DOWNLOAD_TIMEOUT", "1ns")
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == "AL_DOWNLOAD_TIMEOUT" {
+				return "300ms"
+			}
+			return ""
+		},
+	}
+
+	cacheRoot := t.TempDir()
+	if _, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard); err != nil {
+		t.Fatalf("ensureCachedBinaryWithSystem failed: %v", err)
+	}
+}
+
 func TestVerifyChecksum_FileOpenError(t *testing.T) {
 	err := verifyChecksum("non-existent-file", "hash")
 	if err == nil {
@@ -1173,5 +1214,57 @@ func TestDownloadToFileWithSystem_TooLargeFromSystemEnv(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "response too large") {
 		t.Fatalf("expected size-limit message, got %v", err)
+	}
+}
+
+func TestDownloadTimeoutWithSystem(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want time.Duration
+	}{
+		{name: "unset", raw: "", want: defaultDownloadTimeout},
+		{name: "invalid", raw: "not-a-duration", want: defaultDownloadTimeout},
+		{name: "zero", raw: "0s", want: defaultDownloadTimeout},
+		{name: "negative", raw: "-1s", want: defaultDownloadTimeout},
+		{name: "valid", raw: "45s", want: 45 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sys := &testSystem{
+				GetenvFunc: func(key string) string {
+					if key == "AL_DOWNLOAD_TIMEOUT" {
+						return tt.raw
+					}
+					return ""
+				},
+			}
+			if got := downloadTimeoutWithSystem(sys); got != tt.want {
+				t.Fatalf("downloadTimeoutWithSystem() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownloadHTTPClientWithSystem_UsesConfiguredTimeout(t *testing.T) {
+	origClient := httpClient
+	httpClient = &http.Client{Timeout: defaultDownloadTimeout}
+	t.Cleanup(func() { httpClient = origClient })
+
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == "AL_DOWNLOAD_TIMEOUT" {
+				return "90s"
+			}
+			return ""
+		},
+	}
+	client := downloadHTTPClientWithSystem(sys)
+	if client.Timeout != 90*time.Second {
+		t.Fatalf("client timeout = %v, want 90s", client.Timeout)
+	}
+	if client == httpClient {
+		t.Fatal("expected downloadHTTPClientWithSystem to return a client copy when timeout differs")
 	}
 }

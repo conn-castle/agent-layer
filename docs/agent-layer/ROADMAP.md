@@ -103,7 +103,7 @@ Incomplete:
 - Removed unsupported Windows upgrade surface from installers, release targets, launchers, and docs.
 - Implemented and hardened pin management (`--version latest` resolution, explicit version validation, init/upgrade dispatch bypass, corrupt pin recovery, and improved download errors/progress).
 - Published the canonical upgrade contract in `site/docs/upgrades.mdx` with event categories, sequential compatibility guarantees (`N-1` to `N`), release-versioned migration rules, and macOS/Linux shell capability matrix.
-- Linked the upgrade contract from user and contributor docs (`README.md`, site docs, `docs/DEVELOPMENT.md`, `docs/RELEASE.md`, and `docs/UPGRADE_PLAN.md`).
+- Linked the upgrade contract from user and contributor docs (`README.md`, site docs, `docs/DEVELOPMENT.md`, and `docs/RELEASE.md`).
 
 ## Phase 11 ✅ — Upgrade lifecycle (explainability, safety, and migration engine)
 - Delivered explainable, plain-language `al upgrade plan` output with line-level diffs, ownership labeling, and readiness checks.
