@@ -128,7 +128,7 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 		checks = append(checks, *check)
 	}
 
-	if check, err := detectGeneratedSecretRisk(inst); err != nil {
+	if check, err := detectGeneratedSecretRisk(inst, string(configBytes)); err != nil {
 		return nil, err
 	} else if check != nil {
 		checks = append(checks, *check)
@@ -489,7 +489,14 @@ func detectFloatingDependencies(cfg *config.Config) *UpgradeReadinessCheck {
 	}
 }
 
-func detectGeneratedSecretRisk(inst *installer) (*UpgradeReadinessCheck, error) {
+func detectGeneratedSecretRisk(inst *installer, sourceConfigContent string) (*UpgradeReadinessCheck, error) {
+	// If the source config (.agent-layer/config.toml) does not contain secret
+	// literals, any secrets in generated files came from env var resolution
+	// (e.g., ${AL_*} placeholders resolved by al sync). This is correct usage
+	// and not actionable, so suppress the check.
+	if !config.ContainsPotentialSecretLiteral(sourceConfigContent) {
+		return nil, nil
+	}
 	paths := []string{
 		filepath.Join(inst.root, ".codex", "config.toml"),
 		filepath.Join(inst.root, ".mcp.json"),

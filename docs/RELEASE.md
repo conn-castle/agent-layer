@@ -25,18 +25,29 @@ git push origin "$VERSION"
 # Release assets are built by the GitHub Actions workflow.
 ```
 
-Before tagging, generate and commit the template ownership manifest for the release:
+Before tagging, prepare and commit both release manifests:
+
+1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the previous release line (N-1 to N per the compatibility guarantee in `site/docs/upgrades.mdx`). Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
+
+2. **Template ownership manifest** — generate via the script below. This keeps `al upgrade plan` ownership inference deterministic without runtime network/tag lookups.
 
 ```bash
+# 1. Create or verify the migration manifest (manual; see existing files for schema)
+#    internal/templates/migrations/"${VERSION#v}".json
+
+# 2. Generate the template ownership manifest
 ./scripts/generate-template-manifest.sh --tag "$VERSION"
-git add internal/templates/manifests/"${VERSION#v}".json
+
+# 3. Stage both manifests
+git add internal/templates/migrations/"${VERSION#v}".json \
+       internal/templates/manifests/"${VERSION#v}".json
 ```
 
-This keeps `al upgrade plan` ownership inference deterministic without runtime network/tag lookups.
+CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
-2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists, blocking placeholder migration text when changelog notes breaking/manual migration impact, and enforcing upgrade CTA syntax drift checks in core docs/message surfaces.
+2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists, blocking placeholder migration text when changelog notes breaking/manual migration impact, verifying the migration manifest and template ownership manifest exist, and enforcing upgrade CTA syntax drift checks in core docs/message surfaces.
 3. The workflow publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
 4. The workflow opens a PR against `conn-castle/homebrew-tap` to update `Formula/agent-layer.rb` with the new tarball URL + SHA256.
 5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing.

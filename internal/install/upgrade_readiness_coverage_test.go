@@ -871,7 +871,7 @@ func TestDetectGeneratedSecretRisk_ErrorBranches(t *testing.T) {
 		sys := newFaultSystem(RealSystem{})
 		sys.statErrs[normalizePath(target)] = errors.New("stat boom")
 		inst := &installer{root: root, sys: sys}
-		_, err := detectGeneratedSecretRisk(inst)
+		_, err := detectGeneratedSecretRisk(inst, `api_key = "hardcoded-secret"`)
 		if err == nil || !strings.Contains(err.Error(), "stat boom") {
 			t.Fatalf("expected stat error, got %v", err)
 		}
@@ -886,7 +886,7 @@ func TestDetectGeneratedSecretRisk_ErrorBranches(t *testing.T) {
 		sys := newFaultSystem(RealSystem{})
 		sys.readErrs[normalizePath(target)] = errors.New("read boom")
 		inst := &installer{root: root, sys: sys}
-		_, err := detectGeneratedSecretRisk(inst)
+		_, err := detectGeneratedSecretRisk(inst, `api_key = "hardcoded-secret"`)
 		if err == nil || !strings.Contains(err.Error(), "read boom") {
 			t.Fatalf("expected read error, got %v", err)
 		}
@@ -902,7 +902,7 @@ func TestDetectGeneratedSecretRisk_ErrorBranches(t *testing.T) {
 			t.Fatalf("write target: %v", err)
 		}
 		inst := &installer{root: root, sys: RealSystem{}}
-		check, err := detectGeneratedSecretRisk(inst)
+		check, err := detectGeneratedSecretRisk(inst, `api_key = "hardcoded-secret"`)
 		if err != nil {
 			t.Fatalf("detectGeneratedSecretRisk: %v", err)
 		}

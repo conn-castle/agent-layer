@@ -78,7 +78,7 @@ func (inst *installer) createUpgradeSnapshot() (upgradeSnapshot, error) {
 	if err := inst.writeUpgradeSnapshot(snapshot, true); err != nil {
 		return upgradeSnapshot{}, err
 	}
-	_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallUpgradeSnapshotCreatedFmt, snapshot.SnapshotID)
+	_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallUpgradeSnapshotCreatedFmt, snapshot.SnapshotID, snapshot.SnapshotID)
 	return snapshot, nil
 }
 
