@@ -11,6 +11,7 @@
 /.github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts
+# These may contain resolved secrets from .agent-layer/.env — keep gitignored.
 /.agent/
 /.mcp.json
 /.codex/

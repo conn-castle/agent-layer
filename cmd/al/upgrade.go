@@ -644,7 +644,7 @@ func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck
 		}
 		action := readinessAction(check.ID)
 		if action != "" {
-			if _, err := fmt.Fprintf(out, "    action: %s\n", action); err != nil {
+			if _, err := fmt.Fprintf(out, "    recommendation: %s\n", action); err != nil {
 				return err
 			}
 		}
@@ -728,7 +728,7 @@ func readinessSummary(check install.UpgradeReadinessCheck) string {
 	case "stale_disabled_agent_artifacts":
 		return "Disabled-agent generated files are still present."
 	case "generated_secret_risk":
-		return "Generated files appear to contain secret-like literals."
+		return "Source config contains secret-like literals that propagate to generated files."
 	default:
 		return check.Summary
 	}
@@ -749,11 +749,11 @@ func readinessAction(id string) string {
 	case "vscode_no_sync_outputs_stale":
 		return "Run `al sync` before `al upgrade` so generated VS Code files match current config."
 	case "floating_external_dependency_specs":
-		return "Pin floating dependency specs in `.agent-layer/config.toml` for stable upgrades."
+		return "Consider pinning floating version tags (`@latest`, `@next`, `@canary`) in `.agent-layer/config.toml` for reproducible upgrades."
 	case "stale_disabled_agent_artifacts":
 		return "Remove stale generated files for disabled agents, or re-enable those agents."
 	case "generated_secret_risk":
-		return "Move secret literals to `.agent-layer/.env` (AL_* keys) or process env before continuing."
+		return "Move hardcoded secrets from `.agent-layer/config.toml` to `.agent-layer/.env` (AL_* keys) and use `${AL_*}` placeholders."
 	default:
 		return ""
 	}

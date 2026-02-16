@@ -430,7 +430,7 @@ func TestUpgradePlanCmd_TextOutputIncludesPlainSections(t *testing.T) {
 			"Config updates:",
 			"Pin version change:",
 			"Readiness checks:",
-			"action:",
+			"recommendation:",
 			"needs review before apply:",
 		}
 		for _, snippet := range expectedSnippets {

@@ -14,9 +14,9 @@ coverage.out
 
 
 # >>> agent-layer
-# Template hash: e72a1fa3fc2fff50ceb68a817afd97b9c49075036eca3126dd19bbd58ff741f9
+# Template hash: 4908c3ea5d3522d9f02c23becfdb8fd60a95e3723c96a96e51ad29c799d576eb
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
-# and re-run `al init` to apply changes.
+# and re-run `al sync` to apply changes.
 
 # Optional: keep uncommented to ignore .agent-layer/ config.
 /.agent-layer/
@@ -31,6 +31,7 @@ coverage.out
 /.github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts
+# These may contain resolved secrets from .agent-layer/.env — keep gitignored.
 /.agent/
 /.mcp.json
 /.codex/
