@@ -44,6 +44,7 @@ section() {
 source "$SCRIPT_DIR/test-release/release_tests.sh"
 source "$SCRIPT_DIR/test-release/tool_tests.sh"
 source "$SCRIPT_DIR/test-release/upgrade_docs_tests.sh"
+source "$SCRIPT_DIR/test-release/workflow_tests.sh"
 
 # -----------------------------------------------------------------------------
 # Static Analysis & Setup
@@ -136,6 +137,7 @@ dist_dir="$tmp_dir/dist"
 expected_version="v1.0.0"
 expected_version_no_v="${expected_version#v}"
 
+run_workflow_consistency_tests
 run_release_generation_test
 run_build_invocation_details
 run_artifact_verification
