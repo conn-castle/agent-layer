@@ -87,6 +87,29 @@ func TestLaunchCodexError(t *testing.T) {
 	}
 }
 
+func TestEnsureCodexHome_WarningWriteFailureLeavesEnvUnchanged(t *testing.T) {
+	root := t.TempDir()
+	current := filepath.Join(t.TempDir(), "other")
+	env := []string{"CODEX_HOME=" + current}
+
+	origStderr := os.Stderr
+	_, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatalf("close pipe writer: %v", err)
+	}
+	os.Stderr = stderrWriter
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	out := ensureCodexHome(root, env)
+	value, ok := clients.GetEnv(out, "CODEX_HOME")
+	if !ok || value != current {
+		t.Fatalf("expected CODEX_HOME to remain unchanged, got %q", value)
+	}
+}
+
 func writeStubWithExit(t *testing.T, dir string, name string, code int) {
 	t.Helper()
 	path := filepath.Join(dir, name)

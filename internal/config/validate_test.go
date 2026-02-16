@@ -57,6 +57,14 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "enabled is required",
 		},
 		{
+			name: "duplicate server id",
+			cfg: withServers(valid, []MCPServer{
+				{ID: "dup", Enabled: &trueVal, Transport: "http", URL: "https://example.com/one"},
+				{ID: "dup", Enabled: &trueVal, Transport: "http", URL: "https://example.com/two"},
+			}),
+			wantErr: "duplicates",
+		},
+		{
 			name: "invalid transport",
 			cfg: withServers(valid, []MCPServer{
 				{ID: "x", Enabled: &trueVal, Transport: "ftp"},
@@ -213,6 +221,13 @@ func TestValidateWarningsThresholds(t *testing.T) {
 				cfg.Warnings.MCPSchemaTokensServerThreshold = intPtr(0)
 			},
 			errContains: "warnings.mcp_schema_tokens_server_threshold",
+		},
+		{
+			name: "invalid warning noise mode",
+			set: func(cfg *Config) {
+				cfg.Warnings.NoiseMode = "verbose"
+			},
+			errContains: "warnings.noise_mode",
 		},
 	}
 

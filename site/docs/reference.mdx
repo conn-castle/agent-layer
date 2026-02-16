@@ -66,12 +66,14 @@ id = "filesystem"
 enabled = false
 transport = "stdio"
 command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
 
 [warnings]
 # Optional thresholds for warning checks. Omit or comment out to disable.
 # Warn when a newer Agent Layer version is available during sync runs.
 version_update_on_sync = true
+# Warning output noise control: "default" keeps all warnings, "reduce" hides suppressible non-critical warnings.
+noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60
@@ -164,7 +166,7 @@ id = "ripgrep"
 enabled = true
 transport = "stdio"
 command = "npx"
-args = ["-y", "mcp-ripgrep@latest"]
+args = ["-y", "mcp-ripgrep@0.4.0"]
 ```
 
 ### Warnings
@@ -176,7 +178,14 @@ Warnings are used by:
 - `al sync` for instruction token thresholds (and optional update warnings)
 - `al doctor` for MCP server and schema thresholds
 
+Warning output now includes source and severity labels so operators can distinguish internal/config issues from network or external-dependency issues.
+
 Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
+
+Set `noise_mode` to control warning verbosity:
+
+- `default`: keep all warnings (recommended)
+- `reduce`: hide only suppressible non-critical warnings
 
 ### Validation rules
 
@@ -249,7 +258,7 @@ id = "filesystem"
 enabled = true
 transport = "stdio"
 command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
 ```
 
 ## CLI guide
@@ -265,13 +274,14 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al init` | Initialize a repo with Agent Layer templates and memory files. |
 | `al upgrade` | Apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, configurable with `--diff-lines`). |
 | `al upgrade plan` | Show a dry-run, plain-language categorized upgrade plan with line-level diff previews (configurable with `--diff-lines`). |
+| `al upgrade prefetch` | Download and cache a release binary ahead of time (use `--version X.Y.Z` explicitly on dev builds). |
 | `al upgrade rollback <snapshot-id>` | Restore an applied upgrade snapshot by ID (snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`). |
-| `al wizard` | Interactive configuration for approvals, agents, MCP servers, and warnings. |
+| `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
+| `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
-| `al mcp-prompts` | Run the internal MCP prompt server over stdio. |
 | `al --version` | Print the installed Agent Layer version. |
 | `al help` | Show help for any command. |
 
@@ -324,6 +334,8 @@ In non-interactive environments, the wizard is skipped.
 - If you are running a release build, `al init` writes `.agent-layer/al.version`.
 - You can set the initial pin explicitly with `--version X.Y.Z` (or `--version latest`).
 - `.agent-layer/al.version` is required for supported usage. If it is missing or invalid, run `al upgrade` to repair it.
+- Pin file parsing ignores blank lines and `#` comments, and expects exactly one version line.
+- If the pin file is empty, invalid, or contains multiple version lines, dispatch warns and falls back to the current CLI version; run `al upgrade` to rewrite a valid pin.
 - Update checks and pinned downloads require network access unless `AL_NO_NETWORK=1` is set.
 - For upgrade contract details and release-versioned migration notes, see [Upgrades](./upgrades).
 
@@ -344,6 +356,7 @@ In non-interactive environments, the wizard is skipped.
 - Supports manual restore of applied snapshots via `al upgrade rollback <snapshot-id>`
 
 Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
+For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
 
 ### Upgrade rollback
 
@@ -352,6 +365,20 @@ Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
 - Snapshot IDs are the `.json` filename stems in `.agent-layer/state/upgrade-snapshots/`
 - Only snapshots in `applied` status are rollback-eligible
 - Rollback fails loudly when a snapshot is missing, malformed, or non-rollbackable
+
+### Upgrade prefetch
+
+`al upgrade prefetch` downloads and verifies a release binary into the local Agent Layer cache without applying template updates.
+
+- Use it to pre-warm CI runners or offline environments.
+- In release builds, it defaults to the currently running `al` version.
+- In dev builds, pass `--version X.Y.Z` explicitly.
+
+### Repair gitignore block
+
+`al upgrade repair-gitignore-block` restores `.agent-layer/gitignore.block` to the embedded template and reapplies the root `.gitignore` managed block.
+
+Use this when `.agent-layer/gitignore.block` is invalid (for example it accidentally includes managed markers or template-hash lines).
 
 ### Upgrade plan
 
@@ -367,18 +394,11 @@ Use it before `al upgrade` to understand what would change:
 - Template removals/orphans
 - Config key migrations (when migration manifests are present)
 - Pin version change (`current -> target`)
-- Readiness checks (for example unrecognized config keys, potentially stale VS Code `--no-sync` outputs, floating dependency specs, and stale disabled-agent artifacts)
-
-Each diff entry includes an ownership label:
-
-- `upstream template delta`
-- `local customization`
-- `mixed upstream and local`
-- `unknown no baseline`
-
-`unknown no baseline` means Agent Layer cannot prove ownership safely for that file from baseline evidence. In text output, `al upgrade plan` includes an **Ownership warnings** block with actionable guidance.
+- Readiness checks (for example unresolved placeholders, process-env vs `.env` collisions, ignored empty `.env` assignments, path-expansion anomalies, stale VS Code `--no-sync` outputs, floating dependency specs, stale disabled-agent artifacts, and generated-secret risk warnings)
 
 `al upgrade plan` also includes line-level diff previews for changed files. Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
+
+Each diff preview still carries internal ownership metadata (`upstream template delta`, `local customization`, `mixed upstream and local`, `unknown no baseline`) used by upgrade decision logic, but `al upgrade plan` text output intentionally hides ownership diagnostics.
 
 `al upgrade plan` supports plain-language text output only.
 
@@ -394,6 +414,17 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 - `.agent-layer/.env`
 
 The wizard rewrites `config.toml` in the template-defined order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
+
+Additional modes:
+
+- `al wizard --profile /path/to/profile.toml`: preview-only profile rewrite diff
+- `al wizard --profile /path/to/profile.toml --yes`: apply profile and run sync
+- `al wizard --cleanup-backups`: delete `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak`
+
+Secret prompt controls:
+
+- `skip`: disable the current default MCP server for this run
+- `cancel`: exit without applying changes
 
 It is safe to re-run when you want to revisit settings.
 
@@ -450,6 +481,11 @@ This is the default workflow for day-to-day use: you get a clean regenerate and 
 
 `al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is supported only by `al vscode` and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
 
+`al vscode` preflight now fails fast with clear guidance when:
+
+- `code` is missing on `PATH`
+- `.vscode/settings.json` has a malformed managed block marker state
+
 Examples:
 
 ```bash
@@ -493,10 +529,6 @@ al completion zsh --install
 ```
 
 Supported shells: `bash`, `zsh`, `fish`.
-
-### MCP prompt server
-
-`al mcp-prompts` runs the internal MCP prompt server over stdio. This is normally launched automatically by the client, so you rarely need to run it directly.
 
 ### Help and version
 

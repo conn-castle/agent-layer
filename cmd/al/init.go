@@ -25,7 +25,7 @@ import (
 )
 
 var runWizard = func(root string, pinVersion string) error {
-	return wizard.Run(root, wizard.NewHuhUI(), alsync.Run, pinVersion)
+	return wizard.RunWithWriter(root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
 }
 
 var installRun = install.Run

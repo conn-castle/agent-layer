@@ -103,6 +103,10 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	if updated == string(cfg) {
 		t.Fatal("failed to enable ripgrep server in test config")
 	}
+	updated = strings.Replace(updated, "mcp-ripgrep@0.4.0", "mcp-ripgrep@latest", 1)
+	if !strings.Contains(updated, "mcp-ripgrep@latest") {
+		t.Fatal("failed to set floating ripgrep dependency in test config")
+	}
 	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -162,6 +166,183 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 	joined := strings.Join(check.Details, "\n")
 	if !strings.Contains(joined, ".gemini/settings.json") {
 		t.Fatalf("expected disabled artifact detail, got %q", joined)
+	}
+}
+
+func TestBuildUpgradeReadinessChecks_UnresolvedConfigPlaceholders(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	cfg, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(string(cfg), "id = \"context7\"\nenabled = false", "id = \"context7\"\nenabled = true", 1)
+	if updated == string(cfg) {
+		t.Fatal("failed to enable context7 in test config")
+	}
+	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Setenv("AL_CONTEXT7_API_KEY", "")
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	checks, err := buildUpgradeReadinessChecks(inst)
+	if err != nil {
+		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
+	}
+	check := findReadinessCheckByID(checks, readinessCheckUnresolvedPlaceholders)
+	if check == nil {
+		t.Fatalf("expected %s check", readinessCheckUnresolvedPlaceholders)
+	}
+	if !strings.Contains(strings.Join(check.Details, "\n"), "AL_CONTEXT7_API_KEY") {
+		t.Fatalf("expected unresolved placeholder detail, got %q", check.Details)
+	}
+}
+
+func TestBuildUpgradeReadinessChecks_ProcessEnvOverridesDotenv_UsesSystemLookupEnv(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	cfg, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(string(cfg), "id = \"context7\"\nenabled = false", "id = \"context7\"\nenabled = true", 1)
+	if updated == string(cfg) {
+		t.Fatal("failed to enable context7 in test config")
+	}
+	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=from-file\n"), 0o644); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	sys := newFaultSystem(RealSystem{})
+	processValue := "from-process"
+	sys.lookupEnvs["AL_CONTEXT7_API_KEY"] = &processValue
+
+	inst := &installer{root: root, sys: sys}
+	checks, err := buildUpgradeReadinessChecks(inst)
+	if err != nil {
+		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
+	}
+	check := findReadinessCheckByID(checks, readinessCheckProcessEnvOverridesDotenv)
+	if check == nil {
+		t.Fatalf("expected %s check", readinessCheckProcessEnvOverridesDotenv)
+	}
+	if !strings.Contains(strings.Join(check.Details, "\n"), "AL_CONTEXT7_API_KEY") {
+		t.Fatalf("expected process override detail, got %q", check.Details)
+	}
+}
+
+func TestBuildUpgradeReadinessChecks_IgnoredEmptyDotenvAssignments_UsesSystemLookupEnv(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	cfg, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(string(cfg), "id = \"context7\"\nenabled = false", "id = \"context7\"\nenabled = true", 1)
+	if updated == string(cfg) {
+		t.Fatal("failed to enable context7 in test config")
+	}
+	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=\n"), 0o644); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	sys := newFaultSystem(RealSystem{})
+	processValue := "from-process"
+	sys.lookupEnvs["AL_CONTEXT7_API_KEY"] = &processValue
+
+	inst := &installer{root: root, sys: sys}
+	checks, err := buildUpgradeReadinessChecks(inst)
+	if err != nil {
+		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
+	}
+	check := findReadinessCheckByID(checks, readinessCheckIgnoredEmptyDotenvAssignments)
+	if check == nil {
+		t.Fatalf("expected %s check", readinessCheckIgnoredEmptyDotenvAssignments)
+	}
+	if !strings.Contains(strings.Join(check.Details, "\n"), "AL_CONTEXT7_API_KEY") {
+		t.Fatalf("expected empty-assignment detail, got %q", check.Details)
+	}
+}
+
+func TestBuildUpgradeReadinessChecks_PathExpansionAnomalies(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	cfg, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	updated := strings.Replace(string(cfg), "id = \"filesystem\"\nenabled = false", "id = \"filesystem\"\nenabled = true", 1)
+	if updated == string(cfg) {
+		t.Fatal("failed to enable filesystem in test config")
+	}
+	updated = strings.Replace(updated, "${AL_REPO_ROOT}\"]", "${AL_REPO_ROOT}/missing-readiness-dir\"]", 1)
+	if !strings.Contains(updated, "missing-readiness-dir") {
+		t.Fatal("failed to update filesystem path in test config")
+	}
+	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	checks, err := buildUpgradeReadinessChecks(inst)
+	if err != nil {
+		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
+	}
+	check := findReadinessCheckByID(checks, readinessCheckPathExpansionAnomalies)
+	if check == nil {
+		t.Fatalf("expected %s check", readinessCheckPathExpansionAnomalies)
+	}
+	if !strings.Contains(strings.Join(check.Details, "\n"), "missing path") {
+		t.Fatalf("expected path anomaly detail, got %q", check.Details)
+	}
+}
+
+func TestBuildUpgradeReadinessChecks_GeneratedSecretRisk(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	mcpPath := filepath.Join(root, ".mcp.json")
+	if err := os.WriteFile(mcpPath, []byte("{\"Authorization\": \"Bearer supersecretvalue12345\"}\n"), 0o644); err != nil {
+		t.Fatalf("write .mcp.json: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	checks, err := buildUpgradeReadinessChecks(inst)
+	if err != nil {
+		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
+	}
+	check := findReadinessCheckByID(checks, readinessCheckGeneratedSecretRisk)
+	if check == nil {
+		t.Fatalf("expected %s check", readinessCheckGeneratedSecretRisk)
+	}
+	if !strings.Contains(strings.Join(check.Details, "\n"), ".mcp.json") {
+		t.Fatalf("expected generated-secret detail, got %q", check.Details)
 	}
 }
 

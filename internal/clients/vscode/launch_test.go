@@ -1,9 +1,11 @@
 package vscode
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -11,6 +13,13 @@ import (
 )
 
 func TestLaunchVSCode(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
 	root := t.TempDir()
 	binDir := t.TempDir()
 	writeStub(t, binDir, "code")
@@ -28,6 +37,13 @@ func TestLaunchVSCode(t *testing.T) {
 }
 
 func TestLaunchVSCodeError(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
 	root := t.TempDir()
 	binDir := t.TempDir()
 	writeStubWithExit(t, binDir, "code", 1)
@@ -41,6 +57,123 @@ func TestLaunchVSCodeError(t *testing.T) {
 	env := os.Environ()
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestLaunchVSCodePreflight_CodeMissing(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	lookPath = func(file string) (string, error) {
+		return "", &os.PathError{Op: "exec", Path: file, Err: os.ErrNotExist}
+	}
+
+	root := t.TempDir()
+	cfg := &config.ProjectConfig{Root: root}
+	err := Launch(cfg, &run.Info{ID: "id", Dir: root}, os.Environ(), nil)
+	if err == nil {
+		t.Fatal("expected code missing preflight error")
+	}
+	if !strings.Contains(err.Error(), "vscode preflight failed") {
+		t.Fatalf("expected preflight error, got %v", err)
+	}
+}
+
+func TestLaunchVSCodePreflight_ManagedBlockConflict(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	lookPath = func(file string) (string, error) {
+		return filepath.Join(root, "code"), nil
+	}
+
+	settingsPath := filepath.Join(root, ".vscode", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "{\n  // >>> agent-layer\n}\n"
+	if err := os.WriteFile(settingsPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{Root: root}
+	err := Launch(cfg, &run.Info{ID: "id", Dir: root}, os.Environ(), nil)
+	if err == nil {
+		t.Fatal("expected managed-block conflict error")
+	}
+	if !strings.Contains(err.Error(), "managed settings block conflict") {
+		t.Fatalf("expected managed-block conflict, got %v", err)
+	}
+}
+
+func TestCheckManagedSettingsConflict_ReadError(t *testing.T) {
+	origReadFile := readFile
+	t.Cleanup(func() { readFile = origReadFile })
+
+	readFile = func(string) ([]byte, error) {
+		return nil, errors.New("boom")
+	}
+
+	err := checkManagedSettingsConflict(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestCheckManagedSettingsConflict_NoMarkers(t *testing.T) {
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".vscode", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte("{\"editor.formatOnSave\":true}\n"), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	if err := checkManagedSettingsConflict(root); err != nil {
+		t.Fatalf("expected no conflict, got %v", err)
+	}
+}
+
+func TestCheckManagedSettingsConflict_StartAfterEnd(t *testing.T) {
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".vscode", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "{\n  // <<< agent-layer\n  // >>> agent-layer\n}\n"
+	if err := os.WriteFile(settingsPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	err := checkManagedSettingsConflict(root)
+	if err == nil || !strings.Contains(err.Error(), "start marker appears after end marker") {
+		t.Fatalf("expected marker order conflict, got %v", err)
+	}
+}
+
+func TestCheckManagedSettingsConflict_ValidManagedBlock(t *testing.T) {
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".vscode", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "{\n  // >>> agent-layer\n  \"x\": 1,\n  // <<< agent-layer\n}\n"
+	if err := os.WriteFile(settingsPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	if err := checkManagedSettingsConflict(root); err != nil {
+		t.Fatalf("expected valid managed block, got %v", err)
 	}
 }
 

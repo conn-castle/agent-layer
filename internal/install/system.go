@@ -15,6 +15,7 @@ import (
 type System interface {
 	Stat(name string) (os.FileInfo, error)
 	ReadFile(name string) ([]byte, error)
+	LookupEnv(key string) (string, bool)
 	MkdirAll(path string, perm os.FileMode) error
 	RemoveAll(path string) error
 	Rename(oldpath string, newpath string) error
@@ -33,6 +34,11 @@ func (RealSystem) Stat(name string) (os.FileInfo, error) {
 // ReadFile reads the named file and returns the contents.
 func (RealSystem) ReadFile(name string) ([]byte, error) {
 	return os.ReadFile(name)
+}
+
+// LookupEnv returns the value and presence of an environment variable.
+func (RealSystem) LookupEnv(key string) (string, bool) {
+	return os.LookupEnv(key)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.

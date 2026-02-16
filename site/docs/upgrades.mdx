@@ -21,6 +21,7 @@ If guidance in other docs is shorter or summarized, this page is the source of t
 - [Migration rules by release](#migration-rules-by-release)
 - [OS and shell capability matrix](#os-and-shell-capability-matrix)
 - [Commitment level and limitations](#commitment-level-and-limitations)
+- [Upgrade checklist](./upgrade-checklist)
 
 ## Upgrade event model
 
@@ -50,8 +51,8 @@ Current enforcement status:
 Agent Layer follows a sequential release-line guarantee:
 
 - Guaranteed path: upgrade from `N-1` to `N` release lines only.
-- Example: `0.6.x` to `0.7.x` is guaranteed.
-- Non-guaranteed path: skipping release lines (for example `0.5.x` to `0.7.x`).
+- Example: `0.7.x` to `0.8.x` is guaranteed.
+- Non-guaranteed path: skipping release lines (for example `0.6.x` to `0.8.x`).
 
 What "guaranteed" means:
 - We provide documented migration guidance for the guaranteed path.
@@ -68,7 +69,7 @@ Migration rules are published per release and versioned with docs/release notes.
 
 | Target release | Supported source release lines | Event summary | Required manual actions | Notes |
 | --- | --- | --- | --- | --- |
-| `unreleased` | `0.7.x` | `breaking/manual`: `al init` is now one-time scaffolding and no longer supports upgrade/repair; `al init --overwrite` and `al init --force` removed. `needs review`: `al upgrade` no longer supports a single destructive `--force` mode and now requires explicit apply categories. `safe auto`: `al upgrade` now creates automatic managed-file snapshots, auto-rolls back on upgrade-step failures, and supports manual restore via `al upgrade rollback <snapshot-id>`. | Replace any automation that runs `al init --force` or `al upgrade --force` with explicit apply flags (for example `al upgrade --yes --apply-managed-updates`). Include `--apply-memory-updates` and/or `--apply-deletions` only when intentionally applying those categories. For interactive flows, run `al upgrade plan` then `al upgrade`. Use `al upgrade rollback <snapshot-id>` only when you need to restore a previously applied snapshot. | `al upgrade` never overwrites `.agent-layer/.env` or `.agent-layer/config.toml`. Root `.gitignore` managed block is still updated automatically and is excluded from upgrade plans. Snapshots are stored under `.agent-layer/state/upgrade-snapshots/`. |
+| `v0.8.0` | `0.7.x` | `breaking/manual`: `al init` is now one-time scaffolding and no longer supports upgrade/repair; `al init --overwrite` and `al init --force` removed. `needs review`: `al upgrade` no longer supports a single destructive `--force` mode and now requires explicit apply categories. `safe auto`: `al upgrade` now creates automatic managed-file snapshots, auto-rolls back on upgrade-step failures, and supports manual restore via `al upgrade rollback <snapshot-id>`. | Replace any automation that runs `al init --force` or `al upgrade --force` with explicit apply flags (for example `al upgrade --yes --apply-managed-updates`). Include `--apply-memory-updates` and/or `--apply-deletions` only when intentionally applying those categories. For interactive flows, run `al upgrade plan` then `al upgrade`. Use `al upgrade rollback <snapshot-id>` only when you need to restore a previously applied snapshot. | `al upgrade` never overwrites `.agent-layer/.env` or `.agent-layer/config.toml`. Root `.gitignore` managed block is still updated automatically and is excluded from upgrade plans. Snapshots are stored under `.agent-layer/state/upgrade-snapshots/`. |
 | `v0.7.0` | `0.6.x` | `breaking/manual`: Windows support removed (installer, launcher, release targets, code paths). `safe auto`: upgrade path hardening (pin recovery, init dispatch bypass, download progress/errors), upgrade contract published. | **Windows users:** Windows is no longer supported; remove `al-install.ps1` and `open-vscode.bat` if present and migrate to macOS or Linux. **All other users:** No manual action required; run `al upgrade plan` and `al upgrade`. | First release with published upgrade contract. |
 
 Migration execution rules for supported release-line upgrades:

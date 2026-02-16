@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -234,5 +235,30 @@ func TestBuildMCPConfigStdioServer(t *testing.T) {
 	}
 	if server.Env["TOKEN"] != "${TOKEN}" {
 		t.Fatalf("unexpected env: %s", server.Env["TOKEN"])
+	}
+}
+
+func TestWriteMCPConfigMarshalError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		LookPathFunc: func(file string) (string, error) {
+			if file == "al" {
+				return "/usr/local/bin/al", nil
+			}
+			return "", os.ErrNotExist
+		},
+		MarshalIndentFunc: func(v any, prefix, indent string) ([]byte, error) {
+			return nil, errors.New("marshal failed")
+		},
+	}
+	project := &config.ProjectConfig{
+		Config: config.Config{},
+		Root:   root,
+	}
+
+	if err := WriteMCPConfig(sys, root, project); err == nil {
+		t.Fatal("expected marshal error")
 	}
 }

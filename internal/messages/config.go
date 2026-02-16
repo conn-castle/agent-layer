@@ -28,6 +28,7 @@ const (
 	ConfigAntigravityEnabledRequiredFmt       = "%s: agents.antigravity.enabled is required"
 	ConfigMcpServerIDRequiredFmt              = "%s: mcp.servers[%d].id is required"
 	ConfigMcpServerIDReservedFmt              = "%s: mcp.servers[%d].id is reserved for the internal prompt server"
+	ConfigMcpServerIDDuplicateFmt             = "%s: mcp.servers[%d].id %q duplicates mcp.servers[%d].id"
 	ConfigMcpServerEnabledRequiredFmt         = "%s: mcp.servers[%d].enabled is required"
 	ConfigMcpServerURLRequiredFmt             = "%s: mcp.servers[%d].url is required for http transport"
 	ConfigMcpServerCommandNotAllowedFmt       = "%s: mcp.servers[%d].command/args are not allowed for http transport"
@@ -39,6 +40,7 @@ const (
 	ConfigMcpServerHeadersNotAllowedFmt       = "%s: mcp.servers[%d].headers are not allowed for stdio transport"
 	ConfigMcpServerTransportInvalidFmt        = "%s: mcp.servers[%d].transport must be http or stdio"
 	ConfigMcpServerClientInvalidFmt           = "%s: mcp.servers[%d].clients contains invalid client %q"
+	ConfigWarningNoiseModeInvalidFmt          = "%s: warnings.noise_mode %q is invalid (allowed: default, reduce)"
 	ConfigWarningThresholdInvalidFmt          = "%s: %s must be greater than zero"
 
 	ConfigMissingSlashCommandsDirFmt          = "missing slash commands directory %s: %w"

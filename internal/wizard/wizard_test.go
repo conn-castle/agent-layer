@@ -30,3 +30,9 @@ func TestBuildSummaryIncludesRestoredMCPServers(t *testing.T) {
 	assert.Contains(t, summary, "Restored Default MCP Servers:")
 	assert.Contains(t, summary, "- context7")
 }
+
+func TestApprovalModeLabelForValue_NotFound(t *testing.T) {
+	label, ok := approvalModeLabelForValue("unknown")
+	assert.False(t, ok)
+	assert.Equal(t, "", label)
+}

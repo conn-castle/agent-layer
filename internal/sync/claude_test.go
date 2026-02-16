@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -95,5 +96,25 @@ func TestBuildClaudeSettingsNone(t *testing.T) {
 	}
 	if settings.Permissions != nil {
 		t.Fatalf("expected no permissions for none mode")
+	}
+}
+
+func TestWriteClaudeSettingsMarshalError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		MarshalIndentFunc: func(v any, prefix, indent string) ([]byte, error) {
+			return nil, errors.New("marshal failed")
+		},
+	}
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+		},
+	}
+
+	if err := WriteClaudeSettings(sys, root, project); err == nil {
+		t.Fatal("expected marshal error")
 	}
 }

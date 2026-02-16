@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,11 +28,26 @@ var (
 	osStat              = os.Stat
 	osCreateTemp        = os.CreateTemp
 	httpClient          = &http.Client{Timeout: 30 * time.Second}
+	dispatchSleep       = time.Sleep
+)
+
+const (
+	defaultMaxDownloadBytes = int64(100 * 1024 * 1024) // 100 MiB
+	defaultDownloadTimeout  = 30 * time.Second
+	downloadRetryCount      = 1
+	downloadRetryBackoff    = 250 * time.Millisecond
 )
 
 // ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
 // Progress lines are written to progressOut when a download is required.
 func ensureCachedBinary(cacheRoot string, version string, progressOut io.Writer) (string, error) {
+	return ensureCachedBinaryWithSystem(RealSystem{}, cacheRoot, version, progressOut)
+}
+
+func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, progressOut io.Writer) (string, error) {
+	if sys == nil {
+		return "", fmt.Errorf(messages.DispatchSystemRequired)
+	}
 	osName, arch, err := platformStringsFunc()
 	if err != nil {
 		return "", err
@@ -44,7 +60,7 @@ func ensureCachedBinary(cacheRoot string, version string, progressOut io.Writer)
 		return "", fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
 	}
 
-	if noNetwork() {
+	if noNetworkWithSystem(sys) {
 		return "", fmt.Errorf(messages.DispatchVersionNotCachedFmt, version, binPath, EnvNoNetwork)
 	}
 
@@ -74,7 +90,7 @@ func ensureCachedBinary(cacheRoot string, version string, progressOut io.Writer)
 
 		_, _ = fmt.Fprintf(progressOut, messages.DispatchDownloadingFmt, version)
 		url := fmt.Sprintf("%s/download/v%s/%s", releaseBaseURL, version, asset)
-		if err := downloadToFile(url, tmp); err != nil {
+		if err := downloadToFileWithSystem(sys, url, tmp); err != nil {
 			_ = tmp.Close()
 			return err
 		}
@@ -86,7 +102,7 @@ func ensureCachedBinary(cacheRoot string, version string, progressOut io.Writer)
 			return fmt.Errorf(messages.DispatchCloseTempFileFmt, err)
 		}
 
-		expected, err := fetchChecksum(version, asset)
+		expected, err := fetchChecksumWithSystem(sys, version, asset)
 		if err != nil {
 			return err
 		}
@@ -136,71 +152,144 @@ func assetName(osName string, arch string) string {
 	return fmt.Sprintf("al-%s-%s", osName, arch)
 }
 
-// noNetwork reports whether downloads are disabled via AL_NO_NETWORK.
-func noNetwork() bool {
-	return strings.TrimSpace(os.Getenv(EnvNoNetwork)) != ""
+// noNetworkWithSystem reports whether downloads are disabled via AL_NO_NETWORK.
+func noNetworkWithSystem(sys System) bool {
+	return strings.TrimSpace(sys.Getenv(EnvNoNetwork)) != ""
 }
 
 // downloadToFile fetches url and writes it to dest.
 func downloadToFile(url string, dest *os.File) error {
-	resp, err := httpClient.Get(url)
-	if err != nil {
-		if isTimeoutError(err) {
-			return fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+	return downloadToFileWithSystem(RealSystem{}, url, dest)
+}
+
+func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
+	if sys == nil {
+		return fmt.Errorf(messages.DispatchSystemRequired)
+	}
+	client := downloadHTTPClientWithSystem(sys)
+	maxBytes := maxDownloadBytesWithSystem(sys)
+	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
+		resp, err := client.Get(url)
+		if err != nil {
+			if shouldRetryDownload(attempt, err, 0) {
+				dispatchSleep(downloadRetryBackoff)
+				continue
+			}
+			if isTimeoutError(err) {
+				return fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+			}
+			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
 		}
-		return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
+
+		if resp.StatusCode == http.StatusNotFound {
+			_ = resp.Body.Close()
+			return fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
+		}
+		if resp.StatusCode != http.StatusOK {
+			status := resp.StatusCode
+			statusText := resp.Status
+			_ = resp.Body.Close()
+			if shouldRetryDownload(attempt, nil, status) {
+				dispatchSleep(downloadRetryBackoff)
+				continue
+			}
+			return fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, statusText)
+		}
+
+		if err := dest.Truncate(0); err != nil {
+			_ = resp.Body.Close()
+			return fmt.Errorf(messages.DispatchTruncateTempFileFmt, err)
+		}
+		if _, err := dest.Seek(0, io.SeekStart); err != nil {
+			_ = resp.Body.Close()
+			return fmt.Errorf(messages.DispatchResetTempFileOffsetFmt, err)
+		}
+
+		n, copyErr := io.Copy(dest, io.LimitReader(resp.Body, maxBytes+1))
+		_ = resp.Body.Close()
+		if copyErr != nil {
+			if shouldRetryDownload(attempt, copyErr, 0) {
+				dispatchSleep(downloadRetryBackoff)
+				continue
+			}
+			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, copyErr)
+		}
+		if n > maxBytes {
+			return fmt.Errorf(messages.DispatchDownloadTooLargeFmt, url, n, maxBytes)
+		}
+		return nil
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
-	}
-	if _, err := io.Copy(dest, resp.Body); err != nil {
-		return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
-	}
-	return nil
+	return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, errors.New("retry budget exhausted"))
 }
 
 // fetchChecksum retrieves the expected checksum for the asset from checksums.txt.
 func fetchChecksum(version string, asset string) (string, error) {
-	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
-	resp, err := httpClient.Get(url)
-	if err != nil {
-		if isTimeoutError(err) {
-			return "", fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
-		}
-		return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, resp.Status)
-	}
+	return fetchChecksumWithSystem(RealSystem{}, version, asset)
+}
 
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		path := strings.TrimPrefix(fields[1], "./")
-		path = strings.TrimPrefix(path, "*")
-		if path == asset {
-			return fields[0], nil
-		}
+// fetchChecksumWithSystem retrieves the expected checksum using the provided system for timeout/env resolution.
+func fetchChecksumWithSystem(sys System, version string, asset string) (string, error) {
+	if sys == nil {
+		return "", fmt.Errorf(messages.DispatchSystemRequired)
 	}
-	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf(messages.DispatchReadFailedFmt, url, err)
+	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
+	client := downloadHTTPClientWithSystem(sys)
+	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
+		resp, err := client.Get(url)
+		if err != nil {
+			if shouldRetryDownload(attempt, err, 0) {
+				dispatchSleep(downloadRetryBackoff)
+				continue
+			}
+			if isTimeoutError(err) {
+				return "", fmt.Errorf(messages.DispatchDownloadTimeoutFmt, url)
+			}
+			return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
+		}
+		if resp.StatusCode == http.StatusNotFound {
+			_ = resp.Body.Close()
+			return "", fmt.Errorf(messages.DispatchDownload404Fmt, url, releaseBaseURL)
+		}
+		if resp.StatusCode != http.StatusOK {
+			status := resp.StatusCode
+			statusText := resp.Status
+			_ = resp.Body.Close()
+			if shouldRetryDownload(attempt, nil, status) {
+				dispatchSleep(downloadRetryBackoff)
+				continue
+			}
+			return "", fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, statusText)
+		}
+
+		scanner := bufio.NewScanner(resp.Body)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			path := strings.TrimPrefix(fields[1], "./")
+			path = strings.TrimPrefix(path, "*")
+			if path == asset {
+				_ = resp.Body.Close()
+				return fields[0], nil
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			_ = resp.Body.Close()
+			if shouldRetryDownload(attempt, err, 0) {
+				dispatchSleep(downloadRetryBackoff)
+				continue
+			}
+			return "", fmt.Errorf(messages.DispatchReadFailedFmt, url, err)
+		}
+		_ = resp.Body.Close()
+		return "", fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
 	}
-	return "", fmt.Errorf(messages.DispatchChecksumNotFoundFmt, asset, url)
+	return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, errors.New("retry budget exhausted"))
 }
 
 // isTimeoutError reports whether err is a network timeout.
@@ -210,6 +299,54 @@ func isTimeoutError(err error) bool {
 		return netErr.Timeout()
 	}
 	return false
+}
+
+func shouldRetryDownload(attempt int, err error, statusCode int) bool {
+	if attempt >= downloadRetryCount {
+		return false
+	}
+	if err != nil {
+		var netErr net.Error
+		return errors.As(err, &netErr)
+	}
+	return statusCode >= 500 && statusCode <= 599
+}
+
+func maxDownloadBytesWithSystem(sys System) int64 {
+	raw := strings.TrimSpace(sys.Getenv("AL_MAX_DOWNLOAD_BYTES"))
+	if raw == "" {
+		return defaultMaxDownloadBytes
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || v <= 0 {
+		return defaultMaxDownloadBytes
+	}
+	return v
+}
+
+func downloadTimeoutWithSystem(sys System) time.Duration {
+	raw := strings.TrimSpace(sys.Getenv("AL_DOWNLOAD_TIMEOUT"))
+	if raw == "" {
+		return defaultDownloadTimeout
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil || timeout <= 0 {
+		return defaultDownloadTimeout
+	}
+	return timeout
+}
+
+func downloadHTTPClientWithSystem(sys System) *http.Client {
+	if sys == nil {
+		return httpClient
+	}
+	timeout := downloadTimeoutWithSystem(sys)
+	if httpClient.Timeout == timeout {
+		return httpClient
+	}
+	clientCopy := *httpClient
+	clientCopy.Timeout = timeout
+	return &clientCopy
 }
 
 // verifyChecksum computes the SHA-256 of path and compares it to expected.

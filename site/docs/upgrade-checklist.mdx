@@ -1,0 +1,89 @@
+---
+title: Upgrade checklist
+description: One-page upgrade checklist for interactive teams and CI.
+sidebar_position: 6
+---
+
+Use this page when you want a repeatable, low-risk upgrade runbook.
+
+## Interactive team checklist
+
+1. Update the global `al` CLI.
+   - Homebrew: `brew upgrade conn-castle/tap/agent-layer`
+   - Script: `curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash`
+2. Confirm the installed version:
+   ```bash
+   al --version
+   ```
+3. Optional: pre-warm cache for offline or constrained runners:
+   ```bash
+   al upgrade prefetch --version X.Y.Z
+   ```
+4. Preview changes before any writes:
+   ```bash
+   al upgrade plan
+   ```
+5. Apply changes:
+   ```bash
+   al upgrade
+   ```
+6. Validate generated outputs and connectivity:
+   ```bash
+   al sync
+   al doctor
+   ```
+7. If needed, restore a snapshot:
+   ```bash
+   al upgrade rollback <snapshot-id>
+   ```
+
+## CI checklist (managed updates only)
+
+Use this when CI should apply managed template updates without memory/deletion changes:
+
+```bash
+al upgrade --yes --apply-managed-updates
+al sync
+al doctor
+```
+
+Only add these flags when intentionally applying those categories:
+
+- `--apply-memory-updates`
+- `--apply-deletions`
+
+## Shell quick paths (macOS/Linux)
+
+### bash
+
+```bash
+brew upgrade conn-castle/tap/agent-layer || \
+  curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
+al upgrade plan
+al upgrade
+```
+
+### zsh
+
+```bash
+brew upgrade conn-castle/tap/agent-layer || \
+  curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
+al upgrade plan
+al upgrade
+```
+
+### fish
+
+```bash
+brew upgrade conn-castle/tap/agent-layer; or \
+  curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
+al upgrade plan
+al upgrade
+```
+
+## Notes
+
+- `.agent-layer/al.version` is required for supported usage.
+- `al upgrade prefetch` is the recommended cache warm-up command for offline/air-gapped workflows.
+- Snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`.
+- For policy guarantees and release migration rules, see [Upgrades](./upgrades).

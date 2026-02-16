@@ -1051,3 +1051,266 @@ func TestTemplateFileMatches_TemplateReadError(t *testing.T) {
 		t.Fatalf("expected error from template read failure")
 	}
 }
+
+func TestAppendTemplateFileDiffs_StatErrorInjected(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "commands.allow")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write commands.allow: %v", err)
+	}
+
+	sys := newFaultSystem(RealSystem{})
+	sys.statErrs[normalizePath(path)] = errors.New("stat boom")
+	inst := &installer{root: root, sys: sys}
+	if err := inst.appendTemplateFileDiffs(map[string]struct{}{}, []templateFile{{
+		path:     path,
+		template: "commands.allow",
+		perm:     0o644,
+	}}); err == nil || !strings.Contains(err.Error(), "failed to stat") {
+		t.Fatalf("expected stat error, got %v", err)
+	}
+}
+
+func TestAppendTemplateDirDiffs_SectionAwareErrorsAndDiffs(t *testing.T) {
+	root := t.TempDir()
+	memoryDir := filepath.Join(root, "docs", "agent-layer")
+	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+		t.Fatalf("mkdir memory dir: %v", err)
+	}
+	issuesPath := filepath.Join(memoryDir, "ISSUES.md")
+	if err := os.Mkdir(issuesPath, 0o755); err != nil {
+		t.Fatalf("mkdir issues dir: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	err := inst.appendTemplateDirDiffs(map[string]struct{}{}, templateDir{
+		templateRoot: "docs/agent-layer",
+		destRoot:     memoryDir,
+	})
+	if err == nil {
+		t.Fatalf("expected section-aware read error")
+	}
+}
+
+func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
+	root := t.TempDir()
+	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(instructionsDir, 0o755); err != nil {
+		t.Fatalf("mkdir instructions: %v", err)
+	}
+	targetPath := filepath.Join(instructionsDir, "00_base.md")
+	if err := os.WriteFile(targetPath, []byte("custom instructions\n"), 0o644); err != nil {
+		t.Fatalf("write instruction: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	diffs := map[string]struct{}{}
+	if err := inst.appendTemplateDirDiffs(diffs, templateDir{
+		templateRoot: "instructions",
+		destRoot:     instructionsDir,
+	}); err != nil {
+		t.Fatalf("appendTemplateDirDiffs: %v", err)
+	}
+
+	if _, ok := diffs[".agent-layer/instructions/00_base.md"]; !ok {
+		t.Fatalf("expected non-section-aware mismatch to be recorded, got %v", diffs)
+	}
+}
+
+func TestAppendPinnedVersionDiff_MissingPinFileNoDiff(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
+	diffs := map[string]struct{}{}
+	if err := inst.appendPinnedVersionDiff(diffs); err != nil {
+		t.Fatalf("appendPinnedVersionDiff: %v", err)
+	}
+	if len(diffs) != 0 {
+		t.Fatalf("expected no diffs when pin file is missing, got %v", diffs)
+	}
+}
+
+func TestWriteTemplateDirCached_SectionAwareError(t *testing.T) {
+	root := t.TempDir()
+	memoryDir := filepath.Join(root, "docs", "agent-layer")
+	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+		t.Fatalf("mkdir memory dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(memoryDir, "ISSUES.md"), []byte("# invalid\n"), 0o644); err != nil {
+		t.Fatalf("write invalid issues: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	err := inst.writeTemplateDirCached(templateDir{
+		templateRoot: "docs/agent-layer",
+		destRoot:     memoryDir,
+	})
+	if err == nil {
+		t.Fatalf("expected section-aware error")
+	}
+}
+
+func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
+	root := t.TempDir()
+	memoryDir := filepath.Join(root, "docs", "agent-layer")
+	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+		t.Fatalf("mkdir memory dir: %v", err)
+	}
+	relPath := "docs/agent-layer/ISSUES.md"
+	path := filepath.Join(memoryDir, "ISSUES.md")
+	inst := &installer{root: root, sys: RealSystem{}}
+
+	t.Run("read error", func(t *testing.T) {
+		if err := os.RemoveAll(path); err != nil {
+			t.Fatalf("remove file: %v", err)
+		}
+		if err := os.Mkdir(path, 0o755); err != nil {
+			t.Fatalf("mkdir path: %v", err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(path) })
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err == nil || !strings.Contains(err.Error(), "failed to read") {
+			t.Fatalf("expected read error, got %v", err)
+		}
+	})
+
+	t.Run("template read error", func(t *testing.T) {
+		content := "# header\n" + ownershipMarkerEntriesStart + "\n- entry\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write issues: %v", err)
+		}
+		original := templates.ReadFunc
+		templates.ReadFunc = func(name string) ([]byte, error) {
+			if name == "docs/agent-layer/ISSUES.md" {
+				return nil, errors.New("template read boom")
+			}
+			return original(name)
+		}
+		t.Cleanup(func() { templates.ReadFunc = original })
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err == nil || !strings.Contains(err.Error(), "failed to read template") {
+			t.Fatalf("expected template read error, got %v", err)
+		}
+	})
+
+	t.Run("local split error", func(t *testing.T) {
+		if err := os.WriteFile(path, []byte("# no marker\n"), 0o644); err != nil {
+			t.Fatalf("write issues: %v", err)
+		}
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err == nil {
+			t.Fatalf("expected local split error")
+		}
+	})
+
+	t.Run("template split error", func(t *testing.T) {
+		content := "# header\n" + ownershipMarkerEntriesStart + "\n- local entry\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write issues: %v", err)
+		}
+		original := templates.ReadFunc
+		templates.ReadFunc = func(name string) ([]byte, error) {
+			if name == "docs/agent-layer/ISSUES.md" {
+				return []byte("# bad template without marker\n"), nil
+			}
+			return original(name)
+		}
+		t.Cleanup(func() { templates.ReadFunc = original })
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err == nil {
+			t.Fatalf("expected template split error")
+		}
+	})
+}
+
+func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
+	root := t.TempDir()
+	memoryDir := filepath.Join(root, "docs", "agent-layer")
+	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+		t.Fatalf("mkdir memory dir: %v", err)
+	}
+	relPath := "docs/agent-layer/ISSUES.md"
+	path := filepath.Join(memoryDir, "ISSUES.md")
+	content := "# custom header\n" + ownershipMarkerEntriesStart + "\n- custom entry\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write issues: %v", err)
+	}
+
+	t.Run("overwrite prompt error", func(t *testing.T) {
+		inst := &installer{
+			root:      root,
+			sys:       RealSystem{},
+			overwrite: true,
+			prompter: PromptFuncs{
+				OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) {
+					return false, errors.New("prompt boom")
+				},
+			},
+		}
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err == nil || !strings.Contains(err.Error(), "prompt boom") {
+			t.Fatalf("expected overwrite prompt error, got %v", err)
+		}
+	})
+
+	t.Run("overwrite declined records diff", func(t *testing.T) {
+		inst := &installer{
+			root:      root,
+			sys:       RealSystem{},
+			overwrite: true,
+			prompter: PromptFuncs{
+				OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return false, nil },
+				OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return false, nil },
+			},
+		}
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err != nil {
+			t.Fatalf("writeSectionAwareTemplateFile: %v", err)
+		}
+		if len(inst.diffs) == 0 {
+			t.Fatalf("expected diff to be recorded when overwrite is declined")
+		}
+	})
+
+	t.Run("overwrite accepted write error", func(t *testing.T) {
+		sys := newFaultSystem(RealSystem{})
+		sys.writeErrs[normalizePath(path)] = errors.New("write boom")
+		inst := &installer{
+			root:      root,
+			sys:       sys,
+			overwrite: true,
+			prompter: PromptFuncs{
+				OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+				OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
+			},
+		}
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err == nil || !strings.Contains(err.Error(), "failed to write") {
+			t.Fatalf("expected write error, got %v", err)
+		}
+	})
+
+	t.Run("stat error", func(t *testing.T) {
+		sys := newFaultSystem(RealSystem{})
+		sys.statErrs[normalizePath(path)] = errors.New("stat boom")
+		inst := &installer{root: root, sys: sys}
+		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		if err == nil || !strings.Contains(err.Error(), "failed to stat") {
+			t.Fatalf("expected stat error, got %v", err)
+		}
+	})
+}
+
+func TestWriteTemplateFileWithMatch_MkdirAllErrorAfterNotExist(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "nested", "config.toml")
+	sys := newFaultSystem(RealSystem{})
+	sys.mkdirErrs[normalizePath(filepath.Dir(path))] = errors.New("mkdir boom")
+
+	err := writeTemplateFileWithMatch(sys, path, "config.toml", 0o644, nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "failed to create directory for") {
+		t.Fatalf("expected mkdir error, got %v", err)
+	}
+}

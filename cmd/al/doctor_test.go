@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -97,7 +99,7 @@ type testError struct{ msg string }
 func (e *testError) Error() string { return e.msg }
 
 func TestMCPDiscoveryReporter_Report(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"server1", "server2"}, false)
+	reporter := newMCPDiscoveryReporter([]string{"server1", "server2"}, false, io.Discard)
 	reporter.start()
 
 	// Send events
@@ -124,7 +126,7 @@ func TestMCPDiscoveryReporter_Report(t *testing.T) {
 }
 
 func TestMCPDiscoveryReporter_ReportAfterStop(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"server1"}, false)
+	reporter := newMCPDiscoveryReporter([]string{"server1"}, false, io.Discard)
 	reporter.start()
 	reporter.stop()
 
@@ -133,7 +135,7 @@ func TestMCPDiscoveryReporter_ReportAfterStop(t *testing.T) {
 }
 
 func TestMCPDiscoveryReporter_Spinner(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"server1"}, true)
+	reporter := newMCPDiscoveryReporter([]string{"server1"}, true, io.Discard)
 	reporter.start()
 
 	// Allow spinner to tick a few times
@@ -150,7 +152,7 @@ func TestMCPDiscoveryReporter_Spinner(t *testing.T) {
 }
 
 func TestMCPDiscoveryReporter_FormatLine(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"srv"}, false)
+	reporter := newMCPDiscoveryReporter([]string{"srv"}, false, io.Discard)
 
 	// Initial state - no status recorded
 	line := reporter.formatLine("srv")
@@ -187,7 +189,7 @@ func TestMCPDiscoveryReporter_FormatLine(t *testing.T) {
 }
 
 func TestMCPDiscoveryReporter_StatusFor(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"srv"}, false)
+	reporter := newMCPDiscoveryReporter([]string{"srv"}, false, io.Discard)
 
 	// Unknown server returns start status
 	status := reporter.statusFor("unknown")
@@ -206,7 +208,7 @@ func TestMCPDiscoveryReporter_StatusFor(t *testing.T) {
 }
 
 func TestMCPDiscoveryReporter_AdvanceSpinner(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"srv"}, true)
+	reporter := newMCPDiscoveryReporter([]string{"srv"}, true, io.Discard)
 
 	initial := reporter.spinnerIndex
 	reporter.advanceSpinner()
@@ -222,7 +224,7 @@ func TestMCPDiscoveryReporter_AdvanceSpinnerEmpty(t *testing.T) {
 }
 
 func TestMCPDiscoveryReporter_FinalizePending(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"srv1", "srv2"}, false)
+	reporter := newMCPDiscoveryReporter([]string{"srv1", "srv2"}, false, io.Discard)
 
 	// srv1 has no status, srv2 is still starting
 	reporter.mu.Lock()
@@ -245,43 +247,39 @@ func TestStartMCPDiscoveryReporter_NonZero(t *testing.T) {
 	isTerminal = func() bool { return false }
 	t.Cleanup(func() { isTerminal = origIsTerminal })
 
-	output := captureStdout(t, func() {
-		reporter, stop := startMCPDiscoveryReporter([]string{"srv1"})
-		if reporter == nil {
-			t.Fatal("expected reporter")
-		}
-		reporter(warnings.MCPDiscoveryEvent{ServerID: "srv1", Status: warnings.MCPDiscoveryStatusDone})
-		stop()
-	})
-
-	if !strings.Contains(output, "srv1") {
-		t.Fatalf("expected output to mention server, got %q", output)
+	var output bytes.Buffer
+	reporter, stop := startMCPDiscoveryReporter([]string{"srv1"}, &output)
+	if reporter == nil {
+		t.Fatal("expected reporter")
 	}
-	if !strings.Contains(output, "done") {
-		t.Fatalf("expected output to include done, got %q", output)
+	reporter(warnings.MCPDiscoveryEvent{ServerID: "srv1", Status: warnings.MCPDiscoveryStatusDone})
+	stop()
+
+	if !strings.Contains(output.String(), "srv1") {
+		t.Fatalf("expected output to mention server, got %q", output.String())
+	}
+	if !strings.Contains(output.String(), "done") {
+		t.Fatalf("expected output to include done, got %q", output.String())
 	}
 }
 
 func TestMCPDiscoveryReporter_DrainEvents(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"srv"}, false)
+	var output bytes.Buffer
+	reporter := newMCPDiscoveryReporter([]string{"srv"}, false, &output)
 	reporter.events <- warnings.MCPDiscoveryEvent{ServerID: "srv", Status: warnings.MCPDiscoveryStatusDone}
 
-	output := captureStdout(t, func() {
-		reporter.drainEvents()
-	})
+	reporter.drainEvents()
 
 	if reporter.statusFor("srv") != warnings.MCPDiscoveryStatusDone {
 		t.Fatalf("expected status done")
 	}
-	if !strings.Contains(output, "srv: done") {
-		t.Fatalf("expected drain output, got %q", output)
+	if !strings.Contains(output.String(), "srv: done") {
+		t.Fatalf("expected drain output, got %q", output.String())
 	}
 }
 
 func TestMCPDiscoveryReporter_RenderMoveCursor(t *testing.T) {
-	reporter := newMCPDiscoveryReporter([]string{"srv"}, true)
+	reporter := newMCPDiscoveryReporter([]string{"srv"}, true, io.Discard)
 	reporter.rendered = true
-	captureStdout(t, func() {
-		reporter.render(true)
-	})
+	reporter.render(true)
 }

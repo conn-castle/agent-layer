@@ -278,6 +278,13 @@ func TestWriteCodexConfig(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, ".codex", "config.toml")); err != nil {
 		t.Fatalf("expected config.toml: %v", err)
 	}
+	info, err := os.Stat(filepath.Join(root, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatalf("stat config.toml: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("expected config.toml mode 0600, got %o", got)
+	}
 }
 
 func TestWriteCodexConfigError(t *testing.T) {

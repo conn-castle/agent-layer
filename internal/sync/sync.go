@@ -98,8 +98,17 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) ([]w
 
 // collectWarnings gathers all sync-time warnings based on the project config.
 func collectWarnings(project *config.ProjectConfig) ([]warnings.Warning, error) {
-	// Only check instructions size per spec for sync
-	return warnings.CheckInstructions(project.Root, project.Config.Warnings.InstructionTokenThreshold)
+	// Instructions size checks run after sync generation.
+	instructionWarnings, err := warnings.CheckInstructions(project.Root, project.Config.Warnings.InstructionTokenThreshold)
+	if err != nil {
+		return nil, err
+	}
+	policyWarnings := warnings.CheckPolicy(project)
+	collected := make([]warnings.Warning, 0, len(instructionWarnings)+len(policyWarnings))
+	collected = append(collected, instructionWarnings...)
+	collected = append(collected, policyWarnings...)
+
+	return warnings.ApplyNoiseControl(collected, project.Config.Warnings.NoiseMode), nil
 }
 
 func runSteps(steps []func() error) error {

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -22,6 +22,7 @@ import (
 var (
 	checkInstructions = warnings.CheckInstructions
 	checkMCPServers   = warnings.CheckMCPServers
+	checkPolicy       = warnings.CheckPolicy
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -29,12 +30,13 @@ func newDoctorCmd() *cobra.Command {
 		Use:   messages.DoctorUse,
 		Short: messages.DoctorShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf(messages.DoctorHealthCheckFmt, root)
+			_, _ = fmt.Fprintf(out, messages.DoctorHealthCheckFmt, root)
 
 			var allResults []doctor.Result
 
@@ -78,6 +80,7 @@ func newDoctorCmd() *cobra.Command {
 			if cfg != nil {
 				// 3. Check Secrets
 				allResults = append(allResults, doctor.CheckSecrets(cfg)...)
+				allResults = append(allResults, doctor.CheckSecretRisk(root)...)
 
 				// 4. Check Agents
 				allResults = append(allResults, doctor.CheckAgents(cfg)...)
@@ -85,7 +88,7 @@ func newDoctorCmd() *cobra.Command {
 
 			hasFail := false
 			for _, r := range allResults {
-				printResult(r)
+				printResult(out, r)
 				if r.Status == doctor.StatusFail {
 					hasFail = true
 				}
@@ -95,12 +98,12 @@ func newDoctorCmd() *cobra.Command {
 			// Only run if basic config loaded successfully, otherwise we might crash or be useless.
 			var warningList []warnings.Warning
 			if cfg != nil {
-				fmt.Println(messages.DoctorWarningSystemHeader)
+				_, _ = fmt.Fprintln(out, messages.DoctorWarningSystemHeader)
 
 				// Instructions check
 				instWarnings, err := checkInstructions(root, cfg.Config.Warnings.InstructionTokenThreshold)
 				if err != nil {
-					color.Red(messages.DoctorInstructionsCheckFailedFmt, err)
+					_, _ = fmt.Fprintln(out, color.RedString(messages.DoctorInstructionsCheckFailedFmt, err))
 					hasFail = true
 				} else {
 					warningList = append(warningList, instWarnings...)
@@ -108,31 +111,34 @@ func newDoctorCmd() *cobra.Command {
 
 				// MCP check (Doctor runs discovery)
 				enabledServerIDs := enabledMCPServerIDs(cfg.Config.MCP.Servers)
-				reportProgress, stopProgress := startMCPDiscoveryReporter(enabledServerIDs)
-				mcpWarnings, err := checkMCPServers(context.Background(), cfg, nil, reportProgress)
+				reportProgress, stopProgress := startMCPDiscoveryReporter(enabledServerIDs, out)
+				mcpWarnings, err := checkMCPServers(cmd.Context(), cfg, nil, reportProgress)
 				stopProgress()
 				if err != nil {
-					color.Red(messages.DoctorMCPCheckFailedFmt, err)
+					_, _ = fmt.Fprintln(out, color.RedString(messages.DoctorMCPCheckFailedFmt, err))
 					hasFail = true
 				} else {
 					warningList = append(warningList, mcpWarnings...)
 				}
+
+				warningList = append(warningList, checkPolicy(cfg)...)
+				warningList = warnings.ApplyNoiseControl(warningList, cfg.Config.Warnings.NoiseMode)
 			}
 
 			if len(warningList) > 0 {
 				for _, w := range warningList {
-					fmt.Println(w.String())
-					fmt.Println() // Spacer
+					_, _ = fmt.Fprintln(out, w.String())
+					_, _ = fmt.Fprintln(out) // Spacer
 				}
 				hasFail = true // Warnings cause exit 1 per spec
-				fmt.Println()
+				_, _ = fmt.Fprintln(out)
 			}
 
 			if hasFail {
-				color.Red(messages.DoctorFailureSummary)
+				_, _ = fmt.Fprintln(out, color.RedString(messages.DoctorFailureSummary))
 				return fmt.Errorf(messages.DoctorFailureError)
 			} else {
-				color.Green(messages.DoctorSuccessSummary)
+				_, _ = fmt.Fprintln(out, color.GreenString(messages.DoctorSuccessSummary))
 			}
 
 			return nil
@@ -140,7 +146,7 @@ func newDoctorCmd() *cobra.Command {
 	}
 }
 
-func printResult(r doctor.Result) {
+func printResult(out io.Writer, r doctor.Result) {
 	var status string
 	switch r.Status {
 	case doctor.StatusOK:
@@ -151,25 +157,25 @@ func printResult(r doctor.Result) {
 		status = color.RedString(messages.DoctorStatusFailLabel)
 	}
 
-	fmt.Printf(messages.DoctorResultLineFmt, status, r.CheckName, r.Message)
+	_, _ = fmt.Fprintf(out, messages.DoctorResultLineFmt, status, r.CheckName, r.Message)
 	if r.Recommendation != "" {
-		printRecommendation(r.Recommendation)
+		printRecommendation(out, r.Recommendation)
 	}
 }
 
 // printRecommendation renders a multi-line recommendation with consistent indentation.
-func printRecommendation(recommendation string) {
+func printRecommendation(out io.Writer, recommendation string) {
 	lines := strings.Split(recommendation, "\n")
 	for i, line := range lines {
 		if i == 0 {
-			fmt.Printf("%s%s\n", messages.DoctorRecommendationPrefix, line)
+			_, _ = fmt.Fprintf(out, "%s%s\n", messages.DoctorRecommendationPrefix, line)
 			continue
 		}
 		if line == "" {
-			fmt.Printf("%s\n", messages.DoctorRecommendationIndent)
+			_, _ = fmt.Fprintf(out, "%s\n", messages.DoctorRecommendationIndent)
 			continue
 		}
-		fmt.Printf("%s%s\n", messages.DoctorRecommendationIndent, line)
+		_, _ = fmt.Fprintf(out, "%s%s\n", messages.DoctorRecommendationIndent, line)
 	}
 }
 
@@ -190,22 +196,22 @@ func enabledMCPServerIDs(servers []config.MCPServer) []string {
 
 // startMCPDiscoveryReporter prints progress events from MCP discovery and returns a reporter + stop function.
 // serverIDs is the ordered list of enabled MCP server IDs; returns a nil reporter when none are enabled.
-func startMCPDiscoveryReporter(serverIDs []string) (warnings.MCPDiscoveryStatusFunc, func()) {
-	fmt.Printf(messages.DoctorMCPCheckStartFmt, len(serverIDs))
+func startMCPDiscoveryReporter(serverIDs []string, out io.Writer) (warnings.MCPDiscoveryStatusFunc, func()) {
+	_, _ = fmt.Fprintf(out, messages.DoctorMCPCheckStartFmt, len(serverIDs))
 	if len(serverIDs) == 0 {
-		fmt.Println(messages.DoctorMCPCheckDone)
+		_, _ = fmt.Fprintln(out, messages.DoctorMCPCheckDone)
 		return nil, func() {}
 	}
 
-	fmt.Println()
-	reporter := newMCPDiscoveryReporter(serverIDs, isTerminal())
+	_, _ = fmt.Fprintln(out)
+	reporter := newMCPDiscoveryReporter(serverIDs, isTerminal(), out)
 	reporter.start()
 
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
 			reporter.stop()
-			fmt.Println(messages.DoctorMCPCheckDone)
+			_, _ = fmt.Fprintln(out, messages.DoctorMCPCheckDone)
 		})
 	}
 
@@ -214,6 +220,7 @@ func startMCPDiscoveryReporter(serverIDs []string) (warnings.MCPDiscoveryStatusF
 
 // mcpDiscoveryReporter serializes and renders MCP discovery progress updates.
 type mcpDiscoveryReporter struct {
+	out           io.Writer
 	mu            sync.RWMutex
 	ids           []string
 	useSpinner    bool
@@ -228,9 +235,10 @@ type mcpDiscoveryReporter struct {
 }
 
 // newMCPDiscoveryReporter constructs a progress reporter for MCP discovery output.
-func newMCPDiscoveryReporter(serverIDs []string, useSpinner bool) *mcpDiscoveryReporter {
+func newMCPDiscoveryReporter(serverIDs []string, useSpinner bool, out io.Writer) *mcpDiscoveryReporter {
 	ids := append([]string(nil), serverIDs...)
 	return &mcpDiscoveryReporter{
+		out:           out,
 		ids:           ids,
 		useSpinner:    useSpinner,
 		events:        make(chan warnings.MCPDiscoveryEvent, len(ids)*2),
@@ -247,7 +255,7 @@ func (r *mcpDiscoveryReporter) start() {
 		r.render(false)
 	} else {
 		for _, id := range r.ids {
-			fmt.Println(r.formatLine(id))
+			_, _ = fmt.Fprintln(r.out, r.formatLine(id))
 		}
 	}
 
@@ -292,7 +300,7 @@ func (r *mcpDiscoveryReporter) run() {
 				continue
 			}
 			if event.Status != warnings.MCPDiscoveryStatusStart {
-				fmt.Println(formatMCPDiscoveryEvent(event))
+				_, _ = fmt.Fprintln(r.out, formatMCPDiscoveryEvent(event))
 			}
 		case <-tickCh:
 			r.advanceSpinner()
@@ -326,7 +334,7 @@ func (r *mcpDiscoveryReporter) drainEvents() {
 		case event := <-r.events:
 			r.applyEvent(event)
 			if !r.useSpinner && event.Status != warnings.MCPDiscoveryStatusStart {
-				fmt.Println(formatMCPDiscoveryEvent(event))
+				_, _ = fmt.Fprintln(r.out, formatMCPDiscoveryEvent(event))
 			}
 		default:
 			return
@@ -361,11 +369,11 @@ func (r *mcpDiscoveryReporter) render(moveCursor bool) {
 		return
 	}
 	if r.rendered && moveCursor {
-		fmt.Printf("\x1b[%dA", len(r.ids))
+		_, _ = fmt.Fprintf(r.out, "\x1b[%dA", len(r.ids))
 	}
 	for _, id := range r.ids {
-		fmt.Print("\r\x1b[2K")
-		fmt.Println(r.formatLineLocked(id))
+		_, _ = fmt.Fprint(r.out, "\r\x1b[2K")
+		_, _ = fmt.Fprintln(r.out, r.formatLineLocked(id))
 	}
 	r.rendered = true
 }

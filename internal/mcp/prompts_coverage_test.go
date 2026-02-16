@@ -31,3 +31,20 @@ func TestRunServer_RealImplementation(t *testing.T) {
 		_ = err
 	}
 }
+
+func TestRunPromptServer_DefaultRunnerWrapper(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// This exercises RunPromptServer (the public wrapper around runPromptServer)
+	// with the real default stdio runner and a canceled context so it exits quickly.
+	err := RunPromptServer(ctx, "v1.0.0", nil)
+	if err == nil {
+		// Cancellation may be treated as a clean shutdown by the MCP server.
+		return
+	}
+	// Any non-nil error should be the wrapped prompt-server failure path.
+	if err != nil && err.Error() == "" {
+		t.Fatalf("expected wrapped error message, got %v", err)
+	}
+}

@@ -1,9 +1,11 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -241,5 +243,103 @@ func TestCheckAgents(t *testing.T) {
 	}
 	if statusMap["Agent disabled: Codex"] != StatusWarn {
 		t.Error("Codex should be disabled (nil)")
+	}
+}
+
+func TestCheckSecretRisk(t *testing.T) {
+	root := t.TempDir()
+	codexDir := filepath.Join(root, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer supersecrettoken\""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckSecretRisk(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusWarn {
+		t.Fatalf("expected warning status, got %s", results[0].Status)
+	}
+	if results[0].CheckName != messages.DoctorCheckNameSecretRisk {
+		t.Fatalf("unexpected check name: %s", results[0].CheckName)
+	}
+}
+
+func TestCheckSecretRisk_PlaceholderNotFlagged(t *testing.T) {
+	root := t.TempDir()
+	codexDir := filepath.Join(root, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer ${AL_TOKEN}\""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckSecretRisk(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusOK {
+		t.Fatalf("expected OK status, got %s", results[0].Status)
+	}
+	if results[0].Message != messages.DoctorSecretRiskNone {
+		t.Fatalf("unexpected message: %s", results[0].Message)
+	}
+}
+
+func TestCheckSecretRisk_ReadErrorWarns(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, ".codex", "config.toml")
+	origReadFile := readFile
+	readFile = func(path string) ([]byte, error) {
+		if path == target {
+			return nil, errors.New("permission denied")
+		}
+		return nil, os.ErrNotExist
+	}
+	t.Cleanup(func() {
+		readFile = origReadFile
+	})
+
+	results := CheckSecretRisk(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusWarn {
+		t.Fatalf("expected warn status, got %s", results[0].Status)
+	}
+	if results[0].CheckName != messages.DoctorCheckNameSecretRisk {
+		t.Fatalf("unexpected check name: %s", results[0].CheckName)
+	}
+	if !strings.Contains(results[0].Message, ".codex") {
+		t.Fatalf("expected relative path in warning, got %q", results[0].Message)
+	}
+	if results[0].Recommendation != messages.DoctorSecretRiskReadRecommend {
+		t.Fatalf("unexpected recommendation: %s", results[0].Recommendation)
+	}
+}
+
+func TestCheckSecretRisk_BearerWithBase64CharsFlagged(t *testing.T) {
+	root := t.TempDir()
+	codexDir := filepath.Join(root, ".codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(codexDir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer AB12+cd/ef=\""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckSecretRisk(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status != StatusWarn {
+		t.Fatalf("expected warning status, got %s", results[0].Status)
 	}
 }

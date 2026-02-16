@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -65,6 +67,22 @@ const maxToolsToDiscover = 1000
 // mcpDiscoveryTimeout is the per-server timeout for doctor MCP discovery checks.
 const mcpDiscoveryTimeout = 30 * time.Second
 
+var mcpAllowedEnvKeys = map[string]struct{}{
+	"HOME":       {},
+	"LANG":       {},
+	"LC_ALL":     {},
+	"LC_CTYPE":   {},
+	"PATH":       {},
+	"SHELL":      {},
+	"SYSTEMROOT": {},
+	"TERM":       {},
+	"TMP":        {},
+	"TMPDIR":     {},
+	"TEMP":       {},
+	"USER":       {},
+	"WINDIR":     {},
+}
+
 // RealConnector implements Connector using the SDK.
 type RealConnector struct{}
 
@@ -87,10 +105,7 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 	switch server.Transport {
 	case config.TransportStdio:
 		cmd := exec.Command(server.Command, server.Args...)
-		cmd.Env = os.Environ() // Start with current env
-		for k, v := range server.Env {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
-		}
+		cmd.Env = buildMCPCommandEnv(os.Environ(), server.Env)
 
 		transport = &mcp.CommandTransport{
 			Command: cmd,
@@ -199,11 +214,57 @@ type headerTransport struct {
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
 	for k, v := range t.headers {
-		req.Header.Set(k, v)
+		cloned.Header.Set(k, v)
 	}
 	if t.base == nil {
-		return http.DefaultTransport.RoundTrip(req)
+		return http.DefaultTransport.RoundTrip(cloned)
 	}
-	return t.base.RoundTrip(req)
+	return t.base.RoundTrip(cloned)
+}
+
+func buildMCPCommandEnv(baseEnv []string, serverEnv map[string]string) []string {
+	values := make(map[string]string)
+	for _, pair := range baseEnv {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok {
+			continue
+		}
+		normalized, allowed := normalizeAllowedMCPEnvKey(key)
+		if !allowed {
+			continue
+		}
+		values[normalized] = value
+	}
+	for key, value := range serverEnv {
+		if normalized, allowed := normalizeAllowedMCPEnvKey(key); allowed {
+			values[normalized] = value
+			continue
+		}
+		values[key] = value
+	}
+
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	env := make([]string, 0, len(keys))
+	for _, key := range keys {
+		env = append(env, fmt.Sprintf("%s=%s", key, values[key]))
+	}
+	return env
+}
+
+func normalizeAllowedMCPEnvKey(key string) (string, bool) {
+	upper := strings.ToUpper(key)
+	if _, ok := mcpAllowedEnvKeys[upper]; ok {
+		return upper, true
+	}
+	if strings.HasPrefix(upper, "AL_") {
+		return upper, true
+	}
+	return "", false
 }

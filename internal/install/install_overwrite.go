@@ -10,11 +10,20 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+type unifiedOverwritePrompter interface {
+	OverwriteAllUnified(managed []DiffPreview, memory []DiffPreview) (bool, bool, error)
+}
+
 // shouldOverwrite decides whether to overwrite the given path.
 // It returns true to overwrite, false to keep existing content, or an error.
 func (inst *installer) shouldOverwrite(path string) (bool, error) {
 	if !inst.overwrite {
 		return false, nil
+	}
+	if inst.hasUnifiedOverwritePrompter() && (!inst.overwriteAllDecided || !inst.overwriteMemoryAllDecided) {
+		if err := inst.resolveUnifiedOverwriteAllDecisions(); err != nil {
+			return false, err
+		}
 	}
 	if inst.isMemoryPath(path) {
 		overwriteAll, err := inst.shouldOverwriteAllMemory()
@@ -49,9 +58,81 @@ func (inst *installer) shouldOverwrite(path string) (bool, error) {
 	return inst.prompter.Overwrite(preview)
 }
 
+func (inst *installer) hasUnifiedOverwritePrompter() bool {
+	if inst.prompter == nil {
+		return false
+	}
+	unified, ok := inst.prompter.(unifiedOverwritePrompter)
+	if !ok || unified == nil {
+		return false
+	}
+	validator, ok := inst.prompter.(promptValidator)
+	if !ok {
+		return false
+	}
+	return validator.hasOverwriteAllUnified()
+}
+
+func (inst *installer) resolveUnifiedOverwriteAllDecisions() error {
+	if inst.overwriteAllDecided && inst.overwriteMemoryAllDecided {
+		return nil
+	}
+	if inst.prompter == nil {
+		return fmt.Errorf(messages.InstallOverwritePromptRequired)
+	}
+	unified, ok := inst.prompter.(unifiedOverwritePrompter)
+	if !ok {
+		return fmt.Errorf(messages.InstallOverwritePromptRequired)
+	}
+
+	managedDiffs, err := inst.listManagedLabeledDiffs()
+	if err != nil {
+		return err
+	}
+	managedPreviews, managedIndex, err := inst.buildManagedDiffPreviews(managedDiffs)
+	if err != nil {
+		return err
+	}
+	inst.managedDiffPreviews = managedIndex
+
+	memoryDiffs, err := inst.listMemoryLabeledDiffs()
+	if err != nil {
+		return err
+	}
+	memoryPreviews, memoryIndex, err := inst.buildMemoryDiffPreviews(memoryDiffs)
+	if err != nil {
+		return err
+	}
+	inst.memoryDiffPreviews = memoryIndex
+
+	if len(managedPreviews) == 0 && len(memoryPreviews) == 0 {
+		inst.overwriteAll = false
+		inst.overwriteMemoryAll = false
+		inst.overwriteAllDecided = true
+		inst.overwriteMemoryAllDecided = true
+		return nil
+	}
+
+	overwriteManaged, overwriteMemory, err := unified.OverwriteAllUnified(managedPreviews, memoryPreviews)
+	if err != nil {
+		return err
+	}
+	inst.overwriteAll = overwriteManaged
+	inst.overwriteMemoryAll = overwriteMemory
+	inst.overwriteAllDecided = true
+	inst.overwriteMemoryAllDecided = true
+	return nil
+}
+
 // shouldOverwriteAllManaged resolves the "overwrite all managed files" decision.
 func (inst *installer) shouldOverwriteAllManaged() (bool, error) {
 	if inst.overwriteAllDecided {
+		return inst.overwriteAll, nil
+	}
+	if inst.hasUnifiedOverwritePrompter() {
+		if err := inst.resolveUnifiedOverwriteAllDecisions(); err != nil {
+			return false, err
+		}
 		return inst.overwriteAll, nil
 	}
 	if inst.prompter == nil {
@@ -78,6 +159,12 @@ func (inst *installer) shouldOverwriteAllManaged() (bool, error) {
 // shouldOverwriteAllMemory resolves the "overwrite all memory files" decision.
 func (inst *installer) shouldOverwriteAllMemory() (bool, error) {
 	if inst.overwriteMemoryAllDecided {
+		return inst.overwriteMemoryAll, nil
+	}
+	if inst.hasUnifiedOverwritePrompter() {
+		if err := inst.resolveUnifiedOverwriteAllDecisions(); err != nil {
+			return false, err
+		}
 		return inst.overwriteMemoryAll, nil
 	}
 	if inst.prompter == nil {

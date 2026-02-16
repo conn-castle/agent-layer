@@ -2,6 +2,7 @@ package projection
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -134,5 +135,23 @@ func TestMCPServerResolveError_Unwrap(t *testing.T) {
 	}
 	if err.Unwrap() != root {
 		t.Fatalf("expected Unwrap() to return root error")
+	}
+}
+
+func TestResolveEnabledMCPServers_UnknownTransportFails(t *testing.T) {
+	enabled := true
+	servers := []config.MCPServer{
+		{
+			ID:        "bad-transport",
+			Enabled:   &enabled,
+			Transport: "ftp",
+		},
+	}
+	_, err := ResolveEnabledMCPServers(servers, map[string]string{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "unsupported transport") {
+		t.Fatalf("expected unsupported transport error, got %v", err)
 	}
 }

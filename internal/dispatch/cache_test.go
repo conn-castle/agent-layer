@@ -24,6 +24,29 @@ func (f failingRoundTripper) RoundTrip(_ *http.Request) (*http.Response, error) 
 	return nil, f.err
 }
 
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type partialTimeoutBody struct {
+	wrote bool
+}
+
+func (b *partialTimeoutBody) Read(p []byte) (int, error) {
+	if b.wrote {
+		return 0, io.EOF
+	}
+	b.wrote = true
+	n := copy(p, []byte("partial"))
+	return n, &net.OpError{Op: "read", Net: "tcp", Err: &timeoutErr{}}
+}
+
+func (b *partialTimeoutBody) Close() error {
+	return nil
+}
+
 func TestEnsureCachedBinary(t *testing.T) {
 	// 1. Setup mock server
 	version := "1.0.0"
@@ -421,6 +444,13 @@ func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
 	}
 }
 
+func TestEnsureCachedBinaryWithSystem_RequiresSystem(t *testing.T) {
+	_, err := ensureCachedBinaryWithSystem(nil, t.TempDir(), "1.0.0", io.Discard)
+	if err == nil {
+		t.Fatal("expected error for nil system")
+	}
+}
+
 func TestDownloadToFile_CopyError(t *testing.T) {
 	// Simulate connection close during body read
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +471,20 @@ func TestDownloadToFile_CopyError(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error on short read")
+	}
+}
+
+func TestDownloadToFileWithSystem_RequiresSystem(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	err = downloadToFileWithSystem(nil, "https://example.invalid/file", f)
+	if err == nil {
+		t.Fatal("expected error for nil system")
 	}
 }
 
@@ -484,6 +528,47 @@ func TestFetchChecksum_StatusError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unexpected status") {
 		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestEnsureCachedBinaryWithSystem_ChecksumUsesProvidedSystemTimeout(t *testing.T) {
+	version := "1.0.0"
+	content := "binary-content"
+	sum := sha256.Sum256([]byte(content))
+	checksum := fmt.Sprintf("%x", sum)
+	osName, arch, _ := platformStrings()
+	asset := assetName(osName, arch)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case fmt.Sprintf("/download/v%s/%s", version, asset):
+			_, _ = w.Write([]byte(content))
+		case fmt.Sprintf("/download/v%s/checksums.txt", version):
+			time.Sleep(20 * time.Millisecond)
+			_, _ = fmt.Fprintf(w, "%s %s\n", checksum, asset)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	t.Setenv("AL_DOWNLOAD_TIMEOUT", "1ns")
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == "AL_DOWNLOAD_TIMEOUT" {
+				return "300ms"
+			}
+			return ""
+		},
+	}
+
+	cacheRoot := t.TempDir()
+	if _, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard); err != nil {
+		t.Fatalf("ensureCachedBinaryWithSystem failed: %v", err)
 	}
 }
 
@@ -983,5 +1068,203 @@ func TestFetchChecksum_Timeout_ActionableMessage(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Remediation") {
 		t.Errorf("expected Remediation guidance in error, got: %s", msg)
+	}
+}
+
+func TestDownloadToFile_TooLarge(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("0123456789")) // 10 bytes
+	}))
+	defer server.Close()
+
+	t.Setenv("AL_MAX_DOWNLOAD_BYTES", "5")
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	err = downloadToFile(server.URL, f)
+	if err == nil {
+		t.Fatal("expected size-limit error")
+	}
+	if !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("expected size-limit message, got %v", err)
+	}
+}
+
+func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
+	origClient := httpClient
+	origSleep := dispatchSleep
+	t.Cleanup(func() {
+		httpClient = origClient
+		dispatchSleep = origSleep
+	})
+	dispatchSleep = func(time.Duration) {}
+
+	attempt := 0
+	httpClient = &http.Client{
+		Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+			attempt++
+			if attempt == 1 {
+				return nil, &net.OpError{Op: "dial", Net: "tcp", Err: &timeoutErr{}}
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(strings.NewReader("ok")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := downloadToFile("https://example.invalid/file", f); err != nil {
+		t.Fatalf("expected retry to succeed, got %v", err)
+	}
+	if attempt != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempt)
+	}
+}
+
+func TestDownloadToFile_RetryOnCopyErrorResetsDestination(t *testing.T) {
+	origClient := httpClient
+	origSleep := dispatchSleep
+	t.Cleanup(func() {
+		httpClient = origClient
+		dispatchSleep = origSleep
+	})
+	dispatchSleep = func(time.Duration) {}
+
+	attempt := 0
+	httpClient = &http.Client{
+		Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+			attempt++
+			if attempt == 1 {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Status:     "200 OK",
+					Body:       &partialTimeoutBody{},
+					Header:     make(http.Header),
+				}, nil
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(strings.NewReader("ok")),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := downloadToFile("https://example.invalid/file", f); err != nil {
+		t.Fatalf("expected retry to succeed, got %v", err)
+	}
+	if attempt != 2 {
+		t.Fatalf("expected 2 attempts, got %d", attempt)
+	}
+	data, err := os.ReadFile(tmp)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(data) != "ok" {
+		t.Fatalf("expected retried content to replace partial bytes, got %q", string(data))
+	}
+}
+
+func TestDownloadToFileWithSystem_TooLargeFromSystemEnv(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("0123456789")) // 10 bytes
+	}))
+	defer server.Close()
+
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == "AL_MAX_DOWNLOAD_BYTES" {
+				return "5"
+			}
+			return ""
+		},
+	}
+
+	tmp := filepath.Join(t.TempDir(), "file")
+	f, err := os.Create(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+
+	err = downloadToFileWithSystem(sys, server.URL, f)
+	if err == nil {
+		t.Fatal("expected size-limit error")
+	}
+	if !strings.Contains(err.Error(), "response too large") {
+		t.Fatalf("expected size-limit message, got %v", err)
+	}
+}
+
+func TestDownloadTimeoutWithSystem(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want time.Duration
+	}{
+		{name: "unset", raw: "", want: defaultDownloadTimeout},
+		{name: "invalid", raw: "not-a-duration", want: defaultDownloadTimeout},
+		{name: "zero", raw: "0s", want: defaultDownloadTimeout},
+		{name: "negative", raw: "-1s", want: defaultDownloadTimeout},
+		{name: "valid", raw: "45s", want: 45 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sys := &testSystem{
+				GetenvFunc: func(key string) string {
+					if key == "AL_DOWNLOAD_TIMEOUT" {
+						return tt.raw
+					}
+					return ""
+				},
+			}
+			if got := downloadTimeoutWithSystem(sys); got != tt.want {
+				t.Fatalf("downloadTimeoutWithSystem() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownloadHTTPClientWithSystem_UsesConfiguredTimeout(t *testing.T) {
+	origClient := httpClient
+	httpClient = &http.Client{Timeout: defaultDownloadTimeout}
+	t.Cleanup(func() { httpClient = origClient })
+
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == "AL_DOWNLOAD_TIMEOUT" {
+				return "90s"
+			}
+			return ""
+		},
+	}
+	client := downloadHTTPClientWithSystem(sys)
+	if client.Timeout != 90*time.Second {
+		t.Fatalf("client timeout = %v, want 90s", client.Timeout)
+	}
+	if client == httpClient {
+		t.Fatal("expected downloadHTTPClientWithSystem to return a client copy when timeout differs")
 	}
 }

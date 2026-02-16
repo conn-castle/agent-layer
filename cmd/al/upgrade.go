@@ -7,9 +7,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
+
+var installRepairGitignoreBlock = install.RepairGitignoreBlock
+var dispatchPrefetchVersion = dispatch.PrefetchVersion
 
 func newUpgradeCmd() *cobra.Command {
 	var yes bool
@@ -48,20 +52,26 @@ func newUpgradeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			reviewState := buildUpgradeReviewState(policy)
 			opts := install.Options{
 				Overwrite:    true,
 				PinVersion:   targetPin,
 				DiffMaxLines: diffLines,
 				System:       install.RealSystem{},
 			}
-			opts.Prompter = buildUpgradePrompter(cmd, policy)
+			opts.Prompter = buildUpgradePrompter(cmd, policy, reviewState)
 			if err := installRun(root, opts); err != nil {
 				return err
 			}
 			return nil
 		},
 	}
-	cmd.AddCommand(newUpgradePlanCmd(&diffLines), newUpgradeRollbackCmd())
+	cmd.AddCommand(
+		newUpgradePlanCmd(&diffLines),
+		newUpgradeRollbackCmd(),
+		newUpgradePrefetchCmd(),
+		newUpgradeRepairGitignoreBlockCmd(),
+	)
 
 	cmd.Flags().BoolVar(&yes, "yes", false, messages.UpgradeFlagYes)
 	cmd.Flags().BoolVar(&applyManagedUpdates, "apply-managed-updates", false, messages.UpgradeFlagApplyManagedUpdates)
@@ -98,6 +108,52 @@ func newUpgradeRollbackCmd() *cobra.Command {
 	}
 }
 
+func newUpgradePrefetchCmd() *cobra.Command {
+	var versionFlag string
+	cmd := &cobra.Command{
+		Use:   messages.UpgradePrefetchUse,
+		Short: messages.UpgradePrefetchShort,
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			targetVersion, err := resolvePinVersionForInit(cmd.Context(), versionFlag, Version)
+			if err != nil {
+				return err
+			}
+			targetVersion = strings.TrimSpace(targetVersion)
+			if targetVersion == "" {
+				return fmt.Errorf(messages.UpgradePrefetchVersionRequired)
+			}
+			if err := dispatchPrefetchVersion(targetVersion, cmd.ErrOrStderr()); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), messages.UpgradePrefetchDoneFmt, targetVersion)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&versionFlag, "version", "", messages.UpgradePrefetchVersionFlag)
+	return cmd
+}
+
+func newUpgradeRepairGitignoreBlockCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   messages.UpgradeRepairGitignoreUse,
+		Short: messages.UpgradeRepairGitignoreShort,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveRepoRoot()
+			if err != nil {
+				return err
+			}
+			if err := installRepairGitignoreBlock(root, install.RepairGitignoreBlockOptions{
+				System: install.RealSystem{},
+			}); err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), messages.UpgradeRepairGitignoreDone)
+			return err
+		},
+	}
+}
+
 type upgradeApplyInputs struct {
 	interactive    bool
 	yes            bool
@@ -117,6 +173,24 @@ type upgradeApplyPolicy struct {
 	applyManaged     bool
 	applyMemory      bool
 	applyDeletions   bool
+}
+
+type upgradeReviewState struct {
+	enabled         bool
+	prompted        bool
+	managedPreviews []install.DiffPreview
+	memoryPreviews  []install.DiffPreview
+	applyManaged    bool
+	applyMemory     bool
+}
+
+func buildUpgradeReviewState(policy upgradeApplyPolicy) *upgradeReviewState {
+	state := &upgradeReviewState{enabled: false}
+	if !policy.interactive || policy.explicitCategory {
+		return state
+	}
+	state.enabled = true
+	return state
 }
 
 func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error) {
@@ -139,11 +213,17 @@ func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error
 	}, nil
 }
 
-func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) install.PromptFuncs {
+func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewState *upgradeReviewState) install.PromptFuncs {
 	return install.PromptFuncs{
 		OverwriteAllPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
 			if policy.explicitCategory {
 				return policy.applyManaged, nil
+			}
+			if reviewState != nil && reviewState.enabled {
+				if err := promptUnifiedUpgradeReview(cmd, reviewState); err != nil {
+					return false, err
+				}
+				return reviewState.applyManaged, nil
 			}
 			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews); err != nil {
 				return false, err
@@ -154,10 +234,52 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) install
 			if policy.explicitCategory {
 				return policy.applyMemory, nil
 			}
+			if reviewState != nil && reviewState.enabled {
+				if err := promptUnifiedUpgradeReview(cmd, reviewState); err != nil {
+					return false, err
+				}
+				return reviewState.applyMemory, nil
+			}
 			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews); err != nil {
 				return false, err
 			}
 			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+		},
+		OverwriteAllUnifiedPreviewFunc: func(managedPreviews []install.DiffPreview, memoryPreviews []install.DiffPreview) (bool, bool, error) {
+			if policy.explicitCategory {
+				return policy.applyManaged, policy.applyMemory, nil
+			}
+			if reviewState != nil && reviewState.enabled {
+				reviewState.managedPreviews = managedPreviews
+				reviewState.memoryPreviews = memoryPreviews
+				if err := promptUnifiedUpgradeReview(cmd, reviewState); err != nil {
+					return false, false, err
+				}
+				return reviewState.applyManaged, reviewState.applyMemory, nil
+			}
+
+			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, managedPreviews); err != nil {
+				return false, false, err
+			}
+			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, memoryPreviews); err != nil {
+				return false, false, err
+			}
+			applyManaged := false
+			applyMemory := false
+			var err error
+			if len(managedPreviews) > 0 {
+				applyManaged, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+				if err != nil {
+					return false, false, err
+				}
+			}
+			if len(memoryPreviews) > 0 {
+				applyMemory, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+				if err != nil {
+					return false, false, err
+				}
+			}
+			return applyManaged, applyMemory, nil
 		},
 		OverwritePreviewFunc: func(preview install.DiffPreview) (bool, error) {
 			if policy.explicitCategory {
@@ -205,6 +327,37 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy) install
 			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
 		},
 	}
+}
+
+func promptUnifiedUpgradeReview(cmd *cobra.Command, state *upgradeReviewState) error {
+	if state.prompted {
+		return nil
+	}
+	if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, state.managedPreviews); err != nil {
+		return err
+	}
+	if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, state.memoryPreviews); err != nil {
+		return err
+	}
+	applyManaged := false
+	applyMemory := false
+	var err error
+	if len(state.managedPreviews) > 0 {
+		applyManaged, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+		if err != nil {
+			return err
+		}
+	}
+	if len(state.memoryPreviews) > 0 {
+		applyMemory, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+		if err != nil {
+			return err
+		}
+	}
+	state.applyManaged = applyManaged
+	state.applyMemory = applyMemory
+	state.prompted = true
+	return nil
 }
 
 func isMemoryPreviewPath(path string) bool {
@@ -560,12 +713,22 @@ func readinessSummary(check install.UpgradeReadinessCheck) string {
 	switch check.ID {
 	case "unrecognized_config_keys":
 		return "Config needs review before upgrade."
+	case "unresolved_config_placeholders":
+		return "Config has placeholders that do not resolve from env."
+	case "process_env_overrides_dotenv":
+		return "Process environment overrides `.agent-layer/.env` values."
+	case "ignored_empty_dotenv_assignments":
+		return "Empty `.env` assignments are masking process environment values."
+	case "path_expansion_anomalies":
+		return "Some path-like MCP values do not expand cleanly."
 	case "vscode_no_sync_outputs_stale":
 		return "VS Code generated files may be stale."
 	case "floating_external_dependency_specs":
 		return "Some enabled MCP dependencies use floating versions."
 	case "stale_disabled_agent_artifacts":
 		return "Disabled-agent generated files are still present."
+	case "generated_secret_risk":
+		return "Generated files appear to contain secret-like literals."
 	default:
 		return check.Summary
 	}
@@ -575,12 +738,22 @@ func readinessAction(id string) string {
 	switch id {
 	case "unrecognized_config_keys":
 		return "Fix unknown or invalid keys in `.agent-layer/config.toml` (or run `al wizard`) before applying."
+	case "unresolved_config_placeholders":
+		return "Set required env values in `.agent-layer/.env` (AL_* keys) or process env, then rerun `al upgrade plan`."
+	case "process_env_overrides_dotenv":
+		return "Align conflicting env values so CI/local runs use the same secrets and URLs."
+	case "ignored_empty_dotenv_assignments":
+		return "Remove empty assignments or set explicit values in `.agent-layer/.env` to avoid hidden process-env fallback."
+	case "path_expansion_anomalies":
+		return "Fix MCP command/arg paths that rely on `~` or `${AL_REPO_ROOT}` and currently resolve to invalid paths."
 	case "vscode_no_sync_outputs_stale":
 		return "Run `al sync` before `al upgrade` so generated VS Code files match current config."
 	case "floating_external_dependency_specs":
 		return "Pin floating dependency specs in `.agent-layer/config.toml` for stable upgrades."
 	case "stale_disabled_agent_artifacts":
 		return "Remove stale generated files for disabled agents, or re-enable those agents."
+	case "generated_secret_risk":
+		return "Move secret literals to `.agent-layer/.env` (AL_* keys) or process env before continuing."
 	default:
 		return ""
 	}

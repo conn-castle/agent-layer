@@ -3,6 +3,8 @@ package root
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"syscall"
 	"testing"
 )
 
@@ -99,5 +101,46 @@ func TestFindRepoRootFallsBackToStart(t *testing.T) {
 	}
 	if got != root {
 		t.Fatalf("expected root %s, got %s", root, got)
+	}
+}
+
+func TestFindRootsRequireStartPath(t *testing.T) {
+	if _, _, err := FindAgentLayerRoot(""); err == nil {
+		t.Fatal("expected FindAgentLayerRoot to reject empty start")
+	}
+	if _, err := FindRepoRoot(""); err == nil {
+		t.Fatal("expected FindRepoRoot to reject empty start")
+	}
+}
+
+func TestFindRepoRootUsesGitFile(t *testing.T) {
+	root := t.TempDir()
+	gitPath := filepath.Join(root, ".git")
+	if err := os.WriteFile(gitPath, []byte("gitdir: .git/worktrees/x\n"), 0o644); err != nil {
+		t.Fatalf("write .git file: %v", err)
+	}
+
+	got, err := FindRepoRoot(root)
+	if err != nil {
+		t.Fatalf("FindRepoRoot error: %v", err)
+	}
+	if got != root {
+		t.Fatalf("expected root %s, got %s", root, got)
+	}
+}
+
+func TestFindRepoRootGitSpecialFileErrors(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("mkfifo is not supported on windows")
+	}
+
+	root := t.TempDir()
+	gitPath := filepath.Join(root, ".git")
+	if err := syscall.Mkfifo(gitPath, 0o644); err != nil {
+		t.Fatalf("mkfifo .git: %v", err)
+	}
+
+	if _, err := FindRepoRoot(root); err == nil {
+		t.Fatal("expected error when .git is neither directory nor regular file")
 	}
 }

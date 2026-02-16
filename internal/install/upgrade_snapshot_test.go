@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -477,6 +478,101 @@ func TestRollbackUpgradeSnapshotState_NoTargets(t *testing.T) {
 	if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, nil); err != nil {
 		t.Fatalf("rollbackUpgradeSnapshotState: %v", err)
 	}
+}
+
+func TestRollbackUpgradeSnapshotState_RemoveErrorFallbackRelativePath(t *testing.T) {
+	root := string([]byte{0})
+	target := filepath.Join(t.TempDir(), "target.txt")
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "remove-error-fallback",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+	}
+
+	faults := newFaultSystem(RealSystem{})
+	faults.removeErrs[normalizePath(target)] = errors.New("remove boom")
+
+	err := rollbackUpgradeSnapshotState(root, faults, snapshot, []string{target})
+	if err == nil {
+		t.Fatal("expected remove error")
+	}
+	if !strings.Contains(err.Error(), "reset path") || !strings.Contains(err.Error(), target) {
+		t.Fatalf("expected fallback target path in error, got %v", err)
+	}
+}
+
+func TestRestoreUpgradeSnapshotEntriesAtRoot_ErrorBranches(t *testing.T) {
+	t.Run("snapshotEntryAbsPath error", func(t *testing.T) {
+		root := t.TempDir()
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, []upgradeSnapshotEntry{
+			{Path: "../../outside", Kind: upgradeSnapshotEntryKindDir},
+		})
+		if err == nil || !strings.Contains(err.Error(), "outside repo root") {
+			t.Fatalf("expected snapshotEntryAbsPath error, got %v", err)
+		}
+	})
+
+	t.Run("restore directory mkdir error", func(t *testing.T) {
+		root := t.TempDir()
+		dirPath := filepath.Join(root, "docs", "agent-layer")
+		faults := newFaultSystem(RealSystem{})
+		faults.mkdirErrs[normalizePath(dirPath)] = errors.New("mkdir boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{Path: "docs/agent-layer", Kind: upgradeSnapshotEntryKindDir},
+		})
+		if err == nil || !strings.Contains(err.Error(), "mkdir boom") {
+			t.Fatalf("expected mkdir error, got %v", err)
+		}
+	})
+
+	t.Run("file decode error", func(t *testing.T) {
+		root := t.TempDir()
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: "!!!",
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "decode content") {
+			t.Fatalf("expected decode error, got %v", err)
+		}
+	})
+
+	t.Run("file parent mkdir error", func(t *testing.T) {
+		root := t.TempDir()
+		filePath := filepath.Join(root, ".agent-layer", "al.version")
+		faults := newFaultSystem(RealSystem{})
+		faults.mkdirErrs[normalizePath(filepath.Dir(filePath))] = errors.New("mkdir boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.1.0\n")),
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "mkdir boom") {
+			t.Fatalf("expected parent mkdir error, got %v", err)
+		}
+	})
+
+	t.Run("file write error", func(t *testing.T) {
+		root := t.TempDir()
+		filePath := filepath.Join(root, ".agent-layer", "al.version")
+		faults := newFaultSystem(RealSystem{})
+		faults.writeErrs[normalizePath(filePath)] = errors.New("write boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.1.0\n")),
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "write boom") {
+			t.Fatalf("expected write error, got %v", err)
+		}
+	})
 }
 
 func TestRollbackUpgradeSnapshot_MalformedSnapshotFailsLoudly(t *testing.T) {
@@ -1100,6 +1196,13 @@ func TestValidateUpgradeSnapshot_RejectsInvalidSnapshot(t *testing.T) {
 			want: "invalid created_at_utc",
 		},
 		{
+			name: "missing created_at_utc",
+			mutate: func(snapshot *upgradeSnapshot) {
+				snapshot.CreatedAtUTC = " "
+			},
+			want: "created_at_utc is required",
+		},
+		{
 			name: "invalid status",
 			mutate: func(snapshot *upgradeSnapshot) {
 				snapshot.Status = "bogus"
@@ -1183,6 +1286,15 @@ func TestValidateUpgradeSnapshotEntry_RejectsInvalidEntry(t *testing.T) {
 			want: "must not set perm",
 		},
 		{
+			name: "absent has content",
+			entry: upgradeSnapshotEntry{
+				Path:          "docs/agent-layer/extra.md",
+				Kind:          upgradeSnapshotEntryKindAbsent,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("x")),
+			},
+			want: "must not set content_base64",
+		},
+		{
 			name: "invalid kind",
 			entry: upgradeSnapshotEntry{
 				Path: ".agent-layer/al.version",
@@ -1202,6 +1314,147 @@ func TestValidateUpgradeSnapshotEntry_RejectsInvalidEntry(t *testing.T) {
 				t.Fatalf("validation error = %q, want substring %q", err.Error(), tc.want)
 			}
 		})
+	}
+}
+
+func TestCreateUpgradeSnapshot_WriteFailurePropagates(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+	faults := newFaultSystem(RealSystem{})
+	faults.mkdirErrs[normalizePath(snapshotDir)] = errors.New("mkdir failed")
+
+	inst := &installer{root: root, sys: faults}
+	if _, err := inst.createUpgradeSnapshot(); err == nil || !strings.Contains(err.Error(), "failed to create directory for") {
+		t.Fatalf("expected snapshot write failure, got %v", err)
+	}
+}
+
+func TestWriteUpgradeSnapshot_ValidationError(t *testing.T) {
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+	invalid := upgradeSnapshot{
+		SchemaVersion: 0,
+		SnapshotID:    "invalid",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusCreated,
+	}
+	if err := inst.writeUpgradeSnapshot(invalid, false); err == nil || !strings.Contains(err.Error(), "validate upgrade snapshot") {
+		t.Fatalf("expected validate error, got %v", err)
+	}
+}
+
+func TestPruneUpgradeSnapshots_RemoveError(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	for idx := 0; idx < 2; idx++ {
+		snapshot := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    fmt.Sprintf("remove-fail-%d", idx),
+			CreatedAtUTC:  time.Date(2026, time.January, 1, 0, idx, 0, 0, time.UTC).Format(time.RFC3339),
+			Status:        upgradeSnapshotStatusApplied,
+		}
+		if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+			t.Fatalf("write snapshot %d: %v", idx, err)
+		}
+	}
+
+	removePath := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath), "remove-fail-0.json")
+	faults := newFaultSystem(RealSystem{})
+	faults.removeErrs[normalizePath(removePath)] = errors.New("remove failed")
+	inst = &installer{root: root, sys: faults}
+	if err := inst.pruneUpgradeSnapshots(1); err == nil || !strings.Contains(err.Error(), "delete old upgrade snapshot") {
+		t.Fatalf("expected remove error, got %v", err)
+	}
+}
+
+func TestCaptureUpgradeSnapshotTarget_AbsentRepoRelativeError(t *testing.T) {
+	inst := &installer{root: "relative/root", sys: RealSystem{}}
+	target := filepath.Join(t.TempDir(), "does-not-exist")
+	err := inst.captureUpgradeSnapshotTarget(target, map[string]upgradeSnapshotEntry{})
+	if err == nil {
+		t.Fatal("expected repo-relative error for absolute target with relative root")
+	}
+}
+
+func TestCaptureUpgradeSnapshotTarget_SpecialFileRepoRelativeError(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("mkfifo unsupported on windows")
+	}
+	dir := t.TempDir()
+	fifoPath := filepath.Join(dir, "test.fifo")
+	if err := syscall.Mkfifo(fifoPath, 0o644); err != nil {
+		t.Fatalf("mkfifo: %v", err)
+	}
+	inst := &installer{root: "relative/root", sys: RealSystem{}}
+	err := inst.captureUpgradeSnapshotTarget(fifoPath, map[string]upgradeSnapshotEntry{})
+	if err == nil {
+		t.Fatal("expected repo-relative error for special file")
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_CallbackErrAndRepoRelativeErrors(t *testing.T) {
+	t.Run("callback err", func(t *testing.T) {
+		inst := &installer{root: t.TempDir(), sys: walkCallbackErrSystem{base: RealSystem{}}}
+		err := inst.captureUpgradeSnapshotDirectory(inst.root, map[string]upgradeSnapshotEntry{})
+		if err == nil || !strings.Contains(err.Error(), "walk callback boom") {
+			t.Fatalf("expected callback error, got %v", err)
+		}
+	})
+
+	t.Run("dir repo-relative error", func(t *testing.T) {
+		rootPath := t.TempDir()
+		inst := &installer{root: "relative/root", sys: RealSystem{}}
+		err := inst.captureUpgradeSnapshotDirectory(rootPath, map[string]upgradeSnapshotEntry{})
+		if err == nil {
+			t.Fatal("expected repo-relative error for directory entry")
+		}
+	})
+
+	t.Run("non-regular repo-relative error", func(t *testing.T) {
+		if os.PathSeparator == '\\' {
+			t.Skip("mkfifo unsupported on windows")
+		}
+		rootPath := t.TempDir()
+		fifoPath := filepath.Join(rootPath, "item.fifo")
+		if err := syscall.Mkfifo(fifoPath, 0o644); err != nil {
+			t.Fatalf("mkfifo: %v", err)
+		}
+		inst := &installer{root: "relative/root", sys: RealSystem{}}
+		err := inst.captureUpgradeSnapshotDirectory(rootPath, map[string]upgradeSnapshotEntry{})
+		if err == nil {
+			t.Fatal("expected repo-relative error for non-regular entry")
+		}
+	})
+}
+
+func TestCaptureUpgradeSnapshotFile_RepoRelativeError(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	inst := &installer{root: "relative/root", sys: RealSystem{}}
+	if err := inst.captureUpgradeSnapshotFile(path, 0o644, map[string]upgradeSnapshotEntry{}); err == nil {
+		t.Fatal("expected repo-relative error")
+	}
+}
+
+func TestUniqueNormalizedPaths_SkipsDotAndEmpty(t *testing.T) {
+	got := uniqueNormalizedPaths([]string{"", ".", "a", "a/.", "b", "./b"})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 unique paths, got %d (%v)", len(got), got)
+	}
+	if got[0] != "a" || got[1] != "b" {
+		t.Fatalf("unexpected normalized paths: %v", got)
+	}
+}
+
+func TestRepoRelativePath_RelError(t *testing.T) {
+	inst := &installer{root: string([]byte{0}), sys: RealSystem{}}
+	if _, err := inst.repoRelativePath("/tmp/file"); err == nil {
+		t.Fatal("expected filepath.Rel error")
 	}
 }
 
@@ -1249,6 +1502,10 @@ func (s *writeFailOnceSystem) ReadFile(name string) ([]byte, error) {
 	return s.base.ReadFile(name)
 }
 
+func (s *writeFailOnceSystem) LookupEnv(key string) (string, bool) {
+	return s.base.LookupEnv(key)
+}
+
 func (s *writeFailOnceSystem) MkdirAll(path string, perm os.FileMode) error {
 	return s.base.MkdirAll(path, perm)
 }
@@ -1270,5 +1527,41 @@ func (s *writeFailOnceSystem) WriteFileAtomic(filename string, data []byte, perm
 		s.fired = true
 		return s.err
 	}
+	return s.base.WriteFileAtomic(filename, data, perm)
+}
+
+type walkCallbackErrSystem struct {
+	base System
+}
+
+func (s walkCallbackErrSystem) Stat(name string) (os.FileInfo, error) {
+	return s.base.Stat(name)
+}
+
+func (s walkCallbackErrSystem) ReadFile(name string) ([]byte, error) {
+	return s.base.ReadFile(name)
+}
+
+func (s walkCallbackErrSystem) LookupEnv(key string) (string, bool) {
+	return s.base.LookupEnv(key)
+}
+
+func (s walkCallbackErrSystem) MkdirAll(path string, perm os.FileMode) error {
+	return s.base.MkdirAll(path, perm)
+}
+
+func (s walkCallbackErrSystem) RemoveAll(path string) error {
+	return s.base.RemoveAll(path)
+}
+
+func (s walkCallbackErrSystem) Rename(oldpath string, newpath string) error {
+	return s.base.Rename(oldpath, newpath)
+}
+
+func (s walkCallbackErrSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
+	return fn(root, nil, errors.New("walk callback boom"))
+}
+
+func (s walkCallbackErrSystem) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
 	return s.base.WriteFileAtomic(filename, data, perm)
 }

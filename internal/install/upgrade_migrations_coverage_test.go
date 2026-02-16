@@ -2183,6 +2183,221 @@ func TestDeleteNestedConfigValue_ParentMissing(t *testing.T) {
 	}
 }
 
+func TestExecuteDeleteMigration_InvalidPath(t *testing.T) {
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+	if _, err := inst.executeDeleteMigration(""); err == nil {
+		t.Fatal("expected invalid path error")
+	}
+}
+
+func TestExecuteConfigSetDefaultMigration_ReadError(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(cfgPath, []byte("[clients]\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	faults := newFaultSystem(RealSystem{})
+	faults.readErrs[normalizePath(cfgPath)] = errors.New("read boom")
+	inst := &installer{root: root, sys: faults}
+	if _, err := inst.executeConfigSetDefaultMigration("clients.model", json.RawMessage(`"x"`)); err == nil || !strings.Contains(err.Error(), "read boom") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestWriteMigrationConfigMap_EmptyMapAddsTrailingNewline(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeMigrationConfigMap(cfgPath, map[string]any{}); err != nil {
+		t.Fatalf("writeMigrationConfigMap: %v", err)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config file: %v", err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("expected trailing newline for empty config, got %q", string(data))
+	}
+}
+
+func TestMatchesTemplateDocsManifest_NoDocsEntries(t *testing.T) {
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+	match, err := inst.matchesTemplateDocsManifest(templateManifest{
+		Files: []manifestFileEntry{{Path: ".agent-layer/config.toml"}},
+	})
+	if err != nil {
+		t.Fatalf("matchesTemplateDocsManifest: %v", err)
+	}
+	if match {
+		t.Fatal("expected no match when manifest has no docs entries")
+	}
+}
+
+func TestDedupSortedStrings_Branches(t *testing.T) {
+	if out := dedupSortedStrings(nil); out != nil {
+		t.Fatalf("expected nil for empty input, got %#v", out)
+	}
+	out := dedupSortedStrings([]string{" beta ", "", "alpha", "alpha", " "})
+	if len(out) != 2 || out[0] != "alpha" || out[1] != "beta" {
+		t.Fatalf("unexpected dedup output: %#v", out)
+	}
+}
+
+func TestRunMigrations_ReportWriteFailurePropagates(t *testing.T) {
+	inst := &installer{
+		root:               t.TempDir(),
+		sys:                RealSystem{},
+		warnWriter:         errorWriter{},
+		migrationsPrepared: true,
+		migrationReport: UpgradeMigrationReport{
+			TargetVersion:       "0.7.0",
+			SourceVersion:       "0.6.0",
+			SourceVersionOrigin: UpgradeMigrationSourcePin,
+			Entries: []UpgradeMigrationEntry{{
+				ID:        "noop-delete",
+				Kind:      string(upgradeMigrationKindDeleteFile),
+				Rationale: "delete missing file",
+				Status:    UpgradeMigrationStatusPlanned,
+			}},
+		},
+		pendingMigrationOps: []upgradeMigrationOperation{{
+			ID:   "noop-delete",
+			Kind: upgradeMigrationKindDeleteFile,
+			Path: ".agent-layer/missing.md",
+		}},
+	}
+
+	if err := inst.runMigrations(); err == nil || !strings.Contains(err.Error(), "write boom") {
+		t.Fatalf("expected migration report write error, got %v", err)
+	}
+}
+
+func TestInferSourceVersionFromLatestSnapshot_ListErrorAndReadSkip(t *testing.T) {
+	t.Run("list snapshot files error propagates", func(t *testing.T) {
+		root := t.TempDir()
+		snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+			t.Fatalf("mkdir snapshot dir: %v", err)
+		}
+
+		faults := newFaultSystem(RealSystem{})
+		faults.walkErrs[normalizePath(snapshotDir)] = errors.New("walk boom")
+		inst := &installer{root: root, sys: faults}
+		if _, err := inst.inferSourceVersionFromLatestSnapshot(); err == nil || !strings.Contains(err.Error(), "walk boom") {
+			t.Fatalf("expected list/walk error, got %v", err)
+		}
+	})
+
+	t.Run("unreadable newest snapshot is skipped", func(t *testing.T) {
+		root := t.TempDir()
+		inst := &installer{root: root, sys: RealSystem{}}
+		snapshotDir := inst.upgradeSnapshotDirPath()
+		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+			t.Fatalf("mkdir snapshot dir: %v", err)
+		}
+
+		now := time.Now().UTC()
+		olderPath := filepath.Join(snapshotDir, "older.json")
+		newerPath := filepath.Join(snapshotDir, "newer.json")
+		older := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    "older",
+			CreatedAtUTC:  now.Format(time.RFC3339),
+			Status:        upgradeSnapshotStatusApplied,
+			Entries: []upgradeSnapshotEntry{{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			}},
+		}
+		newer := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    "newer",
+			CreatedAtUTC:  now.Add(time.Second).Format(time.RFC3339),
+			Status:        upgradeSnapshotStatusApplied,
+			Entries: []upgradeSnapshotEntry{{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.6.0\n")),
+			}},
+		}
+		if err := writeUpgradeSnapshotFile(olderPath, older, RealSystem{}); err != nil {
+			t.Fatalf("write older snapshot: %v", err)
+		}
+		if err := writeUpgradeSnapshotFile(newerPath, newer, RealSystem{}); err != nil {
+			t.Fatalf("write newer snapshot: %v", err)
+		}
+
+		sys := &readFailOnNthSystem{
+			base:   RealSystem{},
+			target: newerPath,
+			failOn: 2, // First read for listUpgradeSnapshotFiles succeeds, second read in infer loop fails.
+			err:    errors.New("read boom"),
+		}
+		inst = &installer{root: root, sys: sys}
+		versionValue, err := inst.inferSourceVersionFromLatestSnapshot()
+		if err != nil {
+			t.Fatalf("inferSourceVersionFromLatestSnapshot: %v", err)
+		}
+		if versionValue != "0.5.0" {
+			t.Fatalf("expected fallback to older snapshot version, got %q", versionValue)
+		}
+	})
+}
+
+type readFailOnNthSystem struct {
+	base   System
+	target string
+	failOn int
+	err    error
+	calls  int
+}
+
+func (s *readFailOnNthSystem) Stat(name string) (os.FileInfo, error) {
+	return s.base.Stat(name)
+}
+
+func (s *readFailOnNthSystem) ReadFile(name string) ([]byte, error) {
+	if normalizePath(name) == normalizePath(s.target) {
+		s.calls++
+		if s.calls == s.failOn {
+			return nil, s.err
+		}
+	}
+	return s.base.ReadFile(name)
+}
+
+func (s *readFailOnNthSystem) LookupEnv(key string) (string, bool) {
+	return s.base.LookupEnv(key)
+}
+
+func (s *readFailOnNthSystem) MkdirAll(path string, perm os.FileMode) error {
+	return s.base.MkdirAll(path, perm)
+}
+
+func (s *readFailOnNthSystem) RemoveAll(path string) error {
+	return s.base.RemoveAll(path)
+}
+
+func (s *readFailOnNthSystem) Rename(oldpath string, newpath string) error {
+	return s.base.Rename(oldpath, newpath)
+}
+
+func (s *readFailOnNthSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
+	return s.base.WalkDir(root, fn)
+}
+
+func (s *readFailOnNthSystem) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
+	return s.base.WriteFileAtomic(filename, data, perm)
+}
+
 func writeTestConfigFile(t *testing.T, root string, content string) string {
 	t.Helper()
 	path := filepath.Join(root, ".agent-layer", "config.toml")

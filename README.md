@@ -120,6 +120,27 @@ If a server fails to start with “No such file or directory,” verify the `com
 
 If MCP servers that use `npx` are failing in VS Code, your GUI environment may not see a user-directory Node install. Install Node via Homebrew (`brew install node`) so VS Code can find `node` and `npx`, and avoid per-user installs that only exist in shell profiles.
 
+### Why did some VS Code settings disappear after `al sync`?
+
+Some VS Code extensions (for example Peacock) write settings through the VS Code configuration API in a way that can land inside the Agent Layer-managed block in `.vscode/settings.json`.
+
+If that happens, Agent Layer will replace that managed block on the next `al sync`, and those extension-written settings will be removed.
+
+Fix:
+1. Manually edit `.vscode/settings.json` and move extension-owned settings outside the managed marker block (`// >>> agent-layer` to `// <<< agent-layer`).
+2. If the managed block is currently the last block in the file, add a user-owned tail anchor key after it:
+
+```jsonc
+{
+  // >>> agent-layer
+  // ... Agent Layer managed settings ...
+  // <<< agent-layer
+  "__settingsTailAnchor": 0
+}
+```
+
+This keeps a stable non-managed tail position for extension writes.
+
 ---
 
 ## Version pinning (per repo, required)
@@ -139,6 +160,11 @@ Agent Layer treats `.agent-layer/al.version` as required for supported usage. Do
 Pin format:
 - `0.6.0` or `v0.6.0` (both are accepted)
 
+Pin parser behavior:
+- blank lines and `#` comments are ignored
+- exactly one non-comment version line is expected
+- empty/invalid/multi-version pin files produce a warning and dispatch falls back to the current CLI version until repaired
+
 Cache location (per user):
 - default: user cache dir (for example `~/.cache/agent-layer/versions/<version>/<os>-<arch>/al-<os>-<arch>` on Linux)
 - override: `AL_CACHE_DIR=/path/to/cache`
@@ -156,9 +182,12 @@ Update the global CLI:
 - Script (macOS/Linux): re-run the install script from Install (downloads and replaces `al`)
 
 Run `al upgrade plan` and then `al upgrade` inside the repo to apply template-managed updates. This updates `.agent-layer/al.version` to match the currently installed `al` binary and refreshes template-managed files.
+For a concise runbook (interactive + CI), use the one-page [upgrade checklist](https://conn-castle.github.io/agent-layer-web/docs/upgrade-checklist).
 
 Each `al upgrade` run writes an automatic snapshot of managed upgrade targets and auto-rolls back if an upgrade step fails. Snapshots are retained under `.agent-layer/state/upgrade-snapshots/` for rollback history.
 To manually restore an applied snapshot, run `al upgrade rollback <snapshot-id>` (use the JSON filename stem from `.agent-layer/state/upgrade-snapshots/` as `<snapshot-id>`).
+
+To pre-warm a release binary in cache (for offline/air-gapped runs), use `al upgrade prefetch --version X.Y.Z`.
 
 `al upgrade` also executes embedded per-release migration manifests before template writes (for example file renames/deletes and config key transitions). If the prior source version cannot be resolved, source-agnostic migrations still run and source-gated migrations are skipped with explicit report output.
 
@@ -184,6 +213,19 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 
+Non-interactive profile mode is also available:
+
+```bash
+# Preview-only diff against current .agent-layer/config.toml
+al wizard --profile /path/to/profile.toml
+
+# Apply profile + run sync
+al wizard --profile /path/to/profile.toml --yes
+
+# Remove wizard backups when no longer needed
+al wizard --cleanup-backups
+```
+
 **Controls:**
 - **Arrow keys**: Navigate
 - **Space**: Toggle selection (multi-select)
@@ -191,6 +233,7 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **Esc/Ctrl+C**: Cancel
 
 The wizard rewrites `config.toml` in the template-defined order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
+When prompted for required MCP secrets, type `skip` to disable that server for this run or `cancel` to exit without applying changes.
 
 ---
 
@@ -294,6 +337,8 @@ env = { MY_TOKEN = "${AL_MY_TOKEN}" }
 # Optional thresholds for warning checks. Omit or comment out to disable.
 # Warn when a newer Agent Layer version is available during sync runs.
 version_update_on_sync = true
+# Warning output noise control: "default" keeps all warnings, "reduce" hides suppressible non-critical warnings.
+noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
 mcp_tools_total_threshold = 60
@@ -341,6 +386,7 @@ Omit `http_transport` to default to `sse`.
 Warning thresholds are optional. When a threshold is omitted, its warning is disabled. Values must be positive integers (zero/negative are rejected by config validation). `al sync` uses `instruction_token_threshold` and, when `version_update_on_sync = true`, warns if a newer Agent Layer release is available. `al doctor` evaluates all configured MCP warning thresholds.
 
 Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
+Set `noise_mode = "default"` to keep all warnings (recommended) or `noise_mode = "reduce"` to hide only suppressible non-critical warnings.
 
 #### Approvals modes (`approvals.mode`)
 
@@ -411,12 +457,14 @@ Launchers:
 - Linux: `open-vscode.desktop` or `open-vscode.sh` (uses `code` CLI; shows a dialog if missing)
 
 These launchers invoke `al vscode`, so the `al` CLI must be available on your PATH.
+`al vscode` also runs launch preflight checks and fails fast with guidance when `code` is missing on `PATH` or `.vscode/settings.json` has a managed-block marker conflict.
 
 If you use the CLI-based launchers, install the `code` command from inside VS Code:
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
 **Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected behavior and keeps credentials isolated per repo. It also enables you to use different Codex accounts across repositories, such as one for personal projects and one for work, without credential overlap.
+For contributor-level implementation details, see `docs/architecture/vscode-launch.md`.
 
 ---
 
@@ -465,10 +513,12 @@ Other commands:
 - `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
 - `al upgrade` — apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
+- `al upgrade prefetch` — download and cache a release binary (use `--version X.Y.Z` on dev builds; useful for offline/CI cache warm-up)
 - `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`)
+- `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates
-- `al wizard` — interactive setup wizard (configure agents, models, MCP secrets)
+- `al wizard` — interactive setup wizard plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`)
 - `al completion` — generate shell completion scripts (bash/zsh/fish, macOS/Linux only)
 
 ---

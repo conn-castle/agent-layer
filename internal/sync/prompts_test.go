@@ -9,6 +9,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
+const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/test.md\n  Regenerate: al sync\n-->\n"
+
 func TestBuildVSCodePrompt(t *testing.T) {
 	cmd := config.SlashCommand{Name: "alpha", Body: "Body"}
 	content := buildVSCodePrompt(cmd)
@@ -69,10 +71,10 @@ func TestRemoveStalePromptFiles(t *testing.T) {
 	manual := filepath.Join(dir, "manual.prompt.md")
 	other := filepath.Join(dir, "notes.txt")
 	subdir := filepath.Join(dir, "nested")
-	if err := os.WriteFile(keep, []byte("GENERATED FILE"), 0o644); err != nil {
+	if err := os.WriteFile(keep, []byte(generatedMarkerFixture), 0o644); err != nil {
 		t.Fatalf("write keep: %v", err)
 	}
-	if err := os.WriteFile(stale, []byte("GENERATED FILE"), 0o644); err != nil {
+	if err := os.WriteFile(stale, []byte(generatedMarkerFixture), 0o644); err != nil {
 		t.Fatalf("write stale: %v", err)
 	}
 	if err := os.WriteFile(manual, []byte("manual"), 0o644); err != nil {
@@ -260,10 +262,10 @@ func TestRemoveStaleSkillDirs(t *testing.T) {
 	if err := os.WriteFile(ignoreFile, []byte("ignore"), 0o644); err != nil {
 		t.Fatalf("write ignore: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(keepDir, "SKILL.md"), []byte("GENERATED FILE"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(keepDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
 		t.Fatalf("write keep: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(staleDir, "SKILL.md"), []byte("GENERATED FILE"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(staleDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
 		t.Fatalf("write stale: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("manual"), 0o644); err != nil {
@@ -293,7 +295,7 @@ func TestHasGeneratedMarker(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "file.md")
-	if err := os.WriteFile(path, []byte("GENERATED FILE"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(generatedMarkerFixture), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	ok, err := hasGeneratedMarker(RealSystem{}, path)

@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestWithFileLock(t *testing.T) {
@@ -107,5 +111,37 @@ func TestFileLock_Release_UnlockError(t *testing.T) {
 	lock := &fileLock{file: file}
 	if err := lock.release(); !errors.Is(err, expectedErr) {
 		t.Fatalf("expected error %v, got %v", expectedErr, err)
+	}
+}
+
+func TestLockFile_Timeout(t *testing.T) {
+	origFlock := flockFn
+	origSleep := lockSleep
+	origTimeout := lockWaitTimeout
+	origPoll := lockPollEvery
+	flockFn = func(fd int, how int) error {
+		return unix.EWOULDBLOCK
+	}
+	lockSleep = func(time.Duration) {}
+	lockWaitTimeout = time.Nanosecond
+	lockPollEvery = time.Nanosecond
+	t.Cleanup(func() {
+		flockFn = origFlock
+		lockSleep = origSleep
+		lockWaitTimeout = origTimeout
+		lockPollEvery = origPoll
+	})
+
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "test.lock")
+	lock, err := acquireFileLock(path)
+	if lock != nil {
+		t.Fatalf("expected no lock on timeout, got %+v", lock)
+	}
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !errors.Is(err, unix.EWOULDBLOCK) && !strings.Contains(err.Error(), "timed out waiting for lock") {
+		t.Fatalf("expected timeout-related error, got %v", err)
 	}
 }

@@ -219,3 +219,18 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Agent Layer upgrade/init workflows support embedded templates only; non-default template repositories and template-source pinning metadata are out of scope.
     Reason: Keep upgrade behavior clear, deterministic, and maintainable by avoiding parallel template-source paths.
     Tradeoffs: Teams cannot use first-class custom template repositories in this release line and must revisit this in a future scoped backlog item if needed.
+
+- Decision 2026-02-15 p6a-mcp-default-version-lane: Default MCP template dependencies are pinned with explicit floating opt-in
+    Decision: Seeded MCP server commands now pin concrete dependency versions by default (`npx` and `uvx` surfaces), with inline commented examples showing the explicit floating/latest opt-in lane.
+    Reason: Keep default sync/upgrade behavior deterministic while preserving an intentional path for teams that want fastest-updating external MCP tools.
+    Tradeoffs: Pinned defaults can lag upstream MCP releases until Agent Layer updates the template versions.
+
+- Decision 2026-02-15 p7a-warning-noise-guardrail: Noise reduction cannot hide critical warnings
+    Decision: Added `warnings.noise_mode` with conservative behavior: `reduce` suppresses only warnings marked suppressible and non-critical; critical warnings are always shown.
+    Reason: Allow lower-noise daily output without creating a blind spot for high-risk upgrade/config policy failures.
+    Tradeoffs: Some warning noise remains in reduce mode by design.
+
+- Decision 2026-02-15 p7b-wizard-profile-preview-default: Profile mode is preview-first with explicit apply
+    Decision: `al wizard --profile` defaults to preview-only rewrite diffs and requires `--yes` for writes; secret prompts support explicit `skip` and `cancel`; backups are cleaned only via explicit `--cleanup-backups`.
+    Reason: Keep non-interactive wizard usage safe in CI/automation and avoid accidental config rewrites.
+    Tradeoffs: Adds extra flags for scripted flows and requires explicit cleanup for backup files.

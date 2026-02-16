@@ -214,7 +214,7 @@ id = "filesystem"
 enabled = true
 transport = "stdio"
 command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}"]
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
 ```
 
 If `transport = "stdio"`, do not set `url` or `headers`.
@@ -322,12 +322,19 @@ Pin formats:
 - `X.Y.Z`
 - `vX.Y.Z`
 
+Pin parser behavior:
+
+- blank lines and `#` comments are ignored
+- exactly one non-comment version line is expected
+- empty, invalid, or multi-version pin files trigger a warning and dispatch falls back to the current CLI version until repaired
+
 ### How to set a pin
 
 - `al init` writes a pin when you are running a release build
 - or pass `--version X.Y.Z` to `al init`
 - `al upgrade` updates the pin to match the currently running `al` binary
 - or edit `.agent-layer/al.version` directly
+- `al upgrade prefetch --version X.Y.Z` pre-warms a specific release binary in cache for offline or CI workflows
 
 ### Upgrading a repo
 

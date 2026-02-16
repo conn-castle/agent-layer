@@ -1,11 +1,14 @@
 package wizard
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/aymanbagabas/go-udiff"
 	"github.com/fatih/color"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -18,49 +21,92 @@ var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
+	errWizardCancelled        = errors.New("wizard cancelled")
 )
 
 // Run starts the interactive wizard.
 // pinVersion is written to .agent-layer/al.version when install is needed.
 func Run(root string, ui UI, runSync syncer, pinVersion string) error {
+	return RunWithWriter(root, ui, runSync, pinVersion, os.Stdout)
+}
+
+// RunWithWriter starts the interactive wizard and writes user-facing output to out.
+// pinVersion is written to .agent-layer/al.version when install is needed.
+func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
+	if out == nil {
+		out = os.Stdout
+	}
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	envPath := filepath.Join(root, ".agent-layer", ".env")
 
-	// 2. Install gating
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		confirm := true
-		err := ui.Confirm(messages.WizardInstallPrompt, &confirm)
-		if err != nil {
-			return err
-		}
-		if !confirm {
-			fmt.Println(messages.WizardExitWithoutChanges)
-			return nil
-		}
-
-		// Run install
-		if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
-			return fmt.Errorf(messages.WizardInstallFailedFmt, err)
-		}
-		fmt.Println(messages.WizardInstallComplete)
+	proceed, err := ensureWizardConfig(root, configPath, ui, pinVersion, out)
+	if err != nil {
+		return err
+	}
+	if !proceed {
+		return nil
 	}
 
-	// 3. Load config
 	cfg, err := loadProjectConfigFunc(root)
 	if err != nil {
 		return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
 	}
 
-	// 4. Initialize choices from config
+	choices, err := initializeChoices(cfg)
+	if err != nil {
+		return err
+	}
+
+	if err := promptWizardFlow(root, ui, cfg, choices); err != nil {
+		if errors.Is(err, errWizardCancelled) {
+			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			return nil
+		}
+		return err
+	}
+
+	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, error) {
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		confirm := true
+		if err := ui.Confirm(messages.WizardInstallPrompt, &confirm); err != nil {
+			return false, err
+		}
+		if !confirm {
+			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			return false, nil
+		}
+
+		if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
+			return false, fmt.Errorf(messages.WizardInstallFailedFmt, err)
+		}
+		_, _ = fmt.Fprintln(out, messages.WizardInstallComplete)
+		return true, nil
+	} else if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices := NewChoices()
 
 	defaultServers, err := loadDefaultMCPServersFunc()
 	if err != nil {
-		return fmt.Errorf(messages.WizardLoadDefaultMCPServersFailedFmt, err)
+		return nil, fmt.Errorf(messages.WizardLoadDefaultMCPServersFailedFmt, err)
 	}
 	choices.DefaultMCPServers = defaultServers
+
 	warningDefaults, err := loadWarningDefaultsFunc()
 	if err != nil {
-		return fmt.Errorf(messages.WizardLoadWarningDefaultsFailedFmt, err)
+		return nil, fmt.Errorf(messages.WizardLoadWarningDefaultsFailedFmt, err)
 	}
 	choices.InstructionTokenThreshold = warningDefaults.InstructionTokenThreshold
 	choices.MCPServerThreshold = warningDefaults.MCPServerThreshold
@@ -69,13 +115,11 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	choices.MCPSchemaTokensTotalThreshold = warningDefaults.MCPSchemaTokensTotalThreshold
 	choices.MCPSchemaTokensServerThreshold = warningDefaults.MCPSchemaTokensServerThreshold
 
-	// Approvals
 	choices.ApprovalMode = cfg.Config.Approvals.Mode
 	if choices.ApprovalMode == "" {
 		choices.ApprovalMode = ApprovalAll
 	}
 
-	// Agents
 	agentConfigs := []agentEnabledConfig{
 		{id: AgentGemini, enabled: cfg.Config.Agents.Gemini.Enabled},
 		{id: AgentClaude, enabled: cfg.Config.Agents.Claude.Enabled},
@@ -85,20 +129,17 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
-	// Models
 	choices.GeminiModel = cfg.Config.Agents.Gemini.Model
 	choices.ClaudeModel = cfg.Config.Agents.Claude.Model
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
 
-	// MCP Servers
 	for _, srv := range cfg.Config.MCP.Servers {
 		if srv.Enabled != nil && *srv.Enabled {
 			choices.EnabledMCPServers[srv.ID] = true
 		}
 	}
 
-	// Warnings
 	choices.WarningsEnabled = cfg.Config.Warnings.InstructionTokenThreshold != nil ||
 		cfg.Config.Warnings.MCPServerThreshold != nil ||
 		cfg.Config.Warnings.MCPToolsTotalThreshold != nil ||
@@ -124,9 +165,10 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 		choices.MCPSchemaTokensServerThreshold = *cfg.Config.Warnings.MCPSchemaTokensServerThreshold
 	}
 
-	// 5. UI Flow
+	return choices, nil
+}
 
-	// Approvals
+func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Choices) error {
 	approvalModeLabel, ok := approvalModeLabelForValue(choices.ApprovalMode)
 	if !ok {
 		return fmt.Errorf(messages.WizardUnknownApprovalModeFmt, choices.ApprovalMode)
@@ -141,16 +183,33 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	choices.ApprovalMode = approvalModeValue
 	choices.ApprovalModeTouched = true
 
-	// Agents
 	enabledAgents := enabledAgentIDs(choices.EnabledAgents)
 	if err := ui.MultiSelect(messages.WizardEnableAgentsTitle, SupportedAgents, &enabledAgents); err != nil {
 		return err
 	}
-	// Update map
 	choices.EnabledAgents = agentIDSet(enabledAgents)
 	choices.EnabledAgentsTouched = true
 
-	// Models (for enabled agents)
+	if err := promptModels(ui, choices); err != nil {
+		return err
+	}
+	if err := promptDefaultMCPServers(ui, cfg, choices); err != nil {
+		return err
+	}
+	if err := promptSecrets(root, ui, choices); err != nil {
+		return err
+	}
+
+	warningsEnabled := choices.WarningsEnabled
+	if err := ui.Confirm(messages.WizardEnableWarningsPrompt, &warningsEnabled); err != nil {
+		return err
+	}
+	choices.WarningsEnabled = warningsEnabled
+	choices.WarningsEnabledTouched = true
+	return nil
+}
+
+func promptModels(ui UI, choices *Choices) error {
 	if choices.EnabledAgents[AgentGemini] {
 		if hasPreviewModels(GeminiModels) {
 			if err := ui.Note(messages.WizardPreviewModelWarningTitle, previewModelWarningText()); err != nil {
@@ -180,7 +239,10 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 		choices.CodexReasoningTouched = true
 	}
 
-	// MCP Servers
+	return nil
+}
+
+func promptDefaultMCPServers(ui UI, cfg *config.ProjectConfig, choices *Choices) error {
 	missingDefaults := missingDefaultMCPServers(choices.DefaultMCPServers, cfg.Config.MCP.Servers)
 	if len(missingDefaults) > 0 {
 		choices.MissingDefaultMCPServers = missingDefaults
@@ -190,128 +252,183 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 		}
 		choices.RestoreMissingMCPServers = restore
 	}
-	var defaultServerIDs []string
-	var enabledDefaultServers []string
-	for _, s := range choices.DefaultMCPServers {
-		defaultServerIDs = append(defaultServerIDs, s.ID)
-		if choices.EnabledMCPServers[s.ID] {
-			enabledDefaultServers = append(enabledDefaultServers, s.ID)
+	defaultServerIDs := make([]string, 0, len(choices.DefaultMCPServers))
+	enabledDefaultServers := make([]string, 0, len(choices.DefaultMCPServers))
+	for _, server := range choices.DefaultMCPServers {
+		defaultServerIDs = append(defaultServerIDs, server.ID)
+		if choices.EnabledMCPServers[server.ID] {
+			enabledDefaultServers = append(enabledDefaultServers, server.ID)
 		}
 	}
 	if err := ui.MultiSelect(messages.WizardEnableDefaultMCPServersTitle, defaultServerIDs, &enabledDefaultServers); err != nil {
 		return err
 	}
-	// Only update known defaults in the map
-	for _, s := range choices.DefaultMCPServers {
-		choices.EnabledMCPServers[s.ID] = false // Reset known ones
+
+	for _, server := range choices.DefaultMCPServers {
+		choices.EnabledMCPServers[server.ID] = false
 	}
 	for _, id := range enabledDefaultServers {
 		choices.EnabledMCPServers[id] = true
 	}
 	choices.EnabledMCPServersTouched = true
+	return nil
+}
 
-	// Secrets
-	// Load existing env to know what's set
-	envPath := filepath.Join(root, ".agent-layer", ".env")
-	envValues := make(map[string]string)
-	if b, err := os.ReadFile(envPath); err == nil {
-		parsed, err := envfile.Parse(string(b))
-		if err != nil {
-			return fmt.Errorf(messages.WizardInvalidEnvFileFmt, envPath, err)
-		}
-		envValues = parsed
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	for _, srv := range choices.DefaultMCPServers {
-		if choices.EnabledMCPServers[srv.ID] {
-			if len(srv.RequiredEnv) == 0 {
-				continue
-			}
-			for _, key := range srv.RequiredEnv {
-				if key == "" {
-					continue
-				}
-
-				if existing, ok := choices.Secrets[key]; ok && existing != "" {
-					continue
-				}
-				if val, ok := envValues[key]; ok && val != "" {
-					override := false
-					if err := ui.Confirm(fmt.Sprintf(messages.WizardSecretAlreadySetPromptFmt, key), &override); err != nil {
-						return err
-					}
-					if !override {
-						choices.Secrets[key] = val
-						continue
-					}
-				} else {
-					if val := os.Getenv(key); val != "" {
-						useEnv := false
-						if err := ui.Confirm(fmt.Sprintf(messages.WizardEnvSecretFoundPromptFmt, key), &useEnv); err != nil {
-							return err
-						}
-						if useEnv {
-							choices.Secrets[key] = val
-							continue
-						}
-					}
-				}
-
-				for {
-					var val string
-					if err := ui.SecretInput(fmt.Sprintf(messages.WizardSecretInputPromptFmt, key), &val); err != nil {
-						return err
-					}
-					if val != "" {
-						choices.Secrets[key] = val
-						break
-					}
-					disable := true
-					if err := ui.Confirm(fmt.Sprintf(messages.WizardSecretMissingDisablePromptFmt, key, srv.ID), &disable); err != nil {
-						return err
-					}
-					if disable {
-						choices.EnabledMCPServers[srv.ID] = false
-						choices.DisabledMCPServers[srv.ID] = true
-						break
-					}
-				}
-				if !choices.EnabledMCPServers[srv.ID] {
-					break
-				}
-			}
-		}
-	}
-
-	// Warnings
-	warningsEnabled := choices.WarningsEnabled
-	if err := ui.Confirm(messages.WizardEnableWarningsPrompt, &warningsEnabled); err != nil {
-		return err
-	}
-	choices.WarningsEnabled = warningsEnabled
-	choices.WarningsEnabledTouched = true
-
-	// 6. Summary
+func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer) error {
 	summary := buildSummary(choices)
 	confirmApply := true
 	if err := ui.Note(messages.WizardSummaryTitle, summary); err != nil {
+		return err
+	}
+	rewritePreview, err := buildRewritePreview(configPath, envPath, choices)
+	if err != nil {
+		return err
+	}
+	if err := ui.Note(messages.WizardRewritePreviewTitle, rewritePreview); err != nil {
 		return err
 	}
 	if err := ui.Confirm(messages.WizardApplyChangesPrompt, &confirmApply); err != nil {
 		return err
 	}
 	if !confirmApply {
-		fmt.Println(messages.WizardExitWithoutChanges)
+		_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 		return nil
 	}
 
-	// 7. Apply
-	if err := applyChanges(root, configPath, envPath, choices, runSync); err != nil {
+	if err := applyChanges(root, configPath, envPath, choices, runSync, out); err != nil {
 		return err
 	}
 
-	_, _ = color.New(color.FgGreen).Println(messages.WizardCompleted)
+	_, _ = color.New(color.FgGreen).Fprintln(out, messages.WizardCompleted)
 	return nil
+}
+
+func promptSecrets(root string, ui UI, choices *Choices) error {
+	envPath := filepath.Join(root, ".agent-layer", ".env")
+	envValues := make(map[string]string)
+	if b, err := os.ReadFile(envPath); err == nil {
+		parsed, parseErr := envfile.Parse(string(b))
+		if parseErr != nil {
+			return fmt.Errorf(messages.WizardInvalidEnvFileFmt, envPath, parseErr)
+		}
+		envValues = parsed
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	for _, server := range choices.DefaultMCPServers {
+		if !choices.EnabledMCPServers[server.ID] || len(server.RequiredEnv) == 0 {
+			continue
+		}
+		disableServer := false
+		for _, key := range server.RequiredEnv {
+			if key == "" {
+				continue
+			}
+			if existing, ok := choices.Secrets[key]; ok && existing != "" {
+				continue
+			}
+			if value, ok := envValues[key]; ok && value != "" {
+				override := false
+				if err := ui.Confirm(fmt.Sprintf(messages.WizardSecretAlreadySetPromptFmt, key), &override); err != nil {
+					return err
+				}
+				if !override {
+					choices.Secrets[key] = value
+					continue
+				}
+			} else if value := os.Getenv(key); value != "" {
+				useEnv := false
+				if err := ui.Confirm(fmt.Sprintf(messages.WizardEnvSecretFoundPromptFmt, key), &useEnv); err != nil {
+					return err
+				}
+				if useEnv {
+					choices.Secrets[key] = value
+					continue
+				}
+			}
+
+			for {
+				var value string
+				if err := ui.SecretInput(fmt.Sprintf(messages.WizardSecretInputPromptFmt, key), &value); err != nil {
+					return err
+				}
+				normalized := strings.TrimSpace(value)
+				switch strings.ToLower(normalized) {
+				case "cancel":
+					return errWizardCancelled
+				case "skip":
+					choices.EnabledMCPServers[server.ID] = false
+					choices.DisabledMCPServers[server.ID] = true
+					disableServer = true
+				}
+				if disableServer {
+					break
+				}
+				if normalized != "" {
+					choices.Secrets[key] = normalized
+					break
+				}
+
+				disable := true
+				if err := ui.Confirm(fmt.Sprintf(messages.WizardSecretMissingDisablePromptFmt, key, server.ID), &disable); err != nil {
+					return err
+				}
+				if disable {
+					choices.EnabledMCPServers[server.ID] = false
+					choices.DisabledMCPServers[server.ID] = true
+					disableServer = true
+					break
+				}
+			}
+			if disableServer {
+				break
+			}
+		}
+	}
+
+	return nil
+}
+
+func buildRewritePreview(configPath, envPath string, choices *Choices) (string, error) {
+	currentConfigBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", err
+	}
+	nextConfig, err := PatchConfig(string(currentConfigBytes), choices)
+	if err != nil {
+		return "", fmt.Errorf(messages.WizardPatchConfigFailedFmt, err)
+	}
+
+	currentEnvBytes, err := os.ReadFile(envPath)
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	nextEnv := envfile.Patch(string(currentEnvBytes), choices.Secrets)
+
+	parts := make([]string, 0, 2)
+	configDiff := strings.TrimSpace(udiff.Unified(
+		".agent-layer/config.toml (current)",
+		".agent-layer/config.toml (proposed)",
+		string(currentConfigBytes),
+		nextConfig,
+	))
+	if configDiff != "" {
+		parts = append(parts, configDiff)
+	}
+
+	envDiff := strings.TrimSpace(udiff.Unified(
+		".agent-layer/.env (current)",
+		".agent-layer/.env (proposed)",
+		string(currentEnvBytes),
+		nextEnv,
+	))
+	if envDiff != "" {
+		parts = append(parts, envDiff)
+	}
+
+	if len(parts) == 0 {
+		return "No rewrites needed. Current files already match the selected changes.", nil
+	}
+	return strings.Join(parts, "\n\n"), nil
 }

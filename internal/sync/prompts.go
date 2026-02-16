@@ -13,6 +13,12 @@ import (
 
 const promptHeaderTemplate = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/%s.md\n  Regenerate: al sync\n-->\n"
 
+const (
+	generatedMarkerHeader     = "GENERATED FILE"
+	generatedMarkerSource     = "Source: .agent-layer/"
+	generatedMarkerRegenerate = "Regenerate: al sync"
+)
+
 // WriteVSCodePrompts generates VS Code prompt files for slash commands.
 func WriteVSCodePrompts(sys System, root string, commands []config.SlashCommand) error {
 	promptDir := filepath.Join(root, ".vscode", "prompts")
@@ -50,7 +56,7 @@ func buildVSCodePrompt(cmd config.SlashCommand) string {
 }
 
 func removeStalePromptFiles(sys System, promptDir string, wanted map[string]struct{}) error {
-	entries, err := os.ReadDir(promptDir)
+	entries, err := sys.ReadDir(promptDir)
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadFailedFmt, promptDir, err)
 	}
@@ -73,7 +79,7 @@ func removeStalePromptFiles(sys System, promptDir string, wanted map[string]stru
 			return err
 		}
 		if isGenerated {
-			if err := os.Remove(path); err != nil {
+			if err := sys.Remove(path); err != nil {
 				return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)
 			}
 		}
@@ -204,7 +210,7 @@ func wrapDescription(text string, width int) []string {
 }
 
 func removeStaleSkillDirs(sys System, skillsDir string, wanted map[string]struct{}) error {
-	entries, err := os.ReadDir(skillsDir)
+	entries, err := sys.ReadDir(skillsDir)
 	if err != nil {
 		return fmt.Errorf(messages.SyncReadFailedFmt, skillsDir, err)
 	}
@@ -230,7 +236,7 @@ func removeStaleSkillDirs(sys System, skillsDir string, wanted map[string]struct
 
 	sort.Strings(stale)
 	for _, dir := range stale {
-		if err := os.RemoveAll(dir); err != nil {
+		if err := sys.RemoveAll(dir); err != nil {
 			return fmt.Errorf(messages.SyncRemoveFailedFmt, dir, err)
 		}
 	}
@@ -246,5 +252,8 @@ func hasGeneratedMarker(sys System, path string) (bool, error) {
 		}
 		return false, fmt.Errorf(messages.SyncReadFailedFmt, path, err)
 	}
-	return strings.Contains(string(data), "GENERATED FILE"), nil
+	content := string(data)
+	return strings.Contains(content, generatedMarkerHeader) &&
+		strings.Contains(content, generatedMarkerSource) &&
+		strings.Contains(content, generatedMarkerRegenerate), nil
 }

@@ -1,15 +1,34 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.8.0 - 2026-02-16
+
+### Added
+- New upgrade command surface centered on `al upgrade`: `al upgrade plan` (dry-run preview), `al upgrade rollback <snapshot-id>` (manual restore), `al upgrade prefetch --version X.Y.Z` (cache warm-up), and `al upgrade repair-gitignore-block` (managed block repair).
+- `al upgrade plan` now produces plain-language categorized upgrade previews with readiness checks and line-level diff previews (default 40 lines per file, configurable via `--diff-lines`).
+- Upgrade planning ownership inference is now deterministic and offline using committed release manifests (`internal/templates/manifests/*.json`) plus repo baseline state (`.agent-layer/state/managed-baseline.json`).
+- `al upgrade` now creates managed-file snapshots under `.agent-layer/state/upgrade-snapshots/` and automatically rolls back transactional changes when an upgrade step fails.
+- Embedded per-release migration engine: `al upgrade` executes migration manifests (`internal/templates/migrations/<target>.json`) before template writes and emits deterministic migration reports.
+- `al wizard` now supports non-interactive profile mode (`--profile`, optional `--yes`) and backup cleanup (`--cleanup-backups`).
+- Warning noise control added via `warnings.noise_mode` (`default` or `reduce`) to reduce non-critical suppressible warning output when desired.
 
 ### Changed
-- **Breaking:** `al init` is now scaffolding only: it errors if `.agent-layer/` already exists. Use `al upgrade plan` and `al upgrade` to upgrade or repair templates.
-- `.agent-layer/.env` and `.agent-layer/config.toml` are now user-owned: seeded only when missing; never overwritten by init/upgrade.
-- `.agent-layer/.gitignore` is agent-owned internal: always overwritten; excluded from upgrade plans/diffs.
+- **Breaking:** `al init` is now one-time scaffolding only. If `.agent-layer/` already exists, `al init` errors and directs users to `al upgrade plan` + `al upgrade`.
+- **Breaking:** `al upgrade` non-interactive execution now requires `--yes` plus explicit apply flags (`--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`) to make mutation intent explicit.
+- `.agent-layer/.env` and `.agent-layer/config.toml` are now strictly user-owned: seeded only when missing and never overwritten by init/upgrade operations.
+- `.agent-layer/.gitignore` is treated as internal agent-owned state: always rewritten from templates and excluded from upgrade plans/diff prompts.
+- Default MCP server templates now pin concrete tool versions by default, with inline floating/latest opt-in examples for teams that want automatic upstream updates.
+- Update-check handling now degrades gracefully on GitHub API rate limits so init/doctor flows continue with actionable warning output.
+- Release process now requires generating and committing a per-tag template ownership manifest before tagging (`./scripts/generate-template-manifest.sh --tag vX.Y.Z`).
+
+### Fixed
+- `al upgrade rollback <snapshot-id>` now rejects path separators in snapshot IDs, preventing path traversal attempts during manual rollback resolution.
+- `al vscode` launch preflight now fails fast with explicit guidance when the `code` CLI is missing on `PATH` or when `.vscode/settings.json` has a managed-block marker conflict.
 
 ### Removed
-- **Breaking:** `al init --overwrite` and `al init --force` flags. Use `al upgrade` (interactive) or `al upgrade --force` (non-interactive) instead.
+- **Breaking:** `al init --overwrite` and `al init --force` have been removed. Use `al upgrade plan` and `al upgrade` for upgrades/repairs.
+- **Breaking:** `al upgrade --force` has been removed. Use explicit apply flags (plus `--yes` for non-interactive runs) to select mutation categories.
+- **Breaking:** `al upgrade plan --json` has been removed; text output is now the only supported plan interface.
 
 ## v0.7.0 - 2026-02-07
 
@@ -28,7 +47,7 @@ All notable changes to this project will be documented in this file.
 - Launcher template writes refactored for reliability with proper macOS path escaping.
 - Codex MCP header projection order corrected.
 - CI workflow caches pinned tools in GitHub Actions for faster builds.
-- Upgrade contract linked from README, site docs, DEVELOPMENT.md, RELEASE.md, and docs/UPGRADE_PLAN.md.
+- Upgrade contract linked from README, site docs, DEVELOPMENT.md, and RELEASE.md.
 
 ### Removed
 - `al-install.ps1` (Windows PowerShell installer).

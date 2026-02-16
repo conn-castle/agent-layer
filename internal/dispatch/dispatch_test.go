@@ -40,6 +40,33 @@ func TestReadPinnedVersion(t *testing.T) {
 	}
 }
 
+func TestReadPinnedVersion_CommentsAndBlankLines(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "al.version")
+	content := "\n# repo pin\n\nv0.6.1\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	got, ok, warning, err := readPinnedVersion(RealSystem{}, root)
+	if err != nil {
+		t.Fatalf("readPinnedVersion error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected pinned version")
+	}
+	if got != "0.6.1" {
+		t.Fatalf("expected 0.6.1, got %q", got)
+	}
+	if warning != "" {
+		t.Fatalf("unexpected warning: %q", warning)
+	}
+}
+
 func TestReadPinnedVersionEmptyFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
@@ -98,6 +125,32 @@ func TestReadPinnedVersion_InvalidContent_ReturnsWarning(t *testing.T) {
 	}
 }
 
+func TestReadPinnedVersion_MultipleVersionLines_ReturnsWarning(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "al.version")
+	if err := os.WriteFile(path, []byte("0.5.0\n0.5.1\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	ver, ok, warning, err := readPinnedVersion(RealSystem{}, root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatalf("expected found=false for invalid pin")
+	}
+	if ver != "" {
+		t.Fatalf("expected empty version, got %q", ver)
+	}
+	if !strings.Contains(warning, "multiple version lines") {
+		t.Fatalf("expected warning to mention multiple lines, got %q", warning)
+	}
+}
+
 func TestReadPinnedVersion_PermissionDenied_ReturnsError(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("skipping permissions test on windows")
@@ -125,7 +178,7 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "v1.2.3")
 	t.Setenv(EnvNoNetwork, "")
 
-	got, source, warning, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
+	got, source, warning, overridePinned, hasOverridePinned, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -137,6 +190,9 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 	}
 	if warning != "" {
 		t.Fatalf("unexpected warning: %q", warning)
+	}
+	if hasOverridePinned {
+		t.Fatalf("expected override pin flag false, got true with %q", overridePinned)
 	}
 }
 
@@ -150,7 +206,7 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	got, source, warning, err := resolveRequestedVersion(RealSystem{}, root, true, "0.5.0")
+	got, source, warning, overridePinned, hasOverridePinned, err := resolveRequestedVersion(RealSystem{}, root, true, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -163,10 +219,13 @@ func TestResolveRequestedVersionUsesPin(t *testing.T) {
 	if warning != "" {
 		t.Fatalf("unexpected warning: %q", warning)
 	}
+	if hasOverridePinned {
+		t.Fatalf("expected override pin flag false, got true with %q", overridePinned)
+	}
 }
 
 func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
-	got, source, warning, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
+	got, source, warning, overridePinned, hasOverridePinned, err := resolveRequestedVersion(RealSystem{}, t.TempDir(), false, "0.5.0")
 	if err != nil {
 		t.Fatalf("resolveRequestedVersion error: %v", err)
 	}
@@ -178,6 +237,9 @@ func TestResolveRequestedVersionUsesCurrent(t *testing.T) {
 	}
 	if warning != "" {
 		t.Fatalf("unexpected warning: %q", warning)
+	}
+	if hasOverridePinned {
+		t.Fatalf("expected override pin flag false, got true with %q", overridePinned)
 	}
 }
 
@@ -312,6 +374,77 @@ func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
 	err := MaybeExecWithSystem(RealSystem{}, []string{"cmd"}, "1.0.0", ".", func(int) {})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestMaybeExec_OverrideWarnsWhenPinExists(t *testing.T) {
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("0.9.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	t.Setenv(EnvVersionOverride, "1.0.0")
+	var stderr bytes.Buffer
+	sys := &testSystem{
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			return root, true, nil
+		},
+		StderrFunc: func() io.Writer {
+			return &stderr
+		},
+	}
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+
+	output := stderr.String()
+	if !strings.Contains(output, "version source: 1.0.0 (AL_VERSION)") {
+		t.Fatalf("expected version source output, got %q", output)
+	}
+	if !strings.Contains(output, "overrides repo pin 0.9.0") {
+		t.Fatalf("expected override warning, got %q", output)
+	}
+}
+
+func TestMaybeExec_OverrideReadsPinOnce(t *testing.T) {
+	root := t.TempDir()
+	var stderr bytes.Buffer
+	readCount := 0
+
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == EnvVersionOverride {
+				return "1.0.0"
+			}
+			return ""
+		},
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			return root, true, nil
+		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			readCount++
+			return []byte("0.9.0\n"), nil
+		},
+		StderrFunc: func() io.Writer {
+			return &stderr
+		},
+	}
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if readCount != 1 {
+		t.Fatalf("expected pin to be read once, got %d reads", readCount)
+	}
+	if !strings.Contains(stderr.String(), "overrides repo pin 0.9.0") {
+		t.Fatalf("expected override warning, got %q", stderr.String())
 	}
 }
 

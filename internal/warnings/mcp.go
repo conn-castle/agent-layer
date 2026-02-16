@@ -30,24 +30,33 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			subject = resolveErr.ServerID
 		}
 		return []Warning{{
-			Code:    CodeMCPServerUnreachable,
-			Subject: subject,
-			Message: fmt.Sprintf(messages.WarningsResolveConfigFailedFmt, err),
-			Fix:     messages.WarningsResolveConfigFix,
+			Code:     CodeMCPServerUnreachable,
+			Subject:  subject,
+			Message:  fmt.Sprintf(messages.WarningsResolveConfigFailedFmt, err),
+			Fix:      messages.WarningsResolveConfigFix,
+			Source:   SourceInternal,
+			Severity: SeverityCritical,
 		}}, nil
 	}
 
 	var warnings []Warning
+	transportByServerID := make(map[string]string, len(enabledServers))
+	for _, server := range enabledServers {
+		transportByServerID[server.ID] = server.Transport
+	}
 
 	thresholds := cfg.Config.Warnings
 
 	// Check: MCP_TOO_MANY_SERVERS_ENABLED
 	if thresholds.MCPServerThreshold != nil && len(enabledServers) > *thresholds.MCPServerThreshold {
 		warnings = append(warnings, Warning{
-			Code:    CodeMCPTooManyServers,
-			Subject: "mcp.servers",
-			Message: fmt.Sprintf(messages.WarningsTooManyServersFmt, *thresholds.MCPServerThreshold, len(enabledServers), *thresholds.MCPServerThreshold),
-			Fix:     messages.WarningsTooManyServersFix,
+			Code:              CodeMCPTooManyServers,
+			Subject:           "mcp.servers",
+			Message:           fmt.Sprintf(messages.WarningsTooManyServersFmt, *thresholds.MCPServerThreshold, len(enabledServers), *thresholds.MCPServerThreshold),
+			Fix:               messages.WarningsTooManyServersFix,
+			Source:            SourceInternal,
+			Severity:          SeverityWarning,
+			NoiseSuppressible: true,
 		})
 	}
 
@@ -61,11 +70,17 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 
 	for _, res := range results {
 		if res.Error != nil {
+			source := SourceExternalDependency
+			if transportByServerID[res.ServerID] == config.TransportHTTP {
+				source = SourceNetwork
+			}
 			warnings = append(warnings, Warning{
-				Code:    CodeMCPServerUnreachable,
-				Subject: res.ServerID,
-				Message: fmt.Sprintf(messages.WarningsMCPConnectFailedFmt, res.Error),
-				Fix:     messages.WarningsMCPConnectFix,
+				Code:     CodeMCPServerUnreachable,
+				Subject:  res.ServerID,
+				Message:  fmt.Sprintf(messages.WarningsMCPConnectFailedFmt, res.Error),
+				Fix:      messages.WarningsMCPConnectFix,
+				Source:   source,
+				Severity: SeverityCritical,
 			})
 			continue
 		}
@@ -73,10 +88,13 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 		// Check: MCP_SERVER_TOO_MANY_TOOLS
 		if thresholds.MCPServerToolsThreshold != nil && len(res.Tools) > *thresholds.MCPServerToolsThreshold {
 			warnings = append(warnings, Warning{
-				Code:    CodeMCPServerTooManyTools,
-				Subject: res.ServerID,
-				Message: fmt.Sprintf(messages.WarningsMCPServerTooManyToolsFmt, *thresholds.MCPServerToolsThreshold, len(res.Tools), *thresholds.MCPServerToolsThreshold),
-				Fix:     messages.WarningsMCPServerTooManyToolsFix,
+				Code:              CodeMCPServerTooManyTools,
+				Subject:           res.ServerID,
+				Message:           fmt.Sprintf(messages.WarningsMCPServerTooManyToolsFmt, *thresholds.MCPServerToolsThreshold, len(res.Tools), *thresholds.MCPServerToolsThreshold),
+				Fix:               messages.WarningsMCPServerTooManyToolsFix,
+				Source:            SourceInternal,
+				Severity:          SeverityWarning,
+				NoiseSuppressible: true,
 			})
 		}
 
@@ -101,11 +119,14 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			}
 
 			warnings = append(warnings, Warning{
-				Code:    CodeMCPToolSchemaBloatServer,
-				Subject: res.ServerID,
-				Message: fmt.Sprintf(messages.WarningsMCPSchemaBloatServerFmt, *thresholds.MCPSchemaTokensServerThreshold, res.SchemaTokens, *thresholds.MCPSchemaTokensServerThreshold),
-				Fix:     messages.WarningsMCPSchemaBloatFix,
-				Details: details,
+				Code:              CodeMCPToolSchemaBloatServer,
+				Subject:           res.ServerID,
+				Message:           fmt.Sprintf(messages.WarningsMCPSchemaBloatServerFmt, *thresholds.MCPSchemaTokensServerThreshold, res.SchemaTokens, *thresholds.MCPSchemaTokensServerThreshold),
+				Fix:               messages.WarningsMCPSchemaBloatFix,
+				Details:           details,
+				Source:            SourceInternal,
+				Severity:          SeverityWarning,
+				NoiseSuppressible: true,
 			})
 		}
 
@@ -120,20 +141,26 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	// Check: MCP_TOO_MANY_TOOLS_TOTAL
 	if thresholds.MCPToolsTotalThreshold != nil && totalTools > *thresholds.MCPToolsTotalThreshold {
 		warnings = append(warnings, Warning{
-			Code:    CodeMCPTooManyToolsTotal,
-			Subject: "mcp.tools.total",
-			Message: fmt.Sprintf(messages.WarningsMCPTooManyToolsTotalFmt, *thresholds.MCPToolsTotalThreshold, totalTools, *thresholds.MCPToolsTotalThreshold),
-			Fix:     messages.WarningsMCPTooManyToolsTotalFix,
+			Code:              CodeMCPTooManyToolsTotal,
+			Subject:           "mcp.tools.total",
+			Message:           fmt.Sprintf(messages.WarningsMCPTooManyToolsTotalFmt, *thresholds.MCPToolsTotalThreshold, totalTools, *thresholds.MCPToolsTotalThreshold),
+			Fix:               messages.WarningsMCPTooManyToolsTotalFix,
+			Source:            SourceInternal,
+			Severity:          SeverityWarning,
+			NoiseSuppressible: true,
 		})
 	}
 
 	// Check: MCP_TOOL_SCHEMA_BLOAT_TOTAL
 	if thresholds.MCPSchemaTokensTotalThreshold != nil && totalSchemaTokens > *thresholds.MCPSchemaTokensTotalThreshold {
 		warnings = append(warnings, Warning{
-			Code:    CodeMCPToolSchemaBloatTotal,
-			Subject: "mcp.tools.schema.total",
-			Message: fmt.Sprintf(messages.WarningsMCPSchemaBloatTotalFmt, *thresholds.MCPSchemaTokensTotalThreshold, totalSchemaTokens, *thresholds.MCPSchemaTokensTotalThreshold),
-			Fix:     messages.WarningsMCPSchemaBloatFix,
+			Code:              CodeMCPToolSchemaBloatTotal,
+			Subject:           "mcp.tools.schema.total",
+			Message:           fmt.Sprintf(messages.WarningsMCPSchemaBloatTotalFmt, *thresholds.MCPSchemaTokensTotalThreshold, totalSchemaTokens, *thresholds.MCPSchemaTokensTotalThreshold),
+			Fix:               messages.WarningsMCPSchemaBloatFix,
+			Source:            SourceInternal,
+			Severity:          SeverityWarning,
+			NoiseSuppressible: true,
 		})
 	}
 
@@ -141,10 +168,12 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	for name, servers := range toolNames {
 		if len(servers) > 1 {
 			warnings = append(warnings, Warning{
-				Code:    CodeMCPToolNameCollision,
-				Subject: name,
-				Message: fmt.Sprintf(messages.WarningsMCPToolNameCollisionFmt, servers),
-				Fix:     messages.WarningsMCPToolNameCollisionFix,
+				Code:     CodeMCPToolNameCollision,
+				Subject:  name,
+				Message:  fmt.Sprintf(messages.WarningsMCPToolNameCollisionFmt, servers),
+				Fix:      messages.WarningsMCPToolNameCollisionFix,
+				Source:   SourceInternal,
+				Severity: SeverityWarning,
 			})
 		}
 	}

@@ -29,6 +29,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-tools-${{ steps.setup-go.outputs.go-version }}-
             ${{ runner.os }}-go-tools-
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Install pinned tools
         run: make tools
       - name: CI checks

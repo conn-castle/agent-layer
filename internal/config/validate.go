@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -32,6 +33,12 @@ var validHTTPTransports = map[string]struct{}{
 	"streamable": {},
 }
 
+var validWarningNoiseModes = map[string]struct{}{
+	"":        {},
+	"default": {},
+	"reduce":  {},
+}
+
 // Validate ensures the config is complete and consistent.
 func (c *Config) Validate(path string) error {
 	if _, ok := validApprovals[c.Approvals.Mode]; !ok {
@@ -54,6 +61,7 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
 
+	seenServerIDs := make(map[string]int, len(c.MCP.Servers))
 	for i, server := range c.MCP.Servers {
 		if server.ID == "" {
 			return fmt.Errorf(messages.ConfigMcpServerIDRequiredFmt, path, i)
@@ -61,6 +69,10 @@ func (c *Config) Validate(path string) error {
 		if server.ID == "agent-layer" {
 			return fmt.Errorf(messages.ConfigMcpServerIDReservedFmt, path, i)
 		}
+		if firstIndex, ok := seenServerIDs[server.ID]; ok {
+			return fmt.Errorf(messages.ConfigMcpServerIDDuplicateFmt, path, i, server.ID, firstIndex)
+		}
+		seenServerIDs[server.ID] = i
 		if server.Enabled == nil {
 			return fmt.Errorf(messages.ConfigMcpServerEnabledRequiredFmt, path, i)
 		}
@@ -114,6 +126,11 @@ func (c *Config) Validate(path string) error {
 // validateWarnings validates optional warning thresholds.
 // path is used for error context; warnings carries the thresholds; returns an error when a threshold is non-positive.
 func validateWarnings(path string, warnings WarningsConfig) error {
+	mode := strings.ToLower(strings.TrimSpace(warnings.NoiseMode))
+	if _, ok := validWarningNoiseModes[mode]; !ok {
+		return fmt.Errorf(messages.ConfigWarningNoiseModeInvalidFmt, path, warnings.NoiseMode)
+	}
+
 	thresholds := []struct {
 		name  string
 		value *int

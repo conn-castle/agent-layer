@@ -9,6 +9,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+var (
+	readFile = os.ReadFile
+)
+
 // CheckStructure verifies that the required project directories exist.
 func CheckStructure(root string) []Result {
 	var results []Result
@@ -138,6 +142,57 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 				Message:   fmt.Sprintf(messages.DoctorAgentDisabledFmt, a.Name),
 			})
 		}
+	}
+	return results
+}
+
+// CheckSecretRisk scans generated artifact surfaces for likely secret literals.
+func CheckSecretRisk(root string) []Result {
+	candidates := []string{
+		filepath.Join(root, ".codex", "config.toml"),
+		filepath.Join(root, ".mcp.json"),
+		filepath.Join(root, ".claude", "settings.json"),
+		filepath.Join(root, ".gemini", "settings.json"),
+		filepath.Join(root, ".vscode", "mcp.json"),
+	}
+
+	var results []Result
+	for _, path := range candidates {
+		rel := path
+		if relPath, relErr := filepath.Rel(root, path); relErr == nil {
+			rel = relPath
+		}
+
+		data, err := readFile(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			results = append(results, Result{
+				Status:         StatusWarn,
+				CheckName:      messages.DoctorCheckNameSecretRisk,
+				Message:        fmt.Sprintf(messages.DoctorSecretRiskReadFailedFmt, rel, err),
+				Recommendation: messages.DoctorSecretRiskReadRecommend,
+			})
+			continue
+		}
+		if !config.ContainsPotentialSecretLiteral(string(data)) {
+			continue
+		}
+		results = append(results, Result{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameSecretRisk,
+			Message:        fmt.Sprintf(messages.DoctorSecretRiskDetectedFmt, rel),
+			Recommendation: messages.DoctorSecretRiskRecommend,
+		})
+	}
+
+	if len(results) == 0 {
+		results = append(results, Result{
+			Status:    StatusOK,
+			CheckName: messages.DoctorCheckNameSecretRisk,
+			Message:   messages.DoctorSecretRiskNone,
+		})
 	}
 	return results
 }

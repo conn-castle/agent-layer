@@ -51,10 +51,10 @@ EOF
 | `v0.6.2` | `0.6.1` | No additional migration rules yet beyond standard `al init` upgrade flow. | None currently. | Update this row when release-specific rules are defined. |
 EOF
 
-  if "$script_path" --tag v0.7.0 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" >/dev/null 2>&1; then
+  if stderr=$("$script_path" --tag v0.7.0 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" 2>&1 >/dev/null); then
     pass "check-upgrade-docs: passes when row exists and changelog has no breaking/manual signal"
   else
-    fail "check-upgrade-docs: unexpected failure for non-breaking release row"
+    fail "check-upgrade-docs: unexpected failure for non-breaking release row: $stderr"
   fi
 
   if "$script_path" --tag v0.9.9 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" >/dev/null 2>&1; then
@@ -69,10 +69,10 @@ EOF
     pass "check-upgrade-docs: fails when placeholder row is used for breaking/manual release"
   fi
 
-  if "$script_path" --tag v0.6.1 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" >/dev/null 2>&1; then
+  if stderr=$("$script_path" --tag v0.6.1 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" 2>&1 >/dev/null); then
     pass "check-upgrade-docs: passes when breaking/manual release has non-placeholder migration guidance"
   else
-    fail "check-upgrade-docs: unexpected failure for explicit breaking/manual migration row"
+    fail "check-upgrade-docs: unexpected failure for explicit breaking/manual migration row: $stderr"
   fi
 
   if "$script_path" --tag v0.6.2 --upgrades-file "$upgrades_placeholder_breaking_colon" --changelog-file "$changelog_file" >/dev/null 2>&1; then
@@ -81,10 +81,10 @@ EOF
     pass "check-upgrade-docs: fails when placeholder row is used for Breaking: release"
   fi
 
-  if "$script_path" --tag v0.6.2 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" >/dev/null 2>&1; then
+  if stderr=$("$script_path" --tag v0.6.2 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" 2>&1 >/dev/null); then
     pass "check-upgrade-docs: passes when Breaking: release has non-placeholder migration guidance"
   else
-    fail "check-upgrade-docs: unexpected failure for explicit Breaking: migration row"
+    fail "check-upgrade-docs: unexpected failure for explicit Breaking: migration row: $stderr"
   fi
 
   if "$script_path" --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" >/dev/null 2>&1; then
