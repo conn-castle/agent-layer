@@ -62,6 +62,7 @@ func TestRunWithSystemFS_Success(t *testing.T) {
 	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
 		t.Fatalf("copy fixture: %v", err)
 	}
+	writePromptServerBinary(t, root)
 	envPath := filepath.Join(root, ".agent-layer", ".env")
 	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
