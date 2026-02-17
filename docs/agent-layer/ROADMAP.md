@@ -119,7 +119,7 @@ Incomplete:
 - Clear deferred backlog items that are unblocked and have outsized impact relative to effort.
 
 ### Tasks
-- [x] yolo-mode: Add a "full-auto" (YOLO) config option that configures agents to run with maximum autonomy — skipping permission prompts where the agent supports it. Wire appropriate launch flags per client (e.g., Claude's `--dangerously-skip-permissions`, Codex full-auto sandbox). Include prominent security warnings in CLI output, `al doctor`, and documentation. (From BACKLOG e5f4d3c)
+- [x] yolo-mode: Add a "full-auto" (YOLO) config option that configures agents to run with maximum autonomy — skipping permission prompts where the agent supports it. Wire appropriate launch flags per client (e.g., Claude's `--dangerously-skip-permissions`, Codex full-auto sandbox). Print a single-line `[yolo]` acknowledgement on sync and launch. Document in README and site docs. (From BACKLOG e5f4d3c)
 - [ ] claude-vscode: Add support for configuring and launching the Claude extension within VS Code, similar to existing VS Code agent support. (From BACKLOG 7e9f3a1)
 - [ ] skill-auto-approval: Enable safe auto-approval for workflow skills, allowing skills invoked through the workflow system to run with minimal human intervention when the operation is deemed safe. Requires clear safety criteria and audit trail. (From BACKLOG b2c3d4e)
 - [x] launch-plan-decision: Evaluate whether a standalone `al launch-plan <client>` command is needed now that Phase 11 is complete. Document the decision (keep/remove/reshape) based on final launch sync-mode semantics. (From BACKLOG launch-plan-revisit)
@@ -128,9 +128,9 @@ Incomplete:
 
 ### Task details
 - yolo-mode
-  Description: Add a config option (e.g., `[approvals] auto_approve = "full"` or a dedicated `[approvals] yolo = true`) that tells `al sync` to generate per-client configs with maximum autonomy. For Claude Code: pass `--dangerously-skip-permissions` or equivalent allowlist. For Codex: configure full-auto sandbox mode. For VS Code: adjust settings accordingly. Display a clear, unmissable security warning on `al sync` and `al <client>` when YOLO mode is active. `al doctor` should flag YOLO mode as a warning.
-  Acceptance criteria: Config option exists and is documented. Each supported client launches with reduced/no permission prompts when enabled. Security warning is displayed on sync and launch. `al doctor` warns when YOLO is active.
-  Notes: This is a power-user feature. The security warning must be prominent and explain the risks. Consider requiring explicit opt-in (not just a default change).
+  Description: Add `approvals.mode = "yolo"` that tells `al sync` to generate per-client configs with maximum autonomy. Per-client flags: Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove`. Print a lightweight single-line `[yolo]` acknowledgement on sync and launch (not a structured warning — YOLO users chose the mode deliberately).
+  Acceptance criteria: Config option exists and is documented. Each supported client launches with reduced/no permission prompts when enabled. Single-line acknowledgement is printed on sync and launch. Template config includes a caution comment.
+  Notes: This is a power-user feature. The acknowledgement is deliberately lightweight — a 5-line structured warning every invocation deters adoption. The template config comment and documentation carry the risk explanation.
 - claude-vscode
   Description: Add launcher support for the Claude extension in VS Code. The Claude extension does not respect MCP servers defined in the local repo config (similar to Codex), so `al sync` must project MCP server configuration into the Claude extension's settings. This may involve a new agent entry in config.toml (e.g., `[agents.claude-vscode]`), a new sync target for Claude extension MCP/settings, and a launch command or integration with `al vscode`.
   Acceptance criteria: Users can enable the Claude VS Code extension through config and launch/configure it via `al` commands. MCP servers defined in `config.toml` are projected into Claude extension settings by `al sync`.
@@ -143,7 +143,7 @@ Incomplete:
   Acceptance criteria: Decision is recorded in DECISIONS.md with rationale.
 
 ### Exit criteria
-- YOLO mode config option exists, wires correct flags per client, and displays security warnings.
+- YOLO mode config option exists, wires correct flags per client, and prints a single-line acknowledgement.
 - Claude VS Code extension is configurable and launchable via `al` CLI.
 - Safe workflow skills can run without manual approval prompts.
 - Launch-plan decision is documented.

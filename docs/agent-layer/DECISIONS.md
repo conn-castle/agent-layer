@@ -208,4 +208,4 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Decision 2026-02-17 p12-yolo-mode: Approvals policy expanded to 5-mode system (supersedes f6a7b8c)
     Decision: Add `yolo` as a fifth `approvals.mode` value. YOLO mode auto-approves commands and MCP (like `all`) and also sends full-auto flags to each client: Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove=true`.
     Reason: Users running in sandboxed/ephemeral environments want to skip all permission prompts without per-client manual configuration.
-    Tradeoffs: YOLO bypasses all safety prompts; a `CheckPolicy` warning and `RunNoSync` stderr message inform users that YOLO is active.
+    Tradeoffs: YOLO bypasses all safety prompts; a single-line `[yolo]` acknowledgement on stderr (not a structured warning) informs users on every sync and launch. The template config comment and documentation carry the risk explanation. No `al doctor` warning — YOLO is a deliberate choice, not a health issue.
