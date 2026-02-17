@@ -37,16 +37,10 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			if len(warnings) > 0 {
-				hasErrors := false
 				for _, w := range warnings {
 					fmt.Fprintln(os.Stderr, w.String())
-					if !w.NoiseSuppressible {
-						hasErrors = true
-					}
 				}
-				if hasErrors {
-					return ErrSyncCompletedWithWarnings
-				}
+				return ErrSyncCompletedWithWarnings
 			}
 			if project.Config.Approvals.Mode == "yolo" {
 				fmt.Fprintln(os.Stderr, messages.WarningsPolicyYOLOAck)
