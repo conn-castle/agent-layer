@@ -14,6 +14,7 @@ import (
 )
 
 type vscodeSettings struct {
+	ChatToolsGlobalAutoApprove   *bool            `json:"chat.tools.global.autoApprove,omitempty"`
 	ChatToolsTerminalAutoApprove OrderedMap[bool] `json:"chat.tools.terminal.autoApprove,omitempty"`
 }
 
@@ -73,6 +74,11 @@ func writeVSCodeSettings(sys System, root string, project *config.ProjectConfig,
 func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error) {
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	settings := &vscodeSettings{}
+
+	if project.Config.Approvals.Mode == "yolo" {
+		trueVal := true
+		settings.ChatToolsGlobalAutoApprove = &trueVal
+	}
 
 	if approvals.AllowCommands {
 		autoApprove := make(OrderedMap[bool])

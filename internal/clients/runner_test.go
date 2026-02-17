@@ -260,6 +260,70 @@ Do it.`
 	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
+func writeMinimalRepoWithMode(t *testing.T, root string, mode string) {
+	t.Helper()
+	paths := config.DefaultPaths(root)
+	dirs := []string{paths.InstructionsDir, paths.SlashCommandsDir}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	configToml := fmt.Sprintf(`
+[approvals]
+mode = %q
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = false
+
+[agents.codex]
+enabled = false
+
+[agents.vscode]
+enabled = false
+
+[agents.antigravity]
+enabled = false
+
+[warnings]
+instruction_token_threshold = 50000
+mcp_server_threshold = 5
+`, mode)
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	gitignoreBlock := "# test gitignore content\n"
+	if err := os.WriteFile(filepath.Join(paths.Root, ".agent-layer", "gitignore.block"), []byte(gitignoreBlock), 0o644); err != nil {
+		t.Fatalf("write gitignore.block: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
+		t.Fatalf("write instructions: %v", err)
+	}
+	command := `---
+name: alpha
+description: test
+---
+
+Do it.`
+	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "alpha.md"), []byte(command), 0o644); err != nil {
+		t.Fatalf("write slash command: %v", err)
+	}
+	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o644); err != nil {
+		t.Fatalf("write commands allow: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "al"), []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write al stub: %v", err)
+	}
+	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
 func TestRunNoSync_Success(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
@@ -279,6 +343,28 @@ func TestRunNoSync_Success(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("expected launch to be called")
+	}
+}
+
+func TestRunNoSync_YOLOWarning(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepoWithMode(t, root, "yolo")
+
+	var stderr bytes.Buffer
+	err := RunNoSyncWithStderr(root, "gemini", func(cfg *config.Config) *bool {
+		return cfg.Agents.Gemini.Enabled
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		return nil
+	}, nil, &stderr)
+	if err != nil {
+		t.Fatalf("RunNoSyncWithStderr: %v", err)
+	}
+	output := stderr.String()
+	if !strings.Contains(output, "[yolo]") {
+		t.Fatalf("expected [yolo] acknowledgement in stderr, got %q", output)
+	}
+	if strings.Contains(output, "WARNING") {
+		t.Fatalf("expected single-line ack, not structured warning, got %q", output)
 	}
 }
 

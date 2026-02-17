@@ -188,6 +188,29 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 	}
 }
 
+func TestBuildCodexConfigYOLO(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(output, `approval_policy = "never"`) {
+		t.Fatalf("expected approval_policy in output:\n%s", output)
+	}
+	if !strings.Contains(output, `sandbox_mode = "danger-full-access"`) {
+		t.Fatalf("expected sandbox_mode in output:\n%s", output)
+	}
+}
+
 func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{

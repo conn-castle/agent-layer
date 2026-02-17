@@ -105,6 +105,7 @@ const (
 	WarningsPolicyAntigravityMCPFix       = "Remove antigravity from mcp.servers[].clients and keep MCP-targeted clients to gemini/claude/codex/vscode."
 	WarningsPolicyAntigravityApprovalsFmt = "approvals.mode=%q has no effect for antigravity"
 	WarningsPolicyAntigravityApprovalsFix = "Keep approvals.mode for supported clients, but do not expect antigravity to honor approvals settings."
+	WarningsPolicyYOLOAck                 = "[yolo] permission prompts disabled for supported clients"
 	WarningsNoiseModeInvalidFmt           = "unknown warnings noise mode %q; expected one of: %s, %s"
 	WarningsNoiseModeInvalidFix           = "Set warnings.noise_mode to default or reduce."
 

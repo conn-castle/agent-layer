@@ -66,6 +66,27 @@ func TestWriteVSCodeSettings(t *testing.T) {
 	}
 }
 
+func TestBuildVSCodeSettingsYOLO(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	settings, err := buildVSCodeSettings(project)
+	if err != nil {
+		t.Fatalf("buildVSCodeSettings error: %v", err)
+	}
+	if settings.ChatToolsGlobalAutoApprove == nil || !*settings.ChatToolsGlobalAutoApprove {
+		t.Fatalf("expected ChatToolsGlobalAutoApprove=true for yolo mode")
+	}
+	if len(settings.ChatToolsTerminalAutoApprove) != 1 {
+		t.Fatalf("expected 1 terminal auto-approve entry for yolo mode")
+	}
+}
+
 func TestWriteVSCodeSettingsPreservesExistingContent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

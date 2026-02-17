@@ -122,6 +122,17 @@ func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
 	require.Equal(t, "approvals.mode", results[1].Subject)
 }
 
+func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Nil(t, results, "YOLO mode should not produce policy warnings")
+}
+
 func TestCheckPolicy_NilAndDisabledServer(t *testing.T) {
 	require.Nil(t, CheckPolicy(nil))
 

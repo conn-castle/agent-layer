@@ -29,6 +29,7 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	}
 
 	results := make([]Warning, 0)
+
 	for _, server := range project.Config.MCP.Servers {
 		if server.Enabled == nil || !*server.Enabled {
 			continue

@@ -62,6 +62,10 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	if project.Config.Agents.Codex.ReasoningEffort != "" {
 		builder.WriteString(fmt.Sprintf("model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort))
 	}
+	if project.Config.Approvals.Mode == "yolo" {
+		builder.WriteString("approval_policy = \"never\"\n")
+		builder.WriteString("sandbox_mode = \"danger-full-access\"\n")
+	}
 
 	// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
 	resolved, err := projection.ResolveMCPServers(

@@ -160,6 +160,23 @@ func withServers(cfg Config, servers []MCPServer) Config {
 	return cfg
 }
 
+func TestValidateApprovalsYOLO(t *testing.T) {
+	trueVal := true
+	cfg := Config{
+		Approvals: ApprovalsConfig{Mode: "yolo"},
+		Agents: AgentsConfig{
+			Gemini:      AgentConfig{Enabled: &trueVal},
+			Claude:      AgentConfig{Enabled: &trueVal},
+			Codex:       CodexConfig{Enabled: &trueVal},
+			VSCode:      AgentConfig{Enabled: &trueVal},
+			Antigravity: AgentConfig{Enabled: &trueVal},
+		},
+	}
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("expected yolo to be valid, got %v", err)
+	}
+}
+
 func TestValidateWarningsThresholds(t *testing.T) {
 	enabled := true
 	base := Config{

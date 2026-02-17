@@ -99,6 +99,30 @@ func TestBuildClaudeSettingsNone(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeSettingsYOLO(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
+				},
+			},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if settings.Permissions == nil || len(settings.Permissions.Allow) < 2 {
+		t.Fatalf("expected permissions allow list for yolo mode")
+	}
+}
+
 func TestWriteClaudeSettingsMarshalError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

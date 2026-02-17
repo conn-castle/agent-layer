@@ -204,3 +204,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al launch-plan <client>` will not be implemented as a separate command. If dry-run sync demand emerges, add `--dry-run` to `al sync` instead.
     Reason: `al sync` already writes deterministic, gitignored outputs that are safe to regenerate and inspect. `al upgrade plan` handles preview for upgrade mutations. `--no-sync` exists only on `al vscode`; other clients always sync before launch. No `launch-plan` code was ever built, and a separate command would duplicate sync semantics.
     Tradeoffs: No dedicated pre-sync preview exists today; users who want to inspect outputs must run `al sync` and review the generated files.
+
+- Decision 2026-02-17 p12-yolo-mode: Approvals policy expanded to 5-mode system (supersedes f6a7b8c)
+    Decision: Add `yolo` as a fifth `approvals.mode` value. YOLO mode auto-approves commands and MCP (like `all`) and also sends full-auto flags to each client: Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove=true`.
+    Reason: Users running in sandboxed/ephemeral environments want to skip all permission prompts without per-client manual configuration.
+    Tradeoffs: YOLO bypasses all safety prompts; a `CheckPolicy` warning and `RunNoSync` stderr message inform users that YOLO is active.

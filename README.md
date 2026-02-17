@@ -207,7 +207,7 @@ Compatibility guarantee:
 
 Run `al wizard` any time to interactively configure the most important settings:
 
-- **Approvals Mode** (all, mcp, commands, none)
+- **Approvals Mode** (all, mcp, commands, none, yolo)
 - **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex reasoning effort)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
@@ -286,7 +286,7 @@ Example:
 
 ```toml
 [approvals]
-# one of: "all", "mcp", "commands", "none"
+# one of: "all", "mcp", "commands", "none", "yolo"
 mode = "all"
 
 [agents.gemini]
@@ -396,6 +396,7 @@ These modes control whether the agent is allowed to run shell commands and/or MC
 - `mcp`: auto-approve **only** MCP tool calls; shell commands still require approval (or are restricted)
 - `commands`: auto-approve **only** shell commands; MCP tool calls still require approval
 - `none`: approve **nothing** automatically
+- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` to Codex, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
 
 Client notes:
 - Some clients do not support all approval types; Agent Layer generates the closest supported behavior per client.
