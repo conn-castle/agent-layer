@@ -16,7 +16,7 @@ coverage.out
 # >>> agent-layer
 # Template hash: 4908c3ea5d3522d9f02c23becfdb8fd60a95e3723c96a96e51ad29c799d576eb
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
-# and re-run `al sync` to apply changes.
+# and re-run `al init` to apply changes.
 
 # Optional: keep uncommented to ignore .agent-layer/ config.
 /.agent-layer/

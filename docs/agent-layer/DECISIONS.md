@@ -55,30 +55,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: The user works in parallel with agents, making concurrent changes a normal operating condition.
     Tradeoffs: Increases risk of edit conflicts if both user and agent modify the same file simultaneously; relies on git for resolution.
 
-- Decision 2026-01-25 edefea6: Sync dependency injection for system calls
-    Decision: Added a `System` interface with a `RealSystem` implementation and threaded it through `internal/sync` writers and prompt resolution instead of patching globals.
-    Reason: Removes test-only global state and enables parallel-safe unit tests.
-    Tradeoffs: Adds `sys System` parameters and test stubs for filesystem/process operations.
-
-- Decision 2026-01-25 b4c5d6e: Centralize VS Code launcher paths
-    Decision: Centralize VS Code launcher paths in `internal/launchers` and consume them from sync and install.
-    Reason: Single source of truth prevents drift and accidental deletion of generated artifacts.
-    Tradeoffs: Adds a small shared package dependency for sync and install.
-
-- Decision 2026-01-25 f3a9d1: Freeze repo-local .agent-layer updates
-    Decision: Do not manually update `.agent-layer/` in this repo; use a migration later.
-    Reason: Preserve the current `.agent-layer/` state for testing migration behavior in a future release.
-    Tradeoffs: Repo-local instructions may drift from templates until the migration is exercised.
-
 - Decision 2026-01-25 7e2c9f4: Agent-only workflow artifacts live in `.agent-layer/tmp`
     Decision: Workflow artifacts are written to `.agent-layer/tmp` using a unique per-invocation filename: `.agent-layer/tmp/<workflow>.<run-id>.<type>.md` with `run-id = YYYYMMDD-HHMMSS-<short-rand>`; no path overrides.
     Reason: Keeps artifacts invisible to humans while avoiding collisions for concurrent agents without relying on env vars or per-chat IDs.
     Tradeoffs: Files can accumulate until manually cleaned; agents must echo paths in chat to retain context.
-
-- Decision 2026-01-26 999bc79: Centralize MCP server resolution in projection package
-    Decision: MCP server resolution logic and the `ResolvedMCPServer` type now live in `internal/projection`. The warnings package imports projection for MCP resolution instead of maintaining duplicate code.
-    Reason: Eliminates DRY violation where identical resolution logic existed in both projection and warnings packages.
-    Tradeoffs: Warnings package now depends on projection; acceptable since projection is a lower-level utility.
 
 - Decision 2026-01-27 d4e7a1b: VS Code settings merge scoped to managed block
     Decision: When the managed markers exist in `.vscode/settings.json`, update only the managed block and do not validate unrelated JSONC content; if markers are missing, parse the root object to insert the block.
@@ -89,11 +69,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Codex projects MCP headers using `bearer_token_env_var` for `Authorization: Bearer ${VAR}`, `env_http_headers` for exact `${VAR}` values, and `http_headers` for literals; other placeholder formats error.
     Reason: Support custom headers across clients without embedding secrets or relying on placeholder expansion in Codex.
     Tradeoffs: Headers with mixed literal + env placeholder (for example, `Token ${VAR}`) are rejected for Codex and must be restructured.
-
-- Decision 2026-01-28 2f8a4e1: Breakdown MCP tool token counts in doctor warnings
-    Decision: Provide a breakdown of the top tools by token count in `MCP_TOOL_SCHEMA_BLOAT_SERVER` warnings.
-    Reason: Better visibility into which tools contribute to schema bloat allows targeted optimization.
-    Tradeoffs: Adds per-tool JSON marshaling during discovery, slightly increasing check latency.
 
 - Decision 2026-02-03 c7d2a1f: Curated CLI docs in site/
     Decision: Stop generating CLI docs during website publish; use the curated `site/docs/reference.mdx` section as the source of truth.
@@ -135,11 +110,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Provides a clear, enforceable public contract without overpromising broad multi-line migration support before lifecycle tooling lands.
     Tradeoffs: Skipped-line upgrades remain best effort and may require additional manual migration guidance per release.
 
-- Decision 2026-02-09 p1-upgrade-plan-heuristics: Upgrade planning compares invoking binary templates with conservative labels (superseded by `p1b-ownership-baseline`)
-    Decision: `al upgrade` bypasses repo pin dispatch, `al upgrade plan` compares repo state to the invoking binary's embedded templates, rename detection uses unique exact normalized-content hash matches, and ownership labels are best-effort without a managed-file hash manifest.
-    Reason: Upgrade previews must reflect the version the user is actively running while still surfacing useful diffs now, before migration manifests and stronger ownership baselines land.
-    Tradeoffs: Ambiguous rename/ownership cases fall back to non-rename + `local customization`, so some true upstream deltas may be under-labeled until manifest/baseline infrastructure is added.
-
 - Decision 2026-02-09 p1b-ownership-baseline: Ownership classification now uses embedded manifests plus canonical baseline state
     Decision: `al upgrade plan` ownership classification now uses committed per-release manifests (`internal/templates/manifests/*.json`) and canonical repo baseline state (`.agent-layer/state/managed-baseline.json`) with section-aware policies (`memory_entries_v1`, `memory_roadmap_v1`, `allowlist_lines_v1`), and emits `unknown_no_baseline` when evidence is insufficient.
     Reason: Distinguishes upstream template deltas from true local customization without runtime network/tag lookups and avoids silent guesses in ambiguous cases.
@@ -160,11 +130,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Unpinned repos can silently drift when developers upgrade the global `al` install, causing hard-to-debug mismatches.
     Tradeoffs: Advanced users can still delete the pin file manually, but that is unsupported and reduces reproducibility.
 
-- Decision 2026-02-11 p1d-json-contract: Upgrade-plan JSON is diagnostic, not a stable public schema contract (superseded by `p3b-hard-removals`)
-    Decision: Keep `al upgrade plan --json` as optional diagnostic output, but do not guarantee a stable field-level schema for CI automation.
-    Reason: There are currently no first-party automation consumers; locking the schema now would add compatibility burden without immediate product value.
-    Tradeoffs: External automation must pin CLI versions (or parse defensively) if it chooses to consume `--json` output.
-
 - Decision 2026-02-11 p1e-readiness-heuristics: Readiness checks are text-first with VS Code mtime heuristic
     Decision: Implement upgrade readiness checks in text dry-run output; detect stale `--no-sync` state using VS Code generated-output presence plus config-vs-output mtime comparison (instead of full sync-content diffing).
     Reason: Keeps checks decoupled from sync internals while surfacing practical risk before upgrade apply.
@@ -179,11 +144,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al upgrade plan` and interactive `al upgrade` overwrite prompts now render unified line-level diffs by default, with per-file truncation at 40 lines and an explicit `--diff-lines` override.
     Reason: Issue #30 required users to see specific line changes before accepting/rejecting overwrite decisions; always-on previews remove blind yes/no prompts.
     Tradeoffs: Default output is noisier for large files; users who need deeper context must opt in with a larger `--diff-lines` value.
-
-- Decision 2026-02-14 p1g-upgrade-everyday-output: Default upgrade UX is plain-language; JSON retained temporarily (superseded by `p3b-hard-removals`)
-    Decision: `al upgrade plan` default text output now prioritizes plain-language summaries/actions and no longer surfaces ownership reason codes, confidence/detection metadata, or readiness IDs; at that time `--json` remained only as a hidden temporary compatibility path (supersedes the user-facing part of `p1d-json-contract`).
-    Reason: Everyday users needed low-jargon guidance while existing automation had a short transition window before full JSON removal.
-    Tradeoffs: Power users lost internal diagnostics in the default path and had to use the temporary hidden JSON mode or source-level inspection during the transition.
 
 - Decision 2026-02-14 p2a-upgrade-snapshot-transaction: Upgrade snapshot/rollback boundary and retention policy
     Decision: `al upgrade` now captures full-byte snapshots for the transactional upgrade mutation set (managed files/dirs, memory files, `.gitignore`, launcher outputs, and scanned unknown deletion targets), runs rollback on transactional-step failure, and retains the newest 20 snapshots under `.agent-layer/state/upgrade-snapshots/`.

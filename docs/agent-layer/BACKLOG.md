@@ -28,17 +28,11 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
-- Backlog 2026-02-14 upg-snapshot-list: Add snapshot discovery command for upgrade rollback
-    Priority: Medium. Area: upgrade UX
-    Description: Provide a first-class command to list available upgrade snapshots so users do not need to inspect `.agent-layer/state/upgrade-snapshots/` manually before running `al upgrade rollback`.
-    Acceptance criteria: `al upgrade rollback --list` (or equivalent `al upgrade snapshots`) shows snapshot IDs, timestamps, and statuses in a stable human-readable format.
-    Notes: Should include guidance for selecting rollbackable snapshots (`status=applied`).
-
-- Backlog 2026-02-13 launch-plan-revisit: Reevaluate dedicated launch-impact preview command
-    Priority: Medium. Area: launch UX
-    Description: Reconsider whether a standalone `al launch-plan <client>` command is needed, versus integrating preview behavior into launch/sync mode UX.
-    Acceptance criteria: After Phase 11 is complete, decision is documented to keep/remove/reshape launch-plan based on final launch sync-mode semantics and safety guarantees.
-    Notes: Explicitly defer the decision until Phase 11 finishes so it is evaluated against the final upgrade/sync design.
+- Backlog 2026-02-16 skill-install: Install community skills from external sources
+    Priority: Low. Area: skills / ecosystem
+    Description: Allow users to install agentskills.io-compliant skills from GitHub repos or a registry (e.g., `al skill add <repo>` or `al skill add <name>`).
+    Acceptance criteria: Users can install a skill from an external source into `.agent-layer/skills/` and it is picked up by `al sync`.
+    Notes: Depends on Phase 15 (skills standard alignment). Consider validation, versioning, and update mechanisms.
 
 - Backlog 2026-02-10 test-agents: Multi-agent test strategy and execution workflows
     Priority: High. Area: workflows/testing
@@ -46,41 +40,11 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: E2E agents use tools like Playwright to actively "break things," turning failures into new tests; results are delivered as complete PRs with code and tests.
     Notes: Must distinguish between test types; requires full product access for E2E agents to explore and find edge cases.
 
-- Backlog 2026-02-10 analytics: Add tracking and analytics to the website
-    Priority: Medium. Area: website
-    Description: Integrate tracking and analytics into the project website to monitor visitor counts and usage patterns.
-    Acceptance criteria: Website includes an analytics provider (e.g., Google Analytics, Plausible) and visitor data is accessible.
-    Notes: Ensure privacy compliance (GDPR/CCPA) and consider privacy-respecting alternatives.
-
-- Backlog 2026-02-03 f1a2b3c: Transform roadmap into public-facing documentation
-    Priority: Medium. Area: documentation
-    Description: Convert the internal `ROADMAP.md` into actual documentation that clearly communicates the project's direction and upcoming features to users.
-    Acceptance criteria: `ROADMAP.md` is formatted and positioned as a user-facing document, providing clarity on what is coming and what is speculative.
-    Notes: Ensure it remains easy for agents to update while being readable for humans.
-
-- Backlog 2026-01-30 e5f4d3c: Enable full-auto mode for Claude and Codex
-    Priority: Low. Area: agent permissions
-    Description: Provide a way to give Claude and Codex full access to the CLI to avoid repetitive permission prompts, specifically for Claude's custom Python execution.
-    Acceptance criteria: Claude and Codex can be configured to run in "full-auto" mode, bypassing manual approval for CLI commands and Python scripts.
-    Notes: Merges and elevates Backlog 2026-01-25 d0e1f2a; requires strong security warnings.
-
-- Backlog 2026-01-28 7e9f3a1: Add support for Claude extension in VSCode
-    Priority: Medium. Area: client integration
-    Description: Add support for configuring and launching the Claude extension within VSCode, similar to the existing VSCode agent support.
-    Acceptance criteria: Users can enable and configure the Claude extension through `al vscode` or a dedicated command.
-    Notes: Currently, `al vscode` handles VSCode configuration; this would extend it to specifically support the Claude extension.
-
 - Backlog 2026-01-25 a1b2c3d: Add interaction monitoring for prompt self-improvement
     Priority: Low. Area: agent intelligence
     Description: Add interaction monitoring to agent system instructions to self-improve all prompts, rules, and workflows based on usage patterns.
     Acceptance criteria: Monitoring captures interaction patterns and produces actionable suggestions for prompt improvements.
     Notes: Requires careful design to avoid privacy concerns and ensure suggestions are high-quality.
-
-- Backlog 2026-01-25 b2c3d4e: Enable safe auto-approval for workflow slash commands
-    Priority: Medium. Area: workflow automation
-    Description: Enable safe auto-approval for slash-command workflows invoked through the workflow system.
-    Acceptance criteria: Workflows can run with minimal human intervention where the operation is deemed safe.
-    Notes: Requires clear safety criteria and audit trail for auto-approved actions.
 
 - Backlog 2026-01-25 c3d4e5f: Auto-merge client-side edits back to agent-layer sources
     Priority: Medium. Area: config synchronization
@@ -93,12 +57,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Description: Add a queueing system to chain tasks without interrupting the current task.
     Acceptance criteria: Users can queue multiple tasks that execute sequentially without manual intervention between them.
     Notes: Consider how to handle failures mid-queue and queue persistence across sessions.
-
-- Backlog 2026-01-25 e5f6a7b: Add slash-command ordering guide
-    Priority: Low. Area: documentation
-    Description: Add a simple flowchart or rules-based guide for slash-command ordering.
-    Acceptance criteria: Documentation clearly explains recommended slash-command sequences for common workflows.
-    Notes: Should cover common scenarios like feature development, bug fixing, and code review.
 
 - Backlog 2026-01-25 f6a7b8c: Build multi-agent chat tool
     Priority: Low. Area: agent collaboration
@@ -123,12 +81,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Description: Persist conversation history in model-specific local folders (e.g., `.agent-layer/gemini/`, `.agent-layer/openai/`).
     Acceptance criteria: Conversation history is saved locally per model and can be restored across sessions.
     Notes: Consider storage format, retention policy, and privacy implications.
-
-- Backlog 2026-01-25 1b2c3d4: Investigate support for Claude Code Desktop (GUI)
-    Priority: Low. Area: client integration
-    Description: Investigate adding support for launching and configuring Claude Code Desktop (GUI version) if/when available.
-    Acceptance criteria: Feasibility study completed; if viable, `al claude-desktop` command or similar is spec'd out.
-    Notes: Currently `al claude` supports the CLI; need to check if a GUI variant exists or is planned and how it integrates.
 
 - Backlog 2026-01-25 1a2b3c4: Evaluate unified shell/command MCP for centralized allowlisting
     Priority: Low. Area: MCP / security
