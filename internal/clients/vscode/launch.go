@@ -33,7 +33,9 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	env = clients.SetEnv(env, "CODEX_HOME", codexHome)
 
 	args := append([]string{}, passArgs...)
-	args = append(args, ".")
+	if !hasPositionalArg(passArgs) {
+		args = append(args, ".")
+	}
 	cmd := exec.Command("code", args...)
 	cmd.Dir = cfg.Root
 	cmd.Stdin = os.Stdin
@@ -46,6 +48,28 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 
 	return nil
+}
+
+// hasPositionalArg returns true when passArgs contains at least one argument
+// that is not a flag (i.e., does not start with "-"). This lets callers pass
+// workspace files or folder paths without an extra "." being appended.
+//
+// Limitation: flags that accept a separate value argument (e.g.,
+// "--user-data-dir /tmp/data") will cause the value to be misclassified as
+// positional. In practice this is unlikely for passthrough args — most
+// VS Code flags passed through al are boolean (--new-window, -n, -r).
+func hasPositionalArg(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			// Everything after bare "--" is positional.
+			return true
+		}
+		if strings.HasPrefix(a, "-") {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func runPreflight(root string) error {

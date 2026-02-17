@@ -124,6 +124,7 @@ Incomplete:
 - [ ] skill-auto-approval: Enable safe auto-approval for workflow skills, allowing skills invoked through the workflow system to run with minimal human intervention when the operation is deemed safe. Requires clear safety criteria and audit trail. (From BACKLOG b2c3d4e)
 - [x] launch-plan-decision: Evaluate whether a standalone `al launch-plan <client>` command is needed now that Phase 11 is complete. Document the decision (keep/remove/reshape) based on final launch sync-mode semantics. (From BACKLOG launch-plan-revisit)
 - [x] sys-inst-commit-clarity: Replace rigid "NEVER stage or commit" instructions with clearer "commit only when explicitly asked" language across all agents. (From BACKLOG)
+- [x] vscode-positional-args: Fix `al vscode` unconditionally appending `.` when caller provides positional args (e.g., workspace files), causing double windows. Skip `.` when passArgs contains a positional argument. (GitHub #51)
 
 ### Task details
 - yolo-mode
@@ -147,6 +148,7 @@ Incomplete:
 - Safe workflow skills can run without manual approval prompts.
 - Launch-plan decision is documented.
 - Agent commit instructions are clarified across all instruction templates.
+- `al vscode` does not append `.` when caller provides positional args (GitHub #51).
 
 ## Phase 13 — Maintenance and quality sweep
 
