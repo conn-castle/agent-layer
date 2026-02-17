@@ -854,7 +854,7 @@ func writeTestRepoWithWarnings(t *testing.T, root string) {
 		t.Fatalf("mkdir docs: %v", err)
 	}
 
-	// Config with very low instruction token threshold to trigger a warning
+	// Config with a secret in an MCP URL to trigger a non-suppressible policy warning
 	configToml := `
 [approvals]
 mode = "all"
@@ -876,6 +876,12 @@ enabled = true
 
 [warnings]
 instruction_token_threshold = 1
+
+[[mcp.servers]]
+id = "leaky"
+enabled = true
+transport = "http"
+url = "https://example.com/mcp?api_key=raw_secret"
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
