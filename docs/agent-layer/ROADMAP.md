@@ -122,8 +122,8 @@ Incomplete:
 - [ ] yolo-mode: Add a "full-auto" (YOLO) config option that configures agents to run with maximum autonomy — skipping permission prompts where the agent supports it. Wire appropriate launch flags per client (e.g., Claude's `--dangerously-skip-permissions`, Codex full-auto sandbox). Include prominent security warnings in CLI output, `al doctor`, and documentation. (From BACKLOG e5f4d3c)
 - [ ] claude-vscode: Add support for configuring and launching the Claude extension within VS Code, similar to existing VS Code agent support. (From BACKLOG 7e9f3a1)
 - [ ] skill-auto-approval: Enable safe auto-approval for workflow skills, allowing skills invoked through the workflow system to run with minimal human intervention when the operation is deemed safe. Requires clear safety criteria and audit trail. (From BACKLOG b2c3d4e)
-- [ ] launch-plan-decision: Evaluate whether a standalone `al launch-plan <client>` command is needed now that Phase 11 is complete. Document the decision (keep/remove/reshape) based on final launch sync-mode semantics. (From BACKLOG launch-plan-revisit)
-- [ ] sys-inst-commit-clarity: Replace rigid "NEVER stage or commit" instructions with clearer "commit only when explicitly asked" language across all agents. (From BACKLOG)
+- [x] launch-plan-decision: Evaluate whether a standalone `al launch-plan <client>` command is needed now that Phase 11 is complete. Document the decision (keep/remove/reshape) based on final launch sync-mode semantics. (From BACKLOG launch-plan-revisit)
+- [x] sys-inst-commit-clarity: Replace rigid "NEVER stage or commit" instructions with clearer "commit only when explicitly asked" language across all agents. (From BACKLOG)
 
 ### Task details
 - yolo-mode

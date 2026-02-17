@@ -199,3 +199,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `gentemplatemanifest` reads template files from the working tree via `os.ReadFile`/`filepath.WalkDir` instead of `git show <tag>:<path>`. The `--tag` flag is replaced with `--version`.
     Reason: Eliminates the tag chicken-and-egg problem where the manifest must be committed before tagging but the tool required a tag to generate the manifest.
     Tradeoffs: The manifest is no longer guaranteed to match tag content; the release preflight gate mitigates this risk.
+
+- Decision 2026-02-16 p12-no-launch-plan: Do not implement `al launch-plan`
+    Decision: `al launch-plan <client>` will not be implemented as a separate command. If dry-run sync demand emerges, add `--dry-run` to `al sync` instead.
+    Reason: `al sync` already writes deterministic, gitignored outputs that are safe to regenerate and inspect. `al upgrade plan` handles preview for upgrade mutations. `--no-sync` exists only on `al vscode`; other clients always sync before launch. No `launch-plan` code was ever built, and a separate command would duplicate sync semantics.
+    Tradeoffs: No dedicated pre-sync preview exists today; users who want to inspect outputs must run `al sync` and review the generated files.
