@@ -7,6 +7,7 @@ const (
 	approvalModeAll      = "all"
 	approvalModeCommands = "commands"
 	approvalModeMCP      = "mcp"
+	approvalModeYOLO     = "yolo"
 )
 
 // Approvals captures the resolved approvals policy and allowlist.
@@ -18,8 +19,9 @@ type Approvals struct {
 
 // BuildApprovals resolves approvals.mode into per-feature flags.
 func BuildApprovals(cfg config.Config, commands []string) Approvals {
-	allowCommands := cfg.Approvals.Mode == approvalModeAll || cfg.Approvals.Mode == approvalModeCommands
-	allowMCP := cfg.Approvals.Mode == approvalModeAll || cfg.Approvals.Mode == approvalModeMCP
+	mode := cfg.Approvals.Mode
+	allowCommands := mode == approvalModeAll || mode == approvalModeCommands || mode == approvalModeYOLO
+	allowMCP := mode == approvalModeAll || mode == approvalModeMCP || mode == approvalModeYOLO
 
 	return Approvals{
 		AllowCommands: allowCommands,

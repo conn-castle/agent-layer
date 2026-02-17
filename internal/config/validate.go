@@ -18,6 +18,7 @@ var validApprovals = map[string]struct{}{
 	"mcp":      {},
 	"commands": {},
 	"none":     {},
+	"yolo":     {},
 }
 
 var validClients = map[string]struct{}{

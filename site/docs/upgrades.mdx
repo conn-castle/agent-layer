@@ -16,12 +16,22 @@ If guidance in other docs is shorter or summarized, this page is the source of t
 
 ## In this page
 
+- [How to upgrade](#how-to-upgrade)
 - [Upgrade event model](#upgrade-event-model)
 - [Compatibility guarantees](#compatibility-guarantees)
 - [Migration rules by release](#migration-rules-by-release)
 - [OS and shell capability matrix](#os-and-shell-capability-matrix)
 - [Commitment level and limitations](#commitment-level-and-limitations)
 - [Upgrade checklist](./upgrade-checklist)
+
+## How to upgrade
+
+1. Update the global `al` CLI:
+   - **Homebrew (macOS/Linux):** `brew upgrade conn-castle/tap/agent-layer`
+   - **Script (macOS/Linux):** `curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash`
+2. Upgrade the repo: `al upgrade plan` then `al upgrade`.
+
+For a full step-by-step runbook (interactive and CI), see the [upgrade checklist](./upgrade-checklist).
 
 ## Upgrade event model
 

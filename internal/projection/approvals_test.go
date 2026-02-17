@@ -18,3 +18,19 @@ func TestBuildApprovals(t *testing.T) {
 		t.Fatalf("unexpected commands: %+v", result.Commands)
 	}
 }
+
+func TestBuildApprovalsYOLO(t *testing.T) {
+	cfg := config.Config{
+		Approvals: config.ApprovalsConfig{Mode: "yolo"},
+	}
+	result := BuildApprovals(cfg, []string{"make test"})
+	if !result.AllowCommands {
+		t.Fatal("expected AllowCommands=true for yolo mode")
+	}
+	if !result.AllowMCP {
+		t.Fatal("expected AllowMCP=true for yolo mode")
+	}
+	if len(result.Commands) != 1 || result.Commands[0] != "make test" {
+		t.Fatalf("unexpected commands: %+v", result.Commands)
+	}
+}

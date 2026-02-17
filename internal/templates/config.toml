@@ -4,7 +4,8 @@
 # - Leave advanced fields as-is unless you have a specific need.
 
 [approvals]
-# one of: "all", "mcp", "commands", "none"
+# one of: "all", "mcp", "commands", "none", "yolo"
+# yolo skips ALL permission prompts; use only in sandboxed/ephemeral environments
 mode = "all"
 
 [agents.gemini]

@@ -145,17 +145,25 @@ make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.25.6+, `make tools` has been run
-Notes: Includes `make tidy-check`, `make test-release`, and `make test-e2e`; requires a clean working tree.
+Notes: Includes `make tidy-check`, `make test-release`, `make test-e2e`, and `make docs-cta-check`; requires a clean working tree.
 
 ### Release
 
-- Generate an embedded template ownership manifest for a release tag
+- Generate an embedded template ownership manifest for a release version
 ```bash
 ./scripts/generate-template-manifest.sh --tag vX.Y.Z
 ```
-Run from: repo root  
-Prerequisites: local git tags include the target release tag  
-Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new release tag and commit the generated manifest.
+Run from: repo root
+Prerequisites: none (reads from the working tree, no git tag required)
+Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new release version and commit the generated manifest.
+
+- Validate release readiness (run before tagging)
+```bash
+make release-preflight RELEASE_TAG=vX.Y.Z
+```
+Run from: repo root
+Prerequisites: `rg` (ripgrep) available on PATH, both manifests committed
+Notes: Runs `test-release` (workflow consistency + release script tests) then validates upgrade-contract docs for the tag. Catches issues that would fail the release workflow.
 
 - Validate upgrade-contract docs for a target release tag
 ```bash

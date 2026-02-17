@@ -188,6 +188,36 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	}
 }
 
+func TestBuildGeminiSettingsYOLO(t *testing.T) {
+	t.Parallel()
+	sys := &MockSystem{
+		LookPathFunc: func(file string) (string, error) {
+			if file == "al" {
+				return "/usr/local/bin/al", nil
+			}
+			return "", os.ErrNotExist
+		},
+	}
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+		},
+		CommandsAllow: []string{"git status"},
+		Root:          t.TempDir(),
+	}
+
+	settings, err := buildGeminiSettings(sys, project)
+	if err != nil {
+		t.Fatalf("buildGeminiSettings error: %v", err)
+	}
+	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
+		t.Fatalf("expected allowed tools for yolo mode")
+	}
+	if settings.MCPServers["agent-layer"].Trust == nil || !*settings.MCPServers["agent-layer"].Trust {
+		t.Fatalf("expected trust to be true when approvals.mode=yolo")
+	}
+}
+
 func TestBuildGeminiSettingsMissingEnv(t *testing.T) {
 	t.Parallel()
 	enabled := true

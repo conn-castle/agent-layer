@@ -9,8 +9,9 @@ Usage:
   scripts/generate-template-manifest.sh --tag vX.Y.Z [--output internal/templates/manifests/X.Y.Z.json]
 
 Description:
-  Generates a template ownership manifest from a release tag and writes it to the
-  repository manifest directory.
+  Generates a template ownership manifest from the working tree for the given
+  version and writes it to the repository manifest directory. No git tag is
+  required; files are read directly from the working tree.
 USAGE
 }
 
@@ -53,4 +54,4 @@ if [[ -z "$output" ]]; then
 fi
 
 cd "$ROOT_DIR"
-go run -tags tools ./internal/tools/gentemplatemanifest --tag "$tag" --output "$output" --repo-root "$ROOT_DIR"
+go run -tags tools ./internal/tools/gentemplatemanifest --version "$tag" --output "$output" --repo-root "$ROOT_DIR"

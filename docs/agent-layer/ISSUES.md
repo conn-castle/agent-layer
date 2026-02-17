@@ -27,6 +27,16 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-16 test-coverage-parity: Local test coverage does not match GitHub Actions CI
+    Priority: Medium. Area: testing / CI.
+    Description: Test coverage reports generated locally (e.g., via `go test -cover`) do not align with the results produced in GitHub Actions. This makes it difficult to ensure coverage requirements are met before pushing code.
+    Next step: Investigate the differences in coverage calculation (e.g., flags, environment, or tool versions) and provide a script or Makefile target that reproduces the CI coverage report locally.
+
+- Issue 2026-02-16 skill-standard-rename: Rename slash-commands to skills and align with standard
+    Priority: High. Area: slash-commands / skills.
+    Description: Slash-commands should be renamed to "skills" to align with the established skill standard. This includes supporting supplemental folders within the skill directory and updating `al doctor` to verify compatibility using the standard toolset.
+    Next step: Perform a global rename of slash-command terminology and implement structural/validation updates to match the skill standard.
+
 - Issue 2026-02-16 upg-ver-diff-ignore: Ignore diffs for al.version during upgrades
     Priority: Low. Area: install / UX.
     Description: Upgrades currently show or warn about diffs for the `al.version` file. Since updating the version is the primary goal of an upgrade, this warning is redundant and potentially confusing for users.
@@ -66,8 +76,8 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 stub-dup: writeStubWithExit test helper duplicated across 5+ packages
     Priority: Low. Area: testing / DRY.
-    Description: The `writeStubWithExit` test helper (writes an executable stub script) is duplicated across `cmd/al`, `cmd/publish-site`, and other test packages with minor variations.
-    Next step: Consolidate into `internal/testutil` alongside `boolPtr` and `withWorkingDir`.
+    Description: The `writeStubWithExit` test helper (writes an executable stub script) is duplicated across `cmd/al`, `cmd/publish-site`, and other test packages with minor variations. `writeStubExpectArg` is also duplicated across `internal/clients/claude/launch_test.go` and `internal/clients/gemini/launch_test.go`.
+    Next step: Consolidate into `internal/testutil` alongside `boolPtr`, `withWorkingDir`, and `writeStubExpectArg`.
 
 - Issue 2026-02-12 envfile-asym: Asymmetric envfile encode/decode
     Priority: Low. Area: envfile / correctness.
@@ -86,8 +96,8 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
     Priority: Low. Area: install / maintainability.
-    Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added (snapshot/rollback, migration engine).
-    Next step: Monitor during Phase 11 Phase 2 work. If method count exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`).
+    Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
+    Next step: Audit current method count (Phase 11 is complete). If it exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`). Scheduled in Phase 13 (maintenance).
 
 - Issue 2026-02-10 upg-ver: Cannot apply a specific intermediate release during upgrade
     Priority: Medium. Area: upgrade / version pinning / UX.

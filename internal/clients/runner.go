@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/updatewarn"
@@ -26,9 +27,18 @@ func Run(ctx context.Context, root string, name string, enabled EnabledSelector,
 
 // RunNoSync performs the standard client launch pipeline without running sync.
 func RunNoSync(root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string) error {
+	return RunNoSyncWithStderr(root, name, enabled, launch, args, os.Stderr)
+}
+
+// RunNoSyncWithStderr is like RunNoSync but allows specifying a custom stderr writer for testing.
+func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string, stderr io.Writer) error {
 	project, err := loadProject(root, name, enabled)
 	if err != nil {
 		return err
+	}
+
+	if project.Config.Approvals.Mode == "yolo" && stderr != nil {
+		_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 	}
 
 	return launchWithRunInfo(root, project, launch, args)
@@ -51,6 +61,10 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 	// Print warnings to stderr before launching
 	for _, w := range warnings {
 		_, _ = fmt.Fprintln(stderr, w.String())
+	}
+
+	if project.Config.Approvals.Mode == "yolo" && stderr != nil {
+		_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 	}
 
 	return launchWithRunInfo(root, project, launch, args)

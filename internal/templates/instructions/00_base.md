@@ -27,7 +27,7 @@
 ## Workflow & Safety
 1. **Read before editing; don’t speculate:** Read and understand relevant files before proposing or making edits. Do not invent code you have not inspected.
 2. **Context economy:** When searching for files or context during implementation, limit exploration to the specific service or directory relevant to the request. Do not scan the entire repository unless necessary.
-3. **Git safety:** Never commit changes. Ask the user to commit changes.
+3. **Git safety:** Do not stage or commit changes unless the user explicitly asks. When asked, follow repository commit conventions.
 4. **Temporary artifacts:** Generate **all** agent-only temporary artifacts in `./.agent-layer/tmp` (one-off scripts, scratch files, logs, dumps, debug outputs). Delete them when no longer needed. Any build artifacts or other temporary files for the parent repository must go in their standard locations and never inside `.agent-layer`.
 5. **Schema safety:** Never modify the database schema via raw SQL or direct tool access. Always generate a proper migration file using the project’s migration system, and ask the user to apply it.
 6. **Debugging strategy:** Debugging follows a strict red-then-green loop: reproduce the bug with a persistent automated test case, then fix it. Avoid one-off scripts unless a test case is impossible. If a one-off script is required, place it in `./.agent-layer/tmp` and delete it immediately after use.

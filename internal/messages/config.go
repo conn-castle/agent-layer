@@ -20,7 +20,7 @@ const (
 	ConfigMissingCommandsAllowlistFmt    = "missing commands allowlist %s: %w"
 	ConfigFailedReadCommandsAllowlistFmt = "failed to read commands allowlist %s: %w"
 
-	ConfigApprovalsModeInvalidFmt             = "%s: approvals.mode must be one of all, mcp, commands, none"
+	ConfigApprovalsModeInvalidFmt             = "%s: approvals.mode must be one of all, mcp, commands, none, yolo"
 	ConfigGeminiEnabledRequiredFmt            = "%s: agents.gemini.enabled is required"
 	ConfigClaudeEnabledRequiredFmt            = "%s: agents.claude.enabled is required"
 	ConfigCodexEnabledRequiredFmt             = "%s: agents.codex.enabled is required"

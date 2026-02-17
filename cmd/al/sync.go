@@ -42,6 +42,9 @@ func newSyncCmd() *cobra.Command {
 				}
 				return ErrSyncCompletedWithWarnings
 			}
+			if project.Config.Approvals.Mode == "yolo" {
+				fmt.Fprintln(os.Stderr, messages.WarningsPolicyYOLOAck)
+			}
 			return nil
 		},
 	}

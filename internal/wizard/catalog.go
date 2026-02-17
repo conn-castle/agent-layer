@@ -26,6 +26,7 @@ const (
 	ApprovalMCP      = "mcp"
 	ApprovalCommands = "commands"
 	ApprovalNone     = "none"
+	ApprovalYOLO     = "yolo"
 )
 
 // ApprovalModeOption describes a selectable approval mode.
@@ -41,6 +42,7 @@ var ApprovalModeOptions = []ApprovalModeOption{
 	{Value: ApprovalMCP, Description: messages.WizardApprovalMCPDescription},
 	{Value: ApprovalCommands, Description: messages.WizardApprovalCommandsDescription},
 	{Value: ApprovalNone, Description: messages.WizardApprovalNoneDescription},
+	{Value: ApprovalYOLO, Description: messages.WizardApprovalYOLODescription},
 }
 
 // ApprovalModes lists the canonical approval mode values.

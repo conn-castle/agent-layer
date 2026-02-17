@@ -33,7 +33,7 @@ Never put secrets in `config.toml`. Secrets belong in `.agent-layer/.env`.
 
 ```toml
 [approvals]
-# one of: "all", "mcp", "commands", "none"
+# one of: "all", "mcp", "commands", "none", "yolo"
 mode = "all"
 
 [agents.gemini]
@@ -191,7 +191,7 @@ Set `noise_mode` to control warning verbosity:
 
 Agent Layer validates `config.toml` on every run. Common validation rules:
 
-- `approvals.mode` must be one of `all`, `mcp`, `commands`, `none`
+- `approvals.mode` must be one of `all`, `mcp`, `commands`, `none`, `yolo`
 - `enabled` flags must be set for all agents and MCP servers
 - MCP transport must be `http` or `stdio`
 - `http_transport` (when set) must be `sse` or `streamable`

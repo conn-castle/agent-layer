@@ -177,6 +177,152 @@ func TestCheckManagedSettingsConflict_ValidManagedBlock(t *testing.T) {
 	}
 }
 
+func TestHasPositionalArg(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"nil args", nil, false},
+		{"empty args", []string{}, false},
+		{"long flags only", []string{"--new-window", "--reuse-window"}, false},
+		{"short flags only", []string{"-n", "-r"}, false},
+		{"mixed short and long flags", []string{"-n", "--reuse-window"}, false},
+		{"positional path", []string{"/path/to/project"}, true},
+		{"flag then positional", []string{"--new-window", "/path/to/project.code-workspace"}, true},
+		{"short flag then positional", []string{"-n", "/path/to/project.code-workspace"}, true},
+		{"bare double dash", []string{"--new-window", "--"}, true},
+		{"relative path", []string{"."}, true},
+		{"positional then flag", []string{"mydir", "--reuse-window"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasPositionalArg(tt.args)
+			if got != tt.want {
+				t.Fatalf("hasPositionalArg(%v) = %v, want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLaunchVSCode_SkipsDotWhenPositionalArgPresent(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	// Write a stub that prints its arguments to a file so we can inspect them.
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{Root: root}
+	t.Setenv("PATH", binDir)
+	env := os.Environ()
+
+	// Pass a positional workspace arg — "." should NOT be appended.
+	passArgs := []string{"--new-window", "/path/to/project.code-workspace"}
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, passArgs); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	argsStr := strings.TrimSpace(string(got))
+	if strings.HasSuffix(argsStr, " .") {
+		t.Fatalf("expected no trailing '.', got args: %q", argsStr)
+	}
+	if !strings.Contains(argsStr, "/path/to/project.code-workspace") {
+		t.Fatalf("expected workspace arg in output, got: %q", argsStr)
+	}
+}
+
+func TestLaunchVSCode_AppendsDotWithShortFlagsOnly(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{Root: root}
+	t.Setenv("PATH", binDir)
+	env := os.Environ()
+
+	// Pass only short flags — "." SHOULD still be appended.
+	passArgs := []string{"-n", "-r"}
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, passArgs); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	argsStr := strings.TrimSpace(string(got))
+	if !strings.HasSuffix(argsStr, ".") {
+		t.Fatalf("expected trailing '.', got args: %q", argsStr)
+	}
+}
+
+func TestLaunchVSCode_AppendsDotWhenNoPositionalArg(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{Root: root}
+	t.Setenv("PATH", binDir)
+	env := os.Environ()
+
+	// Pass only flags — "." SHOULD be appended.
+	passArgs := []string{"--new-window"}
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, passArgs); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	argsStr := strings.TrimSpace(string(got))
+	if !strings.HasSuffix(argsStr, ".") {
+		t.Fatalf("expected trailing '.', got args: %q", argsStr)
+	}
+}
+
 func writeStub(t *testing.T, dir string, name string) {
 	t.Helper()
 	writeStubWithExit(t, dir, name, 0)

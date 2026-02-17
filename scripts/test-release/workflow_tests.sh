@@ -45,4 +45,27 @@ run_workflow_consistency_tests() {
   else
     fail "workflow-consistency: release workflow missing apt packages from CI:$missing"
   fi
+
+  # Structural integrity: verify files required by the release workflow exist.
+  # The release workflow validates cmd/publish-site/main.go and site/ at runtime
+  # (line ~97-102 of release.yml). Catching their absence here prevents a green
+  # CI that later fails on tag push.
+
+  if [[ -f "$ROOT_DIR/cmd/publish-site/main.go" ]]; then
+    pass "workflow-consistency: cmd/publish-site/main.go exists"
+  else
+    fail "workflow-consistency: cmd/publish-site/main.go missing (required by release workflow)"
+  fi
+
+  if [[ -d "$ROOT_DIR/site" ]]; then
+    pass "workflow-consistency: site/ directory exists"
+  else
+    fail "workflow-consistency: site/ directory missing (required by release workflow)"
+  fi
+
+  if [[ -f "$ROOT_DIR/CHANGELOG.md" ]]; then
+    pass "workflow-consistency: CHANGELOG.md exists"
+  else
+    fail "workflow-consistency: CHANGELOG.md missing (required by release workflow for release notes)"
+  fi
 }
