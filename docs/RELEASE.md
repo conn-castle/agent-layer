@@ -29,21 +29,27 @@ Before tagging, prepare and commit both release manifests:
 
 1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the previous release line (N-1 to N per the compatibility guarantee in `site/docs/upgrades.mdx`). Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
 
-2. **Template ownership manifest** — generate via the script below. This keeps `al upgrade plan` ownership inference deterministic without runtime network/tag lookups.
+2. **Template ownership manifest** — generate via the script below. The script reads templates directly from the working tree (no git tag required). This keeps `al upgrade plan` ownership inference deterministic without runtime network/tag lookups.
 
 ```bash
 # 1. Create or verify the migration manifest (manual; see existing files for schema)
 #    internal/templates/migrations/"${VERSION#v}".json
 
-# 2. Generate the template ownership manifest
+# 2. Generate the template ownership manifest (reads from working tree, no tag needed)
 ./scripts/generate-template-manifest.sh --tag "$VERSION"
 
 # 3. Stage both manifests
 git add internal/templates/migrations/"${VERSION#v}".json \
        internal/templates/manifests/"${VERSION#v}".json
+
+# 4. Commit the manifests
+git commit -m "release: add manifests for $VERSION"
+
+# 5. Run release preflight to validate everything
+make release-preflight RELEASE_TAG="$VERSION"
 ```
 
-CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing.
+CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging to catch issues early.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.

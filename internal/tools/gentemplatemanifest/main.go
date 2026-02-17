@@ -4,14 +4,12 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -63,27 +61,27 @@ type templateSource struct {
 }
 
 func main() {
-	tag := flag.String("tag", "", "release tag to load templates from (for example v0.7.0)")
+	ver := flag.String("version", "", "release version (for example v0.8.0 or 0.8.0)")
 	output := flag.String("output", "", "output manifest path")
 	repoRoot := flag.String("repo-root", ".", "repository root")
 	flag.Parse()
 
-	if strings.TrimSpace(*tag) == "" {
-		fatalf("--tag is required")
+	if strings.TrimSpace(*ver) == "" {
+		fatalf("--version is required")
 	}
 	if strings.TrimSpace(*output) == "" {
 		fatalf("--output is required")
 	}
-	normalizedVersion, err := version.Normalize(*tag)
+	normalizedVersion, err := version.Normalize(*ver)
 	if err != nil {
-		fatalf("normalize tag %q: %v", *tag, err)
+		fatalf("normalize version %q: %v", *ver, err)
 	}
 	root, err := filepath.Abs(*repoRoot)
 	if err != nil {
 		fatalf("resolve repo root: %v", err)
 	}
 
-	sources, err := collectTemplateSources(root, *tag)
+	sources, err := collectTemplateSources(root)
 	if err != nil {
 		fatalf("collect template sources: %v", err)
 	}
@@ -97,7 +95,7 @@ func main() {
 		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
 		Files:         entries,
 		Metadata: map[string]any{
-			"source_tag": strings.TrimSpace(*tag),
+			"source_version": normalizedVersion,
 		},
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
@@ -113,7 +111,7 @@ func main() {
 	}
 }
 
-func collectTemplateSources(root string, tag string) ([]templateSource, error) {
+func collectTemplateSources(root string) ([]templateSource, error) {
 	templateRoot := "internal/templates"
 	// Only include upgrade-managed root templates in the manifest. User-owned seed-only
 	// files (.agent-layer/config.toml, .agent-layer/.env) and agent-only internal files
@@ -121,15 +119,14 @@ func collectTemplateSources(root string, tag string) ([]templateSource, error) {
 	rootFiles := []string{"commands.allow", "gitignore.block"}
 	sources := make([]templateSource, 0, 64)
 	for _, name := range rootFiles {
-		repoPath := filepath.ToSlash(filepath.Join(templateRoot, name))
-		exists, err := gitPathExists(root, tag, repoPath)
-		if err != nil {
+		absPath := filepath.Join(root, templateRoot, name)
+		if _, err := os.Stat(absPath); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 			return nil, err
 		}
-		if !exists {
-			continue
-		}
-		content, err := gitShow(root, tag, repoPath)
+		content, err := os.ReadFile(absPath)
 		if err != nil {
 			return nil, err
 		}
@@ -141,13 +138,35 @@ func collectTemplateSources(root string, tag string) ([]templateSource, error) {
 	}
 	dirs := []string{"instructions", "slash-commands", "docs/agent-layer"}
 	for _, dir := range dirs {
-		repoPaths, err := gitListFiles(root, tag, filepath.ToSlash(filepath.Join(templateRoot, dir)))
+		absDir := filepath.Join(root, templateRoot, dir)
+		if _, err := os.Stat(absDir); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		var paths []string
+		err := filepath.WalkDir(absDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				return nil
+			}
+			rel, relErr := filepath.Rel(filepath.Join(root, templateRoot), path)
+			if relErr != nil {
+				return relErr
+			}
+			paths = append(paths, filepath.ToSlash(rel))
+			return nil
+		})
 		if err != nil {
 			return nil, err
 		}
-		for _, repoPath := range repoPaths {
-			templatePath := strings.TrimPrefix(repoPath, templateRoot+"/")
-			content, err := gitShow(root, tag, repoPath)
+		sort.Strings(paths)
+		for _, templatePath := range paths {
+			absPath := filepath.Join(root, templateRoot, templatePath)
+			content, err := os.ReadFile(absPath)
 			if err != nil {
 				return nil, err
 			}
@@ -328,49 +347,6 @@ func normalizeTemplateContent(content string) string {
 func hashString(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return fmt.Sprintf("%x", sum[:])
-}
-
-func gitPathExists(root string, tag string, repoPath string) (bool, error) {
-	cmd := exec.Command("git", "cat-file", "-e", tag+":"+repoPath)
-	cmd.Dir = root
-	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
-func gitShow(root string, tag string, repoPath string) ([]byte, error) {
-	cmd := exec.Command("git", "show", tag+":"+repoPath)
-	cmd.Dir = root
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git show %s:%s: %w", tag, repoPath, err)
-	}
-	return out, nil
-}
-
-func gitListFiles(root string, tag string, repoPath string) ([]string, error) {
-	cmd := exec.Command("git", "ls-tree", "-r", "--name-only", tag, repoPath)
-	cmd.Dir = root
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("git ls-tree %s %s: %w", tag, repoPath, err)
-	}
-	lines := bytes.Split(out, []byte("\n"))
-	paths := make([]string, 0, len(lines))
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(string(line))
-		if trimmed == "" {
-			continue
-		}
-		paths = append(paths, filepath.ToSlash(trimmed))
-	}
-	sort.Strings(paths)
-	return paths, nil
 }
 
 func fatalf(format string, args ...any) {

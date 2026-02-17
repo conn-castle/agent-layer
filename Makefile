@@ -132,6 +132,14 @@ docs-upgrade-check: ## Validate upgrade contract docs for a release tag (set REL
 docs-cta-check: ## Validate upgrade CTA syntax in core docs/messages
 	@./scripts/check-upgrade-ctas.sh
 
+.PHONY: release-preflight
+release-preflight: test-release ## Validate release readiness (set RELEASE_TAG=vX.Y.Z)
+	@if [[ -z "$${RELEASE_TAG:-}" ]]; then \
+	  echo "RELEASE_TAG is required (example: make release-preflight RELEASE_TAG=v0.8.0)" >&2; \
+	  exit 1; \
+	fi
+	@./scripts/check-upgrade-docs.sh --tag "$${RELEASE_TAG}"
+
 .PHONY: release-dist
 release-dist: test-release ## Build release artifacts (cross-compile)
 	@AL_VERSION="$(AL_VERSION)" DIST_DIR="$(DIST_DIR)" ./scripts/build-release.sh
@@ -141,7 +149,7 @@ setup: ## Run one-time setup for this clone
 	@./scripts/setup.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint coverage test-release test-e2e ## Run CI checks locally
+ci: tidy-check fmt-check lint coverage test-release test-e2e docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local checks during development (format + lint + coverage + release tests)

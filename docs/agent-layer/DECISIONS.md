@@ -234,3 +234,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al wizard --profile` defaults to preview-only rewrite diffs and requires `--yes` for writes; secret prompts support explicit `skip` and `cancel`; backups are cleaned only via explicit `--cleanup-backups`.
     Reason: Keep non-interactive wizard usage safe in CI/automation and avoid accidental config rewrites.
     Tradeoffs: Adds extra flags for scripted flows and requires explicit cleanup for backup files.
+
+- Decision 2026-02-15 rel-working-tree-manifest: Manifest generation reads from working tree, not git tags
+    Decision: `gentemplatemanifest` reads template files from the working tree via `os.ReadFile`/`filepath.WalkDir` instead of `git show <tag>:<path>`. The `--tag` flag is replaced with `--version`.
+    Reason: Eliminates the tag chicken-and-egg problem where the manifest must be committed before tagging but the tool required a tag to generate the manifest.
+    Tradeoffs: The manifest is no longer guaranteed to match tag content; the release preflight gate mitigates this risk.
