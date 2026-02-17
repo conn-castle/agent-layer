@@ -76,8 +76,8 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-12 stub-dup: writeStubWithExit test helper duplicated across 5+ packages
     Priority: Low. Area: testing / DRY.
-    Description: The `writeStubWithExit` test helper (writes an executable stub script) is duplicated across `cmd/al`, `cmd/publish-site`, and other test packages with minor variations.
-    Next step: Consolidate into `internal/testutil` alongside `boolPtr` and `withWorkingDir`.
+    Description: The `writeStubWithExit` test helper (writes an executable stub script) is duplicated across `cmd/al`, `cmd/publish-site`, and other test packages with minor variations. `writeStubExpectArg` is also duplicated across `internal/clients/claude/launch_test.go` and `internal/clients/gemini/launch_test.go`.
+    Next step: Consolidate into `internal/testutil` alongside `boolPtr`, `withWorkingDir`, and `writeStubExpectArg`.
 
 - Issue 2026-02-12 envfile-asym: Asymmetric envfile encode/decode
     Priority: Low. Area: envfile / correctness.

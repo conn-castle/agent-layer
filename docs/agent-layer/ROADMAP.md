@@ -161,7 +161,7 @@ Incomplete:
 
 #### Testing and DRY
 - [ ] test-coverage-parity: Align local and CI test coverage reporting so developers can verify coverage locally before pushing. (From ISSUES)
-- [ ] testutil-consolidate: Create `internal/testutil` package and consolidate duplicated test helpers: `writeStubWithExit` (5+ packages), `boolPtr` (2 packages), `withWorkingDir` (2 packages). (From ISSUES stub-dup, 3c5f958c, 3c5f958d)
+- [ ] testutil-consolidate: Create `internal/testutil` package and consolidate duplicated test helpers: `writeStubWithExit` (5+ packages), `writeStubExpectArg` (2 packages), `boolPtr` (2 packages), `withWorkingDir` (2 packages). (From ISSUES stub-dup, 3c5f958c, 3c5f958d)
 - [ ] envfile-roundtrip: Fix asymmetric envfile encode/decode and add round-trip property tests. (From ISSUES envfile-asym)
 
 #### Wizard and config
