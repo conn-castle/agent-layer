@@ -384,25 +384,31 @@ func decodeConfigLoose(data []byte) (config.Config, string) {
 }
 
 func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath string, configMTime time.Time) (*UpgradeReadinessCheck, error) {
-	if cfg.Agents.VSCode.Enabled == nil || !*cfg.Agents.VSCode.Enabled {
+	vscodeEnabled := cfg.Agents.VSCode.Enabled != nil && *cfg.Agents.VSCode.Enabled
+	claudeVSCodeEnabled := cfg.Agents.ClaudeVSCode.Enabled != nil && *cfg.Agents.ClaudeVSCode.Enabled
+	if !vscodeEnabled && !claudeVSCodeEnabled {
 		return nil, nil
 	}
 
 	details := make([]string, 0)
 	latestGenerated := time.Time{}
 
-	mcpPath := filepath.Join(inst.root, ".vscode", "mcp.json")
-	mcpInfo, err := inst.sys.Stat(mcpPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(mcpPath))))
-		} else {
-			return nil, readinessErr("stat", mcpPath, err)
+	// .vscode/mcp.json is only generated when agents.vscode is enabled (Codex MCP config).
+	if vscodeEnabled {
+		mcpPath := filepath.Join(inst.root, ".vscode", "mcp.json")
+		mcpInfo, err := inst.sys.Stat(mcpPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(mcpPath))))
+			} else {
+				return nil, readinessErr("stat", mcpPath, err)
+			}
+		} else if !mcpInfo.IsDir() {
+			latestGenerated = maxModTime(latestGenerated, mcpInfo.ModTime())
 		}
-	} else if !mcpInfo.IsDir() {
-		latestGenerated = maxModTime(latestGenerated, mcpInfo.ModTime())
 	}
 
+	// .vscode/settings.json managed block is generated when either agent is enabled.
 	settingsPath := filepath.Join(inst.root, ".vscode", "settings.json")
 	settingsInfo, err := inst.sys.Stat(settingsPath)
 	if err != nil {
@@ -423,20 +429,52 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		}
 	}
 
-	slashCount, err := countMarkdownFiles(inst, filepath.Join(inst.root, ".agent-layer", "slash-commands"))
-	if err != nil {
-		return nil, err
-	}
-	if slashCount > 0 {
-		promptDir := filepath.Join(inst.root, ".vscode", "prompts")
-		promptFiles, newestPrompt, promptErr := listGeneratedFilesWithSuffix(inst, promptDir, ".prompt.md")
-		if promptErr != nil {
-			return nil, promptErr
+	// .vscode/prompts/ is only generated when agents.vscode is enabled.
+	if vscodeEnabled {
+		slashCount, err := countMarkdownFiles(inst, filepath.Join(inst.root, ".agent-layer", "slash-commands"))
+		if err != nil {
+			return nil, err
 		}
-		if len(promptFiles) == 0 {
-			details = append(details, "missing generated VS Code prompt files under .vscode/prompts")
-		} else {
-			latestGenerated = maxModTime(latestGenerated, newestPrompt)
+		if slashCount > 0 {
+			promptDir := filepath.Join(inst.root, ".vscode", "prompts")
+			promptFiles, newestPrompt, promptErr := listGeneratedFilesWithSuffix(inst, promptDir, ".prompt.md")
+			if promptErr != nil {
+				return nil, promptErr
+			}
+			if len(promptFiles) == 0 {
+				details = append(details, "missing generated VS Code prompt files under .vscode/prompts")
+			} else {
+				latestGenerated = maxModTime(latestGenerated, newestPrompt)
+			}
+		}
+	}
+
+	// .mcp.json and .claude/settings.json are generated when claude OR claude-vscode is enabled.
+	// The Claude extension in VS Code depends on these, so they must be fresh for --no-sync.
+	claudeEnabled := cfg.Agents.Claude.Enabled != nil && *cfg.Agents.Claude.Enabled
+	if claudeEnabled || claudeVSCodeEnabled {
+		claudeMCPPath := filepath.Join(inst.root, ".mcp.json")
+		claudeMCPInfo, err := inst.sys.Stat(claudeMCPPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(claudeMCPPath))))
+			} else {
+				return nil, readinessErr("stat", claudeMCPPath, err)
+			}
+		} else if !claudeMCPInfo.IsDir() {
+			latestGenerated = maxModTime(latestGenerated, claudeMCPInfo.ModTime())
+		}
+
+		claudeSettingsPath := filepath.Join(inst.root, ".claude", "settings.json")
+		claudeSettingsInfo, err := inst.sys.Stat(claudeSettingsPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				details = append(details, fmt.Sprintf("missing %s", filepath.ToSlash(inst.relativePath(claudeSettingsPath))))
+			} else {
+				return nil, readinessErr("stat", claudeSettingsPath, err)
+			}
+		} else if !claudeSettingsInfo.IsDir() {
+			latestGenerated = maxModTime(latestGenerated, claudeSettingsInfo.ModTime())
 		}
 	}
 
@@ -573,13 +611,15 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				evidence: hasAgentLayerMCPSignature,
 			}},
 		},
+		// .mcp.json and .claude/settings.json are generated when either agents.claude
+		// or agents.claude-vscode is enabled.
 		{
 			agent:   "claude",
-			enabled: cfg.Agents.Claude.Enabled,
-			files: []disabledArtifactFileSpec{{
-				path:     filepath.Join(inst.root, ".mcp.json"),
-				evidence: hasAgentLayerMCPSignature,
-			}},
+			enabled: combinedBoolOr(cfg.Agents.Claude.Enabled, cfg.Agents.ClaudeVSCode.Enabled),
+			files: []disabledArtifactFileSpec{
+				{path: filepath.Join(inst.root, ".mcp.json"), evidence: hasAgentLayerMCPSignature},
+				{path: filepath.Join(inst.root, ".claude", "settings.json"), evidence: isJSONObject},
+			},
 		},
 		{
 			agent:   "codex",
@@ -600,11 +640,19 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				{root: filepath.Join(inst.root, ".agent", "skills"), suffix: "SKILL.md"},
 			},
 		},
+		// .vscode/settings.json is generated when either agents.vscode or agents.claude-vscode is enabled.
+		{
+			agent:   "vscode",
+			enabled: combinedBoolOr(cfg.Agents.VSCode.Enabled, cfg.Agents.ClaudeVSCode.Enabled),
+			files: []disabledArtifactFileSpec{
+				{path: filepath.Join(inst.root, ".vscode", "settings.json"), evidence: hasVSCodeManagedBlock},
+			},
+		},
+		// Prompts and launchers are only generated when agents.vscode is enabled.
 		{
 			agent:   "vscode",
 			enabled: cfg.Agents.VSCode.Enabled,
 			files: []disabledArtifactFileSpec{
-				{path: filepath.Join(inst.root, ".vscode", "settings.json"), evidence: hasVSCodeManagedBlock},
 				{path: launcherPaths.Command, evidence: exactTemplateMatcher("launchers/open-vscode.command")},
 				{path: launcherPaths.Shell, evidence: exactTemplateMatcher("launchers/open-vscode.sh")},
 				{path: launcherPaths.Desktop, evidence: exactTemplateMatcher("launchers/open-vscode.desktop")},
@@ -691,6 +739,15 @@ func hasAgentLayerMCPSignature(data []byte) (bool, error) {
 	return strings.Contains(content, "\"mcpServers\"") &&
 		strings.Contains(content, "\"agent-layer\"") &&
 		strings.Contains(content, "\"mcp-prompts\""), nil
+}
+
+// isJSONObject reports whether data looks like a JSON object.
+// .claude/settings.json is wholly generated by al sync and always contains a
+// JSON object (with or without a "permissions" key). This is sufficient provenance
+// because the check only fires when both Claude agents are disabled.
+func isJSONObject(data []byte) (bool, error) {
+	trimmed := bytes.TrimSpace(data)
+	return len(trimmed) > 0 && trimmed[0] == '{', nil
 }
 
 func exactTemplateMatcher(templatePath string) func([]byte) (bool, error) {
@@ -783,6 +840,12 @@ func maxModTime(current time.Time, candidate time.Time) time.Time {
 		return candidate
 	}
 	return current
+}
+
+// combinedBoolOr returns a pointer to true if either a or b is non-nil and true.
+func combinedBoolOr(a, b *bool) *bool {
+	v := (a != nil && *a) || (b != nil && *b)
+	return &v
 }
 
 func sortedMapKeys(m map[string]string) []string {

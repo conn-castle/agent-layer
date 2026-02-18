@@ -25,6 +25,8 @@ mode = "none"
 enabled = false
 [agents.claude]
 enabled = false
+[agents.claude-vscode]
+enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]

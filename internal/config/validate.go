@@ -52,6 +52,9 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.Claude.Enabled == nil {
 		return fmt.Errorf(messages.ConfigClaudeEnabledRequiredFmt, path)
 	}
+	if c.Agents.ClaudeVSCode.Enabled == nil {
+		return fmt.Errorf(messages.ConfigClaudeVSCodeEnabledRequiredFmt, path)
+	}
 	if c.Agents.Codex.Enabled == nil {
 		return fmt.Errorf(messages.ConfigCodexEnabledRequiredFmt, path)
 	}

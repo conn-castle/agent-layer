@@ -4,17 +4,19 @@ import "github.com/conn-castle/agent-layer/internal/messages"
 
 // AgentID constants matching config keys
 const (
-	AgentGemini      = "gemini"
-	AgentClaude      = "claude"
-	AgentCodex       = "codex"
-	AgentVSCode      = "vscode"
-	AgentAntigravity = "antigravity"
+	AgentGemini       = "gemini"
+	AgentClaude       = "claude"
+	AgentClaudeVSCode = "claude-vscode"
+	AgentCodex        = "codex"
+	AgentVSCode       = "vscode"
+	AgentAntigravity  = "antigravity"
 )
 
 // SupportedAgents is the list of agents the wizard can configure.
 var SupportedAgents = []string{
 	AgentGemini,
 	AgentClaude,
+	AgentClaudeVSCode,
 	AgentCodex,
 	AgentVSCode,
 	AgentAntigravity,

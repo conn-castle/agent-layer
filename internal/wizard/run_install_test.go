@@ -11,7 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/warnings"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestRun_NotInstalled_UserCancels(t *testing.T) {
@@ -27,7 +27,7 @@ func TestRun_NotInstalled_UserCancels(t *testing.T) {
 		},
 	}
 
-	mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
+	mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestRun_Install(t *testing.T) {
 		NoteFunc:        func(title, body string) error { return nil },
 	}
 
-	mockSync := func(root string) ([]warnings.Warning, error) { return nil, nil }
+	mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestRun_ConfirmError_Install(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "confirm error")
 }
@@ -99,7 +99,7 @@ func TestRun_InstallFailure(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "install failed")
 }
@@ -124,7 +124,7 @@ mode = "none"`
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load config")
 }
@@ -147,7 +147,7 @@ func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
 	}
 	t.Cleanup(func() { loadProjectConfigFunc = orig })
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load config")
 }

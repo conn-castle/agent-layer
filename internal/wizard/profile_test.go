@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -26,9 +27,9 @@ func TestRunProfile_PreviewOnly(t *testing.T) {
 
 	syncCalled := false
 	var out bytes.Buffer
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) {
+	err := RunProfile(root, func(string) (*alsync.Result, error) {
 		syncCalled = true
-		return nil, nil
+		return &alsync.Result{}, nil
 	}, "", profilePath, false, &out)
 	require.NoError(t, err)
 	require.False(t, syncCalled)
@@ -51,9 +52,9 @@ func TestRunProfile_Apply(t *testing.T) {
 
 	syncCalled := false
 	var out bytes.Buffer
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) {
+	err := RunProfile(root, func(string) (*alsync.Result, error) {
 		syncCalled = true
-		return nil, nil
+		return &alsync.Result{}, nil
 	}, "", profilePath, true, &out)
 	require.NoError(t, err)
 	require.True(t, syncCalled)
@@ -96,7 +97,7 @@ func TestRunProfile_InstallFailureWhenConfigMissing(t *testing.T) {
 	profilePath := filepath.Join(root, "profile.toml")
 	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
 
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) { return nil, nil }, "not-a-version", profilePath, false, nil)
+	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "not-a-version", profilePath, false, nil)
 	require.ErrorContains(t, err, "install failed")
 }
 
@@ -106,7 +107,7 @@ func TestRunProfile_ConfigStatError(t *testing.T) {
 	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("not-a-dir"), 0o644))
 
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) { return nil, nil }, "", profilePath, false, nil)
+	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, false, nil)
 	require.Error(t, err)
 }
 
@@ -116,7 +117,7 @@ func TestRunProfile_ProfileReadError(t *testing.T) {
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
 
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) { return nil, nil }, "", filepath.Join(root, "missing.toml"), false, nil)
+	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", filepath.Join(root, "missing.toml"), false, nil)
 	require.ErrorContains(t, err, "failed to read profile")
 }
 
@@ -129,7 +130,7 @@ func TestRunProfile_ProfileInvalid(t *testing.T) {
 	profilePath := filepath.Join(root, "profile.toml")
 	require.NoError(t, os.WriteFile(profilePath, []byte("[approvals"), 0o644))
 
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) { return nil, nil }, "", profilePath, false, nil)
+	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, false, nil)
 	require.ErrorContains(t, err, "invalid profile")
 }
 
@@ -144,7 +145,7 @@ func TestRunProfile_CurrentConfigReadError(t *testing.T) {
 	profilePath := filepath.Join(root, "profile.toml")
 	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
 
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) { return nil, nil }, "", profilePath, false, nil)
+	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, false, nil)
 	require.Error(t, err)
 }
 
@@ -159,9 +160,9 @@ func TestRunProfile_NoConfigChangesPreviewOnly(t *testing.T) {
 
 	syncCalled := false
 	var out bytes.Buffer
-	err := RunProfile(root, func(string) ([]warnings.Warning, error) {
+	err := RunProfile(root, func(string) (*alsync.Result, error) {
 		syncCalled = true
-		return nil, nil
+		return &alsync.Result{}, nil
 	}, "", profilePath, false, &out)
 	require.NoError(t, err)
 	require.False(t, syncCalled)
@@ -180,8 +181,8 @@ func TestRunProfile_NoConfigChangesApplyWithWarningAndSyncError(t *testing.T) {
 
 	t.Run("warning output", func(t *testing.T) {
 		var out bytes.Buffer
-		err := RunProfile(root, func(string) ([]warnings.Warning, error) {
-			return []warnings.Warning{{Message: "be careful"}}, nil
+		err := RunProfile(root, func(string) (*alsync.Result, error) {
+			return &alsync.Result{Warnings: []warnings.Warning{{Message: "be careful"}}}, nil
 		}, "", profilePath, true, &out)
 		require.NoError(t, err)
 		require.Contains(t, out.String(), messages.WizardProfileNoConfigChanges)
@@ -191,7 +192,7 @@ func TestRunProfile_NoConfigChangesApplyWithWarningAndSyncError(t *testing.T) {
 	})
 
 	t.Run("sync error", func(t *testing.T) {
-		err := RunProfile(root, func(string) ([]warnings.Warning, error) {
+		err := RunProfile(root, func(string) (*alsync.Result, error) {
 			return nil, errors.New("sync failed")
 		}, "", profilePath, true, nil)
 		require.ErrorContains(t, err, "sync failed")
@@ -210,7 +211,7 @@ func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 
 	t.Run("backup write failure", func(t *testing.T) {
 		require.NoError(t, os.Mkdir(configPath+".bak", 0o755))
-		err := RunProfile(root, func(string) ([]warnings.Warning, error) { return nil, nil }, "", profilePath, true, nil)
+		err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, true, nil)
 		require.ErrorContains(t, err, "failed to backup config")
 	})
 
@@ -225,7 +226,7 @@ func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 			return origWrite(path, data, perm)
 		}
 
-		err := RunProfile(root, func(string) ([]warnings.Warning, error) { return nil, nil }, "", profilePath, true, nil)
+		err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, true, nil)
 		require.ErrorContains(t, err, "failed to write config")
 	})
 }

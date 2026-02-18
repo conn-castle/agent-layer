@@ -112,43 +112,12 @@ Incomplete:
 - Enforced `.agent-layer/.env` namespace policy (`AL_`-only) and removed the legacy install `Force` path to keep one explicit apply/prompt flow.
 - Superseded Backlog 2026-02-03 `b4c5d6e` in this roadmap phase: embedded templates remain the sole supported template source for deterministic upgrades in this release line.
 
-## Phase 12 — High-leverage quick wins
-
-### Goal
-- Ship high-value, easy-to-implement features that improve daily usability and power-user workflows.
-- Clear deferred backlog items that are unblocked and have outsized impact relative to effort.
-
-### Tasks
-- [x] yolo-mode: Add a "full-auto" (YOLO) config option that configures agents to run with maximum autonomy — skipping permission prompts where the agent supports it. Wire appropriate launch flags per client (e.g., Claude's `--dangerously-skip-permissions`, Codex full-auto sandbox). Print a single-line `[yolo]` acknowledgement on sync and launch. Document in README and site docs. (From BACKLOG e5f4d3c)
-- [ ] claude-vscode: Add support for configuring and launching the Claude extension within VS Code, similar to existing VS Code agent support. (From BACKLOG 7e9f3a1)
-- [ ] skill-auto-approval: Enable safe auto-approval for workflow skills, allowing skills invoked through the workflow system to run with minimal human intervention when the operation is deemed safe. Requires clear safety criteria and audit trail. (From BACKLOG b2c3d4e)
-- [x] launch-plan-decision: Evaluate whether a standalone `al launch-plan <client>` command is needed now that Phase 11 is complete. Document the decision (keep/remove/reshape) based on final launch sync-mode semantics. (From BACKLOG launch-plan-revisit)
-- [x] sys-inst-commit-clarity: Replace rigid "NEVER stage or commit" instructions with clearer "commit only when explicitly asked" language across all agents. (From BACKLOG)
-- [x] vscode-positional-args: Fix `al vscode` unconditionally appending `.` when caller provides positional args (e.g., workspace files), causing double windows. Skip `.` when passArgs contains a positional argument. (GitHub #51)
-
-### Task details
-- yolo-mode
-  Description: Add `approvals.mode = "yolo"` that tells `al sync` to generate per-client configs with maximum autonomy. Per-client flags: Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove`. Print a lightweight single-line `[yolo]` acknowledgement on sync and launch (not a structured warning — YOLO users chose the mode deliberately).
-  Acceptance criteria: Config option exists and is documented. Each supported client launches with reduced/no permission prompts when enabled. Single-line acknowledgement is printed on sync and launch. Template config includes a caution comment.
-  Notes: This is a power-user feature. The acknowledgement is deliberately lightweight — a 5-line structured warning every invocation deters adoption. The template config comment and documentation carry the risk explanation.
-- claude-vscode
-  Description: Add launcher support for the Claude extension in VS Code. The Claude extension does not respect MCP servers defined in the local repo config (similar to Codex), so `al sync` must project MCP server configuration into the Claude extension's settings. This may involve a new agent entry in config.toml (e.g., `[agents.claude-vscode]`), a new sync target for Claude extension MCP/settings, and a launch command or integration with `al vscode`.
-  Acceptance criteria: Users can enable the Claude VS Code extension through config and launch/configure it via `al` commands. MCP servers defined in `config.toml` are projected into Claude extension settings by `al sync`.
-  Notes: Currently `al vscode` handles VS Code Copilot/Codex configuration. The Claude extension has the same MCP gap as Codex — it needs explicit MCP projection.
-- skill-auto-approval
-  Description: Extend the approval system so that skills invoked through the workflow system can be auto-approved when they meet safety criteria. Define what "safe" means (e.g., read-only operations, scoped file edits, no network calls). Add audit trail for auto-approved actions.
-  Acceptance criteria: Safe workflow skills run without prompts. Safety criteria are documented. Audit log records auto-approved actions.
-- launch-plan-decision
-  Description: Phase 11 is complete. Evaluate whether `al launch-plan <client>` adds value or is redundant with `al sync` + `al upgrade plan`. Document the decision.
-  Acceptance criteria: Decision is recorded in DECISIONS.md with rationale.
-
-### Exit criteria
-- YOLO mode config option exists, wires correct flags per client, and prints a single-line acknowledgement.
-- Claude VS Code extension is configurable and launchable via `al` CLI.
-- Safe workflow skills can run without manual approval prompts.
-- Launch-plan decision is documented.
-- Agent commit instructions are clarified across all instruction templates.
-- `al vscode` does not append `.` when caller provides positional args (GitHub #51).
+## Phase 12 ✅ — High-leverage quick wins
+- Added `approvals.mode = "yolo"` with per-client full-auto projections and single-line sync/launch acknowledgements.
+- Added `[agents.claude-vscode]` and unified VS Code launch behavior under `al vscode`.
+- Added skill `auto-approve` frontmatter support with Claude prompt-retrieval permission projection and sync reporting.
+- Recorded the decision to not implement a standalone `al launch-plan` command.
+- Clarified agent commit instructions and fixed `al vscode` positional-arg handling to avoid unconditional `.` appends.
 
 ## Phase 13 — Maintenance and quality sweep
 

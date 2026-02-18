@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/warnings"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestRun_ApprovalModeLabelUnknown(t *testing.T) {
@@ -30,7 +30,7 @@ func TestRun_ApprovalModeLabelUnknown(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown approval mode selection")
 }
@@ -53,7 +53,7 @@ func TestRun_SelectError_Approvals(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "select error")
 }
@@ -77,7 +77,7 @@ func TestRun_MultiSelectError_Agents(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "multiselect error")
 }
@@ -106,7 +106,7 @@ func TestRun_NoteError_PreviewModelWarning(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "preview note error")
 }
@@ -137,7 +137,7 @@ func TestRun_SelectError_GeminiModel(t *testing.T) {
 	}
 	_ = callCount
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "gemini model error")
 }
@@ -166,7 +166,7 @@ func TestRun_SelectError_ClaudeModel(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "claude model error")
 }
@@ -195,7 +195,7 @@ func TestRun_SelectError_CodexModel(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "codex model error")
 }
@@ -224,7 +224,7 @@ func TestRun_SelectError_CodexReasoning(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "codex reasoning error")
 }
@@ -255,7 +255,7 @@ func TestRun_ConfirmError_RestoreMissing(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "restore confirm error")
 }
@@ -283,7 +283,7 @@ func TestRun_MultiSelectError_MCPServers(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "mcp multiselect error")
 }
@@ -311,7 +311,7 @@ func TestRun_NoteError_Summary(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "summary note error")
 }
@@ -337,7 +337,7 @@ func TestRun_ConfirmError_Apply(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "apply confirm error")
 }
@@ -361,7 +361,7 @@ func TestRun_EnvFileReadError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 }
 
@@ -384,7 +384,7 @@ func TestRun_EnvFileParseError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid env file")
 }
@@ -405,7 +405,7 @@ func TestRun_LoadDefaultMCPServersError(t *testing.T) {
 		return nil, errors.New("mcp load error")
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load default MCP servers")
 }
@@ -426,7 +426,7 @@ func TestRun_LoadWarningDefaultsError(t *testing.T) {
 		return WarningDefaults{}, errors.New("warnings load error")
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to load warning defaults")
 }

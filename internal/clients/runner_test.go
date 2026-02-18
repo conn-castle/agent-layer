@@ -151,6 +151,9 @@ enabled = true
 [agents.claude]
 enabled = false
 
+[agents.claude-vscode]
+enabled = false
+
 [agents.codex]
 enabled = false
 
@@ -216,6 +219,9 @@ enabled = true
 [agents.claude]
 enabled = false
 
+[agents.claude-vscode]
+enabled = false
+
 [agents.codex]
 enabled = false
 
@@ -278,6 +284,9 @@ mode = %q
 enabled = true
 
 [agents.claude]
+enabled = false
+
+[agents.claude-vscode]
 enabled = false
 
 [agents.codex]
@@ -394,4 +403,132 @@ func TestRunWithStderr_NilWriter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunWithStderr nil writer: %v", err)
 	}
+}
+
+func TestRunWithStderr_NilWriterVSCodeAutoApprove(t *testing.T) {
+	root := t.TempDir()
+	writeAutoApproveRepo(t, root)
+	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		return nil
+	}
+	// Should not panic with nil stderr when name is "vscode" and auto-approved skills exist.
+	err := RunWithStderr(context.Background(), root, "vscode", func(cfg *config.Config) *bool {
+		v := (cfg.Agents.VSCode.Enabled != nil && *cfg.Agents.VSCode.Enabled) ||
+			(cfg.Agents.ClaudeVSCode.Enabled != nil && *cfg.Agents.ClaudeVSCode.Enabled)
+		return &v
+	}, launch, nil, "v1.0.0", nil)
+	if err != nil {
+		t.Fatalf("RunWithStderr nil writer vscode: %v", err)
+	}
+}
+
+func TestRunWithStderr_AutoApproveInfoLine(t *testing.T) {
+	root := t.TempDir()
+	writeAutoApproveRepo(t, root)
+	var stderr bytes.Buffer
+	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		return nil
+	}
+	err := RunWithStderr(context.Background(), root, "vscode", func(cfg *config.Config) *bool {
+		v := (cfg.Agents.VSCode.Enabled != nil && *cfg.Agents.VSCode.Enabled) ||
+			(cfg.Agents.ClaudeVSCode.Enabled != nil && *cfg.Agents.ClaudeVSCode.Enabled)
+		return &v
+	}, launch, nil, "v1.0.0", &stderr)
+	if err != nil {
+		t.Fatalf("RunWithStderr: %v", err)
+	}
+	output := stderr.String()
+	if !strings.Contains(output, "[auto-approve] skills: approved") {
+		t.Fatalf("expected auto-approve info line, got %q", output)
+	}
+}
+
+func TestRunWithStderr_AutoApproveNotPrintedWhenClaudeVSCodeDisabled(t *testing.T) {
+	root := t.TempDir()
+	// Config: claude=true (CLI auto-approve relevant), claude-vscode=false, vscode=true.
+	// Auto-approve should NOT be printed for name="vscode" because claude-vscode is disabled.
+	writeAutoApproveRepoCustom(t, root, true, false, true)
+	var stderr bytes.Buffer
+	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		return nil
+	}
+	err := RunWithStderr(context.Background(), root, "vscode", func(cfg *config.Config) *bool {
+		v := (cfg.Agents.VSCode.Enabled != nil && *cfg.Agents.VSCode.Enabled) ||
+			(cfg.Agents.ClaudeVSCode.Enabled != nil && *cfg.Agents.ClaudeVSCode.Enabled)
+		return &v
+	}, launch, nil, "v1.0.0", &stderr)
+	if err != nil {
+		t.Fatalf("RunWithStderr: %v", err)
+	}
+	output := stderr.String()
+	if strings.Contains(output, "[auto-approve]") {
+		t.Fatalf("expected no auto-approve info line for vscode without claude-vscode, got %q", output)
+	}
+}
+
+func writeAutoApproveRepo(t *testing.T, root string) {
+	t.Helper()
+	writeAutoApproveRepoCustom(t, root, false, true, false)
+}
+
+func writeAutoApproveRepoCustom(t *testing.T, root string, claude, claudeVSCode, vscode bool) {
+	t.Helper()
+	paths := config.DefaultPaths(root)
+	dirs := []string{paths.InstructionsDir, paths.SlashCommandsDir}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+
+	configToml := fmt.Sprintf(`
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = false
+
+[agents.claude]
+enabled = %t
+
+[agents.claude-vscode]
+enabled = %t
+
+[agents.codex]
+enabled = false
+
+[agents.vscode]
+enabled = %t
+
+[agents.antigravity]
+enabled = false
+
+[warnings]
+instruction_token_threshold = 50000
+mcp_server_threshold = 5
+`, claude, claudeVSCode, vscode)
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+	gitignoreBlock := "# test gitignore content\n"
+	if err := os.WriteFile(filepath.Join(paths.Root, ".agent-layer", "gitignore.block"), []byte(gitignoreBlock), 0o644); err != nil {
+		t.Fatalf("write gitignore.block: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
+		t.Fatalf("write instructions: %v", err)
+	}
+	command := "---\ndescription: Auto-approved skill\nauto-approve: true\n---\n\nDo it."
+	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "approved.md"), []byte(command), 0o644); err != nil {
+		t.Fatalf("write slash command: %v", err)
+	}
+	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o644); err != nil {
+		t.Fatalf("write commands allow: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "al"), []byte("stub"), 0o755); err != nil {
+		t.Fatalf("write al stub: %v", err)
+	}
+	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

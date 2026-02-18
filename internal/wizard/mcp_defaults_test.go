@@ -159,6 +159,9 @@ enabled = true
 [agents.claude]
 enabled = true
 
+[agents.claude-vscode]
+enabled = true
+
 [agents.codex]
 enabled = true
 

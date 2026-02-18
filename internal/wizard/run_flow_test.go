@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/warnings"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestRun_HappyPath(t *testing.T) {
@@ -23,6 +23,8 @@ mode = "none"
 [agents.gemini]
 enabled = false
 [agents.claude]
+enabled = false
+[agents.claude-vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -67,9 +69,9 @@ enabled = false
 	}
 
 	syncCalled := false
-	mockSync := func(r string) ([]warnings.Warning, error) {
+	mockSync := func(r string) (*alsync.Result, error) {
 		syncCalled = true
-		return nil, nil
+		return &alsync.Result{}, nil
 	}
 
 	err := Run(root, ui, mockSync, "")
@@ -94,6 +96,8 @@ mode = "none"
 enabled = false
 [agents.claude]
 enabled = false
+[agents.claude-vscode]
+enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
@@ -117,9 +121,9 @@ enabled = false
 	}
 
 	syncCalled := false
-	mockSync := func(r string) ([]warnings.Warning, error) {
+	mockSync := func(r string) (*alsync.Result, error) {
 		syncCalled = true
-		return nil, nil
+		return &alsync.Result{}, nil
 	}
 
 	err := Run(root, ui, mockSync, "")
@@ -137,6 +141,8 @@ mode = "none"
 [agents.gemini]
 enabled = false
 [agents.claude]
+enabled = false
+[agents.claude-vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -158,7 +164,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) ([]warnings.Warning, error) {
+	mockSync := func(r string) (*alsync.Result, error) {
 		return nil, errors.New("sync failed")
 	}
 
@@ -178,6 +184,8 @@ mode = "all"
 [agents.gemini]
 enabled = false
 [agents.claude]
+enabled = false
+[agents.claude-vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -200,7 +208,7 @@ enabled = false
 		NoteFunc:        func(title, body string) error { return nil },
 	}
 
-	mockSync := func(r string) ([]warnings.Warning, error) { return nil, nil }
+	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)

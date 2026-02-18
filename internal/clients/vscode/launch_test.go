@@ -323,6 +323,109 @@ func TestLaunchVSCode_AppendsDotWhenNoPositionalArg(t *testing.T) {
 	}
 }
 
+func TestLaunchVSCode_NoCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	// Write a stub that dumps env to a file so we can inspect it.
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	vscodeDisabled := false
+	claudeVSCodeEnabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				VSCode:       config.AgentConfig{Enabled: &vscodeDisabled},
+				ClaudeVSCode: config.AgentConfig{Enabled: &claudeVSCodeEnabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	// Filter out CODEX_HOME from the environment so the test only detects
+	// additions made by the launcher itself.
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "CODEX_HOME=") {
+			env = append(env, e)
+		}
+	}
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if strings.Contains(string(got), "CODEX_HOME=") {
+		t.Fatal("expected CODEX_HOME to NOT be set when agents.vscode is disabled")
+	}
+}
+
+func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeEnabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	// Write a stub that dumps env to a file so we can inspect it.
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	vscodeEnabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				VSCode: config.AgentConfig{Enabled: &vscodeEnabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	// Filter out CODEX_HOME from the environment.
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "CODEX_HOME=") {
+			env = append(env, e)
+		}
+	}
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(got), "CODEX_HOME=") {
+		t.Fatal("expected CODEX_HOME to be set when agents.vscode is enabled")
+	}
+}
+
 func writeStub(t *testing.T, dir string, name string) {
 	t.Helper()
 	writeStubWithExit(t, dir, name, 0)

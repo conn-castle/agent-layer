@@ -154,6 +154,8 @@ mode = "all"
 enabled = true
 [agents.claude]
 enabled = true
+[agents.claude-vscode]
+enabled = true
 [agents.codex]
 enabled = false
 [agents.vscode]
@@ -219,11 +221,12 @@ func TestCheckAgents(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Gemini:      config.AgentConfig{Enabled: &tBool},
-				Claude:      config.AgentConfig{Enabled: &fBool},
-				Codex:       config.CodexConfig{Enabled: nil},
-				VSCode:      config.AgentConfig{Enabled: &tBool},
-				Antigravity: config.AgentConfig{Enabled: &fBool},
+				Gemini:       config.AgentConfig{Enabled: &tBool},
+				Claude:       config.AgentConfig{Enabled: &fBool},
+				ClaudeVSCode: config.AgentConfig{Enabled: &fBool},
+				Codex:        config.CodexConfig{Enabled: nil},
+				VSCode:       config.AgentConfig{Enabled: &tBool},
+				Antigravity:  config.AgentConfig{Enabled: &fBool},
 			},
 		},
 	}

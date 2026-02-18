@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/warnings"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestRun_WithSecrets(t *testing.T) {
@@ -26,6 +26,8 @@ mode = "all"
 [agents.gemini]
 enabled = false
 [agents.claude]
+enabled = false
+[agents.claude-vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -68,7 +70,7 @@ enabled = false
 		},
 	}
 
-	mockSync := func(r string) ([]warnings.Warning, error) { return nil, nil }
+	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
@@ -89,6 +91,8 @@ mode = "all"
 [agents.gemini]
 enabled = false
 [agents.claude]
+enabled = false
+[agents.claude-vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -125,7 +129,7 @@ enabled = false
 			},
 		}
 
-		err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+		err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 		require.NoError(t, err)
 
 		envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -160,7 +164,7 @@ enabled = false
 			},
 		}
 
-		err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+		err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 		require.NoError(t, err)
 
 		envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -192,7 +196,7 @@ func TestRun_SecretFromEnv(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -229,7 +233,7 @@ func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "env confirm error")
 }
@@ -269,7 +273,7 @@ func TestRun_SecretFromEnv_Declined(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 
 	envData, _ := os.ReadFile(filepath.Join(configDir, ".env"))
@@ -303,7 +307,7 @@ func TestRun_SecretInputError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "secret input error")
 }
@@ -338,7 +342,7 @@ func TestRun_SecretBlank_DisableMCP(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 	assert.Equal(t, 1, secretInputCalls)
 }
@@ -377,7 +381,7 @@ func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "disable confirm error")
 }
@@ -423,7 +427,7 @@ func TestRun_SecretBlank_Retry(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 	assert.Equal(t, 2, secretInputCalls)
 
@@ -461,7 +465,7 @@ func TestRun_ExistingSecret_OverrideConfirmError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(r string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "override confirm error")
 }
@@ -494,7 +498,7 @@ func TestRun_SecretInputSkip_DisablesServer(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 
 	configData, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
@@ -534,9 +538,9 @@ func TestRun_SecretInputCancel_StopsWithoutApply(t *testing.T) {
 
 	originalConfig, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	require.NoError(t, err)
-	err = Run(root, ui, func(string) ([]warnings.Warning, error) {
+	err = Run(root, ui, func(string) (*alsync.Result, error) {
 		syncCalled = true
-		return nil, nil
+		return &alsync.Result{}, nil
 	}, "")
 	require.NoError(t, err)
 	assert.False(t, syncCalled)

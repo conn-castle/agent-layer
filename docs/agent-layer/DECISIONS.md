@@ -209,3 +209,18 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Add `yolo` as a fifth `approvals.mode` value. YOLO mode auto-approves commands and MCP (like `all`) and also sends full-auto flags to each client: Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove=true`.
     Reason: Users running in sandboxed/ephemeral environments want to skip all permission prompts without per-client manual configuration.
     Tradeoffs: YOLO bypasses all safety prompts; a single-line `[yolo]` acknowledgement on stderr (not a structured warning) informs users on every sync and launch. The template config comment and documentation carry the risk explanation. No `al doctor` warning — YOLO is a deliberate choice, not a health issue.
+
+- Decision 2026-02-17 p12-claude-vscode-no-mcp-filter: claude-vscode is NOT an independent MCP client filter
+    Decision: `claude-vscode` is not added to `validClients` for MCP server filtering. The `"claude"` client filter covers both Claude Code CLI and Claude VS Code extension. The two share `.mcp.json` and `.claude/settings.json`. `[agents.claude-vscode]` is a config-only concept; `al vscode` is the unified VS Code launcher.
+    Reason: The Claude VS Code extension reads `.mcp.json` from the project root — the same file used by Claude Code CLI. Independent MCP filtering is not possible without separate output files, which would conflict with the extension's expected paths.
+    Tradeoffs: Users cannot enable different MCP servers for Claude CLI vs Claude VS Code extension. Both always see the same MCP configuration.
+
+- Decision 2026-02-17 p12-unified-vscode-launcher: Single `al vscode` command handles both Codex and Claude extensions
+    Decision: Remove `al claude-vscode` as a separate CLI command. `al vscode` is enabled when either `agents.vscode` or `agents.claude-vscode` is true. `CODEX_HOME` is set only when `agents.vscode` is enabled. `[agents.claude-vscode]` remains as a config-only concept controlling which VS Code extension settings are projected during sync.
+    Reason: VS Code is a single IDE. Users install both extensions in the same instance. Having two separate launch commands forces users to choose or run both (opening VS Code twice). One command is simpler and correct.
+    Tradeoffs: Users who only have `agents.claude-vscode` enabled will not get `CODEX_HOME` set (correct — they don't want Codex). Users who want both must enable both config sections.
+
+- Decision 2026-02-17 p12-auto-approve-scope: auto-approve controls MCP prompt retrieval only, not agent actions
+    Decision: `auto-approve: true` in slash command frontmatter adds `mcp__agent-layer__<name>` to Claude's permission allow list, which auto-approves the MCP tool call that fetches the skill's prompt text. It does not auto-approve any actions the agent takes after reading the prompt.
+    Reason: Auto-approving prompt retrieval is safe — it only returns the skill's markdown body. Auto-approving agent actions (file edits, bash commands) would bypass the safety boundary that `approvals.mode` provides.
+    Tradeoffs: Users still see approval prompts for agent actions even with auto-approved skills. The benefit is zero-click skill invocation in Claude clients for approved skills.

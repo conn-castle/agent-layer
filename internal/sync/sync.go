@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
@@ -13,9 +14,15 @@ import (
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
+// Result holds the outcome of a sync operation.
+type Result struct {
+	Warnings           []warnings.Warning
+	AutoApprovedSkills []string
+}
+
 // Run regenerates all configured outputs for the repo.
 // Returns any sync-time warnings and an error if sync failed.
-func Run(root string) ([]warnings.Warning, error) {
+func Run(root string) (*Result, error) {
 	project, err := config.LoadProjectConfigFS(os.DirFS(root), root)
 	if err != nil {
 		return nil, err
@@ -26,7 +33,7 @@ func Run(root string) ([]warnings.Warning, error) {
 
 // RunWithSystemFS loads project config from fsys and runs sync with the provided System.
 // sys provides OS operations for sync writers; fsys must be rooted at repo root.
-func RunWithSystemFS(sys System, fsys fs.FS, root string) ([]warnings.Warning, error) {
+func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 	if sys == nil {
 		return nil, fmt.Errorf(messages.SyncSystemRequired)
 	}
@@ -40,9 +47,15 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) ([]warnings.Warning, e
 	return RunWithProject(sys, root, project)
 }
 
+// agentEnabled returns true when the given enabled pointer is non-nil and true.
+func agentEnabled(enabled *bool) bool {
+	return enabled != nil && *enabled
+}
+
 // RunWithProject regenerates outputs using an already loaded project config.
 // Returns any sync-time warnings and an error if sync failed.
-func RunWithProject(sys System, root string, project *config.ProjectConfig) ([]warnings.Warning, error) {
+func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Result, error) {
+	agents := project.Config.Agents
 	steps := []func() error{
 		func() error { return updateGitignore(sys, root) },
 		func() error {
@@ -50,38 +63,50 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) ([]w
 		},
 	}
 
-	if project.Config.Agents.Codex.Enabled != nil && *project.Config.Agents.Codex.Enabled {
+	if agentEnabled(agents.Codex.Enabled) {
 		steps = append(steps,
 			func() error { return WriteCodexInstructions(sys, root, project.Instructions) },
 			func() error { return WriteCodexSkills(sys, root, project.SlashCommands) },
 		)
 	}
 
-	if project.Config.Agents.VSCode.Enabled != nil && *project.Config.Agents.VSCode.Enabled {
+	// VS Code block — granular split:
+	// WriteVSCodeSettings fires for vscode OR claude-vscode.
+	// WriteVSCodeMCPConfig, WriteVSCodePrompts, WriteVSCodeLaunchers fire for vscode only.
+	vscodeEnabled := agentEnabled(agents.VSCode.Enabled)
+	claudeVSCodeEnabled := agentEnabled(agents.ClaudeVSCode.Enabled)
+
+	if vscodeEnabled || claudeVSCodeEnabled {
+		steps = append(steps,
+			func() error { return WriteVSCodeSettings(sys, root, project) },
+		)
+	}
+	if vscodeEnabled {
 		steps = append(steps,
 			func() error { return WriteVSCodePrompts(sys, root, project.SlashCommands) },
-			func() error { return WriteVSCodeSettings(sys, root, project) },
 			func() error { return WriteVSCodeMCPConfig(sys, root, project) },
 			func() error { return launchers.WriteVSCodeLaunchers(sys, root) },
 		)
 	}
 
-	if project.Config.Agents.Antigravity.Enabled != nil && *project.Config.Agents.Antigravity.Enabled {
+	if agentEnabled(agents.Antigravity.Enabled) {
 		steps = append(steps, func() error { return WriteAntigravitySkills(sys, root, project.SlashCommands) })
 	}
 
-	if project.Config.Agents.Gemini.Enabled != nil && *project.Config.Agents.Gemini.Enabled {
+	if agentEnabled(agents.Gemini.Enabled) {
 		steps = append(steps, func() error { return WriteGeminiSettings(sys, root, project) })
 	}
 
-	if project.Config.Agents.Claude.Enabled != nil && *project.Config.Agents.Claude.Enabled {
+	// Claude files (.mcp.json, .claude/settings.json) fire when claude OR claude-vscode enabled.
+	claudeEnabled := agentEnabled(agents.Claude.Enabled)
+	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
 			func() error { return WriteClaudeSettings(sys, root, project) },
 			func() error { return WriteMCPConfig(sys, root, project) },
 		)
 	}
 
-	if project.Config.Agents.Codex.Enabled != nil && *project.Config.Agents.Codex.Enabled {
+	if agentEnabled(agents.Codex.Enabled) {
 		steps = append(steps,
 			func() error { return WriteCodexConfig(sys, root, project) },
 			func() error { return WriteCodexRules(sys, root, project) },
@@ -93,7 +118,33 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) ([]w
 	}
 
 	// Collect warnings after successful sync
-	return collectWarnings(project)
+	ws, err := collectWarnings(project)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect auto-approved skill names when Claude agents are active.
+	var autoApproved []string
+	if claudeEnabled || claudeVSCodeEnabled {
+		autoApproved = collectAutoApprovedSkills(project)
+	}
+
+	return &Result{
+		Warnings:           ws,
+		AutoApprovedSkills: autoApproved,
+	}, nil
+}
+
+// collectAutoApprovedSkills returns sorted names of slash commands with auto-approve enabled.
+func collectAutoApprovedSkills(project *config.ProjectConfig) []string {
+	var names []string
+	for _, cmd := range project.SlashCommands {
+		if cmd.AutoApprove {
+			names = append(names, cmd.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // collectWarnings gathers all sync-time warnings based on the project config.

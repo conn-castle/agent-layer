@@ -10,11 +10,12 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 	valid := Config{
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
-			Gemini:      AgentConfig{Enabled: &enabled},
-			Claude:      AgentConfig{Enabled: &enabled},
-			Codex:       CodexConfig{Enabled: &enabled},
-			VSCode:      AgentConfig{Enabled: &enabled},
-			Antigravity: AgentConfig{Enabled: &enabled},
+			Gemini:       AgentConfig{Enabled: &enabled},
+			Claude:       AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			Codex:        CodexConfig{Enabled: &enabled},
+			VSCode:       AgentConfig{Enabled: &enabled},
+			Antigravity:  AgentConfig{Enabled: &enabled},
 		},
 	}
 
@@ -37,6 +38,11 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 			name:        "missing claude enabled",
 			modify:      func(c *Config) { c.Agents.Claude.Enabled = nil },
 			errContains: "agents.claude.enabled is required",
+		},
+		{
+			name:        "missing claude-vscode enabled",
+			modify:      func(c *Config) { c.Agents.ClaudeVSCode.Enabled = nil },
+			errContains: "agents.claude-vscode.enabled is required",
 		},
 		{
 			name:        "missing codex enabled",
@@ -89,11 +95,12 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 	baseConfig := Config{
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
-			Gemini:      AgentConfig{Enabled: &enabled},
-			Claude:      AgentConfig{Enabled: &enabled},
-			Codex:       CodexConfig{Enabled: &enabled},
-			VSCode:      AgentConfig{Enabled: &enabled},
-			Antigravity: AgentConfig{Enabled: &enabled},
+			Gemini:       AgentConfig{Enabled: &enabled},
+			Claude:       AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			Codex:        CodexConfig{Enabled: &enabled},
+			VSCode:       AgentConfig{Enabled: &enabled},
+			Antigravity:  AgentConfig{Enabled: &enabled},
 		},
 	}
 

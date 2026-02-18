@@ -159,6 +159,10 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.ClaudeModelTouched {
 			setOptionalKeyValue(block, templateBlock, "model", choices.ClaudeModel, "enabled")
 		}
+	case "agents.claude-vscode":
+		if choices.EnabledAgentsTouched {
+			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
+		}
 	case "agents.codex":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentCodex]), "")

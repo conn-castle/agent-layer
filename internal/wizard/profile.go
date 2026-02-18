@@ -81,14 +81,14 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 	}
 
 	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
-	warningList, err := runSync(root)
+	result, err := runSync(root)
 	if err != nil {
 		return err
 	}
-	if len(warningList) > 0 {
+	if len(result.Warnings) > 0 {
 		_, _ = fmt.Fprintln(out)
 		warnColor := color.New(color.FgYellow)
-		for _, warningItem := range warningList {
+		for _, warningItem := range result.Warnings {
 			_, _ = warnColor.Fprintf(out, messages.WizardWarningFmt, warningItem.Message)
 		}
 		_, _ = fmt.Fprintln(out)

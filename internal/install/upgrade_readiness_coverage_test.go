@@ -153,7 +153,10 @@ func TestDetectVSCodeNoSyncStaleness_SettingsReadError(t *testing.T) {
 
 func TestDetectVSCodeNoSyncStaleness_VSCodeDisabledNoFinding(t *testing.T) {
 	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	cfg := config.Config{Agents: config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(false)}}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
+		ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(false)},
+	}}
 
 	check, err := detectVSCodeNoSyncStaleness(inst, &cfg, "config.toml", time.Now())
 	if err != nil {
@@ -161,6 +164,48 @@ func TestDetectVSCodeNoSyncStaleness_VSCodeDisabledNoFinding(t *testing.T) {
 	}
 	if check != nil {
 		t.Fatalf("expected no finding for disabled vscode, got %#v", check)
+	}
+}
+
+func TestDetectVSCodeNoSyncStaleness_ClaudeVSCodeOnlyEnabled(t *testing.T) {
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".vscode", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir settings dir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte("{\"editor.tabSize\":2}\n"), 0o644); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
+		ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+	}}
+	check, err := detectVSCodeNoSyncStaleness(inst, &cfg, filepath.Join(root, ".agent-layer", "config.toml"), time.Now())
+	if err != nil {
+		t.Fatalf("detectVSCodeNoSyncStaleness: %v", err)
+	}
+	if check == nil {
+		t.Fatal("expected readiness finding for claude-vscode-only config with missing managed block")
+	}
+	joined := strings.Join(check.Details, "\n")
+	if !strings.Contains(joined, "missing Agent Layer managed block") {
+		t.Fatalf("expected missing managed block detail, got %#v", check.Details)
+	}
+	// .vscode/mcp.json and prompts are only generated for agents.vscode, not claude-vscode.
+	if strings.Contains(joined, ".vscode/mcp.json") {
+		t.Fatalf("should not flag .vscode/mcp.json for claude-vscode-only config, got %#v", check.Details)
+	}
+	if strings.Contains(joined, "prompts") {
+		t.Fatalf("should not flag .vscode/prompts for claude-vscode-only config, got %#v", check.Details)
+	}
+	// Claude outputs (.mcp.json, .claude/settings.json) should be flagged when claude-vscode is enabled.
+	if !strings.Contains(joined, ".mcp.json") {
+		t.Fatalf("expected .mcp.json to be flagged for claude-vscode-only config, got %#v", check.Details)
+	}
+	if !strings.Contains(joined, ".claude/settings.json") {
+		t.Fatalf("expected .claude/settings.json to be flagged for claude-vscode-only config, got %#v", check.Details)
 	}
 }
 
@@ -266,7 +311,7 @@ func TestDetectDisabledAgentArtifacts_IgnoresUserFileWithoutEvidence(t *testing.
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: boolPtr(false)}, Claude: config.AgentConfig{Enabled: boolPtr(true)}, VSCode: config.AgentConfig{Enabled: boolPtr(true)}, Antigravity: config.AgentConfig{Enabled: boolPtr(true)}, Codex: config.CodexConfig{Enabled: boolPtr(true)}}}
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: boolPtr(false)}, Claude: config.AgentConfig{Enabled: boolPtr(true)}, ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)}, VSCode: config.AgentConfig{Enabled: boolPtr(true)}, Antigravity: config.AgentConfig{Enabled: boolPtr(true)}, Codex: config.CodexConfig{Enabled: boolPtr(true)}}}
 	check, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err != nil {
 		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
@@ -285,11 +330,12 @@ func TestDetectDisabledAgentArtifacts_IgnoresDirectories(t *testing.T) {
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	cfg := config.Config{Agents: config.AgentsConfig{
-		Gemini:      config.AgentConfig{Enabled: boolPtr(true)},
-		Claude:      config.AgentConfig{Enabled: boolPtr(true)},
-		Codex:       config.CodexConfig{Enabled: boolPtr(false)},
-		VSCode:      config.AgentConfig{Enabled: boolPtr(true)},
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
+		Gemini:       config.AgentConfig{Enabled: boolPtr(true)},
+		Claude:       config.AgentConfig{Enabled: boolPtr(true)},
+		ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+		Codex:        config.CodexConfig{Enabled: boolPtr(false)},
+		VSCode:       config.AgentConfig{Enabled: boolPtr(true)},
+		Antigravity:  config.AgentConfig{Enabled: boolPtr(true)},
 	}}
 	check, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err != nil {
@@ -307,10 +353,58 @@ func TestDetectDisabledAgentArtifacts_ClaudeStatError(t *testing.T) {
 	sys.statErrs[normalizePath(claudePath)] = errors.New("stat boom")
 	inst := &installer{root: root, sys: sys}
 
-	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: boolPtr(true)}, Claude: config.AgentConfig{Enabled: boolPtr(false)}, VSCode: config.AgentConfig{Enabled: boolPtr(true)}, Antigravity: config.AgentConfig{Enabled: boolPtr(true)}, Codex: config.CodexConfig{Enabled: boolPtr(true)}}}
+	// Both Claude and ClaudeVSCode must be disabled for the claude rule to fire.
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: boolPtr(true)}, Claude: config.AgentConfig{Enabled: boolPtr(false)}, ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(false)}, VSCode: config.AgentConfig{Enabled: boolPtr(true)}, Antigravity: config.AgentConfig{Enabled: boolPtr(true)}, Codex: config.CodexConfig{Enabled: boolPtr(true)}}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "stat boom") {
 		t.Fatalf("expected claude stat error, got %v", err)
+	}
+}
+
+func TestDetectDisabledAgentArtifacts_ClaudeSettingsStatError(t *testing.T) {
+	root := t.TempDir()
+	claudeSettingsPath := filepath.Join(root, ".claude", "settings.json")
+	sys := newFaultSystem(RealSystem{})
+	sys.statErrs[normalizePath(claudeSettingsPath)] = errors.New("stat boom")
+	inst := &installer{root: root, sys: sys}
+
+	// Both Claude and ClaudeVSCode must be disabled for the claude rule to fire.
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: boolPtr(true)}, Claude: config.AgentConfig{Enabled: boolPtr(false)}, ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(false)}, VSCode: config.AgentConfig{Enabled: boolPtr(true)}, Antigravity: config.AgentConfig{Enabled: boolPtr(true)}, Codex: config.CodexConfig{Enabled: boolPtr(true)}}}
+	_, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err == nil || !strings.Contains(err.Error(), "stat boom") {
+		t.Fatalf("expected claude settings stat error, got %v", err)
+	}
+}
+
+func TestDetectDisabledAgentArtifacts_FlagsClaudeSettings(t *testing.T) {
+	root := t.TempDir()
+	claudeSettingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(claudeSettingsPath), 0o755); err != nil {
+		t.Fatalf("mkdir claude dir: %v", err)
+	}
+	if err := os.WriteFile(claudeSettingsPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("write claude settings: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		Gemini:       config.AgentConfig{Enabled: boolPtr(true)},
+		Claude:       config.AgentConfig{Enabled: boolPtr(false)},
+		ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(false)},
+		VSCode:       config.AgentConfig{Enabled: boolPtr(true)},
+		Antigravity:  config.AgentConfig{Enabled: boolPtr(true)},
+		Codex:        config.CodexConfig{Enabled: boolPtr(true)},
+	}}
+	check, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err != nil {
+		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
+	}
+	if check == nil {
+		t.Fatal("expected disabled-agent artifacts check for .claude/settings.json")
+	}
+	joined := strings.Join(check.Details, "\n")
+	if !strings.Contains(joined, ".claude/settings.json") {
+		t.Fatalf("expected .claude/settings.json in details, got %q", joined)
 	}
 }
 
@@ -322,11 +416,12 @@ func TestDetectDisabledAgentArtifacts_CodexStatError(t *testing.T) {
 	inst := &installer{root: root, sys: sys}
 
 	cfg := config.Config{Agents: config.AgentsConfig{
-		Gemini:      config.AgentConfig{Enabled: boolPtr(true)},
-		Claude:      config.AgentConfig{Enabled: boolPtr(true)},
-		Codex:       config.CodexConfig{Enabled: boolPtr(false)},
-		VSCode:      config.AgentConfig{Enabled: boolPtr(true)},
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
+		Gemini:       config.AgentConfig{Enabled: boolPtr(true)},
+		Claude:       config.AgentConfig{Enabled: boolPtr(true)},
+		ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+		Codex:        config.CodexConfig{Enabled: boolPtr(false)},
+		VSCode:       config.AgentConfig{Enabled: boolPtr(true)},
+		Antigravity:  config.AgentConfig{Enabled: boolPtr(true)},
 	}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "stat boom") {
@@ -356,7 +451,7 @@ func TestDetectDisabledAgentArtifacts_VSCodeTemplateReadError(t *testing.T) {
 	})
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: boolPtr(true)}, Claude: config.AgentConfig{Enabled: boolPtr(true)}, VSCode: config.AgentConfig{Enabled: boolPtr(false)}, Antigravity: config.AgentConfig{Enabled: boolPtr(true)}, Codex: config.CodexConfig{Enabled: boolPtr(true)}}}
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: boolPtr(true)}, Claude: config.AgentConfig{Enabled: boolPtr(true)}, ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(false)}, VSCode: config.AgentConfig{Enabled: boolPtr(false)}, Antigravity: config.AgentConfig{Enabled: boolPtr(true)}, Codex: config.CodexConfig{Enabled: boolPtr(true)}}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "template boom") {
 		t.Fatalf("expected template read error, got %v", err)
@@ -378,11 +473,12 @@ func TestDetectDisabledAgentArtifacts_VSCodeSettingsReadError(t *testing.T) {
 	sys.readErrs[normalizePath(settingsPath)] = errors.New("read boom")
 	inst := &installer{root: root, sys: sys}
 	cfg := config.Config{Agents: config.AgentsConfig{
-		Gemini:      config.AgentConfig{Enabled: boolPtr(true)},
-		Claude:      config.AgentConfig{Enabled: boolPtr(true)},
-		Codex:       config.CodexConfig{Enabled: boolPtr(true)},
-		VSCode:      config.AgentConfig{Enabled: boolPtr(false)},
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
+		Gemini:       config.AgentConfig{Enabled: boolPtr(true)},
+		Claude:       config.AgentConfig{Enabled: boolPtr(true)},
+		ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(false)},
+		Codex:        config.CodexConfig{Enabled: boolPtr(true)},
+		VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
+		Antigravity:  config.AgentConfig{Enabled: boolPtr(true)},
 	}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "read boom") {
@@ -400,11 +496,12 @@ func TestDetectDisabledAgentArtifacts_VSCodePromptWalkError(t *testing.T) {
 	sys.walkErrs[normalizePath(promptRoot)] = errors.New("walk boom")
 	inst := &installer{root: root, sys: sys}
 	cfg := config.Config{Agents: config.AgentsConfig{
-		Gemini:      config.AgentConfig{Enabled: boolPtr(true)},
-		Claude:      config.AgentConfig{Enabled: boolPtr(true)},
-		Codex:       config.CodexConfig{Enabled: boolPtr(true)},
-		VSCode:      config.AgentConfig{Enabled: boolPtr(false)},
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
+		Gemini:       config.AgentConfig{Enabled: boolPtr(true)},
+		Claude:       config.AgentConfig{Enabled: boolPtr(true)},
+		ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(false)},
+		Codex:        config.CodexConfig{Enabled: boolPtr(true)},
+		VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
+		Antigravity:  config.AgentConfig{Enabled: boolPtr(true)},
 	}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "walk boom") {
@@ -595,11 +692,12 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 
 	cfg := config.Config{
 		Agents: config.AgentsConfig{
-			Gemini:      config.AgentConfig{Enabled: boolPtr(true)},
-			Claude:      config.AgentConfig{Enabled: boolPtr(true)},
-			Codex:       config.CodexConfig{Enabled: boolPtr(false)},
-			VSCode:      config.AgentConfig{Enabled: boolPtr(false)},
-			Antigravity: config.AgentConfig{Enabled: boolPtr(false)},
+			Gemini:       config.AgentConfig{Enabled: boolPtr(true)},
+			Claude:       config.AgentConfig{Enabled: boolPtr(true)},
+			ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+			Codex:        config.CodexConfig{Enabled: boolPtr(false)},
+			VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
+			Antigravity:  config.AgentConfig{Enabled: boolPtr(false)},
 		},
 	}
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -611,18 +709,31 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 		t.Fatal("expected disabled-agent artifacts check")
 	}
 	joined := strings.Join(check.Details, "\n")
+	// Codex/antigravity disabled artifacts should be flagged.
 	for _, expected := range []string{
 		".codex/AGENTS.md",
 		".codex/config.toml",
 		".codex/rules/default.rules",
 		".codex/skills/alpha/SKILL.md",
 		".agent/skills/beta/SKILL.md",
-		".vscode/settings.json",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected detail %q, got %q", expected, joined)
+		}
+	}
+	// .vscode/settings.json is shared (generated when either agent is enabled),
+	// so it should NOT be flagged when claude-vscode is enabled.
+	if strings.Contains(joined, ".vscode/settings.json") {
+		t.Fatalf("unexpected .vscode/settings.json in disabled details when claude-vscode is enabled, got %q", joined)
+	}
+	// Prompts and launchers are vscode-only, so they SHOULD be flagged
+	// even when claude-vscode is enabled (vscode is disabled).
+	for _, expected := range []string{
 		".vscode/prompts/alpha.prompt.md",
 		".agent-layer/open-vscode.command",
 	} {
 		if !strings.Contains(joined, expected) {
-			t.Fatalf("expected detail %q, got %q", expected, joined)
+			t.Fatalf("expected vscode-only artifact %q to be flagged, got %q", expected, joined)
 		}
 	}
 }

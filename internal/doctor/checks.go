@@ -123,6 +123,7 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 	}{
 		{"Gemini", cfg.Config.Agents.Gemini.Enabled},
 		{"Claude", cfg.Config.Agents.Claude.Enabled},
+		{"ClaudeVSCode", cfg.Config.Agents.ClaudeVSCode.Enabled},
 		{"Codex", cfg.Config.Agents.Codex.Enabled},
 		{"VSCode", cfg.Config.Agents.VSCode.Enabled},
 		{"Antigravity", cfg.Config.Agents.Antigravity.Enabled},

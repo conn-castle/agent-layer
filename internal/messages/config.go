@@ -23,6 +23,7 @@ const (
 	ConfigApprovalsModeInvalidFmt             = "%s: approvals.mode must be one of all, mcp, commands, none, yolo"
 	ConfigGeminiEnabledRequiredFmt            = "%s: agents.gemini.enabled is required"
 	ConfigClaudeEnabledRequiredFmt            = "%s: agents.claude.enabled is required"
+	ConfigClaudeVSCodeEnabledRequiredFmt      = "%s: agents.claude-vscode.enabled is required"
 	ConfigCodexEnabledRequiredFmt             = "%s: agents.codex.enabled is required"
 	ConfigVSCodeEnabledRequiredFmt            = "%s: agents.vscode.enabled is required"
 	ConfigAntigravityEnabledRequiredFmt       = "%s: agents.antigravity.enabled is required"
@@ -52,6 +53,7 @@ const (
 	ConfigSlashCommandFailedReadContentFmt    = "failed to read content: %w"
 	ConfigSlashCommandDescriptionEmpty        = "description is empty"
 	ConfigSlashCommandMissingDescription      = "missing description in front matter"
+	ConfigSlashCommandAutoApproveInvalidFmt   = "auto-approve value %q is not a valid boolean"
 
 	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"
 	ConfigNoInstructionFilesFmt     = "no instruction files found in %s"
