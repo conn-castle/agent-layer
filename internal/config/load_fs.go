@@ -157,13 +157,14 @@ func LoadSlashCommandsFS(fsys fs.FS, root string, dir string) ([]SlashCommand, e
 			return nil, fmt.Errorf(messages.ConfigFailedReadSlashCommandFmt, path, err)
 		}
 		data = bytes.TrimPrefix(data, utf8BOM)
-		description, body, err := parseSlashCommand(string(data))
+		description, autoApprove, body, err := parseSlashCommand(string(data))
 		if err != nil {
 			return nil, fmt.Errorf(messages.ConfigInvalidSlashCommandFmt, path, err)
 		}
 		commands = append(commands, SlashCommand{
 			Name:        strings.TrimSuffix(name, ".md"),
 			Description: description,
+			AutoApprove: autoApprove,
 			Body:        body,
 			SourcePath:  path,
 		})

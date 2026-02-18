@@ -15,11 +15,12 @@ type ApprovalsConfig struct {
 
 // AgentsConfig holds per-client enablement and model selection.
 type AgentsConfig struct {
-	Gemini      AgentConfig `toml:"gemini"`
-	Claude      AgentConfig `toml:"claude"`
-	Codex       CodexConfig `toml:"codex"`
-	VSCode      AgentConfig `toml:"vscode"`
-	Antigravity AgentConfig `toml:"antigravity"`
+	Gemini       AgentConfig `toml:"gemini"`
+	Claude       AgentConfig `toml:"claude"`
+	ClaudeVSCode AgentConfig `toml:"claude-vscode"`
+	Codex        CodexConfig `toml:"codex"`
+	VSCode       AgentConfig `toml:"vscode"`
+	Antigravity  AgentConfig `toml:"antigravity"`
 }
 
 // AgentConfig is shared by agents that only need enablement and model selection.
@@ -76,6 +77,7 @@ type InstructionFile struct {
 type SlashCommand struct {
 	Name        string
 	Description string
+	AutoApprove bool
 	Body        string
 	SourcePath  string
 }

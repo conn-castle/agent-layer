@@ -794,6 +794,9 @@ enabled = true
 [agents.claude]
 enabled = true
 
+[agents.claude-vscode]
+enabled = true
+
 [agents.codex]
 enabled = true
 
@@ -863,6 +866,9 @@ mode = "all"
 enabled = true
 
 [agents.claude]
+enabled = true
+
+[agents.claude-vscode]
 enabled = true
 
 [agents.codex]

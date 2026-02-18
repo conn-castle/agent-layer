@@ -30,7 +30,7 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
 4. `internal/clients/vscode/launch.go` runs preflight checks:
    - `code` command exists on `PATH`
    - `.vscode/settings.json` managed markers are not malformed/duplicated
-5. Launch sets `CODEX_HOME=<repo>/.codex` and executes `code ... .`.
+5. Launch sets `CODEX_HOME=<repo>/.codex` and executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
 
 ## Managed settings architecture
 

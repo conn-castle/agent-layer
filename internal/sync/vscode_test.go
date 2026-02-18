@@ -15,6 +15,7 @@ func TestBuildVSCodeSettings(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -33,6 +34,7 @@ func TestBuildVSCodeSettingsEscapesSlash(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"scripts/dev.sh"},
 	}
@@ -54,6 +56,7 @@ func TestWriteVSCodeSettings(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -71,6 +74,7 @@ func TestBuildVSCodeSettingsYOLO(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -84,6 +88,48 @@ func TestBuildVSCodeSettingsYOLO(t *testing.T) {
 	}
 	if len(settings.ChatToolsTerminalAutoApprove) != 1 {
 		t.Fatalf("expected 1 terminal auto-approve entry for yolo mode")
+	}
+}
+
+func TestBuildVSCodeSettingsClaudeVSCodeYOLO(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Agents: config.AgentsConfig{
+				VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
+				ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+			},
+		},
+	}
+
+	settings, err := buildVSCodeSettings(project)
+	if err != nil {
+		t.Fatalf("buildVSCodeSettings error: %v", err)
+	}
+	if settings.ClaudeCodeAllowDangerouslySkipPerms == nil || !*settings.ClaudeCodeAllowDangerouslySkipPerms {
+		t.Fatal("expected ClaudeCodeAllowDangerouslySkipPerms=true when claude-vscode enabled + yolo")
+	}
+}
+
+func TestBuildVSCodeSettingsClaudeVSCodeNonYOLO(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Agents: config.AgentsConfig{
+				VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
+				ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+			},
+		},
+	}
+
+	settings, err := buildVSCodeSettings(project)
+	if err != nil {
+		t.Fatalf("buildVSCodeSettings error: %v", err)
+	}
+	if settings.ClaudeCodeAllowDangerouslySkipPerms != nil {
+		t.Fatal("expected ClaudeCodeAllowDangerouslySkipPerms to be nil when mode is not yolo")
 	}
 }
 
@@ -102,6 +148,7 @@ func TestWriteVSCodeSettingsPreservesExistingContent(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -151,6 +198,7 @@ func TestWriteVSCodeSettingsReplacesManagedBlock(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -194,6 +242,7 @@ func TestWriteVSCodeSettingsNoTrailingCommaWhenManagedBlockIsLast(t *testing.T) 
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -231,6 +280,7 @@ func TestWriteVSCodeSettingsInsertsManagedBlockWithExistingFields(t *testing.T) 
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}

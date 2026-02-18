@@ -21,6 +21,9 @@ enabled = true
 [agents.claude]
 enabled = true
 
+[agents.claude-vscode]
+enabled = true
+
 [agents.codex]
 enabled = true
 model = "gpt-5.2-codex"
@@ -66,6 +69,9 @@ mode = "bad"
 enabled = true
 
 [agents.claude]
+enabled = true
+
+[agents.claude-vscode]
 enabled = true
 
 [agents.codex]
@@ -157,6 +163,9 @@ mode = "all"
 enabled = true
 
 [agents.claude]
+enabled = true
+
+[agents.claude-vscode]
 enabled = true
 
 [agents.codex]

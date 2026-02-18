@@ -14,8 +14,9 @@ import (
 )
 
 type vscodeSettings struct {
-	ChatToolsGlobalAutoApprove   *bool            `json:"chat.tools.global.autoApprove,omitempty"`
-	ChatToolsTerminalAutoApprove OrderedMap[bool] `json:"chat.tools.terminal.autoApprove,omitempty"`
+	ChatToolsGlobalAutoApprove          *bool            `json:"chat.tools.global.autoApprove,omitempty"`
+	ChatToolsTerminalAutoApprove        OrderedMap[bool] `json:"chat.tools.terminal.autoApprove,omitempty"`
+	ClaudeCodeAllowDangerouslySkipPerms *bool            `json:"claudeCode.allowDangerouslySkipPermissions,omitempty"`
 }
 
 const (
@@ -75,20 +76,33 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	settings := &vscodeSettings{}
 
-	if project.Config.Approvals.Mode == "yolo" {
-		trueVal := true
-		settings.ChatToolsGlobalAutoApprove = &trueVal
+	vscodeEnabled := agentEnabled(project.Config.Agents.VSCode.Enabled)
+	claudeVSCodeEnabled := agentEnabled(project.Config.Agents.ClaudeVSCode.Enabled)
+	isYOLO := project.Config.Approvals.Mode == "yolo"
+
+	// Copilot settings: only when agents.vscode is enabled.
+	if vscodeEnabled {
+		if isYOLO {
+			trueVal := true
+			settings.ChatToolsGlobalAutoApprove = &trueVal
+		}
+
+		if approvals.AllowCommands {
+			autoApprove := make(OrderedMap[bool])
+			for _, cmd := range approvals.Commands {
+				pattern := formatVSCodeAutoApprovePattern(cmd)
+				autoApprove[pattern] = true
+			}
+			if len(autoApprove) > 0 {
+				settings.ChatToolsTerminalAutoApprove = autoApprove
+			}
+		}
 	}
 
-	if approvals.AllowCommands {
-		autoApprove := make(OrderedMap[bool])
-		for _, cmd := range approvals.Commands {
-			pattern := formatVSCodeAutoApprovePattern(cmd)
-			autoApprove[pattern] = true
-		}
-		if len(autoApprove) > 0 {
-			settings.ChatToolsTerminalAutoApprove = autoApprove
-		}
+	// Claude extension settings: only when agents.claude-vscode is enabled.
+	if claudeVSCodeEnabled && isYOLO {
+		trueVal := true
+		settings.ClaudeCodeAllowDangerouslySkipPerms = &trueVal
 	}
 
 	return settings, nil

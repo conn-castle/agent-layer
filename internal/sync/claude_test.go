@@ -24,7 +24,7 @@ func TestBuildClaudeSettings(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, _, err := buildClaudeSettings(project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestBuildClaudeSettingsNone(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, _, err := buildClaudeSettings(project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -114,12 +114,66 @@ func TestBuildClaudeSettingsYOLO(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, _, err := buildClaudeSettings(project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
 	if settings.Permissions == nil || len(settings.Permissions.Allow) < 2 {
 		t.Fatalf("expected permissions allow list for yolo mode")
+	}
+}
+
+func TestBuildClaudeSettingsAutoApprove(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+		},
+		SlashCommands: []config.SlashCommand{
+			{Name: "find-issues", AutoApprove: true},
+			{Name: "review-pr", AutoApprove: false},
+			{Name: "deploy", AutoApprove: true},
+		},
+	}
+
+	settings, autoApproved, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if len(autoApproved) != 2 {
+		t.Fatalf("expected 2 auto-approved skills, got %d", len(autoApproved))
+	}
+	if autoApproved[0] != "deploy" || autoApproved[1] != "find-issues" {
+		t.Fatalf("expected sorted [deploy, find-issues], got %v", autoApproved)
+	}
+	if settings.Permissions == nil || len(settings.Permissions.Allow) != 2 {
+		t.Fatalf("expected 2 allow entries for auto-approved skills, got %v", settings.Permissions)
+	}
+}
+
+func TestBuildClaudeSettingsAutoApproveSkippedWhenMCPAllowed(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "all"},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
+				},
+			},
+		},
+		SlashCommands: []config.SlashCommand{
+			{Name: "find-issues", AutoApprove: true},
+		},
+	}
+
+	_, autoApproved, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if len(autoApproved) != 0 {
+		t.Fatalf("expected no auto-approved names when AllowMCP is true, got %v", autoApproved)
 	}
 }
 

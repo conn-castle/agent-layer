@@ -11,11 +11,12 @@ func TestValidateConfigErrors(t *testing.T) {
 	valid := Config{
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
-			Gemini:      AgentConfig{Enabled: &trueVal},
-			Claude:      AgentConfig{Enabled: &trueVal},
-			Codex:       CodexConfig{Enabled: &trueVal},
-			VSCode:      AgentConfig{Enabled: &trueVal},
-			Antigravity: AgentConfig{Enabled: &falseVal},
+			Gemini:       AgentConfig{Enabled: &trueVal},
+			Claude:       AgentConfig{Enabled: &trueVal},
+			ClaudeVSCode: AgentConfig{Enabled: &trueVal},
+			Codex:        CodexConfig{Enabled: &trueVal},
+			VSCode:       AgentConfig{Enabled: &trueVal},
+			Antigravity:  AgentConfig{Enabled: &falseVal},
 		},
 		MCP: MCPConfig{},
 	}
@@ -165,11 +166,12 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: "yolo"},
 		Agents: AgentsConfig{
-			Gemini:      AgentConfig{Enabled: &trueVal},
-			Claude:      AgentConfig{Enabled: &trueVal},
-			Codex:       CodexConfig{Enabled: &trueVal},
-			VSCode:      AgentConfig{Enabled: &trueVal},
-			Antigravity: AgentConfig{Enabled: &trueVal},
+			Gemini:       AgentConfig{Enabled: &trueVal},
+			Claude:       AgentConfig{Enabled: &trueVal},
+			ClaudeVSCode: AgentConfig{Enabled: &trueVal},
+			Codex:        CodexConfig{Enabled: &trueVal},
+			VSCode:       AgentConfig{Enabled: &trueVal},
+			Antigravity:  AgentConfig{Enabled: &trueVal},
 		},
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
@@ -182,11 +184,12 @@ func TestValidateWarningsThresholds(t *testing.T) {
 	base := Config{
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
-			Gemini:      AgentConfig{Enabled: &enabled},
-			Claude:      AgentConfig{Enabled: &enabled},
-			Codex:       CodexConfig{Enabled: &enabled},
-			VSCode:      AgentConfig{Enabled: &enabled},
-			Antigravity: AgentConfig{Enabled: &enabled},
+			Gemini:       AgentConfig{Enabled: &enabled},
+			Claude:       AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			Codex:        CodexConfig{Enabled: &enabled},
+			VSCode:       AgentConfig{Enabled: &enabled},
+			Antigravity:  AgentConfig{Enabled: &enabled},
 		},
 	}
 

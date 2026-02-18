@@ -299,6 +299,9 @@ enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
 
+[agents.claude-vscode]
+enabled = true
+
 [agents.codex]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
@@ -427,6 +430,8 @@ These files are user-editable; define the workflows you want your agents to run.
 
 - One Markdown file per command.
 - Filename (without `.md`) is the canonical command name.
+- Frontmatter supports `description` (required) and `auto-approve` (optional, defaults to `false`).
+- `auto-approve: true` auto-approves the MCP prompt retrieval for that skill in Claude clients. It does **not** auto-approve agent actions after reading the prompt; those remain governed by `approvals.mode`.
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
 
 ### Approved commands: `.agent-layer/commands.allow`
@@ -447,7 +452,14 @@ Some clients discover slash commands via MCP prompts. Agent Layer provides an **
 
 ---
 
-## VS Code + Codex extension (CODEX_HOME)
+## VS Code (Codex + Claude extensions)
+
+`al vscode` is the single command for launching VS Code with both Codex and Claude extension support. It is enabled when either `[agents.vscode]` or `[agents.claude-vscode]` is set to `enabled = true` in `config.toml`.
+
+- When `[agents.vscode]` is enabled, `CODEX_HOME` is set for the Codex extension.
+- When `[agents.claude-vscode]` is enabled, Claude files (`.mcp.json`, `.claude/settings.json`) are generated. YOLO mode sets `claudeCode.allowDangerouslySkipPermissions` in `.vscode/settings.json`.
+- VS Code settings are generated when either agent is enabled.
+- Supports `--no-sync` to skip sync before opening VS Code.
 
 The Codex VS Code extension reads `CODEX_HOME` from the VS Code process environment at startup.
 
@@ -553,7 +565,7 @@ Installer adds a managed `.gitignore` block that typically ignores:
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 
-To commit `.agent-layer/`, remove the `/agent-layer/` line in `.agent-layer/gitignore.block` and re-run `al sync`.
+To commit `.agent-layer/`, remove the `/.agent-layer/` line in `.agent-layer/gitignore.block` and re-run `al sync`.
 
 To customize the managed block, edit `.agent-layer/gitignore.block` and re-run `al sync`.
 

@@ -10,10 +10,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/warnings"
+	"github.com/conn-castle/agent-layer/internal/sync"
 )
 
-type syncer func(root string) ([]warnings.Warning, error)
+type syncer func(root string) (*sync.Result, error)
 
 var writeFileAtomic = fsutil.WriteFileAtomic
 
@@ -83,15 +83,15 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 
 	// Sync
 	_, _ = fmt.Fprintln(out, messages.WizardRunningSync)
-	warnings, err := runSync(root)
+	result, err := runSync(root)
 	if err != nil {
 		return err
 	}
 	// Print any warnings from sync
-	if len(warnings) > 0 {
+	if len(result.Warnings) > 0 {
 		_, _ = fmt.Fprintln(out)
 		warnColor := color.New(color.FgYellow)
-		for _, w := range warnings {
+		for _, w := range result.Warnings {
 			_, _ = warnColor.Fprintf(out, messages.WizardWarningFmt, w.Message)
 		}
 		_, _ = fmt.Fprintln(out)

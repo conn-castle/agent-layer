@@ -31,7 +31,7 @@ This repo is built around determinism: the same inputs should produce the same c
 - Use the commands in `docs/agent-layer/COMMANDS.md` for format, lint, test, coverage, and release builds.
 - Prefer `make` targets (see `docs/agent-layer/COMMANDS.md`) instead of running `goimports` / `golangci-lint` directly; tools are installed repo-locally under `.tools/bin` so you do not need to edit your shell PATH. This avoids “works on my machine” drift and keeps local output aligned with CI.
 - Use `make dev` for a quick local pass (format + fmt-check + lint + coverage + release tests). Run `./scripts/setup.sh` or `make tools` first.
-- If you change installer templates (anything under `internal/templates/`), run `go run ./cmd/al upgrade` in a target repo to apply the updated templates (or `go run ./cmd/al init` for a fresh repo).
+- If you change installer templates (anything under `internal/templates/`), run `al upgrade` in a target repo to apply the updated templates. When testing from this source repo's scratch target (`tmp/dev-repo`), use `go run ../../cmd/al upgrade` (or `go run ../../cmd/al init` for a fresh repo).
 - If template-managed file semantics change for release upgrades, regenerate the release manifest: `./scripts/generate-template-manifest.sh --tag vX.Y.Z`.
 - If you change upgrade behavior or upgrade-facing guidance, update the canonical upgrade contract page at `site/docs/upgrades.mdx` and keep release notes/docs links aligned.
 - If you change VS Code launch behavior, update `docs/architecture/vscode-launch.md` and keep troubleshooting guidance aligned.
@@ -98,11 +98,12 @@ Notes:
 - `make test` uses `gotestsum` for more readable output (installed via `make tools`).
 - `make lint` and `make test` fail fast if tools are missing; run `make tools` once per clone.
 
-## Full local verification (CI-equivalent)
+## Full local verification (closest CI parity)
 ```bash
 make ci
+make release-dist AL_VERSION=ci DIST_DIR=dist
 ```
-Note: `make ci` includes `make tidy-check`, which fails if `go.mod` or `go.sum` would change. While you are actively editing dependencies, use `make test`, `make lint`, and `make coverage` instead. `make ci` expects tools to be installed via `make tools`.
+Note: `make ci` includes `make tidy-check`, which fails if `go.mod` or `go.sum` would change. While you are actively editing dependencies, use `make test`, `make lint`, and `make coverage` instead. `make ci` expects tools to be installed via `make tools`. The `make release-dist ...` command mirrors CI's dry-run release artifact build.
 
 ## Troubleshooting
 - If you see `golangci-lint: command not found` or `goimports: command not found`, run:

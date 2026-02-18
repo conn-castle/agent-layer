@@ -123,6 +123,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	agentConfigs := []agentEnabledConfig{
 		{id: AgentGemini, enabled: cfg.Config.Agents.Gemini.Enabled},
 		{id: AgentClaude, enabled: cfg.Config.Agents.Claude.Enabled},
+		{id: AgentClaudeVSCode, enabled: cfg.Config.Agents.ClaudeVSCode.Enabled},
 		{id: AgentCodex, enabled: cfg.Config.Agents.Codex.Enabled},
 		{id: AgentVSCode, enabled: cfg.Config.Agents.VSCode.Enabled},
 		{id: AgentAntigravity, enabled: cfg.Config.Agents.Antigravity.Enabled},

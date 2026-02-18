@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -40,13 +41,14 @@ func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 			return nil, fmt.Errorf(messages.ConfigFailedReadSlashCommandFmt, path, err)
 		}
 		data = bytes.TrimPrefix(data, utf8BOM)
-		description, body, err := parseSlashCommand(string(data))
+		description, autoApprove, body, err := parseSlashCommand(string(data))
 		if err != nil {
 			return nil, fmt.Errorf(messages.ConfigInvalidSlashCommandFmt, path, err)
 		}
 		commands = append(commands, SlashCommand{
 			Name:        strings.TrimSuffix(name, ".md"),
 			Description: description,
+			AutoApprove: autoApprove,
 			Body:        body,
 			SourcePath:  path,
 		})
@@ -55,13 +57,13 @@ func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 	return commands, nil
 }
 
-func parseSlashCommand(content string) (string, string, error) {
+func parseSlashCommand(content string) (string, bool, string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	if !scanner.Scan() {
-		return "", "", fmt.Errorf(messages.ConfigSlashCommandMissingContent)
+		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandMissingContent)
 	}
 	if strings.TrimSpace(scanner.Text()) != "---" {
-		return "", "", fmt.Errorf(messages.ConfigSlashCommandMissingFrontMatter)
+		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandMissingFrontMatter)
 	}
 
 	var fmLines []string
@@ -75,7 +77,7 @@ func parseSlashCommand(content string) (string, string, error) {
 		fmLines = append(fmLines, line)
 	}
 	if !foundEnd {
-		return "", "", fmt.Errorf(messages.ConfigSlashCommandUnterminatedFrontMatter)
+		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandUnterminatedFrontMatter)
 	}
 
 	var bodyBuilder strings.Builder
@@ -84,7 +86,7 @@ func parseSlashCommand(content string) (string, string, error) {
 		bodyBuilder.WriteString("\n")
 	}
 	if err := scanner.Err(); err != nil {
-		return "", "", fmt.Errorf(messages.ConfigSlashCommandFailedReadContentFmt, err)
+		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandFailedReadContentFmt, err)
 	}
 
 	body := strings.TrimPrefix(bodyBuilder.String(), "\n")
@@ -92,10 +94,38 @@ func parseSlashCommand(content string) (string, string, error) {
 
 	description, err := parseDescription(fmLines)
 	if err != nil {
-		return "", "", err
+		return "", false, "", err
 	}
 
-	return description, body, nil
+	autoApprove, err := parseAutoApprove(fmLines)
+	if err != nil {
+		return "", false, "", err
+	}
+
+	return description, autoApprove, body, nil
+}
+
+func parseAutoApprove(lines []string) (bool, error) {
+	for _, line := range lines {
+		// Skip continuation lines (indented lines belong to the previous key's value).
+		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "auto-approve:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(trimmed, "auto-approve:"))
+		if value == "" {
+			return false, fmt.Errorf(messages.ConfigSlashCommandAutoApproveInvalidFmt, "")
+		}
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return false, fmt.Errorf(messages.ConfigSlashCommandAutoApproveInvalidFmt, value)
+		}
+		return b, nil
+	}
+	return false, nil
 }
 
 func parseDescription(lines []string) (string, error) {

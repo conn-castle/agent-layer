@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/warnings"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestRun_DefaultServersFromConfig(t *testing.T) {
@@ -21,6 +21,8 @@ mode = "all"
 [agents.gemini]
 enabled = false
 [agents.claude]
+enabled = false
+[agents.claude-vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -77,7 +79,7 @@ command = "tool"
 		},
 	}
 
-	err := Run(root, ui, func(string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.NoError(t, err)
 }
 
@@ -110,7 +112,7 @@ func TestRun_InvalidEnvFile(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.Error(t, err)
 }
 
@@ -146,6 +148,6 @@ func TestRun_EnvReadError(t *testing.T) {
 		},
 	}
 
-	err := Run(root, ui, func(string) ([]warnings.Warning, error) { return nil, nil }, "")
+	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	require.Error(t, err)
 }

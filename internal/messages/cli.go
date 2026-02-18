@@ -120,9 +120,10 @@ const (
 	CodexUse   = "codex"
 	CodexShort = "Sync and launch Codex CLI"
 
-	VSCodeUse              = "vscode"
-	VSCodeShort            = "Sync and launch VS Code with CODEX_HOME configured"
-	VSCodeNoSyncInvalidFmt = "invalid value for --no-sync: %q"
+	VSCodeUse   = "vscode"
+	VSCodeShort = "Sync and launch VS Code"
+
+	NoSyncInvalidFmt = "invalid value for --no-sync: %q"
 
 	AntigravityUse   = "antigravity"
 	AntigravityShort = "Sync and launch Antigravity"
@@ -135,7 +136,8 @@ const (
 	ClientsVSCodeExitErrorFmt            = "vscode exited with error: %w"
 	ClientsVSCodeCodeNotFoundFmt         = "vscode preflight failed: 'code' command not found on PATH: %w"
 	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"
-	ClientsCodexHomeWarningFmt           = "Warning: CODEX_HOME is set to %s; expected %s\n"
+
+	ClientsCodexHomeWarningFmt = "Warning: CODEX_HOME is set to %s; expected %s\n"
 
 	// StubShortFmt formats stub command descriptions.
 	StubShortFmt          = "%s (not implemented yet)"

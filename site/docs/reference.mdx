@@ -45,6 +45,9 @@ enabled = true
 enabled = true
 # model = "..."
 
+[agents.claude-vscode]
+enabled = true
+
 [agents.codex]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
@@ -103,6 +106,7 @@ Supported agents:
 
 - `gemini`
 - `claude`
+- `claude-vscode`
 - `codex`
 - `vscode`
 - `antigravity`
@@ -117,7 +121,7 @@ Each `[[mcp.servers]]` entry must include:
 
 Optional fields:
 
-- `clients` to restrict which clients receive a server
+- `clients` to restrict which clients receive a server (valid values: `gemini`, `claude`, `vscode`, `codex`, `antigravity`; note that `claude-vscode` uses the `claude` client)
 - `http_transport` (`sse` or `streamable`) for HTTP servers
 - `headers` for HTTP auth and metadata
 - `command`, `args`, `env` for stdio servers
@@ -479,7 +483,7 @@ These commands read `.agent-layer/`, regenerate client outputs, and then launch 
 
 This is the default workflow for day-to-day use: you get a clean regenerate and a launch in one command, which keeps behavior consistent even when you switch tools.
 
-`al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is supported only by `al vscode` and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
+`al <client>` forwards any extra arguments to the underlying client. If you need to use Agent Layer flags as well, place `--` before the client arguments. `--no-sync` is supported by `al vscode` and must appear before `--`. For an explicit false value, use `--no-sync=false` (space-separated values like `--no-sync false` are not supported and will be passed through).
 
 `al vscode` preflight now fails fast with clear guidance when:
 

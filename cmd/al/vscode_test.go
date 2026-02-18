@@ -5,6 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/clients"
+	"github.com/conn-castle/agent-layer/internal/clients/vscode"
+	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 func TestRunVSCodeNoSync(t *testing.T) {
@@ -15,8 +19,12 @@ func TestRunVSCodeNoSync(t *testing.T) {
 	writeStub(t, binDir, "code")
 
 	t.Setenv("PATH", binDir)
-	if err := runVSCodeNoSync(root, nil); err != nil {
-		t.Fatalf("runVSCodeNoSync error: %v", err)
+	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		return &v
+	}, vscode.Launch, nil)
+	if err != nil {
+		t.Fatalf("RunNoSync error: %v", err)
 	}
 }
 
@@ -35,6 +43,9 @@ enabled = true
 [agents.claude]
 enabled = true
 
+[agents.claude-vscode]
+enabled = false
+
 [agents.codex]
 enabled = true
 
@@ -48,8 +59,56 @@ enabled = true
 		t.Fatalf("write config: %v", err)
 	}
 
-	if err := runVSCodeNoSync(root, nil); err == nil {
-		t.Fatal("expected error when VS Code is disabled")
+	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		return &v
+	}, vscode.Launch, nil)
+	if err == nil {
+		t.Fatal("expected error when both VS Code agents are disabled")
+	}
+}
+
+func TestRunVSCodeNoSyncEnabledViaClaudeVSCode(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepo(t, root)
+
+	paths := filepath.Join(root, ".agent-layer", "config.toml")
+	configToml := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = false
+
+[agents.antigravity]
+enabled = true
+`
+	if err := os.WriteFile(paths, []byte(configToml), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	binDir := t.TempDir()
+	writeStub(t, binDir, "code")
+	t.Setenv("PATH", binDir)
+
+	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		return &v
+	}, vscode.Launch, nil)
+	if err != nil {
+		t.Fatalf("expected success when claude-vscode is enabled: %v", err)
 	}
 }
 
@@ -69,72 +128,14 @@ func TestRunVSCodeNoSyncManagedBlockConflict(t *testing.T) {
 	writeStub(t, binDir, "code")
 	t.Setenv("PATH", binDir)
 
-	err := runVSCodeNoSync(root, nil)
+	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		return &v
+	}, vscode.Launch, nil)
 	if err == nil {
 		t.Fatal("expected managed-block conflict error")
 	}
 	if !strings.Contains(err.Error(), "managed settings block conflict") {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestSplitVSCodeArgs(t *testing.T) {
-	tests := []struct {
-		name       string
-		args       []string
-		wantNoSync bool
-		wantArgs   []string
-		wantErr    bool
-	}{
-		{
-			name:       "no-sync before separator",
-			args:       []string{"--no-sync", "--", "--reuse-window"},
-			wantNoSync: true,
-			wantArgs:   []string{"--reuse-window"},
-		},
-		{
-			name:       "no-sync bool false",
-			args:       []string{"--no-sync=false", "--reuse-window"},
-			wantNoSync: false,
-			wantArgs:   []string{"--reuse-window"},
-		},
-		{
-			name:    "no-sync invalid value",
-			args:    []string{"--no-sync=maybe"},
-			wantErr: true,
-		},
-		{
-			name:       "pass-through without separator",
-			args:       []string{"--reuse-window"},
-			wantNoSync: false,
-			wantArgs:   []string{"--reuse-window"},
-		},
-		{
-			name:       "no-sync after separator",
-			args:       []string{"--", "--no-sync"},
-			wantNoSync: false,
-			wantArgs:   []string{"--no-sync"},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotNoSync, gotArgs, err := splitVSCodeArgs(tt.args)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if gotNoSync != tt.wantNoSync {
-				t.Fatalf("expected noSync=%v, got %v", tt.wantNoSync, gotNoSync)
-			}
-			if strings.Join(gotArgs, ",") != strings.Join(tt.wantArgs, ",") {
-				t.Fatalf("expected args %v, got %v", tt.wantArgs, gotArgs)
-			}
-		})
 	}
 }

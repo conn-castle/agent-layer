@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/warnings"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestRunWithWriter_InstallCancelledPrintsToWriter(t *testing.T) {
@@ -24,7 +24,7 @@ func TestRunWithWriter_InstallCancelledPrintsToWriter(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, ui, func(string) ([]warnings.Warning, error) { return nil, nil }, "", &out)
+	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), messages.WizardExitWithoutChanges)
 }
@@ -49,7 +49,7 @@ func TestRunWithWriter_ApplyCancelledPrintsToWriter(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := RunWithWriter(root, ui, func(string) ([]warnings.Warning, error) { return nil, nil }, "", &out)
+	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), messages.WizardExitWithoutChanges)
 }

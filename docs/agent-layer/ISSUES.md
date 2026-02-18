@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-18 auto-approve-names-duplication: buildClaudeSettings returns unused autoApprovedNames
+    Priority: Low. Area: internal/sync
+    Description: buildClaudeSettings computes and returns autoApprovedNames which WriteClaudeSettings discards. collectAutoApprovedSkills in sync.go recomputes the same list. The iteration logic overlaps but contexts differ (one builds permission patterns gated on !AllowMCP, the other always collects names for display).
+    Next step: Drop []string return from buildClaudeSettings; keep collectAutoApprovedSkills as single source for display names.
+
 - Issue 2026-02-16 test-coverage-parity: Local test coverage does not match GitHub Actions CI
     Priority: Medium. Area: testing / CI.
     Description: Test coverage reports generated locally (e.g., via `go test -cover`) do not align with the results produced in GitHub Actions. This makes it difficult to ensure coverage requirements are met before pushing code.
@@ -113,3 +118,4 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: templates / developer experience.
     Description: `finish-task.md`, `fix-issues.md`, and `cleanup-code.md` templates reference `make test-fast` and `make dead-code`. The templates already guard these with conditional language ("preferred when available", "only if already present"), but agents may still attempt them in repos that do not provide them.
     Next step: Consider whether the conditional language is sufficient, or whether a stronger guard (e.g., checking target existence before invocation) would reduce noise.
+    Notes: Reconfirmed by documentation audit on 2026-02-18; keep this as a template-level guardrail issue (not a repo-local Makefile requirement).
