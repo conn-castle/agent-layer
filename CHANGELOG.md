@@ -1,6 +1,23 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.1 - 2026-02-18
+
+### Added
+- `[agents.claude-vscode]` config section for Claude Code VS Code Extension support. `al vscode` is the single command for launching VS Code with both Codex and Claude extension settings based on which agents are enabled.
+- `approvals.mode = "yolo"` for maximum agent autonomy: skips all permission prompts (Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove`). Intended for sandboxed/ephemeral environments.
+- Slash command `auto-approve` frontmatter: `auto-approve: true` auto-approves MCP prompt retrieval for that skill in Claude clients. It does not auto-approve agent actions after reading the prompt; those remain governed by `approvals.mode`.
+- Upgrade readiness checks now detect stale disabled-agent artifacts for `.claude/settings.json`.
+
+### Changed
+- `al vscode` now launches when either `[agents.vscode]` or `[agents.claude-vscode]` is enabled in `config.toml`, unifying both extensions under a single launch command.
+- `CODEX_HOME` is now cleared from the VS Code process environment when `[agents.vscode]` is disabled, preventing stale Codex configuration leakage when only Claude VS Code is enabled.
+- Release process now includes a preflight gate (`make release-preflight RELEASE_TAG=vX.Y.Z`) that validates upgrade-contract documentation before tagging.
+
+### Fixed
+- `al vscode` no longer appends `.` when pass-through arguments include a positional path or file argument. (#51)
+- Sync warning exit behavior restored: non-suppressible warnings correctly propagate exit status regardless of `noise_mode` setting.
+
 ## v0.8.0 - 2026-02-16
 
 ### Added

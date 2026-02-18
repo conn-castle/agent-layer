@@ -451,6 +451,23 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 3. Write generated configs and launchers for enabled clients.
 4. Emit warnings if any thresholds in `[warnings]` are exceeded.
 
+**Slash command format**
+
+Each file in `.agent-layer/slash-commands/` must be a Markdown file with YAML frontmatter:
+
+- `description` (required): short description of the command
+- `auto-approve` (optional, defaults to `false`): when `true`, auto-approves the MCP prompt retrieval for that skill in Claude clients. It does **not** auto-approve agent actions after reading the prompt; those remain governed by `approvals.mode`
+
+Example:
+
+```md
+---
+description: Run a code quality audit.
+auto-approve: true
+---
+# Your command body here
+```
+
 **Generated outputs**
 
 Common outputs include:
