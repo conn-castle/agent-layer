@@ -32,6 +32,10 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if cfg.Config.Agents.VSCode.Enabled != nil && *cfg.Config.Agents.VSCode.Enabled {
 		codexHome := filepath.Join(cfg.Root, ".codex")
 		env = clients.SetEnv(env, "CODEX_HOME", codexHome)
+	} else {
+		// Clear any inherited CODEX_HOME so the Codex extension does not pick up
+		// stale config when only claude-vscode is enabled.
+		env = clients.UnsetEnv(env, "CODEX_HOME")
 	}
 
 	args := append([]string{}, passArgs...)
