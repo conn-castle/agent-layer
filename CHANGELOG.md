@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.3 - 2026-02-19
+
+### Fixed
+- `al doctor` lenient config fallback now injects built-in environment variables (e.g., `AL_REPO_ROOT`), fixing false "missing environment variables" warnings for MCP servers like `filesystem` that reference `${AL_REPO_ROOT}` in their args.
+- `al wizard` now sanitizes transport-incompatible MCP server fields during config patching. For example, leftover `headers` on a stdio server or leftover `command`/`args` on an HTTP server are automatically removed. Previously, the wizard would complete successfully but `al sync` would fail with a validation error, creating a circular "run wizard to fix" loop.
+
 ## v0.8.2 - 2026-02-18
 
 ### Added

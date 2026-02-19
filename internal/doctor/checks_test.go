@@ -320,6 +320,124 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a valid TOML config that fails strict validation (missing claude-vscode).
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+
+	// Should report a FAIL result for the validation error.
+	if len(results) != 1 || results[0].Status != StatusFail {
+		t.Fatalf("expected 1 FAIL result, got %d: %v", len(results), results)
+	}
+
+	// Should still return a usable config from lenient loading.
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+
+	// AL_REPO_ROOT must be injected so downstream MCP resolution doesn't
+	// produce false "missing environment variables" warnings.
+	got := cfg.Env[config.BuiltinRepoRootEnvVar]
+	if got != root {
+		t.Fatalf("expected %s=%q in lenient fallback env, got %q", config.BuiltinRepoRootEnvVar, root, got)
+	}
+}
+
+func TestCheckConfig_LenientFallback_InjectsBuiltInEnv_NoEnvFile(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a config that fails strict validation.
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Deliberately omit .env file.
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+
+	if len(results) != 1 || results[0].Status != StatusFail {
+		t.Fatalf("expected 1 FAIL result, got %d: %v", len(results), results)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+
+	// AL_REPO_ROOT must still be injected even when .env is missing.
+	got := cfg.Env[config.BuiltinRepoRootEnvVar]
+	if got != root {
+		t.Fatalf("expected %s=%q even without .env file, got %q", config.BuiltinRepoRootEnvVar, root, got)
+	}
+}
+
 func TestCheckSecretsNoRequired(t *testing.T) {
 	// Config with no MCP servers = no required secrets
 	cfg := &config.ProjectConfig{

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	toml "github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -843,6 +844,580 @@ func TestFindInsertIndex_EdgeCases(t *testing.T) {
 	}
 	assert.Equal(t, 1, findInsertIndex(lines, "after"))
 	assert.Equal(t, 1, findInsertIndex([]string{"[test]", "x = 1"}, ""))
+}
+
+func TestSanitizeMCPServerBlock_StdioRemovesHeaders(t *testing.T) {
+	block := &tomlBlock{
+		name: "mcp.servers",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "myserver"`,
+			`enabled = true`,
+			`transport = "stdio"`,
+			`command = "npx"`,
+			`args = ["-y", "some-package"]`,
+			`headers = { Authorization = "Bearer ${TOKEN}" }`,
+		},
+	}
+
+	sanitizeMCPServerBlock(block)
+
+	joined := strings.Join(block.lines, "\n")
+	assert.NotContains(t, joined, "headers")
+	assert.Contains(t, joined, `transport = "stdio"`)
+	assert.Contains(t, joined, `command = "npx"`)
+	assert.Contains(t, joined, `id = "myserver"`)
+}
+
+func TestSanitizeMCPServerBlock_StdioRemovesURLAndHTTPTransport(t *testing.T) {
+	block := &tomlBlock{
+		name: "mcp.servers",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "broken"`,
+			`enabled = true`,
+			`transport = "stdio"`,
+			`command = "run"`,
+			`url = "https://leftover.example.com"`,
+			`http_transport = "streamable"`,
+		},
+	}
+
+	sanitizeMCPServerBlock(block)
+
+	joined := strings.Join(block.lines, "\n")
+	assert.NotContains(t, joined, "url =")
+	assert.NotContains(t, joined, "http_transport")
+	assert.Contains(t, joined, `command = "run"`)
+}
+
+func TestSanitizeMCPServerBlock_HTTPRemovesCommandArgsEnv(t *testing.T) {
+	block := &tomlBlock{
+		name: "mcp.servers",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "httpserver"`,
+			`enabled = true`,
+			`transport = "http"`,
+			`url = "https://api.example.com"`,
+			`command = "leftover"`,
+			`args = ["--stale"]`,
+			`env = { KEY = "value" }`,
+		},
+	}
+
+	sanitizeMCPServerBlock(block)
+
+	joined := strings.Join(block.lines, "\n")
+	assert.NotContains(t, joined, "command =")
+	assert.NotContains(t, joined, "args =")
+	assert.NotContains(t, joined, "env =")
+	assert.Contains(t, joined, `url = "https://api.example.com"`)
+}
+
+func TestSanitizeMCPServerBlock_PreservesCommentedLines(t *testing.T) {
+	block := &tomlBlock{
+		name: "mcp.servers",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "myserver"`,
+			`transport = "stdio"`,
+			`command = "npx"`,
+			`# headers = { old = "commented" }`,
+			`headers = { Authorization = "Bearer ${TOKEN}" }`,
+		},
+	}
+
+	sanitizeMCPServerBlock(block)
+
+	joined := strings.Join(block.lines, "\n")
+	// Uncommented headers line should be removed.
+	assert.NotContains(t, joined, `Authorization`)
+	// Commented headers line should be preserved.
+	assert.Contains(t, joined, `# headers = { old = "commented" }`)
+}
+
+func TestSanitizeMCPServerBlock_NoTransportDoesNothing(t *testing.T) {
+	block := &tomlBlock{
+		name: "mcp.servers",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "notransport"`,
+			`enabled = true`,
+			`headers = { X = "kept" }`,
+		},
+	}
+
+	sanitizeMCPServerBlock(block)
+
+	joined := strings.Join(block.lines, "\n")
+	assert.Contains(t, joined, `headers = { X = "kept" }`)
+}
+
+func TestPatchConfig_SanitizesHTTPMultilineArgs(t *testing.T) {
+	// Simulate an HTTP server that has leftover multiline args from a transport
+	// change. The wizard must remove all continuation lines, not just the key line.
+	content := `
+[mcp]
+
+[[mcp.servers]]
+id = "myhttp"
+enabled = true
+transport = "http"
+url = "https://api.example.com"
+args = [
+    "--one",
+    "--two",
+]
+`
+	choices := NewChoices()
+	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "myhttp"}}
+	choices.EnabledMCPServersTouched = true
+	choices.EnabledMCPServers = map[string]bool{"myhttp": true}
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "args")
+	assert.NotContains(t, out, "--one")
+	assert.NotContains(t, out, "--two")
+	assert.Contains(t, out, `url = "https://api.example.com"`)
+
+	// Verify the output is valid TOML by parsing it.
+	_, parseErr := toml.LoadBytes([]byte(out))
+	require.NoError(t, parseErr, "patched output must be valid TOML")
+}
+
+func TestPatchConfig_SanitizesStdioHeadersDuringPatch(t *testing.T) {
+	// Simulate a config that has headers on a stdio server — the exact
+	// scenario that caused the user's "headers are not allowed for stdio
+	// transport" validation error after upgrading.
+	content := `
+[mcp]
+
+[[mcp.servers]]
+id = "context7"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@2.1.1"]
+headers = { Authorization = "Bearer ${TOKEN}" }
+`
+	choices := NewChoices()
+	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "context7"}}
+	choices.EnabledMCPServersTouched = true
+	choices.EnabledMCPServers = map[string]bool{"context7": true}
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "headers")
+	assert.Contains(t, out, `transport = "stdio"`)
+	assert.Contains(t, out, `command = "npx"`)
+}
+
+func TestExtractMCPBlockKeyValue(t *testing.T) {
+	t.Run("extracts transport value", func(t *testing.T) {
+		lines := []string{
+			"[[mcp.servers]]",
+			`id = "test"`,
+			`transport = "stdio"`,
+		}
+		assert.Equal(t, "stdio", extractMCPBlockKeyValue(lines, "transport"))
+	})
+
+	t.Run("returns empty for missing key", func(t *testing.T) {
+		lines := []string{
+			"[[mcp.servers]]",
+			`id = "test"`,
+		}
+		assert.Equal(t, "", extractMCPBlockKeyValue(lines, "transport"))
+	})
+
+	t.Run("skips commented lines", func(t *testing.T) {
+		lines := []string{
+			"[[mcp.servers]]",
+			`# transport = "http"`,
+			`transport = "stdio"`,
+		}
+		assert.Equal(t, "stdio", extractMCPBlockKeyValue(lines, "transport"))
+	})
+}
+
+func TestRemoveKeyFromBlock(t *testing.T) {
+	t.Run("removes uncommented key", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`headers = { X = "remove" }`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "headers")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "headers")
+		assert.Contains(t, joined, "command")
+	})
+
+	t.Run("preserves commented key", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`# headers = { old = "commented" }`,
+				`headers = { new = "active" }`,
+			},
+		}
+		removeKeyFromBlock(block, "headers")
+		joined := strings.Join(block.lines, "\n")
+		assert.Contains(t, joined, `# headers = { old = "commented" }`)
+		assert.NotContains(t, joined, `new = "active"`)
+	})
+
+	t.Run("noop when key absent", func(t *testing.T) {
+		block := &tomlBlock{
+			name:  "test",
+			lines: []string{"[[mcp.servers]]", `id = "test"`},
+		}
+		before := len(block.lines)
+		removeKeyFromBlock(block, "headers")
+		assert.Equal(t, before, len(block.lines))
+	})
+
+	t.Run("removes multiline array", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`args = [`,
+				`    "--flag1",`,
+				`    "--flag2",`,
+				`]`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "args")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "args")
+		assert.NotContains(t, joined, "--flag1")
+		assert.NotContains(t, joined, "--flag2")
+		assert.Contains(t, joined, `command = "keep"`)
+		assert.Contains(t, joined, `id = "test"`)
+	})
+
+	t.Run("removes multiline array with brackets in strings", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`args = [`,
+				`    "value with ] bracket",`,
+				`    "--other",`,
+				`]`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "args")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "args")
+		assert.NotContains(t, joined, "bracket")
+		assert.NotContains(t, joined, "--other")
+		assert.Contains(t, joined, `command = "keep"`)
+	})
+
+	t.Run("removes multiline inline table", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`env = {`,
+				`    KEY1 = "val1",`,
+				`    KEY2 = "val2",`,
+				`}`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "env")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "env")
+		assert.NotContains(t, joined, "KEY1")
+		assert.NotContains(t, joined, "KEY2")
+		assert.Contains(t, joined, `command = "keep"`)
+	})
+
+	t.Run("removes multiline triple-quoted string", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`command = """`,
+				`/usr/local/bin/`,
+				`my-server`,
+				`"""`,
+				`enabled = true`,
+			},
+		}
+		removeKeyFromBlock(block, "command")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "command")
+		assert.NotContains(t, joined, "my-server")
+		assert.Contains(t, joined, `enabled = true`)
+	})
+
+	t.Run("handles single-line array correctly", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`args = ["-y", "pkg@1.0"]`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "args")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "args")
+		assert.Contains(t, joined, `command = "keep"`)
+	})
+}
+
+func TestMultilineValueEndIndex(t *testing.T) {
+	t.Run("single line scalar", func(t *testing.T) {
+		lines := []string{`command = "npx"`}
+		assert.Equal(t, 0, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("single line array", func(t *testing.T) {
+		lines := []string{`args = ["-y", "pkg"]`}
+		assert.Equal(t, 0, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("multiline array", func(t *testing.T) {
+		lines := []string{
+			`args = [`,
+			`    "--one",`,
+			`    "--two",`,
+			`]`,
+		}
+		assert.Equal(t, 3, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("nested brackets in strings", func(t *testing.T) {
+		lines := []string{
+			`args = [`,
+			`    "value with ] bracket",`,
+			`    "other",`,
+			`]`,
+		}
+		assert.Equal(t, 3, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("multiline inline table", func(t *testing.T) {
+		lines := []string{
+			`env = {`,
+			`    KEY = "val",`,
+			`}`,
+		}
+		assert.Equal(t, 2, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("triple-quoted string", func(t *testing.T) {
+		lines := []string{
+			`command = """`,
+			`multi`,
+			`line`,
+			`"""`,
+		}
+		assert.Equal(t, 3, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("triple-quoted string closed same line", func(t *testing.T) {
+		lines := []string{`command = """inline"""`}
+		assert.Equal(t, 0, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("triple-quoted literal string", func(t *testing.T) {
+		lines := []string{
+			`command = '''`,
+			`multi`,
+			`'''`,
+		}
+		assert.Equal(t, 2, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("no equals sign", func(t *testing.T) {
+		lines := []string{`no-equals`}
+		assert.Equal(t, 0, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("unbalanced brackets returns start", func(t *testing.T) {
+		lines := []string{`args = [`}
+		// Only one line, bracket never closed — should fall back to startIdx.
+		assert.Equal(t, 0, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("startIdx beyond range", func(t *testing.T) {
+		lines := []string{`x = 1`}
+		assert.Equal(t, 5, multilineValueEndIndex(lines, 5))
+	})
+}
+
+func TestCountBracketDepth(t *testing.T) {
+	t.Run("simple open bracket", func(t *testing.T) {
+		assert.Equal(t, 1, countBracketDepth("[", '[', ']'))
+	})
+
+	t.Run("balanced", func(t *testing.T) {
+		assert.Equal(t, 0, countBracketDepth(`["a", "b"]`, '[', ']'))
+	})
+
+	t.Run("bracket inside double quotes ignored", func(t *testing.T) {
+		assert.Equal(t, 1, countBracketDepth(`["value with ] bracket"`, '[', ']'))
+	})
+
+	t.Run("bracket inside single quotes ignored", func(t *testing.T) {
+		assert.Equal(t, 1, countBracketDepth(`['value with ] bracket'`, '[', ']'))
+	})
+
+	t.Run("escaped quote in string does not break tracking", func(t *testing.T) {
+		// The \" is an escaped quote inside the string; the ] correctly closes the array.
+		// Without escape handling, the \" would prematurely end the string.
+		assert.Equal(t, 0, countBracketDepth(`["escaped \" quote"]`, '[', ']'))
+	})
+
+	t.Run("comment stops counting", func(t *testing.T) {
+		assert.Equal(t, 1, countBracketDepth(`[ # comment with ]`, '[', ']'))
+	})
+
+	t.Run("no brackets", func(t *testing.T) {
+		assert.Equal(t, 0, countBracketDepth(`"just a string"`, '[', ']'))
+	})
+
+	t.Run("curly braces", func(t *testing.T) {
+		assert.Equal(t, 0, countBracketDepth(`{ KEY = "val" }`, '{', '}'))
+	})
+}
+
+func TestContainsUnescapedTripleQuote(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		expect bool
+	}{
+		{"plain triple quote", `hello """`, true},
+		{"just triple quote", `"""`, true},
+		{"escaped first quote", `hello \"""`, false},
+		{"double-escaped backslash then triple quote", `hello \\"""`, true},
+		{"triple-escaped then triple quote", `hello \\\"""`, false},
+		{"no triple quote at all", `hello world`, false},
+		{"two quotes only", `hello ""`, false},
+		{"escaped then later unescaped", `\""" then """`, true},
+		{"empty string", ``, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expect, containsUnescapedTripleQuote(tt.input))
+		})
+	}
+}
+
+func TestMultilineValueEndIndex_EscapedTripleQuote(t *testing.T) {
+	t.Run("escaped triple quote does not close multiline string", func(t *testing.T) {
+		// In TOML basic strings, \" is an escaped quote.
+		// \""" is NOT a closing delimiter — the first quote is escaped.
+		// The actual closing delimiter is the plain """ on the next line.
+		lines := []string{
+			`command = """`,
+			`line with \""" not a close`,
+			`still open`,
+			`"""`,
+		}
+		assert.Equal(t, 3, multilineValueEndIndex(lines, 0))
+	})
+
+	t.Run("double-escaped backslash before triple quote does close", func(t *testing.T) {
+		// \\ is an escaped backslash; the """ after it is unescaped.
+		lines := []string{
+			`command = """`,
+			`line with \\"""`,
+		}
+		assert.Equal(t, 1, multilineValueEndIndex(lines, 0))
+	})
+}
+
+func TestRemoveKeyFromBlock_EscapedTripleQuoteMultiline(t *testing.T) {
+	block := &tomlBlock{
+		name: "test",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "test"`,
+			`command = """`,
+			`path with \""" embedded`,
+			`still going`,
+			`"""`,
+			`enabled = true`,
+		},
+	}
+	removeKeyFromBlock(block, "command")
+	joined := strings.Join(block.lines, "\n")
+	assert.NotContains(t, joined, "command")
+	assert.NotContains(t, joined, "path with")
+	assert.NotContains(t, joined, "still going")
+	assert.Contains(t, joined, `id = "test"`)
+	assert.Contains(t, joined, `enabled = true`)
+}
+
+func TestSanitizeMCPServerBlock_SectionStyleSubTableNotInBlock(t *testing.T) {
+	// Section-style sub-tables like [mcp.servers.env] are parsed as separate
+	// sections by the line-based parser — they are NOT part of the [[mcp.servers]]
+	// block. This means sanitizeMCPServerBlock cannot reach them.
+	//
+	// This is a known limitation of the line-based parser. In practice, agent-layer
+	// templates use inline tables (env = { KEY = "val" }), and go-toml validation
+	// will still reject the config if section-style sub-tables contain transport-
+	// incompatible fields. The wizard just can't auto-remove them.
+	//
+	// This test verifies that sanitization works correctly on the server block
+	// itself when a section-style sub-table exists — no crash, no corruption.
+	content := `
+[mcp]
+
+[[mcp.servers]]
+id = "myserver"
+enabled = true
+transport = "http"
+url = "https://api.example.com"
+command = "leftover"
+
+[mcp.servers.env]
+KEY = "val"
+`
+	doc := parseTomlDocument(content)
+
+	// The section-style sub-table should be parsed as a separate section.
+	require.Contains(t, doc.sections, "mcp.servers.env",
+		"section-style sub-table should be a separate section in the line-based parser")
+
+	// The [[mcp.servers]] block should NOT contain the env key-value.
+	require.Contains(t, doc.arrays, "mcp.servers")
+	require.Len(t, doc.arrays["mcp.servers"], 1)
+	serverBlock := doc.arrays["mcp.servers"][0]
+	joined := strings.Join(serverBlock.lines, "\n")
+	assert.NotContains(t, joined, "KEY =",
+		"section-style env sub-table should not be inside the server block")
+
+	// Sanitize the server block — it should remove "command" (http-incompatible).
+	tb := tomlBlock{name: serverBlock.name, lines: cloneLines(serverBlock.lines)}
+	sanitizeMCPServerBlock(&tb)
+	sanitized := strings.Join(tb.lines, "\n")
+	assert.NotContains(t, sanitized, "command")
+	assert.Contains(t, sanitized, `url = "https://api.example.com"`)
 }
 
 func TestPatchHelpers_EdgeCases(t *testing.T) {
