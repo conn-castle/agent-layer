@@ -53,7 +53,6 @@ enabled = false
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
-name: hello
 description: test command
 ---
 
@@ -132,7 +131,6 @@ enabled = false
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
-name: hello
 description: test command
 ---
 
@@ -189,7 +187,6 @@ enabled = false
 		t.Fatalf("write env: %v", err)
 	}
 	cmdContent := `---
-name: hello
 description: test command
 ---
 
@@ -297,7 +294,6 @@ enabled = false
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
-name: hello
 description: test command
 ---
 
@@ -356,5 +352,114 @@ func TestLoadTemplateConfigReadError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to read template") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseConfigLenient_ValidTOMLMissingRequiredFields(t *testing.T) {
+	// A pre-v0.8.1 config missing [agents.claude-vscode] should succeed
+	// with lenient parsing even though strict ParseConfig would reject it.
+	toml := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = false
+`
+	cfg, err := ParseConfigLenient([]byte(toml), "test")
+	if err != nil {
+		t.Fatalf("expected lenient parse to succeed, got: %v", err)
+	}
+	if cfg.Agents.ClaudeVSCode.Enabled != nil {
+		t.Fatal("expected claude-vscode.enabled to be nil (missing from config)")
+	}
+	// Strict parse should fail on the same input.
+	_, strictErr := ParseConfig([]byte(toml), "test")
+	if strictErr == nil {
+		t.Fatal("expected strict ParseConfig to fail for missing claude-vscode.enabled")
+	}
+}
+
+func TestParseConfigLenient_InvalidTOMLSyntax(t *testing.T) {
+	_, err := ParseConfigLenient([]byte("invalid toml [[["), "test")
+	if err == nil {
+		t.Fatal("expected error for invalid TOML syntax")
+	}
+	if !strings.Contains(err.Error(), "invalid config") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigLenient(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.toml")
+
+	// Write a config missing required fields.
+	toml := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+`
+	if err := os.WriteFile(path, []byte(toml), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfigLenient(path)
+	if err != nil {
+		t.Fatalf("expected lenient load to succeed, got: %v", err)
+	}
+	if cfg.Approvals.Mode != "all" {
+		t.Fatalf("expected approvals.mode = all, got %q", cfg.Approvals.Mode)
+	}
+}
+
+func TestLoadConfigLenient_MissingFile(t *testing.T) {
+	_, err := LoadConfigLenient("/nonexistent/config.toml")
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if !strings.Contains(err.Error(), "missing config file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParseConfig_ValidationErrorIncludesGuidance(t *testing.T) {
+	// A config missing required fields should produce an error with guidance text.
+	toml := `
+[approvals]
+mode = "all"
+`
+	_, err := ParseConfig([]byte(toml), "test")
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "al wizard") || !strings.Contains(err.Error(), "al doctor") {
+		t.Fatalf("expected error to contain guidance about wizard/doctor, got: %v", err)
+	}
+	if !errors.Is(err, ErrConfigValidation) {
+		t.Fatalf("expected error to wrap ErrConfigValidation, got: %v", err)
+	}
+}
+
+func TestParseConfig_TOMLSyntaxErrorIsNotValidationError(t *testing.T) {
+	_, err := ParseConfig([]byte(`{{{`), "test")
+	if err == nil {
+		t.Fatal("expected TOML syntax error")
+	}
+	if errors.Is(err, ErrConfigValidation) {
+		t.Fatalf("TOML syntax error should not match ErrConfigValidation, got: %v", err)
 	}
 }

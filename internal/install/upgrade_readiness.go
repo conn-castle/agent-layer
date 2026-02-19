@@ -28,7 +28,7 @@ const (
 	readinessCheckVSCodeNoSyncStaleOutput       = "vscode_no_sync_outputs_stale"
 	readinessCheckFloatingDependencies          = "floating_external_dependency_specs"
 	readinessCheckDisabledArtifacts             = "stale_disabled_agent_artifacts"
-	readinessCheckGeneratedSecretRisk           = "generated_secret_risk"
+	readinessCheckMissingRequiredConfigFields   = "missing_required_config_fields"
 )
 
 const (
@@ -89,6 +89,14 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 		return checks, nil
 	}
 
+	if validateErr := cfg.Validate(filepath.ToSlash(inst.relativePath(configPath))); validateErr != nil {
+		checks = append(checks, UpgradeReadinessCheck{
+			ID:      readinessCheckMissingRequiredConfigFields,
+			Summary: "Config is missing required fields. Run 'al wizard' to fix or 'al upgrade' to apply missing fields.",
+			Details: []string{validateErr.Error()},
+		})
+	}
+
 	envValues, err := readAgentLayerEnvForReadiness(inst)
 	if err != nil {
 		return nil, err
@@ -123,12 +131,6 @@ func buildUpgradeReadinessChecks(inst *installer) ([]UpgradeReadinessCheck, erro
 	}
 
 	if check, err := detectDisabledAgentArtifacts(inst, &cfg); err != nil {
-		return nil, err
-	} else if check != nil {
-		checks = append(checks, *check)
-	}
-
-	if check, err := detectGeneratedSecretRisk(inst, string(configBytes)); err != nil {
 		return nil, err
 	} else if check != nil {
 		checks = append(checks, *check)
@@ -525,55 +527,6 @@ func detectFloatingDependencies(cfg *config.Config) *UpgradeReadinessCheck {
 		Summary: "Enabled MCP servers include floating dependency specs.",
 		Details: details,
 	}
-}
-
-func detectGeneratedSecretRisk(inst *installer, sourceConfigContent string) (*UpgradeReadinessCheck, error) {
-	// If the source config (.agent-layer/config.toml) does not contain secret
-	// literals, any secrets in generated files came from env var resolution
-	// (e.g., ${AL_*} placeholders resolved by al sync). This is correct usage
-	// and not actionable, so suppress the check.
-	if !config.ContainsPotentialSecretLiteral(sourceConfigContent) {
-		return nil, nil
-	}
-	paths := []string{
-		filepath.Join(inst.root, ".codex", "config.toml"),
-		filepath.Join(inst.root, ".mcp.json"),
-		filepath.Join(inst.root, ".claude", "settings.json"),
-		filepath.Join(inst.root, ".gemini", "settings.json"),
-		filepath.Join(inst.root, ".vscode", "mcp.json"),
-	}
-
-	details := make([]string, 0)
-	for _, path := range paths {
-		info, err := inst.sys.Stat(path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return nil, readinessErr("stat", path, err)
-		}
-		if info.IsDir() {
-			continue
-		}
-		data, err := inst.sys.ReadFile(path)
-		if err != nil {
-			return nil, readinessErr("read", path, err)
-		}
-		if !config.ContainsPotentialSecretLiteral(string(data)) {
-			continue
-		}
-		details = append(details, filepath.ToSlash(inst.relativePath(path)))
-	}
-
-	if len(details) == 0 {
-		return nil, nil
-	}
-	sort.Strings(details)
-	return &UpgradeReadinessCheck{
-		ID:      readinessCheckGeneratedSecretRisk,
-		Summary: "Generated files appear to contain secret-like literals.",
-		Details: details,
-	}, nil
 }
 
 func floatingDetails(serverIndex int, serverID string, field string, value string) []string {

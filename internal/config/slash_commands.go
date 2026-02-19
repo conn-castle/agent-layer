@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -41,14 +40,13 @@ func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 			return nil, fmt.Errorf(messages.ConfigFailedReadSlashCommandFmt, path, err)
 		}
 		data = bytes.TrimPrefix(data, utf8BOM)
-		description, autoApprove, body, err := parseSlashCommand(string(data))
+		description, body, err := parseSlashCommand(string(data))
 		if err != nil {
 			return nil, fmt.Errorf(messages.ConfigInvalidSlashCommandFmt, path, err)
 		}
 		commands = append(commands, SlashCommand{
 			Name:        strings.TrimSuffix(name, ".md"),
 			Description: description,
-			AutoApprove: autoApprove,
 			Body:        body,
 			SourcePath:  path,
 		})
@@ -57,13 +55,13 @@ func LoadSlashCommands(dir string) ([]SlashCommand, error) {
 	return commands, nil
 }
 
-func parseSlashCommand(content string) (string, bool, string, error) {
+func parseSlashCommand(content string) (string, string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	if !scanner.Scan() {
-		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandMissingContent)
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandMissingContent)
 	}
 	if strings.TrimSpace(scanner.Text()) != "---" {
-		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandMissingFrontMatter)
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandMissingFrontMatter)
 	}
 
 	var fmLines []string
@@ -77,7 +75,7 @@ func parseSlashCommand(content string) (string, bool, string, error) {
 		fmLines = append(fmLines, line)
 	}
 	if !foundEnd {
-		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandUnterminatedFrontMatter)
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandUnterminatedFrontMatter)
 	}
 
 	var bodyBuilder strings.Builder
@@ -86,46 +84,45 @@ func parseSlashCommand(content string) (string, bool, string, error) {
 		bodyBuilder.WriteString("\n")
 	}
 	if err := scanner.Err(); err != nil {
-		return "", false, "", fmt.Errorf(messages.ConfigSlashCommandFailedReadContentFmt, err)
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandFailedReadContentFmt, err)
 	}
 
 	body := strings.TrimPrefix(bodyBuilder.String(), "\n")
 	body = strings.TrimRight(body, "\n")
 
+	if key := unknownFrontMatterKey(fmLines); key != "" {
+		return "", "", fmt.Errorf(messages.ConfigSlashCommandUnknownKeyFmt, key)
+	}
+
 	description, err := parseDescription(fmLines)
 	if err != nil {
-		return "", false, "", err
+		return "", "", err
 	}
 
-	autoApprove, err := parseAutoApprove(fmLines)
-	if err != nil {
-		return "", false, "", err
-	}
-
-	return description, autoApprove, body, nil
+	return description, body, nil
 }
 
-func parseAutoApprove(lines []string) (bool, error) {
+// unknownFrontMatterKey returns the first unrecognized top-level key in frontmatter lines,
+// or "" if all keys are recognized. Indented continuation lines are skipped.
+func unknownFrontMatterKey(lines []string) string {
 	for _, line := range lines {
-		// Skip continuation lines (indented lines belong to the previous key's value).
 		if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
 			continue
 		}
 		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "auto-approve:") {
+		if trimmed == "" || trimmed[0] == '#' {
 			continue
 		}
-		value := strings.TrimSpace(strings.TrimPrefix(trimmed, "auto-approve:"))
-		if value == "" {
-			return false, fmt.Errorf(messages.ConfigSlashCommandAutoApproveInvalidFmt, "")
+		colonIdx := strings.IndexByte(trimmed, ':')
+		if colonIdx < 0 {
+			continue
 		}
-		b, err := strconv.ParseBool(value)
-		if err != nil {
-			return false, fmt.Errorf(messages.ConfigSlashCommandAutoApproveInvalidFmt, value)
+		key := trimmed[:colonIdx]
+		if key != "description" {
+			return key
 		}
-		return b, nil
 	}
-	return false, nil
+	return ""
 }
 
 func parseDescription(lines []string) (string, error) {

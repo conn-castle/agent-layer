@@ -816,7 +816,6 @@ enabled = true
 		t.Fatalf("write instructions: %v", err)
 	}
 	command := `---
-name: alpha
 description: test
 ---
 

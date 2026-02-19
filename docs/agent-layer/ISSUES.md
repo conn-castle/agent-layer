@@ -27,10 +27,20 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-02-18 auto-approve-names-duplication: buildClaudeSettings returns unused autoApprovedNames
-    Priority: Low. Area: internal/sync
-    Description: buildClaudeSettings computes and returns autoApprovedNames which WriteClaudeSettings discards. collectAutoApprovedSkills in sync.go recomputes the same list. The iteration logic overlaps but contexts differ (one builds permission patterns gated on !AllowMCP, the other always collects names for display).
-    Next step: Drop []string return from buildClaudeSettings; keep collectAutoApprovedSkills as single source for display names.
+- Issue 2026-02-18 config-new-field-checklist: Future new required config fields must include migration manifest entry
+    Priority: Medium. Area: config / backwards compatibility.
+    Description: v0.8.1 added `agents.claude-vscode.enabled` as required, breaking pre-v0.8.1 configs. Fixed by config resilience (lenient parsing + interactive upgrade prompts). Any future new required field must include a `config_set_default` operation in the release's migration manifest (`internal/templates/migrations/<version>.json`).
+    Next step: Add a CI lint or code review checklist item that enforces: any new nil-check in `Validate()` must have a matching `config_set_default` operation in the migration manifest.
+
+- Issue 2026-02-18 warn-deterministic-order: MCP collision warning output is non-deterministic
+    Priority: Medium. Area: warnings / determinism.
+    Description: `internal/warnings/mcp.go:168` iterates `toolNames` (a map) directly when generating `CodeMCPToolNameCollision` warnings. Map iteration order is non-deterministic, producing unstable CLI output.
+    Next step: Sort collision subjects before appending warnings; add a deterministic ordering contract test for `CheckMCPServers` output.
+
+- Issue 2026-02-18 race-target: No canonical race-check command in workflow docs
+    Priority: Low. Area: testing / CI hygiene.
+    Description: Race checks pass today but there is no documented repeatable command in COMMANDS.md. Race testing is ad hoc instead of a repeatable workflow step.
+    Next step: Add a Makefile target (e.g., `make test-race`) targeting concurrency-critical packages and document it in COMMANDS.md.
 
 - Issue 2026-02-16 test-coverage-parity: Local test coverage does not match GitHub Actions CI
     Priority: Medium. Area: testing / CI.
@@ -74,15 +84,16 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
     Next step: Add snapshot-size budget checks (warning and/or configurable cap) and document retention sizing guidance.
 
-- Issue 2026-02-12 wiz-globals: Mutable exported globals and dead code in wizard package
+- Issue 2026-02-12 wiz-dead-code: Dead code in wizard package
     Priority: Low. Area: wizard / maintainability.
-    Description: `internal/wizard/catalog.go:15-95` has mutable exported slice variables (e.g., `MCPServerCatalog`) that any caller can modify. Also, `approval_modes.go` and `helpers.go` contain unreferenced functions (`ApprovalModes`, `approvalModeHelpText`, `commentForLine`, `inlineCommentForLine`).
-    Next step: Convert exported catalog variables to functions returning fresh copies; remove confirmed dead code.
+    Description: `approvalModeHelpText()` in `notes.go` is only exercised by its own test but never called in production code. `commentForLine`/`inlineCommentForLine` in `tomlutil.go` are used internally and are NOT dead code.
+    Next step: Remove `approvalModeHelpText` and its test if the function is confirmed unused.
+    Notes: Mutable exported globals issue resolved by config field catalog refactor (Decision config-field-catalog).
 
-- Issue 2026-02-12 stub-dup: writeStubWithExit test helper duplicated across 5+ packages
+- Issue 2026-02-12 stub-dup: writeStub/writeStubWithExit test helpers duplicated across 5+ packages
     Priority: Low. Area: testing / DRY.
-    Description: The `writeStubWithExit` test helper (writes an executable stub script) is duplicated across `cmd/al`, `cmd/publish-site`, and other test packages with minor variations. `writeStubExpectArg` is also duplicated across `internal/clients/claude/launch_test.go` and `internal/clients/gemini/launch_test.go`.
-    Next step: Consolidate into `internal/testutil` alongside `boolPtr`, `withWorkingDir`, and `writeStubExpectArg`.
+    Description: `writeStub` is duplicated across 5+ test files (`internal/clients/vscode`, `claude`, `antigravity`, `gemini`, `cmd/al`). `writeStubWithExit` is similarly duplicated across `cmd/al`, `cmd/publish-site`, and others. `writeStubExpectArg` is duplicated in `internal/clients/claude` and `gemini`.
+    Next step: Consolidate all three (`writeStub`, `writeStubWithExit`, `writeStubExpectArg`) into `internal/testutil` alongside `boolPtr` and `withWorkingDir`.
 
 - Issue 2026-02-12 envfile-asym: Asymmetric envfile encode/decode
     Priority: Low. Area: envfile / correctness.
@@ -104,10 +115,10 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
     Next step: Audit current method count (Phase 11 is complete). If it exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`). Scheduled in Phase 13 (maintenance).
 
-- Issue 2026-02-10 upg-ver: Cannot apply a specific intermediate release during upgrade
-    Priority: Medium. Area: upgrade / version pinning / UX.
-    Description: With `al upgrade` always running the currently installed binary (dispatch bypass) and no `al upgrade --version`, there is no supported way to upgrade a repo from an older pin to an intermediate version (for example 0.6.0 -> 0.6.1) when a newer version is installed (for example 0.7.0); the repo is forced to upgrade to the installed version or rely on manual pin edits/reinstalling.
-    Next step: Decide on a supported workflow (`al upgrade --version X.Y.Z`, or an equivalent “dispatch/exec target version for upgrade” mechanism) and add tests + docs.
+- Issue 2026-02-10 upg-ver: Cannot target a specific intermediate release during upgrade
+    Priority: Low. Area: upgrade / version pinning / UX.
+    Description: Migration manifests are now chained during multi-version jumps (all intermediate manifests between source and target are loaded and applied in order), so migrations are no longer missed. However, there is still no `al upgrade --version X.Y.Z` to target a specific intermediate version; the repo always upgrades to the installed binary version.
+    Next step: Decide if `al upgrade --version X.Y.Z` is needed given that migration chaining resolves the data-loss risk.
 
 - Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
     Priority: Medium. Area: website / marketing.

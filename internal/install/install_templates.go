@@ -11,7 +11,6 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
-	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 // templateGitignoreBlock is the template name for the gitignore managed block.
@@ -106,9 +105,6 @@ func (inst *installer) listManagedLabeledDiffs() ([]LabeledPath, error) {
 		if err := inst.appendTemplateDirDiffs(diffs, dir); err != nil {
 			return nil, err
 		}
-	}
-	if err := inst.appendPinnedVersionDiff(diffs); err != nil {
-		return nil, err
 	}
 	templatePathByRel, err := inst.managedTemplatePathByRel()
 	if err != nil {
@@ -209,34 +205,6 @@ func (inst *installer) appendTemplateDirDiffs(diffs map[string]struct{}, dir tem
 		if !matches {
 			diffs[relPath] = struct{}{}
 		}
-	}
-	return nil
-}
-
-// appendPinnedVersionDiff adds al.version when it differs from the requested pin.
-func (inst *installer) appendPinnedVersionDiff(diffs map[string]struct{}) error {
-	if inst.pinVersion == "" {
-		return nil
-	}
-	sys := inst.sys
-	path := filepath.Join(inst.root, ".agent-layer", "al.version")
-	data, err := sys.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf(messages.InstallFailedReadFmt, path, err)
-	}
-	existing := strings.TrimSpace(string(data))
-	if existing == "" {
-		return nil
-	}
-	normalized, err := version.Normalize(existing)
-	if err != nil {
-		normalized = ""
-	}
-	if normalized != inst.pinVersion {
-		diffs[normalizeRelPath(inst.relativePath(path))] = struct{}{}
 	}
 	return nil
 }

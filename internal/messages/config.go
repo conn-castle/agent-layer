@@ -53,11 +53,17 @@ const (
 	ConfigSlashCommandFailedReadContentFmt    = "failed to read content: %w"
 	ConfigSlashCommandDescriptionEmpty        = "description is empty"
 	ConfigSlashCommandMissingDescription      = "missing description in front matter"
-	ConfigSlashCommandAutoApproveInvalidFmt   = "auto-approve value %q is not a valid boolean"
+	ConfigSlashCommandUnknownKeyFmt           = "unrecognized front matter key %q; only description is supported"
 
 	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"
 	ConfigNoInstructionFilesFmt     = "no instruction files found in %s"
 	ConfigFailedReadInstructionFmt  = "failed to read instruction %s: %w"
 
 	ConfigMissingEnvVarsFmt = "missing environment variables: %s"
+
+	// ConfigValidationGuidance is appended to validation errors to direct users to repair tools.
+	ConfigValidationGuidance = "(run 'al wizard' to fix or 'al doctor' to diagnose)"
+
+	// ConfigLenientLoadInfoFmt is used when repair tools fall back to lenient config loading.
+	ConfigLenientLoadInfoFmt = "Config has validation errors; %s will help you fix them: %v"
 )

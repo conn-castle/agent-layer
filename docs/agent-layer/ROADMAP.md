@@ -115,7 +115,6 @@ Incomplete:
 ## Phase 12 ✅ — High-leverage quick wins
 - Added `approvals.mode = "yolo"` with per-client full-auto projections and single-line sync/launch acknowledgements.
 - Added `[agents.claude-vscode]` and unified VS Code launch behavior under `al vscode`.
-- Added skill `auto-approve` frontmatter support with Claude prompt-retrieval permission projection and sync reporting.
 - Recorded the decision to not implement a standalone `al launch-plan` command.
 - Clarified agent commit instructions and fixed `al vscode` positional-arg handling to avoid unconditional `.` appends.
 
@@ -129,8 +128,9 @@ Incomplete:
 ### Tasks
 
 #### Testing and DRY
+- [ ] warn-deterministic-order: Sort MCP collision warning subjects before emission so output order is deterministic regardless of map iteration. Add a contract test for `CheckMCPServers` output ordering. (From ISSUES)
 - [ ] test-coverage-parity: Align local and CI test coverage reporting so developers can verify coverage locally before pushing. (From ISSUES)
-- [ ] testutil-consolidate: Create `internal/testutil` package and consolidate duplicated test helpers: `writeStubWithExit` (5+ packages), `writeStubExpectArg` (2 packages), `boolPtr` (2 packages), `withWorkingDir` (2 packages). (From ISSUES stub-dup, 3c5f958c, 3c5f958d)
+- [ ] testutil-consolidate: Create `internal/testutil` package and consolidate duplicated test helpers: `writeStub` (5+ packages), `writeStubWithExit` (5+ packages), `writeStubExpectArg` (2 packages), `boolPtr` (2 packages), `withWorkingDir` (2 packages). (From ISSUES stub-dup, 3c5f958c, 3c5f958d)
 - [ ] envfile-roundtrip: Fix asymmetric envfile encode/decode and add round-trip property tests. (From ISSUES envfile-asym)
 
 #### Wizard and config
@@ -147,14 +147,19 @@ Incomplete:
 #### Structural
 - [ ] installer-struct: Evaluate whether the `installer` struct (23 fields, 57+ methods) should be split into sub-structs (e.g., `templateManager`, `ownershipClassifier`). Extract if method count has grown. (From ISSUES 3c5f958f)
 
+#### Workflow and CI
+- [ ] race-target: Add a canonical race-check command (e.g., `make test-race`) targeting concurrency-critical packages and document it in COMMANDS.md. (From ISSUES)
+
 ### Exit criteria
-- Duplicated test helpers are consolidated into `internal/testutil`.
+- MCP collision warnings are emitted in deterministic sorted order with a contract test.
+- Duplicated test helpers (including `writeStub`) are consolidated into `internal/testutil`.
 - Envfile round-trip property tests pass.
 - Local test coverage matches CI coverage.
 - Wizard exported globals are immutable; dead code is removed.
 - Upgrade plan suppresses `al.version` noise.
 - Snapshot list command is available for upgrade rollback discovery.
 - Remaining upgrade polish items are addressed or explicitly documented as intentional.
+- A canonical race-check command exists in the Makefile and is documented in COMMANDS.md.
 
 ## Phase 14 — Documentation and website improvements
 

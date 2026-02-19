@@ -220,7 +220,22 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: VS Code is a single IDE. Users install both extensions in the same instance. Having two separate launch commands forces users to choose or run both (opening VS Code twice). One command is simpler and correct.
     Tradeoffs: Users who only have `agents.claude-vscode` enabled will not get `CODEX_HOME` set (correct — they don't want Codex). Users who want both must enable both config sections.
 
-- Decision 2026-02-17 p12-auto-approve-scope: auto-approve controls MCP prompt retrieval only, not agent actions
-    Decision: `auto-approve: true` in slash command frontmatter adds `mcp__agent-layer__<name>` to Claude's permission allow list, which auto-approves the MCP tool call that fetches the skill's prompt text. It does not auto-approve any actions the agent takes after reading the prompt.
-    Reason: Auto-approving prompt retrieval is safe — it only returns the skill's markdown body. Auto-approving agent actions (file edits, bash commands) would bypass the safety boundary that `approvals.mode` provides.
-    Tradeoffs: Users still see approval prompts for agent actions even with auto-approved skills. The benefit is zero-click skill invocation in Claude clients for approved skills.
+- Decision 2026-02-18 config-migrate: Config migration step between unmarshal and validate
+    Decision: Add `Config.Migrate()` as a mandatory step in `ParseConfig` between TOML unmarshal and `Validate`. New required config fields added in a release must include a corresponding backfill in `Migrate()` that defaults the field to the pre-existence behavior (e.g., disabled).
+    Reason: Without migration, adding a new required field breaks all existing configs and locks users out of every command including `al wizard` and `al upgrade`.
+    Tradeoffs: The migration step silently fills in defaults rather than failing loudly; accepted because the defaults are deterministic and match pre-existence behavior.
+
+- Decision 2026-02-18 config-resilience: Replace silent Migrate() with lenient parsing + interactive upgrade prompts (supersedes config-migrate)
+    Decision: Remove `Config.Migrate()` entirely. Instead: (1) add `ParseConfigLenient`/`LoadConfigLenient` that unmarshal without validation, (2) `al wizard` and `al doctor` fall back to lenient loading so they always work on broken configs, (3) `al upgrade` uses `config_set_default` migration operations that prompt the user interactively for new required field values, (4) runtime commands (`al sync`, `al claude`, etc.) remain strict and fail with actionable guidance.
+    Reason: Silent defaults violate the "no silent fallbacks" rule. Repair tools must always be runnable. Every config value should come from an explicit user choice.
+    Tradeoffs: Users must run `al wizard` or `al upgrade` to fix broken configs instead of having them auto-repaired; accepted because explicit consent is a design principle.
+
+- Decision 2026-02-18 migration-chain: Migration manifests are chained during multi-version upgrades
+    Decision: When source version is known, all manifests between source (exclusive) and target (inclusive) are loaded and applied in order with per-operation deduplication by ID. When source is unknown, only the target manifest is loaded (backward compatible). Migrations that missed a release are placed in the next release's manifest with an expanded `min_prior_version`.
+    Reason: Without chaining, users jumping multiple versions (e.g., 0.8.0 → 0.8.2) miss intermediate migrations. The v0.8.1 config migration shipped after the binary, so it was moved to 0.8.2's manifest to catch all users.
+    Tradeoffs: Manifest ordering depends on semver sort of filenames; manifests must have unique operation IDs across the chain or later duplicates are silently skipped.
+
+- Decision 2026-02-18 config-field-catalog: Shared config field catalog in `internal/config/fields.go`
+    Decision: Centralize config field metadata (type, valid options, required flag, allow-custom) in a single registry. Wizard and upgrade prompts derive option lists from the catalog instead of maintaining separate hardcoded slices. `validate.go` derives approval mode validation from the catalog. Upgrade `config_set_default` prompts receive field metadata to show type-aware numbered choices (bool true/false, enum options) instead of yes/no.
+    Reason: Config field options were duplicated across `wizard/catalog.go` (option lists), `validate.go` (valid value maps), and had no way to flow to the upgrade prompter. A shared catalog provides a single source of truth and enables richer upgrade prompts.
+    Tradeoffs: Adding a new config field now requires updating `internal/config/fields.go` in addition to `types.go`/`validate.go`; accepted because the catalog is the natural place to document field constraints.

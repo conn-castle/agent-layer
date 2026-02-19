@@ -55,7 +55,7 @@ const (
 
 	UpgradeOverwritePromptFmt       = "Overwrite %s with the template version?"
 	UpgradeOverwriteAllPrompt       = "Overwrite all existing managed files with template versions and update the pin if needed?"
-	UpgradeOverwriteManagedHeader   = "Existing managed files (and pin) that differ from templates:"
+	UpgradeOverwriteManagedHeader   = "Existing managed files that differ from templates:"
 	UpgradeOverwriteMemoryHeader    = "Existing memory files in docs/agent-layer that differ from templates:"
 	UpgradeOverwriteMemoryAllPrompt = "Overwrite all existing memory files in docs/agent-layer with template versions?"
 	UpgradeDeleteUnknownAllPrompt   = "Delete all unknown files under .agent-layer?"

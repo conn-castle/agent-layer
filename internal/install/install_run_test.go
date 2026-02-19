@@ -486,7 +486,8 @@ func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Without overwrite, pin should NOT be changed; should record diff instead
+	// Without overwrite, pin should NOT be changed; no diff is recorded because
+	// al.version changes are expected during upgrades and should not be surfaced.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read pin: %v", err)
@@ -494,8 +495,8 @@ func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
 	if string(data) != "0.9.0\n" {
 		t.Fatalf("expected pin to remain unchanged, got %q", string(data))
 	}
-	if len(inst.diffs) != 1 {
-		t.Fatalf("expected 1 diff recorded, got %d", len(inst.diffs))
+	if len(inst.diffs) != 0 {
+		t.Fatalf("expected no diffs recorded, got %d", len(inst.diffs))
 	}
 }
 
@@ -541,7 +542,7 @@ func TestWriteVersionFile_InvalidExisting(t *testing.T) {
 	}
 }
 
-func TestWriteVersionFile_PromptError(t *testing.T) {
+func TestWriteVersionFile_UpgradeSkipsPrompt(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -551,20 +552,48 @@ func TestWriteVersionFile_PromptError(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
+	// During upgrade (overwrite=true), the version pin is written unconditionally
+	// without prompting — updating the pin is the point of running an upgrade.
 	inst := &installer{
 		root:       root,
 		pinVersion: "1.0.0",
 		overwrite:  true,
 		sys:        RealSystem{},
-		prompter: PromptFuncs{
-			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
-				return false, errors.New("prompt failed")
-			},
-		},
 	}
 	err := inst.writeVersionFile()
-	if err == nil {
-		t.Fatalf("expected error from prompt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "1.0.0\n" {
+		t.Fatalf("expected pin to be updated, got %q", string(data))
+	}
+}
+
+func TestWriteVersionFile_InitKeepsExistingPin(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("0.9.0"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// During init (overwrite=false), a differing valid pin is kept as-is.
+	inst := &installer{
+		root:       root,
+		pinVersion: "1.0.0",
+		overwrite:  false,
+		sys:        RealSystem{},
+	}
+	err := inst.writeVersionFile()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.TrimSpace(string(data)) != "0.9.0" {
+		t.Fatalf("expected existing pin to be preserved, got %q", string(data))
 	}
 }
 
@@ -654,9 +683,9 @@ func TestWriteVersionFile_OverwriteFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should have recorded a diff
-	if len(inst.diffs) != 1 {
-		t.Fatalf("expected diff to be recorded, got %d diffs", len(inst.diffs))
+	// al.version diffs are not recorded; version changes are expected during upgrades.
+	if len(inst.diffs) != 0 {
+		t.Fatalf("expected no diffs recorded, got %d diffs", len(inst.diffs))
 	}
 }
 

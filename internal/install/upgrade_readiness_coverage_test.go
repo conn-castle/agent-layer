@@ -975,54 +975,6 @@ func TestCheckPathExpansionValue_Branches(t *testing.T) {
 	}
 }
 
-func TestDetectGeneratedSecretRisk_ErrorBranches(t *testing.T) {
-	t.Run("stat error", func(t *testing.T) {
-		root := t.TempDir()
-		target := filepath.Join(root, ".mcp.json")
-		sys := newFaultSystem(RealSystem{})
-		sys.statErrs[normalizePath(target)] = errors.New("stat boom")
-		inst := &installer{root: root, sys: sys}
-		_, err := detectGeneratedSecretRisk(inst, `api_key = "hardcoded-secret"`)
-		if err == nil || !strings.Contains(err.Error(), "stat boom") {
-			t.Fatalf("expected stat error, got %v", err)
-		}
-	})
-
-	t.Run("read error", func(t *testing.T) {
-		root := t.TempDir()
-		target := filepath.Join(root, ".mcp.json")
-		if err := os.WriteFile(target, []byte("{\"token\":\"abc\"}\n"), 0o644); err != nil {
-			t.Fatalf("write target: %v", err)
-		}
-		sys := newFaultSystem(RealSystem{})
-		sys.readErrs[normalizePath(target)] = errors.New("read boom")
-		inst := &installer{root: root, sys: sys}
-		_, err := detectGeneratedSecretRisk(inst, `api_key = "hardcoded-secret"`)
-		if err == nil || !strings.Contains(err.Error(), "read boom") {
-			t.Fatalf("expected read error, got %v", err)
-		}
-	})
-
-	t.Run("ignores directories and non-secret files", func(t *testing.T) {
-		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, ".codex", "config.toml"), 0o755); err != nil {
-			t.Fatalf("mkdir config dir: %v", err)
-		}
-		target := filepath.Join(root, ".mcp.json")
-		if err := os.WriteFile(target, []byte("{\"safe\":true}\n"), 0o644); err != nil {
-			t.Fatalf("write target: %v", err)
-		}
-		inst := &installer{root: root, sys: RealSystem{}}
-		check, err := detectGeneratedSecretRisk(inst, `api_key = "hardcoded-secret"`)
-		if err != nil {
-			t.Fatalf("detectGeneratedSecretRisk: %v", err)
-		}
-		if check != nil {
-			t.Fatalf("expected no secret-risk check, got %#v", check)
-		}
-	})
-}
-
 func TestDetectPathExpansionAnomalies_AdditionalBranches(t *testing.T) {
 	t.Run("ignores disabled and non-stdio servers", func(t *testing.T) {
 		inst := &installer{root: t.TempDir(), sys: RealSystem{}}

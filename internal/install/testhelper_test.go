@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -112,4 +113,68 @@ func withMigrationManifestOverride(t *testing.T, targetVersion string, manifestJ
 		return original(name)
 	}
 	t.Cleanup(func() { templates.ReadFunc = original })
+}
+
+// fakeDirEntry implements fs.DirEntry for test walk overrides.
+type fakeDirEntry struct {
+	name  string
+	isDir bool
+}
+
+func (f fakeDirEntry) Name() string               { return f.name }
+func (f fakeDirEntry) IsDir() bool                { return f.isDir }
+func (f fakeDirEntry) Type() fs.FileMode          { return 0 }
+func (f fakeDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
+
+// withMigrationManifestChainOverride intercepts both templates.ReadFunc and
+// templates.WalkFunc so that listMigrationManifestVersions discovers exactly
+// the provided versions and loadUpgradeMigrationManifestByVersion returns the
+// provided JSON for each. The map keys are version strings (e.g. "0.6.1"),
+// and values are the full manifest JSON.
+func withMigrationManifestChainOverride(t *testing.T, manifests map[string]string) {
+	t.Helper()
+
+	// Build path→JSON lookup.
+	pathMap := make(map[string]string, len(manifests))
+	for ver, jsonStr := range manifests {
+		pathMap[fmt.Sprintf("migrations/%s.json", ver)] = jsonStr
+	}
+
+	origRead := templates.ReadFunc
+	templates.ReadFunc = func(name string) ([]byte, error) {
+		if jsonStr, ok := pathMap[name]; ok {
+			return []byte(jsonStr), nil
+		}
+		// For migration paths not in the override map, return not-found
+		// so the override fully controls the migrations namespace.
+		if strings.HasPrefix(name, "migrations/") && strings.HasSuffix(name, ".json") {
+			return nil, fs.ErrNotExist
+		}
+		return origRead(name)
+	}
+
+	origWalk := templates.WalkFunc
+	templates.WalkFunc = func(root string, fn fs.WalkDirFunc) error {
+		if root != "migrations" {
+			return origWalk(root, fn)
+		}
+		// Emit the directory entry first.
+		if err := fn("migrations", fakeDirEntry{name: "migrations", isDir: true}, nil); err != nil {
+			return err
+		}
+		// Emit one entry per overridden version.
+		for ver := range manifests {
+			filename := ver + ".json"
+			entryPath := "migrations/" + filename
+			if err := fn(entryPath, fakeDirEntry{name: filename, isDir: false}, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	t.Cleanup(func() {
+		templates.ReadFunc = origRead
+		templates.WalkFunc = origWalk
+	})
 }

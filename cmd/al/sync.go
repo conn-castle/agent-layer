@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -37,15 +36,7 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			// Print auto-approve info before warnings (warnings cause early error return).
-			// Only relevant when at least one Claude agent is enabled.
 			stderr := cmd.ErrOrStderr()
-			claudeEnabled := project.Config.Agents.Claude.Enabled != nil && *project.Config.Agents.Claude.Enabled
-			claudeVSCodeEnabled := project.Config.Agents.ClaudeVSCode.Enabled != nil && *project.Config.Agents.ClaudeVSCode.Enabled
-			if len(result.AutoApprovedSkills) > 0 && (claudeEnabled || claudeVSCodeEnabled) {
-				_, _ = fmt.Fprintf(stderr, "[auto-approve] skills: %s\n", strings.Join(result.AutoApprovedSkills, ", "))
-			}
-
 			if len(result.Warnings) > 0 {
 				for _, w := range result.Warnings {
 					_, _ = fmt.Fprintln(stderr, w.String())

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -57,15 +56,6 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 	result, err := sync.RunWithProject(sync.RealSystem{}, root, project)
 	if err != nil {
 		return err
-	}
-
-	// Print auto-approve info when the launched client actually uses Claude.
-	// For "claude": always relevant. For "vscode": only when claude-vscode is enabled.
-	agents := project.Config.Agents
-	claudeActive := name == "claude" ||
-		(name == "vscode" && agents.ClaudeVSCode.Enabled != nil && *agents.ClaudeVSCode.Enabled)
-	if claudeActive && len(result.AutoApprovedSkills) > 0 && stderr != nil {
-		_, _ = fmt.Fprintf(stderr, "[auto-approve] skills: %s\n", strings.Join(result.AutoApprovedSkills, ", "))
 	}
 
 	// Print warnings to stderr before launching

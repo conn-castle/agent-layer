@@ -5,7 +5,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
@@ -16,8 +15,7 @@ import (
 
 // Result holds the outcome of a sync operation.
 type Result struct {
-	Warnings           []warnings.Warning
-	AutoApprovedSkills []string
+	Warnings []warnings.Warning
 }
 
 // Run regenerates all configured outputs for the repo.
@@ -123,28 +121,9 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		return nil, err
 	}
 
-	// Collect auto-approved skill names when Claude agents are active.
-	var autoApproved []string
-	if claudeEnabled || claudeVSCodeEnabled {
-		autoApproved = collectAutoApprovedSkills(project)
-	}
-
 	return &Result{
-		Warnings:           ws,
-		AutoApprovedSkills: autoApproved,
+		Warnings: ws,
 	}, nil
-}
-
-// collectAutoApprovedSkills returns sorted names of slash commands with auto-approve enabled.
-func collectAutoApprovedSkills(project *config.ProjectConfig) []string {
-	var names []string
-	for _, cmd := range project.SlashCommands {
-		if cmd.AutoApprove {
-			names = append(names, cmd.Name)
-		}
-	}
-	sort.Strings(names)
-	return names
 }
 
 // collectWarnings gathers all sync-time warnings based on the project config.

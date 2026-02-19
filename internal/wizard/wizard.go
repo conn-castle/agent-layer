@@ -21,6 +21,7 @@ var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
+	loadConfigLenientFunc     = config.LoadConfigLenient
 	errWizardCancelled        = errors.New("wizard cancelled")
 )
 
@@ -49,7 +50,21 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 	cfg, err := loadProjectConfigFunc(root)
 	if err != nil {
-		return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
+		if !errors.Is(err, config.ErrConfigValidation) {
+			// Non-validation failure (env, instructions, slash commands, etc.) —
+			// lenient config fallback would not help; propagate the real error.
+			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
+		}
+		// Config has validation errors (e.g., missing required fields from a
+		// newer version). Fall back to lenient loading so the wizard can still
+		// run and help the user fix the config.
+		lenientCfg, lenientErr := loadConfigLenientFunc(configPath)
+		if lenientErr != nil {
+			// TOML syntax error or file unreadable — can't recover.
+			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, lenientErr)
+		}
+		_, _ = fmt.Fprintf(out, messages.ConfigLenientLoadInfoFmt+"\n", "the wizard", err)
+		cfg = &config.ProjectConfig{Config: *lenientCfg, Root: root}
 	}
 
 	choices, err := initializeChoices(cfg)
@@ -185,7 +200,7 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 	choices.ApprovalModeTouched = true
 
 	enabledAgents := enabledAgentIDs(choices.EnabledAgents)
-	if err := ui.MultiSelect(messages.WizardEnableAgentsTitle, SupportedAgents, &enabledAgents); err != nil {
+	if err := ui.MultiSelect(messages.WizardEnableAgentsTitle, SupportedAgents(), &enabledAgents); err != nil {
 		return err
 	}
 	choices.EnabledAgents = agentIDSet(enabledAgents)
@@ -212,29 +227,29 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 
 func promptModels(ui UI, choices *Choices) error {
 	if choices.EnabledAgents[AgentGemini] {
-		if hasPreviewModels(GeminiModels) {
+		if hasPreviewModels(GeminiModels()) {
 			if err := ui.Note(messages.WizardPreviewModelWarningTitle, previewModelWarningText()); err != nil {
 				return err
 			}
 		}
-		if err := selectOptionalValue(ui, messages.WizardGeminiModelTitle, GeminiModels, &choices.GeminiModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardGeminiModelTitle, GeminiModels(), &choices.GeminiModel); err != nil {
 			return err
 		}
 		choices.GeminiModelTouched = true
 	}
 	if choices.EnabledAgents[AgentClaude] {
-		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, ClaudeModels, &choices.ClaudeModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, ClaudeModels(), &choices.ClaudeModel); err != nil {
 			return err
 		}
 		choices.ClaudeModelTouched = true
 	}
 	if choices.EnabledAgents[AgentCodex] {
-		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels, &choices.CodexModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels(), &choices.CodexModel); err != nil {
 			return err
 		}
 		choices.CodexModelTouched = true
 
-		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, CodexReasoningEfforts, &choices.CodexReasoning); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, CodexReasoningEfforts(), &choices.CodexReasoning); err != nil {
 			return err
 		}
 		choices.CodexReasoningTouched = true
