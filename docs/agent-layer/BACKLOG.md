@@ -28,6 +28,18 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-19 upg-snapshot-list: Add command to list upgrade snapshots
+    Priority: Medium. Area: upgrade / CLI
+    Description: Provide a CLI way to list available upgrade snapshots so users can discover rollback targets without manually inspecting directories.
+    Acceptance criteria: A user can run `al upgrade rollback --list` (or equivalent) and see snapshot IDs and key metadata needed to choose a rollback target.
+    Notes: Output should be human-readable and stable for scripting where practical.
+
+- Backlog 2026-02-19 wiz-default-model-names: Update wizard default Claude/Codex model names
+    Priority: Medium. Area: wizard / configuration
+    Description: Update `al wizard` so the default Claude and Codex model names match the current intended defaults.
+    Acceptance criteria: Running `al wizard` with default selections writes the updated Claude and Codex model names to config and related tests/docs reflect the new defaults.
+    Notes: Keep model defaults sourced from a single canonical location to avoid future drift.
+
 - Backlog 2026-02-19 readable-upgrade-diff: Improve upgrade diff readability with color coding
     Priority: Medium. Area: upgrades / UX
     Description: Make upgrade-process diffs more human-readable and friendly so users can quickly understand what changed.

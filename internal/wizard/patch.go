@@ -198,6 +198,12 @@ type mcpBlock struct {
 	lines []string
 }
 
+// stdioIncompatibleKeys are TOML keys that are not valid for stdio transport MCP servers.
+var stdioIncompatibleKeys = []string{"headers", "url", "http_transport"}
+
+// httpIncompatibleKeys are TOML keys that are not valid for http transport MCP servers.
+var httpIncompatibleKeys = []string{"command", "args", "env"}
+
 // buildMCPServerBlocks returns ordered MCP server blocks using template order for defaults.
 // currentDoc supplies existing blocks; templateDoc provides default blocks; choices controls restore and enabled toggles.
 func buildMCPServerBlocks(currentDoc tomlDocument, templateDoc tomlDocument, choices *Choices) ([]tomlBlock, error) {
@@ -234,13 +240,17 @@ func buildMCPServerBlocks(currentDoc tomlDocument, templateDoc tomlDocument, cho
 		block, ok := currentByID[id]
 		switch {
 		case ok:
-			ordered = append(ordered, updateMCPEnabled(block, templateByID[id], choices, id))
+			tb := updateMCPEnabled(block, templateByID[id], choices, id)
+			sanitizeMCPServerBlock(&tb)
+			ordered = append(ordered, tb)
 		case choices.RestoreMissingMCPServers && containsKey(missingDefaults, id):
 			tpl, exists := templateByID[id]
 			if !exists {
 				return nil, fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
 			}
-			ordered = append(ordered, updateMCPEnabled(tpl, tpl, choices, id))
+			tb := updateMCPEnabled(tpl, tpl, choices, id)
+			sanitizeMCPServerBlock(&tb)
+			ordered = append(ordered, tb)
 		}
 	}
 
@@ -250,10 +260,230 @@ func buildMCPServerBlocks(currentDoc tomlDocument, templateDoc tomlDocument, cho
 				continue
 			}
 		}
-		ordered = append(ordered, tomlBlock{name: "mcp.servers", lines: cloneLines(block.lines)})
+		tb := tomlBlock{name: "mcp.servers", lines: cloneLines(block.lines)}
+		sanitizeMCPServerBlock(&tb)
+		ordered = append(ordered, tb)
 	}
 
 	return ordered, nil
+}
+
+// sanitizeMCPServerBlock removes transport-incompatible fields from a server block.
+// This allows the wizard to repair configs where, for example, a stdio server
+// has leftover headers from a previous configuration.
+func sanitizeMCPServerBlock(block *tomlBlock) {
+	transport := extractMCPBlockKeyValue(block.lines, "transport")
+	switch transport {
+	case "stdio":
+		for _, key := range stdioIncompatibleKeys {
+			removeKeyFromBlock(block, key)
+		}
+	case "http":
+		for _, key := range httpIncompatibleKeys {
+			removeKeyFromBlock(block, key)
+		}
+	}
+}
+
+// extractMCPBlockKeyValue returns the unquoted value for a key in a TOML block.
+// lines are the raw block lines; key is the key to search for.
+// Tracks multiline string state to avoid parsing content inside multiline strings.
+func extractMCPBlockKeyValue(lines []string, key string) string {
+	state := tomlStateNone
+	for _, line := range lines {
+		if IsTomlStateInMultiline(state) {
+			_, state = ScanTomlLineForComment(line, state)
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			_, state = ScanTomlLineForComment(line, state)
+			continue
+		}
+		k, value, ok := parseKeyValueWithState(trimmed, key, state)
+		if ok && k == key {
+			return strings.Trim(value, "\"'")
+		}
+		_, state = ScanTomlLineForComment(line, state)
+	}
+	return ""
+}
+
+// removeKeyFromBlock removes all uncommented lines for the given key from a block,
+// including continuation lines of multiline arrays, inline tables, and triple-quoted strings.
+// block is updated in place; commented-out lines for the key are preserved.
+// Tracks multiline string state to avoid matching content inside multiline strings.
+func removeKeyFromBlock(block *tomlBlock, key string) {
+	type lineRange struct{ start, end int }
+	state := tomlStateNone
+	var ranges []lineRange
+	for i := 0; i < len(block.lines); i++ {
+		line := block.lines[i]
+		if IsTomlStateInMultiline(state) {
+			_, state = ScanTomlLineForComment(line, state)
+			continue
+		}
+		parsed, ok := parseKeyLineWithState(line, key, state)
+		_, state = ScanTomlLineForComment(line, state)
+		if ok && !parsed.commented {
+			endIdx := multilineValueEndIndex(block.lines, i)
+			ranges = append(ranges, lineRange{i, endIdx})
+			// Advance state through any skipped continuation lines.
+			for j := i + 1; j <= endIdx && j < len(block.lines); j++ {
+				_, state = ScanTomlLineForComment(block.lines[j], state)
+			}
+			i = endIdx
+		}
+	}
+	// Remove in reverse order to avoid index shifting.
+	for i := len(ranges) - 1; i >= 0; i-- {
+		r := ranges[i]
+		block.lines = append(block.lines[:r.start], block.lines[r.end+1:]...)
+	}
+}
+
+// multilineValueEndIndex returns the index of the last line of a value that
+// starts at startIdx. Returns startIdx when the value fits on a single line.
+// Handles multiline arrays ([...]), inline tables ({...}), and triple-quoted
+// basic strings and literal strings.
+func multilineValueEndIndex(lines []string, startIdx int) int {
+	if startIdx >= len(lines) {
+		return startIdx
+	}
+	line := lines[startIdx]
+	eqIdx := strings.Index(line, "=")
+	if eqIdx < 0 {
+		return startIdx
+	}
+	valuePart := strings.TrimSpace(line[eqIdx+1:])
+
+	// Multiline basic string (""")
+	// In basic strings, \" is an escaped quote; \""" must not be treated
+	// as a closing delimiter (it is an escaped quote followed by two quotes).
+	if strings.HasPrefix(valuePart, `"""`) {
+		rest := valuePart[3:]
+		if containsUnescapedTripleQuote(rest) {
+			return startIdx // closed on same line
+		}
+		for i := startIdx + 1; i < len(lines); i++ {
+			if containsUnescapedTripleQuote(lines[i]) {
+				return i
+			}
+		}
+		return startIdx // unclosed — don't remove extra lines
+	}
+
+	// Multiline literal string (''')
+	// Literal strings have no escape sequences, so ''' always closes.
+	if strings.HasPrefix(valuePart, `'''`) {
+		rest := valuePart[3:]
+		if strings.Contains(rest, `'''`) {
+			return startIdx
+		}
+		for i := startIdx + 1; i < len(lines); i++ {
+			if strings.Contains(lines[i], `'''`) {
+				return i
+			}
+		}
+		return startIdx
+	}
+
+	// Array or inline table — track bracket depth, skipping brackets inside strings.
+	// Quote state is threaded across lines so that strings spanning multiple lines
+	// (e.g., multiline basic strings inside arrays) don't break bracket tracking.
+	var opener, closer byte
+	switch {
+	case strings.HasPrefix(valuePart, "["):
+		opener, closer = '[', ']'
+	case strings.HasPrefix(valuePart, "{"):
+		opener, closer = '{', '}'
+	default:
+		return startIdx // simple scalar value
+	}
+
+	depth := 0
+	qs := quoteState{}
+	for i := startIdx; i < len(lines); i++ {
+		from := 0
+		if i == startIdx {
+			from = eqIdx + 1
+		}
+		var delta int
+		delta, qs = countBracketDepth(lines[i][from:], opener, closer, qs)
+		depth += delta
+		if depth <= 0 {
+			return i
+		}
+	}
+	return startIdx // unbalanced — don't remove extra lines
+}
+
+// quoteState tracks whether we are inside a quoted string across line boundaries.
+type quoteState struct {
+	inDouble bool
+	inSingle bool
+}
+
+// countBracketDepth counts the net bracket depth change in a line, skipping
+// brackets inside quoted strings and stopping at unquoted # comments.
+// qs carries quote state from previous lines so that strings spanning multiple
+// lines do not break bracket tracking. Returns updated depth and quote state.
+func countBracketDepth(s string, opener, closer byte, qs quoteState) (int, quoteState) {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if qs.inDouble {
+			if ch == '\\' {
+				i++ // skip escaped character
+				continue
+			}
+			if ch == '"' {
+				qs.inDouble = false
+			}
+			continue
+		}
+		if qs.inSingle {
+			if ch == '\'' {
+				qs.inSingle = false
+			}
+			continue
+		}
+		switch ch {
+		case '"':
+			qs.inDouble = true
+		case '\'':
+			qs.inSingle = true
+		case '#':
+			return depth, qs // rest of line is a comment
+		case opener:
+			depth++
+		case closer:
+			depth--
+		}
+	}
+	return depth, qs
+}
+
+// containsUnescapedTripleQuote reports whether s contains an unescaped """ delimiter.
+// In TOML basic strings, \" is an escaped quote; an odd number of preceding
+// backslashes means the first quote is escaped, so \""" is not a closing delimiter.
+func containsUnescapedTripleQuote(s string) bool {
+	for search := s; ; {
+		idx := strings.Index(search, `"""`)
+		if idx < 0 {
+			return false
+		}
+		// Count backslashes immediately before the triple quote.
+		backslashes := 0
+		for i := idx - 1; i >= 0 && search[i] == '\\'; i-- {
+			backslashes++
+		}
+		if backslashes%2 == 0 {
+			return true // even (or zero) backslashes — unescaped delimiter
+		}
+		// Odd backslashes — first quote is escaped; advance past this match.
+		search = search[idx+1:]
+	}
 }
 
 // updateMCPEnabled applies the enabled toggle to a server block when requested.
@@ -304,28 +534,8 @@ func parseMCPBlocks(blocks []*tomlBlock) []mcpBlock {
 
 // extractMCPServerID returns the first non-commented id value in a server block.
 // lines are the raw block lines; returns empty string when no id is found.
-// Tracks multiline string state to avoid parsing content inside multiline strings.
 func extractMCPServerID(lines []string) string {
-	state := tomlStateNone
-	for _, line := range lines {
-		// Skip lines inside multiline strings.
-		if IsTomlStateInMultiline(state) {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
-		}
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
-		}
-		key, value, ok := parseKeyValueWithState(trimmed, "id", state)
-		if !ok || key != "id" {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
-		}
-		return strings.Trim(value, "\"'")
-	}
-	return ""
+	return extractMCPBlockKeyValue(lines, "id")
 }
 
 // parseKeyValueWithState extracts a simple key/value pair from a TOML line with explicit state.

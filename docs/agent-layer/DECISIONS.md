@@ -235,6 +235,11 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Without chaining, users jumping multiple versions (e.g., 0.8.0 → 0.8.2) miss intermediate migrations. The v0.8.1 config migration shipped after the binary, so it was moved to 0.8.2's manifest to catch all users.
     Tradeoffs: Manifest ordering depends on semver sort of filenames; manifests must have unique operation IDs across the chain or later duplicates are silently skipped.
 
+- Decision 2026-02-19 wizard-mcp-sanitize: Wizard sanitizes transport-incompatible MCP server fields during patch
+    Decision: `buildMCPServerBlocks` in `internal/wizard/patch.go` now calls `sanitizeMCPServerBlock` on every server block, removing fields that are invalid for the server's transport type (e.g., `headers`/`url`/`http_transport` on stdio servers; `command`/`args`/`env` on http servers). Commented-out lines are preserved.
+    Reason: Without sanitization, a config with transport-incompatible fields (e.g., headers on a stdio server) could not be repaired by `al wizard` — the wizard would complete all prompts but sync would fail at the end with a validation error, creating a circular "run wizard to fix" loop.
+    Tradeoffs: The wizard silently removes invalid fields rather than prompting about them; accepted because the removed fields have no valid meaning for the transport type and keeping them causes a hard block.
+
 - Decision 2026-02-18 config-field-catalog: Shared config field catalog in `internal/config/fields.go`
     Decision: Centralize config field metadata (type, valid options, required flag, allow-custom) in a single registry. Wizard and upgrade prompts derive option lists from the catalog instead of maintaining separate hardcoded slices. `validate.go` derives approval mode validation from the catalog. Upgrade `config_set_default` prompts receive field metadata to show type-aware numbered choices (bool true/false, enum options) instead of yes/no.
     Reason: Config field options were duplicated across `wizard/catalog.go` (option lists), `validate.go` (valid value maps), and had no way to flow to the upgrade prompter. A shared catalog provides a single source of truth and enables richer upgrade prompts.

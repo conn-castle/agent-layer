@@ -96,10 +96,14 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		partial := &config.ProjectConfig{Config: *lenientCfg, Root: root}
 
 		// Best-effort: load .env so CheckSecrets can check against it.
+		// Always inject built-in env vars (e.g., AL_REPO_ROOT) so downstream
+		// checks like MCP server resolution don't produce false positives.
 		envPath := filepath.Join(root, ".agent-layer", ".env")
-		if env, envErr := loadEnvFunc(envPath); envErr == nil {
-			partial.Env = env
+		var env map[string]string
+		if loaded, envErr := loadEnvFunc(envPath); envErr == nil {
+			env = loaded
 		}
+		partial.Env = config.WithBuiltInEnv(env, root)
 
 		return results, partial
 	}
