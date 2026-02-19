@@ -1266,41 +1266,87 @@ func TestMultilineValueEndIndex(t *testing.T) {
 		lines := []string{`x = 1`}
 		assert.Equal(t, 5, multilineValueEndIndex(lines, 5))
 	})
+
+	t.Run("multiline string inside array does not break bracket tracking", func(t *testing.T) {
+		// A triple-quoted string inside an array that contains ] on an interior
+		// line. Without cross-line quote state, the ] would incorrectly close
+		// the array.
+		lines := []string{
+			`args = ["""`,
+			`value with ] bracket`,
+			`""",`,
+			`"other",`,
+			`]`,
+		}
+		assert.Equal(t, 4, multilineValueEndIndex(lines, 0))
+	})
 }
 
 func TestCountBracketDepth(t *testing.T) {
+	noState := quoteState{}
+
 	t.Run("simple open bracket", func(t *testing.T) {
-		assert.Equal(t, 1, countBracketDepth("[", '[', ']'))
+		depth, _ := countBracketDepth("[", '[', ']', noState)
+		assert.Equal(t, 1, depth)
 	})
 
 	t.Run("balanced", func(t *testing.T) {
-		assert.Equal(t, 0, countBracketDepth(`["a", "b"]`, '[', ']'))
+		depth, _ := countBracketDepth(`["a", "b"]`, '[', ']', noState)
+		assert.Equal(t, 0, depth)
 	})
 
 	t.Run("bracket inside double quotes ignored", func(t *testing.T) {
-		assert.Equal(t, 1, countBracketDepth(`["value with ] bracket"`, '[', ']'))
+		depth, _ := countBracketDepth(`["value with ] bracket"`, '[', ']', noState)
+		assert.Equal(t, 1, depth)
 	})
 
 	t.Run("bracket inside single quotes ignored", func(t *testing.T) {
-		assert.Equal(t, 1, countBracketDepth(`['value with ] bracket'`, '[', ']'))
+		depth, _ := countBracketDepth(`['value with ] bracket'`, '[', ']', noState)
+		assert.Equal(t, 1, depth)
 	})
 
 	t.Run("escaped quote in string does not break tracking", func(t *testing.T) {
 		// The \" is an escaped quote inside the string; the ] correctly closes the array.
 		// Without escape handling, the \" would prematurely end the string.
-		assert.Equal(t, 0, countBracketDepth(`["escaped \" quote"]`, '[', ']'))
+		depth, _ := countBracketDepth(`["escaped \" quote"]`, '[', ']', noState)
+		assert.Equal(t, 0, depth)
 	})
 
 	t.Run("comment stops counting", func(t *testing.T) {
-		assert.Equal(t, 1, countBracketDepth(`[ # comment with ]`, '[', ']'))
+		depth, _ := countBracketDepth(`[ # comment with ]`, '[', ']', noState)
+		assert.Equal(t, 1, depth)
 	})
 
 	t.Run("no brackets", func(t *testing.T) {
-		assert.Equal(t, 0, countBracketDepth(`"just a string"`, '[', ']'))
+		depth, _ := countBracketDepth(`"just a string"`, '[', ']', noState)
+		assert.Equal(t, 0, depth)
 	})
 
 	t.Run("curly braces", func(t *testing.T) {
-		assert.Equal(t, 0, countBracketDepth(`{ KEY = "val" }`, '{', '}'))
+		depth, _ := countBracketDepth(`{ KEY = "val" }`, '{', '}', noState)
+		assert.Equal(t, 0, depth)
+	})
+
+	t.Run("quote state persists across lines", func(t *testing.T) {
+		// Line 1 opens a double-quoted string that doesn't close on this line.
+		// Line 2 has a ] inside the still-open string — should be ignored.
+		// Line 3 closes the string and closes the array.
+		qs := noState
+		var depth int
+		depth, qs = countBracketDepth(`["""`, '[', ']', qs)
+		assert.Equal(t, 1, depth, "opening bracket counted, triple-quote opens string")
+		assert.True(t, qs.inDouble, "should be inside double-quoted string after line 1")
+
+		depth, qs = countBracketDepth(`value with ] bracket`, '[', ']', qs)
+		assert.Equal(t, 0, depth, "] inside string should be ignored")
+		assert.True(t, qs.inDouble, "still inside double-quoted string")
+
+		depth, qs = countBracketDepth(`""",`, '[', ']', qs)
+		assert.Equal(t, 0, depth, "no brackets on closing line")
+		assert.False(t, qs.inDouble, "string should be closed")
+
+		depth, _ = countBracketDepth(`]`, '[', ']', qs)
+		assert.Equal(t, -1, depth, "closing bracket counted")
 	})
 }
 

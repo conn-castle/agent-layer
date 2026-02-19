@@ -345,7 +345,7 @@ func removeKeyFromBlock(block *tomlBlock, key string) {
 // multilineValueEndIndex returns the index of the last line of a value that
 // starts at startIdx. Returns startIdx when the value fits on a single line.
 // Handles multiline arrays ([...]), inline tables ({...}), and triple-quoted
-// strings ("""/”').
+// basic strings and literal strings.
 func multilineValueEndIndex(lines []string, startIdx int) int {
 	if startIdx >= len(lines) {
 		return startIdx
@@ -389,6 +389,8 @@ func multilineValueEndIndex(lines []string, startIdx int) int {
 	}
 
 	// Array or inline table — track bracket depth, skipping brackets inside strings.
+	// Quote state is threaded across lines so that strings spanning multiple lines
+	// (e.g., multiline basic strings inside arrays) don't break bracket tracking.
 	var opener, closer byte
 	switch {
 	case strings.HasPrefix(valuePart, "["):
@@ -400,12 +402,15 @@ func multilineValueEndIndex(lines []string, startIdx int) int {
 	}
 
 	depth := 0
+	qs := quoteState{}
 	for i := startIdx; i < len(lines); i++ {
 		from := 0
 		if i == startIdx {
 			from = eqIdx + 1
 		}
-		depth += countBracketDepth(lines[i][from:], opener, closer)
+		var delta int
+		delta, qs = countBracketDepth(lines[i][from:], opener, closer, qs)
+		depth += delta
 		if depth <= 0 {
 			return i
 		}
@@ -413,44 +418,50 @@ func multilineValueEndIndex(lines []string, startIdx int) int {
 	return startIdx // unbalanced — don't remove extra lines
 }
 
+// quoteState tracks whether we are inside a quoted string across line boundaries.
+type quoteState struct {
+	inDouble bool
+	inSingle bool
+}
+
 // countBracketDepth counts the net bracket depth change in a line, skipping
 // brackets inside quoted strings and stopping at unquoted # comments.
-func countBracketDepth(s string, opener, closer byte) int {
+// qs carries quote state from previous lines so that strings spanning multiple
+// lines do not break bracket tracking. Returns updated depth and quote state.
+func countBracketDepth(s string, opener, closer byte, qs quoteState) (int, quoteState) {
 	depth := 0
-	inDouble := false
-	inSingle := false
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
-		if inDouble {
+		if qs.inDouble {
 			if ch == '\\' {
 				i++ // skip escaped character
 				continue
 			}
 			if ch == '"' {
-				inDouble = false
+				qs.inDouble = false
 			}
 			continue
 		}
-		if inSingle {
+		if qs.inSingle {
 			if ch == '\'' {
-				inSingle = false
+				qs.inSingle = false
 			}
 			continue
 		}
 		switch ch {
 		case '"':
-			inDouble = true
+			qs.inDouble = true
 		case '\'':
-			inSingle = true
+			qs.inSingle = true
 		case '#':
-			return depth // rest of line is a comment
+			return depth, qs // rest of line is a comment
 		case opener:
 			depth++
 		case closer:
 			depth--
 		}
 	}
-	return depth
+	return depth, qs
 }
 
 // containsUnescapedTripleQuote reports whether s contains an unescaped """ delimiter.
