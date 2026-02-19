@@ -20,7 +20,7 @@ type claudePermissions struct {
 
 // WriteClaudeSettings generates .claude/settings.json.
 func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig) error {
-	settings, _, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings(project)
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig)
 	return nil
 }
 
-func buildClaudeSettings(project *config.ProjectConfig) (*claudeSettings, []string, error) {
+func buildClaudeSettings(project *config.ProjectConfig) (*claudeSettings, error) {
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	var allow []string
 
@@ -63,23 +63,10 @@ func buildClaudeSettings(project *config.ProjectConfig) (*claudeSettings, []stri
 		}
 	}
 
-	// Auto-approved skills: add prompt server tool patterns.
-	// Skip if AllowMCP is true — the wildcard mcp__agent-layer__* already covers all.
-	var autoApprovedNames []string
-	if !approvals.AllowMCP {
-		for _, cmd := range project.SlashCommands {
-			if cmd.AutoApprove {
-				autoApprovedNames = append(autoApprovedNames, cmd.Name)
-				allow = append(allow, fmt.Sprintf("mcp__agent-layer__%s", cmd.Name))
-			}
-		}
-		sort.Strings(autoApprovedNames)
-	}
-
 	settings := &claudeSettings{}
 	if len(allow) > 0 {
 		settings.Permissions = &claudePermissions{Allow: allow}
 	}
 
-	return settings, autoApprovedNames, nil
+	return settings, nil
 }

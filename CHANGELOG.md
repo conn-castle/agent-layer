@@ -13,6 +13,12 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - Users jumping multiple versions (e.g., 0.8.0 to 0.8.2) no longer miss intermediate migration operations.
 
+### Removed
+- Slash command `auto-approve` frontmatter. Approval permissions are controlled entirely by `approvals.mode`.
+
+### Improved
+- Slash command frontmatter now rejects unrecognized keys with a clear error, catching typos and unsupported fields early.
+
 ## v0.8.1 - 2026-02-18
 
 ### Added

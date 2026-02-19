@@ -430,8 +430,7 @@ These files are user-editable; define the workflows you want your agents to run.
 
 - One Markdown file per command.
 - Filename (without `.md`) is the canonical command name.
-- Frontmatter supports `description` (required) and `auto-approve` (optional, defaults to `false`).
-- `auto-approve: true` auto-approves the MCP prompt retrieval for that skill in Claude clients. It does **not** auto-approve agent actions after reading the prompt; those remain governed by `approvals.mode`.
+- Frontmatter supports `description` (required).
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
 
 ### Approved commands: `.agent-layer/commands.allow`

@@ -53,7 +53,7 @@ const (
 	ConfigSlashCommandFailedReadContentFmt    = "failed to read content: %w"
 	ConfigSlashCommandDescriptionEmpty        = "description is empty"
 	ConfigSlashCommandMissingDescription      = "missing description in front matter"
-	ConfigSlashCommandAutoApproveInvalidFmt   = "auto-approve value %q is not a valid boolean"
+	ConfigSlashCommandUnknownKeyFmt           = "unrecognized front matter key %q; only description is supported"
 
 	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"
 	ConfigNoInstructionFilesFmt     = "no instruction files found in %s"

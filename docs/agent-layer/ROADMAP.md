@@ -115,7 +115,6 @@ Incomplete:
 ## Phase 12 ✅ — High-leverage quick wins
 - Added `approvals.mode = "yolo"` with per-client full-auto projections and single-line sync/launch acknowledgements.
 - Added `[agents.claude-vscode]` and unified VS Code launch behavior under `al vscode`.
-- Added skill `auto-approve` frontmatter support with Claude prompt-retrieval permission projection and sync reporting.
 - Recorded the decision to not implement a standalone `al launch-plan` command.
 - Clarified agent commit instructions and fixed `al vscode` positional-arg handling to avoid unconditional `.` appends.
 

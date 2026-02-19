@@ -220,11 +220,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: VS Code is a single IDE. Users install both extensions in the same instance. Having two separate launch commands forces users to choose or run both (opening VS Code twice). One command is simpler and correct.
     Tradeoffs: Users who only have `agents.claude-vscode` enabled will not get `CODEX_HOME` set (correct — they don't want Codex). Users who want both must enable both config sections.
 
-- Decision 2026-02-17 p12-auto-approve-scope: auto-approve controls MCP prompt retrieval only, not agent actions
-    Decision: `auto-approve: true` in slash command frontmatter adds `mcp__agent-layer__<name>` to Claude's permission allow list, which auto-approves the MCP tool call that fetches the skill's prompt text. It does not auto-approve any actions the agent takes after reading the prompt.
-    Reason: Auto-approving prompt retrieval is safe — it only returns the skill's markdown body. Auto-approving agent actions (file edits, bash commands) would bypass the safety boundary that `approvals.mode` provides.
-    Tradeoffs: Users still see approval prompts for agent actions even with auto-approved skills. The benefit is zero-click skill invocation in Claude clients for approved skills.
-
 - Decision 2026-02-18 config-migrate: Config migration step between unmarshal and validate
     Decision: Add `Config.Migrate()` as a mandatory step in `ParseConfig` between TOML unmarshal and `Validate`. New required config fields added in a release must include a corresponding backfill in `Migrate()` that defaults the field to the pre-existence behavior (e.g., disabled).
     Reason: Without migration, adding a new required field breaks all existing configs and locks users out of every command including `al wizard` and `al upgrade`.

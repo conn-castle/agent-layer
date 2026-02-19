@@ -8,7 +8,6 @@ import (
 )
 
 const slashCommandContent = `---
-name: alpha
 description: >-
   First line
   Second line
@@ -48,7 +47,7 @@ func TestLoadSlashCommands(t *testing.T) {
 }
 
 func parseSlashCommandErr(content string) error {
-	_, _, _, err := parseSlashCommand(content) //nolint:dogsled // test helper discards parsed values
+	_, _, err := parseSlashCommand(content)
 	return err
 }
 
@@ -68,117 +67,35 @@ func TestParseSlashCommandErrors(t *testing.T) {
 		t.Fatalf("expected unterminated front matter error, got %v", err)
 	}
 
-	err = parseSlashCommandErr("---\nname: alpha\n---\n")
+	err = parseSlashCommandErr("---\n---\n")
 	if err == nil || !strings.Contains(err.Error(), "missing description") {
 		t.Fatalf("expected missing description error, got %v", err)
 	}
 }
 
-func TestParseAutoApproveTrue(t *testing.T) {
-	content := "---\ndescription: Test command\nauto-approve: true\n---\n\nBody text."
-	desc, autoApprove, body, err := parseSlashCommand(content)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if desc != "Test command" {
-		t.Fatalf("unexpected description: %q", desc)
-	}
-	if !autoApprove {
-		t.Fatal("expected auto-approve to be true")
-	}
-	if body != "Body text." {
-		t.Fatalf("unexpected body: %q", body)
-	}
-}
-
-func TestParseAutoApproveFalse(t *testing.T) {
-	content := "---\ndescription: Test command\nauto-approve: false\n---\n\nBody."
-	_, autoApprove, _, err := parseSlashCommand(content)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if autoApprove {
-		t.Fatal("expected auto-approve to be false")
-	}
-}
-
-func TestParseAutoApproveAbsent(t *testing.T) {
-	content := "---\ndescription: Test command\n---\n\nBody."
-	_, autoApprove, _, err := parseSlashCommand(content)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if autoApprove {
-		t.Fatal("expected auto-approve to default to false when absent")
-	}
-}
-
-func TestParseAutoApproveEmpty(t *testing.T) {
-	content := "---\ndescription: Test command\nauto-approve:\n---\n\nBody."
+func TestParseUnrecognizedFrontMatterKey(t *testing.T) {
+	content := "---\ndescription: Test command\nfoo: bar\n---\n\nBody."
 	err := parseSlashCommandErr(content)
-	if err == nil || !strings.Contains(err.Error(), "auto-approve") {
-		t.Fatalf("expected auto-approve error for empty value, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unrecognized front matter key \"foo\"") {
+		t.Fatalf("expected unrecognized key error, got %v", err)
 	}
 }
 
-func TestParseAutoApproveInvalid(t *testing.T) {
-	content := "---\ndescription: Test command\nauto-approve: notaboolean\n---\n\nBody."
-	err := parseSlashCommandErr(content)
-	if err == nil || !strings.Contains(err.Error(), "auto-approve") {
-		t.Fatalf("expected auto-approve error for invalid value, got %v", err)
-	}
-}
-
-func TestLoadSlashCommandsAutoApprove(t *testing.T) {
-	dir := t.TempDir()
-	autoApproveContent := "---\ndescription: Auto-approved skill\nauto-approve: true\n---\n\nDo something."
-	normalContent := "---\ndescription: Normal skill\n---\n\nDo something else."
-	if err := os.WriteFile(filepath.Join(dir, "approved.md"), []byte(autoApproveContent), 0o644); err != nil {
-		t.Fatalf("write approved: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "normal.md"), []byte(normalContent), 0o644); err != nil {
-		t.Fatalf("write normal: %v", err)
-	}
-
-	commands, err := LoadSlashCommands(dir)
+func TestParseUnrecognizedKeyIndentedLineIgnored(t *testing.T) {
+	// Indented continuation lines are not top-level keys — should not error.
+	content := "---\ndescription: >-\n  some-key: value\n---\n\nBody."
+	_, _, err := parseSlashCommand(content)
 	if err != nil {
-		t.Fatalf("LoadSlashCommands error: %v", err)
-	}
-	if len(commands) != 2 {
-		t.Fatalf("expected 2 commands, got %d", len(commands))
-	}
-	// Lexicographic: approved before normal
-	if !commands[0].AutoApprove {
-		t.Fatal("expected approved.md to have AutoApprove=true")
-	}
-	if commands[1].AutoApprove {
-		t.Fatal("expected normal.md to have AutoApprove=false")
+		t.Fatalf("unexpected error for indented line: %v", err)
 	}
 }
 
-func TestParseAutoApproveSkipsDescriptionContinuationLine(t *testing.T) {
-	// A multiline description continuation line that looks like "auto-approve: true"
-	// must not flip the flag. The real auto-approve key is unindented and wins.
-	content := "---\ndescription: >-\n  auto-approve: true\nauto-approve: false\n---\n\nBody."
-	_, autoApprove, _, err := parseSlashCommand(content)
+func TestParseUnrecognizedKeyCommentIgnored(t *testing.T) {
+	// YAML comment lines containing colons should not be treated as keys.
+	content := "---\ndescription: Test command\n# note: this is a comment\n---\n\nBody."
+	_, _, err := parseSlashCommand(content)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if autoApprove {
-		t.Fatal("expected auto-approve to be false; continuation line should not match")
-	}
-}
-
-func TestParseAutoApproveSkipsIndentedLine(t *testing.T) {
-	// If auto-approve appears only in an indented line, it should be silently skipped
-	// (defaults to false) rather than matching or erroring.
-	content := "---\ndescription: >-\n  auto-approve: true\n---\n\nBody."
-	_, autoApprove, _, err := parseSlashCommand(content)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if autoApprove {
-		t.Fatal("expected auto-approve to default to false when only in indented line")
+		t.Fatalf("unexpected error for comment line: %v", err)
 	}
 }
 

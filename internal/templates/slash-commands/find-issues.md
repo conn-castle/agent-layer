@@ -1,6 +1,5 @@
 ---
 description: Proactive, repo-adaptive code quality audit to surface over-engineering, bad practices, and "band-aids", aligned with README and the project memory files. Report-first: no automatic issue logging unless the user explicitly opts in.
-auto-approve: true
 ---
 
 # Proactive code quality audit (report-first, memory-aware)

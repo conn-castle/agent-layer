@@ -77,7 +77,6 @@ type InstructionFile struct {
 type SlashCommand struct {
 	Name        string
 	Description string
-	AutoApprove bool
 	Body        string
 	SourcePath  string
 }
