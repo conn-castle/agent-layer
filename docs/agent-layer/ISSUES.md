@@ -119,10 +119,10 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
     Next step: Audit current method count (Phase 11 is complete). If it exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`). Scheduled in Phase 13 (maintenance).
 
-- Issue 2026-02-10 upg-ver: Cannot apply a specific intermediate release during upgrade
-    Priority: Medium. Area: upgrade / version pinning / UX.
-    Description: With `al upgrade` always running the currently installed binary (dispatch bypass) and no `al upgrade --version`, there is no supported way to upgrade a repo from an older pin to an intermediate version (for example 0.6.0 -> 0.6.1) when a newer version is installed (for example 0.7.0); the repo is forced to upgrade to the installed version or rely on manual pin edits/reinstalling.
-    Next step: Decide on a supported workflow (`al upgrade --version X.Y.Z`, or an equivalent “dispatch/exec target version for upgrade” mechanism) and add tests + docs.
+- Issue 2026-02-10 upg-ver: Cannot target a specific intermediate release during upgrade
+    Priority: Low. Area: upgrade / version pinning / UX.
+    Description: Migration manifests are now chained during multi-version jumps (all intermediate manifests between source and target are loaded and applied in order), so migrations are no longer missed. However, there is still no `al upgrade --version X.Y.Z` to target a specific intermediate version; the repo always upgrades to the installed binary version.
+    Next step: Decide if `al upgrade --version X.Y.Z` is needed given that migration chaining resolves the data-loss risk.
 
 - Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
     Priority: Medium. Area: website / marketing.

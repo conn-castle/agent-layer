@@ -518,10 +518,20 @@ func TestExecuteConfigSetDefaultMigration_NoPromptUsesDefault(t *testing.T) {
 	}
 }
 
-func TestLoadUpgradeMigrationManifest_0_8_1_HasConfigSetDefault(t *testing.T) {
+func TestLoadUpgradeMigrationManifest_0_8_1_IsEmpty(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.8.1")
 	if err != nil {
 		t.Fatalf("load 0.8.1 manifest: %v", err)
+	}
+	if len(manifest.Operations) != 0 {
+		t.Fatalf("expected 0 operations in 0.8.1 (shipped empty), got %d", len(manifest.Operations))
+	}
+}
+
+func TestLoadUpgradeMigrationManifest_0_8_2_HasConfigSetDefault(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.8.2")
+	if err != nil {
+		t.Fatalf("load 0.8.2 manifest: %v", err)
 	}
 	if len(manifest.Operations) != 1 {
 		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
@@ -538,6 +548,316 @@ func TestLoadUpgradeMigrationManifest_0_8_1_HasConfigSetDefault(t *testing.T) {
 	}
 	if !op.SourceAgnostic {
 		t.Fatal("expected source_agnostic = true")
+	}
+	if manifest.MinPriorVersion != "0.8.0" {
+		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.8.0")
+	}
+}
+
+func TestListMigrationManifestVersions(t *testing.T) {
+	versions, err := listMigrationManifestVersions()
+	if err != nil {
+		t.Fatalf("listMigrationManifestVersions: %v", err)
+	}
+	if len(versions) == 0 {
+		t.Fatal("expected at least one migration manifest version")
+	}
+	// Verify sorted ascending.
+	for i := 1; i < len(versions); i++ {
+		cmp, cmpErr := compareSemver(versions[i-1], versions[i])
+		if cmpErr != nil {
+			t.Fatalf("compareSemver(%q, %q): %v", versions[i-1], versions[i], cmpErr)
+		}
+		if cmp >= 0 {
+			t.Fatalf("versions not sorted ascending: %q >= %q", versions[i-1], versions[i])
+		}
+	}
+	// Verify known versions exist.
+	if !containsString(versions, "0.7.0") {
+		t.Fatalf("expected 0.7.0 in versions, got %v", versions)
+	}
+	if !containsString(versions, "0.8.2") {
+		t.Fatalf("expected 0.8.2 in versions, got %v", versions)
+	}
+}
+
+func TestCollectMigrationChain(t *testing.T) {
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,
+		"0.6.1": `{"schema_version":1,"target_version":"0.6.1","min_prior_version":"0.6.0","operations":[
+			{"id":"op-a","kind":"delete_file","rationale":"clean up","path":"old.txt","source_agnostic":true}
+		]}`,
+		"0.7.0": `{"schema_version":1,"target_version":"0.7.0","min_prior_version":"0.6.0","operations":[
+			{"id":"op-b","kind":"delete_file","rationale":"more cleanup","path":"old2.txt","source_agnostic":true}
+		]}`,
+	})
+
+	t.Run("source_exclusive_target_inclusive", func(t *testing.T) {
+		chain, err := collectMigrationChain("0.6.0", "0.7.0")
+		if err != nil {
+			t.Fatalf("collectMigrationChain: %v", err)
+		}
+		if len(chain) != 2 {
+			t.Fatalf("expected 2 manifests in chain, got %d", len(chain))
+		}
+		if chain[0].manifest.TargetVersion != "0.6.1" {
+			t.Fatalf("first chain entry = %q, want 0.6.1", chain[0].manifest.TargetVersion)
+		}
+		if chain[1].manifest.TargetVersion != "0.7.0" {
+			t.Fatalf("second chain entry = %q, want 0.7.0", chain[1].manifest.TargetVersion)
+		}
+	})
+
+	t.Run("same_source_and_target_returns_empty", func(t *testing.T) {
+		chain, err := collectMigrationChain("0.7.0", "0.7.0")
+		if err != nil {
+			t.Fatalf("collectMigrationChain: %v", err)
+		}
+		if len(chain) != 0 {
+			t.Fatalf("expected empty chain, got %d", len(chain))
+		}
+	})
+
+	t.Run("no_intermediate_manifests", func(t *testing.T) {
+		chain, err := collectMigrationChain("0.6.1", "0.7.0")
+		if err != nil {
+			t.Fatalf("collectMigrationChain: %v", err)
+		}
+		if len(chain) != 1 {
+			t.Fatalf("expected 1 manifest, got %d", len(chain))
+		}
+		if chain[0].manifest.TargetVersion != "0.7.0" {
+			t.Fatalf("chain entry = %q, want 0.7.0", chain[0].manifest.TargetVersion)
+		}
+	})
+}
+
+func TestPlanUpgradeMigrations_ChainsIntermediateManifests(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		t.Fatalf("mkdir pin dir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,
+		"0.6.1": `{"schema_version":1,"target_version":"0.6.1","min_prior_version":"0.6.0","operations":[
+			{"id":"intermediate-op","kind":"delete_file","rationale":"cleanup intermediate","path":"stale.txt","source_agnostic":true}
+		]}`,
+		"0.7.0": `{"schema_version":1,"target_version":"0.7.0","min_prior_version":"0.6.0","operations":[
+			{"id":"target-op","kind":"delete_file","rationale":"cleanup target","path":"old.txt","source_agnostic":true}
+		]}`,
+	})
+
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if plan.report.TargetVersion != "0.7.0" {
+		t.Fatalf("target version = %q, want 0.7.0", plan.report.TargetVersion)
+	}
+	if plan.report.MinPriorVersion != "0.6.0" {
+		t.Fatalf("min prior version = %q, want 0.6.0", plan.report.MinPriorVersion)
+	}
+
+	// Verify both operations appear in order.
+	if len(plan.report.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(plan.report.Entries))
+	}
+	ids := make([]string, 0, len(plan.report.Entries))
+	for _, e := range plan.report.Entries {
+		ids = append(ids, e.ID)
+	}
+	if !containsString(ids, "intermediate-op") {
+		t.Fatalf("missing intermediate-op in entries: %v", ids)
+	}
+	if !containsString(ids, "target-op") {
+		t.Fatalf("missing target-op in entries: %v", ids)
+	}
+
+	// Verify manifest path contains both paths.
+	if !containsAll(plan.report.ManifestPath, "0.6.1.json", "0.7.0.json") {
+		t.Fatalf("manifest path should contain both manifests, got %q", plan.report.ManifestPath)
+	}
+}
+
+func TestPlanUpgradeMigrations_ChainDeduplicatesOperationIDs(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		t.Fatalf("mkdir pin dir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,
+		"0.6.1": `{"schema_version":1,"target_version":"0.6.1","min_prior_version":"0.6.0","operations":[
+			{"id":"shared-op","kind":"delete_file","rationale":"from 0.6.1","path":"stale.txt","source_agnostic":true}
+		]}`,
+		"0.7.0": `{"schema_version":1,"target_version":"0.7.0","min_prior_version":"0.6.0","operations":[
+			{"id":"shared-op","kind":"delete_file","rationale":"from 0.7.0","path":"stale.txt","source_agnostic":true}
+		]}`,
+	})
+
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+
+	// Only one entry for the shared ID (from the first manifest in the chain).
+	count := 0
+	for _, e := range plan.report.Entries {
+		if e.ID == "shared-op" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected shared-op to appear once (deduplicated), got %d", count)
+	}
+	// Verify the rationale is from the first manifest (0.6.1).
+	for _, e := range plan.report.Entries {
+		if e.ID == "shared-op" && e.Rationale != "from 0.6.1" {
+			t.Fatalf("expected shared-op rationale from first manifest, got %q", e.Rationale)
+		}
+	}
+}
+
+func TestPlanUpgradeMigrations_UnknownSourceFallsBackToTargetOnly(t *testing.T) {
+	root := t.TempDir()
+	// No pin file → source is unknown.
+
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[
+			{"id":"should-not-appear","kind":"delete_file","rationale":"from 0.6.0","path":"x.txt","source_agnostic":true}
+		]}`,
+		"0.6.1": `{"schema_version":1,"target_version":"0.6.1","min_prior_version":"0.6.0","operations":[
+			{"id":"should-not-appear-either","kind":"delete_file","rationale":"from 0.6.1","path":"y.txt","source_agnostic":true}
+		]}`,
+		"0.7.0": `{"schema_version":1,"target_version":"0.7.0","min_prior_version":"0.6.0","operations":[
+			{"id":"target-only","kind":"delete_file","rationale":"from target","path":"z.txt","source_agnostic":true}
+		]}`,
+	})
+
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+
+	if plan.report.SourceVersionOrigin != UpgradeMigrationSourceUnknown {
+		t.Fatalf("source origin = %q, want unknown", plan.report.SourceVersionOrigin)
+	}
+
+	// Only the target manifest's operations should appear.
+	if len(plan.report.Entries) != 1 {
+		t.Fatalf("expected 1 entry (target only), got %d", len(plan.report.Entries))
+	}
+	if plan.report.Entries[0].ID != "target-only" {
+		t.Fatalf("entry ID = %q, want target-only", plan.report.Entries[0].ID)
+	}
+	// ManifestPath should be a single path (not comma-joined).
+	if strings.Contains(plan.report.ManifestPath, ",") {
+		t.Fatalf("expected single manifest path, got %q", plan.report.ManifestPath)
+	}
+}
+
+func TestPlanUpgradeMigrations_ChainSourceTooOldPerManifest(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		t.Fatalf("mkdir pin dir: %v", err)
+	}
+	// Source is 0.5.0 — older than 0.6.1's min_prior_version (0.6.0) but
+	// the agnostic op should still execute. The non-agnostic op in 0.6.1
+	// should be skipped as source-too-old.
+	if err := os.WriteFile(pinPath, []byte("0.5.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.5.0": `{"schema_version":1,"target_version":"0.5.0","min_prior_version":"0.4.0","operations":[]}`,
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[
+			{"id":"safe-op","kind":"delete_file","rationale":"agnostic cleanup","path":"safe.txt","source_agnostic":true}
+		]}`,
+		"0.6.1": `{"schema_version":1,"target_version":"0.6.1","min_prior_version":"0.6.0","operations":[
+			{"id":"gated-op","kind":"delete_file","rationale":"needs 0.6.0+","path":"gated.txt"},
+			{"id":"agnostic-later","kind":"delete_file","rationale":"agnostic in later manifest","path":"agnostic.txt","source_agnostic":true}
+		]}`,
+	})
+
+	inst := &installer{root: root, pinVersion: "0.6.1", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+
+	statuses := map[string]UpgradeMigrationStatus{}
+	for _, e := range plan.report.Entries {
+		statuses[e.ID] = e.Status
+	}
+
+	// safe-op is in 0.6.0 which has min_prior 0.5.0 — source 0.5.0 >= 0.5.0 → planned.
+	// But safe-op is source_agnostic, so it would be planned regardless.
+	if statuses["safe-op"] != UpgradeMigrationStatusPlanned {
+		t.Fatalf("safe-op status = %q, want planned", statuses["safe-op"])
+	}
+
+	// gated-op is in 0.6.1 which has min_prior 0.6.0 — source 0.5.0 < 0.6.0 → skipped.
+	if statuses["gated-op"] != UpgradeMigrationStatusSkippedSourceTooOld {
+		t.Fatalf("gated-op status = %q, want skipped_source_too_old", statuses["gated-op"])
+	}
+
+	// agnostic-later is source_agnostic so it should still be planned.
+	if statuses["agnostic-later"] != UpgradeMigrationStatusPlanned {
+		t.Fatalf("agnostic-later status = %q, want planned", statuses["agnostic-later"])
+	}
+
+	// Only the agnostic ops should be executable.
+	execIDs := make([]string, 0, len(plan.executable))
+	for _, op := range plan.executable {
+		execIDs = append(execIDs, op.ID)
+	}
+	if !containsString(execIDs, "safe-op") {
+		t.Fatalf("expected safe-op in executable, got %v", execIDs)
+	}
+	if containsString(execIDs, "gated-op") {
+		t.Fatalf("did not expect gated-op in executable, got %v", execIDs)
+	}
+	if !containsString(execIDs, "agnostic-later") {
+		t.Fatalf("expected agnostic-later in executable, got %v", execIDs)
+	}
+}
+
+func TestPlanUpgradeMigrations_KnownSourceMissingTargetManifestFails(t *testing.T) {
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		t.Fatalf("mkdir pin dir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	// Override walk to return only 0.6.0 and 0.6.1 — no 0.7.0 manifest.
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,
+		"0.6.1": `{"schema_version":1,"target_version":"0.6.1","min_prior_version":"0.6.0","operations":[]}`,
+	})
+
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	_, err := inst.planUpgradeMigrations()
+	if err == nil {
+		t.Fatal("expected error for missing target manifest, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing migration manifest") {
+		t.Fatalf("expected 'missing migration manifest' error, got: %v", err)
 	}
 }
 

@@ -2,14 +2,5 @@
   "schema_version": 1,
   "target_version": "0.8.1",
   "min_prior_version": "0.8.0",
-  "operations": [
-    {
-      "id": "add-claude-vscode-enabled",
-      "kind": "config_set_default",
-      "key": "agents.claude-vscode.enabled",
-      "value": false,
-      "rationale": "New agent added in v0.8.1. Enable if you use the Claude VS Code extension.",
-      "source_agnostic": true
-    }
-  ]
+  "operations": []
 }

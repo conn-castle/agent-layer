@@ -234,3 +234,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Remove `Config.Migrate()` entirely. Instead: (1) add `ParseConfigLenient`/`LoadConfigLenient` that unmarshal without validation, (2) `al wizard` and `al doctor` fall back to lenient loading so they always work on broken configs, (3) `al upgrade` uses `config_set_default` migration operations that prompt the user interactively for new required field values, (4) runtime commands (`al sync`, `al claude`, etc.) remain strict and fail with actionable guidance.
     Reason: Silent defaults violate the "no silent fallbacks" rule. Repair tools must always be runnable. Every config value should come from an explicit user choice.
     Tradeoffs: Users must run `al wizard` or `al upgrade` to fix broken configs instead of having them auto-repaired; accepted because explicit consent is a design principle.
+
+- Decision 2026-02-18 migration-chain: Migration manifests are chained during multi-version upgrades
+    Decision: When source version is known, all manifests between source (exclusive) and target (inclusive) are loaded and applied in order with per-operation deduplication by ID. When source is unknown, only the target manifest is loaded (backward compatible). Migrations that missed a release are placed in the next release's manifest with an expanded `min_prior_version`.
+    Reason: Without chaining, users jumping multiple versions (e.g., 0.8.0 → 0.8.2) miss intermediate migrations. The v0.8.1 config migration shipped after the binary, so it was moved to 0.8.2's manifest to catch all users.
+    Tradeoffs: Manifest ordering depends on semver sort of filenames; manifests must have unique operation IDs across the chain or later duplicates are silently skipped.

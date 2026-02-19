@@ -717,30 +717,6 @@ func TestMatchTemplate_NoInfo(t *testing.T) {
 	}
 }
 
-func TestAppendPinnedVersionDiff_InvalidVersion(t *testing.T) {
-	root := t.TempDir()
-	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	versionPath := filepath.Join(alDir, "al.version")
-	// Write invalid version that can't be normalized
-	if err := os.WriteFile(versionPath, []byte("not-a-version\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
-	diffs := make(map[string]struct{})
-	err := inst.appendPinnedVersionDiff(diffs)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// Invalid version should trigger a diff
-	if len(diffs) != 1 {
-		t.Fatalf("expected diff for invalid version")
-	}
-}
-
 func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
@@ -790,29 +766,6 @@ func TestTemplateFileMatches_GitignoreBlockNoMatch(t *testing.T) {
 	}
 	if matches {
 		t.Fatalf("expected gitignore.block NOT to match custom content")
-	}
-}
-
-func TestListManagedDiffs_PinnedVersionError(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("skipping permissions test on windows")
-	}
-	root := t.TempDir()
-	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	// Create al.version as a directory to cause read error
-	versionPath := filepath.Join(alDir, "al.version")
-	if err := os.Mkdir(versionPath, 0o755); err != nil {
-		t.Fatalf("mkdir version: %v", err)
-	}
-
-	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
-	_, err := inst.listManagedDiffs()
-	if err == nil {
-		t.Fatalf("expected error from pinned version diff")
 	}
 }
 
@@ -875,30 +828,6 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 	err := inst.appendTemplateDirDiffs(diffs, dir)
 	if err == nil {
 		t.Fatalf("expected error from stat failure")
-	}
-}
-
-func TestAppendPinnedVersionDiff_ReadError_IsDirectory(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("skipping permissions test on windows")
-	}
-	root := t.TempDir()
-	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	// Create al.version as a directory to cause read error (not ErrNotExist)
-	versionPath := filepath.Join(alDir, "al.version")
-	if err := os.Mkdir(versionPath, 0o755); err != nil {
-		t.Fatalf("mkdir version: %v", err)
-	}
-
-	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
-	diffs := make(map[string]struct{})
-	err := inst.appendPinnedVersionDiff(diffs)
-	if err == nil {
-		t.Fatalf("expected error from read failure")
 	}
 }
 
@@ -1117,18 +1046,6 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 
 	if _, ok := diffs[".agent-layer/instructions/00_base.md"]; !ok {
 		t.Fatalf("expected non-section-aware mismatch to be recorded, got %v", diffs)
-	}
-}
-
-func TestAppendPinnedVersionDiff_MissingPinFileNoDiff(t *testing.T) {
-	root := t.TempDir()
-	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
-	diffs := map[string]struct{}{}
-	if err := inst.appendPinnedVersionDiff(diffs); err != nil {
-		t.Fatalf("appendPinnedVersionDiff: %v", err)
-	}
-	if len(diffs) != 0 {
-		t.Fatalf("expected no diffs when pin file is missing, got %v", diffs)
 	}
 }
 

@@ -1252,13 +1252,15 @@ func TestPlanUpgradeMigrations_SnapshotEntryAbsPathError(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.7.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
 	// A rename with an empty "from" will cause snapshotEntryAbsPath to fail
 	// since migrationCoveredPaths will produce empty rel paths that get cleaned.
-	withMigrationManifestOverride(t, "0.7.0", `{
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,
+		"0.7.0": `{
   "schema_version": 1,
   "target_version": "0.7.0",
   "min_prior_version": "0.6.0",
@@ -1272,7 +1274,8 @@ func TestPlanUpgradeMigrations_SnapshotEntryAbsPathError(t *testing.T) {
       "to": "new.key"
     }
   ]
-}`)
+}`,
+	})
 	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
 	plan, err := inst.planUpgradeMigrations()
 	if err != nil {
@@ -1962,12 +1965,14 @@ func TestPlanUpgradeMigrations_ConfigSetDefaultWithConfigMigration(t *testing.T)
 	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.7.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 	writeTestConfigFile(t, root, "[clients]\n")
 
-	withMigrationManifestOverride(t, "0.7.0", `{
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[]}`,
+		"0.7.0": `{
   "schema_version": 1,
   "target_version": "0.7.0",
   "min_prior_version": "0.6.0",
@@ -1981,7 +1986,8 @@ func TestPlanUpgradeMigrations_ConfigSetDefaultWithConfigMigration(t *testing.T)
       "value": "\"gpt-4\""
     }
   ]
-}`)
+}`,
+	})
 	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
 	plan, err := inst.planUpgradeMigrations()
 	if err != nil {

@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.2 - 2026-02-18
+
+### Added
+- Migration manifest chaining: `al upgrade` now loads all intermediate migration manifests between the source and target versions during multi-version jumps. Users upgrading from 0.8.0 to 0.8.2 will receive migrations introduced in intermediate releases.
+- Config resilience: `al wizard`, `al doctor`, and `al upgrade` now use lenient config parsing so they always work even on broken or incomplete configs. Runtime commands remain strict with actionable guidance.
+
+### Changed
+- The `agents.claude-vscode.enabled` config migration has been moved from the v0.8.1 manifest to v0.8.2. This ensures all users (including those who installed v0.8.1 before the migration was added) receive the prompt during upgrade.
+
+### Fixed
+- Users jumping multiple versions (e.g., 0.8.0 to 0.8.2) no longer miss intermediate migration operations.
+
 ## v0.8.1 - 2026-02-18
 
 ### Added
