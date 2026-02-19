@@ -79,7 +79,7 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 			results = append(results, Result{
 				Status:         StatusFail,
 				CheckName:      messages.DoctorCheckNameConfig,
-				Message:        fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err),
+				Message:        fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, lenientErr),
 				Recommendation: messages.DoctorConfigLoadRecommend,
 			})
 			return results, nil

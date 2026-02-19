@@ -218,6 +218,12 @@ func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error
 }
 
 func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewState *upgradeReviewState) install.PromptFuncs {
+	// Shared buffered reader for all prompts in this upgrade session. Creating
+	// a single reader prevents buffered stdin bytes from being lost when
+	// multiple prompts are issued sequentially (e.g., chained config_set_default
+	// migration operations).
+	stdinReader := bufio.NewReader(cmd.InOrStdin())
+
 	return install.PromptFuncs{
 		ConfigSetDefaultFunc: func(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error) {
 			if policy.yes {
@@ -228,10 +234,10 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 				return nil, err
 			}
 			if field != nil {
-				return promptConfigChoice(cmd.InOrStdin(), cmd.OutOrStdout(), key, recommendedValue, *field)
+				return promptConfigChoice(stdinReader, cmd.OutOrStdout(), key, recommendedValue, *field)
 			}
 			// Fallback for keys not in the catalog.
-			accept, promptErr := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Accept recommended value %v for %s?", recommendedValue, key), true)
+			accept, promptErr := promptYesNo(stdinReader, cmd.OutOrStdout(), fmt.Sprintf("Accept recommended value %v for %s?", recommendedValue, key), true)
 			if promptErr != nil {
 				return nil, promptErr
 			}
@@ -245,7 +251,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 				return policy.applyManaged, nil
 			}
 			if reviewState != nil && reviewState.enabled {
-				if err := promptUnifiedUpgradeReview(cmd, reviewState); err != nil {
+				if err := promptUnifiedUpgradeReview(cmd, stdinReader, reviewState); err != nil {
 					return false, err
 				}
 				return reviewState.applyManaged, nil
@@ -253,14 +259,14 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews); err != nil {
 				return false, err
 			}
-			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
 		},
 		OverwriteAllMemoryPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
 			if policy.explicitCategory {
 				return policy.applyMemory, nil
 			}
 			if reviewState != nil && reviewState.enabled {
-				if err := promptUnifiedUpgradeReview(cmd, reviewState); err != nil {
+				if err := promptUnifiedUpgradeReview(cmd, stdinReader, reviewState); err != nil {
 					return false, err
 				}
 				return reviewState.applyMemory, nil
@@ -268,7 +274,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews); err != nil {
 				return false, err
 			}
-			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
 		},
 		OverwriteAllUnifiedPreviewFunc: func(managedPreviews []install.DiffPreview, memoryPreviews []install.DiffPreview) (bool, bool, error) {
 			if policy.explicitCategory {
@@ -277,7 +283,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			if reviewState != nil && reviewState.enabled {
 				reviewState.managedPreviews = managedPreviews
 				reviewState.memoryPreviews = memoryPreviews
-				if err := promptUnifiedUpgradeReview(cmd, reviewState); err != nil {
+				if err := promptUnifiedUpgradeReview(cmd, stdinReader, reviewState); err != nil {
 					return false, false, err
 				}
 				return reviewState.applyManaged, reviewState.applyMemory, nil
@@ -293,13 +299,13 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			applyMemory := false
 			var err error
 			if len(managedPreviews) > 0 {
-				applyManaged, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+				applyManaged, err = promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
 				if err != nil {
 					return false, false, err
 				}
 			}
 			if len(memoryPreviews) > 0 {
-				applyMemory, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+				applyMemory, err = promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
 				if err != nil {
 					return false, false, err
 				}
@@ -317,7 +323,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 				return false, err
 			}
 			prompt := fmt.Sprintf(messages.UpgradeOverwritePromptFmt, preview.Path)
-			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, true)
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, true)
 		},
 		DeleteUnknownAllFunc: func(paths []string) (bool, error) {
 			if policy.explicitCategory {
@@ -335,7 +341,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			if err := printFilePaths(cmd.OutOrStdout(), messages.InstallUnknownHeader, paths); err != nil {
 				return false, err
 			}
-			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeDeleteUnknownAllPrompt, false)
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeDeleteUnknownAllPrompt, false)
 		},
 		DeleteUnknownFunc: func(path string) (bool, error) {
 			if policy.explicitCategory {
@@ -349,12 +355,12 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 				}
 			}
 			prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownPromptFmt, path)
-			return promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), prompt, false)
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
 		},
 	}
 }
 
-func promptUnifiedUpgradeReview(cmd *cobra.Command, state *upgradeReviewState) error {
+func promptUnifiedUpgradeReview(cmd *cobra.Command, in io.Reader, state *upgradeReviewState) error {
 	if state.prompted {
 		return nil
 	}
@@ -368,13 +374,13 @@ func promptUnifiedUpgradeReview(cmd *cobra.Command, state *upgradeReviewState) e
 	applyMemory := false
 	var err error
 	if len(state.managedPreviews) > 0 {
-		applyManaged, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+		applyManaged, err = promptYesNo(in, cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
 		if err != nil {
 			return err
 		}
 	}
 	if len(state.memoryPreviews) > 0 {
-		applyMemory, err = promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+		applyMemory, err = promptYesNo(in, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
 		if err != nil {
 			return err
 		}
@@ -885,9 +891,6 @@ func promptNumberedChoice(in io.Reader, out io.Writer, options []string, default
 		}
 		input := strings.TrimSpace(line)
 		if input == "" {
-			if errors.Is(err, io.EOF) {
-				return defaultIdx, nil
-			}
 			return defaultIdx, nil
 		}
 		n, parseErr := strconv.Atoi(input)

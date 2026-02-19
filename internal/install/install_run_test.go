@@ -542,7 +542,7 @@ func TestWriteVersionFile_InvalidExisting(t *testing.T) {
 	}
 }
 
-func TestWriteVersionFile_PromptError(t *testing.T) {
+func TestWriteVersionFile_UpgradeSkipsPrompt(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -552,20 +552,48 @@ func TestWriteVersionFile_PromptError(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
+	// During upgrade (overwrite=true), the version pin is written unconditionally
+	// without prompting — updating the pin is the point of running an upgrade.
 	inst := &installer{
 		root:       root,
 		pinVersion: "1.0.0",
 		overwrite:  true,
 		sys:        RealSystem{},
-		prompter: PromptFuncs{
-			OverwritePreviewFunc: func(preview DiffPreview) (bool, error) {
-				return false, errors.New("prompt failed")
-			},
-		},
 	}
 	err := inst.writeVersionFile()
-	if err == nil {
-		t.Fatalf("expected error from prompt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "1.0.0\n" {
+		t.Fatalf("expected pin to be updated, got %q", string(data))
+	}
+}
+
+func TestWriteVersionFile_InitKeepsExistingPin(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("0.9.0"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// During init (overwrite=false), a differing valid pin is kept as-is.
+	inst := &installer{
+		root:       root,
+		pinVersion: "1.0.0",
+		overwrite:  false,
+		sys:        RealSystem{},
+	}
+	err := inst.writeVersionFile()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data, _ := os.ReadFile(path)
+	if strings.TrimSpace(string(data)) != "0.9.0" {
+		t.Fatalf("expected existing pin to be preserved, got %q", string(data))
 	}
 }
 

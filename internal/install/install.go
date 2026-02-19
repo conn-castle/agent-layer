@@ -326,8 +326,9 @@ func (inst *installer) writeTemplateFiles() error {
 }
 
 // writeVersionFile writes .agent-layer/al.version when pinning is enabled.
-// Empty or corrupt (non-semver) pin files are auto-repaired without requiring --overwrite.
-// Valid semver pins that differ from the target still require --overwrite.
+// During upgrades (overwrite mode) the pin is always written without prompting —
+// updating the version pin is the point of running an upgrade. During init the
+// pin is only written when missing or corrupt.
 func (inst *installer) writeVersionFile() error {
 	if inst.pinVersion == "" {
 		return nil
@@ -345,13 +346,16 @@ func (inst *installer) writeVersionFile() error {
 		case normalized == inst.pinVersion:
 			return nil
 		default:
-			// Valid semver that differs: preserve current overwrite semantics.
-			overwrite, err := inst.shouldOverwrite(path)
-			if err != nil {
-				return err
-			}
-			if !overwrite {
-				return nil
+			// During upgrade the pin write is unconditional — it's the whole
+			// point. During init, prompt before overwriting a valid pin.
+			if !inst.overwrite {
+				overwrite, promptErr := inst.shouldOverwrite(path)
+				if promptErr != nil {
+					return promptErr
+				}
+				if !overwrite {
+					return nil
+				}
 			}
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {

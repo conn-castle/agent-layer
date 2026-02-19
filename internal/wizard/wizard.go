@@ -61,7 +61,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		lenientCfg, lenientErr := loadConfigLenientFunc(configPath)
 		if lenientErr != nil {
 			// TOML syntax error or file unreadable — can't recover.
-			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
+			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, lenientErr)
 		}
 		_, _ = fmt.Fprintf(out, messages.ConfigLenientLoadInfoFmt+"\n", "the wizard", err)
 		cfg = &config.ProjectConfig{Config: *lenientCfg, Root: root}
