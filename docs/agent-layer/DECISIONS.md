@@ -224,3 +224,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `auto-approve: true` in slash command frontmatter adds `mcp__agent-layer__<name>` to Claude's permission allow list, which auto-approves the MCP tool call that fetches the skill's prompt text. It does not auto-approve any actions the agent takes after reading the prompt.
     Reason: Auto-approving prompt retrieval is safe — it only returns the skill's markdown body. Auto-approving agent actions (file edits, bash commands) would bypass the safety boundary that `approvals.mode` provides.
     Tradeoffs: Users still see approval prompts for agent actions even with auto-approved skills. The benefit is zero-click skill invocation in Claude clients for approved skills.
+
+- Decision 2026-02-18 config-migrate: Config migration step between unmarshal and validate
+    Decision: Add `Config.Migrate()` as a mandatory step in `ParseConfig` between TOML unmarshal and `Validate`. New required config fields added in a release must include a corresponding backfill in `Migrate()` that defaults the field to the pre-existence behavior (e.g., disabled).
+    Reason: Without migration, adding a new required field breaks all existing configs and locks users out of every command including `al wizard` and `al upgrade`.
+    Tradeoffs: The migration step silently fills in defaults rather than failing loudly; accepted because the defaults are deterministic and match pre-existence behavior.
+
+- Decision 2026-02-18 config-resilience: Replace silent Migrate() with lenient parsing + interactive upgrade prompts (supersedes config-migrate)
+    Decision: Remove `Config.Migrate()` entirely. Instead: (1) add `ParseConfigLenient`/`LoadConfigLenient` that unmarshal without validation, (2) `al wizard` and `al doctor` fall back to lenient loading so they always work on broken configs, (3) `al upgrade` uses `config_set_default` migration operations that prompt the user interactively for new required field values, (4) runtime commands (`al sync`, `al claude`, etc.) remain strict and fail with actionable guidance.
+    Reason: Silent defaults violate the "no silent fallbacks" rule. Repair tools must always be runnable. Every config value should come from an explicit user choice.
+    Tradeoffs: Users must run `al wizard` or `al upgrade` to fix broken configs instead of having them auto-repaired; accepted because explicit consent is a design principle.

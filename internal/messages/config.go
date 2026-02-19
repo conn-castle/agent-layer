@@ -60,4 +60,10 @@ const (
 	ConfigFailedReadInstructionFmt  = "failed to read instruction %s: %w"
 
 	ConfigMissingEnvVarsFmt = "missing environment variables: %s"
+
+	// ConfigValidationGuidance is appended to validation errors to direct users to repair tools.
+	ConfigValidationGuidance = "(run 'al wizard' to fix or 'al doctor' to diagnose)"
+
+	// ConfigLenientLoadInfoFmt is used when repair tools fall back to lenient config loading.
+	ConfigLenientLoadInfoFmt = "Config has validation errors; %s will help you fix them: %v"
 )

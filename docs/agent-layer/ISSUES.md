@@ -27,6 +27,21 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-18 config-new-field-checklist: Future new required config fields must include migration manifest entry
+    Priority: Medium. Area: config / backwards compatibility.
+    Description: v0.8.1 added `agents.claude-vscode.enabled` as required, breaking pre-v0.8.1 configs. Fixed by config resilience (lenient parsing + interactive upgrade prompts). Any future new required field must include a `config_set_default` operation in the release's migration manifest (`internal/templates/migrations/<version>.json`).
+    Next step: Add a CI lint or code review checklist item that enforces: any new nil-check in `Validate()` must have a matching `config_set_default` operation in the migration manifest.
+
+- Issue 2026-02-18 warn-deterministic-order: MCP collision warning output is non-deterministic
+    Priority: Medium. Area: warnings / determinism.
+    Description: `internal/warnings/mcp.go:168` iterates `toolNames` (a map) directly when generating `CodeMCPToolNameCollision` warnings. Map iteration order is non-deterministic, producing unstable CLI output.
+    Next step: Sort collision subjects before appending warnings; add a deterministic ordering contract test for `CheckMCPServers` output.
+
+- Issue 2026-02-18 race-target: No canonical race-check command in workflow docs
+    Priority: Low. Area: testing / CI hygiene.
+    Description: Race checks pass today but there is no documented repeatable command in COMMANDS.md. Race testing is ad hoc instead of a repeatable workflow step.
+    Next step: Add a Makefile target (e.g., `make test-race`) targeting concurrency-critical packages and document it in COMMANDS.md.
+
 - Issue 2026-02-18 auto-approve-names-duplication: buildClaudeSettings returns unused autoApprovedNames
     Priority: Low. Area: internal/sync
     Description: buildClaudeSettings computes and returns autoApprovedNames which WriteClaudeSettings discards. collectAutoApprovedSkills in sync.go recomputes the same list. The iteration logic overlaps but contexts differ (one builds permission patterns gated on !AllowMCP, the other always collects names for display).
@@ -79,10 +94,10 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `internal/wizard/catalog.go:15-95` has mutable exported slice variables (e.g., `MCPServerCatalog`) that any caller can modify. Also, `approval_modes.go` and `helpers.go` contain unreferenced functions (`ApprovalModes`, `approvalModeHelpText`, `commentForLine`, `inlineCommentForLine`).
     Next step: Convert exported catalog variables to functions returning fresh copies; remove confirmed dead code.
 
-- Issue 2026-02-12 stub-dup: writeStubWithExit test helper duplicated across 5+ packages
+- Issue 2026-02-12 stub-dup: writeStub/writeStubWithExit test helpers duplicated across 5+ packages
     Priority: Low. Area: testing / DRY.
-    Description: The `writeStubWithExit` test helper (writes an executable stub script) is duplicated across `cmd/al`, `cmd/publish-site`, and other test packages with minor variations. `writeStubExpectArg` is also duplicated across `internal/clients/claude/launch_test.go` and `internal/clients/gemini/launch_test.go`.
-    Next step: Consolidate into `internal/testutil` alongside `boolPtr`, `withWorkingDir`, and `writeStubExpectArg`.
+    Description: `writeStub` is duplicated across 5+ test files (`internal/clients/vscode`, `claude`, `antigravity`, `gemini`, `cmd/al`). `writeStubWithExit` is similarly duplicated across `cmd/al`, `cmd/publish-site`, and others. `writeStubExpectArg` is duplicated in `internal/clients/claude` and `gemini`.
+    Next step: Consolidate all three (`writeStub`, `writeStubWithExit`, `writeStubExpectArg`) into `internal/testutil` alongside `boolPtr` and `withWorkingDir`.
 
 - Issue 2026-02-12 envfile-asym: Asymmetric envfile encode/decode
     Priority: Low. Area: envfile / correctness.

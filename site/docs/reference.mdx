@@ -398,7 +398,7 @@ Use it before `al upgrade` to understand what would change:
 - Template removals/orphans
 - Config key migrations (when migration manifests are present)
 - Pin version change (`current -> target`)
-- Readiness checks (for example unresolved placeholders, process-env vs `.env` collisions, ignored empty `.env` assignments, path-expansion anomalies, stale VS Code `--no-sync` outputs, floating dependency specs, stale disabled-agent artifacts, and generated-secret risk warnings)
+- Readiness checks (for example unresolved placeholders, process-env vs `.env` collisions, ignored empty `.env` assignments, path-expansion anomalies, stale VS Code `--no-sync` outputs, floating dependency specs, and stale disabled-agent artifacts)
 
 `al upgrade plan` also includes line-level diff previews for changed files. Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
 

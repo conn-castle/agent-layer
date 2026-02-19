@@ -412,6 +412,135 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 	}
 }
 
+func TestExecuteConfigSetDefaultMigration_CallsPrompt(t *testing.T) {
+	root := t.TempDir()
+
+	// Write a config file missing the key.
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("[agents]\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var promptedKey string
+	var promptedValue any
+	var promptedRationale string
+	prompter := PromptFuncs{
+		OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+		OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
+		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
+		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
+		ConfigSetDefaultFunc: func(key string, recommendedValue any, rationale string) (any, error) {
+			promptedKey = key
+			promptedValue = recommendedValue
+			promptedRationale = rationale
+			return true, nil // User chooses true instead of false
+		},
+	}
+
+	inst := &installer{root: root, prompter: prompter, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "add-test-key",
+		Kind:      upgradeMigrationKindConfigSetDefault,
+		Key:       "agents.test-agent.enabled",
+		Value:     []byte(`false`),
+		Rationale: "New agent added for testing.",
+	}
+	changed, err := inst.executeConfigSetDefaultMigration(op)
+	if err != nil {
+		t.Fatalf("executeConfigSetDefaultMigration: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+
+	// Verify prompt was called with correct arguments.
+	if promptedKey != "agents.test-agent.enabled" {
+		t.Fatalf("prompted key = %q, want %q", promptedKey, "agents.test-agent.enabled")
+	}
+	if promptedValue != false {
+		t.Fatalf("prompted recommended value = %v, want false", promptedValue)
+	}
+	if promptedRationale != "New agent added for testing." {
+		t.Fatalf("prompted rationale = %q, want %q", promptedRationale, "New agent added for testing.")
+	}
+
+	// Verify the user's chosen value (true) was written, not the manifest default (false).
+	data, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), "enabled = true") {
+		t.Fatalf("expected user-chosen value 'enabled = true' in config, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteConfigSetDefaultMigration_NoPromptUsesDefault(t *testing.T) {
+	root := t.TempDir()
+
+	// Write a config file missing the key.
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("[agents]\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	// No ConfigSetDefaultFunc — should use the manifest's default value.
+	prompter := autoApprovePrompter()
+	inst := &installer{root: root, prompter: prompter, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "add-test-key",
+		Kind:      upgradeMigrationKindConfigSetDefault,
+		Key:       "agents.test-agent.enabled",
+		Value:     []byte(`false`),
+		Rationale: "New agent added for testing.",
+	}
+	changed, err := inst.executeConfigSetDefaultMigration(op)
+	if err != nil {
+		t.Fatalf("executeConfigSetDefaultMigration: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+
+	// Verify the manifest default (false) was written.
+	data, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), "enabled = false") {
+		t.Fatalf("expected manifest default 'enabled = false' in config, got:\n%s", string(data))
+	}
+}
+
+func TestLoadUpgradeMigrationManifest_0_8_1_HasConfigSetDefault(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.8.1")
+	if err != nil {
+		t.Fatalf("load 0.8.1 manifest: %v", err)
+	}
+	if len(manifest.Operations) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
+	}
+	op := manifest.Operations[0]
+	if op.ID != "add-claude-vscode-enabled" {
+		t.Fatalf("op ID = %q, want %q", op.ID, "add-claude-vscode-enabled")
+	}
+	if op.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("op kind = %q, want %q", op.Kind, upgradeMigrationKindConfigSetDefault)
+	}
+	if op.Key != "agents.claude-vscode.enabled" {
+		t.Fatalf("op key = %q, want %q", op.Key, "agents.claude-vscode.enabled")
+	}
+	if !op.SourceAgnostic {
+		t.Fatal("expected source_agnostic = true")
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

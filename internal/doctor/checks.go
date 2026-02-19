@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,8 @@ import (
 )
 
 var (
-	readFile = os.ReadFile
+	loadConfigLenientFunc = config.LoadConfigLenient
+	loadEnvFunc           = config.LoadEnv
 )
 
 // CheckStructure verifies that the required project directories exist.
@@ -49,17 +51,57 @@ func CheckStructure(root string) []Result {
 }
 
 // CheckConfig validates that the configuration file can be loaded and parsed.
+// When strict loading fails but lenient loading succeeds (e.g., missing required
+// fields from a newer version), CheckConfig returns a FAIL result with the
+// validation error AND the leniently-loaded config so downstream checks still run.
 func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 	var results []Result
 	cfg, err := config.LoadProjectConfig(root)
 	if err != nil {
+		if !errors.Is(err, config.ErrConfigValidation) {
+			// Non-validation failure (env, instructions, slash commands, etc.) —
+			// lenient config fallback would not help.
+			results = append(results, Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameConfig,
+				Message:        fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err),
+				Recommendation: messages.DoctorConfigLoadRecommend,
+			})
+			return results, nil
+		}
+
+		// Config has validation errors. Try lenient loading so downstream
+		// checks (secrets, agents) can still run.
+		configPath := filepath.Join(root, ".agent-layer", "config.toml")
+		lenientCfg, lenientErr := loadConfigLenientFunc(configPath)
+		if lenientErr != nil {
+			// TOML syntax error or file unreadable — can't recover.
+			results = append(results, Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameConfig,
+				Message:        fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err),
+				Recommendation: messages.DoctorConfigLoadRecommend,
+			})
+			return results, nil
+		}
+
+		// Lenient loading succeeded — report the validation error but return
+		// a partial config so downstream checks can still run.
 		results = append(results, Result{
 			Status:         StatusFail,
 			CheckName:      messages.DoctorCheckNameConfig,
 			Message:        fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err),
-			Recommendation: messages.DoctorConfigLoadRecommend,
+			Recommendation: messages.DoctorConfigLoadLenientRecommend,
 		})
-		return results, nil
+		partial := &config.ProjectConfig{Config: *lenientCfg, Root: root}
+
+		// Best-effort: load .env so CheckSecrets can check against it.
+		envPath := filepath.Join(root, ".agent-layer", ".env")
+		if env, envErr := loadEnvFunc(envPath); envErr == nil {
+			partial.Env = env
+		}
+
+		return results, partial
 	}
 
 	results = append(results, Result{
@@ -71,9 +113,16 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 }
 
 // CheckSecrets scans the configuration for missing environment variables.
+// Only enabled MCP servers are considered; disabled servers are skipped.
 func CheckSecrets(cfg *config.ProjectConfig) []Result {
 	var results []Result
-	required := config.RequiredEnvVarsForMCPServers(cfg.Config.MCP.Servers)
+	var enabled []config.MCPServer
+	for _, s := range cfg.Config.MCP.Servers {
+		if s.Enabled != nil && *s.Enabled {
+			enabled = append(enabled, s)
+		}
+	}
+	required := config.RequiredEnvVarsForMCPServers(enabled)
 
 	// Scan .env for missing values
 	for _, secret := range required {
@@ -143,57 +192,6 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 				Message:   fmt.Sprintf(messages.DoctorAgentDisabledFmt, a.Name),
 			})
 		}
-	}
-	return results
-}
-
-// CheckSecretRisk scans generated artifact surfaces for likely secret literals.
-func CheckSecretRisk(root string) []Result {
-	candidates := []string{
-		filepath.Join(root, ".codex", "config.toml"),
-		filepath.Join(root, ".mcp.json"),
-		filepath.Join(root, ".claude", "settings.json"),
-		filepath.Join(root, ".gemini", "settings.json"),
-		filepath.Join(root, ".vscode", "mcp.json"),
-	}
-
-	var results []Result
-	for _, path := range candidates {
-		rel := path
-		if relPath, relErr := filepath.Rel(root, path); relErr == nil {
-			rel = relPath
-		}
-
-		data, err := readFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			results = append(results, Result{
-				Status:         StatusWarn,
-				CheckName:      messages.DoctorCheckNameSecretRisk,
-				Message:        fmt.Sprintf(messages.DoctorSecretRiskReadFailedFmt, rel, err),
-				Recommendation: messages.DoctorSecretRiskReadRecommend,
-			})
-			continue
-		}
-		if !config.ContainsPotentialSecretLiteral(string(data)) {
-			continue
-		}
-		results = append(results, Result{
-			Status:         StatusWarn,
-			CheckName:      messages.DoctorCheckNameSecretRisk,
-			Message:        fmt.Sprintf(messages.DoctorSecretRiskDetectedFmt, rel),
-			Recommendation: messages.DoctorSecretRiskRecommend,
-		})
-	}
-
-	if len(results) == 0 {
-		results = append(results, Result{
-			Status:    StatusOK,
-			CheckName: messages.DoctorCheckNameSecretRisk,
-			Message:   messages.DoctorSecretRiskNone,
-		})
 	}
 	return results
 }

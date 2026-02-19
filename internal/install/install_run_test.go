@@ -486,7 +486,8 @@ func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Without overwrite, pin should NOT be changed; should record diff instead
+	// Without overwrite, pin should NOT be changed; no diff is recorded because
+	// al.version changes are expected during upgrades and should not be surfaced.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read pin: %v", err)
@@ -494,8 +495,8 @@ func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
 	if string(data) != "0.9.0\n" {
 		t.Fatalf("expected pin to remain unchanged, got %q", string(data))
 	}
-	if len(inst.diffs) != 1 {
-		t.Fatalf("expected 1 diff recorded, got %d", len(inst.diffs))
+	if len(inst.diffs) != 0 {
+		t.Fatalf("expected no diffs recorded, got %d", len(inst.diffs))
 	}
 }
 
@@ -654,9 +655,9 @@ func TestWriteVersionFile_OverwriteFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should have recorded a diff
-	if len(inst.diffs) != 1 {
-		t.Fatalf("expected diff to be recorded, got %d diffs", len(inst.diffs))
+	// al.version diffs are not recorded; version changes are expected during upgrades.
+	if len(inst.diffs) != 0 {
+		t.Fatalf("expected no diffs recorded, got %d diffs", len(inst.diffs))
 	}
 }
 

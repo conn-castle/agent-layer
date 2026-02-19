@@ -449,9 +449,13 @@ func TestExecuteConfigRenameKeyMigration_Branches(t *testing.T) {
 }
 
 func TestExecuteConfigSetDefaultMigration_Branches(t *testing.T) {
+	makeOp := func(key string, value json.RawMessage) upgradeMigrationOperation {
+		return upgradeMigrationOperation{ID: "test", Kind: upgradeMigrationKindConfigSetDefault, Key: key, Value: value, Rationale: "test"}
+	}
+
 	t.Run("missing config no-op", func(t *testing.T) {
 		inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-		changed, err := inst.executeConfigSetDefaultMigration("a.b", json.RawMessage(`"x"`))
+		changed, err := inst.executeConfigSetDefaultMigration(makeOp("a.b", json.RawMessage(`"x"`)))
 		if err != nil {
 			t.Fatalf("executeConfigSetDefaultMigration: %v", err)
 		}
@@ -464,10 +468,10 @@ func TestExecuteConfigSetDefaultMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		writeTestConfigFile(t, root, "a = 1\n")
 		inst := &installer{root: root, sys: RealSystem{}}
-		if _, err := inst.executeConfigSetDefaultMigration("a..b", json.RawMessage(`"x"`)); err == nil {
+		if _, err := inst.executeConfigSetDefaultMigration(makeOp("a..b", json.RawMessage(`"x"`))); err == nil {
 			t.Fatal("expected invalid key error")
 		}
-		if _, err := inst.executeConfigSetDefaultMigration("a.b", json.RawMessage(`{`)); err == nil {
+		if _, err := inst.executeConfigSetDefaultMigration(makeOp("a.b", json.RawMessage(`{`))); err == nil {
 			t.Fatal("expected invalid json error")
 		}
 	})
@@ -476,7 +480,7 @@ func TestExecuteConfigSetDefaultMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		writeTestConfigFile(t, root, "[a]\nb = \"existing\"\n")
 		inst := &installer{root: root, sys: RealSystem{}}
-		changed, err := inst.executeConfigSetDefaultMigration("a.b", json.RawMessage(`"new"`))
+		changed, err := inst.executeConfigSetDefaultMigration(makeOp("a.b", json.RawMessage(`"new"`)))
 		if err != nil {
 			t.Fatalf("executeConfigSetDefaultMigration: %v", err)
 		}
@@ -489,7 +493,7 @@ func TestExecuteConfigSetDefaultMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		writeTestConfigFile(t, root, "[a]\n")
 		inst := &installer{root: root, sys: RealSystem{}}
-		changed, err := inst.executeConfigSetDefaultMigration("a.b", json.RawMessage(`"value"`))
+		changed, err := inst.executeConfigSetDefaultMigration(makeOp("a.b", json.RawMessage(`"value"`)))
 		if err != nil {
 			t.Fatalf("executeConfigSetDefaultMigration: %v", err)
 		}
@@ -511,7 +515,7 @@ func TestExecuteConfigSetDefaultMigration_Branches(t *testing.T) {
 		fault := newFaultSystem(RealSystem{})
 		fault.writeErrs[normalizePath(cfgPath)] = errors.New("write boom")
 		inst = &installer{root: root, sys: fault}
-		if _, err := inst.executeConfigSetDefaultMigration("a.b", json.RawMessage(`"value"`)); err == nil || !strings.Contains(err.Error(), "write boom") {
+		if _, err := inst.executeConfigSetDefaultMigration(makeOp("a.b", json.RawMessage(`"value"`))); err == nil || !strings.Contains(err.Error(), "write boom") {
 			t.Fatalf("expected write error, got %v", err)
 		}
 	})
@@ -1548,7 +1552,7 @@ func TestExecuteConfigSetDefaultMigration_NonTableTraversal(t *testing.T) {
 	root := t.TempDir()
 	writeTestConfigFile(t, root, "a = \"scalar\"\n")
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.executeConfigSetDefaultMigration("a.b.c", json.RawMessage(`"x"`))
+	_, err := inst.executeConfigSetDefaultMigration(upgradeMigrationOperation{ID: "test", Kind: upgradeMigrationKindConfigSetDefault, Key: "a.b.c", Value: json.RawMessage(`"x"`), Rationale: "test"})
 	if err == nil || !strings.Contains(err.Error(), "non-table") {
 		t.Fatalf("expected non-table traversal error, got %v", err)
 	}
@@ -1893,7 +1897,7 @@ func TestExecuteConfigSetDefaultMigration_GetNestedError(t *testing.T) {
 	writeTestConfigFile(t, root, "a = \"scalar\"\n")
 	inst := &installer{root: root, sys: RealSystem{}}
 	// Key path "a.child" traverses scalar "a", which errors in getNestedConfigValue.
-	_, err := inst.executeConfigSetDefaultMigration("a.child", json.RawMessage(`"x"`))
+	_, err := inst.executeConfigSetDefaultMigration(upgradeMigrationOperation{ID: "test", Kind: upgradeMigrationKindConfigSetDefault, Key: "a.child", Value: json.RawMessage(`"x"`), Rationale: "test"})
 	if err == nil || !strings.Contains(err.Error(), "non-table") {
 		t.Fatalf("expected non-table error, got %v", err)
 	}
@@ -2056,7 +2060,7 @@ func TestExecuteConfigSetDefaultMigration_SetNestedError(t *testing.T) {
 	// when trying to create "clients.model.name".
 	writeTestConfigFile(t, root, "clients = \"scalar\"\n")
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.executeConfigSetDefaultMigration("clients.model.name", json.RawMessage(`"x"`))
+	_, err := inst.executeConfigSetDefaultMigration(upgradeMigrationOperation{ID: "test", Kind: upgradeMigrationKindConfigSetDefault, Key: "clients.model.name", Value: json.RawMessage(`"x"`), Rationale: "test"})
 	if err == nil || !strings.Contains(err.Error(), "non-table") {
 		t.Fatalf("expected non-table error, got %v", err)
 	}
@@ -2069,7 +2073,7 @@ func TestExecuteConfigSetDefaultMigration_WriteError(t *testing.T) {
 	fault := newFaultSystem(RealSystem{})
 	fault.writeErrs[normalizePath(cfgPath)] = errors.New("write boom set")
 	inst := &installer{root: root, sys: fault}
-	_, err := inst.executeConfigSetDefaultMigration("clients.model", json.RawMessage(`"x"`))
+	_, err := inst.executeConfigSetDefaultMigration(upgradeMigrationOperation{ID: "test", Kind: upgradeMigrationKindConfigSetDefault, Key: "clients.model", Value: json.RawMessage(`"x"`), Rationale: "test"})
 	if err == nil || !strings.Contains(err.Error(), "write boom set") {
 		t.Fatalf("expected write error, got %v", err)
 	}
@@ -2203,7 +2207,7 @@ func TestExecuteConfigSetDefaultMigration_ReadError(t *testing.T) {
 	faults := newFaultSystem(RealSystem{})
 	faults.readErrs[normalizePath(cfgPath)] = errors.New("read boom")
 	inst := &installer{root: root, sys: faults}
-	if _, err := inst.executeConfigSetDefaultMigration("clients.model", json.RawMessage(`"x"`)); err == nil || !strings.Contains(err.Error(), "read boom") {
+	if _, err := inst.executeConfigSetDefaultMigration(upgradeMigrationOperation{ID: "test", Kind: upgradeMigrationKindConfigSetDefault, Key: "clients.model", Value: json.RawMessage(`"x"`), Rationale: "test"}); err == nil || !strings.Contains(err.Error(), "read boom") {
 		t.Fatalf("expected read error, got %v", err)
 	}
 }

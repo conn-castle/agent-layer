@@ -1025,7 +1025,7 @@ func TestReadinessSummaryAndAction(t *testing.T) {
 		"vscode_no_sync_outputs_stale",
 		"floating_external_dependency_specs",
 		"stale_disabled_agent_artifacts",
-		"generated_secret_risk",
+		"missing_required_config_fields",
 		"unknown_id",
 	}
 	for _, id := range ids {

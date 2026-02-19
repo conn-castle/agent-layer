@@ -326,7 +326,7 @@ func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOpera
 	case upgradeMigrationKindConfigRenameKey:
 		return inst.executeConfigRenameKeyMigration(op.From, op.To)
 	case upgradeMigrationKindConfigSetDefault:
-		return inst.executeConfigSetDefaultMigration(op.Key, op.Value)
+		return inst.executeConfigSetDefaultMigration(op)
 	default:
 		return false, fmt.Errorf("unsupported migration kind %q", op.Kind)
 	}
@@ -465,7 +465,9 @@ func (inst *installer) executeConfigRenameKeyMigration(fromKey string, toKey str
 	return true, nil
 }
 
-func (inst *installer) executeConfigSetDefaultMigration(keyPath string, rawValue json.RawMessage) (bool, error) {
+func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOperation) (bool, error) {
+	keyPath := op.Key
+	rawValue := op.Value
 	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
 	if err != nil {
 		return false, err
@@ -485,6 +487,13 @@ func (inst *installer) executeConfigSetDefaultMigration(keyPath string, rawValue
 	var decoded any
 	if unmarshalErr := json.Unmarshal(rawValue, &decoded); unmarshalErr != nil {
 		return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
+	}
+	if prompter, ok := inst.prompter.(configSetDefaultPrompter); ok {
+		prompted, promptErr := prompter.ConfigSetDefault(keyPath, decoded, op.Rationale)
+		if promptErr != nil {
+			return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
+		}
+		decoded = prompted
 	}
 	if setErr := setNestedConfigValue(cfg, parts, decoded, true); setErr != nil {
 		return false, setErr

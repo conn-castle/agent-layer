@@ -21,6 +21,7 @@ var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
+	loadConfigLenientFunc     = config.LoadConfigLenient
 	errWizardCancelled        = errors.New("wizard cancelled")
 )
 
@@ -49,7 +50,21 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 	cfg, err := loadProjectConfigFunc(root)
 	if err != nil {
-		return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
+		if !errors.Is(err, config.ErrConfigValidation) {
+			// Non-validation failure (env, instructions, slash commands, etc.) —
+			// lenient config fallback would not help; propagate the real error.
+			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
+		}
+		// Config has validation errors (e.g., missing required fields from a
+		// newer version). Fall back to lenient loading so the wizard can still
+		// run and help the user fix the config.
+		lenientCfg, lenientErr := loadConfigLenientFunc(configPath)
+		if lenientErr != nil {
+			// TOML syntax error or file unreadable — can't recover.
+			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
+		}
+		_, _ = fmt.Fprintf(out, messages.ConfigLenientLoadInfoFmt+"\n", "the wizard", err)
+		cfg = &config.ProjectConfig{Config: *lenientCfg, Root: root}
 	}
 
 	choices, err := initializeChoices(cfg)

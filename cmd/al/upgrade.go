@@ -215,6 +215,23 @@ func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error
 
 func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewState *upgradeReviewState) install.PromptFuncs {
 	return install.PromptFuncs{
+		ConfigSetDefaultFunc: func(key string, recommendedValue any, rationale string) (any, error) {
+			if policy.yes {
+				return recommendedValue, nil
+			}
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nNew required config key: %s\n  Recommended: %v\n  Rationale: %s\n", key, recommendedValue, rationale)
+			if err != nil {
+				return nil, err
+			}
+			accept, promptErr := promptYesNo(cmd.InOrStdin(), cmd.OutOrStdout(), fmt.Sprintf("Accept recommended value %v for %s?", recommendedValue, key), true)
+			if promptErr != nil {
+				return nil, promptErr
+			}
+			if accept {
+				return recommendedValue, nil
+			}
+			return nil, fmt.Errorf("user declined default value for required config key %s; run 'al wizard' to set it manually", key)
+		},
 		OverwriteAllPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
 			if policy.explicitCategory {
 				return policy.applyManaged, nil
@@ -727,8 +744,8 @@ func readinessSummary(check install.UpgradeReadinessCheck) string {
 		return "Some enabled MCP dependencies use floating versions."
 	case "stale_disabled_agent_artifacts":
 		return "Disabled-agent generated files are still present."
-	case "generated_secret_risk":
-		return "Source config contains secret-like literals that propagate to generated files."
+	case "missing_required_config_fields":
+		return "Config is missing required fields added in a newer version."
 	default:
 		return check.Summary
 	}
@@ -752,8 +769,8 @@ func readinessAction(id string) string {
 		return "Consider pinning floating version tags (`@latest`, `@next`, `@canary`) in `.agent-layer/config.toml` for reproducible upgrades."
 	case "stale_disabled_agent_artifacts":
 		return "Remove stale generated files for disabled agents, or re-enable those agents."
-	case "generated_secret_risk":
-		return "Move hardcoded secrets from `.agent-layer/config.toml` to `.agent-layer/.env` (AL_* keys) and use `${AL_*}` placeholders."
+	case "missing_required_config_fields":
+		return "Run `al wizard` to add missing required fields, or `al upgrade` will apply defaults during migration."
 	default:
 		return ""
 	}

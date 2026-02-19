@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,6 +12,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
+
+// ErrConfigValidation is a sentinel that wraps config validation failures
+// (as opposed to TOML syntax, filesystem, or other loading errors).
+// Callers can use errors.Is(err, ErrConfigValidation) to distinguish
+// validation problems from other LoadProjectConfig failure modes.
+var ErrConfigValidation = errors.New("config validation failed")
 
 // LoadProjectConfig reads and validates the full Agent Layer config from disk.
 func LoadProjectConfig(root string) (*ProjectConfig, error) {
@@ -71,7 +78,29 @@ func ParseConfig(data []byte, source string) (*Config, error) {
 		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
 	}
 	if err := cfg.Validate(source); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w "+messages.ConfigValidationGuidance, ErrConfigValidation, err)
 	}
 	return &cfg, nil
+}
+
+// ParseConfigLenient parses config TOML data without validation.
+// Returns an error only on TOML syntax errors. Missing or invalid fields
+// are not checked, making this suitable for repair tools (wizard, doctor)
+// that need to read partially valid configs.
+func ParseConfigLenient(data []byte, source string) (*Config, error) {
+	var cfg Config
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
+	}
+	return &cfg, nil
+}
+
+// LoadConfigLenient reads .agent-layer/config.toml without validation.
+// Returns an error only on filesystem or TOML syntax errors.
+func LoadConfigLenient(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf(messages.ConfigMissingFileFmt, path, err)
+	}
+	return ParseConfigLenient(data, path)
 }

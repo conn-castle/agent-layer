@@ -321,26 +321,31 @@ func TestBuildUpgradeReadinessChecks_PathExpansionAnomalies(t *testing.T) {
 	}
 }
 
-func TestBuildUpgradeReadinessChecks_GeneratedSecretRisk(t *testing.T) {
+func TestBuildUpgradeReadinessChecks_MissingRequiredConfigFields(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	// Put a hardcoded secret in the source config so the check is not suppressed.
+	// Write a config that is valid TOML but missing required fields (e.g. claude-vscode).
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read config: %v", err)
-	}
-	configData = append(configData, []byte("\n# hardcoded secret for test\napi_key = \"hardcoded-secret-value-1234\"\n")...)
-	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
+	partialConfig := `
+[approvals]
+mode = "all"
 
-	mcpPath := filepath.Join(root, ".mcp.json")
-	if err := os.WriteFile(mcpPath, []byte("{\"Authorization\": \"Bearer supersecretvalue12345\"}\n"), 0o644); err != nil {
-		t.Fatalf("write .mcp.json: %v", err)
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(configPath, []byte(partialConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -348,46 +353,13 @@ func TestBuildUpgradeReadinessChecks_GeneratedSecretRisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
 	}
-	check := findReadinessCheckByID(checks, readinessCheckGeneratedSecretRisk)
+	check := findReadinessCheckByID(checks, readinessCheckMissingRequiredConfigFields)
 	if check == nil {
-		t.Fatalf("expected %s check", readinessCheckGeneratedSecretRisk)
+		t.Fatalf("expected %s check", readinessCheckMissingRequiredConfigFields)
 	}
-	if !strings.Contains(strings.Join(check.Details, "\n"), ".mcp.json") {
-		t.Fatalf("expected generated-secret detail, got %q", check.Details)
-	}
-}
-
-func TestBuildUpgradeReadinessChecks_GeneratedSecretRisk_SuppressedWhenSourceClean(t *testing.T) {
-	root := t.TempDir()
-	if err := Run(root, Options{System: RealSystem{}}); err != nil {
-		t.Fatalf("seed repo: %v", err)
-	}
-
-	// Source config uses ${AL_*} placeholders — no hardcoded secrets.
-	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatalf("read config: %v", err)
-	}
-	configData = append(configData, []byte("\n# placeholder-based secret\napi_key = \"${AL_MY_KEY}\"\n")...)
-	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-
-	// Generated file has a resolved secret literal.
-	mcpPath := filepath.Join(root, ".mcp.json")
-	if err := os.WriteFile(mcpPath, []byte("{\"Authorization\": \"Bearer supersecretvalue12345\"}\n"), 0o644); err != nil {
-		t.Fatalf("write .mcp.json: %v", err)
-	}
-
-	inst := &installer{root: root, sys: RealSystem{}}
-	checks, err := buildUpgradeReadinessChecks(inst)
-	if err != nil {
-		t.Fatalf("buildUpgradeReadinessChecks: %v", err)
-	}
-	check := findReadinessCheckByID(checks, readinessCheckGeneratedSecretRisk)
-	if check != nil {
-		t.Fatalf("expected secret-risk check to be suppressed when source config is clean, got %#v", check)
+	joined := strings.Join(check.Details, "\n")
+	if !strings.Contains(joined, "claude-vscode") {
+		t.Fatalf("expected validation error about claude-vscode, got %q", joined)
 	}
 }
 

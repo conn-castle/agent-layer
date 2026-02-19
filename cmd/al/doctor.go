@@ -80,7 +80,6 @@ func newDoctorCmd() *cobra.Command {
 			if cfg != nil {
 				// 3. Check Secrets
 				allResults = append(allResults, doctor.CheckSecrets(cfg)...)
-				allResults = append(allResults, doctor.CheckSecretRisk(root)...)
 
 				// 4. Check Agents
 				allResults = append(allResults, doctor.CheckAgents(cfg)...)

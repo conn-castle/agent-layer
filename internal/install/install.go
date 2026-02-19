@@ -351,7 +351,6 @@ func (inst *installer) writeVersionFile() error {
 				return err
 			}
 			if !overwrite {
-				inst.recordDiff(path)
 				return nil
 			}
 		}

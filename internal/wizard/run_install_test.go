@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -135,19 +136,22 @@ func TestRun_ConfigLoadFailureAfterInstall(t *testing.T) {
 
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
-			*value = true // Confirm install
+			*value = true // Confirm install and apply
 			return nil
 		},
 	}
 
-	// Stub loadProjectConfigFunc to return an error after install succeeds
+	// Stub loadProjectConfigFunc to return a validation error after install succeeds
+	// (simulates a config with missing required fields from a newer version).
+	// Must wrap ErrConfigValidation so the narrowed lenient fallback triggers.
 	orig := loadProjectConfigFunc
 	loadProjectConfigFunc = func(root string) (*config.ProjectConfig, error) {
-		return nil, errors.New("injected config load error")
+		return nil, fmt.Errorf("%w: injected config load error", config.ErrConfigValidation)
 	}
 	t.Cleanup(func() { loadProjectConfigFunc = orig })
 
+	// With lenient fallback, the wizard should proceed through the flow
+	// (lenient loading reads the installed config without validation).
 	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to load config")
+	assert.NoError(t, err)
 }

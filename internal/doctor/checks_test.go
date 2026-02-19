@@ -1,7 +1,6 @@
 package doctor
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,12 +69,14 @@ func TestCheckStructure(t *testing.T) {
 func TestCheckSecretsUsesRequiredEnvVars(t *testing.T) {
 	t.Setenv("HEADER_TOKEN", "present")
 
+	enabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{
 						ID:      "demo",
+						Enabled: &enabled,
 						URL:     "https://example.com/${URL_TOKEN}",
 						Command: "run-${CMD_TOKEN}",
 						Args:    []string{"--token", "${ARG_TOKEN}"},
@@ -114,6 +115,49 @@ func TestCheckSecretsUsesRequiredEnvVars(t *testing.T) {
 		if !found {
 			t.Fatalf("expected result message %q", msg)
 		}
+	}
+}
+
+func TestCheckSecretsSkipsDisabledServers(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID:      "enabled-server",
+						Enabled: &enabled,
+						URL:     "https://example.com/${ENABLED_TOKEN}",
+					},
+					{
+						ID:      "disabled-server",
+						Enabled: &disabled,
+						URL:     "https://example.com/${DISABLED_TOKEN}",
+					},
+					{
+						ID:  "nil-enabled-server",
+						URL: "https://example.com/${NIL_TOKEN}",
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	results := CheckSecrets(cfg)
+
+	// Only the enabled server's secret should appear.
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for single enabled server, got %d: %v", len(results), results)
+	}
+	wantMsg := fmt.Sprintf(messages.DoctorMissingSecretFmt, "ENABLED_TOKEN")
+	if results[0].Message != wantMsg {
+		t.Fatalf("expected %q, got %q", wantMsg, results[0].Message)
+	}
+	if results[0].Status != StatusFail {
+		t.Fatalf("expected fail status, got %s", results[0].Status)
 	}
 }
 
@@ -192,6 +236,90 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a valid TOML config that is missing required fields (e.g. claude-vscode).
+	// Strict loading will fail but lenient loading should succeed.
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Create remaining files needed for LoadProjectConfig (env, instructions, etc.).
+	// Include an env var so we can verify the lenient fallback loads .env.
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_TEST_TOKEN=loaded\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+
+	// Should report a FAIL result for the validation error.
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+	}
+	if results[0].Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", results[0].Status)
+	}
+	if !strings.Contains(results[0].Message, "claude-vscode") {
+		t.Fatalf("expected validation error about claude-vscode, got: %s", results[0].Message)
+	}
+	if results[0].Recommendation != messages.DoctorConfigLoadLenientRecommend {
+		t.Fatalf("expected lenient recommendation, got: %s", results[0].Recommendation)
+	}
+
+	// Should still return a usable config from lenient loading.
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	if cfg.Config.Approvals.Mode != "all" {
+		t.Fatalf("expected approvals.mode = all, got %q", cfg.Config.Approvals.Mode)
+	}
+
+	// Env should be loaded so downstream secret checks work correctly.
+	if cfg.Env == nil {
+		t.Fatal("expected .env to be loaded in lenient fallback")
+	}
+	if cfg.Env["AL_TEST_TOKEN"] != "loaded" {
+		t.Fatalf("expected AL_TEST_TOKEN=loaded, got %q", cfg.Env["AL_TEST_TOKEN"])
+	}
+
+	// Downstream checks should work with the lenient config.
+	agentResults := CheckAgents(cfg)
+	if len(agentResults) == 0 {
+		t.Fatal("expected agent results from lenient config")
+	}
+}
+
 func TestCheckSecretsNoRequired(t *testing.T) {
 	// Config with no MCP servers = no required secrets
 	cfg := &config.ProjectConfig{
@@ -246,103 +374,5 @@ func TestCheckAgents(t *testing.T) {
 	}
 	if statusMap["Agent disabled: Codex"] != StatusWarn {
 		t.Error("Codex should be disabled (nil)")
-	}
-}
-
-func TestCheckSecretRisk(t *testing.T) {
-	root := t.TempDir()
-	codexDir := filepath.Join(root, ".codex")
-	if err := os.MkdirAll(codexDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(codexDir, "config.toml")
-	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer supersecrettoken\""), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	results := CheckSecretRisk(root)
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Status != StatusWarn {
-		t.Fatalf("expected warning status, got %s", results[0].Status)
-	}
-	if results[0].CheckName != messages.DoctorCheckNameSecretRisk {
-		t.Fatalf("unexpected check name: %s", results[0].CheckName)
-	}
-}
-
-func TestCheckSecretRisk_PlaceholderNotFlagged(t *testing.T) {
-	root := t.TempDir()
-	codexDir := filepath.Join(root, ".codex")
-	if err := os.MkdirAll(codexDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(codexDir, "config.toml")
-	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer ${AL_TOKEN}\""), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	results := CheckSecretRisk(root)
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Status != StatusOK {
-		t.Fatalf("expected OK status, got %s", results[0].Status)
-	}
-	if results[0].Message != messages.DoctorSecretRiskNone {
-		t.Fatalf("unexpected message: %s", results[0].Message)
-	}
-}
-
-func TestCheckSecretRisk_ReadErrorWarns(t *testing.T) {
-	root := t.TempDir()
-	target := filepath.Join(root, ".codex", "config.toml")
-	origReadFile := readFile
-	readFile = func(path string) ([]byte, error) {
-		if path == target {
-			return nil, errors.New("permission denied")
-		}
-		return nil, os.ErrNotExist
-	}
-	t.Cleanup(func() {
-		readFile = origReadFile
-	})
-
-	results := CheckSecretRisk(root)
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Status != StatusWarn {
-		t.Fatalf("expected warn status, got %s", results[0].Status)
-	}
-	if results[0].CheckName != messages.DoctorCheckNameSecretRisk {
-		t.Fatalf("unexpected check name: %s", results[0].CheckName)
-	}
-	if !strings.Contains(results[0].Message, ".codex") {
-		t.Fatalf("expected relative path in warning, got %q", results[0].Message)
-	}
-	if results[0].Recommendation != messages.DoctorSecretRiskReadRecommend {
-		t.Fatalf("unexpected recommendation: %s", results[0].Recommendation)
-	}
-}
-
-func TestCheckSecretRisk_BearerWithBase64CharsFlagged(t *testing.T) {
-	root := t.TempDir()
-	codexDir := filepath.Join(root, ".codex")
-	if err := os.MkdirAll(codexDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(codexDir, "config.toml")
-	if err := os.WriteFile(configPath, []byte("authorization = \"Bearer AB12+cd/ef=\""), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	results := CheckSecretRisk(root)
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
-	}
-	if results[0].Status != StatusWarn {
-		t.Fatalf("expected warning status, got %s", results[0].Status)
 	}
 }
