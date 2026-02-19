@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.8.2",
-  "generated_at_utc": "2026-02-19T02:52:45Z",
+  "generated_at_utc": "2026-02-19T17:02:42Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -79,7 +79,7 @@
     },
     {
       "path": ".agent-layer/slash-commands/find-issues.md",
-      "full_hash_normalized": "13e989835edbb9af2786d571d9c6cf10e2c841cdd041766ff47bb4007694a5f0"
+      "full_hash_normalized": "06e828ccf93e721500d9d8524b6e4c2d363b4184ec980145790a8a3e241d91fc"
     },
     {
       "path": ".agent-layer/slash-commands/finish-task.md",
