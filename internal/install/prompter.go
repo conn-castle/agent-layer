@@ -3,6 +3,7 @@ package install
 import (
 	"fmt"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
@@ -26,9 +27,10 @@ type PromptOverwritePreviewFunc func(preview DiffPreview) (bool, error)
 
 // PromptConfigSetDefaultFunc asks the user to confirm or customize a default value
 // for a missing required config key. It receives the key path, the recommended value,
-// and a rationale string. It returns the value to set (which may differ from the
-// recommended value). When nil, the recommended value is used without prompting.
-type PromptConfigSetDefaultFunc func(key string, recommendedValue any, rationale string) (any, error)
+// a rationale string, and an optional field definition from the config catalog (nil
+// when the key is not in the catalog). It returns the value to set (which may differ
+// from the recommended value). When nil, the recommended value is used without prompting.
+type PromptConfigSetDefaultFunc func(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error)
 
 // PromptFuncs adapts optional prompt callbacks into a Prompter.
 type PromptFuncs struct {
@@ -100,16 +102,16 @@ func (p PromptFuncs) DeleteUnknown(path string) (bool, error) {
 // migration values. When the Prompter does not implement this interface (or
 // returns nil), the migration uses the manifest's recommended value directly.
 type configSetDefaultPrompter interface {
-	ConfigSetDefault(key string, recommendedValue any, rationale string) (any, error)
+	ConfigSetDefault(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error)
 }
 
 // ConfigSetDefault prompts the user to confirm or customize a default value
 // for a missing config key. Returns the manifest value when no callback is set.
-func (p PromptFuncs) ConfigSetDefault(key string, recommendedValue any, rationale string) (any, error) {
+func (p PromptFuncs) ConfigSetDefault(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error) {
 	if p.ConfigSetDefaultFunc == nil {
 		return recommendedValue, nil
 	}
-	return p.ConfigSetDefaultFunc(key, recommendedValue, rationale)
+	return p.ConfigSetDefaultFunc(key, recommendedValue, rationale, field)
 }
 
 type promptValidator interface {

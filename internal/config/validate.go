@@ -13,12 +13,18 @@ const (
 	TransportStdio = "stdio"
 )
 
-var validApprovals = map[string]struct{}{
-	"all":      {},
-	"mcp":      {},
-	"commands": {},
-	"none":     {},
-	"yolo":     {},
+// isValidApprovalMode checks the value against the config field catalog.
+func isValidApprovalMode(mode string) bool {
+	field, ok := LookupField("approvals.mode")
+	if !ok {
+		return false
+	}
+	for _, opt := range field.Options {
+		if opt.Value == mode {
+			return true
+		}
+	}
+	return false
 }
 
 var validClients = map[string]struct{}{
@@ -42,7 +48,7 @@ var validWarningNoiseModes = map[string]struct{}{
 
 // Validate ensures the config is complete and consistent.
 func (c *Config) Validate(path string) error {
-	if _, ok := validApprovals[c.Approvals.Mode]; !ok {
+	if !isValidApprovalMode(c.Approvals.Mode) {
 		return fmt.Errorf(messages.ConfigApprovalsModeInvalidFmt, path)
 	}
 

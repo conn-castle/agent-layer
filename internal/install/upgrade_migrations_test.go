@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -433,7 +434,7 @@ func TestExecuteConfigSetDefaultMigration_CallsPrompt(t *testing.T) {
 		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
 		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
 		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
-		ConfigSetDefaultFunc: func(key string, recommendedValue any, rationale string) (any, error) {
+		ConfigSetDefaultFunc: func(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error) {
 			promptedKey = key
 			promptedValue = recommendedValue
 			promptedRationale = rationale

@@ -1,6 +1,6 @@
 package wizard
 
-import "github.com/conn-castle/agent-layer/internal/messages"
+import "github.com/conn-castle/agent-layer/internal/config"
 
 // AgentID constants matching config keys
 const (
@@ -12,14 +12,36 @@ const (
 	AgentAntigravity  = "antigravity"
 )
 
-// SupportedAgents is the list of agents the wizard can configure.
-var SupportedAgents = []string{
-	AgentGemini,
-	AgentClaude,
-	AgentClaudeVSCode,
-	AgentCodex,
-	AgentVSCode,
-	AgentAntigravity,
+// supportedAgentKeys lists the config field keys for agent enablement in UI order.
+var supportedAgentKeys = []string{
+	"agents.gemini.enabled",
+	"agents.claude.enabled",
+	"agents.claude-vscode.enabled",
+	"agents.codex.enabled",
+	"agents.vscode.enabled",
+	"agents.antigravity.enabled",
+}
+
+// SupportedAgents returns the agent IDs the wizard can configure.
+// Order matches the config field catalog registration order.
+func SupportedAgents() []string {
+	agents := make([]string, len(supportedAgentKeys))
+	for i, key := range supportedAgentKeys {
+		f, ok := config.LookupField(key)
+		if !ok {
+			// Defensive: key must exist in catalog.
+			panic("wizard: agent field " + key + " not in config catalog")
+		}
+		// Extract agent ID from "agents.<id>.enabled"
+		agents[i] = extractAgentID(f.Key)
+	}
+	return agents
+}
+
+// extractAgentID extracts the agent ID from a key like "agents.gemini.enabled".
+func extractAgentID(key string) string {
+	// "agents." = 7 chars, ".enabled" = 8 chars
+	return key[7 : len(key)-8]
 }
 
 // ApprovalMode constants
@@ -31,69 +53,32 @@ const (
 	ApprovalYOLO     = "yolo"
 )
 
-// ApprovalModeOption describes a selectable approval mode.
-// Value is the canonical config value; Description explains behavior.
-type ApprovalModeOption struct {
-	Value       string
-	Description string
+// ApprovalModeFieldOptions returns approval mode options from the config field catalog.
+// Panics if the approvals.mode field is not in the catalog (programming error).
+func ApprovalModeFieldOptions() []config.FieldOption {
+	f, ok := config.LookupField("approvals.mode")
+	if !ok {
+		panic("wizard: approvals.mode field not in config catalog")
+	}
+	return f.Options
 }
 
-// ApprovalModeOptions lists available approval modes and their descriptions.
-var ApprovalModeOptions = []ApprovalModeOption{
-	{Value: ApprovalAll, Description: messages.WizardApprovalAllDescription},
-	{Value: ApprovalMCP, Description: messages.WizardApprovalMCPDescription},
-	{Value: ApprovalCommands, Description: messages.WizardApprovalCommandsDescription},
-	{Value: ApprovalNone, Description: messages.WizardApprovalNoneDescription},
-	{Value: ApprovalYOLO, Description: messages.WizardApprovalYOLODescription},
+// GeminiModels returns supported Gemini model values from the config field catalog.
+func GeminiModels() []string {
+	return config.FieldOptionValues("agents.gemini.model")
 }
 
-// ApprovalModes lists the canonical approval mode values.
-var ApprovalModes = approvalModeValues()
-
-// Model catalogs
-
-// GeminiModels lists supported Gemini model values for the wizard.
-var GeminiModels = []string{
-	// Auto
-	"auto",
-	"auto-gemini-2.5",
-	"auto-gemini-3",
-	// Gemini 2.5
-	"gemini-2.5-pro",
-	"gemini-2.5-flash",
-	"gemini-2.5-flash-lite",
-	// Gemini 3 Preview
-	"gemini-3-pro-preview",
-	"gemini-3-flash-preview",
+// ClaudeModels returns supported Claude model values from the config field catalog.
+func ClaudeModels() []string {
+	return config.FieldOptionValues("agents.claude.model")
 }
 
-// ClaudeModels lists supported Claude model values for the wizard.
-var ClaudeModels = []string{
-	"default",
-	"sonnet",
-	"sonnet[1m]",
-	"haiku",
-	"opus",
+// CodexModels returns supported Codex model values from the config field catalog.
+func CodexModels() []string {
+	return config.FieldOptionValues("agents.codex.model")
 }
 
-// CodexModels lists supported Codex model values for the wizard.
-var CodexModels = []string{
-	"gpt-5.2-codex",
-	"gpt-5.1-codex-mini",
-	"gpt-5.1-codex-max",
-	"gpt-5.1-codex",
-	"gpt-5-codex",
-	"gpt-5-codex-mini",
-	"gpt-5.2",
-	"gpt-5.1",
-	"gpt-5",
-}
-
-// CodexReasoningEfforts lists supported reasoning effort values for Codex.
-var CodexReasoningEfforts = []string{
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
+// CodexReasoningEfforts returns supported reasoning effort values from the config field catalog.
+func CodexReasoningEfforts() []string {
+	return config.FieldOptionValues("agents.codex.reasoning_effort")
 }

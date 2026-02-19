@@ -192,7 +192,7 @@ func promptPositiveInt(ui UI, title string, value *int) error {
 // c holds wizard choices; returns formatted summary lines.
 func agentSummaryLines(c *Choices) []string {
 	var agents []string
-	for _, agent := range SupportedAgents {
+	for _, agent := range SupportedAgents() {
 		if !c.EnabledAgents[agent] {
 			continue
 		}

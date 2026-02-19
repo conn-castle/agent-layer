@@ -89,10 +89,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
     Next step: Add snapshot-size budget checks (warning and/or configurable cap) and document retention sizing guidance.
 
-- Issue 2026-02-12 wiz-globals: Mutable exported globals and dead code in wizard package
+- Issue 2026-02-12 wiz-dead-code: Dead code in wizard package
     Priority: Low. Area: wizard / maintainability.
-    Description: `internal/wizard/catalog.go:15-95` has mutable exported slice variables (e.g., `MCPServerCatalog`) that any caller can modify. Also, `approval_modes.go` and `helpers.go` contain unreferenced functions (`ApprovalModes`, `approvalModeHelpText`, `commentForLine`, `inlineCommentForLine`).
-    Next step: Convert exported catalog variables to functions returning fresh copies; remove confirmed dead code.
+    Description: `approvalModeHelpText()` in `notes.go` is only exercised by its own test but never called in production code. `commentForLine`/`inlineCommentForLine` in `tomlutil.go` are used internally and are NOT dead code.
+    Next step: Remove `approvalModeHelpText` and its test if the function is confirmed unused.
+    Notes: Mutable exported globals issue resolved by config field catalog refactor (Decision config-field-catalog).
 
 - Issue 2026-02-12 stub-dup: writeStub/writeStubWithExit test helpers duplicated across 5+ packages
     Priority: Low. Area: testing / DRY.

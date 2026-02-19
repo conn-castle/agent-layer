@@ -1,23 +1,17 @@
 package wizard
 
-// approvalModeValues returns the canonical approval mode values in order.
-func approvalModeValues() []string {
-	values := make([]string, 0, len(ApprovalModeOptions))
-	for _, option := range ApprovalModeOptions {
-		values = append(values, option.Value)
-	}
-	return values
-}
+import "github.com/conn-castle/agent-layer/internal/config"
 
 // approvalModeLabel returns the display label for an approval mode option.
-func approvalModeLabel(option ApprovalModeOption) string {
+func approvalModeLabel(option config.FieldOption) string {
 	return option.Value + " - " + option.Description
 }
 
 // approvalModeLabels returns the display labels for all approval modes.
 func approvalModeLabels() []string {
-	labels := make([]string, 0, len(ApprovalModeOptions))
-	for _, option := range ApprovalModeOptions {
+	options := ApprovalModeFieldOptions()
+	labels := make([]string, 0, len(options))
+	for _, option := range options {
 		labels = append(labels, approvalModeLabel(option))
 	}
 	return labels
@@ -25,7 +19,7 @@ func approvalModeLabels() []string {
 
 // approvalModeLabelForValue returns the display label for a canonical value.
 func approvalModeLabelForValue(value string) (string, bool) {
-	for _, option := range ApprovalModeOptions {
+	for _, option := range ApprovalModeFieldOptions() {
 		if option.Value == value {
 			return approvalModeLabel(option), true
 		}
@@ -35,7 +29,7 @@ func approvalModeLabelForValue(value string) (string, bool) {
 
 // approvalModeValueForLabel returns the canonical value for a display label.
 func approvalModeValueForLabel(label string) (string, bool) {
-	for _, option := range ApprovalModeOptions {
+	for _, option := range ApprovalModeFieldOptions() {
 		if approvalModeLabel(option) == label {
 			return option.Value, true
 		}

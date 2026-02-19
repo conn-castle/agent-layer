@@ -17,6 +17,7 @@ import (
 
 	tomlv2 "github.com/pelletier/go-toml/v2"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/version"
@@ -527,7 +528,11 @@ func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOpera
 		return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
 	}
 	if prompter, ok := inst.prompter.(configSetDefaultPrompter); ok {
-		prompted, promptErr := prompter.ConfigSetDefault(keyPath, decoded, op.Rationale)
+		var fieldPtr *config.FieldDef
+		if f, found := config.LookupField(keyPath); found {
+			fieldPtr = &f
+		}
+		prompted, promptErr := prompter.ConfigSetDefault(keyPath, decoded, op.Rationale, fieldPtr)
 		if promptErr != nil {
 			return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
 		}

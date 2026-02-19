@@ -200,7 +200,7 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 	choices.ApprovalModeTouched = true
 
 	enabledAgents := enabledAgentIDs(choices.EnabledAgents)
-	if err := ui.MultiSelect(messages.WizardEnableAgentsTitle, SupportedAgents, &enabledAgents); err != nil {
+	if err := ui.MultiSelect(messages.WizardEnableAgentsTitle, SupportedAgents(), &enabledAgents); err != nil {
 		return err
 	}
 	choices.EnabledAgents = agentIDSet(enabledAgents)
@@ -227,29 +227,29 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 
 func promptModels(ui UI, choices *Choices) error {
 	if choices.EnabledAgents[AgentGemini] {
-		if hasPreviewModels(GeminiModels) {
+		if hasPreviewModels(GeminiModels()) {
 			if err := ui.Note(messages.WizardPreviewModelWarningTitle, previewModelWarningText()); err != nil {
 				return err
 			}
 		}
-		if err := selectOptionalValue(ui, messages.WizardGeminiModelTitle, GeminiModels, &choices.GeminiModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardGeminiModelTitle, GeminiModels(), &choices.GeminiModel); err != nil {
 			return err
 		}
 		choices.GeminiModelTouched = true
 	}
 	if choices.EnabledAgents[AgentClaude] {
-		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, ClaudeModels, &choices.ClaudeModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, ClaudeModels(), &choices.ClaudeModel); err != nil {
 			return err
 		}
 		choices.ClaudeModelTouched = true
 	}
 	if choices.EnabledAgents[AgentCodex] {
-		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels, &choices.CodexModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels(), &choices.CodexModel); err != nil {
 			return err
 		}
 		choices.CodexModelTouched = true
 
-		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, CodexReasoningEfforts, &choices.CodexReasoning); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, CodexReasoningEfforts(), &choices.CodexReasoning); err != nil {
 			return err
 		}
 		choices.CodexReasoningTouched = true
