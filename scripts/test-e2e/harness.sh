@@ -252,10 +252,19 @@ assert_claude_mock_not_called() {
 }
 
 # assert_mock_agent_env <log> <var> [value] — verify an env var was set.
+# Uses literal string comparison for the value (not regex).
 assert_mock_agent_env() {
   local log="$1" var="$2" value="${3:-}"
   if [[ -n "$value" ]]; then
-    if grep -q "^${var}=${value}$" "$log" 2>/dev/null; then
+    local found=0
+    while IFS= read -r line; do
+      local val="${line#*=}"
+      if [[ "$val" == "$value" ]]; then
+        found=1
+        break
+      fi
+    done < <(grep "^${var}=" "$log" 2>/dev/null)
+    if [[ $found -eq 1 ]]; then
       pass "mock agent env: ${var}=${value}"
     else
       fail "mock agent env: expected ${var}=${value}"
@@ -387,8 +396,11 @@ setup_old_version_via_binary() {
   fi
 
   mkdir -p "$dir/.git"
-  if ! (cd "$dir" && "$binary_path" init --no-wizard) >/dev/null 2>&1; then
+  local init_output
+  if ! init_output=$(cd "$dir" && "$binary_path" init --no-wizard 2>&1); then
     fail "old binary init failed: $binary_path"
+    echo "  output:"
+    echo "$init_output" | head -10 | sed 's/^/    /'
     return 1
   fi
 }
@@ -720,10 +732,19 @@ assert_claude_mock_lacks_arg() {
 }
 
 # assert_claude_mock_env <log> <var> [value] — verify an env var was set.
+# Uses literal string comparison for the value (not regex).
 assert_claude_mock_env() {
   local log="$1" var="$2" value="${3:-}"
   if [[ -n "$value" ]]; then
-    if grep -q "^${var}=${value}$" "$log" 2>/dev/null; then
+    local found=0
+    while IFS= read -r line; do
+      local val="${line#*=}"
+      if [[ "$val" == "$value" ]]; then
+        found=1
+        break
+      fi
+    done < <(grep "^${var}=" "$log" 2>/dev/null)
+    if [[ $found -eq 1 ]]; then
       pass "mock claude env: ${var}=${value}"
     else
       fail "mock claude env: expected ${var}=${value}"

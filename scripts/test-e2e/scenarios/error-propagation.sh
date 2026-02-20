@@ -44,7 +44,7 @@ run_scenario_error_propagation() {
   export MOCK_CLAUDE_EXIT_CODE=42
 
   local rc42=0
-  $(cd "$repo_dir" && al claude >/dev/null 2>&1) || rc42=$?
+  (cd "$repo_dir" && al claude >/dev/null 2>&1) || rc42=$?
   if [[ $rc42 -eq 1 ]]; then
     pass "al claude flattens exit code 42 to 1 (Issue exit-code-flatten)"
   else

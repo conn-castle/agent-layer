@@ -350,6 +350,9 @@ func removeKeyFromBlock(block *tomlBlock, key string) {
 // parseDottedPrefixLine checks if a line defines a dotted sub-key of the given key.
 // For example, if key is "headers", matches "headers.Authorization = val"
 // or "# headers.Authorization = val" (commented).
+//
+// Limitation: this does not handle quoted TOML keys (e.g. "headers"."Content-Type").
+// The wizard templates use only bare dotted keys, so this is sufficient for now.
 func parseDottedPrefixLine(line string, key string) (keyLine, bool) {
 	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
 	indent := line[:indentLen]

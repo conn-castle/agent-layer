@@ -40,7 +40,7 @@ if [[ -z "${AL_E2E_VERSION:-}" || "${AL_E2E_VERSION:-}" == "0.0.0" ]]; then
     _detected_version="$(ls "$_manifest_dir"/*.json 2>/dev/null \
       | xargs -I{} basename {} .json \
       | sort -t. -k1,1n -k2,2n -k3,3n \
-      | tail -1)"
+      | tail -1 || true)"
   fi
   if [[ -n "${_detected_version:-}" ]]; then
     AL_E2E_VERSION="v${_detected_version}"
