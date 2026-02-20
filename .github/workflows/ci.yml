@@ -31,6 +31,11 @@ jobs:
             ${{ runner.os }}-go-tools-
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Cache e2e release binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/al-e2e/bin
+          key: e2e-binaries-${{ runner.os }}-${{ runner.arch }}
       - name: Install pinned tools
         run: make tools
       - name: CI checks

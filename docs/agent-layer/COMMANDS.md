@@ -94,13 +94,29 @@ Run from: repo root
 Prerequisites: `make tools` has been run
 Notes: Uses `gotestsum` for nicer output.
 
-- Run end-to-end build/install smoke tests
+- Run scenario-based end-to-end tests (offline, hermetic)
 ```bash
 make test-e2e
 ```
-Run from: repo root  
-Prerequisites: Go 1.25.6+, `curl`, `sha256sum` or `shasum`  
-Notes: Builds release artifacts and exercises `al-install.sh` against a local dist. Set `AL_E2E_VERSION` to override the test version.
+Run from: repo root
+Prerequisites: Go 1.25.6+, `sha256sum` or `shasum`
+Notes: Builds release artifacts and runs 26 scenarios with mock agent binaries. 436 assertions in default mode (with cached upgrade binaries). Auto-detects latest migration manifest version for upgrade testing. Upgrade scenarios use pre-cached binaries from `~/.cache/al-e2e/bin/` (run `make test-e2e-online` once to populate cache). Override version with `AL_E2E_VERSION=vX.Y.Z`. Filter: `AL_E2E_SCENARIOS="upgrade*" make test-e2e`. `defaults.toml` profile fixture is generated at runtime from `internal/templates/config.toml` to prevent drift.
+
+- Run e2e tests with online upgrade binary downloads
+```bash
+make test-e2e-online
+```
+Run from: repo root
+Prerequisites: Go 1.25.6+, `curl`, `sha256sum` or `shasum`, network access
+Notes: Same as `make test-e2e` but sets `AL_E2E_ONLINE=1` to download release binaries from GitHub. Use before releases or to populate the persistent binary cache. Pin the latest release version with `AL_E2E_LATEST_VERSION=X.Y.Z`.
+
+- Run e2e tests for CI (mandatory upgrade scenarios)
+```bash
+make test-e2e-ci
+```
+Run from: repo root
+Prerequisites: Go 1.25.6+, `curl`, `sha256sum` or `shasum`, network access
+Notes: Same as `make test-e2e-online` but also sets `AL_E2E_REQUIRE_UPGRADE=1` to fail hard if upgrade binaries are missing. Used by `make ci`. Ensures 100% of scenarios execute including upgrade paths.
 
 ### Modules
 
@@ -145,7 +161,7 @@ make ci
 ```
 Run from: repo root
 Prerequisites: Go 1.25.6+, `make tools` has been run
-Notes: Includes `make tidy-check`, `make test-release`, `make test-e2e`, and `make docs-cta-check`; requires a clean working tree.
+Notes: Includes `make tidy-check`, `make test-release`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires a clean working tree and network access for upgrade binary downloads.
 
 ### Release
 

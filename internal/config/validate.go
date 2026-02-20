@@ -88,6 +88,10 @@ func (c *Config) Validate(path string) error {
 		}
 		switch server.Transport {
 		case TransportHTTP:
+			// Silently strip stdio-only fields; they are meaningless for HTTP.
+			c.MCP.Servers[i].Command = ""
+			c.MCP.Servers[i].Args = nil
+			c.MCP.Servers[i].Env = nil
 			if server.URL == "" {
 				return fmt.Errorf(messages.ConfigMcpServerURLRequiredFmt, path, i)
 			}
@@ -96,24 +100,13 @@ func (c *Config) Validate(path string) error {
 					return fmt.Errorf(messages.ConfigMcpServerHTTPTransportInvalidFmt, path, i)
 				}
 			}
-			if server.Command != "" || len(server.Args) > 0 {
-				return fmt.Errorf(messages.ConfigMcpServerCommandNotAllowedFmt, path, i)
-			}
-			if len(server.Env) > 0 {
-				return fmt.Errorf(messages.ConfigMcpServerEnvNotAllowedFmt, path, i)
-			}
 		case TransportStdio:
-			if server.HTTPTransport != "" {
-				return fmt.Errorf(messages.ConfigMcpServerHTTPTransportNotAllowedFmt, path, i)
-			}
+			// Silently strip HTTP-only fields; they are meaningless for stdio.
+			c.MCP.Servers[i].HTTPTransport = ""
+			c.MCP.Servers[i].URL = ""
+			c.MCP.Servers[i].Headers = nil
 			if server.Command == "" {
 				return fmt.Errorf(messages.ConfigMcpServerCommandRequiredFmt, path, i)
-			}
-			if server.URL != "" {
-				return fmt.Errorf(messages.ConfigMcpServerURLNotAllowedFmt, path, i)
-			}
-			if len(server.Headers) > 0 {
-				return fmt.Errorf(messages.ConfigMcpServerHeadersNotAllowedFmt, path, i)
 			}
 		default:
 			return fmt.Errorf(messages.ConfigMcpServerTransportInvalidFmt, path, i)

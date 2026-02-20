@@ -80,20 +80,6 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "url is required",
 		},
 		{
-			name: "http with command",
-			cfg: withServers(valid, []MCPServer{
-				{ID: "x", Enabled: &trueVal, Transport: "http", URL: "https://example.com", Command: "tool"},
-			}),
-			wantErr: "command/args are not allowed",
-		},
-		{
-			name: "http with env",
-			cfg: withServers(valid, []MCPServer{
-				{ID: "x", Enabled: &trueVal, Transport: "http", URL: "https://example.com", Env: map[string]string{"TOKEN": "x"}},
-			}),
-			wantErr: "env is not allowed",
-		},
-		{
 			name: "http invalid http_transport",
 			cfg: withServers(valid, []MCPServer{
 				{ID: "x", Enabled: &trueVal, Transport: "http", URL: "https://example.com", HTTPTransport: "grpc"},
@@ -106,27 +92,6 @@ func TestValidateConfigErrors(t *testing.T) {
 				{ID: "x", Enabled: &trueVal, Transport: "stdio"},
 			}),
 			wantErr: "command is required",
-		},
-		{
-			name: "stdio with url",
-			cfg: withServers(valid, []MCPServer{
-				{ID: "x", Enabled: &trueVal, Transport: "stdio", Command: "tool", URL: "https://example.com"},
-			}),
-			wantErr: "url is not allowed",
-		},
-		{
-			name: "stdio with headers",
-			cfg: withServers(valid, []MCPServer{
-				{ID: "x", Enabled: &trueVal, Transport: "stdio", Command: "tool", Headers: map[string]string{"X": "1"}},
-			}),
-			wantErr: "headers are not allowed",
-		},
-		{
-			name: "stdio with http_transport",
-			cfg: withServers(valid, []MCPServer{
-				{ID: "x", Enabled: &trueVal, Transport: "stdio", Command: "tool", HTTPTransport: "sse"},
-			}),
-			wantErr: "http_transport is only valid for http transport",
 		},
 		{
 			name: "invalid client",
@@ -261,4 +226,77 @@ func TestValidateWarningsThresholds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
+	enabled := true
+	base := Config{
+		Approvals: ApprovalsConfig{Mode: "all"},
+		Agents: AgentsConfig{
+			Gemini:       AgentConfig{Enabled: &enabled},
+			Claude:       AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			Codex:        CodexConfig{Enabled: &enabled},
+			VSCode:       AgentConfig{Enabled: &enabled},
+			Antigravity:  AgentConfig{Enabled: &enabled},
+		},
+	}
+
+	t.Run("stdio strips headers url and http_transport", func(t *testing.T) {
+		cfg := base
+		cfg.MCP.Servers = []MCPServer{{
+			ID:            "s1",
+			Enabled:       &enabled,
+			Transport:     "stdio",
+			Command:       "tool",
+			Headers:       map[string]string{"X-Key": "val"},
+			URL:           "https://leftover.example.com",
+			HTTPTransport: "sse",
+		}}
+		if err := cfg.Validate("config.toml"); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		srv := cfg.MCP.Servers[0]
+		if srv.Headers != nil {
+			t.Errorf("expected headers to be nil, got %v", srv.Headers)
+		}
+		if srv.URL != "" {
+			t.Errorf("expected url to be empty, got %q", srv.URL)
+		}
+		if srv.HTTPTransport != "" {
+			t.Errorf("expected http_transport to be empty, got %q", srv.HTTPTransport)
+		}
+		if srv.Command != "tool" {
+			t.Errorf("expected command to be preserved, got %q", srv.Command)
+		}
+	})
+
+	t.Run("http strips command args and env", func(t *testing.T) {
+		cfg := base
+		cfg.MCP.Servers = []MCPServer{{
+			ID:        "s1",
+			Enabled:   &enabled,
+			Transport: "http",
+			URL:       "https://example.com",
+			Command:   "leftover",
+			Args:      []string{"--flag"},
+			Env:       map[string]string{"TOKEN": "x"},
+		}}
+		if err := cfg.Validate("config.toml"); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		srv := cfg.MCP.Servers[0]
+		if srv.Command != "" {
+			t.Errorf("expected command to be empty, got %q", srv.Command)
+		}
+		if srv.Args != nil {
+			t.Errorf("expected args to be nil, got %v", srv.Args)
+		}
+		if srv.Env != nil {
+			t.Errorf("expected env to be nil, got %v", srv.Env)
+		}
+		if srv.URL != "https://example.com" {
+			t.Errorf("expected url to be preserved, got %q", srv.URL)
+		}
+	})
 }

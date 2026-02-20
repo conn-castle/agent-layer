@@ -61,16 +61,19 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 	if err != nil {
 		return err
 	}
-	if warning != "" {
-		_, _ = fmt.Fprint(sys.Stderr(), warning)
-	}
-	if source != sourceCurrent {
-		_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchVersionSourceFmt, requested, source)
-	}
-	if source == EnvVersionOverride && found && hasOverridePinned {
-		_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchVersionOverrideWarningFmt, EnvVersionOverride, overridePinned)
-	}
 	if requested == current {
+		// No dispatch needed — this is the binary that will run the command.
+		// Print version-source diagnostics here so they appear exactly once,
+		// even when an older cached binary was dispatched to reach this point.
+		if warning != "" {
+			_, _ = fmt.Fprint(sys.Stderr(), warning)
+		}
+		if source != sourceCurrent {
+			_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchVersionSourceFmt, requested, source)
+		}
+		if source == EnvVersionOverride && found && hasOverridePinned {
+			_, _ = fmt.Fprintf(sys.Stderr(), messages.DispatchVersionOverrideWarningFmt, EnvVersionOverride, overridePinned)
+		}
 		return nil
 	}
 	if sys.Getenv(EnvShimActive) != "" {

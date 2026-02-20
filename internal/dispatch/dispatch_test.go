@@ -617,6 +617,257 @@ func TestMaybeExec_CorruptPinFallsThroughToCurrentVersion(t *testing.T) {
 	}
 }
 
+func TestMaybeExec_DispatchSuppressesVersionSource(t *testing.T) {
+	// When requested != current and dispatch happens, the dispatching binary
+	// must NOT print version-source diagnostics — the dispatched binary will.
+	version := "1.0.0"
+	content := "binary-content"
+	checksum := sha256.Sum256([]byte(content))
+	checksumStr := fmt.Sprintf("%x", checksum)
+	osName, arch, _ := platformStrings()
+	asset := assetName(osName, arch)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case fmt.Sprintf("/download/v%s/%s", version, asset):
+			_, _ = w.Write([]byte(content))
+		case fmt.Sprintf("/download/v%s/checksums.txt", version):
+			_, _ = fmt.Fprintf(w, "%s %s\n", checksumStr, asset)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	var stderr bytes.Buffer
+	sys := &testSystem{
+		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+			return nil
+		},
+		StderrFunc: func() io.Writer {
+			return &stderr
+		},
+	}
+
+	t.Setenv(EnvVersionOverride, version)
+	t.Setenv(EnvCacheDir, t.TempDir())
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
+	if err != ErrDispatched {
+		t.Fatalf("expected ErrDispatched, got %v", err)
+	}
+
+	if strings.Contains(stderr.String(), "version source") {
+		t.Fatalf("dispatching binary should not print version source, got %q", stderr.String())
+	}
+}
+
+func TestMaybeExec_PinMatchPrintsVersionSourceOnce(t *testing.T) {
+	// When requested == current (no dispatch), version source must appear exactly once.
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	sys := &testSystem{
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			return root, true, nil
+		},
+		StderrFunc: func() io.Writer { return &stderr },
+	}
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "1.0.0", root, func(int) {})
+	if err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+
+	count := strings.Count(stderr.String(), "version source")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 version source line, got %d in %q", count, stderr.String())
+	}
+}
+
+func TestMaybeExec_DispatchRoundTrip_PrintsVersionSourceOnce(t *testing.T) {
+	// Simulate the full dispatch round-trip: dispatching binary (current=0.9.0)
+	// hands off to dispatched binary (current=1.0.0) via the ExecBinaryFunc mock.
+	// The combined stderr must contain exactly one "version source" line.
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	version := "1.0.0"
+	content := "binary-content"
+	checksum := sha256.Sum256([]byte(content))
+	checksumStr := fmt.Sprintf("%x", checksum)
+	osName, arch, _ := platformStrings()
+	asset := assetName(osName, arch)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case fmt.Sprintf("/download/v%s/%s", version, asset):
+			_, _ = w.Write([]byte(content))
+		case fmt.Sprintf("/download/v%s/checksums.txt", version):
+			_, _ = fmt.Fprintf(w, "%s %s\n", checksumStr, asset)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	// Shared stderr collects output from both "binaries".
+	var stderr bytes.Buffer
+
+	sys := &testSystem{
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			return root, true, nil
+		},
+		StderrFunc: func() io.Writer { return &stderr },
+		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+			// Simulate the dispatched binary: it runs MaybeExec with
+			// current == pinned (1.0.0) and AL_SHIM_ACTIVE=1 in the env.
+			childSys := &testSystem{
+				FindAgentLayerRootFunc: func(string) (string, bool, error) {
+					return root, true, nil
+				},
+				StderrFunc: func() io.Writer { return &stderr },
+				GetenvFunc: func(key string) string {
+					if key == EnvShimActive {
+						return "1"
+					}
+					return ""
+				},
+			}
+			err := MaybeExecWithSystem(childSys, args, "1.0.0", root, exit)
+			if err != nil {
+				t.Errorf("dispatched binary MaybeExec failed: %v", err)
+			}
+			return nil
+		},
+	}
+
+	t.Setenv(EnvCacheDir, t.TempDir())
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", root, func(int) {})
+	if err != ErrDispatched {
+		t.Fatalf("expected ErrDispatched, got %v", err)
+	}
+
+	count := strings.Count(stderr.String(), "version source")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 version source line across dispatch round-trip, got %d in %q", count, stderr.String())
+	}
+}
+
+func TestMaybeExec_DispatchRoundTrip_OverrideWithPin_PrintsOnce(t *testing.T) {
+	// Same as the pin round-trip test, but driven by AL_VERSION override
+	// with a different repo pin. The override warning and version source
+	// must each appear exactly once across both "binaries".
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("0.8.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	version := "1.0.0"
+	content := "binary-content"
+	checksum := sha256.Sum256([]byte(content))
+	checksumStr := fmt.Sprintf("%x", checksum)
+	osName, arch, _ := platformStrings()
+	asset := assetName(osName, arch)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case fmt.Sprintf("/download/v%s/%s", version, asset):
+			_, _ = w.Write([]byte(content))
+		case fmt.Sprintf("/download/v%s/checksums.txt", version):
+			_, _ = fmt.Fprintf(w, "%s %s\n", checksumStr, asset)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	oldURL := releaseBaseURL
+	releaseBaseURL = server.URL
+	defer func() { releaseBaseURL = oldURL }()
+
+	var stderr bytes.Buffer
+
+	sys := &testSystem{
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			return root, true, nil
+		},
+		StderrFunc: func() io.Writer { return &stderr },
+		GetenvFunc: func(key string) string {
+			switch key {
+			case EnvVersionOverride:
+				return version
+			case EnvCacheDir:
+				return t.TempDir()
+			default:
+				return ""
+			}
+		},
+		ExecBinaryFunc: func(path string, args []string, env []string, exit func(int)) error {
+			// Dispatched binary: current=1.0.0, AL_VERSION=1.0.0, AL_SHIM_ACTIVE=1
+			childSys := &testSystem{
+				FindAgentLayerRootFunc: func(string) (string, bool, error) {
+					return root, true, nil
+				},
+				StderrFunc: func() io.Writer { return &stderr },
+				GetenvFunc: func(key string) string {
+					switch key {
+					case EnvVersionOverride:
+						return version
+					case EnvShimActive:
+						return "1"
+					default:
+						return ""
+					}
+				},
+			}
+			err := MaybeExecWithSystem(childSys, args, "1.0.0", root, exit)
+			if err != nil {
+				t.Errorf("dispatched binary MaybeExec failed: %v", err)
+			}
+			return nil
+		},
+	}
+
+	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", root, func(int) {})
+	if err != ErrDispatched {
+		t.Fatalf("expected ErrDispatched, got %v", err)
+	}
+
+	output := stderr.String()
+	versionSourceCount := strings.Count(output, "version source")
+	if versionSourceCount != 1 {
+		t.Fatalf("expected exactly 1 version source line, got %d in %q", versionSourceCount, output)
+	}
+	overrideCount := strings.Count(output, "overrides repo pin")
+	if overrideCount != 1 {
+		t.Fatalf("expected exactly 1 override warning, got %d in %q", overrideCount, output)
+	}
+}
+
 func TestMaybeExec_ExecReturnsDispatched(t *testing.T) {
 	t.Setenv(EnvVersionOverride, "1.0.0")
 	t.Setenv(EnvCacheDir, t.TempDir())
