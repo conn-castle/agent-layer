@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.4 - 2026-02-20
+
+### Fixed
+- Version dispatch no longer prints the version-source diagnostic twice when a pinned or environment-overridden version dispatches to a cached binary. The diagnostic now prints only from the binary that actually runs the command.
+
+### Changed
+- Config validation now silently strips transport-incompatible MCP server fields instead of rejecting the config with an error. For example, `headers` on a stdio server or `command`/`args` on an HTTP server are removed during validation rather than causing a load failure. This makes configs more resilient to leftover fields from transport changes or manual editing.
+
+### Improved
+- `al wizard` config patching now removes dotted sub-key lines (e.g., `headers.Authorization = "Bearer ..."`) when stripping a parent key like `headers`. Previously, only inline-table syntax (`headers = { ... }`) was handled.
+- Scenario-based end-to-end test framework with 26 scenarios and 436 assertions replaces the previous monolithic e2e script. Covers fresh install, wizard profiles, upgrade paths, error propagation, agent launch, and rollback workflows with mock agent binaries.
+
 ## v0.8.3 - 2026-02-19
 
 ### Fixed
