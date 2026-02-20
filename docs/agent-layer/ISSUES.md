@@ -27,10 +27,20 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-20 exit-code-flatten: Subprocess exit codes flattened to 1 by all client launchers
+    Priority: Medium. Area: clients / UX.
+    Description: `al claude`, `al gemini`, `al codex`, etc. all exit with code 1 regardless of the subprocess's actual exit code. The subprocess error is wrapped via `fmt.Errorf` and cobra's top-level handler calls `os.Exit(1)` for any error. E2E test confirmed: mock exits 42, al claude exits 1. Users and scripts cannot distinguish between different failure modes based on exit code.
+    Next step: Type-assert `*exec.ExitError` in launch code, extract `.ExitCode()`, and pass it to `os.Exit()` for subprocess failures. Update e2e test to assert propagated code.
+
+- Issue 2026-02-20 wizard-profile-silent-overwrite: Wizard profile mode silently overwrites corrupt config without detection or warning
+    Priority: Low. Area: wizard / UX.
+    Description: `al wizard --profile X --yes` reads the existing config.toml as raw bytes (never parses as TOML), shows a diff preview, and overwrites with the profile. It does not detect or warn about TOML corruption. This is by design (profile mode is a forceful replacement), but may surprise users who don't realize their custom config was lost.
+    Next step: Consider adding a warning when the existing config fails TOML parsing, so users know they're replacing a corrupt file. The backup (config.toml.bak) is already created.
+
 - Issue 2026-02-19 upg-snapshot-recover-version-target: Snapshot recovery restores to prior version, not upgrade start version
     Priority: High. Area: install / rollback correctness.
     Description: During upgrade flows that create a snapshot, invoking recovery does not restore the environment to the version at upgrade start; it restores only to the immediately prior version state.
-    Next step: Reproduce with an automated upgrade/rollback test that asserts version restoration to the recorded upgrade-start version, then update recovery logic to use that canonical target.
+    Next step: E2E scenario 055 covers the basic upgrade/rollback path and asserts version restoration. Investigate whether there are edge cases where "prior version" differs from "upgrade-start version" and add a dedicated test for that distinction if so.
 
 - Issue 2026-02-19 toml-multiline-state-dup: Multiline TOML state tracking duplicated across 7 functions in wizard/patch.go
     Priority: Low. Area: wizard / maintainability.

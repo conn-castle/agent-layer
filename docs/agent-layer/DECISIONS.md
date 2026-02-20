@@ -254,3 +254,32 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `removeKeyFromBlock` in `internal/wizard/patch.go` now detects and removes TOML dotted sub-key lines (e.g., `headers.Authorization = "val"`) in addition to inline table format (`headers = { ... }`). A new `parseDottedPrefixLine` helper matches lines where the key is a dotted prefix.
     Reason: The v0.8.3 wizard sanitization only worked for inline table format. TOML dotted keys (`headers.Foo = "val"`) were invisible to `parseKeyLineWithState` because it requires `key =` (equals after key), not `key.` (dot after key). Users with dotted-key headers on stdio servers would run the wizard and still get validation errors.
     Tradeoffs: Quoted root keys (`"headers".Foo = "val"`) remain unsupported; accepted because this format is extremely rare and the validation-level sanitization provides a safety net regardless of TOML syntax.
+
+- Decision 2026-02-19 e2e-scenario-framework: Replace monolithic test-e2e.sh with scenario-based bash framework
+    Decision: Replaced the monolithic `scripts/test-e2e.sh` with a scenario-based framework: orchestrator + harness + auto-discovered scenario files. Uses contract-level assertions over mock claude argv/env (not snapshot comparison). `defaults.toml` is generated at runtime from `internal/templates/config.toml` to prevent drift.
+    Reason: The monolithic script could not test user workflows end-to-end (init → wizard → sync → launch) because `al claude` calls `exec.Command("claude")`. A mock claude binary on PATH enables full-pipeline testing. Scenario isolation prevents interference between tests.
+    Tradeoffs: Upgrade scenarios require `AL_E2E_VERSION` set to a real version with a migration manifest; they skip with WARN when using the default `0.0.0`.
+
+- Decision 2026-02-19 e2e-dynamic-upgrade-binaries: Download old release binaries instead of committing fixture directories
+    Decision: Upgrade scenarios download old release binaries from GitHub and run `old_binary init --no-wizard` to create authentic `.agent-layer/` state. Tests both the oldest supported version (v0.8.0) and the latest published release as upgrade sources.
+    Reason: Committed fixture directories duplicated the full `.agent-layer/` state and required manual capture/maintenance. Using real binaries produces authentic state and automatically tests the latest release upgrade path.
+    Tradeoffs: The sanitization scenario injects synthetic bad fields via `sed` after init rather than using a pre-built fixture.
+
+- Decision 2026-02-19 e2e-two-lane-hermetic: Two-lane e2e strategy — offline by default, online opt-in
+    Decision: `make test-e2e` is fully offline/hermetic by default (reads only from persistent cache at `~/.cache/al-e2e/bin/`). `make test-e2e-online` (or `AL_E2E_ONLINE=1`) enables GitHub API calls and binary downloads. `AL_E2E_REQUIRE_UPGRADE=1` makes missing binaries a hard failure (for CI with pre-cached binaries). Latest release version can be pinned via `AL_E2E_LATEST_VERSION`.
+    Reason: Network-dependent tests in the default path cause flaky CI from rate limits, outages, and network policies — failures that don't reflect product regressions.
+    Tradeoffs: Developers must run `make test-e2e-online` once to populate the binary cache before offline upgrade tests work. CI needs a prefetch step or pre-cached binaries.
+
+- Decision 2026-02-20 e2e-anti-rubber-stamp: E2E assertions must validate specific behavior, not just "no crash"
+    Decision: E2E scenarios validate specific output content (error messages, config state, MCP permissions) rather than just checking exit codes and absence of panics. Key patterns: (1) upgrade scenarios increment `E2E_UPGRADE_SCENARIO_COUNT` to fail if zero upgrade tests silently skip in CI, (2) state-change scenarios (doctor, rollback, idempotency) hash `.agent-layer/` state before/after operations, (3) error-path scenarios assert exact error messages from Go source, (4) happy-path scenarios check `assert_no_crash_markers` for Go crash indicators.
+    Reason: Tests that only check "no panic" or "exit 0" are rubber stamps — they pass regardless of whether the feature actually works. The wizard recovery test discovered that `al wizard --yes` (without `--profile`) doesn't report corrupt config errors because the terminal check precedes config loading.
+    Tradeoffs: More assertions per scenario means more maintenance when output format changes; accepted because the cost of false-green tests is higher.
+
+- Decision 2026-02-20 e2e-mandatory-upgrade-ci: Upgrade scenarios mandatory in CI via auto-detected manifest version (supersedes e2e-two-lane-hermetic skip behavior)
+    Decision: `test-e2e.sh` auto-detects the latest migration manifest version from `internal/templates/migrations/` when `AL_E2E_VERSION` is unset, replacing the previous `0.0.0` default that silently skipped all upgrade scenarios. `make ci` now uses `test-e2e-ci` which sets `AL_E2E_ONLINE=1` and `AL_E2E_REQUIRE_UPGRADE=1`. CI caches e2e binaries at `~/.cache/al-e2e/bin/`.
+    Reason: Upgrade scenarios were not exercised in any automated CI. The `0.0.0` default meant 7 upgrade scenarios silently skipped on every PR. 100% of e2e tests must run in CI as the final check before release.
+    Tradeoffs: `make ci` now requires network access to download old release binaries on first run (cached afterwards). `make test-e2e` (offline) still works for local dev with cached binaries.
+
+- Decision 2026-02-20 e2e-literal-arg-matching: Mock arg assertions use literal string comparison, not regex
+    Decision: `assert_mock_agent_has_arg` / `assert_claude_mock_has_arg` (and their `_lacks_arg` variants) now use a bash `while read` loop with `[[ "$val" == "$arg" ]]` instead of `grep "^ARG_[0-9]*=${arg}$"`.
+    Reason: Regex-based matching treated `.` and other characters as wildcards. `gemini-2.5-pro` would match `geminiX2X5-pro` where X is any character. Literal comparison prevents false positives.

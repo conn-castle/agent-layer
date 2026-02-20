@@ -1,0 +1,88 @@
+# everything-enabled.toml — E2E fixture: all agents + all MCP servers enabled.
+# Used by scenario 030 to test the maximal configuration path.
+
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = true
+
+[mcp]
+
+[[mcp.servers]]
+id = "context7"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@2.1.1"]
+env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
+
+[[mcp.servers]]
+id = "github"
+enabled = true
+transport = "http"
+http_transport = "streamable"
+url = "https://api.githubcopilot.com/mcp/"
+headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
+
+[[mcp.servers]]
+id = "tavily"
+enabled = true
+transport = "http"
+http_transport = "streamable"
+url = "https://mcp.tavily.com/mcp/?tavilyApiKey=${AL_TAVILY_API_KEY}"
+
+[[mcp.servers]]
+id = "fetch"
+enabled = true
+transport = "stdio"
+command = "uvx"
+args = ["mcp-server-fetch==2025.4.7"]
+
+[[mcp.servers]]
+id = "playwright"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "@playwright/mcp@0.0.68"]
+
+[[mcp.servers]]
+id = "ripgrep"
+enabled = true
+clients = ["gemini", "claude", "codex"]
+transport = "stdio"
+command = "npx"
+args = ["-y", "mcp-ripgrep@0.4.0"]
+
+[[mcp.servers]]
+id = "filesystem"
+enabled = true
+clients = ["gemini", "claude", "codex"]
+transport = "stdio"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
+
+[warnings]
+version_update_on_sync = true
+noise_mode = "default"
+instruction_token_threshold = 10000
+mcp_server_threshold = 15
+mcp_tools_total_threshold = 60
+mcp_server_tools_threshold = 25
+mcp_schema_tokens_total_threshold = 30000
+mcp_schema_tokens_server_threshold = 20000

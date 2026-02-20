@@ -117,8 +117,12 @@ test-release: ## Run release artifact tests
 	@./scripts/test-release.sh
 
 .PHONY: test-e2e
-test-e2e: ## Run end-to-end build/install smoke tests
+test-e2e: ## Run end-to-end tests (offline — uses cached binaries only)
 	@./scripts/test-e2e.sh
+
+.PHONY: test-e2e-online
+test-e2e-online: ## Run e2e tests with online upgrade binary downloads
+	@AL_E2E_ONLINE=1 ./scripts/test-e2e.sh
 
 .PHONY: docs-upgrade-check
 docs-upgrade-check: ## Validate upgrade contract docs for a release tag (set RELEASE_TAG=vX.Y.Z)
@@ -148,8 +152,12 @@ release-dist: test-release ## Build release artifacts (cross-compile)
 setup: ## Run one-time setup for this clone
 	@./scripts/setup.sh
 
+.PHONY: test-e2e-ci
+test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios required)
+	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
+
 .PHONY: ci
-ci: tidy-check fmt-check lint coverage test-release test-e2e docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint coverage test-release test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local checks during development (format + lint + coverage + release tests)
