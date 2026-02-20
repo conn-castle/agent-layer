@@ -182,6 +182,123 @@ command = "tool"
 	}
 }
 
+func TestLoadConfigStdioWithDottedHeaders(t *testing.T) {
+	// Regression: configs with dotted-key headers (headers.Foo = "bar") on
+	// stdio servers must load successfully. Validate() strips the headers
+	// at struct level regardless of TOML syntax.
+	root := t.TempDir()
+	path := filepath.Join(root, "config.toml")
+	content := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = false
+
+[mcp]
+[[mcp.servers]]
+id = "custom"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "some-package"]
+headers.Authorization = "Bearer token"
+headers."X-Custom" = "value"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(cfg.MCP.Servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(cfg.MCP.Servers))
+	}
+	if cfg.MCP.Servers[0].Headers != nil {
+		t.Errorf("expected headers to be nil after sanitization, got %v", cfg.MCP.Servers[0].Headers)
+	}
+	if cfg.MCP.Servers[0].Command != "npx" {
+		t.Errorf("expected command to be preserved, got %q", cfg.MCP.Servers[0].Command)
+	}
+}
+
+func TestLoadConfigHTTPWithDottedEnv(t *testing.T) {
+	// Regression: configs with dotted-key env (env.TOKEN = "val") on
+	// HTTP servers must load successfully.
+	root := t.TempDir()
+	path := filepath.Join(root, "config.toml")
+	content := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = false
+
+[mcp]
+[[mcp.servers]]
+id = "custom"
+enabled = true
+transport = "http"
+url = "https://api.example.com"
+env.TOKEN = "secret"
+command = "leftover"
+args = ["--old"]
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	srv := cfg.MCP.Servers[0]
+	if srv.Env != nil {
+		t.Errorf("expected env to be nil after sanitization, got %v", srv.Env)
+	}
+	if srv.Command != "" {
+		t.Errorf("expected command to be empty after sanitization, got %q", srv.Command)
+	}
+	if srv.Args != nil {
+		t.Errorf("expected args to be nil after sanitization, got %v", srv.Args)
+	}
+	if srv.URL != "https://api.example.com" {
+		t.Errorf("expected url to be preserved, got %q", srv.URL)
+	}
+}
+
 func TestLoadConfigInvalidToml(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")

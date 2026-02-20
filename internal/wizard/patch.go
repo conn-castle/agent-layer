@@ -311,6 +311,7 @@ func extractMCPBlockKeyValue(lines []string, key string) string {
 
 // removeKeyFromBlock removes all uncommented lines for the given key from a block,
 // including continuation lines of multiline arrays, inline tables, and triple-quoted strings.
+// Also removes dotted sub-key lines (e.g., "headers.Authorization = val" when key is "headers").
 // block is updated in place; commented-out lines for the key are preserved.
 // Tracks multiline string state to avoid matching content inside multiline strings.
 func removeKeyFromBlock(block *tomlBlock, key string) {
@@ -324,6 +325,10 @@ func removeKeyFromBlock(block *tomlBlock, key string) {
 			continue
 		}
 		parsed, ok := parseKeyLineWithState(line, key, state)
+		if !ok {
+			// Check for dotted sub-key (e.g., "headers.foo = val" when key is "headers").
+			parsed, ok = parseDottedPrefixLine(line, key)
+		}
 		_, state = ScanTomlLineForComment(line, state)
 		if ok && !parsed.commented {
 			endIdx := multilineValueEndIndex(block.lines, i)
@@ -340,6 +345,30 @@ func removeKeyFromBlock(block *tomlBlock, key string) {
 		r := ranges[i]
 		block.lines = append(block.lines[:r.start], block.lines[r.end+1:]...)
 	}
+}
+
+// parseDottedPrefixLine checks if a line defines a dotted sub-key of the given key.
+// For example, if key is "headers", matches "headers.Authorization = val"
+// or "# headers.Authorization = val" (commented).
+func parseDottedPrefixLine(line string, key string) (keyLine, bool) {
+	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
+	indent := line[:indentLen]
+	trimmed := strings.TrimLeft(line[indentLen:], " \t")
+	commented := false
+	if strings.HasPrefix(trimmed, "#") {
+		commented = true
+		trimmed = strings.TrimLeft(strings.TrimPrefix(trimmed, "#"), " \t")
+	}
+	prefix := key + "."
+	if !strings.HasPrefix(trimmed, prefix) {
+		return keyLine{}, false
+	}
+	// Verify there's a key = value structure after the dot.
+	rest := trimmed[len(prefix):]
+	if !strings.Contains(rest, "=") {
+		return keyLine{}, false
+	}
+	return keyLine{raw: line, indent: indent, commented: commented}, true
 }
 
 // multilineValueEndIndex returns the index of the last line of a value that

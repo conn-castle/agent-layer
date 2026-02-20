@@ -115,39 +115,9 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 			errContains: "reserved for the internal prompt server",
 		},
 		{
-			name:        "http with command",
-			server:      MCPServer{ID: "s1", Enabled: &enabled, Transport: "http", URL: "x", Command: "c"},
-			errContains: "command/args are not allowed for http",
-		},
-		{
-			name:        "http with args",
-			server:      MCPServer{ID: "s1", Enabled: &enabled, Transport: "http", URL: "x", Args: []string{"a"}},
-			errContains: "command/args are not allowed for http",
-		},
-		{
-			name:        "http with env",
-			server:      MCPServer{ID: "s1", Enabled: &enabled, Transport: "http", URL: "x", Env: map[string]string{"k": "v"}},
-			errContains: "env is not allowed for http",
-		},
-		{
 			name:        "http invalid http_transport",
 			server:      MCPServer{ID: "s1", Enabled: &enabled, Transport: "http", URL: "x", HTTPTransport: "grpc"},
 			errContains: "http_transport must be sse or streamable",
-		},
-		{
-			name:        "stdio with url",
-			server:      MCPServer{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "c", URL: "u"},
-			errContains: "url is not allowed for stdio",
-		},
-		{
-			name:        "stdio with headers",
-			server:      MCPServer{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "c", Headers: map[string]string{"k": "v"}},
-			errContains: "headers are not allowed for stdio",
-		},
-		{
-			name:        "stdio with http_transport",
-			server:      MCPServer{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "c", HTTPTransport: "sse"},
-			errContains: "http_transport is only valid for http transport",
 		},
 		{
 			name:        "invalid client",

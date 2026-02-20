@@ -954,6 +954,55 @@ func TestSanitizeMCPServerBlock_NoTransportDoesNothing(t *testing.T) {
 	assert.Contains(t, joined, `headers = { X = "kept" }`)
 }
 
+func TestSanitizeMCPServerBlock_StdioRemovesDottedHeaders(t *testing.T) {
+	block := &tomlBlock{
+		name: "mcp.servers",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "myserver"`,
+			`enabled = true`,
+			`transport = "stdio"`,
+			`command = "npx"`,
+			`headers.Authorization = "Bearer ${TOKEN}"`,
+			`headers."X-Custom" = "value"`,
+		},
+	}
+
+	sanitizeMCPServerBlock(block)
+
+	joined := strings.Join(block.lines, "\n")
+	assert.NotContains(t, joined, "headers")
+	assert.NotContains(t, joined, "Authorization")
+	assert.NotContains(t, joined, "X-Custom")
+	assert.Contains(t, joined, `transport = "stdio"`)
+	assert.Contains(t, joined, `command = "npx"`)
+	assert.Contains(t, joined, `id = "myserver"`)
+}
+
+func TestSanitizeMCPServerBlock_HTTPRemovesDottedEnv(t *testing.T) {
+	block := &tomlBlock{
+		name: "mcp.servers",
+		lines: []string{
+			"[[mcp.servers]]",
+			`id = "myhttp"`,
+			`enabled = true`,
+			`transport = "http"`,
+			`url = "https://api.example.com"`,
+			`env.TOKEN = "secret"`,
+			`env.PATH = "/usr/bin"`,
+		},
+	}
+
+	sanitizeMCPServerBlock(block)
+
+	joined := strings.Join(block.lines, "\n")
+	assert.NotContains(t, joined, "env")
+	assert.NotContains(t, joined, "TOKEN")
+	assert.NotContains(t, joined, "PATH")
+	assert.Contains(t, joined, `transport = "http"`)
+	assert.Contains(t, joined, `url = "https://api.example.com"`)
+}
+
 func TestPatchConfig_SanitizesHTTPMultilineArgs(t *testing.T) {
 	// Simulate an HTTP server that has leftover multiline args from a transport
 	// change. The wizard must remove all continuation lines, not just the key line.
@@ -1014,6 +1063,72 @@ headers = { Authorization = "Bearer ${TOKEN}" }
 	assert.NotContains(t, out, "headers")
 	assert.Contains(t, out, `transport = "stdio"`)
 	assert.Contains(t, out, `command = "npx"`)
+}
+
+func TestPatchConfig_SanitizesDottedHeadersOnStdioServer(t *testing.T) {
+	// Regression: dotted-key headers (headers.Foo = "bar") were invisible
+	// to removeKeyFromBlock because parseKeyLineWithState only matched
+	// "key = value" format, not "key.subkey = value".
+	content := `
+[mcp]
+
+[[mcp.servers]]
+id = "context7"
+enabled = true
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@2.1.1"]
+headers.Authorization = "Bearer ${TOKEN}"
+headers."X-Tools" = "action_list"
+`
+	choices := NewChoices()
+	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "context7"}}
+	choices.EnabledMCPServersTouched = true
+	choices.EnabledMCPServers = map[string]bool{"context7": true}
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "headers")
+	assert.NotContains(t, out, "Authorization")
+	assert.NotContains(t, out, "X-Tools")
+	assert.Contains(t, out, `transport = "stdio"`)
+	assert.Contains(t, out, `command = "npx"`)
+
+	// Verify the output is valid TOML.
+	_, parseErr := toml.LoadBytes([]byte(out))
+	require.NoError(t, parseErr, "patched output must be valid TOML")
+}
+
+func TestPatchConfig_SanitizesDottedEnvOnHTTPServer(t *testing.T) {
+	// Regression: dotted-key env (env.TOKEN = "val") was invisible to sanitization.
+	content := `
+[mcp]
+
+[[mcp.servers]]
+id = "myhttp"
+enabled = true
+transport = "http"
+url = "https://api.example.com"
+env.TOKEN = "secret"
+env.PATH = "/usr/bin"
+`
+	choices := NewChoices()
+	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "myhttp"}}
+	choices.EnabledMCPServersTouched = true
+	choices.EnabledMCPServers = map[string]bool{"myhttp": true}
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "env.TOKEN")
+	assert.NotContains(t, out, "env.PATH")
+	assert.NotContains(t, out, `"secret"`)
+	assert.Contains(t, out, `transport = "http"`)
+	assert.Contains(t, out, `url = "https://api.example.com"`)
+
+	_, parseErr := toml.LoadBytes([]byte(out))
+	require.NoError(t, parseErr, "patched output must be valid TOML")
 }
 
 func TestExtractMCPBlockKeyValue(t *testing.T) {
@@ -1183,6 +1298,61 @@ func TestRemoveKeyFromBlock(t *testing.T) {
 		removeKeyFromBlock(block, "args")
 		joined := strings.Join(block.lines, "\n")
 		assert.NotContains(t, joined, "args")
+		assert.Contains(t, joined, `command = "keep"`)
+	})
+
+	t.Run("removes dotted sub-keys", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`headers.Authorization = "Bearer token"`,
+				`headers."X-Custom" = "value"`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "headers")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "headers")
+		assert.NotContains(t, joined, "Authorization")
+		assert.NotContains(t, joined, "X-Custom")
+		assert.Contains(t, joined, `command = "keep"`)
+	})
+
+	t.Run("preserves commented dotted sub-keys", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`# headers.Authorization = "Bearer old"`,
+				`headers.Authorization = "Bearer active"`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "headers")
+		joined := strings.Join(block.lines, "\n")
+		assert.Contains(t, joined, `# headers.Authorization = "Bearer old"`)
+		assert.NotContains(t, joined, `Bearer active`)
+		assert.Contains(t, joined, `command = "keep"`)
+	})
+
+	t.Run("removes mix of inline table and dotted keys", func(t *testing.T) {
+		block := &tomlBlock{
+			name: "test",
+			lines: []string{
+				"[[mcp.servers]]",
+				`id = "test"`,
+				`env.TOKEN = "secret"`,
+				`env.PATH = "/usr/bin"`,
+				`command = "keep"`,
+			},
+		}
+		removeKeyFromBlock(block, "env")
+		joined := strings.Join(block.lines, "\n")
+		assert.NotContains(t, joined, "env")
+		assert.NotContains(t, joined, "TOKEN")
+		assert.NotContains(t, joined, "PATH")
 		assert.Contains(t, joined, `command = "keep"`)
 	})
 }
