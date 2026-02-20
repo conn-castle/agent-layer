@@ -40,4 +40,12 @@ const (
 	MCPServerEnvFmt                  = "mcp server %s env %s: %w"
 	MCPUnsupportedTransportFmt       = "unsupported transport %s"
 	MCPServerUnsupportedTransportFmt = "mcp server %s: unsupported transport %s"
+
+	SyncGeminiTrustHomeDirFailedFmt   = "failed to resolve home directory for gemini trusted folders: %v"
+	SyncGeminiTrustReadFailedFmt      = "failed to read %s: %v"
+	SyncGeminiTrustCorruptFmt         = "corrupt trusted folders file %s: %v"
+	SyncGeminiTrustCreateDirFailedFmt = "failed to create %s: %v"
+	SyncGeminiTrustMarshalFailedFmt   = "failed to marshal gemini trusted folders: %v"
+	SyncGeminiTrustWriteFailedFmt     = "failed to write %s: %v"
+	SyncGeminiTrustFix                = "Trust the workspace in Gemini CLI via /permissions, or add the repo path to ~/.gemini/trustedFolders.json."
 )

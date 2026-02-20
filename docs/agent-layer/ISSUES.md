@@ -27,6 +27,27 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-20 gemini-http-transport-url: Gemini sync maps SSE servers to httpUrl instead of url
+    Priority: Medium. Area: sync / Gemini MCP.
+    Description: `buildGeminiSettings` in `internal/sync/gemini.go:98-103` always maps HTTP transport servers to `httpUrl` (streamable HTTP) regardless of the resolved `HTTPTransport` value. Gemini CLI distinguishes `httpUrl` (streamable HTTP) from `url` (SSE). The default `http_transport` is `"sse"` (`resolvers.go:76-78`), so any custom HTTP server without explicit `http_transport = "streamable"` would be written to the wrong field. Current defaults (`github`, `tavily`) are unaffected because they explicitly set `http_transport = "streamable"`.
+    Next step: Check `server.HTTPTransport` in the Gemini build loop: use `url` for SSE, `httpUrl` for streamable. Add test coverage for both transport sub-types.
+
+- Issue 2026-02-20 gemini-mcp-zero-servers: /mcp in Gemini CLI shows zero MCP servers due to untrusted workspace — FIXED
+    Priority: High. Area: clients / Gemini MCP / UX.
+    Description: Running `al gemini` and then typing `/mcp` showed zero MCP servers because Gemini CLI's Trusted Folders feature silently replaced untrusted project settings with `{}`. Fixed: `al sync` now auto-writes the repo root to `~/.gemini/trustedFolders.json` when Gemini is enabled (`EnsureGeminiTrustedFolder` in `internal/sync/gemini_trust.go`). Failures produce a non-fatal warning.
+    Next step: Remove this entry after verifying the fix in production.
+
+- Issue 2026-02-20 upg-snapshot-empty-file-base64: Upgrade snapshot validation rejects zero-byte file entries
+    Priority: Critical. Area: install / upgrade snapshots.
+    Description: `al upgrade` can fail with `validate upgrade snapshot: file snapshot entry ... requires content_base64` when snapshot targets include a zero-byte file (for example under `.agent-layer/tmp`). This violates the reliability requirement that `al upgrade` must ALWAYS work.
+    Next step: Allow empty file payloads for `kind=file` (decode base64 without requiring non-empty string) and add a regression test proving `al upgrade` succeeds with zero-byte unknown files present.
+    Notes: Reliability contract: `al upgrade` must always work. GitHub issue: https://github.com/conn-castle/agent-layer/issues/63
+
+- Issue 2026-02-20 wizard-config-order-preferences: Audit wizard config write order and align it to preferred priority
+    Priority: Medium. Area: wizard / UX.
+    Description: Wizard output currently follows canonical template order, and the current sequence may not match a human-friendly priority order for reading/editing `config.toml`.
+    Next step: Audit the current wizard-managed section/server ordering, gather preferred order from the user, then update template/patch ordering logic and tests to enforce that sequence.
+
 - Issue 2026-02-20 exit-code-flatten: Subprocess exit codes flattened to 1 by all client launchers
     Priority: Medium. Area: clients / UX.
     Description: `al claude`, `al gemini`, `al codex`, etc. all exit with code 1 regardless of the subprocess's actual exit code. The subprocess error is wrapped via `fmt.Errorf` and cobra's top-level handler calls `os.Exit(1)` for any error. E2E test confirmed: mock exits 42, al claude exits 1. Users and scripts cannot distinguish between different failure modes based on exit code.
@@ -39,8 +60,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-19 upg-snapshot-recover-version-target: Snapshot recovery restores to prior version, not upgrade start version
     Priority: High. Area: install / rollback correctness.
-    Description: During upgrade flows that create a snapshot, invoking recovery does not restore the environment to the version at upgrade start; it restores only to the immediately prior version state.
-    Next step: E2E scenario 055 covers the basic upgrade/rollback path and asserts version restoration. Investigate whether there are edge cases where "prior version" differs from "upgrade-start version" and add a dedicated test for that distinction if so.
+    Description: During upgrade flows that create a snapshot, invoking recovery does not restore the environment to the version at upgrade start; it restores only to the immediately prior version state. This violates the expectation that upgrade/rollback flows are always safe and dependable.
+    Next step: E2E scenario 055 covers the basic upgrade/rollback path and asserts version restoration. Investigate edge cases where "prior version" differs from "upgrade-start version", add a dedicated test, and enforce the correct recovery target.
+    Notes: Reliability contract: `al upgrade` must always work, including rollback correctness.
 
 - Issue 2026-02-19 toml-multiline-state-dup: Multiline TOML state tracking duplicated across 7 functions in wizard/patch.go
     Priority: Low. Area: wizard / maintainability.

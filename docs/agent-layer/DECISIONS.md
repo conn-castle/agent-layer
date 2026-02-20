@@ -283,3 +283,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Decision 2026-02-20 e2e-literal-arg-matching: Mock arg assertions use literal string comparison, not regex
     Decision: `assert_mock_agent_has_arg` / `assert_claude_mock_has_arg` (and their `_lacks_arg` variants) now use a bash `while read` loop with `[[ "$val" == "$arg" ]]` instead of `grep "^ARG_[0-9]*=${arg}$"`.
     Reason: Regex-based matching treated `.` and other characters as wildcards. `gemini-2.5-pro` would match `geminiX2X5-pro` where X is any character. Literal comparison prevents false positives.
+
+- Decision 2026-02-20 gemini-auto-trust: `al sync` auto-trusts repo in `~/.gemini/trustedFolders.json`
+    Decision: When Gemini is enabled, `al sync` writes the repo root as `TRUST_FOLDER` to `~/.gemini/trustedFolders.json` (outside the repo). Failures produce a non-fatal warning, never a sync error.
+    Reason: Gemini CLI's Trusted Folders feature silently replaces untrusted project settings with `{}`, discarding all MCP servers. Users already expressed trust by enabling Gemini in `config.toml`; propagating that trust to the Gemini runtime is the expected behavior.
+    Tradeoffs: Writes to a file outside the repo boundary (`~/.gemini/`). Acceptable because this is a user-level runtime config (analogous to existing `~/.codex/` writes) and failure is non-fatal.

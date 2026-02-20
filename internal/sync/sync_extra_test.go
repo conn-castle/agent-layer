@@ -84,7 +84,7 @@ func TestCollectWarningsInstructionsError(t *testing.T) {
 		Root: root,
 	}
 
-	if _, err := collectWarnings(project); err == nil {
+	if _, err := collectWarnings(project, nil); err == nil {
 		t.Fatal("expected collectWarnings to fail when AGENTS.md cannot be read as a file")
 	}
 }
