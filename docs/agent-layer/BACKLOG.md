@@ -28,17 +28,23 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-20 mcp-github-default-removal: Remove GitHub MCP server from wizard/template defaults
+    Priority: Medium. Area: wizard / configuration
+    Description: The GitHub MCP server adds too much default config bloat and should not be included as a default server in generated wizard/template configs.
+    Acceptance criteria: New installs and wizard default/restore flows no longer include a GitHub MCP server default block, and related docs/tests are updated.
+    Notes: Preserve existing user-configured GitHub MCP entries unless the user explicitly removes them.
+
+- Backlog 2026-02-20 cli-model-catalog-refresh: Refresh per-client model lists and remove stale options
+    Priority: High. Area: wizard / configuration
+    Description: Update model option lists for each CLI tool (Gemini, Claude, Codex; including current Codex models such as 5.3) and remove old models that are no longer used.
+    Acceptance criteria: Wizard model selectors present only current supported options per client, write updated values correctly, and tests/docs are updated.
+    Notes: Keep model lists in one canonical source to prevent drift.
+
 - Backlog 2026-02-19 upg-snapshot-list: Add command to list upgrade snapshots
     Priority: Medium. Area: upgrade / CLI
     Description: Provide a CLI way to list available upgrade snapshots so users can discover rollback targets without manually inspecting directories.
     Acceptance criteria: A user can run `al upgrade rollback --list` (or equivalent) and see snapshot IDs and key metadata needed to choose a rollback target.
     Notes: Output should be human-readable and stable for scripting where practical.
-
-- Backlog 2026-02-19 wiz-default-model-names: Update wizard default Claude/Codex model names
-    Priority: Medium. Area: wizard / configuration
-    Description: Update `al wizard` so the default Claude and Codex model names match the current intended defaults.
-    Acceptance criteria: Running `al wizard` with default selections writes the updated Claude and Codex model names to config and related tests/docs reflect the new defaults.
-    Notes: Keep model defaults sourced from a single canonical location to avoid future drift.
 
 - Backlog 2026-02-19 readable-upgrade-diff: Improve upgrade diff readability with color coding
     Priority: Medium. Area: upgrades / UX

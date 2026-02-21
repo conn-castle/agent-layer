@@ -65,9 +65,11 @@ const (
 	RunCreateDirFailedFmt  = "failed to create run dir %s: %w"
 
 	// EnvfileLineErrorFmt formats envfile line errors.
-	EnvfileLineErrorFmt     = "line %d: %w"
-	EnvfileReadFailedFmt    = "failed to read env content: %w"
-	EnvfileExpectedKeyValue = "expected KEY=VALUE"
+	EnvfileLineErrorFmt            = "line %d: %w"
+	EnvfileReadFailedFmt           = "failed to read env content: %w"
+	EnvfileExpectedKeyValue        = "expected KEY=VALUE"
+	EnvfileUnterminatedQuotedValue = "unterminated quoted value"
+	EnvfileInvalidQuotedSuffix     = "invalid trailing characters after quoted value"
 
 	// FsutilCreateTempFileFmt formats temp file creation errors.
 	FsutilCreateTempFileFmt = "create temp file for %s: %w"

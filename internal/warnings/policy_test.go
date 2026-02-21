@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestCheckPolicy_SecretInURL(t *testing.T) {
@@ -98,7 +99,7 @@ func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "all"},
 			Agents: config.AgentsConfig{
-				Antigravity: config.AgentConfig{Enabled: &enabled},
+				Antigravity: config.EnableOnlyConfig{Enabled: &enabled},
 			},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -140,7 +141,7 @@ func TestCheckPolicy_NilAndDisabledServer(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Codex: config.CodexConfig{Enabled: boolPtr(true)},
+				Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 			},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{{
@@ -159,12 +160,12 @@ func TestCheckPolicy_CodexHeadersAllowedForms(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Codex: config.CodexConfig{Enabled: boolPtr(true)},
+				Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 			},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{{
 					ID:      "srv",
-					Enabled: boolPtr(true),
+					Enabled: testutil.BoolPtr(true),
 					URL:     "https://example.com/mcp",
 					Headers: map[string]string{
 						"Authorization": "Bearer ${AL_TOKEN}",
@@ -181,12 +182,12 @@ func TestCheckPolicy_CodexHeaderSkippedWhenCodexNotTargetedOrDisabled(t *testing
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Codex: config.CodexConfig{Enabled: boolPtr(false)},
+				Codex: config.CodexConfig{Enabled: testutil.BoolPtr(false)},
 			},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{{
 					ID:      "srv",
-					Enabled: boolPtr(true),
+					Enabled: testutil.BoolPtr(true),
 					Clients: []string{"gemini"},
 					URL:     "https://example.com/mcp",
 					Headers: map[string]string{
@@ -203,20 +204,20 @@ func TestCheckPolicy_SecretURLIgnoresPlaceholderAndEmptyValues(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Codex: config.CodexConfig{Enabled: boolPtr(true)},
+				Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 			},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{{
 					ID:      "srv1",
-					Enabled: boolPtr(true),
+					Enabled: testutil.BoolPtr(true),
 					URL:     "https://example.com/mcp?api_key=${AL_TOKEN}",
 				}, {
 					ID:      "srv2",
-					Enabled: boolPtr(true),
+					Enabled: testutil.BoolPtr(true),
 					URL:     "https://example.com/mcp?api_key=",
 				}, {
 					ID:      "srv3",
-					Enabled: boolPtr(true),
+					Enabled: testutil.BoolPtr(true),
 					URL:     "://not-valid-url",
 				}},
 			},
@@ -309,8 +310,8 @@ func TestFindUnsupportedCodexHeaderForm(t *testing.T) {
 
 func TestPolicyHelpers(t *testing.T) {
 	require.False(t, isEnabled(nil))
-	require.True(t, isEnabled(boolPtr(true)))
-	require.False(t, isEnabled(boolPtr(false)))
+	require.True(t, isEnabled(testutil.BoolPtr(true)))
+	require.False(t, isEnabled(testutil.BoolPtr(false)))
 
 	require.True(t, isClientTargeted(nil, "codex"))
 	require.True(t, isClientTargeted([]string{"codex"}, "codex"))
@@ -361,14 +362,10 @@ func TestDedupePolicyWarningsAndAntigravityEnabled(t *testing.T) {
 	require.Nil(t, dedupePolicyWarnings(nil))
 
 	require.True(t, onlyAntigravityEnabled(config.AgentsConfig{
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
+		Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
 	}))
 	require.False(t, onlyAntigravityEnabled(config.AgentsConfig{
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
-		Codex:       config.CodexConfig{Enabled: boolPtr(true)},
+		Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		Codex:       config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 	}))
-}
-
-func boolPtr(v bool) *bool {
-	return &v
 }

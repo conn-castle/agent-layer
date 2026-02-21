@@ -57,6 +57,11 @@ func TestRunWithSystemFS_InvalidConfig(t *testing.T) {
 }
 
 func TestRunWithSystemFS_Success(t *testing.T) {
+	home := t.TempDir()
+	origHome := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = origHome })
+
 	fixtureRoot := filepath.Join("testdata", "fixture-repo")
 	root := t.TempDir()
 	if err := copyFixtureRepo(fixtureRoot, root); err != nil {

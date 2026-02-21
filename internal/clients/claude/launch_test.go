@@ -1,19 +1,18 @@
 package claude
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestLaunchClaude(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
-	writeStub(t, binDir, "claude")
+	testutil.WriteStub(t, binDir, "claude")
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -34,7 +33,7 @@ func TestLaunchClaude(t *testing.T) {
 func TestLaunchClaudeError(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
-	writeStubWithExit(t, binDir, "claude", 1)
+	testutil.WriteStubWithExit(t, binDir, "claude", 1)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -55,7 +54,7 @@ func TestLaunchClaudeError(t *testing.T) {
 func TestLaunchClaudeYOLO(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
-	writeStubExpectArg(t, binDir, "claude", "--dangerously-skip-permissions")
+	testutil.WriteStubExpectArg(t, binDir, "claude", "--dangerously-skip-permissions")
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -71,28 +70,5 @@ func TestLaunchClaudeYOLO(t *testing.T) {
 	env := os.Environ()
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
-	}
-}
-
-func writeStub(t *testing.T, dir string, name string) {
-	t.Helper()
-	writeStubWithExit(t, dir, name, 0)
-}
-
-func writeStubWithExit(t *testing.T, dir string, name string, code int) {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	content := []byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", code))
-	if err := os.WriteFile(path, content, 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
-}
-
-func writeStubExpectArg(t *testing.T, dir string, name string, expected string) {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	content := []byte(fmt.Sprintf("#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"%s\" ]; then exit 0; fi\ndone\nexit 1\n", expected))
-	if err := os.WriteFile(path, content, 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
 	}
 }

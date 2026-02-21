@@ -27,6 +27,22 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-20 gemini-http-transport-url: Gemini sync maps SSE servers to httpUrl instead of url
+    Priority: Medium. Area: sync / Gemini MCP.
+    Description: `buildGeminiSettings` in `internal/sync/gemini.go:98-103` always maps HTTP transport servers to `httpUrl` (streamable HTTP) regardless of the resolved `HTTPTransport` value. Gemini CLI distinguishes `httpUrl` (streamable HTTP) from `url` (SSE). The default `http_transport` is `"sse"` (`resolvers.go:76-78`), so any custom HTTP server without explicit `http_transport = "streamable"` would be written to the wrong field. Current defaults (`github`, `tavily`) are unaffected because they explicitly set `http_transport = "streamable"`.
+    Next step: Check `server.HTTPTransport` in the Gemini build loop: use `url` for SSE, `httpUrl` for streamable. Add test coverage for both transport sub-types.
+
+- Issue 2026-02-20 upg-snapshot-empty-file-base64: Upgrade snapshot validation rejects zero-byte file entries
+    Priority: Critical. Area: install / upgrade snapshots.
+    Description: `al upgrade` can fail with `validate upgrade snapshot: file snapshot entry ... requires content_base64` when snapshot targets include a zero-byte file (for example under `.agent-layer/tmp`). This violates the reliability requirement that `al upgrade` must ALWAYS work.
+    Next step: Allow empty file payloads for `kind=file` (decode base64 without requiring non-empty string) and add a regression test proving `al upgrade` succeeds with zero-byte unknown files present.
+    Notes: Reliability contract: `al upgrade` must always work. GitHub issue: https://github.com/conn-castle/agent-layer/issues/63
+
+- Issue 2026-02-20 wizard-config-order-preferences: Audit wizard config write order and align it to preferred priority
+    Priority: Medium. Area: wizard / UX.
+    Description: Wizard output currently follows canonical template order, and the current sequence may not match a human-friendly priority order for reading/editing `config.toml`.
+    Next step: Audit the current wizard-managed section/server ordering, gather preferred order from the user, then update template/patch ordering logic and tests to enforce that sequence.
+
 - Issue 2026-02-20 exit-code-flatten: Subprocess exit codes flattened to 1 by all client launchers
     Priority: Medium. Area: clients / UX.
     Description: `al claude`, `al gemini`, `al codex`, etc. all exit with code 1 regardless of the subprocess's actual exit code. The subprocess error is wrapped via `fmt.Errorf` and cobra's top-level handler calls `os.Exit(1)` for any error. E2E test confirmed: mock exits 42, al claude exits 1. Users and scripts cannot distinguish between different failure modes based on exit code.
@@ -39,8 +55,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-19 upg-snapshot-recover-version-target: Snapshot recovery restores to prior version, not upgrade start version
     Priority: High. Area: install / rollback correctness.
-    Description: During upgrade flows that create a snapshot, invoking recovery does not restore the environment to the version at upgrade start; it restores only to the immediately prior version state.
-    Next step: E2E scenario 055 covers the basic upgrade/rollback path and asserts version restoration. Investigate whether there are edge cases where "prior version" differs from "upgrade-start version" and add a dedicated test for that distinction if so.
+    Description: During upgrade flows that create a snapshot, invoking recovery does not restore the environment to the version at upgrade start; it restores only to the immediately prior version state. This violates the expectation that upgrade/rollback flows are always safe and dependable.
+    Next step: E2E scenario 055 covers the basic upgrade/rollback path and asserts version restoration. Investigate edge cases where "prior version" differs from "upgrade-start version", add a dedicated test, and enforce the correct recovery target.
+    Notes: Reliability contract: `al upgrade` must always work, including rollback correctness.
 
 - Issue 2026-02-19 toml-multiline-state-dup: Multiline TOML state tracking duplicated across 7 functions in wizard/patch.go
     Priority: Low. Area: wizard / maintainability.
@@ -51,21 +68,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Medium. Area: config / backwards compatibility.
     Description: v0.8.1 added `agents.claude-vscode.enabled` as required, breaking pre-v0.8.1 configs. Fixed by config resilience (lenient parsing + interactive upgrade prompts). Any future new required field must include a `config_set_default` operation in the release's migration manifest (`internal/templates/migrations/<version>.json`).
     Next step: Add a CI lint or code review checklist item that enforces: any new nil-check in `Validate()` must have a matching `config_set_default` operation in the migration manifest.
-
-- Issue 2026-02-18 warn-deterministic-order: MCP collision warning output is non-deterministic
-    Priority: Medium. Area: warnings / determinism.
-    Description: `internal/warnings/mcp.go:168` iterates `toolNames` (a map) directly when generating `CodeMCPToolNameCollision` warnings. Map iteration order is non-deterministic, producing unstable CLI output.
-    Next step: Sort collision subjects before appending warnings; add a deterministic ordering contract test for `CheckMCPServers` output.
-
-- Issue 2026-02-18 race-target: No canonical race-check command in workflow docs
-    Priority: Low. Area: testing / CI hygiene.
-    Description: Race checks pass today but there is no documented repeatable command in COMMANDS.md. Race testing is ad hoc instead of a repeatable workflow step.
-    Next step: Add a Makefile target (e.g., `make test-race`) targeting concurrency-critical packages and document it in COMMANDS.md.
-
-- Issue 2026-02-16 test-coverage-parity: Local test coverage does not match GitHub Actions CI
-    Priority: Medium. Area: testing / CI.
-    Description: Test coverage reports generated locally (e.g., via `go test -cover`) do not align with the results produced in GitHub Actions. This makes it difficult to ensure coverage requirements are met before pushing code.
-    Next step: Investigate the differences in coverage calculation (e.g., flags, environment, or tool versions) and provide a script or Makefile target that reproduces the CI coverage report locally.
 
 - Issue 2026-02-16 skill-standard-rename: Rename slash-commands to skills and align with standard
     Priority: High. Area: slash-commands / skills.
@@ -104,32 +106,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
     Next step: Add snapshot-size budget checks (warning and/or configurable cap) and document retention sizing guidance.
 
-- Issue 2026-02-12 wiz-dead-code: Dead code in wizard package
-    Priority: Low. Area: wizard / maintainability.
-    Description: `approvalModeHelpText()` in `notes.go` is only exercised by its own test but never called in production code. `commentForLine`/`inlineCommentForLine` in `tomlutil.go` are used internally and are NOT dead code.
-    Next step: Remove `approvalModeHelpText` and its test if the function is confirmed unused.
-    Notes: Mutable exported globals issue resolved by config field catalog refactor (Decision config-field-catalog).
-
-- Issue 2026-02-12 stub-dup: writeStub/writeStubWithExit test helpers duplicated across 5+ packages
-    Priority: Low. Area: testing / DRY.
-    Description: `writeStub` is duplicated across 5+ test files (`internal/clients/vscode`, `claude`, `antigravity`, `gemini`, `cmd/al`). `writeStubWithExit` is similarly duplicated across `cmd/al`, `cmd/publish-site`, and others. `writeStubExpectArg` is duplicated in `internal/clients/claude` and `gemini`.
-    Next step: Consolidate all three (`writeStub`, `writeStubWithExit`, `writeStubExpectArg`) into `internal/testutil` alongside `boolPtr` and `withWorkingDir`.
-
-- Issue 2026-02-12 envfile-asym: Asymmetric envfile encode/decode
-    Priority: Low. Area: envfile / correctness.
-    Description: `internal/envfile/envfile.go:113-130` handles quoting and escaping differently on encode vs. decode paths, meaning a round-trip (write then read) may not preserve values with embedded quotes, newlines, or special characters.
-    Next step: Add round-trip property tests and align encode/decode paths.
-
-- Issue 2026-02-12 3c5f958c: Duplicated boolPtr test helper across packages
-    Priority: Low. Area: testing / DRY.
-    Description: `boolPtr` is defined identically in `internal/install/upgrade_readiness_coverage_test.go` (38 uses) and `internal/sync/sync_extra_test.go` (1 use).
-    Next step: Create `internal/testutil` package and consolidate.
-
-- Issue 2026-02-12 3c5f958d: Duplicated withWorkingDir test helper across packages
-    Priority: Low. Area: testing / DRY.
-    Description: `withWorkingDir` is defined in `cmd/al/root_test.go` (25 uses) and `cmd/publish-site/main_test.go` (15 uses) with a minor error-handling difference.
-    Next step: Consolidate into `internal/testutil` package using the fatal-logging variant.
-
 - Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
     Priority: Low. Area: install / maintainability.
     Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
@@ -147,6 +123,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-08 tmpl-mk: Slash-command templates reference non-existent Makefile targets
     Priority: Low. Area: templates / developer experience.
-    Description: `finish-task.md`, `fix-issues.md`, and `cleanup-code.md` templates reference `make test-fast` and `make dead-code`. The templates already guard these with conditional language ("preferred when available", "only if already present"), but agents may still attempt them in repos that do not provide them.
+    Description: `finish-task.md`, `fix-issues.md`, and `cleanup-code.md` templates reference `make test-fast` and other repo-specific optional targets. The templates already guard these with conditional language ("preferred when available", "only if already present"), but agents may still attempt commands in repos that do not provide them.
     Next step: Consider whether the conditional language is sufficient, or whether a stronger guard (e.g., checking target existence before invocation) would reduce noise.
     Notes: Reconfirmed by documentation audit on 2026-02-18; keep this as a template-level guardrail issue (not a repo-local Makefile requirement).

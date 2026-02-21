@@ -16,6 +16,7 @@ const (
 	CodePolicySecretInURL        = "POLICY_SECRET_IN_URL"
 	CodePolicyCodexHeaderForm    = "POLICY_CODEX_HEADER_FORM_UNSUPPORTED"
 	CodePolicyCapabilityMismatch = "POLICY_CLIENT_CAPABILITY_MISMATCH"
+	CodeGeminiTrustFolderFailed  = "GEMINI_TRUST_FOLDER_FAILED"
 )
 
 // Source labels where a warning originates.

@@ -9,6 +9,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/vscode"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestRunVSCodeNoSync(t *testing.T) {
@@ -16,7 +17,7 @@ func TestRunVSCodeNoSync(t *testing.T) {
 	writeTestRepo(t, root)
 
 	binDir := t.TempDir()
-	writeStub(t, binDir, "code")
+	testutil.WriteStub(t, binDir, "code")
 
 	t.Setenv("PATH", binDir)
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
@@ -100,7 +101,7 @@ enabled = true
 	}
 
 	binDir := t.TempDir()
-	writeStub(t, binDir, "code")
+	testutil.WriteStub(t, binDir, "code")
 	t.Setenv("PATH", binDir)
 
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
@@ -125,7 +126,7 @@ func TestRunVSCodeNoSyncManagedBlockConflict(t *testing.T) {
 	}
 
 	binDir := t.TempDir()
-	writeStub(t, binDir, "code")
+	testutil.WriteStub(t, binDir, "code")
 	t.Setenv("PATH", binDir)
 
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {

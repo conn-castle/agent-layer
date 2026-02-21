@@ -27,6 +27,10 @@ func isValidApprovalMode(mode string) bool {
 	return false
 }
 
+// validClients lists clients that can appear in mcp.servers[].clients.
+// "claude-vscode" is intentionally absent — the Claude VS Code extension shares
+// .mcp.json with Claude CLI, so "claude" covers both.
+// See Decision p12-claude-vscode-no-mcp-filter.
 var validClients = map[string]struct{}{
 	"gemini":      {},
 	"claude":      {},
@@ -70,6 +74,12 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.Antigravity.Enabled == nil {
 		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
+
+	// Model validation: agent model values (agents.gemini.model, agents.claude.model,
+	// agents.codex.model, agents.codex.reasoning_effort) are intentionally NOT validated
+	// here. The field catalog (fields.go) defines known options with AllowCustom: true,
+	// meaning arbitrary model strings are accepted. The downstream client is the authority
+	// on valid model names. See Decision config-field-catalog.
 
 	seenServerIDs := make(map[string]int, len(c.MCP.Servers))
 	for i, server := range c.MCP.Servers {

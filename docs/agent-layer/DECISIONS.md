@@ -283,3 +283,27 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Decision 2026-02-20 e2e-literal-arg-matching: Mock arg assertions use literal string comparison, not regex
     Decision: `assert_mock_agent_has_arg` / `assert_claude_mock_has_arg` (and their `_lacks_arg` variants) now use a bash `while read` loop with `[[ "$val" == "$arg" ]]` instead of `grep "^ARG_[0-9]*=${arg}$"`.
     Reason: Regex-based matching treated `.` and other characters as wildcards. `gemini-2.5-pro` would match `geminiX2X5-pro` where X is any character. Literal comparison prevents false positives.
+
+- Decision 2026-02-20 gemini-auto-trust: `al sync` auto-trusts repo in `~/.gemini/trustedFolders.json`
+    Decision: When Gemini is enabled, `al sync` writes the repo root as `TRUST_FOLDER` to `~/.gemini/trustedFolders.json` (outside the repo). Failures produce a non-fatal warning, never a sync error.
+    Reason: Gemini CLI's Trusted Folders feature silently replaces untrusted project settings with `{}`, discarding all MCP servers. Users already expressed trust by enabling Gemini in `config.toml`; propagating that trust to the Gemini runtime is the expected behavior.
+    Tradeoffs: Writes to a file outside the repo boundary (`~/.gemini/`). Acceptable because this is a user-level runtime config (analogous to existing `~/.codex/` writes) and failure is non-fatal.
+
+- Decision 2026-02-20 config-catalog-scope: Field catalog is wizard-managed fields, not full schema
+    Decision: The field catalog (fields.go) covers fields that the wizard prompts for and upgrade migrations reference. It is not a complete TOML schema inventory. Fields like warnings.noise_mode and warnings.version_update_on_sync are valid config keys but not in the catalog because they are not wizard-managed.
+    Reason: Catalog entries carry wizard UI metadata (options, descriptions, AllowCustom). Adding entries for non-interactive fields would add maintenance burden with no UX benefit.
+
+- Decision 2026-02-20 gemini-trust-export: Export `UserHomeDir` test seam to prevent cross-package test pollution
+    Decision: Export `sync.UserHomeDir` (was `userHomeDir`) so cross-package tests (`cmd/al/`, `internal/clients/`) can stub the home directory used by `EnsureGeminiTrustedFolder`.
+    Reason: Tests that called sync with Gemini enabled were appending temp dirs to the real `~/.gemini/trustedFolders.json` because they could not stub the unexported variable.
+    Tradeoffs: The exported variable is a test seam only; follows the established `updatewarn.CheckForUpdate` pattern.
+
+- Decision 2026-02-20 config-enable-only-strict: Enable-only agents reject unknown TOML keys via strict decode
+    Decision: Introduced `EnableOnlyConfig` struct (Enabled only, no Model) for claude-vscode, vscode, and antigravity agents. `ParseConfig` now runs a strict TOML decode (`DisallowUnknownFields`) after permissive unmarshal, rejecting unknown keys like `model` on enable-only agents. `ParseConfigLenient` (wizard, doctor) is unaffected.
+    Reason: Users could set `agents.vscode.model = "..."` and get zero feedback that the field was silently ignored — no production code reads Model from these agents. Strict decode catches this at config load time with a clear error.
+    Tradeoffs: Any unknown key in config.toml now fails `ParseConfig`. The upgrade readiness `unrecognized_config_keys` check becomes partially redundant (config loading fails first), but remains useful for pre-upgrade diagnostics on lenient-loaded configs.
+
+- Decision 2026-02-20 unknown-key-repairable: Unknown-key errors are repairable via wizard/doctor (follow-up to config-enable-only-strict)
+    Decision: Wrap unknown-key errors with `ErrConfigValidation` and include repair guidance (`al wizard` / `al doctor`). This allows wizard and doctor lenient fallback to trigger for unknown keys, just as it does for missing-field validation errors.
+    Reason: Without the sentinel wrapper, unknown-key errors hard-failed both repair tools — the exact tools the user should run to fix the config. The wizard rewrites config from scratch (removing unknown keys) and the doctor should report them as a repairable FAIL, not an unrecoverable error.
+    Tradeoffs: None significant; unknown keys are a config schema issue semantically equivalent to validation errors.

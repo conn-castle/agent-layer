@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -77,10 +78,23 @@ func ParseConfig(data []byte, source string) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
 	}
+	if err := decodeStrict(data); err != nil {
+		return nil, fmt.Errorf("%w: "+messages.ConfigUnrecognizedKeysFmt+" "+messages.ConfigValidationGuidance, ErrConfigValidation, source, err)
+	}
 	if err := cfg.Validate(source); err != nil {
 		return nil, fmt.Errorf("%w: %w "+messages.ConfigValidationGuidance, ErrConfigValidation, err)
 	}
 	return &cfg, nil
+}
+
+// decodeStrict re-decodes the TOML data with strict unknown-field rejection.
+// This catches keys that toml.Unmarshal silently ignores (e.g. model on
+// enable-only agents whose struct has no Model field).
+func decodeStrict(data []byte) error {
+	var cfg Config
+	decoder := toml.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(&cfg)
 }
 
 // ParseConfigLenient parses config TOML data without validation.

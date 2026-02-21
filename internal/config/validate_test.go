@@ -13,10 +13,10 @@ func TestValidateConfigErrors(t *testing.T) {
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &trueVal},
 			Claude:       AgentConfig{Enabled: &trueVal},
-			ClaudeVSCode: AgentConfig{Enabled: &trueVal},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
-			VSCode:       AgentConfig{Enabled: &trueVal},
-			Antigravity:  AgentConfig{Enabled: &falseVal},
+			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &falseVal},
 		},
 		MCP: MCPConfig{},
 	}
@@ -133,10 +133,10 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &trueVal},
 			Claude:       AgentConfig{Enabled: &trueVal},
-			ClaudeVSCode: AgentConfig{Enabled: &trueVal},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
-			VSCode:       AgentConfig{Enabled: &trueVal},
-			Antigravity:  AgentConfig{Enabled: &trueVal},
+			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 		},
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
@@ -151,10 +151,10 @@ func TestValidateWarningsThresholds(t *testing.T) {
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       AgentConfig{Enabled: &enabled},
-			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
-			VSCode:       AgentConfig{Enabled: &enabled},
-			Antigravity:  AgentConfig{Enabled: &enabled},
+			VSCode:       EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 		},
 	}
 
@@ -235,10 +235,10 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       AgentConfig{Enabled: &enabled},
-			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
-			VSCode:       AgentConfig{Enabled: &enabled},
-			Antigravity:  AgentConfig{Enabled: &enabled},
+			VSCode:       EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 		},
 	}
 

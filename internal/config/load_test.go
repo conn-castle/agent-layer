@@ -454,6 +454,43 @@ mode = "all"
 	}
 }
 
+func TestParseConfig_RejectsUnknownKeys(t *testing.T) {
+	// agents.claude-vscode uses EnableOnlyConfig (no Model field),
+	// so "model" is an unknown key that strict decode must reject.
+	data := `
+[approvals]
+mode = "all"
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.claude-vscode]
+enabled = true
+model = "some-model"
+[agents.codex]
+enabled = true
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = true
+`
+	_, err := ParseConfig([]byte(data), "test")
+	if err == nil {
+		t.Fatal("expected error for unknown key agents.claude-vscode.model")
+	}
+	if !strings.Contains(err.Error(), "unrecognized") {
+		t.Fatalf("expected unrecognized key error, got: %v", err)
+	}
+	// Must be a validation error so wizard/doctor lenient fallback triggers.
+	if !errors.Is(err, ErrConfigValidation) {
+		t.Fatalf("unrecognized key error should match ErrConfigValidation, got: %v", err)
+	}
+	// Must include repair guidance.
+	if !strings.Contains(err.Error(), "al wizard") || !strings.Contains(err.Error(), "al doctor") {
+		t.Fatalf("expected error to contain guidance about wizard/doctor, got: %v", err)
+	}
+}
+
 func TestParseConfig_TOMLSyntaxErrorIsNotValidationError(t *testing.T) {
 	_, err := ParseConfig([]byte(`{{{`), "test")
 	if err == nil {

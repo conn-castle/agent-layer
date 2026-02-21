@@ -115,8 +115,17 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		return nil, err
 	}
 
-	// Collect warnings after successful sync
-	ws, err := collectWarnings(project)
+	// Non-fatal post-steps that produce warnings on failure.
+	var postWarnings []warnings.Warning
+	if agentEnabled(agents.Gemini.Enabled) {
+		if w := EnsureGeminiTrustedFolder(sys, root); w != nil {
+			postWarnings = append(postWarnings, *w)
+		}
+	}
+
+	// Collect warnings after successful sync, including post-step warnings
+	// so that all warnings pass through noise control.
+	ws, err := collectWarnings(project, postWarnings)
 	if err != nil {
 		return nil, err
 	}
@@ -127,14 +136,16 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 }
 
 // collectWarnings gathers all sync-time warnings based on the project config.
-func collectWarnings(project *config.ProjectConfig) ([]warnings.Warning, error) {
+// extra warnings (e.g. from post-steps) are included before noise control is applied.
+func collectWarnings(project *config.ProjectConfig, extra []warnings.Warning) ([]warnings.Warning, error) {
 	// Instructions size checks run after sync generation.
 	instructionWarnings, err := warnings.CheckInstructions(project.Root, project.Config.Warnings.InstructionTokenThreshold)
 	if err != nil {
 		return nil, err
 	}
 	policyWarnings := warnings.CheckPolicy(project)
-	collected := make([]warnings.Warning, 0, len(instructionWarnings)+len(policyWarnings))
+	collected := make([]warnings.Warning, 0, len(extra)+len(instructionWarnings)+len(policyWarnings))
+	collected = append(collected, extra...)
 	collected = append(collected, instructionWarnings...)
 	collected = append(collected, policyWarnings...)
 

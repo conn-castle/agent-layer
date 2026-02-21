@@ -165,17 +165,24 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	}
 
 	// Check: MCP_TOOL_NAME_COLLISION
+	collisionNames := make([]string, 0, len(toolNames))
 	for name, servers := range toolNames {
 		if len(servers) > 1 {
-			warnings = append(warnings, Warning{
-				Code:     CodeMCPToolNameCollision,
-				Subject:  name,
-				Message:  fmt.Sprintf(messages.WarningsMCPToolNameCollisionFmt, servers),
-				Fix:      messages.WarningsMCPToolNameCollisionFix,
-				Source:   SourceInternal,
-				Severity: SeverityWarning,
-			})
+			collisionNames = append(collisionNames, name)
 		}
+	}
+	sort.Strings(collisionNames)
+	for _, name := range collisionNames {
+		servers := append([]string(nil), toolNames[name]...)
+		sort.Strings(servers)
+		warnings = append(warnings, Warning{
+			Code:     CodeMCPToolNameCollision,
+			Subject:  name,
+			Message:  fmt.Sprintf(messages.WarningsMCPToolNameCollisionFmt, servers),
+			Fix:      messages.WarningsMCPToolNameCollisionFix,
+			Source:   SourceInternal,
+			Severity: SeverityWarning,
+		})
 	}
 
 	return warnings, nil

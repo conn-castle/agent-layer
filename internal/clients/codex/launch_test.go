@@ -1,7 +1,6 @@
 package codex
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +8,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestEnsureCodexHomeSetsDefault(t *testing.T) {
@@ -40,7 +40,7 @@ func TestEnsureCodexHomeKeepsMatching(t *testing.T) {
 func TestLaunchCodex(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
-	writeStubWithExit(t, binDir, "codex", 0)
+	testutil.WriteStubWithExit(t, binDir, "codex", 0)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -66,7 +66,7 @@ func TestLaunchCodex(t *testing.T) {
 func TestLaunchCodexError(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
-	writeStubWithExit(t, binDir, "codex", 1)
+	testutil.WriteStubWithExit(t, binDir, "codex", 1)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -107,14 +107,5 @@ func TestEnsureCodexHome_WarningWriteFailureLeavesEnvUnchanged(t *testing.T) {
 	value, ok := clients.GetEnv(out, "CODEX_HOME")
 	if !ok || value != current {
 		t.Fatalf("expected CODEX_HOME to remain unchanged, got %q", value)
-	}
-}
-
-func writeStubWithExit(t *testing.T, dir string, name string, code int) {
-	t.Helper()
-	path := filepath.Join(dir, name)
-	content := []byte(fmt.Sprintf("#!/bin/sh\nexit %d\n", code))
-	if err := os.WriteFile(path, content, 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
 	}
 }
