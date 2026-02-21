@@ -21,7 +21,10 @@ ENVEOF
 
   # Doctor should detect missing secrets and exit nonzero
   local doctor_output rc=0
-  doctor_output=$(cd "$repo_dir" && al doctor 2>&1) || rc=$?
+  doctor_output=$(cd "$repo_dir" && env \
+    -u AL_GITHUB_PERSONAL_ACCESS_TOKEN \
+    -u AL_TAVILY_API_KEY \
+    al doctor 2>&1) || rc=$?
   if [[ $rc -ne 0 ]]; then
     pass "al doctor exits nonzero when secrets are missing (exit code: $rc)"
   else

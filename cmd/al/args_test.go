@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestClientArgsPassThrough(t *testing.T) {
@@ -16,11 +18,11 @@ func TestClientArgsPassThrough(t *testing.T) {
 	binDir := t.TempDir()
 	argsFile := filepath.Join(t.TempDir(), "claude-args.txt")
 	writeArgsStub(t, binDir, "claude", argsFile)
-	writeStub(t, binDir, "al")
+	testutil.WriteStub(t, binDir, "al")
 
 	t.Setenv("PATH", binDir)
 
-	withWorkingDir(t, root, func() {
+	testutil.WithWorkingDir(t, root, func() {
 		cmd := newRootCmd()
 		cmd.SetArgs([]string{"claude", "--foo", "bar", "--baz=qux"})
 		if err := cmd.Execute(); err != nil {
@@ -46,11 +48,11 @@ func TestClientArgsPassThroughWithSeparator(t *testing.T) {
 	binDir := t.TempDir()
 	argsFile := filepath.Join(t.TempDir(), "claude-args-sep.txt")
 	writeArgsStub(t, binDir, "claude", argsFile)
-	writeStub(t, binDir, "al")
+	testutil.WriteStub(t, binDir, "al")
 
 	t.Setenv("PATH", binDir)
 
-	withWorkingDir(t, root, func() {
+	testutil.WithWorkingDir(t, root, func() {
 		cmd := newRootCmd()
 		cmd.SetArgs([]string{"claude", "--", "--help"})
 		if err := cmd.Execute(); err != nil {

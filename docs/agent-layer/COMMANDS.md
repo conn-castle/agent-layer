@@ -35,7 +35,7 @@ Run from: repo root
 Prerequisites: Go 1.25.6+, Make  
 Notes: Uses versions pinned in `go.mod`. Installs tools into `.tools/bin`.
 
-- Install pinned Go tooling (goimports, golangci-lint, gotestsum) only
+- Install pinned Go tooling (goimports, golangci-lint, gotestsum, deadcode) only
 ```bash
 make tools
 ```
@@ -84,6 +84,22 @@ make lint
 Run from: repo root  
 Prerequisites: `make tools` has been run
 
+- Run dead code analysis across all packages (test-aware default)
+```bash
+make dead-code
+```
+Run from: repo root  
+Prerequisites: `make tools` has been run
+Notes: Runs `deadcode -test ./...` for high-signal results that include package test executables.
+
+- Run entrypoint-focused dead code analysis (higher noise, deeper audit)
+```bash
+make dead-code-entrypoints
+```
+Run from: repo root  
+Prerequisites: `make tools` has been run
+Notes: Runs `deadcode -test` from `./cmd/al` and `./cmd/publish-site` roots; useful when auditing CLI-reachability specifically.
+
 ### Test
 
 - Run all tests
@@ -94,13 +110,21 @@ Run from: repo root
 Prerequisites: `make tools` has been run
 Notes: Uses `gotestsum` for nicer output.
 
+- Run race detector on concurrency-critical packages
+```bash
+make test-race
+```
+Run from: repo root
+Prerequisites: Go 1.25.6+
+Notes: Covers `internal/sync`, `internal/install`, and `internal/warnings`.
+
 - Run scenario-based end-to-end tests (offline, hermetic)
 ```bash
 make test-e2e
 ```
 Run from: repo root
 Prerequisites: Go 1.25.6+, `sha256sum` or `shasum`
-Notes: Builds release artifacts and runs 26 scenarios with mock agent binaries. 436 assertions in default mode (with cached upgrade binaries). Auto-detects latest migration manifest version for upgrade testing. Upgrade scenarios use pre-cached binaries from `~/.cache/al-e2e/bin/` (run `make test-e2e-online` once to populate cache). Override version with `AL_E2E_VERSION=vX.Y.Z`. Filter: `AL_E2E_SCENARIOS="upgrade*" make test-e2e`. `defaults.toml` profile fixture is generated at runtime from `internal/templates/config.toml` to prevent drift.
+Notes: Builds release artifacts and runs all discovered scenarios with mock agent binaries. Auto-detects latest migration manifest version for upgrade testing. Upgrade scenarios use pre-cached binaries from `~/.cache/al-e2e/bin/` (run `make test-e2e-online` once to populate cache). Override version with `AL_E2E_VERSION=vX.Y.Z`. Filter: `AL_E2E_SCENARIOS="upgrade*" make test-e2e`. `defaults.toml` profile fixture is generated at runtime from `internal/templates/config.toml` to prevent drift.
 
 - Run e2e tests with online upgrade binary downloads
 ```bash
@@ -143,6 +167,7 @@ make coverage
 ```
 Run from: repo root  
 Prerequisites: Go 1.25.6+
+Notes: Canonical local/CI parity command for coverage. `make dev` and `make ci` both route through this target, and GitHub Actions runs `make ci`.
 
 ### Dev
 

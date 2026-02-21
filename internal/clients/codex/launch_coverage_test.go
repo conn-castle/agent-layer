@@ -7,12 +7,13 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestLaunch_NoArgs(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
-	writeStubWithExit(t, binDir, "codex", 0)
+	testutil.WriteStubWithExit(t, binDir, "codex", 0)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{

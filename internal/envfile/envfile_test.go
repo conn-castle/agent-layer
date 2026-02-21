@@ -101,6 +101,26 @@ OTHER = "spaced value"
 			input: "KEY='val'",
 			want:  map[string]string{"KEY": "val"},
 		},
+		{
+			name:  "double quoted escaped newline",
+			input: `KEY="line1\nline2"`,
+			want:  map[string]string{"KEY": "line1\nline2"},
+		},
+		{
+			name:  "double quoted value with inline comment",
+			input: `KEY="value" # keep this comment`,
+			want:  map[string]string{"KEY": "value"},
+		},
+		{
+			name:  "single quoted value with inline comment",
+			input: `KEY='value' # keep this comment`,
+			want:  map[string]string{"KEY": "value"},
+		},
+		{
+			name:    "quoted value with invalid trailing content",
+			input:   `KEY="value" trailing`,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -247,6 +267,16 @@ func TestEncodeValue(t *testing.T) {
 			input: `\\\"`,
 			want:  `"\\\\\\\""`,
 		},
+		{
+			name:  "newline gets escaped",
+			input: "line1\nline2",
+			want:  `"line1\nline2"`,
+		},
+		{
+			name:  "carriage return gets escaped",
+			input: "line1\rline2",
+			want:  `"line1\rline2"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -254,4 +284,124 @@ func TestEncodeValue(t *testing.T) {
 			assert.Equal(t, tt.want, encodeValue(tt.input))
 		})
 	}
+}
+
+func TestEncodeParseRoundTrip(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "empty", value: ""},
+		{name: "plain", value: "simple"},
+		{name: "spaces", value: "with space"},
+		{name: "tab", value: "with\ttab"},
+		{name: "hash", value: "with#hash"},
+		{name: "equals", value: "with=value"},
+		{name: "quotes", value: `with "quote"`},
+		{name: "backslashes", value: `C:\path\to\dir`},
+		{name: "backslash quote", value: `C:\path\"file"`},
+		{name: "literal slash n", value: `\n`},
+		{name: "actual newline", value: "line1\nline2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, err := Parse("KEY=" + encodeValue(tt.value))
+			require.NoError(t, err)
+			require.Contains(t, parsed, "KEY")
+			assert.Equal(t, tt.value, parsed["KEY"])
+		})
+	}
+}
+
+func TestPatchParseRoundTrip(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "plain", value: "simple"},
+		{name: "spaces", value: "with space"},
+		{name: "tab", value: "with\ttab"},
+		{name: "hash", value: "with#hash"},
+		{name: "equals", value: "with=value"},
+		{name: "quotes", value: `with "quote"`},
+		{name: "backslashes", value: `C:\path\to\dir`},
+		{name: "backslash quote", value: `C:\path\"file"`},
+		{name: "literal slash n", value: `\n`},
+		{name: "actual newline", value: "line1\nline2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := Patch("", map[string]string{"KEY": tt.value})
+			parsed, err := Parse(content)
+			require.NoError(t, err)
+			require.Contains(t, parsed, "KEY")
+			assert.Equal(t, tt.value, parsed["KEY"])
+		})
+	}
+}
+
+func TestParse_UnterminatedQuotedValue(t *testing.T) {
+	tests := []string{
+		`KEY="unterminated`,
+		`KEY='unterminated`,
+		`KEY="trailing slash\\\"`,
+	}
+	for _, input := range tests {
+		_, err := Parse(input)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unterminated quoted value")
+	}
+}
+
+func TestParse_InvalidQuotedSuffix(t *testing.T) {
+	tests := []string{
+		`KEY="value" trailing`,
+		`KEY='value' trailing`,
+	}
+	for _, input := range tests {
+		_, err := Parse(input)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid trailing characters after quoted value")
+	}
+}
+
+func FuzzEncodeParseRoundTrip(f *testing.F) {
+	f.Add("")
+	f.Add("simple")
+	f.Add("with space")
+	f.Add("with#hash")
+	f.Add(`C:\path\"file"`)
+	f.Add(`\n`)
+	f.Add("line1\nline2")
+
+	f.Fuzz(func(t *testing.T, value string) {
+		parsed, err := Parse("KEY=" + encodeValue(value))
+		require.NoError(t, err)
+		require.Contains(t, parsed, "KEY")
+		assert.Equal(t, value, parsed["KEY"])
+	})
+}
+
+func FuzzPatchParseRoundTrip(f *testing.F) {
+	f.Add("")
+	f.Add("simple")
+	f.Add("with space")
+	f.Add("with#hash")
+	f.Add(`C:\path\"file"`)
+	f.Add(`\n`)
+	f.Add("line1\nline2")
+
+	f.Fuzz(func(t *testing.T, value string) {
+		content := Patch("", map[string]string{"KEY": value})
+		parsed, err := Parse(content)
+		require.NoError(t, err)
+		if value == "" {
+			assert.NotContains(t, parsed, "KEY")
+			return
+		}
+		require.Contains(t, parsed, "KEY")
+		assert.Equal(t, value, parsed["KEY"])
+	})
 }

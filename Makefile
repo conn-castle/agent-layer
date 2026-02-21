@@ -20,7 +20,7 @@ help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: tools
-tools: $(TOOL_BIN)/goimports $(TOOL_BIN)/golangci-lint $(TOOL_BIN)/gotestsum ## Install pinned Go tools into $(TOOL_BIN)
+tools: $(TOOL_BIN)/goimports $(TOOL_BIN)/golangci-lint $(TOOL_BIN)/gotestsum $(TOOL_BIN)/deadcode ## Install pinned Go tools into $(TOOL_BIN)
 
 .PHONY: check-goimports
 check-goimports: ## Fail if goimports is missing
@@ -43,8 +43,15 @@ check-gotestsum: ## Fail if gotestsum is missing
 	  exit 1; \
 	fi
 
+.PHONY: check-deadcode
+check-deadcode: ## Fail if deadcode is missing
+	@if [[ ! -x "$(TOOL_BIN)/deadcode" ]]; then \
+	  echo "deadcode not found at $(TOOL_BIN)/deadcode. Run: make tools" >&2; \
+	  exit 1; \
+	fi
+
 .PHONY: check-tools
-check-tools: check-goimports check-golangci-lint check-gotestsum ## Fail if any required tool is missing
+check-tools: check-goimports check-golangci-lint check-gotestsum check-deadcode ## Fail if any required tool is missing
 
 $(TOOL_BIN)/goimports: go.mod go.sum
 	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
@@ -63,6 +70,12 @@ $(TOOL_BIN)/gotestsum: go.mod go.sum
 	@version="$$(go list -m -f '{{.Version}}' gotest.tools/gotestsum)"; \
 	  if [[ -z "$$version" ]]; then echo "Failed to resolve gotestsum version from go.mod" >&2; exit 1; fi; \
 	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "gotest.tools/gotestsum@$$version"
+
+$(TOOL_BIN)/deadcode: go.mod go.sum
+	@mkdir -p "$(TOOL_BIN)" "$(GO_CACHE)" "$(GO_MOD_CACHE)"
+	@version="$$(go list -m -f '{{.Version}}' golang.org/x/tools)"; \
+	  if [[ -z "$$version" ]]; then echo "Failed to resolve golang.org/x/tools version from go.mod" >&2; exit 1; fi; \
+	  GOBIN="$(TOOL_BIN)" GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go install "golang.org/x/tools/cmd/deadcode@$$version"
 
 .PHONY: fmt
 fmt: check-goimports ## Format Go files (gofmt + goimports)
@@ -84,6 +97,21 @@ lint: check-golangci-lint ## Run golangci-lint
 test: check-gotestsum ## Run tests
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/gotestsum" --format testname -- ./...
+
+.PHONY: test-race
+test-race: ## Run race detector for concurrency-critical packages
+	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/sync/... ./internal/install/... ./internal/warnings/...
+
+.PHONY: dead-code
+dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware)
+	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./...
+
+.PHONY: dead-code-entrypoints
+dead-code-entrypoints: check-deadcode ## Run dead code analysis from CLI entrypoints only
+	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site
 
 .PHONY: tidy
 tidy: ## Run go mod tidy

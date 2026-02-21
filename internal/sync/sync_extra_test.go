@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestEnsureEnabled(t *testing.T) {
@@ -44,7 +45,7 @@ func TestRunWithProjectError(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Gemini: config.AgentConfig{Enabled: boolPtr(true)},
+				Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)},
 			},
 		},
 		Instructions: []config.InstructionFile{{Name: "00_base.md", Content: "base"}},
@@ -103,8 +104,4 @@ func TestUpdateGitignoreValidationError(t *testing.T) {
 	if err := updateGitignore(RealSystem{}, root); err == nil {
 		t.Fatal("expected updateGitignore validation error")
 	}
-}
-
-func boolPtr(v bool) *bool {
-	return &v
 }

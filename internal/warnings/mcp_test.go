@@ -180,6 +180,54 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 	assert.Contains(t, bloatWarning.Details[1], "t: 7501 tokens")
 }
 
+func TestCheckMCPServers_ToolNameCollisionWarningsDeterministicOrder(t *testing.T) {
+	enabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "s2", Enabled: &enabled, Transport: "stdio", Command: "echo"},
+					{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "echo"},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	mock := &MockConnector{
+		Results: map[string]DiscoveryResult{
+			"s1": {
+				ServerID: "s1",
+				Tools: []ToolDef{
+					{Name: "zeta"},
+					{Name: "alpha"},
+				},
+			},
+			"s2": {
+				ServerID: "s2",
+				Tools: []ToolDef{
+					{Name: "zeta"},
+					{Name: "alpha"},
+				},
+			},
+		},
+	}
+
+	for range 25 {
+		warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+		require.NoError(t, err)
+		require.Len(t, warnings, 2)
+
+		assert.Equal(t, CodeMCPToolNameCollision, warnings[0].Code)
+		assert.Equal(t, "alpha", warnings[0].Subject)
+		assert.Contains(t, warnings[0].Message, "[s1 s2]")
+
+		assert.Equal(t, CodeMCPToolNameCollision, warnings[1].Code)
+		assert.Equal(t, "zeta", warnings[1].Subject)
+		assert.Contains(t, warnings[1].Message, "[s1 s2]")
+	}
+}
+
 func TestCheckMCPServers_ThresholdsDisabled(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{

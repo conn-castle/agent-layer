@@ -28,6 +28,15 @@ source "$SCRIPT_DIR/test-e2e/harness.sh"
 # ---------------------------------------------------------------------------
 # Global environment policy
 # ---------------------------------------------------------------------------
+# Keep e2e runs hermetic: only AL_E2E_* control vars are inherited.
+# Other host AL_* variables (especially secrets) must not influence scenarios.
+while IFS= read -r env_name; do
+  case "$env_name" in
+    AL_E2E_*) ;;
+    *) unset "$env_name" ;;
+  esac
+done < <(env | awk -F= '/^AL_/ {print $1}')
+
 export AL_NO_NETWORK=1
 
 # If AL_E2E_VERSION is not set, auto-detect the latest migration manifest

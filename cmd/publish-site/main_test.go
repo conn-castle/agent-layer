@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestValidateTagFormat(t *testing.T) {
@@ -364,7 +366,7 @@ func TestRepoRoot_GoModStatError(t *testing.T) {
 		t.Fatalf("mkdir nested: %v", err)
 	}
 
-	withWorkingDir(t, nested, func() {
+	testutil.WithWorkingDir(t, nested, func() {
 		withStatError(t, goModPath, os.ErrPermission)
 
 		_, err := repoRoot()
@@ -407,7 +409,7 @@ func TestRun_InvalidTag(t *testing.T) {
 
 func TestRun_RepoRootMissing(t *testing.T) {
 	root := t.TempDir()
-	withWorkingDir(t, root, func() {
+	testutil.WithWorkingDir(t, root, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", "repo-b")
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to find repo root") {
 			t.Fatalf("expected repo root error, got %v", err)
@@ -418,7 +420,7 @@ func TestRun_RepoRootMissing(t *testing.T) {
 func TestRun_RepoBDirAbsError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", "bad\x00path")
 		if err := run(); err == nil || !strings.Contains(err.Error(), "stat --repo-b-dir") {
 			t.Fatalf("expected repo-b-dir stat error, got %v", err)
@@ -430,7 +432,7 @@ func TestRun_ValidateRepoBRootError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 	repoB := t.TempDir() // missing .git and required files
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil {
 			t.Fatal("expected validate repo-b-dir error")
@@ -442,7 +444,7 @@ func TestRun_MissingSitePages(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: false, withDocs: true, withChangelog: true})
 	repoB := setupRepoB(t)
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "missing Repo A site pages dir") {
 			t.Fatalf("expected missing pages error, got %v", err)
@@ -454,7 +456,7 @@ func TestRun_MissingSiteDocs(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: false, withChangelog: true})
 	repoB := setupRepoB(t)
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "missing Repo A site docs dir") {
 			t.Fatalf("expected missing docs error, got %v", err)
@@ -466,7 +468,7 @@ func TestRun_MissingChangelog(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: false})
 	repoB := setupRepoB(t)
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "missing Repo A changelog") {
 			t.Fatalf("expected missing changelog error, got %v", err)
@@ -481,7 +483,7 @@ func TestRun_ChangelogStatError(t *testing.T) {
 	changelogPath := filepath.Join(repoA, "CHANGELOG.md")
 	withStatError(t, changelogPath, os.ErrPermission)
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to stat Repo A changelog") {
 			t.Fatalf("expected stat changelog error, got %v", err)
@@ -496,7 +498,7 @@ func TestRun_CopyPagesError(t *testing.T) {
 	badFile := filepath.Join(repoA, "site", "pages", "index.mdx")
 	withReadFileError(t, badFile, os.ErrPermission)
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to copy pages") {
 			t.Fatalf("expected copy pages error, got %v", err)
@@ -511,7 +513,7 @@ func TestRun_CopyDocsError(t *testing.T) {
 	badFile := filepath.Join(repoA, "site", "docs", "reference.mdx")
 	withReadFileError(t, badFile, os.ErrPermission)
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to copy docs") {
 			t.Fatalf("expected copy docs error, got %v", err)
@@ -544,7 +546,7 @@ func TestRun_CopyPagesCreateSrcDirError(t *testing.T) {
 	}
 	t.Cleanup(func() { osStatFunc = originalStat })
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to create src dir") {
 			t.Fatalf("expected src mkdir error, got %v", err)
@@ -644,7 +646,7 @@ func TestRun_ReadChangelogError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelogDir: true})
 	repoB := setupRepoB(t)
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to read Repo A changelog") {
 			t.Fatalf("expected read changelog error, got %v", err)
@@ -657,7 +659,7 @@ func TestRun_WriteChangelogError(t *testing.T) {
 	repoB := setupRepoB(t)
 	requireMkdir(t, filepath.Join(repoB, "CHANGELOG.md"))
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to write Repo B changelog") {
 			t.Fatalf("expected write changelog error, got %v", err)
@@ -722,7 +724,7 @@ func TestRun_EnsureIdempotentVersionError(t *testing.T) {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to ensure idempotent version") {
 			t.Fatalf("expected idempotent error, got %v", err)
@@ -735,7 +737,7 @@ func TestRun_DocusaurusCommandError(t *testing.T) {
 	repoB := setupRepoB(t)
 	withHelperCommand(t, "HELPER_FAIL=1")
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "docusaurus docs:version failed") {
 			t.Fatalf("expected docusaurus error, got %v", err)
@@ -748,7 +750,7 @@ func TestRun_DocusaurusTimeout(t *testing.T) {
 	repoB := setupRepoB(t)
 	withHelperCommand(t, "HELPER_SLEEP=50ms")
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB, "--docusaurus-timeout", "1ms")
 		if err := run(); err == nil || !strings.Contains(err.Error(), "exceeded timeout") {
 			t.Fatalf("expected timeout error, got %v", err)
@@ -761,7 +763,7 @@ func TestRun_NormalizeVersionsJSONError(t *testing.T) {
 	repoB := setupRepoB(t)
 	withHelperCommand(t, "HELPER_SKIP_VERSIONS=1")
 
-	withWorkingDir(t, repoA, func() {
+	testutil.WithWorkingDir(t, repoA, func() {
 		setArgs(t, "--tag", "v0.1.0", "--repo-b-dir", repoB)
 		if err := run(); err == nil || !strings.Contains(err.Error(), "failed to normalize versions.json") {
 			t.Fatalf("expected normalize error, got %v", err)
@@ -1130,21 +1132,6 @@ func requireMkdir(t *testing.T, path string) {
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
 	}
-}
-
-func withWorkingDir(t *testing.T, dir string, fn func()) {
-	t.Helper()
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() {
-		_ = os.Chdir(cwd)
-	}()
-	fn()
 }
 
 func setArgs(t *testing.T, args ...string) {
