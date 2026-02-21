@@ -98,7 +98,7 @@ func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "all"},
 			Agents: config.AgentsConfig{
-				Antigravity: config.AgentConfig{Enabled: &enabled},
+				Antigravity: config.EnableOnlyConfig{Enabled: &enabled},
 			},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -361,10 +361,10 @@ func TestDedupePolicyWarningsAndAntigravityEnabled(t *testing.T) {
 	require.Nil(t, dedupePolicyWarnings(nil))
 
 	require.True(t, onlyAntigravityEnabled(config.AgentsConfig{
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
+		Antigravity: config.EnableOnlyConfig{Enabled: boolPtr(true)},
 	}))
 	require.False(t, onlyAntigravityEnabled(config.AgentsConfig{
-		Antigravity: config.AgentConfig{Enabled: boolPtr(true)},
+		Antigravity: config.EnableOnlyConfig{Enabled: boolPtr(true)},
 		Codex:       config.CodexConfig{Enabled: boolPtr(true)},
 	}))
 }

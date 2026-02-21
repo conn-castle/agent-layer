@@ -347,8 +347,8 @@ func TestLaunchVSCode_NoCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				VSCode:       config.AgentConfig{Enabled: &vscodeDisabled},
-				ClaudeVSCode: config.AgentConfig{Enabled: &claudeVSCodeEnabled},
+				VSCode:       config.EnableOnlyConfig{Enabled: &vscodeDisabled},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &claudeVSCodeEnabled},
 			},
 		},
 		Root: root,
@@ -399,8 +399,8 @@ func TestLaunchVSCode_ClearsInheritedCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				VSCode:       config.AgentConfig{Enabled: &vscodeDisabled},
-				ClaudeVSCode: config.AgentConfig{Enabled: &claudeVSCodeEnabled},
+				VSCode:       config.EnableOnlyConfig{Enabled: &vscodeDisabled},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &claudeVSCodeEnabled},
 			},
 		},
 		Root: root,
@@ -445,7 +445,7 @@ func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeEnabled(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				VSCode: config.AgentConfig{Enabled: &vscodeEnabled},
+				VSCode: config.EnableOnlyConfig{Enabled: &vscodeEnabled},
 			},
 		},
 		Root: root,

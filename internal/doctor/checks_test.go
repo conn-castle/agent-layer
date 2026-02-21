@@ -438,6 +438,78 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback_UnknownKeys(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a config with an unknown key (model on an enable-only agent).
+	// Strict loading will fail with an ErrConfigValidation-wrapped unknown-key
+	// error; lenient loading should succeed.
+	unknownKeyConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.claude-vscode]
+enabled = true
+model = "some-model"
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(unknownKeyConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+
+	// Should report a FAIL result for the unknown-key error.
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+	}
+	if results[0].Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", results[0].Status)
+	}
+	if !strings.Contains(results[0].Message, "unrecognized") {
+		t.Fatalf("expected unrecognized key error in message, got: %s", results[0].Message)
+	}
+	if results[0].Recommendation != messages.DoctorConfigLoadLenientRecommend {
+		t.Fatalf("expected lenient recommendation, got: %s", results[0].Recommendation)
+	}
+
+	// Should still return a usable config from lenient loading.
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	if cfg.Config.Approvals.Mode != "all" {
+		t.Fatalf("expected approvals.mode = all, got %q", cfg.Config.Approvals.Mode)
+	}
+}
+
 func TestCheckSecretsNoRequired(t *testing.T) {
 	// Config with no MCP servers = no required secrets
 	cfg := &config.ProjectConfig{
@@ -469,10 +541,10 @@ func TestCheckAgents(t *testing.T) {
 			Agents: config.AgentsConfig{
 				Gemini:       config.AgentConfig{Enabled: &tBool},
 				Claude:       config.AgentConfig{Enabled: &fBool},
-				ClaudeVSCode: config.AgentConfig{Enabled: &fBool},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &fBool},
 				Codex:        config.CodexConfig{Enabled: nil},
-				VSCode:       config.AgentConfig{Enabled: &tBool},
-				Antigravity:  config.AgentConfig{Enabled: &fBool},
+				VSCode:       config.EnableOnlyConfig{Enabled: &tBool},
+				Antigravity:  config.EnableOnlyConfig{Enabled: &fBool},
 			},
 		},
 	}

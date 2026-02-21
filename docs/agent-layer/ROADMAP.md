@@ -134,6 +134,7 @@ Incomplete:
 - [ ] envfile-roundtrip: Fix asymmetric envfile encode/decode and add round-trip property tests. (From ISSUES envfile-asym)
 
 #### Wizard and config
+- [x] cfg-enable-only-strict: Split enable-only agents (`claude-vscode`, `vscode`, `antigravity`) to `EnableOnlyConfig`, reject unknown TOML keys via strict decode, and keep unknown-key failures repairable through wizard/doctor lenient fallback with guidance. (From DECISIONS config-enable-only-strict + unknown-key-repairable)
 - [ ] wiz-globals: Convert mutable exported catalog variables in `internal/wizard/catalog.go` to functions returning fresh copies. Remove confirmed dead code in `approval_modes.go` and `helpers.go`. (From ISSUES)
 - [ ] upg-config-roundtrip: Preserve user TOML comments and key ordering during config migrations, or document the destructive formatting as intentional. (From ISSUES)
 
@@ -148,6 +149,7 @@ Incomplete:
 - [ ] installer-struct: Evaluate whether the `installer` struct (23 fields, 57+ methods) should be split into sub-structs (e.g., `templateManager`, `ownershipClassifier`). Extract if method count has grown. (From ISSUES 3c5f958f)
 
 #### Workflow and CI
+- [x] gemini-trust-test-seam: Export `sync.UserHomeDir` test seam and update cross-package tests to stub Gemini trust writes, preventing host `~/.gemini/trustedFolders.json` pollution during tests. (From DECISIONS gemini-trust-export)
 - [ ] race-target: Add a canonical race-check command (e.g., `make test-race`) targeting concurrency-critical packages and document it in COMMANDS.md. (From ISSUES)
 
 ### Exit criteria

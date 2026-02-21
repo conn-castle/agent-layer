@@ -15,18 +15,23 @@ type ApprovalsConfig struct {
 
 // AgentsConfig holds per-client enablement and model selection.
 type AgentsConfig struct {
-	Gemini       AgentConfig `toml:"gemini"`
-	Claude       AgentConfig `toml:"claude"`
-	ClaudeVSCode AgentConfig `toml:"claude-vscode"`
-	Codex        CodexConfig `toml:"codex"`
-	VSCode       AgentConfig `toml:"vscode"`
-	Antigravity  AgentConfig `toml:"antigravity"`
+	Gemini       AgentConfig      `toml:"gemini"`
+	Claude       AgentConfig      `toml:"claude"`
+	ClaudeVSCode EnableOnlyConfig `toml:"claude-vscode"`
+	Codex        CodexConfig      `toml:"codex"`
+	VSCode       EnableOnlyConfig `toml:"vscode"`
+	Antigravity  EnableOnlyConfig `toml:"antigravity"`
 }
 
-// AgentConfig is shared by agents that only need enablement and model selection.
+// AgentConfig is for agents that support enablement and model selection.
 type AgentConfig struct {
 	Enabled *bool  `toml:"enabled"`
 	Model   string `toml:"model"`
+}
+
+// EnableOnlyConfig is for agents that support enablement but not model selection.
+type EnableOnlyConfig struct {
+	Enabled *bool `toml:"enabled"`
 }
 
 // CodexConfig extends AgentConfig with Codex-specific settings.

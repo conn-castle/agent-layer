@@ -15,7 +15,7 @@ func TestBuildVSCodeSettings(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -34,7 +34,7 @@ func TestBuildVSCodeSettingsEscapesSlash(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"scripts/dev.sh"},
 	}
@@ -56,7 +56,7 @@ func TestWriteVSCodeSettings(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -74,7 +74,7 @@ func TestBuildVSCodeSettingsYOLO(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "yolo"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -97,8 +97,8 @@ func TestBuildVSCodeSettingsClaudeVSCodeYOLO(t *testing.T) {
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "yolo"},
 			Agents: config.AgentsConfig{
-				VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
-				ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+				VSCode:       config.EnableOnlyConfig{Enabled: boolPtr(false)},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)},
 			},
 		},
 	}
@@ -118,8 +118,8 @@ func TestBuildVSCodeSettingsClaudeVSCodeNonYOLO(t *testing.T) {
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "all"},
 			Agents: config.AgentsConfig{
-				VSCode:       config.AgentConfig{Enabled: boolPtr(false)},
-				ClaudeVSCode: config.AgentConfig{Enabled: boolPtr(true)},
+				VSCode:       config.EnableOnlyConfig{Enabled: boolPtr(false)},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)},
 			},
 		},
 	}
@@ -148,7 +148,7 @@ func TestWriteVSCodeSettingsPreservesExistingContent(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -198,7 +198,7 @@ func TestWriteVSCodeSettingsReplacesManagedBlock(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -242,7 +242,7 @@ func TestWriteVSCodeSettingsNoTrailingCommaWhenManagedBlockIsLast(t *testing.T) 
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -280,7 +280,7 @@ func TestWriteVSCodeSettingsInsertsManagedBlockWithExistingFields(t *testing.T) 
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "commands"},
-			Agents:    config.AgentsConfig{VSCode: config.AgentConfig{Enabled: boolPtr(true)}},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: boolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
 	}

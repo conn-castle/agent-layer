@@ -11,6 +11,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
@@ -201,6 +202,11 @@ mcp_server_threshold = 5
 
 func writeMinimalRepo(t *testing.T, root string) {
 	t.Helper()
+	home := t.TempDir()
+	origHome := sync.UserHomeDir
+	sync.UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { sync.UserHomeDir = origHome })
+
 	paths := config.DefaultPaths(root)
 	dirs := []string{paths.InstructionsDir, paths.SlashCommandsDir}
 	for _, dir := range dirs {

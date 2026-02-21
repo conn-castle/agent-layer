@@ -12,10 +12,10 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       AgentConfig{Enabled: &enabled},
-			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
-			VSCode:       AgentConfig{Enabled: &enabled},
-			Antigravity:  AgentConfig{Enabled: &enabled},
+			VSCode:       EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 		},
 	}
 
@@ -97,10 +97,10 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       AgentConfig{Enabled: &enabled},
-			ClaudeVSCode: AgentConfig{Enabled: &enabled},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
-			VSCode:       AgentConfig{Enabled: &enabled},
-			Antigravity:  AgentConfig{Enabled: &enabled},
+			VSCode:       EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 		},
 	}
 

@@ -21,6 +21,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/warnings"
@@ -103,6 +104,11 @@ func TestStubCmd(t *testing.T) {
 }
 
 func TestInitAndSyncCommands(t *testing.T) {
+	home := t.TempDir()
+	origHome := alsync.UserHomeDir
+	alsync.UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { alsync.UserHomeDir = origHome })
+
 	root := t.TempDir()
 	withWorkingDir(t, root, func() {
 		cmd := newInitCmd()
@@ -773,6 +779,11 @@ func TestInitCommandPromptError(t *testing.T) {
 
 func writeTestRepo(t *testing.T, root string) {
 	t.Helper()
+	home := t.TempDir()
+	origHome := alsync.UserHomeDir
+	alsync.UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { alsync.UserHomeDir = origHome })
+
 	paths := config.DefaultPaths(root)
 	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
@@ -845,6 +856,11 @@ func writeTestRepoInvalidConfig(t *testing.T, root string) {
 
 func writeTestRepoWithWarnings(t *testing.T, root string) {
 	t.Helper()
+	home := t.TempDir()
+	origHome := alsync.UserHomeDir
+	alsync.UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { alsync.UserHomeDir = origHome })
+
 	paths := config.DefaultPaths(root)
 	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)

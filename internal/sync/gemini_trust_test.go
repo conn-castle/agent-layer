@@ -12,13 +12,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
-// Tests that stub userHomeDir must NOT use t.Parallel().
+// Tests that stub UserHomeDir must NOT use t.Parallel().
 
 func TestEnsureGeminiTrustedFolderNewFile(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	sys := &MockSystem{Fallback: RealSystem{}}
 	root := "/fake/repo"
@@ -51,9 +51,9 @@ func TestEnsureGeminiTrustedFolderNewFile(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderExistingEntries(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	// Seed an existing entry.
 	dir := filepath.Join(home, geminiDir)
@@ -93,9 +93,9 @@ func TestEnsureGeminiTrustedFolderExistingEntries(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderAlreadyPresent(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -141,9 +141,9 @@ func TestEnsureGeminiTrustedFolderAlreadyPresent(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderEmptyFile(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -172,9 +172,9 @@ func TestEnsureGeminiTrustedFolderEmptyFile(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderCorruptJSON(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -206,9 +206,9 @@ func TestEnsureGeminiTrustedFolderCorruptJSON(t *testing.T) {
 }
 
 func TestEnsureGeminiTrustedFolderHomeDirError(t *testing.T) {
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return "", errors.New("no home") }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return "", errors.New("no home") }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	sys := &MockSystem{Fallback: RealSystem{}}
 	w := EnsureGeminiTrustedFolder(sys, "/any/repo")
@@ -222,9 +222,9 @@ func TestEnsureGeminiTrustedFolderHomeDirError(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderReadError(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -259,9 +259,9 @@ func TestEnsureGeminiTrustedFolderReadError(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderMkdirError(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	sys := &MockSystem{
 		Fallback: RealSystem{},
@@ -281,9 +281,9 @@ func TestEnsureGeminiTrustedFolderMkdirError(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderMarshalError(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	sys := &MockSystem{
 		Fallback: RealSystem{},
@@ -303,9 +303,9 @@ func TestEnsureGeminiTrustedFolderMarshalError(t *testing.T) {
 
 func TestEnsureGeminiTrustedFolderWriteError(t *testing.T) {
 	home := t.TempDir()
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { userHomeDir = orig })
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	sys := &MockSystem{
 		Fallback: RealSystem{},
@@ -327,10 +327,10 @@ func TestEnsureGeminiTrustedFolderWriteError(t *testing.T) {
 // trust warning produced during RunWithProject is included in the result under
 // default noise mode and suppressed under reduce mode.
 func TestRunWithProjectGeminiTrustWarningNoiseControlled(t *testing.T) {
-	// Stub userHomeDir to force a warning.
-	orig := userHomeDir
-	userHomeDir = func() (string, error) { return "", errors.New("no home") }
-	t.Cleanup(func() { userHomeDir = orig })
+	// Stub UserHomeDir to force a warning.
+	orig := UserHomeDir
+	UserHomeDir = func() (string, error) { return "", errors.New("no home") }
+	t.Cleanup(func() { UserHomeDir = orig })
 
 	root := t.TempDir()
 

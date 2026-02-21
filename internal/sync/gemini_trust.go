@@ -11,8 +11,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
-// userHomeDir is a package-level variable to allow test stubbing.
-var userHomeDir = os.UserHomeDir
+// UserHomeDir is a package-level variable to allow test stubbing across packages.
+var UserHomeDir = os.UserHomeDir
 
 const (
 	geminiTrustFolder = "TRUST_FOLDER"
@@ -26,7 +26,7 @@ const (
 // Gemini CLI treats the workspace as trusted and loads project-level settings.
 // Returns a warning on failure; never returns an error.
 func EnsureGeminiTrustedFolder(sys System, root string) *warnings.Warning {
-	home, err := userHomeDir()
+	home, err := UserHomeDir()
 	if err != nil {
 		return geminiTrustWarning(fmt.Sprintf(messages.SyncGeminiTrustHomeDirFailedFmt, err))
 	}
