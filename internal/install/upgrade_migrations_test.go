@@ -434,9 +434,9 @@ func TestExecuteConfigSetDefaultMigration_CallsPrompt(t *testing.T) {
 		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
 		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
 		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
-		ConfigSetDefaultFunc: func(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error) {
+		ConfigSetDefaultFunc: func(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error) {
 			promptedKey = key
-			promptedValue = recommendedValue
+			promptedValue = manifestValue
 			promptedRationale = rationale
 			return true, nil // User chooses true instead of false
 		},
@@ -463,7 +463,7 @@ func TestExecuteConfigSetDefaultMigration_CallsPrompt(t *testing.T) {
 		t.Fatalf("prompted key = %q, want %q", promptedKey, "agents.test-agent.enabled")
 	}
 	if promptedValue != false {
-		t.Fatalf("prompted recommended value = %v, want false", promptedValue)
+		t.Fatalf("prompted manifest value = %v, want false", promptedValue)
 	}
 	if promptedRationale != "New agent added for testing." {
 		t.Fatalf("prompted rationale = %q, want %q", promptedRationale, "New agent added for testing.")

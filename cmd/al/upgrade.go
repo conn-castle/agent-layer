@@ -225,24 +225,24 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 	stdinReader := bufio.NewReader(cmd.InOrStdin())
 
 	return install.PromptFuncs{
-		ConfigSetDefaultFunc: func(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error) {
+		ConfigSetDefaultFunc: func(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error) {
 			if policy.yes {
-				return recommendedValue, nil
+				return manifestValue, nil
 			}
 			_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nNew required config key: %s\n  Rationale: %s\n", key, rationale)
 			if err != nil {
 				return nil, err
 			}
 			if field != nil {
-				return promptConfigChoice(stdinReader, cmd.OutOrStdout(), key, recommendedValue, *field)
+				return promptConfigChoice(stdinReader, cmd.OutOrStdout(), key, manifestValue, *field)
 			}
 			// Fallback for keys not in the catalog.
-			accept, promptErr := promptYesNo(stdinReader, cmd.OutOrStdout(), fmt.Sprintf("Accept recommended value %v for %s?", recommendedValue, key), true)
+			accept, promptErr := promptYesNo(stdinReader, cmd.OutOrStdout(), fmt.Sprintf("Accept value %v for %s?", manifestValue, key), true)
 			if promptErr != nil {
 				return nil, promptErr
 			}
 			if accept {
-				return recommendedValue, nil
+				return manifestValue, nil
 			}
 			return nil, fmt.Errorf("user declined default value for required config key %s; run 'al wizard' to set it manually", key)
 		},
@@ -793,38 +793,38 @@ func readinessAction(id string) string {
 // promptConfigChoice presents a type-aware numbered choice prompt for a config field.
 // Returns the selected value converted to the appropriate Go type (bool for FieldBool,
 // string for FieldEnum).
-func promptConfigChoice(in io.Reader, out io.Writer, key string, recommendedValue any, field config.FieldDef) (any, error) {
+func promptConfigChoice(in io.Reader, out io.Writer, key string, manifestValue any, field config.FieldDef) (any, error) {
 	switch field.Type {
 	case config.FieldBool:
-		return promptBoolChoice(in, out, recommendedValue)
+		return promptBoolChoice(in, out, manifestValue)
 	case config.FieldEnum:
-		return promptEnumChoice(in, out, recommendedValue, field)
+		return promptEnumChoice(in, out, manifestValue, field)
 	default:
-		// Freetext / unknown — accept recommended value by default.
-		if _, err := fmt.Fprintf(out, "  Recommended: %v\n", recommendedValue); err != nil {
+		// Freetext / unknown — present the migration value for acceptance.
+		if _, err := fmt.Fprintf(out, "  Value: %v\n", manifestValue); err != nil {
 			return nil, err
 		}
-		accept, err := promptYesNo(in, out, fmt.Sprintf("Accept recommended value %v for %s?", recommendedValue, key), true)
+		accept, err := promptYesNo(in, out, fmt.Sprintf("Accept value %v for %s?", manifestValue, key), true)
 		if err != nil {
 			return nil, err
 		}
 		if accept {
-			return recommendedValue, nil
+			return manifestValue, nil
 		}
 		return nil, fmt.Errorf("user declined default value for required config key %s; run 'al wizard' to set it manually", key)
 	}
 }
 
 // promptBoolChoice presents a true/false numbered choice and returns the selected bool.
-// Returns an error if recommendedValue is not a bool (manifest/schema error).
-func promptBoolChoice(in io.Reader, out io.Writer, recommendedValue any) (any, error) {
-	recBool, ok := recommendedValue.(bool)
+// Returns an error if manifestValue is not a bool (manifest/schema error).
+func promptBoolChoice(in io.Reader, out io.Writer, manifestValue any) (any, error) {
+	manBool, ok := manifestValue.(bool)
 	if !ok {
-		return nil, fmt.Errorf("migration manifest error: expected bool value, got %T (%v)", recommendedValue, recommendedValue)
+		return nil, fmt.Errorf("migration manifest error: expected bool value, got %T (%v)", manifestValue, manifestValue)
 	}
 	options := []string{"true", "false"}
 	defaultIdx := 1 // false
-	if recBool {
+	if manBool {
 		defaultIdx = 0 // true
 	}
 	chosen, err := promptNumberedChoice(in, out, options, defaultIdx)
@@ -835,9 +835,9 @@ func promptBoolChoice(in io.Reader, out io.Writer, recommendedValue any) (any, e
 }
 
 // promptEnumChoice presents a numbered list of enum options and returns the selected string.
-// Returns an error if the recommended value is not in the option list for strict (non-AllowCustom) enums.
-func promptEnumChoice(in io.Reader, out io.Writer, recommendedValue any, field config.FieldDef) (any, error) {
-	recStr := fmt.Sprintf("%v", recommendedValue)
+// Returns an error if the manifest value is not in the option list for strict (non-AllowCustom) enums.
+func promptEnumChoice(in io.Reader, out io.Writer, manifestValue any, field config.FieldDef) (any, error) {
+	manStr := fmt.Sprintf("%v", manifestValue)
 	options := make([]string, len(field.Options))
 	defaultIdx := -1
 	for i, opt := range field.Options {
@@ -846,15 +846,15 @@ func promptEnumChoice(in io.Reader, out io.Writer, recommendedValue any, field c
 			label += " - " + opt.Description
 		}
 		options[i] = label
-		if opt.Value == recStr {
+		if opt.Value == manStr {
 			defaultIdx = i
 		}
 	}
 	if defaultIdx < 0 {
 		if !field.AllowCustom {
-			return nil, fmt.Errorf("migration manifest error: recommended value %q is not a valid option for %s", recStr, field.Key)
+			return nil, fmt.Errorf("migration manifest error: value %q is not a valid option for %s", manStr, field.Key)
 		}
-		// AllowCustom field with a custom recommended value — default to first option.
+		// AllowCustom field with a custom manifest value — default to first option.
 		defaultIdx = 0
 	}
 	chosen, err := promptNumberedChoice(in, out, options, defaultIdx)
@@ -865,18 +865,14 @@ func promptEnumChoice(in io.Reader, out io.Writer, recommendedValue any, field c
 }
 
 // promptNumberedChoice displays a numbered list and reads the user's selection.
-// options are display labels; defaultIdx is the 0-based default (shown as recommended).
+// options are display labels; defaultIdx is the 0-based pre-selected option (accepted on Enter).
 // Returns the 0-based index of the chosen option.
 func promptNumberedChoice(in io.Reader, out io.Writer, options []string, defaultIdx int) (int, error) {
 	if _, err := fmt.Fprintln(out, "\nChoose a value:"); err != nil {
 		return 0, err
 	}
 	for i, opt := range options {
-		suffix := ""
-		if i == defaultIdx {
-			suffix = " (recommended)"
-		}
-		if _, err := fmt.Fprintf(out, "  %d) %s%s\n", i+1, opt, suffix); err != nil {
+		if _, err := fmt.Fprintf(out, "  %d) %s\n", i+1, opt); err != nil {
 			return 0, err
 		}
 	}

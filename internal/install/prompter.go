@@ -25,12 +25,13 @@ type PromptOverwriteAllUnifiedPreviewFunc func(managed []DiffPreview, memory []D
 // PromptOverwritePreviewFunc asks whether to overwrite a single diff preview path.
 type PromptOverwritePreviewFunc func(preview DiffPreview) (bool, error)
 
-// PromptConfigSetDefaultFunc asks the user to confirm or customize a default value
-// for a missing required config key. It receives the key path, the recommended value,
-// a rationale string, and an optional field definition from the config catalog (nil
-// when the key is not in the catalog). It returns the value to set (which may differ
-// from the recommended value). When nil, the recommended value is used without prompting.
-type PromptConfigSetDefaultFunc func(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error)
+// PromptConfigSetDefaultFunc asks the user to confirm or customize a value for a
+// missing required config key. It receives the key path, a default value from the
+// migration manifest, a rationale string, and an optional field definition from the
+// config catalog (nil when the key is not in the catalog). It returns the value to
+// set (which may differ from the manifest value). When nil, the manifest value is
+// used without prompting.
+type PromptConfigSetDefaultFunc func(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error)
 
 // PromptFuncs adapts optional prompt callbacks into a Prompter.
 type PromptFuncs struct {
@@ -100,18 +101,18 @@ func (p PromptFuncs) DeleteUnknown(path string) (bool, error) {
 // configSetDefaultPrompter is an optional interface that a Prompter can
 // implement to interactively confirm or customize config_set_default
 // migration values. When the Prompter does not implement this interface (or
-// returns nil), the migration uses the manifest's recommended value directly.
+// returns nil), the migration uses the manifest value directly.
 type configSetDefaultPrompter interface {
-	ConfigSetDefault(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error)
+	ConfigSetDefault(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error)
 }
 
 // ConfigSetDefault prompts the user to confirm or customize a default value
 // for a missing config key. Returns the manifest value when no callback is set.
-func (p PromptFuncs) ConfigSetDefault(key string, recommendedValue any, rationale string, field *config.FieldDef) (any, error) {
+func (p PromptFuncs) ConfigSetDefault(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error) {
 	if p.ConfigSetDefaultFunc == nil {
-		return recommendedValue, nil
+		return manifestValue, nil
 	}
-	return p.ConfigSetDefaultFunc(key, recommendedValue, rationale, field)
+	return p.ConfigSetDefaultFunc(key, manifestValue, rationale, field)
 }
 
 type promptValidator interface {

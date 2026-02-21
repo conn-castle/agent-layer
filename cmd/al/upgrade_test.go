@@ -1230,8 +1230,8 @@ func TestPromptBoolChoice_DefaultFalse(t *testing.T) {
 	if result != false {
 		t.Errorf("expected false, got %v", result)
 	}
-	if !strings.Contains(out.String(), "(recommended)") {
-		t.Error("expected recommended marker in output")
+	if strings.Contains(out.String(), "(recommended)") {
+		t.Error("unexpected recommended marker in output")
 	}
 }
 
@@ -1293,7 +1293,7 @@ func TestPromptBoolChoice_NonBoolValue_Errors(t *testing.T) {
 	out := &bytes.Buffer{}
 	_, err := promptBoolChoice(in, out, "true") // string, not bool
 	if err == nil {
-		t.Fatal("expected error for non-bool recommended value")
+		t.Fatal("expected error for non-bool manifest value")
 	}
 	if !strings.Contains(err.Error(), "expected bool") {
 		t.Errorf("expected 'expected bool' in error, got: %s", err.Error())
@@ -1314,7 +1314,7 @@ func TestPromptEnumChoice_UnknownValue_StrictEnum_Errors(t *testing.T) {
 	out := &bytes.Buffer{}
 	_, err := promptEnumChoice(in, out, "nonexistent", field)
 	if err == nil {
-		t.Fatal("expected error for unrecognized recommended value in strict enum")
+		t.Fatal("expected error for unrecognized manifest value in strict enum")
 	}
 	if !strings.Contains(err.Error(), "not a valid option") {
 		t.Errorf("expected 'not a valid option' in error, got: %s", err.Error())
