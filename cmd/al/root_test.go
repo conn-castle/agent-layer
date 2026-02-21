@@ -16,7 +16,7 @@ func (failingWriter) Write(p []byte) (int, error) {
 func TestRootVersionFlag(t *testing.T) {
 	cmd := newRootCmd()
 	cmd.Version = "v1.2.3"
-	cmd.SetVersionTemplate("{{.Version}}\\n")
+	cmd.SetVersionTemplate("{{.Version}}\n")
 	cmd.SetArgs([]string{"--version"})
 
 	var out bytes.Buffer
