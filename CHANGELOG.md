@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.5 - 2026-02-21
+
+### Added
+- `al sync` now auto-adds the repository root to `~/.gemini/trustedFolders.json` when Gemini is enabled so Gemini CLI reliably loads project-level `.gemini/settings.json`. If this write fails, sync still succeeds and emits a non-fatal warning with manual remediation guidance.
+
+### Fixed
+- Config parsing now rejects unrecognized keys during strict decode instead of silently ignoring them, with actionable validation guidance in the returned error.
+- `.env` parsing now correctly handles quoted values, escaped newline/carriage-return sequences, and invalid trailing characters after quoted values.
+- MCP tool-name collision warnings are now deterministic: warning subjects and per-tool server lists are sorted for stable output.
+- Upgrade `config_set_default` prompts no longer mark one choice as "recommended"; migration manifest values are still pre-selected but users must make an explicit choice.
+
+### Improved
+- Expanded automated coverage for root/upgrade command paths, Gemini trust flows, upgrade-readiness helpers, and warning policy branches.
+- Added new end-to-end scenarios covering config unknown-key repairability, Gemini trust/noise-mode behavior, and wizard profile unknown-key rejection.
+
 ## v0.8.4 - 2026-02-20
 
 ### Fixed
