@@ -215,5 +215,5 @@ enabled = false
 
 	// Verify restored in config
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
-	assert.Contains(t, string(data), `id = "github"`)
+	assert.Contains(t, string(data), `id = "tavily"`)
 }

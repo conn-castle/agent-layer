@@ -14,7 +14,7 @@ import (
 
 func TestMissingDefaultMCPServers(t *testing.T) {
 	defaults := []DefaultMCPServer{
-		{ID: "github"},
+		{ID: "tavily"},
 		{ID: "context7"},
 		{ID: "tavily"},
 		{ID: "fetch"},
@@ -22,7 +22,7 @@ func TestMissingDefaultMCPServers(t *testing.T) {
 		{ID: "filesystem"},
 	}
 	servers := []config.MCPServer{
-		{ID: "github"},
+		{ID: "tavily"},
 		{ID: "tavily"},
 	}
 
@@ -33,7 +33,7 @@ func TestMissingDefaultMCPServers(t *testing.T) {
 
 func TestAppendMissingDefaultMCPServers(t *testing.T) {
 	content := "[mcp]\n"
-	missing := []string{"github"}
+	missing := []string{"tavily"}
 
 	tree, err := toml.LoadBytes([]byte(content))
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestAppendMissingDefaultMCPServers(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, updated, "[[mcp.servers]]")
-	assert.Contains(t, updated, `id = "github"`)
+	assert.Contains(t, updated, `id = "tavily"`)
 }
 
 func TestLoadDefaultMCPServers(t *testing.T) {
@@ -58,7 +58,7 @@ func TestLoadDefaultMCPServers(t *testing.T) {
 	for _, s := range defaults {
 		ids[s.ID] = true
 	}
-	assert.True(t, ids["github"])
+	assert.True(t, ids["tavily"])
 	assert.True(t, ids["fetch"])
 	assert.True(t, ids["ripgrep"])
 	assert.True(t, ids["filesystem"])
@@ -130,7 +130,7 @@ servers = "bad"
 	tree, err := toml.LoadBytes([]byte(content))
 	require.NoError(t, err)
 
-	err = appendMissingDefaultMCPServers(tree, []string{"github"})
+	err = appendMissingDefaultMCPServers(tree, []string{"tavily"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected type")
 }
@@ -236,11 +236,11 @@ func TestDefaultMCPServerTreesDuplicateID(t *testing.T) {
 	original := templates.ReadFunc
 	templates.ReadFunc = func(path string) ([]byte, error) {
 		return []byte(`[[mcp.servers]]
-id = "github"
+id = "tavily"
 enabled = true
 
 [[mcp.servers]]
-id = "github"
+id = "tavily"
 enabled = true
 `), nil
 	}

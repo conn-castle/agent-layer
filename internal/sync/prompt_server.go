@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
@@ -38,4 +40,15 @@ func resolvePromptServerCommand(sys System, root string) (string, []string, erro
 	}
 
 	return "go", []string{"run", sourcePath, "mcp-prompts"}, nil
+}
+
+// resolvePromptServerEnv returns deterministic env vars for the internal MCP prompt server.
+func resolvePromptServerEnv(root string) (OrderedMap[string], error) {
+	trimmedRoot := strings.TrimSpace(root)
+	if trimmedRoot == "" {
+		return nil, errors.New("repo root is required for internal MCP prompt server")
+	}
+	return OrderedMap[string]{
+		config.BuiltinRepoRootEnvVar: trimmedRoot,
+	}, nil
 }

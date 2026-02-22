@@ -53,10 +53,15 @@ func buildMCPConfig(sys System, project *config.ProjectConfig) (*mcpConfig, erro
 	if err != nil {
 		return nil, err
 	}
+	promptEnv, err := resolvePromptServerEnv(project.Root)
+	if err != nil {
+		return nil, err
+	}
 	cfg.Servers["agent-layer"] = mcpServer{
 		Type:    config.TransportStdio,
 		Command: promptCommand,
 		Args:    promptArgs,
+		Env:     promptEnv,
 	}
 
 	resolved, err := projection.ResolveMCPServers(

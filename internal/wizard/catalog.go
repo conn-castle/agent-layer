@@ -12,21 +12,24 @@ const (
 	AgentAntigravity  = "antigravity"
 )
 
-// supportedAgentKeys lists the config field keys for agent enablement in UI order.
-var supportedAgentKeys = []string{
-	"agents.gemini.enabled",
-	"agents.claude.enabled",
-	"agents.claude-vscode.enabled",
-	"agents.codex.enabled",
-	"agents.vscode.enabled",
-	"agents.antigravity.enabled",
+// supportedAgentKeys returns the config field keys for agent enablement in UI order.
+func supportedAgentKeys() []string {
+	return []string{
+		"agents.gemini.enabled",
+		"agents.claude.enabled",
+		"agents.claude-vscode.enabled",
+		"agents.codex.enabled",
+		"agents.vscode.enabled",
+		"agents.antigravity.enabled",
+	}
 }
 
 // SupportedAgents returns the agent IDs the wizard can configure.
 // Order matches the config field catalog registration order.
 func SupportedAgents() []string {
-	agents := make([]string, len(supportedAgentKeys))
-	for i, key := range supportedAgentKeys {
+	keys := supportedAgentKeys()
+	agents := make([]string, len(keys))
+	for i, key := range keys {
 		f, ok := config.LookupField(key)
 		if !ok {
 			// Defensive: key must exist in catalog.

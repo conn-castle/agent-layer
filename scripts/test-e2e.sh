@@ -187,6 +187,19 @@ export E2E_OLDEST_VERSION E2E_OLDEST_BINARY
 export E2E_LATEST_VERSION E2E_LATEST_BINARY
 
 # ---------------------------------------------------------------------------
+# Isolate HOME so compiled binaries cannot write to the real user's home
+# directory (e.g. ~/.gemini/trustedFolders.json).
+# ---------------------------------------------------------------------------
+# Pin the binary cache dir before changing HOME so upgrade scenarios
+# still resolve the persistent cache at its original location.
+export AL_E2E_BIN_CACHE="${AL_E2E_BIN_CACHE:-$HOME/.cache/al-e2e/bin}"
+
+E2E_ORIG_HOME="$HOME"
+export E2E_ORIG_HOME
+export HOME="$E2E_TMP_ROOT/home"
+mkdir -p "$HOME"
+
+# ---------------------------------------------------------------------------
 # Auto-discover and source scenarios
 # ---------------------------------------------------------------------------
 scenario_filter="${AL_E2E_SCENARIOS:-*}"

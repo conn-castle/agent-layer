@@ -57,7 +57,7 @@ func TestRunGolden(t *testing.T) {
 	for _, rel := range files {
 		expected := filepath.Join(expectedRoot, rel)
 		actual := filepath.Join(root, rel)
-		assertFileEquals(t, expected, actual)
+		assertFileEquals(t, expected, actual, root)
 	}
 }
 
@@ -91,7 +91,7 @@ func copyFixtureRepo(src string, dest string) error {
 	})
 }
 
-func assertFileEquals(t *testing.T, expectedPath string, actualPath string) {
+func assertFileEquals(t *testing.T, expectedPath string, actualPath string, repoRoot string) {
 	expected, err := os.ReadFile(expectedPath)
 	if err != nil {
 		t.Fatalf("read expected %s: %v", expectedPath, err)
@@ -100,7 +100,8 @@ func assertFileEquals(t *testing.T, expectedPath string, actualPath string) {
 	if err != nil {
 		t.Fatalf("read actual %s: %v", actualPath, err)
 	}
-	if string(expected) != string(actual) {
+	expectedContent := strings.ReplaceAll(string(expected), "__REPO_ROOT__", repoRoot)
+	if expectedContent != string(actual) {
 		t.Fatalf("mismatch for %s", actualPath)
 	}
 }
