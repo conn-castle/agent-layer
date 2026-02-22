@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.6 - 2026-02-22
+
+### Fixed
+- `al upgrade` no longer rejects valid zero-byte snapshot file entries. Snapshot validation now accepts empty `content_base64` for `kind=file`, fixing upgrade failures like `file snapshot entry ... requires content_base64` when unknown empty files are present.
+- Upgrade snapshot validation now has explicit regression coverage for empty file entries to prevent reintroducing this failure mode.
+
+### Improved
+- Added `al upgrade rollback --list` support to inspect available snapshot IDs and statuses before executing rollback.
+- Added e2e coverage for upgrade flows that include empty unknown files and for wizard MCP sanitization behavior when profile defaults disable an injected server block.
+- Expanded `cmd/al` upgrade command coverage around `--version` pin validation and rollback list behavior.
+
 ## v0.8.5 - 2026-02-21
 
 ### Added
