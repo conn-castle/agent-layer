@@ -12,7 +12,7 @@ func TestValidateConfigErrors(t *testing.T) {
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &trueVal},
-			Claude:       AgentConfig{Enabled: &trueVal},
+			Claude:       ClaudeConfig{Enabled: &trueVal},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
@@ -132,7 +132,7 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 		Approvals: ApprovalsConfig{Mode: "yolo"},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &trueVal},
-			Claude:       AgentConfig{Enabled: &trueVal},
+			Claude:       ClaudeConfig{Enabled: &trueVal},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
@@ -150,7 +150,7 @@ func TestValidateWarningsThresholds(t *testing.T) {
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
-			Claude:       AgentConfig{Enabled: &enabled},
+			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
@@ -234,7 +234,7 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
-			Claude:       AgentConfig{Enabled: &enabled},
+			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},

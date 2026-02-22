@@ -134,6 +134,37 @@ func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
 	require.Nil(t, results, "YOLO mode should not produce policy warnings")
 }
 
+func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"approval_policy": "never",
+						"features": map[string]any{
+							"multi_agent": true,
+						},
+					},
+				},
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"allow": []string{"Bash(ls:*)"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 2)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, "agents.codex.agent_specific", results[0].Subject)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[1].Code)
+	require.Equal(t, "agents.claude.agent_specific", results[1].Subject)
+}
+
 func TestCheckPolicy_NilAndDisabledServer(t *testing.T) {
 	require.Nil(t, CheckPolicy(nil))
 

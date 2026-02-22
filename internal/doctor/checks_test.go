@@ -540,7 +540,7 @@ func TestCheckAgents(t *testing.T) {
 		Config: config.Config{
 			Agents: config.AgentsConfig{
 				Gemini:       config.AgentConfig{Enabled: &tBool},
-				Claude:       config.AgentConfig{Enabled: &fBool},
+				Claude:       config.ClaudeConfig{Enabled: &fBool},
 				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &fBool},
 				Codex:        config.CodexConfig{Enabled: nil},
 				VSCode:       config.EnableOnlyConfig{Enabled: &tBool},

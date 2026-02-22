@@ -16,7 +16,7 @@ type ApprovalsConfig struct {
 // AgentsConfig holds per-client enablement and model selection.
 type AgentsConfig struct {
 	Gemini       AgentConfig      `toml:"gemini"`
-	Claude       AgentConfig      `toml:"claude"`
+	Claude       ClaudeConfig     `toml:"claude"`
 	ClaudeVSCode EnableOnlyConfig `toml:"claude-vscode"`
 	Codex        CodexConfig      `toml:"codex"`
 	VSCode       EnableOnlyConfig `toml:"vscode"`
@@ -29,6 +29,13 @@ type AgentConfig struct {
 	Model   string `toml:"model"`
 }
 
+// ClaudeConfig extends AgentConfig with Claude-specific settings.
+type ClaudeConfig struct {
+	Enabled       *bool          `toml:"enabled"`
+	Model         string         `toml:"model"`
+	AgentSpecific map[string]any `toml:"agent_specific"`
+}
+
 // EnableOnlyConfig is for agents that support enablement but not model selection.
 type EnableOnlyConfig struct {
 	Enabled *bool `toml:"enabled"`
@@ -36,9 +43,10 @@ type EnableOnlyConfig struct {
 
 // CodexConfig extends AgentConfig with Codex-specific settings.
 type CodexConfig struct {
-	Enabled         *bool  `toml:"enabled"`
-	Model           string `toml:"model"`
-	ReasoningEffort string `toml:"reasoning_effort"`
+	Enabled         *bool          `toml:"enabled"`
+	Model           string         `toml:"model"`
+	ReasoningEffort string         `toml:"reasoning_effort"`
+	AgentSpecific   map[string]any `toml:"agent_specific"`
 }
 
 // MCPConfig contains the external MCP servers configuration.

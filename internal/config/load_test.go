@@ -491,6 +491,33 @@ enabled = true
 	}
 }
 
+func TestParseConfig_AllowsCustomAgentConfig(t *testing.T) {
+	data := `
+[approvals]
+mode = "all"
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.claude.agent_specific]
+features.example_feature = true
+[agents.claude-vscode]
+enabled = true
+[agents.codex]
+enabled = true
+[agents.codex.agent_specific]
+features.prevent_idle_sleep = true
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = true
+`
+	_, err := ParseConfig([]byte(data), "test")
+	if err != nil {
+		t.Fatalf("expected agent-specific config to parse, got: %v", err)
+	}
+}
+
 func TestParseConfig_TOMLSyntaxErrorIsNotValidationError(t *testing.T) {
 	_, err := ParseConfig([]byte(`{{{`), "test")
 	if err == nil {

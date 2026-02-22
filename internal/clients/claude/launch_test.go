@@ -17,7 +17,7 @@ func TestLaunchClaude(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Claude: config.AgentConfig{Model: "test-model"},
+				Claude: config.ClaudeConfig{Model: "test-model"},
 			},
 		},
 		Root: root,
@@ -38,7 +38,7 @@ func TestLaunchClaudeError(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Claude: config.AgentConfig{Model: "test-model"},
+				Claude: config.ClaudeConfig{Model: "test-model"},
 			},
 		},
 		Root: root,
@@ -60,7 +60,7 @@ func TestLaunchClaudeYOLO(t *testing.T) {
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: "yolo"},
 			Agents: config.AgentsConfig{
-				Claude: config.AgentConfig{Model: "test-model"},
+				Claude: config.ClaudeConfig{Model: "test-model"},
 			},
 		},
 		Root: root,

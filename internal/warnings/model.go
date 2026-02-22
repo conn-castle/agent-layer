@@ -4,19 +4,20 @@ import "fmt"
 
 // Warning codes.
 const (
-	CodeInstructionsTooLarge     = "INSTRUCTIONS_TOO_LARGE"
-	CodeMCPServerUnreachable     = "MCP_SERVER_UNREACHABLE"
-	CodeMCPTooManyServers        = "MCP_TOO_MANY_SERVERS_ENABLED"
-	CodeMCPTooManyToolsTotal     = "MCP_TOO_MANY_TOOLS_TOTAL"
-	CodeMCPServerTooManyTools    = "MCP_SERVER_TOO_MANY_TOOLS"
-	CodeMCPToolSchemaBloatTotal  = "MCP_TOOL_SCHEMA_BLOAT_TOTAL"
-	CodeMCPToolSchemaBloatServer = "MCP_TOOL_SCHEMA_BLOAT_SERVER"
-	CodeMCPToolNameCollision     = "MCP_TOOL_NAME_COLLISION"
-	CodeWarningNoiseModeInvalid  = "WARNING_NOISE_MODE_INVALID"
-	CodePolicySecretInURL        = "POLICY_SECRET_IN_URL"
-	CodePolicyCodexHeaderForm    = "POLICY_CODEX_HEADER_FORM_UNSUPPORTED"
-	CodePolicyCapabilityMismatch = "POLICY_CLIENT_CAPABILITY_MISMATCH"
-	CodeGeminiTrustFolderFailed  = "GEMINI_TRUST_FOLDER_FAILED"
+	CodeInstructionsTooLarge         = "INSTRUCTIONS_TOO_LARGE"
+	CodeMCPServerUnreachable         = "MCP_SERVER_UNREACHABLE"
+	CodeMCPTooManyServers            = "MCP_TOO_MANY_SERVERS_ENABLED"
+	CodeMCPTooManyToolsTotal         = "MCP_TOO_MANY_TOOLS_TOTAL"
+	CodeMCPServerTooManyTools        = "MCP_SERVER_TOO_MANY_TOOLS"
+	CodeMCPToolSchemaBloatTotal      = "MCP_TOOL_SCHEMA_BLOAT_TOTAL"
+	CodeMCPToolSchemaBloatServer     = "MCP_TOOL_SCHEMA_BLOAT_SERVER"
+	CodeMCPToolNameCollision         = "MCP_TOOL_NAME_COLLISION"
+	CodeWarningNoiseModeInvalid      = "WARNING_NOISE_MODE_INVALID"
+	CodePolicySecretInURL            = "POLICY_SECRET_IN_URL"
+	CodePolicyCodexHeaderForm        = "POLICY_CODEX_HEADER_FORM_UNSUPPORTED"
+	CodePolicyCapabilityMismatch     = "POLICY_CLIENT_CAPABILITY_MISMATCH"
+	CodePolicyAgentSpecificOverrides = "POLICY_AGENT_SPECIFIC_OVERRIDES"
+	CodeGeminiTrustFolderFailed      = "GEMINI_TRUST_FOLDER_FAILED"
 )
 
 // Source labels where a warning originates.

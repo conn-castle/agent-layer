@@ -56,45 +56,58 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	var builder strings.Builder
 	builder.WriteString(codexHeader)
 
-	if project.Config.Agents.Codex.Model != "" {
+	if project.Config.Agents.Codex.Model != "" && !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "model") {
 		builder.WriteString(fmt.Sprintf("model = %q\n", project.Config.Agents.Codex.Model))
 	}
-	if project.Config.Agents.Codex.ReasoningEffort != "" {
+	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "model_reasoning_effort") {
 		builder.WriteString(fmt.Sprintf("model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort))
 	}
 	if project.Config.Approvals.Mode == "yolo" {
-		builder.WriteString("approval_policy = \"never\"\n")
-		builder.WriteString("sandbox_mode = \"danger-full-access\"\n")
+		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "approval_policy") {
+			builder.WriteString("approval_policy = \"never\"\n")
+		}
+		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "sandbox_mode") {
+			builder.WriteString("sandbox_mode = \"danger-full-access\"\n")
+		}
+		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "web_search") {
+			builder.WriteString("web_search = \"live\"\n")
+		}
 	}
 
-	// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
-	resolved, err := projection.ResolveMCPServers(
-		project.Config.MCP.Servers,
-		project.Env,
-		"codex",
-		projection.ClientPlaceholderResolver("${%s}"),
-	)
-	if err != nil {
+	if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "mcp_servers") {
+		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
+		resolved, err := projection.ResolveMCPServers(
+			project.Config.MCP.Servers,
+			project.Env,
+			"codex",
+			projection.ClientPlaceholderResolver("${%s}"),
+		)
+		if err != nil {
+			return "", err
+		}
+
+		for i, server := range resolved {
+			if i > 0 {
+				builder.WriteString("\n")
+			}
+			builder.WriteString(fmt.Sprintf("[mcp_servers.%s]\n", server.ID))
+			switch server.Transport {
+			case config.TransportHTTP:
+				if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
+					return "", err
+				}
+			case config.TransportStdio:
+				if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
+					return "", err
+				}
+			default:
+				return "", fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
+			}
+		}
+	}
+
+	if err := appendCodexAgentSpecific(&builder, project.Config.Agents.Codex.AgentSpecific); err != nil {
 		return "", err
-	}
-
-	for i, server := range resolved {
-		if i > 0 {
-			builder.WriteString("\n")
-		}
-		builder.WriteString(fmt.Sprintf("[mcp_servers.%s]\n", server.ID))
-		switch server.Transport {
-		case config.TransportHTTP:
-			if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
-				return "", err
-			}
-		case config.TransportStdio:
-			if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
-				return "", err
-			}
-		default:
-			return "", fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
-		}
 	}
 
 	return builder.String(), nil

@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-22 config-key-style-unify: Config key naming mixes kebab-case and snake_case
+    Priority: Medium. Area: config schema / UX.
+    Description: The config currently mixes naming styles (for example `agents.claude-vscode` vs `agents.codex.agent_specific` and `reasoning_effort`), which makes the schema feel inconsistent and harder to learn.
+    Next step: Define one canonical key style based on TOML/client ecosystem best practice, then migrate all config keys, templates, docs, and tests to that convention.
+
 - Issue 2026-02-20 gemini-http-transport-url: Gemini sync maps SSE servers to httpUrl instead of url
     Priority: Medium. Area: sync / Gemini MCP.
     Description: `buildGeminiSettings` in `internal/sync/gemini.go:98-103` always maps HTTP transport servers to `httpUrl` (streamable HTTP) regardless of the resolved `HTTPTransport` value. Gemini CLI distinguishes `httpUrl` (streamable HTTP) from `url` (SSE). The default `http_transport` is `"sse"` (`resolvers.go:76-78`), so any custom HTTP server without explicit `http_transport = "streamable"` would be written to the wrong field. Current seeded defaults are unaffected because `tavily` explicitly sets `http_transport = "streamable"`.

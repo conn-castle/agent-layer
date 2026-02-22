@@ -298,6 +298,9 @@ enabled = true
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
+# Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
+# These are merged into .claude/settings.json as-is.
+# [agents.claude.agent_specific]
 
 [agents.claude-vscode]
 enabled = true
@@ -308,6 +311,12 @@ enabled = true
 # model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
+# Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
+# These are appended to .codex/config.toml as-is.
+# [agents.codex.agent_specific]
+# [agents.codex.agent_specific.features]
+# multi_agent = true
+# prevent_idle_sleep = true
 
 [agents.vscode]
 enabled = true
@@ -349,6 +358,8 @@ mcp_server_tools_threshold = 25
 mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
 ```
+
+Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.claude.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys.
 
 #### Built-in placeholders
 
@@ -399,10 +410,12 @@ These modes control whether the agent is allowed to run shell commands and/or MC
 - `mcp`: auto-approve **only** MCP tool calls; shell commands still require approval (or are restricted)
 - `commands`: auto-approve **only** shell commands; MCP tool calls still require approval
 - `none`: approve **nothing** automatically
-- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` to Codex, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
+- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
 
 Client notes:
 - Some clients do not support all approval types; Agent Layer generates the closest supported behavior per client.
+
+Codex may still deny or override these settings if its `requirements.toml` disallows them.
 
 ### Secrets: `.agent-layer/.env`
 

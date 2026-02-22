@@ -317,3 +317,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `test-e2e.sh` pins `AL_E2E_BIN_CACHE` to the real cache path, then redirects `HOME` to `$E2E_TMP_ROOT/home` before running scenarios. `E2E_ORIG_HOME` is exported for scenarios that need the real home.
     Reason: Compiled E2E binaries call `os.UserHomeDir()` which resolves via `HOME`. Without isolation, `EnsureGeminiTrustedFolder` writes temp-dir entries to the real `~/.gemini/trustedFolders.json`.
     Tradeoffs: Scenarios that depend on real home-directory state must use `E2E_ORIG_HOME` explicitly; the gemini-trust scenarios already isolate HOME locally and are unaffected.
+
+- Decision 2026-02-22 agent-specific-key-rename: Rename agent passthrough key from `custom` to `agent_specific`
+    Decision: Replace `agents.<client>.custom` with `agents.<client>.agent_specific` across schema, sync/warning logic, templates, docs, tests, and e2e scenarios; no backward-compatibility alias is kept.
+    Reason: Standardize the naming to explicit intent (“agent-specific passthrough”) and remove ambiguous “custom” terminology.
+    Tradeoffs: Existing configs using `custom` now fail strict parsing and must be updated to `agent_specific`.

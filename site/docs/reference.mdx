@@ -44,6 +44,9 @@ enabled = true
 [agents.claude]
 enabled = true
 # model = "..."
+# Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
+# These are merged into .claude/settings.json as-is.
+# [agents.claude.agent_specific]
 
 [agents.claude-vscode]
 enabled = true
@@ -54,6 +57,12 @@ enabled = true
 # model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
+# Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
+# These are appended to .codex/config.toml as-is.
+# [agents.codex.agent_specific]
+# [agents.codex.agent_specific.features]
+# multi_agent = true
+# prevent_idle_sleep = true
 
 [agents.vscode]
 enabled = true
@@ -84,6 +93,8 @@ mcp_server_tools_threshold = 25
 mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
 ```
+
+Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.claude.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys.
 
 ### Sections at a glance
 

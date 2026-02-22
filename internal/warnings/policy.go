@@ -30,6 +30,13 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 
 	results := make([]Warning, 0)
 
+	if agentSpecificWarning := agentSpecificOverrideWarning("codex", "agents.codex.agent_specific", project.Config.Agents.Codex.AgentSpecific, config.CodexReservedKeys); agentSpecificWarning != nil {
+		results = append(results, *agentSpecificWarning)
+	}
+	if agentSpecificWarning := agentSpecificOverrideWarning("claude", "agents.claude.agent_specific", project.Config.Agents.Claude.AgentSpecific, config.ClaudeReservedKeys); agentSpecificWarning != nil {
+		results = append(results, *agentSpecificWarning)
+	}
+
 	for _, server := range project.Config.MCP.Servers {
 		if server.Enabled == nil || !*server.Enabled {
 			continue
@@ -85,6 +92,32 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	}
 
 	return dedupePolicyWarnings(results)
+}
+
+// agentSpecificOverrideWarning reports when agent-specific config overrides managed keys.
+func agentSpecificOverrideWarning(label string, subject string, agentSpecific map[string]any, reserved map[string]struct{}) *Warning {
+	if len(agentSpecific) == 0 || len(reserved) == 0 {
+		return nil
+	}
+	var keys []string
+	for key := range agentSpecific {
+		if _, ok := reserved[key]; ok {
+			keys = append(keys, key)
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	slices.Sort(keys)
+	return &Warning{
+		Code:     CodePolicyAgentSpecificOverrides,
+		Subject:  subject,
+		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, label),
+		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
+		Details:  []string{fmt.Sprintf("overridden keys: %s", strings.Join(keys, ", "))},
+		Source:   SourceInternal,
+		Severity: SeverityWarning,
+	}
 }
 
 func isEnabled(enabled *bool) bool {

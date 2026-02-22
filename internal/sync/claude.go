@@ -10,14 +10,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
-type claudeSettings struct {
-	Permissions *claudePermissions `json:"permissions,omitempty"`
-}
-
-type claudePermissions struct {
-	Allow []string `json:"allow,omitempty"`
-}
-
 // WriteClaudeSettings generates .claude/settings.json.
 func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig) error {
 	settings, err := buildClaudeSettings(project)
@@ -44,7 +36,7 @@ func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig)
 	return nil
 }
 
-func buildClaudeSettings(project *config.ProjectConfig) (*claudeSettings, error) {
+func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) {
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	var allow []string
 
@@ -63,9 +55,17 @@ func buildClaudeSettings(project *config.ProjectConfig) (*claudeSettings, error)
 		}
 	}
 
-	settings := &claudeSettings{}
-	if len(allow) > 0 {
-		settings.Permissions = &claudePermissions{Allow: allow}
+	settings := make(map[string]any)
+	if len(allow) > 0 && !config.HasAgentSpecificKey(project.Config.Agents.Claude.AgentSpecific, "permissions") {
+		settings["permissions"] = map[string]any{
+			"allow": allow,
+		}
+	}
+
+	if len(project.Config.Agents.Claude.AgentSpecific) > 0 {
+		for key, value := range project.Config.Agents.Claude.AgentSpecific {
+			settings[key] = value
+		}
 	}
 
 	return settings, nil

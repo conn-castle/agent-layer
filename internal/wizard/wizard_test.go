@@ -83,7 +83,7 @@ func TestRunWithWriter_LenientFallbackOnBrokenConfig(t *testing.T) {
 			Approvals: config.ApprovalsConfig{Mode: "all"},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &trueVal},
-				Claude: config.AgentConfig{Enabled: &trueVal},
+				Claude: config.ClaudeConfig{Enabled: &trueVal},
 				Codex:  config.CodexConfig{Enabled: &trueVal},
 				VSCode: config.EnableOnlyConfig{Enabled: &trueVal},
 			},
@@ -160,7 +160,7 @@ func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {
 			Approvals: config.ApprovalsConfig{Mode: "all"},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &trueVal},
-				Claude: config.AgentConfig{Enabled: &trueVal},
+				Claude: config.ClaudeConfig{Enabled: &trueVal},
 				Codex:  config.CodexConfig{Enabled: &trueVal},
 				VSCode: config.EnableOnlyConfig{Enabled: &trueVal},
 			},

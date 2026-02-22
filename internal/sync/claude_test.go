@@ -28,7 +28,12 @@ func TestBuildClaudeSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
-	if settings.Permissions == nil || len(settings.Permissions.Allow) < 2 {
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map")
+	}
+	allow, ok := permissions["allow"].([]string)
+	if !ok || len(allow) < 2 {
 		t.Fatalf("expected permissions allow list")
 	}
 }
@@ -94,7 +99,7 @@ func TestBuildClaudeSettingsNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
-	if settings.Permissions != nil {
+	if _, ok := settings["permissions"]; ok {
 		t.Fatalf("expected no permissions for none mode")
 	}
 }
@@ -118,8 +123,90 @@ func TestBuildClaudeSettingsYOLO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
-	if settings.Permissions == nil || len(settings.Permissions.Allow) < 2 {
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map for yolo mode")
+	}
+	allow, ok := permissions["allow"].([]string)
+	if !ok || len(allow) < 2 {
 		t.Fatalf("expected permissions allow list for yolo mode")
+	}
+}
+
+func TestBuildClaudeSettingsAgentSpecific(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"features": map[string]any{
+							"example_feature": true,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	features, ok := settings["features"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected features map")
+	}
+	if value, ok := features["example_feature"].(bool); !ok || !value {
+		t.Fatalf("expected example_feature=true, got %v", features["example_feature"])
+	}
+}
+
+func TestBuildClaudeSettingsAgentSpecificWithApprovals(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"features": map[string]any{
+							"example_feature": true,
+						},
+					},
+				},
+			},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
+				},
+			},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	// Managed permissions must be present alongside agent-specific keys.
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map when approvals are active")
+	}
+	allow, ok := permissions["allow"].([]string)
+	if !ok || len(allow) < 2 {
+		t.Fatalf("expected permissions allow list, got %v", permissions["allow"])
+	}
+	// Agent-specific keys must also be present.
+	features, ok := settings["features"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected features map from agent-specific config")
+	}
+	if value, ok := features["example_feature"].(bool); !ok || !value {
+		t.Fatalf("expected example_feature=true, got %v", features["example_feature"])
 	}
 }
 
