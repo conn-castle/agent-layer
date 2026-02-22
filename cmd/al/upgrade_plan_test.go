@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,6 +196,93 @@ func TestUpgradePlanCmd_InvalidDiffLines(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "invalid value for --diff-lines") {
 			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestUpgradePlanCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
+	root := prepareUpgradeTestRepo(t)
+
+	origValidate := validatePinnedReleaseVersionFunc
+	calledValidate := false
+	validatePinnedReleaseVersionFunc = func(_ context.Context, version string) error {
+		calledValidate = true
+		if version != "0.8.4" {
+			t.Fatalf("validated version = %q, want 0.8.4", version)
+		}
+		return nil
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = origValidate })
+
+	testutil.WithWorkingDir(t, root, func() {
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
+		cmd.SetArgs([]string{"--version", "0.8.4"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade plan --version: %v", err)
+		}
+	})
+
+	if !calledValidate {
+		t.Fatal("expected explicit pin to be validated")
+	}
+}
+
+func TestUpgradePlanCmd_VersionFlagValidationError(t *testing.T) {
+	root := prepareUpgradeTestRepo(t)
+
+	sentinel := errors.New("pin validation failed")
+	origValidate := validatePinnedReleaseVersionFunc
+	validatePinnedReleaseVersionFunc = func(context.Context, string) error {
+		return sentinel
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = origValidate })
+
+	testutil.WithWorkingDir(t, root, func() {
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
+		cmd.SetArgs([]string{"--version", "0.8.4"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+
+		err := cmd.Execute()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("expected sentinel error, got %v", err)
+		}
+	})
+}
+
+func TestUpgradePlanCmd_VersionLatestSkipsValidation(t *testing.T) {
+	root := prepareUpgradeTestRepo(t)
+
+	origResolveLatest := resolveLatestPinVersion
+	resolveLatestPinVersion = func(context.Context, string) (string, error) {
+		return "0.8.4", nil
+	}
+	t.Cleanup(func() { resolveLatestPinVersion = origResolveLatest })
+
+	origValidate := validatePinnedReleaseVersionFunc
+	validatePinnedReleaseVersionFunc = func(context.Context, string) error {
+		return errors.New("validate should be skipped for latest")
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = origValidate })
+
+	testutil.WithWorkingDir(t, root, func() {
+		diffLines := install.DefaultDiffMaxLines
+		cmd := newUpgradePlanCmd(&diffLines)
+		cmd.SetArgs([]string{"--version", "latest"})
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&bytes.Buffer{})
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade plan --version latest: %v", err)
+		}
+		if !strings.Contains(out.String(), "Pin version change:") {
+			t.Fatalf("expected plan output to include pin version section, got %q", out.String())
 		}
 	})
 }

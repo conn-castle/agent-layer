@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -386,6 +387,96 @@ func TestUpgradeCmd_InvalidDiffLines(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "invalid value for --diff-lines") {
 			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestUpgradeCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origValidate := validatePinnedReleaseVersionFunc
+	calledValidate := false
+	validatePinnedReleaseVersionFunc = func(_ context.Context, version string) error {
+		calledValidate = true
+		if version != "1.2.3" {
+			t.Fatalf("validated version = %q, want 1.2.3", version)
+		}
+		return nil
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = origValidate })
+
+	origInstallRun := installRun
+	calledInstall := false
+	installRun = func(_ string, opts install.Options) error {
+		calledInstall = true
+		if opts.PinVersion != "1.2.3" {
+			t.Fatalf("opts.PinVersion = %q, want 1.2.3", opts.PinVersion)
+		}
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates", "--version", "1.2.3"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+	})
+
+	if !calledValidate {
+		t.Fatal("expected explicit pin to be validated")
+	}
+	if !calledInstall {
+		t.Fatal("expected installRun to be called")
+	}
+}
+
+func TestUpgradeCmd_VersionFlagValidationError(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	sentinel := errors.New("invalid pin")
+	origValidate := validatePinnedReleaseVersionFunc
+	validatePinnedReleaseVersionFunc = func(context.Context, string) error {
+		return sentinel
+	}
+	t.Cleanup(func() { validatePinnedReleaseVersionFunc = origValidate })
+
+	origInstallRun := installRun
+	installRun = func(_ string, _ install.Options) error {
+		t.Fatal("installRun should not be called when version validation fails")
+		return nil
+	}
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates", "--version", "1.2.3"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("expected sentinel error, got %v", err)
 		}
 	})
 }
