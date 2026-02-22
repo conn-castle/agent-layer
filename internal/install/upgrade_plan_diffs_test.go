@@ -47,12 +47,8 @@ func TestBuildUpgradePlanDiffPreviews_GeneratesChangedFileAndPinDiffs(t *testing
 		t.Fatalf("expected non-empty diff preview for commands.allow")
 	}
 
-	pinPreview, ok := previews[pinVersionRelPath]
-	if !ok {
-		t.Fatalf("expected preview for %s when pin changes", pinVersionRelPath)
-	}
-	if strings.TrimSpace(pinPreview.UnifiedDiff) == "" {
-		t.Fatalf("expected non-empty pin diff preview")
+	if _, ok := previews[pinVersionRelPath]; ok {
+		t.Fatalf("did not expect preview for %s even when pin changes", pinVersionRelPath)
 	}
 }
 

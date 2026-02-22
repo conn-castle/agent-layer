@@ -69,14 +69,6 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 		return nil, err
 	}
 
-	if plan.PinVersionChange.Action != UpgradePinActionNone {
-		pinPreview, err := inst.pinVersionDiffPreview(pinVersionRelPath, OwnershipUpstreamTemplateDelta)
-		if err != nil {
-			return nil, err
-		}
-		previews[pinVersionRelPath] = pinPreview
-	}
-
 	return previews, nil
 }
 

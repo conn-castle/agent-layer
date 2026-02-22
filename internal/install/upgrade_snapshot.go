@@ -22,13 +22,16 @@ const (
 	upgradeSnapshotMaxRetained   = 20
 )
 
+var upgradeSnapshotSizeWarningBytes int64 = 50 * 1024 * 1024 // 50MB
+
 type upgradeSnapshotStatus string
 
 const (
-	upgradeSnapshotStatusCreated        upgradeSnapshotStatus = "created"
-	upgradeSnapshotStatusApplied        upgradeSnapshotStatus = "applied"
-	upgradeSnapshotStatusAutoRolledBack upgradeSnapshotStatus = "auto_rolled_back"
-	upgradeSnapshotStatusRollbackFailed upgradeSnapshotStatus = "rollback_failed"
+	upgradeSnapshotStatusCreated            upgradeSnapshotStatus = "created"
+	upgradeSnapshotStatusApplied            upgradeSnapshotStatus = "applied"
+	upgradeSnapshotStatusAutoRolledBack     upgradeSnapshotStatus = "auto_rolled_back"
+	upgradeSnapshotStatusManuallyRolledBack upgradeSnapshotStatus = "manually_rolled_back"
+	upgradeSnapshotStatusRollbackFailed     upgradeSnapshotStatus = "rollback_failed"
 )
 
 type upgradeSnapshotEntryKind string
@@ -60,6 +63,43 @@ type upgradeSnapshotFile struct {
 	path      string
 	createdAt time.Time
 	id        string
+}
+
+// UpgradeSnapshotMetadata provides lightweight snapshot listing fields.
+type UpgradeSnapshotMetadata struct {
+	ID           string
+	CreatedAtUTC string
+	Status       string
+}
+
+// ListUpgradeSnapshots returns metadata for all available upgrade snapshots, sorted by creation time (newest first).
+func ListUpgradeSnapshots(root string, sys System) ([]UpgradeSnapshotMetadata, error) {
+	if strings.TrimSpace(root) == "" {
+		return nil, fmt.Errorf(messages.InstallRootRequired)
+	}
+	if sys == nil {
+		return nil, fmt.Errorf(messages.InstallSystemRequired)
+	}
+	inst := &installer{root: root, sys: sys}
+	files, err := inst.listUpgradeSnapshotFiles()
+	if err != nil {
+		return nil, err
+	}
+	// listUpgradeSnapshotFiles returns oldest first; we want newest first.
+	out := make([]UpgradeSnapshotMetadata, 0, len(files))
+	for i := len(files) - 1; i >= 0; i-- {
+		snapshot, err := readUpgradeSnapshot(files[i].path, sys)
+		if err != nil {
+			// Skip unreadable/malformed snapshots instead of aborting the list.
+			continue
+		}
+		out = append(out, UpgradeSnapshotMetadata{
+			ID:           snapshot.SnapshotID,
+			CreatedAtUTC: snapshot.CreatedAtUTC,
+			Status:       string(snapshot.Status),
+		})
+	}
+	return out, nil
 }
 
 func (inst *installer) createUpgradeSnapshot() (upgradeSnapshot, error) {
@@ -100,7 +140,15 @@ func (inst *installer) writeUpgradeSnapshot(snapshot upgradeSnapshot, pruneBefor
 		return fmt.Errorf(messages.InstallFailedCreateDirForFmt, dir, err)
 	}
 	path := filepath.Join(dir, snapshot.SnapshotID+".json")
-	return writeUpgradeSnapshotFile(path, snapshot, inst.sys)
+	if err := writeUpgradeSnapshotFile(path, snapshot, inst.sys); err != nil {
+		return err
+	}
+
+	// Check size and warn if it exceeds threshold.
+	if info, err := inst.sys.Stat(path); err == nil && info.Size() > upgradeSnapshotSizeWarningBytes {
+		_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallUpgradeSnapshotLargeWarningFmt, path, info.Size()/1024/1024, upgradeSnapshotSizeWarningBytes/1024/1024)
+	}
+	return nil
 }
 
 func writeUpgradeSnapshotFile(path string, snapshot upgradeSnapshot, sys System) error {
@@ -147,7 +195,7 @@ func validateUpgradeSnapshot(snapshot upgradeSnapshot) error {
 		return fmt.Errorf("invalid created_at_utc %q: %w", snapshot.CreatedAtUTC, err)
 	}
 	switch snapshot.Status {
-	case upgradeSnapshotStatusCreated, upgradeSnapshotStatusApplied, upgradeSnapshotStatusAutoRolledBack, upgradeSnapshotStatusRollbackFailed:
+	case upgradeSnapshotStatusCreated, upgradeSnapshotStatusApplied, upgradeSnapshotStatusAutoRolledBack, upgradeSnapshotStatusManuallyRolledBack, upgradeSnapshotStatusRollbackFailed:
 	default:
 		return fmt.Errorf("invalid status %q", snapshot.Status)
 	}
@@ -170,9 +218,6 @@ func validateUpgradeSnapshotEntry(entry upgradeSnapshotEntry) error {
 	}
 	switch entry.Kind {
 	case upgradeSnapshotEntryKindFile:
-		if entry.ContentBase64 == "" {
-			return fmt.Errorf("file snapshot entry %s requires content_base64", entry.Path)
-		}
 		if _, err := base64.StdEncoding.DecodeString(entry.ContentBase64); err != nil {
 			return fmt.Errorf("file snapshot entry %s has invalid content_base64: %w", entry.Path, err)
 		}
@@ -221,6 +266,12 @@ func (inst *installer) pruneUpgradeSnapshots(retain int) error {
 
 func (inst *installer) listUpgradeSnapshotFiles() ([]upgradeSnapshotFile, error) {
 	dir := inst.upgradeSnapshotDirPath()
+	if _, err := inst.sys.Stat(dir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf(messages.InstallFailedStatFmt, dir, err)
+	}
 	files := make([]upgradeSnapshotFile, 0)
 	if err := inst.sys.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -232,9 +283,12 @@ func (inst *installer) listUpgradeSnapshotFiles() ([]upgradeSnapshotFile, error)
 		if !strings.HasSuffix(path, ".json") {
 			return nil
 		}
-		snapshot, readErr := readUpgradeSnapshot(path, inst.sys)
-		if readErr != nil {
-			return readErr
+		snapshot, ok := readUpgradeSnapshotIfValid(path, inst.sys)
+		if !ok {
+			// Skip unreadable/malformed snapshots to ensure the list/prune
+			// operations can continue. Malformed snapshots are rare and
+			// should not block the entire upgrade lifecycle.
+			return nil
 		}
 		createdAt, parseErr := time.Parse(time.RFC3339, snapshot.CreatedAtUTC)
 		if parseErr != nil {
@@ -256,6 +310,14 @@ func (inst *installer) listUpgradeSnapshotFiles() ([]upgradeSnapshotFile, error)
 		return files[i].createdAt.Before(files[j].createdAt)
 	})
 	return files, nil
+}
+
+func readUpgradeSnapshotIfValid(path string, sys System) (upgradeSnapshot, bool) {
+	snapshot, err := readUpgradeSnapshot(path, sys)
+	if err != nil {
+		return upgradeSnapshot{}, false
+	}
+	return snapshot, true
 }
 
 func (inst *installer) rollbackUpgradeSnapshot(snapshot upgradeSnapshot, targets []string) error {

@@ -78,9 +78,14 @@ func buildGeminiSettings(sys System, project *config.ProjectConfig) (*geminiSett
 	if err != nil {
 		return nil, err
 	}
+	promptEnv, err := resolvePromptServerEnv(project.Root)
+	if err != nil {
+		return nil, err
+	}
 	settings.MCPServers["agent-layer"] = geminiMCPServer{
 		Command: promptCommand,
 		Args:    promptArgs,
+		Env:     promptEnv,
 		Trust:   &trust,
 	}
 

@@ -305,7 +305,7 @@ enabled = true
 [agents.codex]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
-# model = "gpt-5.2-codex"
+# model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 
@@ -411,9 +411,9 @@ API tokens and other secrets live in `.agent-layer/.env` (always gitignored).
 **Important:** Only environment variables that start with the `AL_` prefix are sourced from `.env` (others are ignored). This convention avoids conflicts with your shell environment and ensures Agent Layer's variables don't override existing environment variables when VS Code terminals inherit the process environment.
 
 Example keys:
-- `AL_GITHUB_PERSONAL_ACCESS_TOKEN`
 - `AL_CONTEXT7_API_KEY`
 - `AL_TAVILY_API_KEY`
+- `AL_GITHUB_PERSONAL_ACCESS_TOKEN` (only when using the optional GitHub MCP server)
 
 Your existing process environment takes precedence. `.agent-layer/.env` fills missing keys only, and empty values in `.agent-layer/.env` are ignored (so template entries cannot override real tokens). This behavior is consistent whether launching via `al` commands or repo-local launchers like `open-vscode.app`, `open-vscode.sh`, or `open-vscode.command`.
 
@@ -526,7 +526,7 @@ Other commands:
 - `al upgrade` — apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
 - `al upgrade prefetch` — download and cache a release binary (use `--version X.Y.Z` on dev builds; useful for offline/CI cache warm-up)
-- `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`)
+- `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`; use `al upgrade rollback --list` to discover available IDs)
 - `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
 - `al doctor` — check common setup issues and warn about available updates

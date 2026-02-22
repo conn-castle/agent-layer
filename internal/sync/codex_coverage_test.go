@@ -74,7 +74,7 @@ func TestBuildCodexConfig_ModelSettings(t *testing.T) {
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
 					Enabled:         &enabled,
-					Model:           "claude-3-5-sonnet",
+					Model:           "sonnet-4.6",
 					ReasoningEffort: "high",
 				},
 			},
@@ -86,7 +86,7 @@ func TestBuildCodexConfig_ModelSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(output, "model = \"claude-3-5-sonnet\"") {
+	if !strings.Contains(output, "model = \"sonnet-4.6\"") {
 		t.Fatalf("missing model setting")
 	}
 	if !strings.Contains(output, "model_reasoning_effort = \"high\"") {

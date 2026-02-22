@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -131,6 +133,82 @@ func TestUpgradeRollbackCmd_PropagatesInstallErrors(t *testing.T) {
 			t.Fatalf("expected sentinel error, got %v", err)
 		}
 	})
+}
+
+func TestUpgradeRollbackCmd_ListNoSnapshots(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var out bytes.Buffer
+		cmd.SetArgs([]string{"rollback", "--list"})
+		cmd.SetOut(&out)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade rollback --list: %v", err)
+		}
+		if !strings.Contains(out.String(), messages.UpgradeRollbackNoSnapshots) {
+			t.Fatalf("expected no snapshots message, got %q", out.String())
+		}
+	})
+}
+
+func TestUpgradeRollbackCmd_ListPrintsSnapshots(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	snapshotDir := filepath.Join(root, ".agent-layer", "state", "upgrade-snapshots")
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		t.Fatalf("mkdir snapshots: %v", err)
+	}
+	snapshotJSON := fmt.Sprintf(`{"schema_version":1,"snapshot_id":"snapshot-123","created_at_utc":"%s","status":"applied","entries":[]}`, time.Now().UTC().Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(snapshotDir, "snapshot-123.json"), []byte(snapshotJSON), 0o644); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var out bytes.Buffer
+		cmd.SetArgs([]string{"rollback", "--list"})
+		cmd.SetOut(&out)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade rollback --list: %v", err)
+		}
+		output := out.String()
+		if !strings.Contains(output, messages.UpgradeRollbackListHeader) {
+			t.Fatalf("expected list header, got %q", output)
+		}
+		if !strings.Contains(output, "snapshot-123") {
+			t.Fatalf("expected snapshot entry, got %q", output)
+		}
+		if !strings.Contains(output, "status: applied") {
+			t.Fatalf("expected snapshot status, got %q", output)
+		}
+	})
+}
+
+func TestUpgradeRollbackCmd_ListRejectsPositionalArgs(t *testing.T) {
+	cmd := newUpgradeRollbackCmd()
+	if err := cmd.Flags().Set("list", "true"); err != nil {
+		t.Fatalf("set --list: %v", err)
+	}
+	err := cmd.Args(cmd, []string{"snapshot-123"})
+	if err == nil {
+		t.Fatal("expected positional args to be rejected with --list")
+	}
+	if !strings.Contains(err.Error(), `unknown command "snapshot-123"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
 
 func TestUpgradePrefetchCmd_UsesVersionFlagAndCallsDispatch(t *testing.T) {

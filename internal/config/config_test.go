@@ -26,7 +26,7 @@ enabled = true
 
 [agents.codex]
 enabled = true
-model = "gpt-5.2-codex"
+model = "gpt-5.3-codex"
 reasoning_effort = "high"
 
 [agents.vscode]

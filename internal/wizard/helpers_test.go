@@ -116,7 +116,7 @@ func TestSelectOptionalValue_Custom(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro-preview"}, &value)
 	assert.NoError(t, err)
 	assert.Equal(t, "custom-model", value)
 }
@@ -134,7 +134,7 @@ func TestSelectOptionalValue_CustomBlank(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "custom value required")
 }
@@ -152,7 +152,7 @@ func TestSelectOptionalValue_CustomPrefill(t *testing.T) {
 	}
 
 	value := "custom-model"
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
 	assert.NoError(t, err)
 	assert.Equal(t, "custom-model", value)
 }
@@ -161,15 +161,15 @@ func TestSelectOptionalValue_ValueInOptions(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
 			// Current should be the predefined value from options
-			assert.Equal(t, "gemini-2.5-pro", *current)
+			assert.Equal(t, "gemini-3.1-pro", *current)
 			return nil
 		},
 	}
 
-	value := "gemini-2.5-pro"
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	value := "gemini-3.1-pro"
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
 	assert.NoError(t, err)
-	assert.Equal(t, "gemini-2.5-pro", value)
+	assert.Equal(t, "gemini-3.1-pro", value)
 }
 
 func TestSelectOptionalValue_SelectError(t *testing.T) {
@@ -180,7 +180,7 @@ func TestSelectOptionalValue_SelectError(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "select error")
 }
@@ -197,7 +197,7 @@ func TestSelectOptionalValue_InputError(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "input error")
 }
@@ -211,7 +211,7 @@ func TestSelectOptionalValue_LeaveBlank(t *testing.T) {
 	}
 
 	value := "some-value"
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-2.5-pro"}, &value)
+	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro-preview"}, &value)
 	assert.NoError(t, err)
 	assert.Equal(t, "", value)
 }

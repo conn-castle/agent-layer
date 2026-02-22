@@ -18,7 +18,7 @@ mode = "yolo"
 
 [agents.gemini]
 enabled = true
-model = "gemini-2.5-pro"
+model = "gemini-3.1-pro"
 
 [agents.claude]
 enabled = true
@@ -55,7 +55,7 @@ PROFILE
 
   # Verify model flag was passed
   assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "--model"
-  assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "gemini-2.5-pro"
+  assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "gemini-3.1-pro"
 
   # Verify yolo approval mode flag (gemini uses --approval-mode=yolo)
   assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "--approval-mode=yolo"
