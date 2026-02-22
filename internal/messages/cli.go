@@ -43,6 +43,9 @@ const (
 	UpgradeRollbackShort                  = "Restore a managed-file upgrade snapshot"
 	UpgradeRollbackRequiresSnapshotID     = "rollback requires a snapshot id: `al upgrade rollback <snapshot-id>`"
 	UpgradeRollbackSuccessFmt             = "Restored snapshot %s.\n"
+	UpgradeRollbackFlagList               = "List available upgrade snapshots"
+	UpgradeRollbackListHeader             = "Available upgrade snapshots (newest first):"
+	UpgradeRollbackNoSnapshots            = "No upgrade snapshots found."
 	UpgradeRequiresTerminal               = "upgrade prompts require an interactive terminal; re-run `al upgrade` in a terminal, or run non-interactively with `--yes` and one or more apply flags"
 	UpgradeNonInteractiveRequiresYesApply = "non-interactive upgrade requires `--yes` and one or more apply flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`"
 	UpgradeYesRequiresApply               = "`--yes` requires one or more apply flags: `--apply-managed-updates`, `--apply-memory-updates`, `--apply-deletions`"
@@ -52,6 +55,7 @@ const (
 	UpgradeFlagApplyManagedUpdates        = "Apply managed template updates without prompts"
 	UpgradeFlagApplyMemoryUpdates         = "Apply memory file updates without prompts"
 	UpgradeFlagApplyDeletions             = "Apply unknown file deletions (requires explicit confirmation unless combined with --yes)"
+	UpgradeFlagVersion                    = "Target Agent Layer version for the upgrade (vX.Y.Z, X.Y.Z, or latest)"
 
 	UpgradeOverwritePromptFmt       = "Overwrite %s with the template version?"
 	UpgradeOverwriteAllPrompt       = "Overwrite all existing managed files with template versions and update the pin if needed?"

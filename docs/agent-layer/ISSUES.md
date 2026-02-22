@@ -29,14 +29,8 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-20 gemini-http-transport-url: Gemini sync maps SSE servers to httpUrl instead of url
     Priority: Medium. Area: sync / Gemini MCP.
-    Description: `buildGeminiSettings` in `internal/sync/gemini.go:98-103` always maps HTTP transport servers to `httpUrl` (streamable HTTP) regardless of the resolved `HTTPTransport` value. Gemini CLI distinguishes `httpUrl` (streamable HTTP) from `url` (SSE). The default `http_transport` is `"sse"` (`resolvers.go:76-78`), so any custom HTTP server without explicit `http_transport = "streamable"` would be written to the wrong field. Current defaults (`github`, `tavily`) are unaffected because they explicitly set `http_transport = "streamable"`.
+    Description: `buildGeminiSettings` in `internal/sync/gemini.go:98-103` always maps HTTP transport servers to `httpUrl` (streamable HTTP) regardless of the resolved `HTTPTransport` value. Gemini CLI distinguishes `httpUrl` (streamable HTTP) from `url` (SSE). The default `http_transport` is `"sse"` (`resolvers.go:76-78`), so any custom HTTP server without explicit `http_transport = "streamable"` would be written to the wrong field. Current seeded defaults are unaffected because `tavily` explicitly sets `http_transport = "streamable"`.
     Next step: Check `server.HTTPTransport` in the Gemini build loop: use `url` for SSE, `httpUrl` for streamable. Add test coverage for both transport sub-types.
-
-- Issue 2026-02-20 upg-snapshot-empty-file-base64: Upgrade snapshot validation rejects zero-byte file entries
-    Priority: Critical. Area: install / upgrade snapshots.
-    Description: `al upgrade` can fail with `validate upgrade snapshot: file snapshot entry ... requires content_base64` when snapshot targets include a zero-byte file (for example under `.agent-layer/tmp`). This violates the reliability requirement that `al upgrade` must ALWAYS work.
-    Next step: Allow empty file payloads for `kind=file` (decode base64 without requiring non-empty string) and add a regression test proving `al upgrade` succeeds with zero-byte unknown files present.
-    Notes: Reliability contract: `al upgrade` must always work. GitHub issue: https://github.com/conn-castle/agent-layer/issues/63
 
 - Issue 2026-02-20 wizard-config-order-preferences: Audit wizard config write order and align it to preferred priority
     Priority: Medium. Area: wizard / UX.
@@ -74,47 +68,16 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Slash-commands should be renamed to "skills" to align with the established skill standard. This includes supporting supplemental folders within the skill directory and updating `al doctor` to verify compatibility using the standard toolset.
     Next step: Perform a global rename of slash-command terminology and implement structural/validation updates to match the skill standard.
 
-- Issue 2026-02-16 upg-ver-diff-ignore: Ignore diffs for al.version during upgrades
-    Priority: Low. Area: install / UX.
-    Description: Upgrades currently show or warn about diffs for the `al.version` file. Since updating the version is the primary goal of an upgrade, this warning is redundant and potentially confusing for users.
-    Next step: Modify the upgrade logic to specifically ignore the `al.version` file when calculating or presenting file diffs to the user.
-
 - Issue 2026-02-15 upg-config-toml-roundtrip: Config migrations strip user TOML comments/formatting
     Priority: Medium. Area: install / UX.
     Description: `upgrade_migrations.go` decodes `.agent-layer/config.toml` into a map and re-marshals after key/default migrations, which removes user comments and original key ordering.
     Next step: Preserve comments/order for simple key migrations (line-level edit or AST-preserving strategy), or explicitly document this destructive formatting side effect.
     Notes: Explicitly deferred in the Upgrade continuation scope; wizard/profile flows now show rewrite previews and backup files before write.
 
-- Issue 2026-02-14 upg-snapshot-scope: Upgrade snapshot captures all unknowns before deletion approval
-    Priority: Low. Area: install / efficiency.
-    Description: `createUpgradeSnapshot` in `upgrade_snapshot.go` captures all unknown files under `.agent-layer` before the upgrade transaction begins, regardless of whether the user later approves or rejects deletion. This is by design — the snapshot must exist before the transaction starts — but means snapshots may include files that were never at risk of deletion.
-    Next step: Consider a two-phase approach where deletion-eligible unknowns are snapshotted lazily at deletion-prompt time, or document current behavior as intentional in upgrade docs.
-
-- Issue 2026-02-14 upg-scoped-restore: Automatic rollback restores all snapshot entries instead of scoped targets
-    Priority: Low. Area: install / correctness.
-    Description: `rollbackUpgradeSnapshotState` computes scoped targets for the delete phase but `restoreUpgradeSnapshotEntriesAtRoot` restores all snapshot entries unfiltered. If a write fails on an unrelated entry during restore, the snapshot is marked `rollback_failed` even though that path was never part of the failed transaction scope. In practice this is safe (unmodified files are rewritten with identical content) but is an inconsistency.
-    Next step: Filter the restore phase to entries covered by scoped targets, or document current full-restore behavior as intentional.
-
-- Issue 2026-02-14 upg-rollback-audit-v1: Manual rollback success is not represented in snapshot status
-    Priority: Low. Area: install / observability.
-    Description: `al upgrade rollback <snapshot-id>` intentionally leaves successful rollbacks at `status: applied` because schema v1 has no dedicated manual-rollback-complete status.
-    Next step: Add a schema/status extension for manual rollback auditability and update rollback/docs/tests accordingly.
-    Notes: Current behavior still records manual rollback failures as `rollback_failed` with `failure_step=manual_rollback`.
-
-- Issue 2026-02-14 upg-snapshot-size: No per-snapshot size guard for upgrade snapshots
-    Priority: Low. Area: install / storage.
-    Description: `internal/install/upgrade_snapshot.go` stores full file contents for rollback entries and retains up to 20 snapshots, but does not warn or cap snapshot size in unusually large repos.
-    Next step: Add snapshot-size budget checks (warning and/or configurable cap) and document retention sizing guidance.
-
 - Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
     Priority: Low. Area: install / maintainability.
     Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
     Next step: Audit current method count (Phase 11 is complete). If it exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`). Scheduled in Phase 13 (maintenance).
-
-- Issue 2026-02-10 upg-ver: Cannot target a specific intermediate release during upgrade
-    Priority: Low. Area: upgrade / version pinning / UX.
-    Description: Migration manifests are now chained during multi-version jumps (all intermediate manifests between source and target are loaded and applied in order), so migrations are no longer missed. However, there is still no `al upgrade --version X.Y.Z` to target a specific intermediate version; the repo always upgrades to the installed binary version.
-    Next step: Decide if `al upgrade --version X.Y.Z` is needed given that migration chaining resolves the data-loss risk.
 
 - Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
     Priority: Medium. Area: website / marketing.

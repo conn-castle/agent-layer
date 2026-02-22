@@ -157,7 +157,7 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
 					Enabled:         &enabled,
-					Model:           "gpt-5.2-codex",
+					Model:           "gpt-5.3-codex",
 					ReasoningEffort: "high",
 				},
 			},
@@ -175,7 +175,7 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 	}
 
 	headerIndex := strings.Index(output, "# GENERATED FILE")
-	modelIndex := strings.Index(output, "model = \"gpt-5.2-codex\"")
+	modelIndex := strings.Index(output, "model = \"gpt-5.3-codex\"")
 	reasoningIndex := strings.Index(output, "model_reasoning_effort = \"high\"")
 	if modelIndex == -1 || reasoningIndex == -1 {
 		t.Fatalf("missing model settings in output:\n%s", output)

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 func TestResolvePromptServerCommandUsesGlobalBinary(t *testing.T) {
@@ -96,5 +98,27 @@ func TestResolvePromptServerCommandMissingGo(t *testing.T) {
 	_, _, err := resolvePromptServerCommand(sys, root)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestResolvePromptServerEnv(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	env, err := resolvePromptServerEnv(root)
+	if err != nil {
+		t.Fatalf("resolvePromptServerEnv error: %v", err)
+	}
+	if got := env[config.BuiltinRepoRootEnvVar]; got != root {
+		t.Fatalf("expected %s=%q, got %q", config.BuiltinRepoRootEnvVar, root, got)
+	}
+}
+
+func TestResolvePromptServerEnvRootRequired(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolvePromptServerEnv(" ")
+	if err == nil {
+		t.Fatal("expected error for empty repo root")
 	}
 }

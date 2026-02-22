@@ -16,7 +16,7 @@ func newMcpPromptsCmd() *cobra.Command {
 		Short:  messages.McpPromptsShort,
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveRepoRoot()
+			root, err := resolveRepoRootForPromptServer()
 			if err != nil {
 				return err
 			}

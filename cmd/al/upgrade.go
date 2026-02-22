@@ -25,6 +25,7 @@ func newUpgradeCmd() *cobra.Command {
 	var applyMemoryUpdates bool
 	var applyDeletions bool
 	var diffLines int
+	var pinVersion string
 
 	cmd := &cobra.Command{
 		Use:   messages.UpgradeUse,
@@ -52,9 +53,14 @@ func newUpgradeCmd() *cobra.Command {
 				return err
 			}
 
-			targetPin, err := resolvePinVersion("", Version)
+			targetPin, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
 			if err != nil {
 				return err
+			}
+			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
+				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
+					return err
+				}
 			}
 			reviewState := buildUpgradeReviewState(policy)
 			opts := install.Options{
@@ -81,15 +87,20 @@ func newUpgradeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&applyManagedUpdates, "apply-managed-updates", false, messages.UpgradeFlagApplyManagedUpdates)
 	cmd.Flags().BoolVar(&applyMemoryUpdates, "apply-memory-updates", false, messages.UpgradeFlagApplyMemoryUpdates)
 	cmd.Flags().BoolVar(&applyDeletions, "apply-deletions", false, messages.UpgradeFlagApplyDeletions)
+	cmd.Flags().StringVar(&pinVersion, "version", "", messages.UpgradeFlagVersion)
 	cmd.PersistentFlags().IntVar(&diffLines, "diff-lines", install.DefaultDiffMaxLines, messages.UpgradeFlagDiffLines)
 	return cmd
 }
 
 func newUpgradeRollbackCmd() *cobra.Command {
-	return &cobra.Command{
+	var list bool
+	cmd := &cobra.Command{
 		Use:   messages.UpgradeRollbackUse,
 		Short: messages.UpgradeRollbackShort,
 		Args: func(cmd *cobra.Command, args []string) error {
+			if list {
+				return cobra.NoArgs(cmd, args)
+			}
 			if len(args) != 1 {
 				return fmt.Errorf(messages.UpgradeRollbackRequiresSnapshotID)
 			}
@@ -99,6 +110,21 @@ func newUpgradeRollbackCmd() *cobra.Command {
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
+			}
+			if list {
+				snapshots, err := install.ListUpgradeSnapshots(root, install.RealSystem{})
+				if err != nil {
+					return err
+				}
+				if len(snapshots) == 0 {
+					_, err = fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeRollbackNoSnapshots)
+					return err
+				}
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeRollbackListHeader)
+				for _, s := range snapshots {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  - %s (%s, status: %s)\n", s.ID, s.CreatedAtUTC, s.Status)
+				}
+				return nil
 			}
 			snapshotID := strings.TrimSpace(args[0])
 			if err := installRollbackUpgradeSnapshot(root, snapshotID, install.RollbackUpgradeSnapshotOptions{
@@ -110,6 +136,8 @@ func newUpgradeRollbackCmd() *cobra.Command {
 			return err
 		},
 	}
+	cmd.Flags().BoolVar(&list, "list", false, messages.UpgradeRollbackFlagList)
+	return cmd
 }
 
 func newUpgradePrefetchCmd() *cobra.Command {
@@ -422,6 +450,7 @@ func writeUpgradeSkippedCategoryNotes(out io.Writer, policy upgradeApplyPolicy) 
 }
 
 func newUpgradePlanCmd(diffLines *int) *cobra.Command {
+	var pinVersion string
 	cmd := &cobra.Command{
 		Use:   messages.UpgradePlanUse,
 		Short: messages.UpgradePlanShort,
@@ -437,9 +466,14 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 				return err
 			}
 
-			targetPin, err := resolvePinVersion("", Version)
+			targetPin, err := resolvePinVersionForInit(cmd.Context(), pinVersion, Version)
 			if err != nil {
 				return err
+			}
+			if strings.TrimSpace(pinVersion) != "" && !strings.EqualFold(strings.TrimSpace(pinVersion), "latest") {
+				if err := validatePinnedReleaseVersionFunc(cmd.Context(), targetPin); err != nil {
+					return err
+				}
 			}
 			plan, err := install.BuildUpgradePlan(root, install.UpgradePlanOptions{
 				TargetPinVersion: targetPin,
@@ -458,6 +492,7 @@ func newUpgradePlanCmd(diffLines *int) *cobra.Command {
 			return renderUpgradePlanText(cmd.OutOrStdout(), plan, previews)
 		},
 	}
+	cmd.Flags().StringVar(&pinVersion, "version", "", messages.UpgradeFlagVersion)
 	return cmd
 }
 
@@ -489,7 +524,7 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map
 	if err := writeMigrationReportSection(out, "Migrations", plan.MigrationReport); err != nil {
 		return err
 	}
-	if err := writePinVersionSection(out, plan.PinVersionChange, previews); err != nil {
+	if err := writePinVersionSection(out, plan.PinVersionChange); err != nil {
 		return err
 	}
 	if err := writeReadinessSection(out, plan.ReadinessChecks); err != nil {
@@ -591,21 +626,13 @@ func writeMigrationReportSection(out io.Writer, title string, report install.Upg
 	return ew.err
 }
 
-func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff, previews map[string]install.DiffPreview) error {
+func writePinVersionSection(out io.Writer, pin install.UpgradePinVersionDiff) error {
 	ew := &errWriter{w: out}
 	ew.println("\nPin version change:")
 	ew.printf("  - current: %q\n", pin.Current)
 	ew.printf("  - target: %q\n", pin.Target)
 	ew.printf("  - action: %s\n", pin.Action)
-	if ew.err != nil {
-		return ew.err
-	}
-	if pin.Action != install.UpgradePinActionNone {
-		if err := writeSinglePreviewBlock(out, previews[".agent-layer/al.version"]); err != nil {
-			return err
-		}
-	}
-	return nil
+	return ew.err
 }
 
 func writeSinglePreviewBlock(out io.Writer, preview install.DiffPreview) error {

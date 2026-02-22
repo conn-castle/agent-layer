@@ -195,7 +195,7 @@ assert_mock_agent_called() {
 
 # assert_mock_agent_has_arg <log> <arg> — verify a specific arg was passed.
 # Uses literal string comparison (not regex) to avoid false positives with
-# metacharacters like . in "gemini-2.5-pro".
+# metacharacters like . in "gemini-3.1-pro".
 assert_mock_agent_has_arg() {
   local log="$1" arg="$2"
   local found=0

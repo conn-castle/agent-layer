@@ -34,6 +34,7 @@ const (
 	InstallUpgradeRollbackSnapshotNotFoundFmt        = "upgrade snapshot %s not found under %s"
 	InstallUpgradeRollbackSnapshotNotRollbackableFmt = "upgrade snapshot %s is not rollbackable (status %s; expected %s): snapshots are only rollbackable after a completed upgrade writes changes"
 	InstallUpgradeRollbackFailedFmt                  = "rollback snapshot %s failed: %w"
+	InstallUpgradeSnapshotLargeWarningFmt            = "Warning: upgrade snapshot %s is large (%d MB); consider cleaning old snapshots under .agent-layer/state/upgrade-snapshots (threshold: %d MB)\n"
 	InstallDiffPreviewPathRequired                   = "diff preview path is required"
 	InstallMissingTemplatePathMappingFmt             = "missing template path mapping for %s"
 	InstallSectionAwareMarkerDuplicateFmt            = "section-aware marker %q appears multiple times in %s"

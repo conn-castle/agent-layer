@@ -135,15 +135,15 @@ Incomplete:
 
 #### Wizard and config
 - [x] cfg-enable-only-strict: Split enable-only agents (`claude-vscode`, `vscode`, `antigravity`) to `EnableOnlyConfig`, reject unknown TOML keys via strict decode, and keep unknown-key failures repairable through wizard/doctor lenient fallback with guidance. (From DECISIONS config-enable-only-strict + unknown-key-repairable)
-- [ ] wiz-globals: Convert mutable exported catalog variables in `internal/wizard/catalog.go` to functions returning fresh copies. Remove confirmed dead code in `approval_modes.go` and `helpers.go`. (From ISSUES)
-- [ ] upg-config-roundtrip: Preserve user TOML comments and key ordering during config migrations, or document the destructive formatting as intentional. (From ISSUES)
+- [x] wiz-globals: Convert mutable exported catalog variables in `internal/wizard/catalog.go` to functions returning fresh copies. Remove confirmed dead code in `approval_modes.go` and `helpers.go`. (From ISSUES)
+- [x] upg-config-roundtrip: Preserve user TOML comments and key ordering during config migrations, or document the destructive formatting as intentional. (From ISSUES)
 
 #### Upgrade polish
-- [ ] upg-ver-diff-ignore: Suppress `al.version` diffs during upgrade plan/apply since updating the version is the primary goal of an upgrade. (From ISSUES)
-- [ ] upg-snapshot-polish: Address snapshot scope (lazy snapshotting), scoped restore filtering, and per-snapshot size guards. (From ISSUES upg-snapshot-scope, upg-scoped-restore, upg-snapshot-size)
-- [ ] upg-rollback-audit: Add schema/status extension for manual rollback auditability in snapshot system. (From ISSUES)
-- [ ] upg-snapshot-list: Add `al upgrade rollback --list` (or `al upgrade snapshots`) to show available snapshots without manual directory inspection. (From BACKLOG)
-- [ ] upg-ver-pinning: Decide on and implement a supported workflow for upgrading to intermediate versions (`al upgrade --version X.Y.Z` or equivalent). (From ISSUES upg-ver)
+- [x] upg-ver-diff-ignore: Suppress `al.version` diffs during upgrade plan/apply since updating the version is the primary goal of an upgrade. (From ISSUES)
+- [x] upg-snapshot-polish: Address snapshot scope (lazy snapshotting), scoped restore filtering, and per-snapshot size guards. (From ISSUES upg-snapshot-scope, upg-scoped-restore, upg-snapshot-size)
+- [x] upg-rollback-audit: Add schema/status extension for manual rollback auditability in snapshot system. (From ISSUES)
+- [x] upg-snapshot-list: Add `al upgrade rollback --list` (or `al upgrade snapshots`) to show available snapshots without manual directory inspection. (From BACKLOG)
+- [x] upg-ver-pinning: Decide on and implement a supported workflow for upgrading to intermediate versions (`al upgrade --version X.Y.Z` or equivalent). (From ISSUES upg-ver)
 
 #### Structural
 - [ ] installer-struct: Evaluate whether the `installer` struct (23 fields, 57+ methods) should be split into sub-structs (e.g., `templateManager`, `ownershipClassifier`). Extract if method count has grown. (From ISSUES 3c5f958f)

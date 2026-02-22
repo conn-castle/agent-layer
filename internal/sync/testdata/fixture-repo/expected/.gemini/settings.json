@@ -11,6 +11,9 @@
       "args": [
         "mcp-prompts"
       ],
+      "env": {
+        "AL_REPO_ROOT": "__REPO_ROOT__"
+      },
       "trust": true
     },
     "example": {

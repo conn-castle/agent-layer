@@ -67,6 +67,11 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 		}
 		return fmt.Errorf(messages.InstallUpgradeRollbackFailedFmt, snapshotID, err)
 	}
+
+	snapshot.Status = upgradeSnapshotStatusManuallyRolledBack
+	if err := writeUpgradeSnapshotFile(snapshotPath, snapshot, sys); err != nil {
+		return fmt.Errorf("rollback snapshot %s succeeded but failed to persist manually_rolled_back state: %w", snapshotID, err)
+	}
 	return nil
 }
 
@@ -127,7 +132,30 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 			return fmt.Errorf("reset path %s for rollback: %w", rel, err)
 		}
 	}
-	return restoreUpgradeSnapshotEntriesAtRoot(root, sys, snapshot.Entries)
+
+	targetRelPaths := make([]string, 0, len(scopedTargets))
+	for _, t := range scopedTargets {
+		rel, err := filepath.Rel(root, t)
+		if err == nil {
+			targetRelPaths = append(targetRelPaths, normalizeRelPath(rel))
+		}
+	}
+
+	filteredEntries := make([]upgradeSnapshotEntry, 0, len(snapshot.Entries))
+	for _, entry := range snapshot.Entries {
+		include := false
+		for _, targetRel := range targetRelPaths {
+			if entry.Path == targetRel || strings.HasPrefix(entry.Path, targetRel+"/") {
+				include = true
+				break
+			}
+		}
+		if include {
+			filteredEntries = append(filteredEntries, entry)
+		}
+	}
+
+	return restoreUpgradeSnapshotEntriesAtRoot(root, sys, filteredEntries)
 }
 
 func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgradeSnapshotEntry) error {

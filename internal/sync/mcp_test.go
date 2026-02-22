@@ -51,6 +51,14 @@ func TestBuildMCPConfig(t *testing.T) {
 	if cfg.Servers["agent-layer"].Type != "stdio" {
 		t.Fatalf("unexpected internal prompt server type: %s", cfg.Servers["agent-layer"].Type)
 	}
+	if cfg.Servers["agent-layer"].Env[config.BuiltinRepoRootEnvVar] != root {
+		t.Fatalf(
+			"expected internal prompt env %s=%q, got %q",
+			config.BuiltinRepoRootEnvVar,
+			root,
+			cfg.Servers["agent-layer"].Env[config.BuiltinRepoRootEnvVar],
+		)
+	}
 	if cfg.Servers["example"].Type != "http" {
 		t.Fatalf("unexpected server type: %s", cfg.Servers["example"].Type)
 	}

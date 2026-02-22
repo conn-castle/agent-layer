@@ -51,7 +51,7 @@ enabled = true
 [agents.codex]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
-# model = "gpt-5.2-codex"
+# model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 
@@ -246,8 +246,10 @@ Rules:
 Example:
 
 ```env
-AL_GITHUB_PERSONAL_ACCESS_TOKEN=your-token-here
 AL_CONTEXT7_API_KEY=your-key-here
+AL_TAVILY_API_KEY=your-key-here
+# Optional: only when using a GitHub MCP server
+AL_GITHUB_PERSONAL_ACCESS_TOKEN=your-token-here
 ```
 
 ### Built-in placeholder

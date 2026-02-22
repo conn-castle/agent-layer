@@ -294,8 +294,8 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	}
 
 	restoredSnapshot := latestSnapshot(t, root)
-	if restoredSnapshot.Status != upgradeSnapshotStatusApplied {
-		t.Fatalf("snapshot status mutated to %q, want %q", restoredSnapshot.Status, upgradeSnapshotStatusApplied)
+	if restoredSnapshot.Status != upgradeSnapshotStatusManuallyRolledBack {
+		t.Fatalf("snapshot status mutated to %q, want %q", restoredSnapshot.Status, upgradeSnapshotStatusManuallyRolledBack)
 	}
 }
 
@@ -752,6 +752,11 @@ func TestRollbackUpgradeSnapshot_RestoresSpecialPathEntries(t *testing.T) {
 	if _, err := os.Stat(extraPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected extra path removed, stat err = %v", err)
 	}
+
+	restoredSnapshot := latestSnapshot(t, root)
+	if restoredSnapshot.Status != upgradeSnapshotStatusManuallyRolledBack {
+		t.Fatalf("snapshot status mutated to %q, want %q", restoredSnapshot.Status, upgradeSnapshotStatusManuallyRolledBack)
+	}
 }
 
 func TestPruneUpgradeSnapshots_KeepNewest(t *testing.T) {
@@ -920,8 +925,8 @@ func TestWriteUpgradeSnapshot_PruneAndMkdirErrors(t *testing.T) {
 		t.Fatalf("write malformed snapshot: %v", err)
 	}
 	err := inst.writeUpgradeSnapshot(snapshot, true)
-	if err == nil || !strings.Contains(err.Error(), "list upgrade snapshots under") {
-		t.Fatalf("expected prune failure, got %v", err)
+	if err != nil {
+		t.Fatalf("expected prune to skip malformed snapshot, got error: %v", err)
 	}
 
 	// mkdir failures are surfaced during snapshot writes.
@@ -962,7 +967,7 @@ func TestCreateUpgradeSnapshot_SuccessAndCaptureError(t *testing.T) {
 	}
 }
 
-func TestPruneUpgradeSnapshots_FailsLoudlyOnMalformedSnapshot(t *testing.T) {
+func TestPruneUpgradeSnapshots_SkipsMalformedSnapshot(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
@@ -974,15 +979,12 @@ func TestPruneUpgradeSnapshots_FailsLoudlyOnMalformedSnapshot(t *testing.T) {
 		t.Fatalf("write malformed snapshot: %v", err)
 	}
 	err := inst.pruneUpgradeSnapshots(1)
-	if err == nil {
-		t.Fatal("expected prune to fail on malformed snapshot")
-	}
-	if !strings.Contains(err.Error(), "list upgrade snapshots under") {
-		t.Fatalf("expected prune error context, got %v", err)
+	if err != nil {
+		t.Fatalf("expected prune to skip malformed snapshot, got: %v", err)
 	}
 }
 
-func TestPruneUpgradeSnapshots_FailsLoudlyOnInvalidSnapshot(t *testing.T) {
+func TestPruneUpgradeSnapshots_SkipsInvalidSnapshot(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
@@ -1001,11 +1003,8 @@ func TestPruneUpgradeSnapshots_FailsLoudlyOnInvalidSnapshot(t *testing.T) {
 		t.Fatalf("write invalid snapshot: %v", err)
 	}
 	err := inst.pruneUpgradeSnapshots(1)
-	if err == nil {
-		t.Fatal("expected prune to fail on invalid snapshot")
-	}
-	if !strings.Contains(err.Error(), "invalid status") {
-		t.Fatalf("expected invalid status failure, got %v", err)
+	if err != nil {
+		t.Fatalf("expected prune to skip invalid snapshot, got: %v", err)
 	}
 }
 
@@ -1247,15 +1246,6 @@ func TestValidateUpgradeSnapshotEntry_RejectsInvalidEntry(t *testing.T) {
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("x")),
 			},
 			want: "snapshot entry path is required",
-		},
-		{
-			name: "file missing content",
-			entry: upgradeSnapshotEntry{
-				Path: ".agent-layer/al.version",
-				Kind: upgradeSnapshotEntryKindFile,
-				Perm: &perm,
-			},
-			want: "requires content_base64",
 		},
 		{
 			name: "file invalid base64",
@@ -1564,4 +1554,111 @@ func (s walkCallbackErrSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
 
 func (s walkCallbackErrSystem) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
 	return s.base.WriteFileAtomic(filename, data, perm)
+}
+
+func TestValidateUpgradeSnapshotEntry_EmptyFile(t *testing.T) {
+	perm := uint32(0o644)
+	entry := upgradeSnapshotEntry{
+		Path:          ".agent-layer/tmp/empty.txt",
+		Kind:          upgradeSnapshotEntryKindFile,
+		Perm:          &perm,
+		ContentBase64: "",
+	}
+	err := validateUpgradeSnapshotEntry(entry)
+	if err != nil {
+		t.Fatalf("expected nil error for empty file snapshot entry, got: %v", err)
+	}
+}
+
+func TestListUpgradeSnapshots(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+
+	// No snapshots yet.
+	snapshots, err := ListUpgradeSnapshots(root, RealSystem{})
+	if err != nil {
+		t.Fatalf("ListUpgradeSnapshots: %v", err)
+	}
+	if len(snapshots) != 0 {
+		t.Fatalf("expected 0 snapshots, got %d", len(snapshots))
+	}
+
+	// Create some snapshots.
+	for idx := 0; idx < 3; idx++ {
+		now := time.Date(2026, time.January, 1, 0, idx, 0, 0, time.UTC)
+		snapshot := upgradeSnapshot{
+			SchemaVersion: upgradeSnapshotSchemaVersion,
+			SnapshotID:    fmt.Sprintf("snapshot-%d", idx),
+			CreatedAtUTC:  now.Format(time.RFC3339),
+			Status:        upgradeSnapshotStatusApplied,
+		}
+		if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+			t.Fatalf("write snapshot %d: %v", idx, err)
+		}
+	}
+
+	snapshots, err = ListUpgradeSnapshots(root, RealSystem{})
+	if err != nil {
+		t.Fatalf("ListUpgradeSnapshots: %v", err)
+	}
+	if len(snapshots) != 3 {
+		t.Fatalf("expected 3 snapshots, got %d", len(snapshots))
+	}
+
+	// Order should be newest first.
+	if snapshots[0].ID != "snapshot-2" || snapshots[1].ID != "snapshot-1" || snapshots[2].ID != "snapshot-0" {
+		t.Fatalf("unexpected order: %v, %v, %v", snapshots[0].ID, snapshots[1].ID, snapshots[2].ID)
+	}
+
+	// Unreadable snapshot should be skipped.
+	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
+	if err := os.WriteFile(filepath.Join(snapshotDir, "unreadable.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("write unreadable snapshot: %v", err)
+	}
+	snapshots, err = ListUpgradeSnapshots(root, RealSystem{})
+	if err != nil {
+		t.Fatalf("ListUpgradeSnapshots: %v", err)
+	}
+	if len(snapshots) != 3 {
+		t.Fatalf("expected 3 snapshots (unreadable skipped), got %d", len(snapshots))
+	}
+}
+
+func TestWriteUpgradeSnapshot_SizeWarning(t *testing.T) {
+	root := t.TempDir()
+	var warn bytes.Buffer
+	inst := &installer{
+		root:       root,
+		sys:        RealSystem{},
+		warnWriter: &warn,
+	}
+
+	originalThreshold := upgradeSnapshotSizeWarningBytes
+	upgradeSnapshotSizeWarningBytes = 1024
+	t.Cleanup(func() {
+		upgradeSnapshotSizeWarningBytes = originalThreshold
+	})
+
+	largeContent := make([]byte, 2048)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "large-snapshot",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusCreated,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          "large-file.bin",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString(largeContent),
+			},
+		},
+	}
+
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("writeUpgradeSnapshot: %v", err)
+	}
+
+	if !strings.Contains(warn.String(), "is large") {
+		t.Fatalf("expected size warning, got %q", warn.String())
+	}
 }

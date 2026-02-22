@@ -5,7 +5,10 @@
       "command": "al",
       "args": [
         "mcp-prompts"
-      ]
+      ],
+      "env": {
+        "AL_REPO_ROOT": "__REPO_ROOT__"
+      }
     },
     "example": {
       "type": "http",

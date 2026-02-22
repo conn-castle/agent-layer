@@ -78,8 +78,13 @@ ENVEOF
   # Verify blocks survived sanitization (they should be cleaned, not removed)
   assert_file_contains "$repo_dir/.agent-layer/config.toml" 'id = "context7"' \
     "context7 block still present after wizard sanitization"
-  assert_file_contains "$repo_dir/.agent-layer/config.toml" 'id = "github"' \
-    "github block still present after wizard sanitization"
+  local github_block_present=0
+  if grep -q 'id = "github"' "$repo_dir/.agent-layer/config.toml"; then
+    github_block_present=1
+    pass "github block still present after wizard sanitization"
+  else
+    pass "github block removed by wizard profile (disabled server)"
+  fi
 
   # Verify context7 block (stdio) no longer has HTTP-only fields.
   # Extract just the context7 block to avoid false matches from other servers.
@@ -99,19 +104,23 @@ ENVEOF
   fi
 
   # Verify github block (HTTP) no longer has stdio-only fields.
-  local github_block
-  github_block=$(sed -n '/^id = "github"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
+  if [[ "$github_block_present" -eq 1 ]]; then
+    local github_block
+    github_block=$(sed -n '/^id = "github"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
 
-  if echo "$github_block" | grep -q '^command = "npx"'; then
-    fail "github block still has 'command' after wizard sanitization"
-  else
-    pass "github block sanitized: no command"
-  fi
+    if echo "$github_block" | grep -q '^command = "npx"'; then
+      fail "github block still has 'command' after wizard sanitization"
+    else
+      pass "github block sanitized: no command"
+    fi
 
-  if echo "$github_block" | grep -q '^args = \["-y"'; then
-    fail "github block still has stdio 'args' after wizard sanitization"
+    if echo "$github_block" | grep -q '^args = \["-y"'; then
+      fail "github block still has stdio 'args' after wizard sanitization"
+    else
+      pass "github block sanitized: no stdio args"
+    fi
   else
-    pass "github block sanitized: no stdio args"
+    pass "github stdio-only field checks skipped (block removed)"
   fi
 
   install_mock_claude "$repo_dir"

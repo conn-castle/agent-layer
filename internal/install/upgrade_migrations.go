@@ -566,6 +566,10 @@ func (inst *installer) readMigrationConfigMap() (map[string]any, string, bool, e
 	return cfg, cfgPath, true, nil
 }
 
+// writeMigrationConfigMap writes the updated config map back to config.toml.
+// NOTE: This currently uses tomlv2.Marshal which does not preserve user comments
+// or key ordering. This destructive formatting is currently intentional to ensure
+// deterministic migration output.
 func (inst *installer) writeMigrationConfigMap(cfgPath string, cfg map[string]any) error {
 	encoded, err := tomlv2.Marshal(cfg)
 	if err != nil {

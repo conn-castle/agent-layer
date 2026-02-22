@@ -24,7 +24,7 @@ enabled = true
 [agents.codex]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model setting and the client uses its default.
-# model = "gpt-5.2-codex"
+# model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 
@@ -49,15 +49,6 @@ args = ["-y", "@upstash/context7-mcp@2.1.1"]
 # Opt in to floating updates:
 # args = ["-y", "@upstash/context7-mcp@latest"]
 env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
-
-[[mcp.servers]]
-# GitHub issues/PR/actions (requires AL_GITHUB_PERSONAL_ACCESS_TOKEN).
-id = "github"
-enabled = false
-transport = "http"
-http_transport = "streamable"
-url = "https://api.githubcopilot.com/mcp/"
-headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}", "X-MCP-Tools" = "actions_list,actions_get,actions_run_trigger,get_job_logs,create_pull_request,list_pull_requests,pull_request_read,pull_request_review_write,search_pull_requests,update_pull_request,search_repositories" }
 
 [[mcp.servers]]
 # Tavily web search/research (requires AL_TAVILY_API_KEY).

@@ -307,3 +307,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Wrap unknown-key errors with `ErrConfigValidation` and include repair guidance (`al wizard` / `al doctor`). This allows wizard and doctor lenient fallback to trigger for unknown keys, just as it does for missing-field validation errors.
     Reason: Without the sentinel wrapper, unknown-key errors hard-failed both repair tools — the exact tools the user should run to fix the config. The wizard rewrites config from scratch (removing unknown keys) and the doctor should report them as a repairable FAIL, not an unrecoverable error.
     Tradeoffs: None significant; unknown keys are a config schema issue semantically equivalent to validation errors.
+
+- Decision 2026-02-21 upg-config-toml-destructive: Config migrations use destructive TOML formatting
+    Decision: `upgrade_migrations.go` continues to use `tomlv2.Marshal` for config updates, which strips user comments and reorders keys.
+    Reason: Full TOML preservation is complex and the wizard/profile flows already provide previews and backups, mitigating the risk of unexpected data loss.
+    Tradeoffs: Users lose manual formatting/comments in `config.toml` when a migration executes; accepted for implementation simplicity and deterministic output.
+
+- Decision 2026-02-21 e2e-home-isolation: E2E orchestrator redirects HOME to prevent host pollution
+    Decision: `test-e2e.sh` pins `AL_E2E_BIN_CACHE` to the real cache path, then redirects `HOME` to `$E2E_TMP_ROOT/home` before running scenarios. `E2E_ORIG_HOME` is exported for scenarios that need the real home.
+    Reason: Compiled E2E binaries call `os.UserHomeDir()` which resolves via `HOME`. Without isolation, `EnsureGeminiTrustedFolder` writes temp-dir entries to the real `~/.gemini/trustedFolders.json`.
+    Tradeoffs: Scenarios that depend on real home-directory state must use `E2E_ORIG_HOME` explicitly; the gemini-trust scenarios already isolate HOME locally and are unaffected.

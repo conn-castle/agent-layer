@@ -186,6 +186,14 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	if settings.MCPServers["agent-layer"].Trust == nil || !*settings.MCPServers["agent-layer"].Trust {
 		t.Fatalf("expected trust to be true when approvals.mode=all")
 	}
+	if settings.MCPServers["agent-layer"].Env[config.BuiltinRepoRootEnvVar] != root {
+		t.Fatalf(
+			"expected internal prompt env %s=%q, got %q",
+			config.BuiltinRepoRootEnvVar,
+			root,
+			settings.MCPServers["agent-layer"].Env[config.BuiltinRepoRootEnvVar],
+		)
+	}
 }
 
 func TestBuildGeminiSettingsYOLO(t *testing.T) {
