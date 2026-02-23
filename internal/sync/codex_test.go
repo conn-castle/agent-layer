@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -304,6 +306,74 @@ func TestBuildCodexConfigAgentSpecificOverrides(t *testing.T) {
 	}
 	if !strings.Contains(output, "[mcp_servers.example]\n") {
 		t.Fatalf("expected agent-specific mcp_servers table in output:\n%s", output)
+	}
+}
+
+func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Enabled: &enabled,
+					AgentSpecific: map[string]any{
+						"approval_policy": "on-request",
+					},
+				},
+			},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID:        "example",
+						Enabled:   &enabled,
+						Clients:   []string{"codex"},
+						Transport: "http",
+						URL:       "https://example.com/mcp",
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rootOverridePos := strings.Index(output, "approval_policy = 'on-request'")
+	mcpTablePos := strings.Index(output, "[mcp_servers.example]\n")
+	if rootOverridePos == -1 {
+		t.Fatalf("expected agent-specific root override in output:\n%s", output)
+	}
+	if mcpTablePos == -1 {
+		t.Fatalf("expected managed mcp table in output:\n%s", output)
+	}
+	if rootOverridePos > mcpTablePos {
+		t.Fatalf("expected root override before managed mcp tables:\n%s", output)
+	}
+
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(output), &parsed); err != nil {
+		t.Fatalf("parse generated toml: %v", err)
+	}
+	if got, ok := parsed["approval_policy"].(string); !ok || got != "on-request" {
+		t.Fatalf("expected root approval_policy on-request, got %#v", parsed["approval_policy"])
+	}
+
+	mcpValue, ok := parsed["mcp_servers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcp_servers map, got %#v", parsed["mcp_servers"])
+	}
+	exampleValue, ok := mcpValue["example"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcp_servers.example map, got %#v", mcpValue["example"])
+	}
+	if _, exists := exampleValue["approval_policy"]; exists {
+		t.Fatalf("expected mcp_servers.example to not contain approval_policy, got %#v", exampleValue)
 	}
 }
 

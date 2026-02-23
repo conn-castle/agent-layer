@@ -74,6 +74,12 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 		}
 	}
 
+	// Write agent-specific root keys/tables before managed MCP tables so any
+	// scalar overrides remain at the TOML root.
+	if err := appendCodexAgentSpecific(&builder, project.Config.Agents.Codex.AgentSpecific); err != nil {
+		return "", err
+	}
+
 	if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "mcp_servers") {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
 		resolved, err := projection.ResolveMCPServers(
@@ -104,10 +110,6 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 				return "", fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 			}
 		}
-	}
-
-	if err := appendCodexAgentSpecific(&builder, project.Config.Agents.Codex.AgentSpecific); err != nil {
-		return "", err
 	}
 
 	return builder.String(), nil

@@ -44,9 +44,12 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		claudeConfigDir := filepath.Join(cfg.Root, ".claude-config")
 		env = clients.SetEnv(env, "CLAUDE_CONFIG_DIR", claudeConfigDir)
 	} else {
-		// Clear any inherited CLAUDE_CONFIG_DIR so the Claude extension does
-		// not pick up stale config from a parent process.
-		env = clients.UnsetEnv(env, "CLAUDE_CONFIG_DIR")
+		// Clear only stale repo-local CLAUDE_CONFIG_DIR. Preserve user-defined
+		// values that point outside this repository.
+		expectedClaudeConfigDir := filepath.Join(cfg.Root, ".claude-config")
+		if current, ok := clients.GetEnv(env, "CLAUDE_CONFIG_DIR"); ok && clients.SamePath(current, expectedClaudeConfigDir) {
+			env = clients.UnsetEnv(env, "CLAUDE_CONFIG_DIR")
+		}
 	}
 
 	args := append([]string{}, passArgs...)

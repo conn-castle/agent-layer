@@ -243,8 +243,8 @@ func TestLaunchVSCode_ClearsInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(t *
 	}
 
 	t.Setenv("PATH", binDir)
-	// Inject stale CLAUDE_CONFIG_DIR to simulate inheritance.
-	env := append(os.Environ(), "CLAUDE_CONFIG_DIR=/stale/path")
+	// Inject a stale repo-local CLAUDE_CONFIG_DIR to simulate inheritance.
+	env := append(os.Environ(), "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -255,6 +255,52 @@ func TestLaunchVSCode_ClearsInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(t *
 	}
 	if strings.Contains(string(got), "CLAUDE_CONFIG_DIR=") {
 		t.Fatal("expected inherited CLAUDE_CONFIG_DIR to be cleared when agents.claude-vscode is disabled")
+	}
+}
+
+func TestLaunchVSCode_PreservesInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	claudeVSCodeDisabled := false
+	vscodeEnabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				VSCode:       config.EnableOnlyConfig{Enabled: &vscodeEnabled},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &claudeVSCodeDisabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	userDir := filepath.Join(t.TempDir(), "global-claude")
+	env := append(os.Environ(), "CLAUDE_CONFIG_DIR="+userDir)
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(got), "CLAUDE_CONFIG_DIR="+userDir) {
+		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got env:\n%s", string(got))
 	}
 }
 
@@ -346,8 +392,8 @@ func TestLaunchVSCode_ClearsCLAUDECONFIGDIRWhenLocalConfigDirDisabled(t *testing
 	}
 
 	t.Setenv("PATH", binDir)
-	// Inject stale CLAUDE_CONFIG_DIR to simulate inheritance.
-	env := append(os.Environ(), "CLAUDE_CONFIG_DIR=/stale/path")
+	// Inject stale repo-local CLAUDE_CONFIG_DIR to simulate inheritance.
+	env := append(os.Environ(), "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -358,5 +404,49 @@ func TestLaunchVSCode_ClearsCLAUDECONFIGDIRWhenLocalConfigDirDisabled(t *testing
 	}
 	if strings.Contains(string(got), "CLAUDE_CONFIG_DIR=") {
 		t.Fatal("expected CLAUDE_CONFIG_DIR to be cleared when local_config_dir is nil")
+	}
+}
+
+func TestLaunchVSCode_PreservesInheritedCLAUDECONFIGDIRWhenLocalConfigDirDisabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	claudeVSCodeEnabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &claudeVSCodeEnabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	userDir := filepath.Join(t.TempDir(), "global-claude")
+	env := append(os.Environ(), "CLAUDE_CONFIG_DIR="+userDir)
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(got), "CLAUDE_CONFIG_DIR="+userDir) {
+		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got env:\n%s", string(got))
 	}
 }

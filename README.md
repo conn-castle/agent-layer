@@ -299,7 +299,8 @@ enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
-# These are merged into .claude/settings.json as-is.
+# These are shallow-merged at the top level into .claude/settings.json.
+# Nested objects are replaced (not deep-merged).
 # [agents.claude.agent_specific]
 
 [agents.claude-vscode]
@@ -312,7 +313,7 @@ enabled = true
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
-# These are appended to .codex/config.toml as-is.
+# These are appended to .codex/config.toml and can override top-level managed keys.
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # multi_agent = true
@@ -470,7 +471,7 @@ Some clients discover slash commands via MCP prompts. Agent Layer provides an **
 
 - When `[agents.vscode]` is enabled, `CODEX_HOME` is set for the Codex extension.
 - When `[agents.claude-vscode]` is enabled, Claude files (`.mcp.json`, `.claude/settings.json`) are generated. YOLO mode sets `claudeCode.allowDangerouslySkipPermissions` in `.vscode/settings.json`.
-- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude-vscode]` is enabled; otherwise `al vscode` unsets it. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled.
+- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude-vscode]` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled.
 - VS Code settings are generated when either agent is enabled.
 - Supports `--no-sync` to skip sync before opening VS Code.
 

@@ -47,10 +47,12 @@ enabled = true
 # local_config_dir isolates Claude Code auth, caches, and user settings per repo.
 # When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
 # For al vscode, CLAUDE_CONFIG_DIR is set only when both local_config_dir
-# and agents.claude-vscode are enabled.
+# and agents.claude-vscode are enabled. Otherwise, al vscode clears only
+# stale repo-local values and preserves user-defined non-repo values.
 # local_config_dir = false
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
-# These are merged into .claude/settings.json as-is.
+# These are shallow-merged at the top level into .claude/settings.json.
+# Nested objects are replaced (not deep-merged).
 # [agents.claude.agent_specific]
 
 [agents.claude-vscode]
@@ -63,7 +65,7 @@ enabled = true
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
-# These are appended to .codex/config.toml as-is.
+# These are appended to .codex/config.toml and can override top-level managed keys.
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # multi_agent = true
@@ -116,7 +118,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 
 ### Agents
 
-Each agent has an `enabled` flag and optional `model` value. Codex also supports `reasoning_effort`, which is optional; omit it (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude-vscode` is enabled.
+Each agent has an `enabled` flag and optional `model` value. Codex also supports `reasoning_effort`, which is optional; omit it (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude-vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
 
 Supported agents:
 
