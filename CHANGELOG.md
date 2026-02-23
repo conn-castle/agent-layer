@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.7 - 2026-02-23
+
+### Added
+- Optional agent-specific passthrough configuration for Claude and Codex via `agents.claude.agent_specific` and `agents.codex.agent_specific`.
+- Optional `agents.claude.local_config_dir` support for repo-local Claude config isolation (`.claude-config`). `al vscode` sets `CLAUDE_CONFIG_DIR` only when both `local_config_dir = true` and `agents.claude-vscode.enabled = true`.
+
+### Changed
+- Agent-specific passthrough keys now intentionally override Agent Layer-managed keys when they collide, with a sync warning so overrides stay explicit.
+
+### Improved
+- Expanded command/runtime test coverage around prompt-server root resolution, dispatch exec delegation, codex/claude agent-specific config rendering, and shared test helpers.
+
 ## v0.8.6 - 2026-02-22
 
 ### Fixed
