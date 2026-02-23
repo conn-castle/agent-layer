@@ -34,6 +34,7 @@ Use this page when you want a repeatable, low-risk upgrade runbook.
    ```
 7. If needed, restore a snapshot:
    ```bash
+   al upgrade rollback --list
    al upgrade rollback <snapshot-id>
    ```
 
@@ -85,5 +86,5 @@ al upgrade
 
 - `.agent-layer/al.version` is required for supported usage.
 - `al upgrade prefetch` is the recommended cache warm-up command for offline/air-gapped workflows.
-- Snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`.
+- Snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/` (run `al upgrade rollback --list` to discover them quickly).
 - For policy guarantees and release migration rules, see [Upgrades](./upgrades).

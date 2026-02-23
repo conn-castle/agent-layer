@@ -94,7 +94,7 @@ Everything is plain text and local to the repo, which makes it easy to review ch
 
 ### 5) Enable an MCP server (optional)
 
-This is where agents usually start to feel dramatically more capable. MCP servers let them retrieve fresh information, search your repo quickly, and integrate with real systems instead of relying only on training data and whatever context you pasted into the prompt.
+MCP servers unlock additional capability. They allow agents to retrieve current information, search your repository efficiently, and integrate with external systems instead of relying only on model training data and prompt context.
 
 `al init` seeds a small library of high-value MCP servers in `.agent-layer/config.toml`, all disabled by default. Two great first picks are:
 
@@ -216,6 +216,8 @@ If you change generated files, those edits will be overwritten the next time you
 The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value, so you will need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude-vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, providing isolated authentication and credential separation across repositories.
 
 If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting#global-config-fallback-for-vs-code-claude).
+
+Enabling repo-local `CLAUDE_CONFIG_DIR` means Claude authentication state becomes repo-scoped, so expect a one-time reauthentication the first time you open each repository after setting `local_config_dir = true`.
 :::
 
 ### Safe to delete
@@ -261,6 +263,7 @@ If you only remember one pattern: `al <client>` is the “do the right thing” 
 | `al init` | Seed `.agent-layer/` and project memory. | [Init](./reference#init) |
 | `al upgrade` | Apply template-managed updates and update the repo pin with line-level diff previews (use `--diff-lines` to raise per-file preview size). | [Upgrade](./reference#upgrade) |
 | `al upgrade plan` | Preview categorized upgrade changes and line-level diffs without writing files. | [Upgrade plan](./reference#upgrade-plan) |
+| `al upgrade rollback --list` | List available upgrade snapshot IDs and statuses before rollback. | [Upgrade rollback](./reference#upgrade-rollback) |
 | `al upgrade rollback <snapshot-id>` | Restore a previously applied managed-file snapshot. | [Upgrade rollback](./reference#upgrade-rollback) |
 | `al wizard` | Interactive configuration. | [Wizard](./reference#wizard) |
 | `al sync` | Regenerate configs without launching. | [Sync](./reference#sync) |

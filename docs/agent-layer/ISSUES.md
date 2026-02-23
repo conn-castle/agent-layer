@@ -39,7 +39,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-02-20 wizard-config-order-preferences: Audit wizard config write order and align it to preferred priority
     Priority: Medium. Area: wizard / UX.
-    Description: Wizard output currently follows canonical template order, and the current sequence may not match a human-friendly priority order for reading/editing `config.toml`.
+    Description: Wizard output currently follows canonical template order, and the current sequence may not match a priority order optimized for human readers/editors of `config.toml`.
     Next step: Audit the current wizard-managed section/server ordering, gather preferred order from the user, then update template/patch ordering logic and tests to enforce that sequence.
 
 - Issue 2026-02-20 exit-code-flatten: Subprocess exit codes flattened to 1 by all client launchers

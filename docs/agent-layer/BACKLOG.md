@@ -30,7 +30,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 - Backlog 2026-02-19 readable-upgrade-diff: Improve upgrade diff readability with color coding
     Priority: Medium. Area: upgrades / UX
-    Description: Make upgrade-process diffs more human-readable and friendly so users can quickly understand what changed.
+    Description: Improve upgrade diff formatting so users can quickly and confidently understand what changed.
     Acceptance criteria: Upgrade diffs render with clear color coding (at minimum) for additions/removals and remain legible in standard terminal workflows.
     Notes: Prefer a format that also improves scanability beyond color when possible (grouping, labels, or concise summaries).
 
@@ -66,7 +66,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 - Backlog 2026-01-25 f6a7b8c: Build multi-agent chat tool
     Priority: Low. Area: agent collaboration
-    Description: Build a Ralph Wiggum-like tool where different agents can chat with each other.
+    Description: Build a multi-agent chat interface where different agents can exchange messages and collaborate on tasks.
     Acceptance criteria: Agents can exchange messages and collaborate on tasks through a shared interface.
     Notes: Experimental feature; needs clear use cases and safety boundaries.
 

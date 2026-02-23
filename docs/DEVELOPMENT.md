@@ -85,7 +85,7 @@ Notes:
 
 ## Run checks locally
 ```bash
-# Quick pass (format + fmt-check + lint + coverage)
+# Quick pass (format + fmt-check + lint + coverage + release tests)
 make dev
 
 # Targeted checks (optional)
@@ -94,7 +94,7 @@ make lint
 make coverage
 ```
 Notes:
-- `make dev` includes coverage; use `make test` when you want a faster loop without the coverage gate.
+- `make dev` includes coverage and `test-release`; use `make test` when you want a faster loop without the coverage gate and release checks.
 - `make test` uses `gotestsum` for more readable output (installed via `make tools`).
 - `make lint` and `make test` fail fast if tools are missing; run `make tools` once per clone.
 

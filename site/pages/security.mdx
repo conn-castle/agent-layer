@@ -3,7 +3,7 @@ title: Security
 description: Telemetry, network behavior, and release integrity.
 ---
 
-Agent Layer is local-first: it generates deterministic config files into your repository and launches the client you choose. It avoids hidden defaults and prefers failing loudly over "best guess" behavior.
+Agent Layer is local-first: it generates deterministic config files in your repository and launches the client you choose. It avoids hidden defaults and surfaces explicit failures instead of relying on implicit guesses.
 
 ## Telemetry
 Agent Layer does not collect telemetry.
@@ -46,7 +46,7 @@ Secrets belong in `.agent-layer/.env`, which is always gitignored. Only variable
 ## Generated outputs and secret safety
 Agent Layer keeps `.agent-layer/config.toml` free of secret values and uses placeholders like `${AL_TOKEN}`. Some clients support placeholders directly, while others require resolved values in their own generated config files.
 
-Treat generated client outputs as build artifacts and keep them gitignored. In particular, `.codex/config.toml` may contain resolved values for MCP server URLs, commands, or environment variables. When `local_config_dir = true` is enabled under `[agents.claude]`, the `.claude-config/` directory (set via `CLAUDE_CONFIG_DIR`) may contain authentication state and user-level settings.
+Treat generated client outputs as build artifacts and keep them gitignored. In particular, `.codex/config.toml` may contain resolved values for MCP server URLs, commands, or environment variables. When `local_config_dir = true` is enabled under `[agents.claude]`, the `.claude-config/` directory (set via `CLAUDE_CONFIG_DIR`) may contain authentication state and user-level settings. Treat `.claude-config/` as sensitive local state and keep it out of Git (the default template ignores it; preserve that ignore if you customize managed gitignore rules).
 
 For a full list of generated outputs, see [/docs/reference#sync](/docs/reference#sync).
 

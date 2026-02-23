@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.8.5",
-  "generated_at_utc": "2026-02-21T21:54:21Z",
+  "generated_at_utc": "2026-02-23T13:35:55Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -43,7 +43,7 @@
     },
     {
       "path": ".agent-layer/gitignore.block",
-      "full_hash_normalized": "4908c3ea5d3522d9f02c23becfdb8fd60a95e3723c96a96e51ad29c799d576eb"
+      "full_hash_normalized": "fdce669052d3681d36773a33e5ca330d04abfeaf25b1ad6626f194751753f8ec"
     },
     {
       "path": ".agent-layer/instructions/00_base.md",

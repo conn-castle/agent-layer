@@ -1,46 +1,31 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v0.8.7 - 2026-02-23
+## v0.8.5 - 2026-02-23
 
 ### Added
 - Optional agent-specific passthrough configuration for Claude and Codex via `agents.claude.agent_specific` and `agents.codex.agent_specific`.
-- Optional `agents.claude.local_config_dir` support for repo-local Claude config isolation (`.claude-config`). `al vscode` sets `CLAUDE_CONFIG_DIR` only when both `local_config_dir = true` and `agents.claude-vscode.enabled = true`.
+- Optional `agents.claude.local_config_dir` support for repo-local Claude config isolation (`.claude-config`).
+- `al upgrade rollback --list` support to inspect available snapshot IDs and statuses before executing rollback.
+- `al sync` now auto-adds the repository root to `~/.gemini/trustedFolders.json` when Gemini is enabled so Gemini CLI reliably loads project-level `.gemini/settings.json`. If this write fails, sync still succeeds and emits a non-fatal warning with manual remediation guidance.
 
 ### Changed
-- Agent-specific passthrough keys now intentionally override Agent Layer-managed keys when they collide, with a sync warning so overrides stay explicit.
-
-### Fixed
-- `al gemini` no longer fails MCP discovery for the internal `agent-layer` server when the PATH `al` binary is a non-runnable shim for the repo pin. Prompt-server command resolution now prefers local source execution (`go run <repo>/cmd/al mcp-prompts`) when available, and `al mcp-prompts` now bypasses repo-pin dispatch so MCP stdio startup stays on the invoking CLI process.
-
-### Improved
-- Expanded command/runtime test coverage around prompt-server root resolution, dispatch exec delegation, codex/claude agent-specific config rendering, and shared test helpers.
-
-## v0.8.6 - 2026-02-22
-
-### Fixed
-- `al upgrade` no longer rejects valid zero-byte snapshot file entries. Snapshot validation now accepts empty `content_base64` for `kind=file`, fixing upgrade failures like `file snapshot entry ... requires content_base64` when unknown empty files are present.
-- Upgrade snapshot validation now has explicit regression coverage for empty file entries to prevent reintroducing this failure mode.
-
-### Improved
-- Added `al upgrade rollback --list` support to inspect available snapshot IDs and statuses before executing rollback.
-- Added e2e coverage for upgrade flows that include empty unknown files and for wizard MCP sanitization behavior when profile defaults disable an injected server block.
-- Expanded `cmd/al` upgrade command coverage around `--version` pin validation and rollback list behavior.
-
-## v0.8.5 - 2026-02-21
-
-### Added
-- `al sync` now auto-adds the repository root to `~/.gemini/trustedFolders.json` when Gemini is enabled so Gemini CLI reliably loads project-level `.gemini/settings.json`. If this write fails, sync still succeeds and emits a non-fatal warning with manual remediation guidance.
+- Agent-specific passthrough keys intentionally override Agent Layer-managed keys when they collide, with sync warnings to keep overrides explicit.
+- `al vscode` now clears `CLAUDE_CONFIG_DIR` only when it points at the repo-local `.claude-config`; user-defined non-repo values are preserved.
+- Codex sync now writes `agents.codex.agent_specific` keys before managed MCP tables so top-level overrides remain at the TOML root.
 
 ### Fixed
 - Config parsing now rejects unrecognized keys during strict decode instead of silently ignoring them, with actionable validation guidance in the returned error.
 - `.env` parsing now correctly handles quoted values, escaped newline/carriage-return sequences, and invalid trailing characters after quoted values.
-- MCP tool-name collision warnings are now deterministic: warning subjects and per-tool server lists are sorted for stable output.
+- MCP tool-name collision warnings are deterministic: warning subjects and per-tool server lists are sorted for stable output.
 - Upgrade `config_set_default` prompts no longer mark one choice as "recommended"; migration manifest values are still pre-selected but users must make an explicit choice.
+- `al upgrade` now accepts zero-byte snapshot file entries, fixing failures where unknown empty files previously produced `requires content_base64` errors.
+- `al gemini` no longer fails MCP discovery for the internal `agent-layer` server when PATH `al` is a non-runnable repo-pin shim. Prompt-server command resolution now prefers local source execution (`go run <repo>/cmd/al mcp-prompts`) when available, `al mcp-prompts` bypasses repo-pin dispatch, and prompt-server source roots are validated as the Agent Layer module.
 
 ### Improved
-- Expanded automated coverage for root/upgrade command paths, Gemini trust flows, upgrade-readiness helpers, and warning policy branches.
-- Added new end-to-end scenarios covering config unknown-key repairability, Gemini trust/noise-mode behavior, and wizard profile unknown-key rejection.
+- Expanded automated coverage for root/upgrade command paths, Gemini trust flows, upgrade-readiness helpers, warning policy branches, prompt-server root resolution, dispatch behavior, and codex/claude agent-specific config rendering.
+- Added e2e coverage for upgrade flows that include empty unknown files and for wizard MCP sanitization behavior when profile defaults disable an injected server block.
+- Website documentation now includes `al upgrade rollback --list` guidance, Gemini trusted-folder remediation notes, and expanded agent-specific and repo-local Claude configuration guidance.
 
 ## v0.8.4 - 2026-02-20
 
