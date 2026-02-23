@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.6 - 2026-02-23
+
+### Changed
+- Documentation-only follow-up release after `v0.8.5` release prep:
+  - Clarified that VS Code MCP header projection uses `${env:VAR}` placeholders and does not auto-generate `inputs` blocks.
+  - Clarified that `make dev` includes `test-release` in addition to formatting, lint, and coverage checks.
+
 ## v0.8.5 - 2026-02-23
 
 ### Added
