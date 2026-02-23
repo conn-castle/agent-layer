@@ -10,6 +10,9 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Agent-specific passthrough keys now intentionally override Agent Layer-managed keys when they collide, with a sync warning so overrides stay explicit.
 
+### Fixed
+- `al gemini` no longer fails MCP discovery for the internal `agent-layer` server when the PATH `al` binary is a non-runnable shim for the repo pin. Prompt-server command resolution now prefers local source execution (`go run <repo>/cmd/al mcp-prompts`) when available, and `al mcp-prompts` now bypasses repo-pin dispatch so MCP stdio startup stays on the invoking CLI process.
+
 ### Improved
 - Expanded command/runtime test coverage around prompt-server root resolution, dispatch exec delegation, codex/claude agent-specific config rendering, and shared test helpers.
 

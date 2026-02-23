@@ -151,7 +151,7 @@ Upgrade contract details (event model, compatibility guarantees, migration rules
 
 When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
 
-When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
+When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init`, `al upgrade`, and `al mcp-prompts` are exceptions: they run on the invoking CLI version so pin updates, upgrade planning, and internal MCP prompt serving are not blocked by an older repo pin.
 
 By default, `al init` enables pinning in release builds by writing `.agent-layer/al.version`. Think of this file like a lockfile: it prevents the repo from silently changing behavior when you update your globally installed `al`.
 

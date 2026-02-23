@@ -12,9 +12,25 @@ import (
 )
 
 // resolvePromptServerCommand returns the command and args used to run the internal MCP prompt server.
-// It prefers the globally installed "al mcp-prompts" and falls back to "go run <root>/cmd/al mcp-prompts" for dev usage.
+// It prefers "go run <root>/cmd/al mcp-prompts" when local source is present,
+// then falls back to globally installed "al mcp-prompts".
 // It returns an error when it cannot resolve a runnable command.
 func resolvePromptServerCommand(sys System, root string) (string, []string, error) {
+	if root != "" {
+		sourcePath := filepath.Join(root, "cmd", "al")
+		info, err := sys.Stat(sourcePath)
+		if err == nil {
+			if !info.IsDir() {
+				return "", nil, fmt.Errorf(messages.SyncPromptServerNotDirFmt, sourcePath)
+			}
+			if _, err := sys.LookPath("go"); err == nil {
+				return "go", []string{"run", sourcePath, "mcp-prompts"}, nil
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", nil, fmt.Errorf(messages.SyncCheckPathFmt, sourcePath, err)
+		}
+	}
+
 	if _, err := sys.LookPath("al"); err == nil {
 		return "al", []string{"mcp-prompts"}, nil
 	}

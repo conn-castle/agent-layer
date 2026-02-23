@@ -80,6 +80,75 @@ func TestResolvePromptServerCommandFallsBackToGoRun(t *testing.T) {
 	}
 }
 
+func TestResolvePromptServerCommandPrefersGoRunWhenSourceExists(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		LookPathFunc: func(file string) (string, error) {
+			switch file {
+			case "go":
+				return "/usr/bin/go", nil
+			case "al":
+				return "/usr/local/bin/al", nil
+			default:
+				return "", errors.New("unexpected lookup")
+			}
+		},
+		StatFunc: func(name string) (os.FileInfo, error) {
+			if name == filepath.Join(root, "cmd", "al") {
+				return &mockFileInfo{isDir: true}, nil
+			}
+			return nil, os.ErrNotExist
+		},
+	}
+
+	command, args, err := resolvePromptServerCommand(sys, root)
+	if err != nil {
+		t.Fatalf("resolvePromptServerCommand error: %v", err)
+	}
+	if command != "go" {
+		t.Fatalf("expected go, got %q", command)
+	}
+	expectedSource := filepath.Join(root, "cmd", "al")
+	if len(args) != 3 || args[0] != "run" || args[1] != expectedSource || args[2] != "mcp-prompts" {
+		t.Fatalf("unexpected args: %#v", args)
+	}
+}
+
+func TestResolvePromptServerCommandFallsBackToAlWhenGoMissing(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		LookPathFunc: func(file string) (string, error) {
+			switch file {
+			case "go":
+				return "", errors.New("missing")
+			case "al":
+				return "/usr/local/bin/al", nil
+			default:
+				return "", errors.New("unexpected lookup")
+			}
+		},
+		StatFunc: func(name string) (os.FileInfo, error) {
+			if name == filepath.Join(root, "cmd", "al") {
+				return &mockFileInfo{isDir: true}, nil
+			}
+			return nil, os.ErrNotExist
+		},
+	}
+
+	command, args, err := resolvePromptServerCommand(sys, root)
+	if err != nil {
+		t.Fatalf("resolvePromptServerCommand error: %v", err)
+	}
+	if command != "al" {
+		t.Fatalf("expected al, got %q", command)
+	}
+	if len(args) != 1 || args[0] != "mcp-prompts" {
+		t.Fatalf("unexpected args: %#v", args)
+	}
+}
+
 func TestResolvePromptServerCommandMissingGo(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

@@ -29,6 +29,12 @@ func TestMainUnknownCommand(t *testing.T) {
 }
 
 func TestRunMainSuccess(t *testing.T) {
+	orig := maybeExecFunc
+	defer func() { maybeExecFunc = orig }()
+	maybeExecFunc = func(args []string, currentVersion string, cwd string, exit func(int)) error {
+		return nil
+	}
+
 	var out bytes.Buffer
 	called := false
 	runMain([]string{"al", "--version"}, &out, &out, func(code int) {
@@ -40,6 +46,12 @@ func TestRunMainSuccess(t *testing.T) {
 }
 
 func TestRunMainError(t *testing.T) {
+	orig := maybeExecFunc
+	defer func() { maybeExecFunc = orig }()
+	maybeExecFunc = func(args []string, currentVersion string, cwd string, exit func(int)) error {
+		return nil
+	}
+
 	var out bytes.Buffer
 	code := 0
 	runMain([]string{"al", "unknown"}, &out, &out, func(exitCode int) {
@@ -56,6 +68,11 @@ func TestRunMainError(t *testing.T) {
 func TestMainCallsExecute(t *testing.T) {
 	originalArgs := os.Args
 	defer func() { os.Args = originalArgs }()
+	orig := maybeExecFunc
+	defer func() { maybeExecFunc = orig }()
+	maybeExecFunc = func(args []string, currentVersion string, cwd string, exit func(int)) error {
+		return nil
+	}
 
 	os.Args = []string{"al", "--version"}
 	main()
@@ -163,6 +180,29 @@ func TestRunMain_UpgradeBypassesDispatch(t *testing.T) {
 	}
 }
 
+func TestRunMain_MCPPromptsBypassesDispatch(t *testing.T) {
+	orig := maybeExecFunc
+	defer func() { maybeExecFunc = orig }()
+	dispatchCalled := false
+	maybeExecFunc = func(args []string, currentVersion string, cwd string, exit func(int)) error {
+		dispatchCalled = true
+		return errors.New("dispatch should be bypassed for mcp-prompts")
+	}
+
+	var out bytes.Buffer
+	exitCode := -1
+	runMain([]string{"al", "mcp-prompts", "--help"}, &out, &out, func(code int) {
+		exitCode = code
+	})
+
+	if dispatchCalled {
+		t.Fatal("expected dispatch to be bypassed for mcp-prompts")
+	}
+	if exitCode != -1 {
+		t.Fatalf("expected no exit call, got %d", exitCode)
+	}
+}
+
 func TestShouldBypassDispatch(t *testing.T) {
 	tests := []struct {
 		name string
@@ -172,6 +212,7 @@ func TestShouldBypassDispatch(t *testing.T) {
 		{name: "No subcommand", args: []string{"al"}, want: false},
 		{name: "Init command", args: []string{"al", "init"}, want: true},
 		{name: "Upgrade command", args: []string{"al", "upgrade"}, want: true},
+		{name: "MCP prompts command", args: []string{"al", "mcp-prompts"}, want: true},
 		{name: "Non-init command", args: []string{"al", "doctor"}, want: false},
 		{name: "Global version flag only", args: []string{"al", "--version"}, want: false},
 		{name: "Double-dash init", args: []string{"al", "--", "init"}, want: true},
