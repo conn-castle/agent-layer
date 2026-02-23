@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Optional agent-specific passthrough configuration for Claude and Codex via `agents.claude.agent_specific` and `agents.codex.agent_specific`.
-- Optional `agents.claude.local_config_dir` support for repo-local Claude config isolation (`.claude-config`).
+- Optional `agents.claude.local_config_dir` support for repo-local Claude config isolation (`.claude-config`). `al vscode` sets `CLAUDE_CONFIG_DIR` only when both `local_config_dir = true` and `agents.claude-vscode.enabled = true`.
 - `al upgrade rollback --list` support to inspect available snapshot IDs and statuses before executing rollback.
 - `al sync` now auto-adds the repository root to `~/.gemini/trustedFolders.json` when Gemini is enabled so Gemini CLI reliably loads project-level `.gemini/settings.json`. If this write fails, sync still succeeds and emits a non-fatal warning with manual remediation guidance.
 
