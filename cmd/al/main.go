@@ -64,12 +64,14 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 // shouldBypassDispatch reports whether dispatch should be skipped for this invocation.
 // `al init` and `al upgrade` run through the invoking CLI so upgrade planning is based on
 // the currently installed binary templates, not an older repo-pinned version.
+// `al mcp-prompts` must also bypass dispatch so MCP stdio servers never hop to a
+// PATH-installed shim/binary that may not match the local repository.
 func shouldBypassDispatch(args []string) bool {
 	if len(args) < 2 {
 		return false
 	}
 	command := firstCommandArg(args[1:])
-	return command == "init" || command == "upgrade"
+	return command == "init" || command == "upgrade" || command == "mcp-prompts"
 }
 
 // firstCommandArg extracts the first non-flag token from root command arguments.

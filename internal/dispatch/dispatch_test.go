@@ -574,12 +574,9 @@ func TestMaybeExec_CacheRootDirError(t *testing.T) {
 }
 
 func TestMaybeExec_CurrentIsDev(t *testing.T) {
-	// If current is dev, and no override/pin, it should just return nil (no dispatch)
-	// assuming dev doesn't dispatch to itself?
-	// resolveRequestedVersion returns current ("dev").
-	// if requested == current -> return nil.
-
-	err := MaybeExec([]string{"cmd"}, "dev", ".", func(int) {})
+	// Use an isolated cwd so repository pin files do not influence this test.
+	cwd := t.TempDir()
+	err := MaybeExec([]string{"cmd"}, "dev", cwd, func(int) {})
 	if err != nil {
 		t.Fatalf("expected nil error for dev current version, got %v", err)
 	}

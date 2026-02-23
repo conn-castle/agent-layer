@@ -21,6 +21,7 @@ const (
 	SyncMissingPromptServerSourceFmt                = "missing prompt server source at %s"
 	SyncCheckPathFmt                                = "check %s: %w"
 	SyncPromptServerNotDirFmt                       = "prompt server source path %s is not a directory"
+	SyncPromptServerModuleMismatchFmt               = "prompt server source root %s is not module github.com/conn-castle/agent-layer"
 	SyncMissingGoForPromptServerFmt                 = "missing go on PATH for prompt server: %w"
 	SyncReadTemplateFailedFmt                       = "failed to read template %s: %w"
 	SyncReadFailedFmt                               = "failed to read %s: %w"
