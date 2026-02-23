@@ -21,6 +21,8 @@ Quick triage:
 - [Pinning and offline mode](#pinning-and-offline-mode)
 - [Still stuck](#still-stuck)
 
+Note: the MCP server issues section includes fallback guidance for both [Codex](#global-mcp-server-fallback-for-vs-code-codex) and [Claude](#global-config-fallback-for-vs-code-claude) in VS Code.
+
 If the triage does not resolve it, use the sections below.
 
 ## Install issues
@@ -149,9 +151,9 @@ This creates a stable non-managed tail position for extension writes.
 
 This is primarily a VS Code fallback.
 
-You should still use `al codex` on the CLI. `al codex` sets a repo-local `CODEX_HOME`, so Codex uses the repo-local `.codex/config.toml` (which Agent Layer generates from `.agent-layer/config.toml`, including MCP servers).
+Continue using `al codex` on the CLI. `al codex` sets a repo-local `CODEX_HOME`, so Codex uses the repo-local `.codex/config.toml` (which Agent Layer generates from `.agent-layer/config.toml`, including MCP servers).
 
-If you launch VS Code without Agent Layer's repo-local launcher, the Codex VS Code extension will not get the repo-local `CODEX_HOME`. In that case, the extension will still use the repo-local instructions and slash commands, but it will use MCP servers from your global Codex config instead.
+If you launch VS Code without Agent Layer's repo-local launcher, the Codex VS Code extension will not receive the repo-local `CODEX_HOME`. In that case, the extension continues to use repo-local instructions and slash commands, but it uses MCP servers from your global Codex config instead.
 
 Tradeoffs (VS Code without launcher):
 
@@ -179,6 +181,23 @@ Workflow (best-effort; depends on your Codex client version):
 3. Keep using Agent Layer for repo-local prompts/skills and slash commands.
 
 If you want the fully managed setup in VS Code, use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CODEX_HOME` and uses MCP servers projected from `.agent-layer/config.toml`.
+
+### Global config fallback for VS Code (Claude)
+
+This is primarily a VS Code fallback, and applies only when `local_config_dir = true` is set under `[agents.claude]`.
+
+When `local_config_dir` is enabled, `al claude` sets a repo-local `CLAUDE_CONFIG_DIR`, so Claude Code uses the repo-local `.claude-config/` for user-level configuration (authentication, caches, settings). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `[agents.claude-vscode]` is enabled.
+
+If you launch VS Code without Agent Layer's repo-local launcher, the Claude extension will not receive the repo-local `CLAUDE_CONFIG_DIR`. In that case, the extension uses your global `~/.claude/` configuration, so authentication and settings are shared across repositories.
+
+When `local_config_dir` is disabled (the default), Claude always uses the global `~/.claude/` configuration regardless of how VS Code is launched.
+
+Tradeoffs (VS Code without launcher, with `local_config_dir` enabled):
+
+- Claude auth/state is shared across repositories (which can be convenient, but is less isolated).
+- You cannot use different Claude accounts per repo.
+
+If you want the fully managed setup in VS Code with `local_config_dir` enabled, use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CLAUDE_CONFIG_DIR`.
 
 ### Client CLI not found
 

@@ -23,7 +23,8 @@ var (
 	readFile = os.ReadFile
 )
 
-// Launch starts VS Code, optionally setting CODEX_HOME when agents.vscode is enabled.
+// Launch starts VS Code, optionally setting CODEX_HOME and/or CLAUDE_CONFIG_DIR
+// based on the enabled agent extensions.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	if err := runPreflight(cfg.Root); err != nil {
 		return err
@@ -36,6 +37,16 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		// Clear any inherited CODEX_HOME so the Codex extension does not pick up
 		// stale config when only claude-vscode is enabled.
 		env = clients.UnsetEnv(env, "CODEX_HOME")
+	}
+
+	localConfigDir := cfg.Config.Agents.Claude.LocalConfigDir != nil && *cfg.Config.Agents.Claude.LocalConfigDir
+	if cfg.Config.Agents.ClaudeVSCode.Enabled != nil && *cfg.Config.Agents.ClaudeVSCode.Enabled && localConfigDir {
+		claudeConfigDir := filepath.Join(cfg.Root, ".claude-config")
+		env = clients.SetEnv(env, "CLAUDE_CONFIG_DIR", claudeConfigDir)
+	} else {
+		// Clear any inherited CLAUDE_CONFIG_DIR so the Claude extension does
+		// not pick up stale config from a parent process.
+		env = clients.UnsetEnv(env, "CLAUDE_CONFIG_DIR")
 	}
 
 	args := append([]string{}, passArgs...)

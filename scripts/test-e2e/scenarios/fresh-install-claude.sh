@@ -43,6 +43,10 @@ run_scenario_fresh_install_claude() {
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
 
+  # Default config does not enable local_config_dir, so CLAUDE_CONFIG_DIR
+  # should NOT be set by the launcher.
+  assert_claude_mock_env_not_set "$MOCK_CLAUDE_LOG" "CLAUDE_CONFIG_DIR"
+
   # Verify generated artifacts exist AND have correct content
   assert_generated_artifacts "$repo_dir"
 

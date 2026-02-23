@@ -38,29 +38,11 @@ func ensureCodexHome(root string, env []string) []string {
 		return clients.SetEnv(env, "CODEX_HOME", expected)
 	}
 
-	if !samePath(current, expected) {
+	if !clients.SamePath(current, expected) {
 		if _, err := fmt.Fprintf(os.Stderr, messages.ClientsCodexHomeWarningFmt, current, expected); err != nil {
 			return env
 		}
 	}
 
 	return env
-}
-
-func samePath(a string, b string) bool {
-	aResolved := resolvePath(a)
-	bResolved := resolvePath(b)
-	return aResolved == bResolved
-}
-
-func resolvePath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = path
-	}
-	eval, err := filepath.EvalSymlinks(abs)
-	if err == nil {
-		return eval
-	}
-	return abs
 }

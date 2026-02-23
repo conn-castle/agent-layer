@@ -177,6 +177,14 @@ func TestInitCommandPromptNoDeclinesWizard(t *testing.T) {
 }
 
 func TestClientCommandsMissingConfig(t *testing.T) {
+	t.Setenv(config.BuiltinRepoRootEnvVar, "")
+	originalPromptServer := runPromptServer
+	runPromptServer = func(ctx context.Context, version string, commands []config.SlashCommand) error {
+		t.Fatalf("runPromptServer should not be called when .agent-layer is missing")
+		return nil
+	}
+	t.Cleanup(func() { runPromptServer = originalPromptServer })
+
 	root := t.TempDir()
 	testutil.WithWorkingDir(t, root, func() {
 		commands := []*cobra.Command{
@@ -188,6 +196,7 @@ func TestClientCommandsMissingConfig(t *testing.T) {
 			newMcpPromptsCmd(),
 		}
 		for _, cmd := range commands {
+			cmd.SetContext(context.Background())
 			err := cmd.RunE(cmd, nil)
 			if err == nil {
 				t.Fatalf("expected error for %s", cmd.Use)
@@ -273,6 +282,14 @@ func TestWizardCommand(t *testing.T) {
 }
 
 func TestCommandsGetwdError(t *testing.T) {
+	t.Setenv(config.BuiltinRepoRootEnvVar, "")
+	originalPromptServer := runPromptServer
+	runPromptServer = func(ctx context.Context, version string, commands []config.SlashCommand) error {
+		t.Fatalf("runPromptServer should not be called when getwd fails")
+		return nil
+	}
+	t.Cleanup(func() { runPromptServer = originalPromptServer })
+
 	original := getwd
 	getwd = func() (string, error) {
 		return "", errors.New("boom")
@@ -291,6 +308,7 @@ func TestCommandsGetwdError(t *testing.T) {
 		newDoctorCmd(),
 	}
 	for _, cmd := range commands {
+		cmd.SetContext(context.Background())
 		if err := cmd.RunE(cmd, nil); err == nil {
 			t.Fatalf("expected error for %s", cmd.Use)
 		}

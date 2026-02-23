@@ -9,6 +9,7 @@ enabled = true
 
 [agents.claude]
 enabled = true
+local_config_dir = true
 
 [agents.claude-vscode]
 enabled = true

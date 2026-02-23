@@ -27,9 +27,16 @@ If VS Code is enabled, Agent Layer also generates repo-local launchers under `.a
 For full detail, see [/docs/reference#sync](/docs/reference#sync).
 
 ## Why does Codex ask me to sign in again per repo?
-The Codex VS Code extension reads `CODEX_HOME` at startup, and Agent Layer sets a repo-specific `CODEX_HOME` via its launchers. That means authentication is stored per repo. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected and keeps credentials isolated. A practical benefit is that you can use different Codex accounts across repositories, such as one for personal projects and one for work, without mixing credentials.
+The Codex VS Code extension reads `CODEX_HOME` at startup. Agent Layer sets a repo-specific value via its launchers, so Codex authentication state is stored per repository. When you open VS Code in a different repository, reauthentication is expected.
 
-If you prefer to avoid the VS Code launcher, the best alternative is to configure MCP servers globally for the Codex VS Code extension. See [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
+If you prefer to avoid the VS Code launcher for Codex, use the global MCP fallback so VS Code can continue to discover your MCP servers. See [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
+
+## Why does Claude ask me to sign in again per repo?
+Claude per-repo authentication is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating authentication, caches, and settings per repository. This lets you maintain separate work and personal accounts without credential overlap.
+
+By default (`local_config_dir` absent or `false`), Claude uses your global `~/.claude/` configuration and authentication is shared across repositories.
+
+For Claude-specific fallback details, see [/docs/troubleshooting#global-config-fallback-for-vs-code-claude](/docs/troubleshooting#global-config-fallback-for-vs-code-claude).
 
 ## Should we commit `.agent-layer/`?
 By default it is gitignored, but teams can choose to commit it (except `.agent-layer/.env`).

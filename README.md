@@ -470,12 +470,13 @@ Some clients discover slash commands via MCP prompts. Agent Layer provides an **
 
 - When `[agents.vscode]` is enabled, `CODEX_HOME` is set for the Codex extension.
 - When `[agents.claude-vscode]` is enabled, Claude files (`.mcp.json`, `.claude/settings.json`) are generated. YOLO mode sets `claudeCode.allowDangerouslySkipPermissions` in `.vscode/settings.json`.
+- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude-vscode]` is enabled; otherwise `al vscode` unsets it. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled.
 - VS Code settings are generated when either agent is enabled.
 - Supports `--no-sync` to skip sync before opening VS Code.
 
-The Codex VS Code extension reads `CODEX_HOME` from the VS Code process environment at startup.
+The Codex VS Code extension reads `CODEX_HOME` and the Claude extension reads `CLAUDE_CONFIG_DIR` from the VS Code process environment at startup.
 
-Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_HOME` correctly for this repo:
+Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_HOME` (and `CLAUDE_CONFIG_DIR` when both `local_config_dir` and `agents.claude-vscode` are enabled) correctly for this repo:
 
 Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
@@ -488,7 +489,7 @@ If you use the CLI-based launchers, install the `code` command from inside VS Co
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
-**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected behavior and keeps credentials isolated per repo. It also enables you to use different Codex accounts across repositories, such as one for personal projects and one for work, without credential overlap.
+**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different repo, you will need to reauthenticate with Codex. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude authentication is also per repo (via `CLAUDE_CONFIG_DIR`). This keeps credentials isolated and enables different accounts per repo.
 For contributor-level implementation details, see `docs/architecture/vscode-launch.md`.
 
 ---

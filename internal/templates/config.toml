@@ -17,6 +17,11 @@ enabled = true
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
+# local_config_dir isolates Claude Code auth, caches, and user settings per repo.
+# When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
+# For al vscode, CLAUDE_CONFIG_DIR is set when both this and agents.claude-vscode are enabled.
+# You will need to reauthenticate once per repo on first launch.
+# local_config_dir = false
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # These are merged into .claude/settings.json as-is.
 # Overlapping keys override Agent Layer-managed values and trigger a sync warning.

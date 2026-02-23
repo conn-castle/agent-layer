@@ -39,6 +39,11 @@ ENVEOF
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
   assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
   assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+
+  # Everything-enabled profile sets local_config_dir = true, so
+  # CLAUDE_CONFIG_DIR should be set to repo-local .claude-config.
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "CLAUDE_CONFIG_DIR" "$repo_dir/.claude-config"
+
   assert_generated_artifacts "$repo_dir"
 
   # Verify ALL 7 MCP servers are in .mcp.json (plus built-in agent-layer)

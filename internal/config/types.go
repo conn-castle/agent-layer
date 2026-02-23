@@ -31,9 +31,10 @@ type AgentConfig struct {
 
 // ClaudeConfig extends AgentConfig with Claude-specific settings.
 type ClaudeConfig struct {
-	Enabled       *bool          `toml:"enabled"`
-	Model         string         `toml:"model"`
-	AgentSpecific map[string]any `toml:"agent_specific"`
+	Enabled        *bool          `toml:"enabled"`
+	Model          string         `toml:"model"`
+	LocalConfigDir *bool          `toml:"local_config_dir"`
+	AgentSpecific  map[string]any `toml:"agent_specific"`
 }
 
 // EnableOnlyConfig is for agents that support enablement but not model selection.
