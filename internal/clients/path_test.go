@@ -1,6 +1,7 @@
 package clients
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,6 +28,39 @@ func TestResolvePath_EvalSymlinksFailure(t *testing.T) {
 	}
 	if !filepath.IsAbs(resolved) {
 		t.Fatalf("expected absolute path")
+	}
+}
+
+func TestResolvePath_AbsErrorReturnsOriginalPath(t *testing.T) {
+	origAbs := filepathAbs
+	origEval := filepathEvalSymlinks
+	filepathAbs = func(string) (string, error) { return "", errors.New("abs failed") }
+	filepathEvalSymlinks = func(path string) (string, error) { return path, nil }
+	t.Cleanup(func() {
+		filepathAbs = origAbs
+		filepathEvalSymlinks = origEval
+	})
+
+	path := "relative-path"
+	resolved := ResolvePath(path)
+	if resolved != path {
+		t.Fatalf("expected original path on Abs error, got %q", resolved)
+	}
+}
+
+func TestResolvePath_EvalSymlinksErrorReturnsAbsPath(t *testing.T) {
+	origAbs := filepathAbs
+	origEval := filepathEvalSymlinks
+	filepathAbs = func(string) (string, error) { return "/abs/path", nil }
+	filepathEvalSymlinks = func(string) (string, error) { return "", errors.New("eval failed") }
+	t.Cleanup(func() {
+		filepathAbs = origAbs
+		filepathEvalSymlinks = origEval
+	})
+
+	resolved := ResolvePath("ignored")
+	if resolved != "/abs/path" {
+		t.Fatalf("expected abs path on eval error, got %q", resolved)
 	}
 }
 
