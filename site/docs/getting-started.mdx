@@ -213,9 +213,9 @@ If you change generated files, those edits will be overwritten the next time you
 :::
 
 :::note
-The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo `CODEX_HOME`, so you will need to reauthenticate when opening a different repo. This is expected and keeps credentials isolated. A practical benefit is that you can use different Codex accounts across repositories, such as one for personal projects and one for work, without mixing credentials.
+The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value, so you will need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude-vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, providing isolated authentication and credential separation across repositories.
 
-If you prefer to launch VS Code without the repo-local launcher, see [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
+If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting#global-config-fallback-for-vs-code-claude).
 :::
 
 ### Safe to delete

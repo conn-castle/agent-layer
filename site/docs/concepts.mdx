@@ -105,9 +105,11 @@ mode = "all" # one of: all, mcp, commands, none, yolo
 | `mcp` | prompt/deny | auto-approve | |
 | `commands` | auto-approve | prompt/deny | |
 | `none` | prompt/deny | prompt/deny | |
-| `yolo` | auto-approve | auto-approve | skips all permission prompts (Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove`) |
+| `yolo` | auto-approve | auto-approve | skips all permission prompts (Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, VS Code `chat.tools.global.autoApprove`) |
 
 The default template sets `mode = "all"`. Change it to match your team's security posture.
+
+Codex may still deny or override these settings if its `requirements.toml` disallows them.
 
 ### Approved commands
 

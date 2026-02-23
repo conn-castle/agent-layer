@@ -16,7 +16,8 @@
 /.mcp.json
 /.codex/
 /.gemini/
-/.claude/
+/.claude/              # Agent Layer-generated Claude project config (settings.json)
+/.claude-config/       # Claude Code user-level runtime state (CLAUDE_CONFIG_DIR)
 /.vscode/mcp.json
 /.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.

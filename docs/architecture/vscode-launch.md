@@ -9,6 +9,7 @@ This architecture covers:
 - `al vscode` command dispatch and no-sync behavior
 - repo-local launcher scripts under `.agent-layer/`
 - `CODEX_HOME` wiring for the VS Code Codex extension
+- `CLAUDE_CONFIG_DIR` wiring for the VS Code Claude extension
 - `.vscode/settings.json` managed block lifecycle
 
 ## Entry points
@@ -30,7 +31,10 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
 4. `internal/clients/vscode/launch.go` runs preflight checks:
    - `code` command exists on `PATH`
    - `.vscode/settings.json` managed markers are not malformed/duplicated
-5. Launch sets `CODEX_HOME=<repo>/.codex` and executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
+5. Launch sets environment variables based on enabled agents:
+   - `CODEX_HOME=<repo>/.codex` when `agents.vscode` is enabled (cleared when disabled to prevent stale inheritance)
+   - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude-vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (cleared otherwise to prevent stale inheritance)
+6. Executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
 
 ## Managed settings architecture
 

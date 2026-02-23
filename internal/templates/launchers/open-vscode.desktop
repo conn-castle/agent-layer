@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Open VS Code
-Comment=Open this repo in VS Code with CODEX_HOME and AL_* environment variables
+Comment=Open this repo in VS Code with CLAUDE_CONFIG_DIR, CODEX_HOME, and AL_* environment variables
 Exec=sh -c 'exec "$(dirname "$1")/open-vscode.sh"' _ "%k"
 Terminal=true
 Categories=Development;IDE;

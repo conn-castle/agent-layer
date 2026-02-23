@@ -298,6 +298,10 @@ enabled = true
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
+# Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
+# These are shallow-merged at the top level into .claude/settings.json.
+# Nested objects are replaced (not deep-merged).
+# [agents.claude.agent_specific]
 
 [agents.claude-vscode]
 enabled = true
@@ -308,6 +312,12 @@ enabled = true
 # model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
+# Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
+# These are appended to .codex/config.toml and can override top-level managed keys.
+# [agents.codex.agent_specific]
+# [agents.codex.agent_specific.features]
+# multi_agent = true
+# prevent_idle_sleep = true
 
 [agents.vscode]
 enabled = true
@@ -349,6 +359,8 @@ mcp_server_tools_threshold = 25
 mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
 ```
+
+Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.claude.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys.
 
 #### Built-in placeholders
 
@@ -399,10 +411,12 @@ These modes control whether the agent is allowed to run shell commands and/or MC
 - `mcp`: auto-approve **only** MCP tool calls; shell commands still require approval (or are restricted)
 - `commands`: auto-approve **only** shell commands; MCP tool calls still require approval
 - `none`: approve **nothing** automatically
-- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` to Codex, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
+- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
 
 Client notes:
 - Some clients do not support all approval types; Agent Layer generates the closest supported behavior per client.
+
+Codex may still deny or override these settings if its `requirements.toml` disallows them.
 
 ### Secrets: `.agent-layer/.env`
 
@@ -457,12 +471,13 @@ Some clients discover slash commands via MCP prompts. Agent Layer provides an **
 
 - When `[agents.vscode]` is enabled, `CODEX_HOME` is set for the Codex extension.
 - When `[agents.claude-vscode]` is enabled, Claude files (`.mcp.json`, `.claude/settings.json`) are generated. YOLO mode sets `claudeCode.allowDangerouslySkipPermissions` in `.vscode/settings.json`.
+- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude-vscode]` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled.
 - VS Code settings are generated when either agent is enabled.
 - Supports `--no-sync` to skip sync before opening VS Code.
 
-The Codex VS Code extension reads `CODEX_HOME` from the VS Code process environment at startup.
+The Codex VS Code extension reads `CODEX_HOME` and the Claude extension reads `CLAUDE_CONFIG_DIR` from the VS Code process environment at startup.
 
-Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_HOME` correctly for this repo:
+Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_HOME` (and `CLAUDE_CONFIG_DIR` when both `local_config_dir` and `agents.claude-vscode` are enabled) correctly for this repo:
 
 Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
@@ -475,7 +490,7 @@ If you use the CLI-based launchers, install the `code` command from inside VS Co
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
-**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different `CODEX_HOME`, you will need to reauthenticate. This is expected behavior and keeps credentials isolated per repo. It also enables you to use different Codex accounts across repositories, such as one for personal projects and one for work, without credential overlap.
+**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different repo, you will need to reauthenticate with Codex. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude authentication is also per repo (via `CLAUDE_CONFIG_DIR`). This keeps credentials isolated and enables different accounts per repo.
 For contributor-level implementation details, see `docs/architecture/vscode-launch.md`.
 
 ---

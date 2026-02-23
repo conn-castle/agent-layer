@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,6 +65,40 @@ func TestResolveRepoRootForPromptServerInvalidEnvHint(t *testing.T) {
 		t.Fatal("expected error for invalid AL_REPO_ROOT hint")
 	}
 	if err.Error() != messages.RootMissingAgentLayer {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveRepoRoot_FindAgentLayerError(t *testing.T) {
+	original := findAgentLayerRoot
+	findAgentLayerRoot = func(string) (string, bool, error) {
+		return "", false, errors.New("find failed")
+	}
+	t.Cleanup(func() { findAgentLayerRoot = original })
+
+	_, err := resolveRepoRoot()
+	if err == nil {
+		t.Fatal("expected resolveRepoRoot to propagate find error")
+	}
+	if err.Error() != "find failed" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveRepoRootForPromptServer_HintFindError(t *testing.T) {
+	original := findAgentLayerRoot
+	findAgentLayerRoot = func(string) (string, bool, error) {
+		return "", false, errors.New("hint find failed")
+	}
+	t.Cleanup(func() { findAgentLayerRoot = original })
+
+	t.Setenv(config.BuiltinRepoRootEnvVar, "/tmp/non-empty-hint")
+
+	_, err := resolveRepoRootForPromptServer()
+	if err == nil {
+		t.Fatal("expected resolveRepoRootForPromptServer to propagate hint find error")
+	}
+	if err.Error() != "hint find failed" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

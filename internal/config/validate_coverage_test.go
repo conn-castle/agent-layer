@@ -11,7 +11,7 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
-			Claude:       AgentConfig{Enabled: &enabled},
+			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
@@ -96,7 +96,7 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 		Approvals: ApprovalsConfig{Mode: "all"},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
-			Claude:       AgentConfig{Enabled: &enabled},
+			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},

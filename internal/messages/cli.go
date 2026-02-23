@@ -141,7 +141,8 @@ const (
 	ClientsVSCodeCodeNotFoundFmt         = "vscode preflight failed: 'code' command not found on PATH: %w"
 	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"
 
-	ClientsCodexHomeWarningFmt = "Warning: CODEX_HOME is set to %s; expected %s\n"
+	ClientsCodexHomeWarningFmt       = "Warning: CODEX_HOME is set to %s; expected %s\n"
+	ClientsClaudeConfigDirWarningFmt = "Warning: CLAUDE_CONFIG_DIR is set to %s; expected %s\n"
 
 	// StubShortFmt formats stub command descriptions.
 	StubShortFmt          = "%s (not implemented yet)"

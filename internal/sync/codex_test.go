@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
@@ -208,6 +210,170 @@ func TestBuildCodexConfigYOLO(t *testing.T) {
 	}
 	if !strings.Contains(output, `sandbox_mode = "danger-full-access"`) {
 		t.Fatalf("expected sandbox_mode in output:\n%s", output)
+	}
+	if !strings.Contains(output, `web_search = "live"`) {
+		t.Fatalf("expected web_search in output:\n%s", output)
+	}
+}
+
+func TestBuildCodexConfigAgentSpecific(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Enabled: &enabled,
+					AgentSpecific: map[string]any{
+						"features": map[string]any{
+							"multi_agent":        true,
+							"prevent_idle_sleep": true,
+						},
+						"nested": map[string]any{
+							"sub": map[string]any{
+								"flag": true,
+							},
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(output, "[features]\n") {
+		t.Fatalf("expected features table in output:\n%s", output)
+	}
+	if !strings.Contains(output, "multi_agent = true") {
+		t.Fatalf("expected multi_agent in output:\n%s", output)
+	}
+	if !strings.Contains(output, "prevent_idle_sleep = true") {
+		t.Fatalf("expected prevent_idle_sleep in output:\n%s", output)
+	}
+	if !strings.Contains(output, "[nested.sub]\n") {
+		t.Fatalf("expected nested.sub table in output:\n%s", output)
+	}
+	if !strings.Contains(output, "flag = true") {
+		t.Fatalf("expected nested flag in output:\n%s", output)
+	}
+}
+
+func TestBuildCodexConfigAgentSpecificOverrides(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Enabled: &enabled,
+					Model:   "gpt-5.3-codex",
+					AgentSpecific: map[string]any{
+						"approval_policy": "untrusted",
+						"model":           "override-model",
+						"mcp_servers": map[string]any{
+							"example": map[string]any{
+								"url": "https://example.com",
+							},
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(output, `approval_policy = "never"`) {
+		t.Fatalf("expected yolo approval_policy to be suppressed by agent-specific override:\n%s", output)
+	}
+	if strings.Contains(output, `model = "gpt-5.3-codex"`) {
+		t.Fatalf("expected model to be suppressed by agent-specific override:\n%s", output)
+	}
+	if !strings.Contains(output, "approval_policy = 'untrusted'") {
+		t.Fatalf("expected agent-specific approval_policy in output:\n%s", output)
+	}
+	if !strings.Contains(output, "model = 'override-model'") {
+		t.Fatalf("expected agent-specific model in output:\n%s", output)
+	}
+	if !strings.Contains(output, "[mcp_servers.example]\n") {
+		t.Fatalf("expected agent-specific mcp_servers table in output:\n%s", output)
+	}
+}
+
+func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(t *testing.T) {
+	t.Parallel()
+
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Enabled: &enabled,
+					AgentSpecific: map[string]any{
+						"approval_policy": "on-request",
+					},
+				},
+			},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{
+						ID:        "example",
+						Enabled:   &enabled,
+						Clients:   []string{"codex"},
+						Transport: "http",
+						URL:       "https://example.com/mcp",
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rootOverridePos := strings.Index(output, "approval_policy = 'on-request'")
+	mcpTablePos := strings.Index(output, "[mcp_servers.example]\n")
+	if rootOverridePos == -1 {
+		t.Fatalf("expected agent-specific root override in output:\n%s", output)
+	}
+	if mcpTablePos == -1 {
+		t.Fatalf("expected managed mcp table in output:\n%s", output)
+	}
+	if rootOverridePos > mcpTablePos {
+		t.Fatalf("expected root override before managed mcp tables:\n%s", output)
+	}
+
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(output), &parsed); err != nil {
+		t.Fatalf("parse generated toml: %v", err)
+	}
+	if got, ok := parsed["approval_policy"].(string); !ok || got != "on-request" {
+		t.Fatalf("expected root approval_policy on-request, got %#v", parsed["approval_policy"])
+	}
+
+	mcpValue, ok := parsed["mcp_servers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcp_servers map, got %#v", parsed["mcp_servers"])
+	}
+	exampleValue, ok := mcpValue["example"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcp_servers.example map, got %#v", mcpValue["example"])
+	}
+	if _, exists := exampleValue["approval_policy"]; exists {
+		t.Fatalf("expected mcp_servers.example to not contain approval_policy, got %#v", exampleValue)
 	}
 }
 

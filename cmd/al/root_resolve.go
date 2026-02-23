@@ -10,13 +10,18 @@ import (
 	"github.com/conn-castle/agent-layer/internal/root"
 )
 
+var (
+	findAgentLayerRoot = root.FindAgentLayerRoot
+	findRepoRoot       = root.FindRepoRoot
+)
+
 // resolveRepoRoot returns the repo root that contains .agent-layer or fails if missing.
 func resolveRepoRoot() (string, error) {
 	cwd, err := getwd()
 	if err != nil {
 		return "", err
 	}
-	repoRoot, found, err := root.FindAgentLayerRoot(cwd)
+	repoRoot, found, err := findAgentLayerRoot(cwd)
 	if err != nil {
 		return "", err
 	}
@@ -30,7 +35,7 @@ func resolveRepoRoot() (string, error) {
 // It prefers AL_REPO_ROOT when set so MCP clients do not depend on their launch cwd.
 func resolveRepoRootForPromptServer() (string, error) {
 	if hint := strings.TrimSpace(os.Getenv(config.BuiltinRepoRootEnvVar)); hint != "" {
-		repoRoot, found, err := root.FindAgentLayerRoot(hint)
+		repoRoot, found, err := findAgentLayerRoot(hint)
 		if err != nil {
 			return "", err
 		}
@@ -48,5 +53,5 @@ func resolveInitRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return root.FindRepoRoot(cwd)
+	return findRepoRoot(cwd)
 }

@@ -15,6 +15,7 @@ const (
 	SyncMarshalGeminiSettingsFailedFmt              = "failed to marshal gemini settings: %w"
 	SyncMarshalVSCodeSettingsFailedFmt              = "failed to marshal vscode settings: %w"
 	SyncMarshalVSCodeMCPConfigFailedFmt             = "failed to marshal vscode mcp config: %w"
+	SyncMarshalCodexAgentSpecificFailedFmt          = "failed to marshal codex agent-specific config: %w"
 	SyncInvalidVSCodeSettingsFmt                    = "invalid vscode settings %s: %w"
 	SyncMissingPromptServerNoRoot                   = "al not found on PATH and no repo root available for go run"
 	SyncMissingPromptServerSourceFmt                = "missing prompt server source at %s"

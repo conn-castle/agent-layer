@@ -248,6 +248,43 @@ foo = "bar"
 	assert.Contains(t, out, `foo = "bar"`)
 }
 
+func TestPatchConfig_PreservesCodexAgentSpecificFeatures(t *testing.T) {
+	content := `
+[approvals]
+mode = "none"
+
+[agents.codex]
+enabled = false
+model = "gpt-5"
+reasoning_effort = "medium"
+
+[agents.codex.agent_specific]
+note = "keep this"
+
+[agents.codex.agent_specific.features]
+multi_agent = true
+prevent_idle_sleep = true
+`
+	choices := NewChoices()
+	choices.ApprovalModeTouched = true
+	choices.ApprovalMode = "all"
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents = map[string]bool{AgentCodex: true}
+	choices.CodexModelTouched = true
+	choices.CodexModel = "gpt-5.3-codex"
+	choices.CodexReasoningTouched = true
+	choices.CodexReasoning = "xhigh"
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `[agents.codex.agent_specific]`)
+	assert.Contains(t, out, `note = "keep this"`)
+	assert.Contains(t, out, `[agents.codex.agent_specific.features]`)
+	assert.Contains(t, out, `multi_agent = true`)
+	assert.Contains(t, out, `prevent_idle_sleep = true`)
+}
+
 func TestPatchConfig_ExtraSectionsSortedAlphabetically(t *testing.T) {
 	content := `
 [approvals]

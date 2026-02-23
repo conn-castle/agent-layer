@@ -111,8 +111,8 @@ log="${MOCK_CLAUDE_LOG_DIR}/claude.log"
     echo "ARG_${i}=${arg}"
     i=$((i + 1))
   done
-  # Record all AL_* environment variables
-  env | grep '^AL_' | sort || true
+  # Record AL_* and CLAUDE_* environment variables
+  env | grep -E '^(AL_|CLAUDE_)' | sort || true
   echo "---END---"
 } >> "$log"
 
@@ -166,7 +166,7 @@ log="$log_dir/${binary}.log"
     echo "ARG_\${i}=\${arg}"
     i=\$((i + 1))
   done
-  env | grep '^AL_' | sort || true
+  env | grep -E '^(AL_|CLAUDE_)' | sort || true
   echo "---END---"
 } >> "\$log"
 
@@ -755,6 +755,16 @@ assert_claude_mock_env() {
     else
       fail "mock claude env: ${var} not set"
     fi
+  fi
+}
+
+# assert_claude_mock_env_not_set <log> <var> — verify an env var was NOT set.
+assert_claude_mock_env_not_set() {
+  local log="$1" var="$2"
+  if grep -q "^${var}=" "$log" 2>/dev/null; then
+    fail "mock claude env: ${var} should not be set"
+  else
+    pass "mock claude env: ${var} not set (expected)"
   fi
 }
 
