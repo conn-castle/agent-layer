@@ -8,6 +8,7 @@ Key properties:
 - Local-first, no telemetry
 - Deterministic outputs from canonical inputs
 - Explicit approvals and command allowlists
+- Per-repo credential isolation (separate Claude and Codex logins per repository)
 
 Comparison:
 
@@ -16,6 +17,7 @@ Comparison:
 | duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
 | inconsistent approvals and command policies | consistent approvals and allowlists |
 | MCP servers added in one client and forgotten in another | generated MCP config for every supported client |
+| shared global credentials across repos | per-repo credential isolation for Claude and Codex |
 | no single place to review or audit changes | audit in version control |
 
 If Agent Layer improves your workflow, please consider starring the repository. Stars help new users discover the project.

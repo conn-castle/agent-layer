@@ -159,6 +159,13 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.ClaudeModelTouched {
 			setOptionalKeyValue(block, templateBlock, "model", choices.ClaudeModel, "enabled")
 		}
+		if choices.ClaudeLocalConfigDirTouched {
+			if choices.ClaudeLocalConfigDir {
+				setKeyValue(block, templateBlock, "local_config_dir", formatTomlValue(true), "model")
+			} else {
+				setCommentedKeyLine(block, templateBlock, "local_config_dir", "model")
+			}
+		}
 	case "agents.claude-vscode":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaudeVSCode]), "")

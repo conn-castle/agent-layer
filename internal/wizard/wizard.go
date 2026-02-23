@@ -147,6 +147,9 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 
 	choices.GeminiModel = cfg.Config.Agents.Gemini.Model
 	choices.ClaudeModel = cfg.Config.Agents.Claude.Model
+	if cfg.Config.Agents.Claude.LocalConfigDir != nil {
+		choices.ClaudeLocalConfigDir = *cfg.Config.Agents.Claude.LocalConfigDir
+	}
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
 
@@ -242,6 +245,14 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.ClaudeModelTouched = true
+	}
+	if choices.EnabledAgents[AgentClaude] || choices.EnabledAgents[AgentClaudeVSCode] {
+		claudeLocalConfigDir := choices.ClaudeLocalConfigDir
+		if err := ui.Confirm(messages.WizardClaudeLocalConfigDirPrompt, &claudeLocalConfigDir); err != nil {
+			return err
+		}
+		choices.ClaudeLocalConfigDir = claudeLocalConfigDir
+		choices.ClaudeLocalConfigDirTouched = true
 	}
 	if choices.EnabledAgents[AgentCodex] {
 		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels(), &choices.CodexModel); err != nil {

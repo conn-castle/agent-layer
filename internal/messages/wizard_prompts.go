@@ -11,6 +11,7 @@ const (
 	WizardPreviewModelWarningTitle            = "Preview Model Warning"
 	WizardGeminiModelTitle                    = "Gemini Model"
 	WizardClaudeModelTitle                    = "Claude Model"
+	WizardClaudeLocalConfigDirPrompt          = "Isolate Claude credentials per repo? (separate login per repository)"
 	WizardCodexModelTitle                     = "Codex Model"
 	WizardCodexReasoningEffortTitle           = "Codex Reasoning Effort"
 	WizardMissingDefaultMCPServersPromptFmt   = "Default MCP server entries are missing from config.toml: %s. Restore them before continuing?"

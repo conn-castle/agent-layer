@@ -1673,6 +1673,40 @@ KEY = "val"
 	assert.Contains(t, sanitized, `url = "https://api.example.com"`)
 }
 
+func TestPatchConfig_ClaudeLocalConfigDirEnabled(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+# local_config_dir = false
+`
+	choices := NewChoices()
+	choices.ClaudeLocalConfigDirTouched = true
+	choices.ClaudeLocalConfigDir = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "local_config_dir = true")
+	assert.NotContains(t, out, "# local_config_dir")
+}
+
+func TestPatchConfig_ClaudeLocalConfigDirDisabled(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+local_config_dir = true
+`
+	choices := NewChoices()
+	choices.ClaudeLocalConfigDirTouched = true
+	choices.ClaudeLocalConfigDir = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "# local_config_dir")
+	assert.NotContains(t, out, "local_config_dir = true")
+}
+
 func TestPatchHelpers_EdgeCases(t *testing.T) {
 	assert.Nil(t, cloneBlock(nil))
 	assert.Nil(t, cloneLines(nil))

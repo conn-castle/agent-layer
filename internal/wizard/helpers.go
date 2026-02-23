@@ -22,6 +22,9 @@ func buildSummary(c *Choices) string {
 	for _, a := range agents {
 		sb.WriteString(a + "\n")
 	}
+	if c.ClaudeLocalConfigDirTouched && c.ClaudeLocalConfigDir {
+		sb.WriteString(messages.WizardSummaryClaudeLocalConfigDir)
+	}
 
 	var mcp []string
 	for _, s := range c.DefaultMCPServers {

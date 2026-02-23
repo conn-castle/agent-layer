@@ -17,6 +17,9 @@ type Choices struct {
 	ClaudeModel        string
 	ClaudeModelTouched bool
 
+	ClaudeLocalConfigDir        bool
+	ClaudeLocalConfigDirTouched bool
+
 	CodexModel        string
 	CodexModelTouched bool
 

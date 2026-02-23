@@ -15,6 +15,7 @@ One important design choice follows from that: Agent Layer is repo-local. Differ
 ## In this page
 
 - [Single source of truth](#single-source-of-truth)
+- [Per-repo credential isolation](#per-repo-credential-isolation)
 - [Approvals and safety](#approvals-and-safety)
 - [MCP servers](#mcp-servers)
 - [Project memory](#project-memory)
@@ -92,6 +93,38 @@ Use them sparingly:
 - Codex agent-specific values are written at the TOML root before managed MCP tables so top-level overrides stay explicit.
 
 If you find yourself carrying many permanent overrides, that is usually a sign the setting should become a first-class key in `.agent-layer/config.toml`.
+
+## Per-repo credential isolation
+
+Agent Layer gives each repository its own agent credentials so work in one repo never leaks into another. This matters whenever you use different accounts per project, work across client boundaries, or want a security boundary between sensitive and exploratory repos.
+
+### How it works
+
+**Codex** isolation is automatic. Every repo that enables `[agents.vscode]` gets its own `CODEX_HOME`, so Codex authentication is always per-repo with no extra configuration.
+
+**Claude** isolation is opt-in. Set `local_config_dir = true` under `[agents.claude]` in `.agent-layer/config.toml`:
+
+```toml
+[agents.claude]
+enabled = true
+local_config_dir = true
+```
+
+When enabled, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local `.claude-config/` directory. For VS Code, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir = true` and `[agents.claude-vscode]` is enabled.
+
+### Trade-offs
+
+Enabling per-repo isolation means you will reauthenticate once per repository the first time you open it after enabling the setting. After that initial login, credentials are cached locally in the repo and subsequent launches are seamless.
+
+Claude isolation is opt-in (default `false`) because always-on isolation would force a reauthentication in every existing repo. Teams that need isolation can enable it per-repo; teams that prefer shared global credentials keep the default.
+
+### When to enable it
+
+- You use different Claude accounts for different clients or projects
+- You want a hard security boundary between repos (no credential sharing)
+- You work on repos with different billing or access tiers
+
+If none of these apply, the default (shared global `~/.claude/`) works fine and avoids per-repo reauthentication.
 
 ## Approvals and safety
 

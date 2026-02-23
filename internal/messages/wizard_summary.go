@@ -23,4 +23,5 @@ const (
 	WizardSummaryAgentModelFmt                   = "- %s: %s"
 	WizardSummaryCodexModelReasoningFmt          = "%s (%s)"
 	WizardSummaryCodexReasoningFmt               = "reasoning: %s"
+	WizardSummaryClaudeLocalConfigDir            = "\nClaude credential isolation: enabled (per-repo login)\n"
 )

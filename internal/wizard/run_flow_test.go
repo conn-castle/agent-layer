@@ -217,3 +217,129 @@ enabled = false
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	assert.Contains(t, string(data), `id = "tavily"`)
 }
+
+func TestRun_ClaudeLocalConfigDir(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+
+	initialConfig := `[approvals]
+mode = "all"
+[agents.gemini]
+enabled = false
+[agents.claude]
+enabled = true
+# local_config_dir = false
+[agents.claude-vscode]
+enabled = false
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = false
+[agents.antigravity]
+enabled = false
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	ui := &MockUI{
+		NoteFunc: func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == "Approval Mode" {
+				label, ok := approvalModeLabelForValue(ApprovalAll)
+				require.True(t, ok)
+				*current = label
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == "Enable Agents" {
+				*selected = []string{"claude"}
+			}
+			if title == "Enable Default MCP Servers" {
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardClaudeLocalConfigDirPrompt {
+				*value = true
+			}
+			if title == messages.WizardApplyChangesPrompt {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+
+	err := Run(root, ui, mockSync, "")
+	require.NoError(t, err)
+
+	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	assert.Contains(t, string(data), "local_config_dir = true")
+}
+
+func TestRun_ClaudeVSCodeOnlyLocalConfigDir(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+
+	initialConfig := `[approvals]
+mode = "all"
+[agents.gemini]
+enabled = false
+[agents.claude]
+enabled = false
+# local_config_dir = false
+[agents.claude-vscode]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = false
+[agents.antigravity]
+enabled = false
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	ui := &MockUI{
+		NoteFunc: func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == "Approval Mode" {
+				label, ok := approvalModeLabelForValue(ApprovalAll)
+				require.True(t, ok)
+				*current = label
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == "Enable Agents" {
+				*selected = []string{"claude-vscode"}
+			}
+			if title == "Enable Default MCP Servers" {
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardClaudeLocalConfigDirPrompt {
+				*value = true
+			}
+			if title == messages.WizardApplyChangesPrompt {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+
+	err := Run(root, ui, mockSync, "")
+	require.NoError(t, err)
+
+	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	assert.Contains(t, string(data), "local_config_dir = true")
+}
