@@ -11,23 +11,38 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+const agentLayerGoModuleLine = "module github.com/conn-castle/agent-layer"
+
 // resolvePromptServerCommand returns the command and args used to run the internal MCP prompt server.
 // It prefers "go run <root>/cmd/al mcp-prompts" when local source is present,
 // then falls back to globally installed "al mcp-prompts".
 // It returns an error when it cannot resolve a runnable command.
 func resolvePromptServerCommand(sys System, root string) (string, []string, error) {
-	if root != "" {
-		sourcePath := filepath.Join(root, "cmd", "al")
+	sourcePath := filepath.Join(root, "cmd", "al")
+	sourcePresent := false
+	if strings.TrimSpace(root) != "" {
 		info, err := sys.Stat(sourcePath)
 		if err == nil {
 			if !info.IsDir() {
 				return "", nil, fmt.Errorf(messages.SyncPromptServerNotDirFmt, sourcePath)
 			}
+			sourcePresent = true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", nil, fmt.Errorf(messages.SyncCheckPathFmt, sourcePath, err)
+		}
+	}
+
+	sourceRootMatches := false
+	if sourcePresent {
+		match, err := isAgentLayerSourceRoot(sys, root)
+		if err != nil {
+			return "", nil, err
+		}
+		sourceRootMatches = match
+		if sourceRootMatches {
 			if _, err := sys.LookPath("go"); err == nil {
 				return "go", []string{"run", sourcePath, "mcp-prompts"}, nil
 			}
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", nil, fmt.Errorf(messages.SyncCheckPathFmt, sourcePath, err)
 		}
 	}
 
@@ -38,23 +53,15 @@ func resolvePromptServerCommand(sys System, root string) (string, []string, erro
 	if root == "" {
 		return "", nil, fmt.Errorf(messages.SyncMissingPromptServerNoRoot)
 	}
-
-	sourcePath := filepath.Join(root, "cmd", "al")
-	info, err := sys.Stat(sourcePath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil, fmt.Errorf(messages.SyncMissingPromptServerSourceFmt, sourcePath)
-		}
-		return "", nil, fmt.Errorf(messages.SyncCheckPathFmt, sourcePath, err)
+	if !sourcePresent {
+		return "", nil, fmt.Errorf(messages.SyncMissingPromptServerSourceFmt, sourcePath)
 	}
-	if !info.IsDir() {
-		return "", nil, fmt.Errorf(messages.SyncPromptServerNotDirFmt, sourcePath)
+	if !sourceRootMatches {
+		return "", nil, fmt.Errorf(messages.SyncPromptServerModuleMismatchFmt, root)
 	}
-
 	if _, err := sys.LookPath("go"); err != nil {
 		return "", nil, fmt.Errorf(messages.SyncMissingGoForPromptServerFmt, err)
 	}
-
 	return "go", []string{"run", sourcePath, "mcp-prompts"}, nil
 }
 
@@ -67,4 +74,21 @@ func resolvePromptServerEnv(root string) (OrderedMap[string], error) {
 	return OrderedMap[string]{
 		config.BuiltinRepoRootEnvVar: trimmedRoot,
 	}, nil
+}
+
+func isAgentLayerSourceRoot(sys System, root string) (bool, error) {
+	goModPath := filepath.Join(root, "go.mod")
+	content, err := sys.ReadFile(goModPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf(messages.SyncReadFailedFmt, goModPath, err)
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.TrimSpace(line) == agentLayerGoModuleLine {
+			return true, nil
+		}
+	}
+	return false, nil
 }

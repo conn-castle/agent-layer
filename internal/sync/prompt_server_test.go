@@ -65,6 +65,12 @@ func TestResolvePromptServerCommandFallsBackToGoRun(t *testing.T) {
 			}
 			return nil, os.ErrNotExist
 		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			if name == filepath.Join(root, "go.mod") {
+				return []byte("module github.com/conn-castle/agent-layer\n"), nil
+			}
+			return nil, os.ErrNotExist
+		},
 	}
 
 	command, args, err := resolvePromptServerCommand(sys, root)
@@ -97,6 +103,12 @@ func TestResolvePromptServerCommandPrefersGoRunWhenSourceExists(t *testing.T) {
 		StatFunc: func(name string) (os.FileInfo, error) {
 			if name == filepath.Join(root, "cmd", "al") {
 				return &mockFileInfo{isDir: true}, nil
+			}
+			return nil, os.ErrNotExist
+		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			if name == filepath.Join(root, "go.mod") {
+				return []byte("module github.com/conn-castle/agent-layer\n"), nil
 			}
 			return nil, os.ErrNotExist
 		},
@@ -135,6 +147,12 @@ func TestResolvePromptServerCommandFallsBackToAlWhenGoMissing(t *testing.T) {
 			}
 			return nil, os.ErrNotExist
 		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			if name == filepath.Join(root, "go.mod") {
+				return []byte("module github.com/conn-castle/agent-layer\n"), nil
+			}
+			return nil, os.ErrNotExist
+		},
 	}
 
 	command, args, err := resolvePromptServerCommand(sys, root)
@@ -162,11 +180,84 @@ func TestResolvePromptServerCommandMissingGo(t *testing.T) {
 			}
 			return nil, os.ErrNotExist
 		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			if name == filepath.Join(root, "go.mod") {
+				return []byte("module github.com/conn-castle/agent-layer\n"), nil
+			}
+			return nil, os.ErrNotExist
+		},
 	}
 
 	_, _, err := resolvePromptServerCommand(sys, root)
 	if err == nil {
 		t.Fatalf("expected error")
+	}
+}
+
+func TestResolvePromptServerCommandNonAgentLayerRootFallsBackToAl(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		LookPathFunc: func(file string) (string, error) {
+			switch file {
+			case "go":
+				return "/usr/bin/go", nil
+			case "al":
+				return "/usr/local/bin/al", nil
+			default:
+				return "", errors.New("unexpected lookup")
+			}
+		},
+		StatFunc: func(name string) (os.FileInfo, error) {
+			if name == filepath.Join(root, "cmd", "al") {
+				return &mockFileInfo{isDir: true}, nil
+			}
+			return nil, os.ErrNotExist
+		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			if name == filepath.Join(root, "go.mod") {
+				return []byte("module example.com/other\n"), nil
+			}
+			return nil, os.ErrNotExist
+		},
+	}
+
+	command, args, err := resolvePromptServerCommand(sys, root)
+	if err != nil {
+		t.Fatalf("resolvePromptServerCommand error: %v", err)
+	}
+	if command != "al" {
+		t.Fatalf("expected al, got %q", command)
+	}
+	if len(args) != 1 || args[0] != "mcp-prompts" {
+		t.Fatalf("unexpected args: %#v", args)
+	}
+}
+
+func TestResolvePromptServerCommandNonAgentLayerRootErrorsWhenAlMissing(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		LookPathFunc: func(file string) (string, error) {
+			return "", errors.New("missing")
+		},
+		StatFunc: func(name string) (os.FileInfo, error) {
+			if name == filepath.Join(root, "cmd", "al") {
+				return &mockFileInfo{isDir: true}, nil
+			}
+			return nil, os.ErrNotExist
+		},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			if name == filepath.Join(root, "go.mod") {
+				return []byte("module example.com/other\n"), nil
+			}
+			return nil, os.ErrNotExist
+		},
+	}
+
+	_, _, err := resolvePromptServerCommand(sys, root)
+	if err == nil {
+		t.Fatal("expected error")
 	}
 }
 
