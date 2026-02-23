@@ -173,7 +173,7 @@ Incomplete:
 - [x] vsc-launch (Priority: High, Area: documentation / launchers): Produced architecture documentation in `docs/architecture/vscode-launch.md`, linked from contributor docs.
 - [ ] websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
 - [ ] web-seo (Priority: Medium, Area: website / marketing): Update website metadata, SEO tags, Open Graph / social cards, and favicon for professional visibility. (From ISSUES)
-- [ ] web-docs-copy-btn (Priority: Medium, Area: website / UX): Add a "Copy for Agent" button to each documentation page that copies clean, LLM-friendly page content to the clipboard. (From BACKLOG)
+- [ ] web-docs-copy-btn (Priority: Medium, Area: website / UX): Add a "Copy for Agent" button to each documentation page that copies clean, LLM-optimized page content to the clipboard. (From BACKLOG)
 - [ ] analytics (Priority: Medium, Area: website): Integrate privacy-respecting analytics (e.g., Plausible) to monitor visitor patterns and guide content priorities. (From BACKLOG)
 - [ ] public-roadmap (Priority: Medium, Area: documentation): Transform the internal roadmap into a public-facing page on the website that communicates project direction and upcoming features. (From BACKLOG f1a2b3c)
 
@@ -192,7 +192,7 @@ Incomplete:
 - web-docs-copy-btn
   Description: Add a button to the top of each documentation page that copies the page text/markdown to the clipboard. Show a brief success indicator (e.g., toast or icon change).
   Acceptance criteria: Documentation pages feature a visible button; clicking it copies clean content to the clipboard.
-  Notes: Ensure the copied content is well-formatted for LLM consumption (no nav, no boilerplate).
+  Notes: Ensure the copied content is well-formatted for LLM consumption (no navigation elements, no boilerplate).
 - analytics
   Description: Integrate tracking and analytics into the project website.
   Acceptance criteria: Visitor data is accessible via an analytics dashboard. Privacy compliance (GDPR/CCPA) is addressed.
@@ -306,8 +306,8 @@ Incomplete:
 ## Phase 17 — Onboarding and developer experience
 
 ### Goal
-- New users can go from zero to productive in under 5 minutes.
-- Getting-started experience is best-in-class with clear guides, examples, and helpful error messages.
+- New users can reach initial productivity within five minutes.
+- Getting-started experience is exemplary, with clear guides, examples, and actionable error messages.
 
 ### Tasks
 - [ ] quickstart-guide: Create a comprehensive quickstart guide with step-by-step instructions covering install, `al init`, first sync, and launching an agent.

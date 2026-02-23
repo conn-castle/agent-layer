@@ -18,7 +18,7 @@ Comparison:
 | MCP servers added in one client and forgotten in another | generated MCP config for every supported client |
 | no single place to review or audit changes | audit in version control |
 
-If this saves you time, please star the repo. Stars help new users find the project.
+If Agent Layer improves your workflow, please consider starring the repository. Stars help new users discover the project.
 
 ---
 

@@ -199,6 +199,18 @@ Tradeoffs (VS Code without launcher, with `local_config_dir` enabled):
 
 If you want the fully managed setup in VS Code with `local_config_dir` enabled, use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CLAUDE_CONFIG_DIR`.
 
+### Gemini trust warning: `trustedFolders.json`
+
+When Gemini is enabled, `al sync` attempts to add the repo path to `~/.gemini/trustedFolders.json` so Gemini CLI can load repo-local `.gemini/settings.json`.
+
+If this write fails, sync still completes and emits a non-fatal warning. Common causes are missing home-directory permissions or a corrupt `trustedFolders.json` file.
+
+Fix:
+
+1. In Gemini CLI, trust the workspace via `/permissions`.
+2. Or manually add your repo path to `~/.gemini/trustedFolders.json`.
+3. Re-run `al sync` and verify the warning is gone.
+
 ### Client CLI not found
 
 Install the target client CLI (Gemini, Claude, Codex, VS Code, Antigravity) and ensure it is available on your `PATH`.

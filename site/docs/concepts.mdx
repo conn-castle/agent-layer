@@ -80,11 +80,24 @@ Agent Layer avoids that by forcing everything through a single canonical input. 
 
 If you see drift, move the change into `.agent-layer/` and regenerate.
 
+### Agent-specific overrides (escape hatch)
+
+`agents.claude.agent_specific` and `agents.codex.agent_specific` are optional escape hatches for client-specific settings that are not first-class Agent Layer keys yet.
+
+Use them sparingly:
+
+- Colliding keys intentionally override Agent Layer-managed values.
+- Sync emits a warning whenever agent-specific keys overlap managed keys.
+- Claude agent-specific values are shallow-merged at the top level (`nested_object` values are replaced, not deep-merged).
+- Codex agent-specific values are written at the TOML root before managed MCP tables so top-level overrides stay explicit.
+
+If you find yourself carrying many permanent overrides, that is usually a sign the setting should become a first-class key in `.agent-layer/config.toml`.
+
 ## Approvals and safety
 
-Approvals control whether an agent can execute shell commands and MCP tools without prompting. This is a safety layer that lets teams choose how much autonomy they want per repo. Think of approvals as the guardrails that let you scale trust without losing control: generous enough for speed, explicit enough for safety.
+Approvals control whether an agent can execute shell commands and MCP tools without prompting. They provide a safety layer that allows teams to choose the appropriate autonomy level for each repository.
 
-This is where “power” becomes “professional.” The point is not to slow you down; it is to make speed safe. A personal scratch repo can be permissive, while a production repo can require explicit confirmation. The same CLI supports both.
+Approvals keep high-velocity workflows safe. A personal scratch repository can remain permissive, while a production repository can require explicit confirmation. The same CLI supports both modes.
 
 The best approvals setup is the one you do not have to think about: tight enough to prevent accidents, permissive enough that safe work stays fast.
 

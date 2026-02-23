@@ -95,7 +95,7 @@ VS Code supports `headers` for HTTP MCP servers. For secrets, prefer using `inpu
 
 Notes:
 
-* Agent Layer can generate the `inputs` block automatically when a header value is configured as an env-var reference in `.agent-layer/config.toml` (see Implementation Strategy).
+* Agent Layer currently writes headers using `${env:VAR}` placeholders in `.vscode/mcp.json` (it does not auto-generate an `inputs` block).
 
 ### 4) Codex CLI (and Codex IDE extension)
 

@@ -299,6 +299,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al upgrade` | Apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, configurable with `--diff-lines`). |
 | `al upgrade plan` | Show a dry-run, plain-language categorized upgrade plan with line-level diff previews (configurable with `--diff-lines`). |
 | `al upgrade prefetch` | Download and cache a release binary ahead of time (use `--version X.Y.Z` explicitly on dev builds). |
+| `al upgrade rollback --list` | List available upgrade snapshot IDs and statuses before rollback. |
 | `al upgrade rollback <snapshot-id>` | Restore an applied upgrade snapshot by ID (snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/`). |
 | `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
@@ -377,7 +378,7 @@ In non-interactive environments, the wizard is skipped.
 - Never overwrites `.agent-layer/config.toml` or `.agent-layer/.env`
 - Creates an automatic snapshot for managed upgrade targets and auto-rolls back if an upgrade step fails
 - Stores snapshots under `.agent-layer/state/upgrade-snapshots/`
-- Supports manual restore of applied snapshots via `al upgrade rollback <snapshot-id>`
+- Supports snapshot discovery and manual restore via `al upgrade rollback --list` and `al upgrade rollback <snapshot-id>`
 
 Use `--diff-lines N` to raise the per-file diff preview cap (default: 40 lines).
 For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
@@ -386,6 +387,7 @@ For a concise team/CI runbook, see [Upgrade checklist](./upgrade-checklist).
 
 `al upgrade rollback <snapshot-id>` restores a previously applied managed-file snapshot.
 
+- `al upgrade rollback --list` shows available snapshot IDs and statuses
 - Snapshot IDs are the `.json` filename stems in `.agent-layer/state/upgrade-snapshots/`
 - Only snapshots in `applied` status are rollback-eligible
 - Rollback fails loudly when a snapshot is missing, malformed, or non-rollbackable
