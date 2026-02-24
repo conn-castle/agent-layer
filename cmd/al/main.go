@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 )
 
 var maybeExecFunc = dispatch.MaybeExec
+var executeFunc = execute
 
 // Version, Commit, and BuildDate are overridden at build time.
 var (
@@ -71,15 +73,35 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 				exit(silent.Code)
 				return
 			}
+			var exitErr *exec.ExitError
+			if errors.As(err, &exitErr) {
+				_, _ = fmt.Fprintln(stderr, err)
+				code := exitErr.ExitCode()
+				if code <= 0 {
+					code = 1
+				}
+				exit(code)
+				return
+			}
 			_, _ = fmt.Fprintln(stderr, err)
 			exit(1)
 			return
 		}
 	}
-	if err := execute(args, stdout, stderr); err != nil {
+	if err := executeFunc(args, stdout, stderr); err != nil {
 		var silent *SilentExitError
 		if errors.As(err, &silent) {
 			exit(silent.Code)
+			return
+		}
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			_, _ = fmt.Fprintln(stderr, err)
+			code := exitErr.ExitCode()
+			if code <= 0 {
+				code = 1
+			}
+			exit(code)
 			return
 		}
 		_, _ = fmt.Fprintln(stderr, err)

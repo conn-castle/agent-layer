@@ -27,11 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-02-23 wizard-claude-model-catalog-stale: Wizard Claude model options are stale/non-canonical
-    Priority: High. Area: wizard / model selection correctness.
-    Description: Wizard currently offers values like `sonnet-4.6` and `opus-4.6`, but Claude Code supports aliases `default`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`, `opusplan` (and full model names like `claude-sonnet-4-6` / `claude-opus-4-6`).
-    Next step: Update `agents.claude.model` field catalog and wizard prompts/tests to use the canonical supported selectors above, removing stale values.
-
 - Issue 2026-02-23 reasoning-effort-parity: Support reasoning effort for Claude and Gemini when available
     Priority: Medium. Area: clients / model configuration.
     Description: We need consistent handling of `reasoning_effort` for Claude (supported now) and Gemini when the selected model/provider exposes that capability, instead of uneven or missing support across clients.
@@ -52,20 +47,10 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: The config currently mixes naming styles (for example `agents.claude-vscode` vs `agents.codex.agent_specific` and `reasoning_effort`), which makes the schema feel inconsistent and harder to learn.
     Next step: Define one canonical key style based on TOML/client ecosystem best practice, then migrate all config keys, templates, docs, and tests to that convention.
 
-- Issue 2026-02-20 gemini-http-transport-url: Gemini sync maps SSE servers to httpUrl instead of url
-    Priority: Medium. Area: sync / Gemini MCP.
-    Description: `buildGeminiSettings` in `internal/sync/gemini.go:98-103` always maps HTTP transport servers to `httpUrl` (streamable HTTP) regardless of the resolved `HTTPTransport` value. Gemini CLI distinguishes `httpUrl` (streamable HTTP) from `url` (SSE). The default `http_transport` is `"sse"` (`resolvers.go:76-78`), so any custom HTTP server without explicit `http_transport = "streamable"` would be written to the wrong field. Current seeded defaults are unaffected because `tavily` explicitly sets `http_transport = "streamable"`.
-    Next step: Check `server.HTTPTransport` in the Gemini build loop: use `url` for SSE, `httpUrl` for streamable. Add test coverage for both transport sub-types.
-
 - Issue 2026-02-20 wizard-config-order-preferences: Audit wizard config write order and align it to preferred priority
     Priority: Medium. Area: wizard / UX.
     Description: Wizard output currently follows canonical template order, and the current sequence may not match a priority order optimized for human readers/editors of `config.toml`.
     Next step: Audit the current wizard-managed section/server ordering, gather preferred order from the user, then update template/patch ordering logic and tests to enforce that sequence.
-
-- Issue 2026-02-20 exit-code-flatten: Subprocess exit codes flattened to 1 by all client launchers
-    Priority: Medium. Area: clients / UX.
-    Description: `al claude`, `al gemini`, `al codex`, etc. all exit with code 1 regardless of the subprocess's actual exit code. The subprocess error is wrapped via `fmt.Errorf` and cobra's top-level handler calls `os.Exit(1)` for any error. E2E test confirmed: mock exits 42, al claude exits 1. Users and scripts cannot distinguish between different failure modes based on exit code.
-    Next step: Type-assert `*exec.ExitError` in launch code, extract `.ExitCode()`, and pass it to `os.Exit()` for subprocess failures. Update e2e test to assert propagated code.
 
 - Issue 2026-02-20 wizard-profile-silent-overwrite: Wizard profile mode silently overwrites corrupt config without detection or warning
     Priority: Low. Area: wizard / UX.
@@ -103,11 +88,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: install / maintainability.
     Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
     Next step: Audit current method count (Phase 11 is complete). If it exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`). Scheduled in Phase 13 (maintenance).
-
-- Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
-    Priority: Medium. Area: website / marketing.
-    Description: The website needs professional metadata, SEO optimization, and a proper favicon to improve visibility and professional appearance.
-    Next step: Audit `site/` for missing meta tags and favicon, then implement them.
 
 - Issue 2026-02-08 tmpl-mk: Slash-command templates reference non-existent Makefile targets
     Priority: Low. Area: templates / developer experience.

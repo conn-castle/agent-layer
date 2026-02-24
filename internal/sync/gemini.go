@@ -22,6 +22,7 @@ type geminiMCPServer struct {
 	Command string             `json:"command,omitempty"`
 	Args    []string           `json:"args,omitempty"`
 	Env     OrderedMap[string] `json:"env,omitempty"`
+	URL     string             `json:"url,omitempty"`
 	HTTPURL string             `json:"httpUrl,omitempty"`
 	Headers OrderedMap[string] `json:"headers,omitempty"`
 	Trust   *bool              `json:"trust,omitempty"`
@@ -103,8 +104,14 @@ func buildGeminiSettings(sys System, project *config.ProjectConfig) (*geminiSett
 		entry := geminiMCPServer{
 			Command: server.Command,
 			Args:    server.Args,
-			HTTPURL: server.URL,
 			Trust:   &trust,
+		}
+		if server.Transport == config.TransportHTTP {
+			if server.HTTPTransport == "streamable" {
+				entry.HTTPURL = server.URL
+			} else {
+				entry.URL = server.URL
+			}
 		}
 		if len(server.Headers) > 0 {
 			headers := make(OrderedMap[string], len(server.Headers))

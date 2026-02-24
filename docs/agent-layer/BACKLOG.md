@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-02-23 wizard-back-escape: Allow users to go back during wizard by pressing escape
+    Priority: Medium. Area: wizard / UX
+    Description: Allow users to navigate back to the previous step in the `al wizard` flow by pressing the Escape key.
+    Acceptance criteria: Pressing Escape during a wizard prompt returns to the previous step. If at the first step, it should behave as an exit or show a confirmation.
+    Notes: Requires investigating how the wizard handles input and state transitions.
+
 - Backlog 2026-02-19 readable-upgrade-diff: Improve upgrade diff readability with color coding
     Priority: Medium. Area: upgrades / UX
     Description: Improve upgrade diff formatting so users can quickly and confidently understand what changed.
