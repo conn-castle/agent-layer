@@ -1,6 +1,27 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.8 - 2026-02-24
+
+### Added
+- Wizard back-navigation support: pressing `Esc` now moves to the previous step, with explicit first-step exit confirmation and deterministic state rollback behavior for partial selections.
+- Config guardrail test for required fields: automated enforcement now checks that newly required config fields have matching `config_set_default` migration coverage (with explicit legacy baseline allowlist).
+- Claude reasoning-effort support in wizard/config/sync paths (`low|medium|high`), including projection into `.claude/settings.json` as `effortLevel`.
+
+### Changed
+- Wizard-managed `config.toml` writes now use an explicit preferred section order policy (`approvals`, enabled agents, `mcp`, `warnings`) instead of implicitly coupling ordering to template parse order.
+- Upgrade diff output is now colorized in interactive terminals for better scanability (adds/removes/hunks), with plain-text fallback preserved for non-interactive and no-color environments.
+- Wizard profile apply flow now warns when replacing an existing TOML-corrupt `.agent-layer/config.toml`.
+
+### Fixed
+- Prevented hidden behavior drift in multiline TOML patching by refactoring duplicated state tracking into a shared iterator with regression coverage across call sites.
+- Gemini `reasoning_effort` is now rejected explicitly with a clear validation error instead of allowing ambiguous/unsupported behavior.
+- Claude reasoning-effort validation now fails loudly for invalid option values and unsupported model selections.
+
+### Improved
+- Expanded test coverage for wizard back-navigation state transitions, profile corruption warning paths, reasoning-effort capability validation, Claude sync projection behavior, and upgrade diff color/no-color rendering.
+- Updated project memory/docs (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `README.md`) to reflect completed sprint scope and release-facing behavior.
+
 ## v0.8.7 - 2026-02-24
 
 ### Added
