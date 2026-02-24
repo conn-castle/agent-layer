@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -329,5 +330,120 @@ func TestWriteUpgradeSkippedCategoryNotes_NotExplicit(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("expected no output for non-explicit policy, got %q", buf.String())
+	}
+}
+
+func TestBuildUpgradePrompter_ConfigSetDefaultFallbackAcceptDecline(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
+
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
+
+	accepted, err := p.ConfigSetDefault("new.required", "alpha", "needed for test", nil)
+	if err != nil {
+		t.Fatalf("ConfigSetDefault accept: %v", err)
+	}
+	if accepted != "alpha" {
+		t.Fatalf("accepted value = %v, want %q", accepted, "alpha")
+	}
+
+	_, err = p.ConfigSetDefault("new.required", "beta", "needed for test", nil)
+	if err == nil || !strings.Contains(err.Error(), "user declined default value") {
+		t.Fatalf("expected decline error, got %v", err)
+	}
+}
+
+func TestBuildUpgradePrompter_ConfigSetDefaultBypassesPromptWhenYes(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true}, nil)
+	value, err := p.ConfigSetDefault("new.required", true, "needed for test", &config.FieldDef{
+		Key:  "new.required",
+		Type: config.FieldBool,
+	})
+	if err != nil {
+		t.Fatalf("ConfigSetDefault yes-mode: %v", err)
+	}
+	if value != true {
+		t.Fatalf("value = %v, want true", value)
+	}
+}
+
+func TestBuildUpgradePrompter_OverwriteAllUnifiedFallbackPrompts(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
+
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
+	managed, memory, err := p.OverwriteAllUnified(
+		[]install.DiffPreview{{Path: ".agent-layer/commands.allow"}},
+		[]install.DiffPreview{{Path: "docs/agent-layer/ROADMAP.md"}},
+	)
+	if err != nil {
+		t.Fatalf("OverwriteAllUnified fallback: %v", err)
+	}
+	if !managed {
+		t.Fatal("expected managed overwrite approval")
+	}
+	if memory {
+		t.Fatal("expected memory overwrite rejection")
+	}
+}
+
+func TestPrintDiffPreviews_WriteError(t *testing.T) {
+	out := &errorWriter{failAfter: 0}
+	err := printDiffPreviews(out, "header", []install.DiffPreview{{Path: "a"}})
+	if err == nil || !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("expected write failure, got %v", err)
+	}
+}
+
+func TestWriteReadinessSection_TruncatesDetails(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []install.UpgradeReadinessCheck{
+		{
+			ID:      "unrecognized_config_keys",
+			Summary: "summary ignored for known IDs",
+			Details: []string{"one", "two", "three", "four"},
+		},
+	}
+
+	if err := writeReadinessSection(&buf, checks); err != nil {
+		t.Fatalf("writeReadinessSection: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "recommendation:") {
+		t.Fatalf("expected recommendation line, got:\n%s", output)
+	}
+	if !strings.Contains(output, "note: ... and 1 more") {
+		t.Fatalf("expected detail truncation line, got:\n%s", output)
+	}
+}
+
+func TestWriteUpgradeSummary_NoReadinessWarnings(t *testing.T) {
+	var buf bytes.Buffer
+	plan := install.UpgradePlan{
+		MigrationReport: install.UpgradeMigrationReport{
+			Entries: []install.UpgradeMigrationEntry{
+				{Status: install.UpgradeMigrationStatusPlanned},
+				{Status: install.UpgradeMigrationStatusNoop},
+			},
+		},
+	}
+	if err := writeUpgradeSummary(&buf, plan); err != nil {
+		t.Fatalf("writeUpgradeSummary: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "migrations planned: 1") {
+		t.Fatalf("expected planned migration count, got:\n%s", output)
+	}
+	if !strings.Contains(output, "needs review before apply: no") {
+		t.Fatalf("expected no-review summary, got:\n%s", output)
 	}
 }

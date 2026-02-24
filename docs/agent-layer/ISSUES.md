@@ -32,16 +32,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: We need consistent handling of `reasoning_effort` for Claude (supported now) and Gemini when the selected model/provider exposes that capability, instead of uneven or missing support across clients.
     Next step: Add capability-aware mapping and validation per client/model, then add tests covering supported and unsupported paths so behavior fails loudly when unsupported.
 
-- Issue 2026-02-23 upg-diff-unchanged-lines: Upgrade diff preview marks unchanged lines as additions/removals
-    Priority: High. Area: upgrade / diff preview correctness.
-    Description: `al upgrade` diff output showed lines rendered as both `-` and `+` even though content appears unchanged (for example `/.gemini/`, `/.claude/`, and trailing-space-only changes in `COMMANDS.md`), making the preview misleading.
-    Next step: Investigate diff generation/normalization in upgrade managed-file comparison, then ensure unchanged lines are not emitted as content changes (or explicitly label whitespace-only changes).
-
-- Issue 2026-02-23 upg-snapshot-binary-support: Upgrade snapshot rejects binary files in captured path
-    Priority: High. Area: upgrade / snapshot reliability.
-    Description: Running `al upgrade` failed with `unsupported file type for snapshot path .../docs/assets/icon.png`, indicating snapshot capture cannot handle non-text assets inside selected paths.
-    Next step: Update snapshot capture/restore to support arbitrary file types (including binary) across nested paths; add regression test coverage using a PNG fixture.
-
 - Issue 2026-02-22 config-key-style-unify: Config key naming mixes kebab-case and snake_case
     Priority: Medium. Area: config schema / UX.
     Description: The config currently mixes naming styles (for example `agents.claude-vscode` vs `agents.codex.agent_specific` and `reasoning_effort`), which makes the schema feel inconsistent and harder to learn.
@@ -56,12 +46,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: wizard / UX.
     Description: `al wizard --profile X --yes` reads the existing config.toml as raw bytes (never parses as TOML), shows a diff preview, and overwrites with the profile. It does not detect or warn about TOML corruption. This is by design (profile mode is a forceful replacement), but may surprise users who don't realize their custom config was lost.
     Next step: Consider adding a warning when the existing config fails TOML parsing, so users know they're replacing a corrupt file. The backup (config.toml.bak) is already created.
-
-- Issue 2026-02-19 upg-snapshot-recover-version-target: Snapshot recovery restores to prior version, not upgrade start version
-    Priority: High. Area: install / rollback correctness.
-    Description: During upgrade flows that create a snapshot, invoking recovery does not restore the environment to the version at upgrade start; it restores only to the immediately prior version state. This violates the expectation that upgrade/rollback flows are always safe and dependable.
-    Next step: E2E scenario 055 covers the basic upgrade/rollback path and asserts version restoration. Investigate edge cases where "prior version" differs from "upgrade-start version", add a dedicated test, and enforce the correct recovery target.
-    Notes: Reliability contract: `al upgrade` must always work, including rollback correctness.
 
 - Issue 2026-02-19 toml-multiline-state-dup: Multiline TOML state tracking duplicated across 7 functions in wizard/patch.go
     Priority: Low. Area: wizard / maintainability.

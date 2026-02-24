@@ -480,6 +480,88 @@ func TestRollbackUpgradeSnapshotState_NoTargets(t *testing.T) {
 	}
 }
 
+func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir docs/agent-layer: %v", err)
+	}
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write current version: %v", err)
+	}
+	if err := os.WriteFile(roadmapPath, []byte("new roadmap\n"), 0o644); err != nil {
+		t.Fatalf("write current roadmap: %v", err)
+	}
+
+	filePerm := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "always-restore-version",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &filePerm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			},
+			{
+				Path:          "docs/agent-layer/ROADMAP.md",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &filePerm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old roadmap\n")),
+			},
+		},
+	}
+
+	// Simulate a target list that omits .agent-layer/al.version.
+	if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, []string{roadmapPath}); err != nil {
+		t.Fatalf("rollbackUpgradeSnapshotState: %v", err)
+	}
+
+	versionBytes, err := os.ReadFile(versionPath)
+	if err != nil {
+		t.Fatalf("read restored version: %v", err)
+	}
+	if string(versionBytes) != "0.5.0\n" {
+		t.Fatalf("restored version = %q, want %q", string(versionBytes), "0.5.0\n")
+	}
+	roadmapBytes, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatalf("read restored roadmap: %v", err)
+	}
+	if string(roadmapBytes) != "old roadmap\n" {
+		t.Fatalf("restored roadmap = %q, want %q", string(roadmapBytes), "old roadmap\n")
+	}
+}
+
+func TestRollbackUpgradeSnapshotState_VersionEntryPathError(t *testing.T) {
+	root := string([]byte{0})
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "invalid-version-entry",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          pinVersionRelPath,
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			},
+		},
+	}
+
+	err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, nil)
+	if err == nil {
+		t.Fatal("expected path resolution error")
+	}
+}
+
 func TestRollbackUpgradeSnapshotState_RemoveErrorFallbackRelativePath(t *testing.T) {
 	root := string([]byte{0})
 	target := filepath.Join(t.TempDir(), "target.txt")
@@ -1089,18 +1171,55 @@ func TestCaptureUpgradeSnapshotTarget_StatError(t *testing.T) {
 	}
 }
 
-func TestCaptureUpgradeSnapshotDirectory_UnsupportedSymlink(t *testing.T) {
+func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkedBinaryFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer", "tmp")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
-	target := filepath.Join(root, ".agent-layer", "target.txt")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+	target := filepath.Join(root, ".agent-layer", "target.bin")
+	targetBytes := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 0x01, 0x02}
+	if err := os.WriteFile(target, targetBytes, 0o644); err != nil {
 		t.Fatalf("write target file: %v", err)
 	}
-	link := filepath.Join(dir, "link.txt")
+	link := filepath.Join(dir, "icon.png")
 	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	entries := make(map[string]upgradeSnapshotEntry)
+	if err := inst.captureUpgradeSnapshotDirectory(dir, entries); err != nil {
+		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
+	}
+	entry, ok := entries[".agent-layer/tmp/icon.png"]
+	if !ok {
+		t.Fatalf("expected symlinked binary snapshot entry, got keys: %v", entries)
+	}
+	if entry.Kind != upgradeSnapshotEntryKindFile {
+		t.Fatalf("entry kind = %q, want %q", entry.Kind, upgradeSnapshotEntryKindFile)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(entry.ContentBase64)
+	if err != nil {
+		t.Fatalf("decode captured binary entry: %v", err)
+	}
+	if !bytes.Equal(decoded, targetBytes) {
+		t.Fatalf("decoded binary bytes mismatch: got %v want %v", decoded, targetBytes)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_RejectsSymlinkToDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	targetDir := filepath.Join(root, ".agent-layer", "target-dir")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	link := filepath.Join(dir, "dir-link")
+	if err := os.Symlink(targetDir, link); err != nil {
 		t.Fatalf("create symlink: %v", err)
 	}
 
@@ -1108,6 +1227,30 @@ func TestCaptureUpgradeSnapshotDirectory_UnsupportedSymlink(t *testing.T) {
 	err := inst.captureUpgradeSnapshotDirectory(dir, map[string]upgradeSnapshotEntry{})
 	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
 		t.Fatalf("expected unsupported file type error, got %v", err)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_SymlinkStatError(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	target := filepath.Join(root, ".agent-layer", "target.bin")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write target file: %v", err)
+	}
+	link := filepath.Join(dir, "broken.png")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	faults := newFaultSystem(RealSystem{})
+	faults.statErrs[normalizePath(link)] = errors.New("stat failed")
+	inst := &installer{root: root, sys: faults}
+	err := inst.captureUpgradeSnapshotDirectory(dir, map[string]upgradeSnapshotEntry{})
+	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
+		t.Fatalf("expected stat failure, got %v", err)
 	}
 }
 

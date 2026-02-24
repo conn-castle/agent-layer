@@ -392,14 +392,29 @@ func (inst *installer) captureUpgradeSnapshotDirectory(rootPath string, entries 
 			})
 			return nil
 		}
-		if !info.Mode().IsRegular() {
+		mode := info.Mode()
+		if mode&os.ModeSymlink != 0 {
+			resolved, statErr := inst.sys.Stat(path)
+			if statErr != nil {
+				return fmt.Errorf(messages.InstallFailedStatFmt, path, statErr)
+			}
+			if resolved.IsDir() || !resolved.Mode().IsRegular() {
+				relPath, relErr := inst.repoRelativePath(path)
+				if relErr != nil {
+					return relErr
+				}
+				return fmt.Errorf("unsupported file type for snapshot path %s", relPath)
+			}
+			return inst.captureUpgradeSnapshotFile(path, resolved.Mode(), entries)
+		}
+		if !mode.IsRegular() {
 			relPath, relErr := inst.repoRelativePath(path)
 			if relErr != nil {
 				return relErr
 			}
 			return fmt.Errorf("unsupported file type for snapshot path %s", relPath)
 		}
-		return inst.captureUpgradeSnapshotFile(path, info.Mode(), entries)
+		return inst.captureUpgradeSnapshotFile(path, mode, entries)
 	})
 }
 

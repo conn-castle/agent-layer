@@ -112,6 +112,10 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 		return err
 	}
 	scopedTargets := uniqueNormalizedPaths(targets)
+	scopedTargets, err := ensureVersionRollbackTarget(root, snapshot.Entries, scopedTargets)
+	if err != nil {
+		return err
+	}
 	if len(scopedTargets) == 0 {
 		return nil
 	}
@@ -156,6 +160,25 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 	}
 
 	return restoreUpgradeSnapshotEntriesAtRoot(root, sys, filteredEntries)
+}
+
+func ensureVersionRollbackTarget(root string, entries []upgradeSnapshotEntry, targets []string) ([]string, error) {
+	versionEntryPath := ""
+	for _, entry := range entries {
+		if entry.Path == pinVersionRelPath {
+			versionEntryPath = entry.Path
+			break
+		}
+	}
+	if versionEntryPath == "" {
+		return targets, nil
+	}
+
+	versionAbsPath, err := snapshotEntryAbsPath(root, versionEntryPath)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueNormalizedPaths(append(targets, versionAbsPath)), nil
 }
 
 func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgradeSnapshotEntry) error {
