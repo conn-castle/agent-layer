@@ -24,6 +24,9 @@ type AgentsConfig struct {
 }
 
 // AgentConfig is for agents that support enablement and model selection.
+// ReasoningEffort is present so the TOML decoder accepts the key without
+// raising an unknown-key error; the validator then provides a specific
+// error message for agents that do not support reasoning effort (e.g. Gemini).
 type AgentConfig struct {
 	Enabled         *bool  `toml:"enabled"`
 	Model           string `toml:"model"`

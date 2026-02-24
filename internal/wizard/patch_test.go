@@ -106,6 +106,20 @@ func TestOrderedWizardSections_UsesPreferredOrderWithTemplateFallback(t *testing
 	require.Equal(t, want, got)
 }
 
+func TestPreferredWizardSectionOrder_CoversAllSupportedAgents(t *testing.T) {
+	agents := SupportedAgents()
+	sectionSet := make(map[string]struct{}, len(preferredWizardSectionOrder))
+	for _, name := range preferredWizardSectionOrder {
+		sectionSet[name] = struct{}{}
+	}
+	for _, agent := range agents {
+		key := "agents." + agent
+		if _, ok := sectionSet[key]; !ok {
+			t.Errorf("SupportedAgents() includes %q but preferredWizardSectionOrder is missing %q", agent, key)
+		}
+	}
+}
+
 func TestPatchConfig_MCPServerOrdering(t *testing.T) {
 	defaults, err := loadDefaultMCPServers()
 	require.NoError(t, err)

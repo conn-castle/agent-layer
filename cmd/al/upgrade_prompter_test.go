@@ -202,7 +202,14 @@ func TestPrintDiffPreviews(t *testing.T) {
 	}
 }
 
-func TestPrintDiffPreviews_ColorizedWhenInteractive(t *testing.T) {
+// enableTestColorOutput configures the fatih/color library and isTerminal stub
+// to force ANSI color output in tests. The fatih/color library reads NO_COLOR
+// at init time and caches the result in color.NoColor, so we must both clear
+// the env var and explicitly set the package-level bool. If fatih/color adds
+// additional environment checks in future versions, this helper may need
+// updating to account for them.
+func enableTestColorOutput(t *testing.T) {
+	t.Helper()
 	t.Setenv("NO_COLOR", "")
 
 	origIsTerminal := isTerminal
@@ -212,6 +219,24 @@ func TestPrintDiffPreviews_ColorizedWhenInteractive(t *testing.T) {
 	origNoColor := color.NoColor
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = origNoColor })
+}
+
+// disableTestColorOutput configures the fatih/color library to suppress ANSI
+// output. See enableTestColorOutput for context on the fatih/color coupling.
+func disableTestColorOutput(t *testing.T) {
+	t.Helper()
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origNoColor := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = origNoColor })
+}
+
+func TestPrintDiffPreviews_ColorizedWhenInteractive(t *testing.T) {
+	enableTestColorOutput(t)
 
 	var buf bytes.Buffer
 	previews := []install.DiffPreview{
@@ -230,13 +255,7 @@ func TestPrintDiffPreviews_ColorizedWhenInteractive(t *testing.T) {
 }
 
 func TestPrintDiffPreviews_NoColorFallback(t *testing.T) {
-	origIsTerminal := isTerminal
-	isTerminal = func() bool { return true }
-	t.Cleanup(func() { isTerminal = origIsTerminal })
-
-	origNoColor := color.NoColor
-	color.NoColor = true
-	t.Cleanup(func() { color.NoColor = origNoColor })
+	disableTestColorOutput(t)
 
 	var buf bytes.Buffer
 	previews := []install.DiffPreview{
@@ -251,15 +270,7 @@ func TestPrintDiffPreviews_NoColorFallback(t *testing.T) {
 }
 
 func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
-	t.Setenv("NO_COLOR", "")
-
-	origIsTerminal := isTerminal
-	isTerminal = func() bool { return true }
-	t.Cleanup(func() { isTerminal = origIsTerminal })
-
-	origNoColor := color.NoColor
-	color.NoColor = false
-	t.Cleanup(func() { color.NoColor = origNoColor })
+	enableTestColorOutput(t)
 
 	var buf bytes.Buffer
 	preview := install.DiffPreview{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"}

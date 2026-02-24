@@ -691,24 +691,26 @@ func shouldColorizeDiffOutput() bool {
 	return isTerminal() && !color.NoColor
 }
 
+var (
+	diffColorAdded   = color.New(color.FgGreen)
+	diffColorRemoved = color.New(color.FgRed)
+	diffColorHunk    = color.New(color.FgCyan)
+)
+
 func formatUnifiedDiffLine(line string, colorize bool) string {
 	if !colorize {
 		return line
 	}
 	switch {
 	case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
-		return forceColorLine(line, color.FgGreen)
+		return diffColorAdded.Sprint(line)
 	case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
-		return forceColorLine(line, color.FgRed)
+		return diffColorRemoved.Sprint(line)
 	case strings.HasPrefix(line, "@@"):
-		return forceColorLine(line, color.FgCyan)
+		return diffColorHunk.Sprint(line)
 	default:
 		return line
 	}
-}
-
-func forceColorLine(line string, attr color.Attribute) string {
-	return color.New(attr).Sprint(line)
 }
 
 func writeUnifiedDiff(out io.Writer, diff string, colorize bool, indent string) error {

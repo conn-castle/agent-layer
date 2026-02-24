@@ -248,8 +248,12 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
 			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
 		}
+		// Defensively remove any pre-existing file/symlink at the target path.
+		// The rollback reset phase should have already cleared it, but this
+		// prevents EEXIST if the function is called outside a full rollback flow.
+		_ = sys.RemoveAll(absPath)
 		if err := sys.Symlink(entry.LinkTarget, absPath); err != nil {
-			return fmt.Errorf("restore symlink %s: %w", entry.Path, err)
+			return fmt.Errorf(messages.InstallFailedRestoreSymlinkFmt, entry.Path, err)
 		}
 	}
 	return nil

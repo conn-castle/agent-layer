@@ -39,6 +39,7 @@ const (
 	InstallMissingTemplatePathMappingFmt             = "missing template path mapping for %s"
 	InstallSectionAwareMarkerDuplicateFmt            = "section-aware marker %q appears multiple times in %s"
 	InstallSectionAwareMarkerMissingFmt              = "section-aware marker %q missing in %s"
+	InstallFailedRestoreSymlinkFmt                   = "restore symlink %s: %w"
 	InstallUnknownPlanDiffModeFmt                    = "unknown plan diff mode %q"
 
 	// UpdateCreateRequestErrFmt formats request creation errors.
