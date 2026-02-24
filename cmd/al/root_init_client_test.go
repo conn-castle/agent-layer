@@ -261,6 +261,34 @@ func TestSyncCommand_WithWarnings(t *testing.T) {
 	})
 }
 
+func TestSyncCommand_QuietSuppressesWarnings(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoWithWarnings(t, root)
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newSyncCmd()
+		cmd.Flags().Bool("quiet", false, "")
+		if err := cmd.Flags().Set("quiet", "true"); err != nil {
+			t.Fatalf("set quiet flag: %v", err)
+		}
+		var stderr bytes.Buffer
+		cmd.SetErr(&stderr)
+		err := cmd.RunE(cmd, nil)
+		if err == nil {
+			t.Fatal("expected sync to fail with warnings in quiet mode")
+		}
+		var silent *SilentExitError
+		if !errors.As(err, &silent) {
+			t.Fatalf("expected SilentExitError{Code:1}, got %T: %v", err, err)
+		}
+		if silent.Code != 1 {
+			t.Fatalf("expected SilentExitError{Code:1}, got Code:%d", silent.Code)
+		}
+		if stderr.String() != "" {
+			t.Fatalf("expected no stderr output, got %q", stderr.String())
+		}
+	})
+}
+
 func TestWizardCommand(t *testing.T) {
 	originalIsTerminal := isTerminal
 	isTerminal = func() bool { return false }

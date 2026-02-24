@@ -243,8 +243,15 @@ func TestLaunchVSCode_ClearsInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(t *
 	}
 
 	t.Setenv("PATH", binDir)
+	// Filter out any real CLAUDE_CONFIG_DIR so the test controls the only entry.
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
+			env = append(env, e)
+		}
+	}
 	// Inject a stale repo-local CLAUDE_CONFIG_DIR to simulate inheritance.
-	env := append(os.Environ(), "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
+	env = append(env, "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -392,8 +399,15 @@ func TestLaunchVSCode_ClearsCLAUDECONFIGDIRWhenLocalConfigDirDisabled(t *testing
 	}
 
 	t.Setenv("PATH", binDir)
+	// Filter out any real CLAUDE_CONFIG_DIR so the test controls the only entry.
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
+			env = append(env, e)
+		}
+	}
 	// Inject stale repo-local CLAUDE_CONFIG_DIR to simulate inheritance.
-	env := append(os.Environ(), "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
+	env = append(env, "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}

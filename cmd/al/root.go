@@ -27,6 +27,7 @@ func newRootCmd() *cobra.Command {
 	}
 
 	root.Flags().Bool("version", false, messages.RootVersionFlag)
+	root.PersistentFlags().BoolP("quiet", "q", false, messages.RootQuietFlag)
 
 	root.AddCommand(
 		newInitCmd(),

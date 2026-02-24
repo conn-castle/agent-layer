@@ -3,6 +3,7 @@ package dispatch
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -27,8 +28,9 @@ var ErrDispatched = errors.New(messages.DispatchErrDispatched)
 
 // MaybeExec checks for a pinned version and dispatches to it when needed.
 // It returns ErrDispatched if execution was handed off.
-func MaybeExec(args []string, currentVersion string, cwd string, exit func(int)) error {
-	return MaybeExecWithSystem(RealSystem{}, args, currentVersion, cwd, exit)
+func MaybeExec(args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+	strippedArgs := stripQuietFlags(args)
+	return MaybeExecWithSystem(RealSystem{StderrWriter: stderr}, strippedArgs, currentVersion, cwd, exit)
 }
 
 // MaybeExecWithSystem checks for a pinned version and dispatches to it when needed.
@@ -98,6 +100,25 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 		return err
 	}
 	return ErrDispatched
+}
+
+func stripQuietFlags(args []string) []string {
+	if len(args) == 0 {
+		return nil
+	}
+	stripped := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			stripped = append(stripped, args[i:]...)
+			break
+		}
+		if arg == "--quiet" || arg == "-q" || strings.HasPrefix(arg, "--quiet=") {
+			continue
+		}
+		stripped = append(stripped, arg)
+	}
+	return stripped
 }
 
 // normalizeCurrentVersion validates the running build version and returns it in X.Y.Z form.

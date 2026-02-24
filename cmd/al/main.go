@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -22,6 +24,15 @@ var (
 
 func main() {
 	runMain(os.Args, os.Stdout, os.Stderr, os.Exit)
+}
+
+// SilentExitError reports an exit code without emitting error output.
+type SilentExitError struct {
+	Code int
+}
+
+func (e SilentExitError) Error() string {
+	return fmt.Sprintf("exit %d", e.Code)
 }
 
 // execute runs the CLI command with the provided args and output writers.
@@ -45,9 +56,19 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 		exit(1)
 		return
 	}
+	quiet := isQuiet(args, cwd)
+	dispatchStderr := stderr
+	if quiet {
+		dispatchStderr = io.Discard
+	}
 	if !shouldBypassDispatch(args) {
-		if err := maybeExecFunc(args, Version, cwd, exit); err != nil {
+		if err := maybeExecFunc(args, Version, cwd, dispatchStderr, exit); err != nil {
 			if errors.Is(err, dispatch.ErrDispatched) {
+				return
+			}
+			var silent *SilentExitError
+			if errors.As(err, &silent) {
+				exit(silent.Code)
 				return
 			}
 			_, _ = fmt.Fprintln(stderr, err)
@@ -56,6 +77,11 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 		}
 	}
 	if err := execute(args, stdout, stderr); err != nil {
+		var silent *SilentExitError
+		if errors.As(err, &silent) {
+			exit(silent.Code)
+			return
+		}
 		_, _ = fmt.Fprintln(stderr, err)
 		exit(1)
 	}
@@ -93,6 +119,52 @@ func firstCommandArg(args []string) string {
 		return trimmed
 	}
 	return ""
+}
+
+func hasQuietFlag(args []string) bool {
+	for i, arg := range args {
+		if i == 0 {
+			continue
+		}
+		trimmed := strings.TrimSpace(arg)
+		if trimmed == "" {
+			continue
+		}
+		if trimmed == "--" {
+			break
+		}
+		if trimmed == flagQuiet || trimmed == flagQuietShort {
+			return true
+		}
+		if strings.HasPrefix(trimmed, flagQuietPrefix) {
+			value := strings.TrimPrefix(trimmed, flagQuietPrefix)
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				continue
+			}
+			if parsed {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func quietFromConfig(cwd string) bool {
+	rootDir, found, err := findAgentLayerRoot(cwd)
+	if err != nil || !found {
+		return false
+	}
+	paths := config.DefaultPaths(rootDir)
+	cfg, err := config.LoadConfigLenient(paths.ConfigPath)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(cfg.Warnings.NoiseMode), "quiet")
+}
+
+func isQuiet(args []string, cwd string) bool {
+	return hasQuietFlag(args) || quietFromConfig(cwd)
 }
 
 // versionString formats Version with optional commit and build date metadata.

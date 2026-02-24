@@ -27,6 +27,26 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-23 wizard-claude-model-catalog-stale: Wizard Claude model options are stale/non-canonical
+    Priority: High. Area: wizard / model selection correctness.
+    Description: Wizard currently offers values like `sonnet-4.6` and `opus-4.6`, but Claude Code supports aliases `default`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`, `opusplan` (and full model names like `claude-sonnet-4-6` / `claude-opus-4-6`).
+    Next step: Update `agents.claude.model` field catalog and wizard prompts/tests to use the canonical supported selectors above, removing stale values.
+
+- Issue 2026-02-23 reasoning-effort-parity: Support reasoning effort for Claude and Gemini when available
+    Priority: Medium. Area: clients / model configuration.
+    Description: We need consistent handling of `reasoning_effort` for Claude (supported now) and Gemini when the selected model/provider exposes that capability, instead of uneven or missing support across clients.
+    Next step: Add capability-aware mapping and validation per client/model, then add tests covering supported and unsupported paths so behavior fails loudly when unsupported.
+
+- Issue 2026-02-23 upg-diff-unchanged-lines: Upgrade diff preview marks unchanged lines as additions/removals
+    Priority: High. Area: upgrade / diff preview correctness.
+    Description: `al upgrade` diff output showed lines rendered as both `-` and `+` even though content appears unchanged (for example `/.gemini/`, `/.claude/`, and trailing-space-only changes in `COMMANDS.md`), making the preview misleading.
+    Next step: Investigate diff generation/normalization in upgrade managed-file comparison, then ensure unchanged lines are not emitted as content changes (or explicitly label whitespace-only changes).
+
+- Issue 2026-02-23 upg-snapshot-binary-support: Upgrade snapshot rejects binary files in captured path
+    Priority: High. Area: upgrade / snapshot reliability.
+    Description: Running `al upgrade` failed with `unsupported file type for snapshot path .../docs/assets/icon.png`, indicating snapshot capture cannot handle non-text assets inside selected paths.
+    Next step: Update snapshot capture/restore to support arbitrary file types (including binary) across nested paths; add regression test coverage using a PNG fixture.
+
 - Issue 2026-02-22 config-key-style-unify: Config key naming mixes kebab-case and snake_case
     Priority: Medium. Area: config schema / UX.
     Description: The config currently mixes naming styles (for example `agents.claude-vscode` vs `agents.codex.agent_specific` and `reasoning_effort`), which makes the schema feel inconsistent and harder to learn.

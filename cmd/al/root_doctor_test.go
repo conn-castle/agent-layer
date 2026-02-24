@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -249,6 +250,58 @@ func TestDoctorCommand_WithWarnings(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
+func TestDoctorCommand_QuietNoiseModeStillShowsWarnings(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoWithWarnings(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil)
+
+	configToml := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = true
+
+[warnings]
+noise_mode = "quiet"
+instruction_token_threshold = 1
+`
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte(configToml), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var out bytes.Buffer
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		cmd.SetOut(&out)
+		err := cmd.RunE(cmd, nil)
+		if err == nil {
+			t.Fatal("expected doctor to fail when warnings exist")
+		}
+	})
+	if !strings.Contains(out.String(), "WARNING INSTRUCTIONS_TOO_LARGE") {
+		t.Fatalf("expected instructions warning output, got:\n%s", out.String())
+	}
 	if *calls == 0 {
 		t.Fatal("expected update check to run")
 	}

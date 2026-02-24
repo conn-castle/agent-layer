@@ -19,10 +19,13 @@ func newAntigravityCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			passArgs := stripArgsSeparator(args)
+			quiet, passArgs, err := splitQuietArgs(args)
+			if err != nil {
+				return err
+			}
 			return clients.Run(cmd.Context(), root, "antigravity", func(cfg *config.Config) *bool {
 				return cfg.Agents.Antigravity.Enabled
-			}, antigravity.Launch, passArgs, Version)
+			}, antigravity.Launch, quiet, passArgs, Version)
 		},
 	}
 

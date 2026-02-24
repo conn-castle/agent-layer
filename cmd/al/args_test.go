@@ -109,6 +109,73 @@ func TestStripArgsSeparator(t *testing.T) {
 	}
 }
 
+func TestSplitQuietArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantQuiet bool
+		wantArgs  []string
+		wantErr   bool
+	}{
+		{
+			name:      "quiet flag",
+			args:      []string{"--quiet", "--foo"},
+			wantQuiet: true,
+			wantArgs:  []string{"--foo"},
+		},
+		{
+			name:      "quiet shorthand",
+			args:      []string{"-q", "--foo"},
+			wantQuiet: true,
+			wantArgs:  []string{"--foo"},
+		},
+		{
+			name:      "quiet value true",
+			args:      []string{"--quiet=true", "--foo"},
+			wantQuiet: true,
+			wantArgs:  []string{"--foo"},
+		},
+		{
+			name:      "quiet value false consumed",
+			args:      []string{"--quiet=false", "--foo"},
+			wantQuiet: false,
+			wantArgs:  []string{"--foo"},
+		},
+		{
+			name:    "quiet invalid value",
+			args:    []string{"--quiet=maybe"},
+			wantErr: true,
+		},
+		{
+			name:      "quiet after separator",
+			args:      []string{"--", "--quiet"},
+			wantQuiet: false,
+			wantArgs:  []string{"--quiet"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			quiet, gotArgs, err := splitQuietArgs(tt.args)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if quiet != tt.wantQuiet {
+				t.Fatalf("expected quiet=%v, got %v", tt.wantQuiet, quiet)
+			}
+			if strings.Join(gotArgs, ",") != strings.Join(tt.wantArgs, ",") {
+				t.Fatalf("expected args %v, got %v", tt.wantArgs, gotArgs)
+			}
+		})
+	}
+}
+
 func writeArgsStub(t *testing.T, dir string, name string, outputPath string) {
 	t.Helper()
 	path := filepath.Join(dir, name)

@@ -15,7 +15,8 @@ import (
 
 // Result holds the outcome of a sync operation.
 type Result struct {
-	Warnings []warnings.Warning
+	Warnings    []warnings.Warning
+	AllWarnings []warnings.Warning
 }
 
 // Run regenerates all configured outputs for the repo.
@@ -125,13 +126,15 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 
 	// Collect warnings after successful sync, including post-step warnings
 	// so that all warnings pass through noise control.
-	ws, err := collectWarnings(project, postWarnings)
+	rawWarnings, err := collectWarnings(project, postWarnings)
 	if err != nil {
 		return nil, err
 	}
+	filteredWarnings := warnings.ApplyNoiseControl(rawWarnings, project.Config.Warnings.NoiseMode)
 
 	return &Result{
-		Warnings: ws,
+		Warnings:    filteredWarnings,
+		AllWarnings: rawWarnings,
 	}, nil
 }
 
@@ -149,7 +152,7 @@ func collectWarnings(project *config.ProjectConfig, extra []warnings.Warning) ([
 	collected = append(collected, instructionWarnings...)
 	collected = append(collected, policyWarnings...)
 
-	return warnings.ApplyNoiseControl(collected, project.Config.Warnings.NoiseMode), nil
+	return collected, nil
 }
 
 func runSteps(steps []func() error) error {

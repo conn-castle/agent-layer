@@ -27,6 +27,15 @@ func TestApplyNoiseControl_Reduce(t *testing.T) {
 	require.Equal(t, CodePolicyCapabilityMismatch, filtered[1].Code)
 }
 
+func TestApplyNoiseControl_Quiet(t *testing.T) {
+	items := []Warning{
+		{Code: CodeMCPTooManyToolsTotal, NoiseSuppressible: true, Severity: SeverityWarning},
+		{Code: CodeMCPServerUnreachable, Severity: SeverityCritical},
+	}
+	filtered := ApplyNoiseControl(items, NoiseModeQuiet)
+	require.Nil(t, filtered)
+}
+
 func TestApplyNoiseControl_UnknownMode(t *testing.T) {
 	items := []Warning{
 		{Code: CodeMCPTooManyToolsTotal, NoiseSuppressible: true, Severity: SeverityWarning},
