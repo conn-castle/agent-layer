@@ -22,7 +22,9 @@ type System interface {
 }
 
 // RealSystem implements System using the OS and root finder.
-type RealSystem struct{}
+type RealSystem struct {
+	StderrWriter io.Writer
+}
 
 // UserCacheDir returns the default user cache directory.
 func (RealSystem) UserCacheDir() (string, error) {
@@ -55,6 +57,9 @@ func (RealSystem) FindAgentLayerRoot(start string) (string, bool, error) {
 }
 
 // Stderr returns the standard error writer.
-func (RealSystem) Stderr() io.Writer {
+func (r RealSystem) Stderr() io.Writer {
+	if r.StderrWriter != nil {
+		return r.StderrWriter
+	}
 	return os.Stderr
 }

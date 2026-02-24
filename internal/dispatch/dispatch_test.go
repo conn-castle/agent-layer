@@ -266,35 +266,35 @@ func TestCacheRootDir(t *testing.T) {
 
 func TestMaybeExec_NoDispatchNeeded(t *testing.T) {
 	cwd := t.TempDir()
-	err := MaybeExec([]string{"cmd"}, "1.0.0", cwd, func(int) {})
+	err := MaybeExec([]string{"cmd"}, "1.0.0", cwd, io.Discard, func(int) {})
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
 }
 
 func TestMaybeExec_MissingArgs(t *testing.T) {
-	err := MaybeExec([]string{}, "1.0.0", ".", func(int) {})
+	err := MaybeExec([]string{}, "1.0.0", ".", io.Discard, func(int) {})
 	if err == nil || err.Error() != "missing argv[0]" {
 		t.Fatalf("expected missing argv[0], got %v", err)
 	}
 }
 
 func TestMaybeExec_MissingCwd(t *testing.T) {
-	err := MaybeExec([]string{"cmd"}, "1.0.0", "", func(int) {})
+	err := MaybeExec([]string{"cmd"}, "1.0.0", "", io.Discard, func(int) {})
 	if err == nil || err.Error() != "working directory is required" {
 		t.Fatalf("expected working directory required, got %v", err)
 	}
 }
 
 func TestMaybeExec_MissingExit(t *testing.T) {
-	err := MaybeExec([]string{"cmd"}, "1.0.0", ".", nil)
+	err := MaybeExec([]string{"cmd"}, "1.0.0", ".", io.Discard, nil)
 	if err == nil || err.Error() != "exit handler is required" {
 		t.Fatalf("expected exit handler required, got %v", err)
 	}
 }
 
 func TestMaybeExec_InvalidCurrentVersion(t *testing.T) {
-	err := MaybeExec([]string{"cmd"}, "invalid-version", ".", func(int) {})
+	err := MaybeExec([]string{"cmd"}, "invalid-version", ".", io.Discard, func(int) {})
 	if err == nil {
 		t.Fatal("expected error for invalid current version")
 	}
@@ -304,7 +304,7 @@ func TestMaybeExec_DispatchAlreadyActive(t *testing.T) {
 	t.Setenv(EnvShimActive, "1")
 	t.Setenv(EnvVersionOverride, "1.1.0") // Different from current
 
-	err := MaybeExec([]string{"cmd"}, "1.0.0", t.TempDir(), func(int) {})
+	err := MaybeExec([]string{"cmd"}, "1.0.0", t.TempDir(), io.Discard, func(int) {})
 	if err == nil {
 		t.Fatal("expected error when dispatch active")
 	}
@@ -576,7 +576,7 @@ func TestMaybeExec_CacheRootDirError(t *testing.T) {
 func TestMaybeExec_CurrentIsDev(t *testing.T) {
 	// Use an isolated cwd so repository pin files do not influence this test.
 	cwd := t.TempDir()
-	err := MaybeExec([]string{"cmd"}, "dev", cwd, func(int) {})
+	err := MaybeExec([]string{"cmd"}, "dev", cwd, io.Discard, func(int) {})
 	if err != nil {
 		t.Fatalf("expected nil error for dev current version, got %v", err)
 	}
@@ -903,5 +903,117 @@ func TestMaybeExec_ExecReturnsDispatched(t *testing.T) {
 	err := MaybeExecWithSystem(sys, []string{"cmd"}, "0.9.0", ".", func(int) {})
 	if err != ErrDispatched {
 		t.Fatalf("expected ErrDispatched, got %v", err)
+	}
+}
+
+func TestStripQuietFlags(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "removes quiet flags",
+			args: []string{"al", "--quiet", "-q", "--quiet=true", "--quiet=false", "--foo"},
+			want: []string{"al", "--foo"},
+		},
+		{
+			name: "respects separator",
+			args: []string{"al", "--quiet", "--", "--quiet", "-q"},
+			want: []string{"al", "--", "--quiet", "-q"},
+		},
+		{
+			name: "no quiet flags",
+			args: []string{"al", "--foo", "bar"},
+			want: []string{"al", "--foo", "bar"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripQuietFlags(tc.args)
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("expected %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestArgsForRequestedVersion(t *testing.T) {
+	cases := []struct {
+		name      string
+		requested string
+		args      []string
+		want      []string
+	}{
+		{
+			name:      "keeps quiet flags for supported target",
+			requested: "0.8.7",
+			args:      []string{"al", "--quiet", "--foo"},
+			want:      []string{"al", "--quiet", "--foo"},
+		},
+		{
+			name:      "strips quiet flags for older target",
+			requested: "0.8.6",
+			args:      []string{"al", "--quiet", "--foo"},
+			want:      []string{"al", "--foo"},
+		},
+		{
+			name:      "keeps quiet flags for newer target",
+			requested: "1.0.0",
+			args:      []string{"al", "-q", "--foo"},
+			want:      []string{"al", "-q", "--foo"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := argsForRequestedVersion(tc.args, tc.requested)
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("expected %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestSupportsQuietFlag(t *testing.T) {
+	cases := []struct {
+		name    string
+		version string
+		want    bool
+	}{
+		{name: "supports threshold", version: "0.8.7", want: true},
+		{name: "supports newer patch", version: "0.8.8", want: true},
+		{name: "supports newer major", version: "1.0.0", want: true},
+		{name: "does not support older", version: "0.8.6", want: false},
+		{name: "invalid semver", version: "latest", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := supportsQuietFlag(tc.version); got != tc.want {
+				t.Fatalf("supportsQuietFlag(%q) = %v, want %v", tc.version, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMaybeExec_UsesProvidedStderr(t *testing.T) {
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o644); err != nil {
+		t.Fatalf("write pin: %v", err)
+	}
+
+	var stderr bytes.Buffer
+	err := MaybeExec([]string{"al"}, "1.0.0", root, &stderr, func(int) {})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !strings.Contains(stderr.String(), "version source") {
+		t.Fatalf("expected version source output, got %q", stderr.String())
 	}
 }

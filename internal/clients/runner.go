@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/updatewarn"
+	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
 // LaunchFunc launches a client after sync and run setup.
@@ -21,20 +23,25 @@ type EnabledSelector func(cfg *config.Config) *bool
 
 // Run performs the standard client launch pipeline: load config, sync, create run dir, launch.
 // Warnings from sync are printed to stderr before launching.
-func Run(ctx context.Context, root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string, currentVersion string) error {
-	return RunWithStderr(ctx, root, name, enabled, launch, args, currentVersion, os.Stderr)
+func Run(ctx context.Context, root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string, currentVersion string) error {
+	return RunWithStderr(ctx, root, name, enabled, launch, quiet, args, currentVersion, os.Stderr)
 }
 
 // RunNoSync performs the standard client launch pipeline without running sync.
-func RunNoSync(root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string) error {
-	return RunNoSyncWithStderr(root, name, enabled, launch, args, os.Stderr)
+func RunNoSync(root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string) error {
+	return RunNoSyncWithStderr(root, name, enabled, launch, quiet, args, os.Stderr)
 }
 
 // RunNoSyncWithStderr is like RunNoSync but allows specifying a custom stderr writer for testing.
-func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string, stderr io.Writer) error {
+func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string, stderr io.Writer) error {
 	project, err := loadProject(root, name, enabled)
 	if err != nil {
 		return err
+	}
+
+	effectiveQuiet := resolveQuiet(quiet, project)
+	if effectiveQuiet {
+		stderr = io.Discard
 	}
 
 	if project.Config.Approvals.Mode == "yolo" && stderr != nil {
@@ -45,10 +52,14 @@ func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, laun
 }
 
 // RunWithStderr is like Run but allows specifying a custom stderr writer for testing.
-func RunWithStderr(ctx context.Context, root string, name string, enabled EnabledSelector, launch LaunchFunc, args []string, currentVersion string, stderr io.Writer) error {
+func RunWithStderr(ctx context.Context, root string, name string, enabled EnabledSelector, launch LaunchFunc, quiet bool, args []string, currentVersion string, stderr io.Writer) error {
 	project, err := loadProject(root, name, enabled)
 	if err != nil {
 		return err
+	}
+	effectiveQuiet := resolveQuiet(quiet, project)
+	if effectiveQuiet {
+		stderr = io.Discard
 	}
 	if project.Config.Warnings.VersionUpdateOnSync != nil && *project.Config.Warnings.VersionUpdateOnSync {
 		updatewarn.WarnIfOutdated(ctx, currentVersion, stderr)
@@ -94,4 +105,15 @@ func launchWithRunInfo(root string, project *config.ProjectConfig, launch Launch
 	env := BuildEnv(os.Environ(), project.Env, runInfo)
 
 	return launch(project, runInfo, env, args)
+}
+
+func resolveQuiet(quiet bool, project *config.ProjectConfig) bool {
+	if quiet {
+		return true
+	}
+	if project == nil {
+		return false
+	}
+	mode := strings.TrimSpace(project.Config.Warnings.NoiseMode)
+	return strings.EqualFold(mode, warnings.NoiseModeQuiet)
 }

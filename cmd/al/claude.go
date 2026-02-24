@@ -19,10 +19,13 @@ func newClaudeCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			passArgs := stripArgsSeparator(args)
+			quiet, passArgs, err := splitQuietArgs(args)
+			if err != nil {
+				return err
+			}
 			return clients.Run(cmd.Context(), root, "claude", func(cfg *config.Config) *bool {
 				return cfg.Agents.Claude.Enabled
-			}, claude.Launch, passArgs, Version)
+			}, claude.Launch, quiet, passArgs, Version)
 		},
 	}
 

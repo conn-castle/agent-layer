@@ -228,6 +228,25 @@ func TestValidateWarningsThresholds(t *testing.T) {
 	}
 }
 
+func TestValidateWarningsNoiseModeQuiet(t *testing.T) {
+	enabled := true
+	cfg := Config{
+		Approvals: ApprovalsConfig{Mode: "all"},
+		Agents: AgentsConfig{
+			Gemini:       AgentConfig{Enabled: &enabled},
+			Claude:       ClaudeConfig{Enabled: &enabled},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
+			Codex:        CodexConfig{Enabled: &enabled},
+			VSCode:       EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+		},
+		Warnings: WarningsConfig{NoiseMode: "quiet"},
+	}
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("expected quiet noise_mode to be valid, got %v", err)
+	}
+}
+
 func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 	enabled := true
 	base := Config{

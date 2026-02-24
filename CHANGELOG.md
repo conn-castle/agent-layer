@@ -1,6 +1,24 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.7 - 2026-02-24
+
+### Added
+- `al <client>` commands now support `--quiet` / `-q` for one-off quiet runs that suppress Agent Layer informational output while preserving client output and error exit behavior.
+- Added end-to-end coverage for quiet Claude runs to ensure `al claude --quiet` emits no Agent Layer output and still launches correctly.
+
+### Changed
+- `warnings.noise_mode` now supports `quiet` in addition to `default` and `reduce`.
+- Quiet handling is now applied consistently across dispatch and client launch paths, including argument forwarding and no-sync execution.
+
+### Fixed
+- `al sync` warning-only outcomes in quiet mode now preserve non-zero exit behavior without printing warning text.
+- Quiet-mode behavior now avoids leaking dispatch/update-check banners when quiet is enabled via flag or config.
+
+### Improved
+- Documentation and default config comments now describe quiet-mode behavior and its interaction with `al doctor` (which always prints warnings).
+- Validation and warning messaging now includes `quiet` as a first-class supported noise mode.
+
 ## v0.8.6 - 2026-02-23
 
 ### Added

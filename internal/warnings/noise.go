@@ -12,6 +12,8 @@ const (
 	NoiseModeDefault = "default"
 	// NoiseModeReduce hides suppressible non-critical warnings.
 	NoiseModeReduce = "reduce"
+	// NoiseModeQuiet suppresses all warning output.
+	NoiseModeQuiet = "quiet"
 )
 
 // ApplyNoiseControl applies a conservative noise filter to warning output.
@@ -38,12 +40,15 @@ func ApplyNoiseControl(items []Warning, mode string) []Warning {
 		}
 		return filtered
 	}
+	if normalized == NoiseModeQuiet {
+		return nil
+	}
 
 	out := append([]Warning(nil), items...)
 	out = append(out, Warning{
 		Code:     CodeWarningNoiseModeInvalid,
 		Subject:  "warnings.noise_mode",
-		Message:  fmt.Sprintf(messages.WarningsNoiseModeInvalidFmt, mode, NoiseModeDefault, NoiseModeReduce),
+		Message:  fmt.Sprintf(messages.WarningsNoiseModeInvalidFmt, mode, NoiseModeDefault, NoiseModeReduce, NoiseModeQuiet),
 		Fix:      messages.WarningsNoiseModeInvalidFix,
 		Source:   SourceInternal,
 		Severity: SeverityCritical,

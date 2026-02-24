@@ -27,14 +27,14 @@ func newNoSyncLaunchCmd(
 			if err != nil {
 				return err
 			}
-			noSync, passArgs, err := splitNoSyncArgs(args)
+			noSync, quiet, passArgs, err := splitNoSyncArgs(args)
 			if err != nil {
 				return err
 			}
 			if noSync {
-				return clients.RunNoSync(root, agentName, enabledFn, launchFn, passArgs)
+				return clients.RunNoSync(root, agentName, enabledFn, launchFn, quiet, passArgs)
 			}
-			return clients.Run(cmd.Context(), root, agentName, enabledFn, launchFn, passArgs, Version)
+			return clients.Run(cmd.Context(), root, agentName, enabledFn, launchFn, quiet, passArgs, Version)
 		},
 	}
 
@@ -44,8 +44,9 @@ func newNoSyncLaunchCmd(
 }
 
 // splitNoSyncArgs manually parses --no-sync because flag parsing is disabled for pass-through.
-func splitNoSyncArgs(args []string) (bool, []string, error) {
+func splitNoSyncArgs(args []string) (bool, bool, []string, error) {
 	noSync := false
+	quiet := false
 	passArgs := []string{}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -61,12 +62,25 @@ func splitNoSyncArgs(args []string) (bool, []string, error) {
 			value := strings.TrimPrefix(arg, "--no-sync=")
 			parsed, err := strconv.ParseBool(value)
 			if err != nil {
-				return false, nil, fmt.Errorf(messages.NoSyncInvalidFmt, value)
+				return false, false, nil, fmt.Errorf(messages.NoSyncInvalidFmt, value)
 			}
 			noSync = parsed
 			continue
 		}
+		if arg == flagQuiet || arg == flagQuietShort {
+			quiet = true
+			continue
+		}
+		if strings.HasPrefix(arg, flagQuietPrefix) {
+			value := strings.TrimPrefix(arg, flagQuietPrefix)
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return false, false, nil, fmt.Errorf(messages.QuietInvalidFmt, value)
+			}
+			quiet = parsed
+			continue
+		}
 		passArgs = append(passArgs, arg)
 	}
-	return noSync, passArgs, nil
+	return noSync, quiet, passArgs, nil
 }

@@ -37,7 +37,7 @@ const (
 	ConfigMcpServerTransportInvalidFmt     = "%s: mcp.servers[%d].transport must be http or stdio"
 	ConfigMcpServerClientInvalidFmt        = "%s: mcp.servers[%d].clients contains invalid client %q"
 	ConfigUnrecognizedKeysFmt              = "%s: unrecognized config keys: %w"
-	ConfigWarningNoiseModeInvalidFmt       = "%s: warnings.noise_mode %q is invalid (allowed: default, reduce)"
+	ConfigWarningNoiseModeInvalidFmt       = "%s: warnings.noise_mode %q is invalid (allowed: default, reduce, quiet)"
 	ConfigWarningThresholdInvalidFmt       = "%s: %s must be greater than zero"
 
 	ConfigMissingSlashCommandsDirFmt          = "missing slash commands directory %s: %w"

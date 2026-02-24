@@ -23,7 +23,7 @@ func TestRunVSCodeNoSync(t *testing.T) {
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
 		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, nil)
+	}, vscode.Launch, false, nil)
 	if err != nil {
 		t.Fatalf("RunNoSync error: %v", err)
 	}
@@ -63,7 +63,7 @@ enabled = true
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
 		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, nil)
+	}, vscode.Launch, false, nil)
 	if err == nil {
 		t.Fatal("expected error when both VS Code agents are disabled")
 	}
@@ -107,7 +107,7 @@ enabled = true
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
 		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, nil)
+	}, vscode.Launch, false, nil)
 	if err != nil {
 		t.Fatalf("expected success when claude-vscode is enabled: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestRunVSCodeNoSyncManagedBlockConflict(t *testing.T) {
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
 		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
-	}, vscode.Launch, nil)
+	}, vscode.Launch, false, nil)
 	if err == nil {
 		t.Fatal("expected managed-block conflict error")
 	}

@@ -7,6 +7,7 @@ const (
 	// RootShort is the short description for the root command.
 	RootShort             = "Agent Layer CLI"
 	RootVersionFlag       = "Print version and exit"
+	RootQuietFlag         = "Suppress agent-layer informational output"
 	RootMissingAgentLayer = "agent layer isn't initialized in this repository (missing .agent-layer); run 'al init' to initialize"
 
 	// VersionCommitFmt formats the commit hash for version display.
@@ -128,6 +129,7 @@ const (
 	VSCodeShort = "Sync and launch VS Code"
 
 	NoSyncInvalidFmt = "invalid value for --no-sync: %q"
+	QuietInvalidFmt  = "invalid value for --quiet: %q"
 
 	AntigravityUse   = "antigravity"
 	AntigravityShort = "Sync and launch Antigravity"

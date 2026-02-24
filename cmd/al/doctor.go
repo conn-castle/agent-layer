@@ -121,7 +121,11 @@ func newDoctorCmd() *cobra.Command {
 				}
 
 				warningList = append(warningList, checkPolicy(cfg)...)
-				warningList = warnings.ApplyNoiseControl(warningList, cfg.Config.Warnings.NoiseMode)
+				noiseMode := cfg.Config.Warnings.NoiseMode
+				if strings.EqualFold(strings.TrimSpace(noiseMode), warnings.NoiseModeQuiet) {
+					noiseMode = warnings.NoiseModeDefault
+				}
+				warningList = warnings.ApplyNoiseControl(warningList, noiseMode)
 			}
 
 			if len(warningList) > 0 {

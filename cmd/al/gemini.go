@@ -19,10 +19,13 @@ func newGeminiCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			passArgs := stripArgsSeparator(args)
+			quiet, passArgs, err := splitQuietArgs(args)
+			if err != nil {
+				return err
+			}
 			return clients.Run(cmd.Context(), root, "gemini", func(cfg *config.Config) *bool {
 				return cfg.Agents.Gemini.Enabled
-			}, gemini.Launch, passArgs, Version)
+			}, gemini.Launch, quiet, passArgs, Version)
 		},
 	}
 

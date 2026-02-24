@@ -14,7 +14,7 @@ coverage.out
 
 
 # >>> agent-layer
-# Template hash: 4908c3ea5d3522d9f02c23becfdb8fd60a95e3723c96a96e51ad29c799d576eb
+# Template hash: fb34acb9c757536ffabf43f198466f9d0e30a0870b6090684af794780efd303d
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al sync` to apply changes.
 
@@ -37,6 +37,7 @@ coverage.out
 /.codex/
 /.gemini/
 /.claude/
+/.claude-config/
 /.vscode/mcp.json
 /.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.

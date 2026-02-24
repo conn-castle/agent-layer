@@ -332,3 +332,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al mcp-prompts` now bypasses repo-pin dispatch (same as `al init`/`al upgrade`), and sync prefers local source `go run <repo>/cmd/al mcp-prompts` when available.
     Reason: MCP stdio startup must not depend on a PATH shim or cached pinned binary that may be missing or non-runnable for the requested pin.
     Tradeoffs: In source repos, prompt-server execution may use local `go run` behavior instead of the globally installed pinned binary path.
+
+- Decision 2026-02-24 quiet-mode: Extend warnings.noise_mode + add --quiet flag
+    Decision: Extend `warnings.noise_mode` with `quiet` and add `--quiet`/`-q` to suppress agent-layer informational output (warnings, update checks, dispatch banners) everywhere except `al doctor`, which always prints warnings. Dispatch uses a configurable stderr writer, and `al sync --quiet` returns `SilentExitError` to preserve exit codes without output. No new config section or env var.
+    Reason: A single verbosity knob keeps the UX simple while enabling zero-noise passthrough for scripted usage.
+    Tradeoffs: Older pinned binaries will not honor `quiet` (flag is stripped on dispatch; config value is unknown), so they may emit noise until upgraded.
+
+- Decision 2026-02-24 quiet-supersedes-p7a: Quiet mode may hide critical warnings
+    Decision: `noise_mode = "quiet"` suppresses all warnings (including critical). The p7a guardrail remains enforced for `reduce` only.
+    Reason: Quiet mode is an explicit user opt-in for zero informational output; suppressing critical warnings is intentional in that mode.
+    Tradeoffs: Users can miss high-risk warnings when quiet is enabled; guidance in README/config comments makes this risk explicit.

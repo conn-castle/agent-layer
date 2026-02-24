@@ -48,6 +48,7 @@ var validWarningNoiseModes = map[string]struct{}{
 	"":        {},
 	"default": {},
 	"reduce":  {},
+	"quiet":   {},
 }
 
 // Validate ensures the config is complete and consistent.

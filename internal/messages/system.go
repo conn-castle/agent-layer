@@ -110,8 +110,8 @@ const (
 	WarningsPolicyAgentSpecificOverridesFmt = "agent-specific %s config overrides Agent Layer-managed keys"
 	WarningsPolicyAgentSpecificOverridesFix = "Remove the override if you want Agent Layer to manage those keys, or keep it to take full control."
 	WarningsPolicyYOLOAck                   = "[yolo] permission prompts disabled for supported clients"
-	WarningsNoiseModeInvalidFmt             = "unknown warnings noise mode %q; expected one of: %s, %s"
-	WarningsNoiseModeInvalidFix             = "Set warnings.noise_mode to default or reduce."
+	WarningsNoiseModeInvalidFmt             = "unknown warnings noise mode %q; expected one of: %s, %s, %s"
+	WarningsNoiseModeInvalidFix             = "Set warnings.noise_mode to default, reduce, or quiet."
 
 	WarningsUnsupportedTransportFmt     = "unsupported transport: %s"
 	WarningsUnsupportedHTTPTransportFmt = "unsupported http transport: %s"
