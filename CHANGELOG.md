@@ -1,44 +1,34 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v0.8.8 - 2026-02-24
-
-### Added
-- Wizard back-navigation support: pressing `Esc` now moves to the previous step, with explicit first-step exit confirmation and deterministic state rollback behavior for partial selections.
-- Config guardrail test for required fields: automated enforcement now checks that newly required config fields have matching `config_set_default` migration coverage (with explicit legacy baseline allowlist).
-- Claude reasoning-effort support in wizard/config/sync paths (`low|medium|high`), including projection into `.claude/settings.json` as `effortLevel`.
-
-### Changed
-- Wizard-managed `config.toml` writes now use an explicit preferred section order policy (`approvals`, enabled agents, `mcp`, `warnings`) instead of implicitly coupling ordering to template parse order.
-- Upgrade diff output is now colorized in interactive terminals for better scanability (adds/removes/hunks), with plain-text fallback preserved for non-interactive and no-color environments.
-- Wizard profile apply flow now warns when replacing an existing TOML-corrupt `.agent-layer/config.toml`.
-
-### Fixed
-- Prevented hidden behavior drift in multiline TOML patching by refactoring duplicated state tracking into a shared iterator with regression coverage across call sites.
-- Gemini `reasoning_effort` is now rejected explicitly with a clear validation error instead of allowing ambiguous/unsupported behavior.
-- Claude reasoning-effort validation now fails loudly for invalid option values and unsupported model selections.
-
-### Improved
-- Expanded test coverage for wizard back-navigation state transitions, profile corruption warning paths, reasoning-effort capability validation, Claude sync projection behavior, and upgrade diff color/no-color rendering.
-- Updated project memory/docs (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `README.md`) to reflect completed sprint scope and release-facing behavior.
-
 ## v0.8.7 - 2026-02-24
 
 ### Added
 - `al <client>` commands now support `--quiet` / `-q` for one-off quiet runs that suppress Agent Layer informational output while preserving client output and error exit behavior.
 - Added end-to-end coverage for quiet Claude runs to ensure `al claude --quiet` emits no Agent Layer output and still launches correctly.
+- Wizard back-navigation support: pressing `Esc` now moves to the previous step, with explicit first-step exit confirmation and deterministic state rollback behavior for partial selections.
+- Config guardrail test for required fields: automated enforcement now checks that newly required config fields have matching `config_set_default` migration coverage (with explicit legacy baseline allowlist).
+- Claude reasoning-effort support in wizard/config/sync paths (`low|medium|high`), including projection into `.claude/settings.json` as `effortLevel`.
 
 ### Changed
 - `warnings.noise_mode` now supports `quiet` in addition to `default` and `reduce`.
 - Quiet handling is now applied consistently across dispatch and client launch paths, including argument forwarding and no-sync execution.
+- Wizard-managed `config.toml` writes now use an explicit preferred section order policy (`approvals`, enabled agents, `mcp`, `warnings`) instead of implicitly coupling ordering to template parse order.
+- Upgrade diff output is now colorized in interactive terminals for better scanability (adds/removes/hunks), with plain-text fallback preserved for non-interactive and no-color environments.
+- Wizard profile apply flow now warns when replacing an existing TOML-corrupt `.agent-layer/config.toml`.
 
 ### Fixed
 - `al sync` warning-only outcomes in quiet mode now preserve non-zero exit behavior without printing warning text.
 - Quiet-mode behavior now avoids leaking dispatch/update-check banners when quiet is enabled via flag or config.
+- Prevented hidden behavior drift in multiline TOML patching by refactoring duplicated state tracking into a shared iterator with regression coverage across call sites.
+- Gemini `reasoning_effort` is now rejected explicitly with a clear validation error instead of allowing ambiguous/unsupported behavior.
+- Claude reasoning-effort validation now fails loudly for invalid option values and unsupported model selections.
 
 ### Improved
 - Documentation and default config comments now describe quiet-mode behavior and its interaction with `al doctor` (which always prints warnings).
 - Validation and warning messaging now includes `quiet` as a first-class supported noise mode.
+- Expanded test coverage for wizard back-navigation state transitions, profile corruption warning paths, reasoning-effort capability validation, Claude sync projection behavior, and upgrade diff color/no-color rendering.
+- Updated project memory/docs (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `README.md`) to reflect completed sprint scope and release-facing behavior.
 
 ## v0.8.6 - 2026-02-23
 
