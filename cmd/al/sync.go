@@ -45,18 +45,16 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			hasWarnings := len(result.Warnings) > 0
-			if effectiveQuiet && len(result.AllWarnings) > 0 {
-				hasWarnings = true
-			}
-			if hasWarnings {
-				if !effectiveQuiet {
+			if len(result.AllWarnings) > 0 {
+				if effectiveQuiet {
+					return &SilentExitError{Code: 1}
+				}
+				if len(result.Warnings) > 0 {
 					for _, w := range result.Warnings {
 						_, _ = fmt.Fprintln(stderr, w.String())
 					}
 					return ErrSyncCompletedWithWarnings
 				}
-				return &SilentExitError{Code: 1}
 			}
 			if project.Config.Approvals.Mode == "yolo" {
 				_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)

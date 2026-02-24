@@ -939,6 +939,65 @@ func TestStripQuietFlags(t *testing.T) {
 	}
 }
 
+func TestArgsForRequestedVersion(t *testing.T) {
+	cases := []struct {
+		name      string
+		requested string
+		args      []string
+		want      []string
+	}{
+		{
+			name:      "keeps quiet flags for supported target",
+			requested: "0.8.7",
+			args:      []string{"al", "--quiet", "--foo"},
+			want:      []string{"al", "--quiet", "--foo"},
+		},
+		{
+			name:      "strips quiet flags for older target",
+			requested: "0.8.6",
+			args:      []string{"al", "--quiet", "--foo"},
+			want:      []string{"al", "--foo"},
+		},
+		{
+			name:      "keeps quiet flags for newer target",
+			requested: "1.0.0",
+			args:      []string{"al", "-q", "--foo"},
+			want:      []string{"al", "-q", "--foo"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := argsForRequestedVersion(tc.args, tc.requested)
+			if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("expected %v, got %v", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestSupportsQuietFlag(t *testing.T) {
+	cases := []struct {
+		name    string
+		version string
+		want    bool
+	}{
+		{name: "supports threshold", version: "0.8.7", want: true},
+		{name: "supports newer patch", version: "0.8.8", want: true},
+		{name: "supports newer major", version: "1.0.0", want: true},
+		{name: "does not support older", version: "0.8.6", want: false},
+		{name: "invalid semver", version: "latest", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := supportsQuietFlag(tc.version); got != tc.want {
+				t.Fatalf("supportsQuietFlag(%q) = %v, want %v", tc.version, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMaybeExec_UsesProvidedStderr(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")

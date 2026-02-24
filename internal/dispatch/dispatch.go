@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -21,6 +22,8 @@ const (
 	// sourceCurrent and sourcePin label the origin of the resolved version.
 	sourceCurrent = "current"
 	sourcePin     = "pin"
+
+	quietFlagMinVersion = "0.8.7"
 )
 
 // ErrDispatched signals that execution has been handed off to another binary.
@@ -29,8 +32,7 @@ var ErrDispatched = errors.New(messages.DispatchErrDispatched)
 // MaybeExec checks for a pinned version and dispatches to it when needed.
 // It returns ErrDispatched if execution was handed off.
 func MaybeExec(args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
-	strippedArgs := stripQuietFlags(args)
-	return MaybeExecWithSystem(RealSystem{StderrWriter: stderr}, strippedArgs, currentVersion, cwd, exit)
+	return MaybeExecWithSystem(RealSystem{StderrWriter: stderr}, args, currentVersion, cwd, exit)
 }
 
 // MaybeExecWithSystem checks for a pinned version and dispatches to it when needed.
@@ -94,12 +96,66 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 		return err
 	}
 
+	dispatchArgs := argsForRequestedVersion(args, requested)
 	env := append(sys.Environ(), fmt.Sprintf("%s=1", EnvShimActive))
-	execArgs := append([]string{path}, args[1:]...)
+	execArgs := append([]string{path}, dispatchArgs[1:]...)
 	if err := sys.ExecBinary(path, execArgs, env, exit); err != nil {
 		return err
 	}
 	return ErrDispatched
+}
+
+func argsForRequestedVersion(args []string, requested string) []string {
+	if supportsQuietFlag(requested) {
+		return args
+	}
+	return stripQuietFlags(args)
+}
+
+func supportsQuietFlag(rawVersion string) bool {
+	normalized, err := version.Normalize(rawVersion)
+	if err != nil {
+		return false
+	}
+	return semverAtLeast(normalized, quietFlagMinVersion)
+}
+
+func semverAtLeast(versionA string, versionB string) bool {
+	aMajor, aMinor, aPatch, ok := parseSemver(versionA)
+	if !ok {
+		return false
+	}
+	bMajor, bMinor, bPatch, ok := parseSemver(versionB)
+	if !ok {
+		return false
+	}
+	if aMajor != bMajor {
+		return aMajor > bMajor
+	}
+	if aMinor != bMinor {
+		return aMinor > bMinor
+	}
+	return aPatch >= bPatch
+}
+
+func parseSemver(raw string) (int, int, int, bool) {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return 0, 0, 0, false
+	}
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	patch, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return major, minor, patch, true
 }
 
 func stripQuietFlags(args []string) []string {
