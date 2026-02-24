@@ -37,9 +37,10 @@ const (
 type upgradeSnapshotEntryKind string
 
 const (
-	upgradeSnapshotEntryKindFile   upgradeSnapshotEntryKind = "file"
-	upgradeSnapshotEntryKindDir    upgradeSnapshotEntryKind = "dir"
-	upgradeSnapshotEntryKindAbsent upgradeSnapshotEntryKind = "absent"
+	upgradeSnapshotEntryKindFile    upgradeSnapshotEntryKind = "file"
+	upgradeSnapshotEntryKindDir     upgradeSnapshotEntryKind = "dir"
+	upgradeSnapshotEntryKindSymlink upgradeSnapshotEntryKind = "symlink"
+	upgradeSnapshotEntryKindAbsent  upgradeSnapshotEntryKind = "absent"
 )
 
 type upgradeSnapshotEntry struct {
@@ -47,6 +48,7 @@ type upgradeSnapshotEntry struct {
 	Kind          upgradeSnapshotEntryKind `json:"kind"`
 	Perm          *uint32                  `json:"perm,omitempty"`
 	ContentBase64 string                   `json:"content_base64,omitempty"`
+	LinkTarget    string                   `json:"link_target,omitempty"`
 }
 
 type upgradeSnapshot struct {
@@ -221,9 +223,25 @@ func validateUpgradeSnapshotEntry(entry upgradeSnapshotEntry) error {
 		if _, err := base64.StdEncoding.DecodeString(entry.ContentBase64); err != nil {
 			return fmt.Errorf("file snapshot entry %s has invalid content_base64: %w", entry.Path, err)
 		}
+		if entry.LinkTarget != "" {
+			return fmt.Errorf("file snapshot entry %s must not set link_target", entry.Path)
+		}
 	case upgradeSnapshotEntryKindDir:
 		if entry.ContentBase64 != "" {
 			return fmt.Errorf("dir snapshot entry %s must not set content_base64", entry.Path)
+		}
+		if entry.LinkTarget != "" {
+			return fmt.Errorf("dir snapshot entry %s must not set link_target", entry.Path)
+		}
+	case upgradeSnapshotEntryKindSymlink:
+		if strings.TrimSpace(entry.LinkTarget) == "" {
+			return fmt.Errorf("symlink snapshot entry %s requires link_target", entry.Path)
+		}
+		if entry.ContentBase64 != "" {
+			return fmt.Errorf("symlink snapshot entry %s must not set content_base64", entry.Path)
+		}
+		if entry.Perm != nil {
+			return fmt.Errorf("symlink snapshot entry %s must not set perm", entry.Path)
 		}
 	case upgradeSnapshotEntryKindAbsent:
 		if entry.ContentBase64 != "" {
@@ -231,6 +249,9 @@ func validateUpgradeSnapshotEntry(entry upgradeSnapshotEntry) error {
 		}
 		if entry.Perm != nil {
 			return fmt.Errorf("absent snapshot entry %s must not set perm", entry.Path)
+		}
+		if entry.LinkTarget != "" {
+			return fmt.Errorf("absent snapshot entry %s must not set link_target", entry.Path)
 		}
 	default:
 		return fmt.Errorf("invalid snapshot entry kind %q", entry.Kind)
@@ -343,7 +364,7 @@ func (inst *installer) captureUpgradeSnapshotEntries() ([]upgradeSnapshotEntry, 
 }
 
 func (inst *installer) captureUpgradeSnapshotTarget(target string, entries map[string]upgradeSnapshotEntry) error {
-	info, err := inst.sys.Stat(target)
+	info, err := inst.sys.Lstat(target)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			relPath, relErr := inst.repoRelativePath(target)
@@ -356,7 +377,10 @@ func (inst *installer) captureUpgradeSnapshotTarget(target string, entries map[s
 			})
 			return nil
 		}
-		return fmt.Errorf(messages.InstallFailedStatFmt, target, err)
+		return fmt.Errorf("failed to lstat %s: %w", target, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return inst.captureUpgradeSnapshotSymlink(target, entries)
 	}
 	if info.IsDir() {
 		return inst.captureUpgradeSnapshotDirectory(target, entries)
@@ -376,11 +400,12 @@ func (inst *installer) captureUpgradeSnapshotDirectory(rootPath string, entries 
 		if err != nil {
 			return err
 		}
-		info, infoErr := dirEntry.Info()
-		if infoErr != nil {
-			return infoErr
-		}
+		mode := dirEntry.Type()
 		if dirEntry.IsDir() {
+			info, infoErr := dirEntry.Info()
+			if infoErr != nil {
+				return infoErr
+			}
 			relPath, relErr := inst.repoRelativePath(path)
 			if relErr != nil {
 				return relErr
@@ -392,21 +417,14 @@ func (inst *installer) captureUpgradeSnapshotDirectory(rootPath string, entries 
 			})
 			return nil
 		}
-		mode := info.Mode()
 		if mode&os.ModeSymlink != 0 {
-			resolved, statErr := inst.sys.Stat(path)
-			if statErr != nil {
-				return fmt.Errorf(messages.InstallFailedStatFmt, path, statErr)
-			}
-			if resolved.IsDir() || !resolved.Mode().IsRegular() {
-				relPath, relErr := inst.repoRelativePath(path)
-				if relErr != nil {
-					return relErr
-				}
-				return fmt.Errorf("unsupported file type for snapshot path %s", relPath)
-			}
-			return inst.captureUpgradeSnapshotFile(path, resolved.Mode(), entries)
+			return inst.captureUpgradeSnapshotSymlink(path, entries)
 		}
+		info, infoErr := dirEntry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		mode = info.Mode()
 		if !mode.IsRegular() {
 			relPath, relErr := inst.repoRelativePath(path)
 			if relErr != nil {
@@ -416,6 +434,23 @@ func (inst *installer) captureUpgradeSnapshotDirectory(rootPath string, entries 
 		}
 		return inst.captureUpgradeSnapshotFile(path, mode, entries)
 	})
+}
+
+func (inst *installer) captureUpgradeSnapshotSymlink(path string, entries map[string]upgradeSnapshotEntry) error {
+	relPath, err := inst.repoRelativePath(path)
+	if err != nil {
+		return err
+	}
+	target, err := inst.sys.Readlink(path)
+	if err != nil {
+		return fmt.Errorf("failed to read symlink %s: %w", path, err)
+	}
+	upsertUpgradeSnapshotEntry(entries, upgradeSnapshotEntry{
+		Path:       relPath,
+		Kind:       upgradeSnapshotEntryKindSymlink,
+		LinkTarget: target,
+	})
+	return nil
 }
 
 func (inst *installer) captureUpgradeSnapshotFile(path string, mode fs.FileMode, entries map[string]upgradeSnapshotEntry) error {

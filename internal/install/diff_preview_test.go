@@ -57,9 +57,37 @@ func TestRenderTruncatedUnifiedDiff_CollapsesEquivalentMovedLines(t *testing.T) 
 	if truncated {
 		t.Fatal("did not expect truncation")
 	}
+	if diff != "" {
+		t.Fatalf("expected fully equivalent move-only diff to collapse to empty output, got:\n%s", diff)
+	}
 	if strings.Contains(diff, "-/.gemini/") || strings.Contains(diff, "+/.gemini/") ||
 		strings.Contains(diff, "-/.claude/") || strings.Contains(diff, "+/.claude/") {
 		t.Fatalf("expected equivalent moved lines to be suppressed, got:\n%s", diff)
+	}
+}
+
+func TestNormalizeUnifiedDiffPreview_RemovesEmptyHunksAndKeepsRealChanges(t *testing.T) {
+	raw := strings.Join([]string{
+		"--- a.txt",
+		"+++ b.txt",
+		"@@ -1,1 +1,1 @@",
+		"-old value   ",
+		"+old value",
+		"@@ -3,1 +3,1 @@",
+		"-removed",
+		"+added",
+		"",
+	}, "\n")
+
+	normalized := normalizeUnifiedDiffPreview(raw)
+	if strings.Contains(normalized, "@@ -1,1 +1,1 @@") {
+		t.Fatalf("expected empty first hunk to be removed, got:\n%s", normalized)
+	}
+	if !strings.Contains(normalized, "@@ -3,1 +3,1 @@") {
+		t.Fatalf("expected non-empty second hunk to remain, got:\n%s", normalized)
+	}
+	if !strings.Contains(normalized, "-removed") || !strings.Contains(normalized, "+added") {
+		t.Fatalf("expected second hunk changes to remain, got:\n%s", normalized)
 	}
 }
 

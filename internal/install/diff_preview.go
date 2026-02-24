@@ -200,7 +200,7 @@ func normalizeUnifiedDiffPreview(diff string) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	out := make([]string, 0, len(lines))
+	collapsed := make([]string, 0, len(lines))
 	for idx := 0; idx < len(lines); {
 		line := lines[idx]
 		if isUnifiedDiffChangeLine(line) {
@@ -208,14 +208,18 @@ func normalizeUnifiedDiffPreview(diff string) string {
 			for end < len(lines) && isUnifiedDiffChangeLine(lines[end]) {
 				end++
 			}
-			out = append(out, collapseEquivalentDiffRun(lines[idx:end])...)
+			collapsed = append(collapsed, collapseEquivalentDiffRun(lines[idx:end])...)
 			idx = end
 			continue
 		}
-		out = append(out, line)
+		collapsed = append(collapsed, line)
 		idx++
 	}
-	return ensureTrailingNewline(strings.Join(out, "\n"))
+	pruned := pruneEmptyUnifiedDiffHunks(collapsed)
+	if !hasUnifiedDiffChangeLine(pruned) {
+		return ""
+	}
+	return ensureTrailingNewline(strings.Join(pruned, "\n"))
 }
 
 func isUnifiedDiffChangeLine(line string) bool {
@@ -267,6 +271,59 @@ func collapseEquivalentDiffRun(run []string) []string {
 
 func normalizeComparableDiffPayload(payload string) string {
 	return strings.TrimRight(payload, " \t")
+}
+
+func pruneEmptyUnifiedDiffHunks(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	firstHunk := -1
+	for idx, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			firstHunk = idx
+			break
+		}
+	}
+	if firstHunk < 0 {
+		return lines
+	}
+
+	prefix := lines[:firstHunk]
+	out := make([]string, 0, len(lines))
+	out = append(out, prefix...)
+	keptHunks := 0
+	for idx := firstHunk; idx < len(lines); {
+		if !strings.HasPrefix(lines[idx], "@@") {
+			out = append(out, lines[idx])
+			idx++
+			continue
+		}
+		hunkHeader := lines[idx]
+		end := idx + 1
+		for end < len(lines) && !strings.HasPrefix(lines[end], "@@") {
+			end++
+		}
+		hunkBody := lines[idx+1 : end]
+		if hasUnifiedDiffChangeLine(hunkBody) {
+			out = append(out, hunkHeader)
+			out = append(out, hunkBody...)
+			keptHunks++
+		}
+		idx = end
+	}
+	if keptHunks == 0 {
+		return nil
+	}
+	return out
+}
+
+func hasUnifiedDiffChangeLine(lines []string) bool {
+	for _, line := range lines {
+		if isUnifiedDiffChangeLine(line) {
+			return true
+		}
+	}
+	return false
 }
 
 func sectionAwareMarkerForPath(relPath string) (string, bool) {

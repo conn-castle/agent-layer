@@ -292,8 +292,16 @@ func (s *snapshotWriteFailOnNthSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }
 
+func (s *snapshotWriteFailOnNthSystem) Lstat(name string) (os.FileInfo, error) {
+	return s.base.Lstat(name)
+}
+
 func (s *snapshotWriteFailOnNthSystem) ReadFile(name string) ([]byte, error) {
 	return s.base.ReadFile(name)
+}
+
+func (s *snapshotWriteFailOnNthSystem) Readlink(name string) (string, error) {
+	return s.base.Readlink(name)
 }
 
 func (s *snapshotWriteFailOnNthSystem) LookupEnv(key string) (string, bool) {
@@ -310,6 +318,10 @@ func (s *snapshotWriteFailOnNthSystem) RemoveAll(path string) error {
 
 func (s *snapshotWriteFailOnNthSystem) Rename(oldpath string, newpath string) error {
 	return s.base.Rename(oldpath, newpath)
+}
+
+func (s *snapshotWriteFailOnNthSystem) Symlink(oldname string, newname string) error {
+	return s.base.Symlink(oldname, newname)
 }
 
 func (s *snapshotWriteFailOnNthSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
