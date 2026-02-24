@@ -76,6 +76,15 @@ var fields = []FieldDef{
 			{Value: "opusplan"},
 		},
 	},
+	{
+		Key:  "agents.claude.reasoning_effort",
+		Type: FieldEnum,
+		Options: []FieldOption{
+			{Value: "low"},
+			{Value: "medium"},
+			{Value: "high"},
+		},
+	},
 	{Key: "agents.claude-vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.codex.enabled", Type: FieldBool, Required: true},
 	{

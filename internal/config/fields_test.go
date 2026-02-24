@@ -127,6 +127,19 @@ func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 	}
 }
 
+func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
+	values := FieldOptionValues("agents.claude.reasoning_effort")
+	want := []string{"low", "medium", "high"}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+	}
+	for i, expected := range want {
+		if values[i] != expected {
+			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+		}
+	}
+}
+
 func TestFieldsCopySemantics(t *testing.T) {
 	all := Fields()
 	if len(all) == 0 {

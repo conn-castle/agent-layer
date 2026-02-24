@@ -67,6 +67,31 @@ func TestRunProfile_Apply(t *testing.T) {
 	}
 }
 
+func TestRunProfile_ApplyWarnsWhenExistingConfigIsInvalidTOML(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	require.NoError(t, os.WriteFile(configPath, []byte("[approvals"), 0o644))
+
+	profilePath := filepath.Join(root, "profile.toml")
+	profile := strings.ReplaceAll(basicAgentConfig(), `mode = "none"`, `mode = "all"`)
+	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o644))
+
+	syncCalled := false
+	var out bytes.Buffer
+	err := RunProfile(root, func(string) (*alsync.Result, error) {
+		syncCalled = true
+		return &alsync.Result{}, nil
+	}, "", profilePath, true, &out)
+	require.NoError(t, err)
+	require.True(t, syncCalled)
+	require.Contains(t, out.String(), "existing .agent-layer/config.toml is invalid TOML")
+
+	updated, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	require.Contains(t, string(updated), `mode = "all"`)
+}
+
 func TestCleanupBackups(t *testing.T) {
 	root := t.TempDir()
 	configBackup := filepath.Join(root, ".agent-layer", "config.toml.bak")

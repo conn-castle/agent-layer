@@ -27,6 +27,35 @@ func isValidApprovalMode(mode string) bool {
 	return false
 }
 
+func isValidFieldOption(key string, value string) bool {
+	field, ok := LookupField(key)
+	if !ok {
+		return false
+	}
+	for _, opt := range field.Options {
+		if opt.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+// ClaudeModelSupportsReasoningEffort reports whether the given Claude model
+// string identifies an Opus variant that supports reasoning effort.
+// Matches "opus", "opusplan", "claude-opus-4-6", etc., but not "corpus".
+func ClaudeModelSupportsReasoningEffort(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	if normalized == "" || normalized == "default" {
+		return false
+	}
+	// Match model strings that start with "opus" (e.g., "opus", "opusplan") or
+	// contain "opus" after a delimiter (e.g., "claude-opus-4-6").
+	if strings.HasPrefix(normalized, "opus") {
+		return true
+	}
+	return strings.Contains(normalized, "-opus") || strings.Contains(normalized, "_opus")
+}
+
 // validClients lists clients that can appear in mcp.servers[].clients.
 // "claude-vscode" is intentionally absent — the Claude VS Code extension shares
 // .mcp.json with Claude CLI, so "claude" covers both.
@@ -75,12 +104,26 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.Antigravity.Enabled == nil {
 		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
+	if strings.TrimSpace(c.Agents.Gemini.ReasoningEffort) != "" {
+		return fmt.Errorf(messages.ConfigGeminiReasoningEffortUnsupportedFmt, path)
+	}
+
+	claudeReasoningEffort := strings.TrimSpace(c.Agents.Claude.ReasoningEffort)
+	if claudeReasoningEffort != "" {
+		if !isValidFieldOption("agents.claude.reasoning_effort", claudeReasoningEffort) {
+			return fmt.Errorf(messages.ConfigClaudeReasoningEffortInvalidFmt, path)
+		}
+		if !ClaudeModelSupportsReasoningEffort(c.Agents.Claude.Model) {
+			return fmt.Errorf(messages.ConfigClaudeReasoningEffortModelUnsupportedFmt, path, c.Agents.Claude.Model)
+		}
+	}
 
 	// Model validation: agent model values (agents.gemini.model, agents.claude.model,
 	// agents.codex.model, agents.codex.reasoning_effort) are intentionally NOT validated
 	// here. The field catalog (fields.go) defines known options with AllowCustom: true,
 	// meaning arbitrary model strings are accepted. The downstream client is the authority
-	// on valid model names. See Decision config-field-catalog.
+	// on valid model names. See Decision config-field-catalog. Claude reasoning effort is
+	// validated separately above because only a subset of models support it.
 
 	seenServerIDs := make(map[string]int, len(c.MCP.Servers))
 	for i, server := range c.MCP.Servers {

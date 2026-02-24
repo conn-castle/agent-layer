@@ -171,6 +171,38 @@ func TestRun_SelectError_ClaudeModel(t *testing.T) {
 	assert.Contains(t, err.Error(), "claude model error")
 }
 
+func TestRun_SelectError_ClaudeReasoning(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	validConfig := basicAgentConfig()
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	ui := &MockUI{
+		NoteFunc: func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error {
+			switch title {
+			case messages.WizardClaudeModelTitle:
+				*current = "opus" // must select opus to trigger reasoning prompt
+			case messages.WizardClaudeReasoningEffortTitle:
+				return errors.New("claude reasoning error")
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == messages.WizardEnableAgentsTitle {
+				*selected = []string{AgentClaude}
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "claude reasoning error")
+}
+
 func TestRun_SelectError_CodexModel(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)

@@ -12,6 +12,7 @@ var CodexReservedKeys = map[string]struct{}{
 
 // ClaudeReservedKeys are top-level keys in .claude/settings.json managed by Agent Layer.
 var ClaudeReservedKeys = map[string]struct{}{
+	"effortLevel": {},
 	"permissions": {},
 }
 

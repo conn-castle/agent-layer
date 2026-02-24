@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fatih/color"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -197,6 +199,79 @@ func TestPrintDiffPreviews(t *testing.T) {
 	}
 	if strings.Contains(noHeader.String(), "Test Header") {
 		t.Fatalf("expected no header in output:\n%s", noHeader.String())
+	}
+}
+
+func TestPrintDiffPreviews_ColorizedWhenInteractive(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = origNoColor })
+
+	var buf bytes.Buffer
+	previews := []install.DiffPreview{
+		{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"},
+	}
+	if err := printDiffPreviews(&buf, "Header", previews); err != nil {
+		t.Fatalf("printDiffPreviews colorized: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected ANSI color sequences in output:\n%s", output)
+	}
+	if !strings.Contains(output, "Diff for file-a.txt:") {
+		t.Fatalf("expected diff label in output:\n%s", output)
+	}
+}
+
+func TestPrintDiffPreviews_NoColorFallback(t *testing.T) {
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origNoColor := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = origNoColor })
+
+	var buf bytes.Buffer
+	previews := []install.DiffPreview{
+		{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"},
+	}
+	if err := printDiffPreviews(&buf, "Header", previews); err != nil {
+		t.Fatalf("printDiffPreviews no-color: %v", err)
+	}
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Fatalf("expected plain output without ANSI color sequences:\n%s", buf.String())
+	}
+}
+
+func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = origNoColor })
+
+	var buf bytes.Buffer
+	preview := install.DiffPreview{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"}
+	if err := writeSinglePreviewBlock(&buf, preview); err != nil {
+		t.Fatalf("writeSinglePreviewBlock colorized: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected ANSI color sequences in output:\n%s", output)
+	}
+	if !strings.Contains(output, "    diff:") {
+		t.Fatalf("expected diff label in output:\n%s", output)
 	}
 }
 

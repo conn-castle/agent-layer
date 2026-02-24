@@ -37,6 +37,21 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.gemini.enabled",
 		},
 		{
+			name:    "gemini reasoning effort unsupported",
+			cfg:     withGeminiReasoning(valid, "high"),
+			wantErr: "agents.gemini.reasoning_effort is not supported",
+		},
+		{
+			name:    "invalid claude reasoning effort",
+			cfg:     withClaudeReasoning(valid, "opus", "xhigh"),
+			wantErr: "agents.claude.reasoning_effort must be one of",
+		},
+		{
+			name:    "claude reasoning requires opus model",
+			cfg:     withClaudeReasoning(valid, "sonnet", "high"),
+			wantErr: "requires an Opus model",
+		},
+		{
 			name: "missing server id",
 			cfg: withServers(valid, []MCPServer{
 				{Enabled: &trueVal, Transport: "http", URL: "https://example.com"},
@@ -126,6 +141,17 @@ func withServers(cfg Config, servers []MCPServer) Config {
 	return cfg
 }
 
+func withGeminiReasoning(cfg Config, effort string) Config {
+	cfg.Agents.Gemini.ReasoningEffort = effort
+	return cfg
+}
+
+func withClaudeReasoning(cfg Config, model string, effort string) Config {
+	cfg.Agents.Claude.Model = model
+	cfg.Agents.Claude.ReasoningEffort = effort
+	return cfg
+}
+
 func TestValidateApprovalsYOLO(t *testing.T) {
 	trueVal := true
 	cfg := Config{
@@ -141,6 +167,24 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
 		t.Fatalf("expected yolo to be valid, got %v", err)
+	}
+}
+
+func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
+	trueVal := true
+	cfg := Config{
+		Approvals: ApprovalsConfig{Mode: "all"},
+		Agents: AgentsConfig{
+			Gemini:       AgentConfig{Enabled: &trueVal},
+			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "high"},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
+			Codex:        CodexConfig{Enabled: &trueVal},
+			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+		},
+	}
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("expected claude opus reasoning effort to be valid, got %v", err)
 	}
 }
 
@@ -318,4 +362,34 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 			t.Errorf("expected url to be preserved, got %q", srv.URL)
 		}
 	})
+}
+
+func TestClaudeModelSupportsReasoningEffort(t *testing.T) {
+	cases := []struct {
+		model string
+		want  bool
+	}{
+		{"opus", true},
+		{"Opus", true},
+		{" opus ", true},
+		{"opusplan", true},
+		{"claude-opus-4-6", true},
+		{"claude_opus_4_6", true},
+		{"my-opus-variant", true},
+		{"", false},
+		{"default", false},
+		{"Default", false},
+		{"sonnet", false},
+		{"haiku", false},
+		{"corpus", false},
+		{"gpt-5", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.model, func(t *testing.T) {
+			got := ClaudeModelSupportsReasoningEffort(tc.model)
+			if got != tc.want {
+				t.Errorf("ClaudeModelSupportsReasoningEffort(%q) = %v, want %v", tc.model, got, tc.want)
+			}
+		})
+	}
 }

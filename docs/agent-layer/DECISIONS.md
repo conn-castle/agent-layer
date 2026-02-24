@@ -342,3 +342,18 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `noise_mode = "quiet"` suppresses all warnings (including critical). The p7a guardrail remains enforced for `reduce` only.
     Reason: Quiet mode is an explicit user opt-in for zero informational output; suppressing critical warnings is intentional in that mode.
     Tradeoffs: Users can miss high-risk warnings when quiet is enabled; guidance in README/config comments makes this risk explicit.
+
+- Decision 2026-02-24 wizard-order-policy: Wizard config writes now use explicit preferred section order (supersedes f7a3c9d)
+    Decision: Wizard-managed `config.toml` writes iterate an explicit preferred section order (`approvals`, enabled agents, `mcp`, `warnings`) instead of relying on template parse order as the implicit ordering source.
+    Reason: The previous "template order is policy" coupling made ordering intent implicit and brittle when templates were reorganized.
+    Tradeoffs: Existing user files are still rewritten to canonical wizard order; manual ordering/layout edits are not preserved.
+
+- Decision 2026-02-24 reasoning-effort-support-matrix: Reasoning effort is explicit per-client capability, not universal
+    Decision: Keep `reasoning_effort` supported for Codex and add Claude support (validated options, projected to `.claude/settings.json` as `effortLevel`); Gemini `reasoning_effort` is rejected with a hard validation error until a supported upstream control exists.
+    Reason: Claude exposes a stable settings surface for effort control now, while Gemini currently has no verified equivalent in this integration path; silent omission would violate fail-loud policy.
+    Tradeoffs: Configs attempting Gemini reasoning fail fast and must remove that key; future Gemini support requires explicit schema/validation/prompt updates.
+
+- Decision 2026-02-24 required-field-migration-guardrail: Required config fields need migration defaults with a legacy baseline allowlist
+    Decision: Add an automated guardrail test that enforces migration-manifest `config_set_default` coverage for required config fields introduced after baseline version `0.8.1`, with an explicit allowlist for legacy required fields that predate manifest enforcement.
+    Reason: A naive all-fields check would fail forever because historical required fields existed before migration manifests had operations.
+    Tradeoffs: The baseline allowlist must be maintained deliberately when introducing new required fields; stale allowlist entries can hide drift if not reviewed.

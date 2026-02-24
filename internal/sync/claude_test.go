@@ -163,6 +163,53 @@ func TestBuildClaudeSettingsAgentSpecific(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeSettingsIncludesReasoningEffort(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					ReasoningEffort: "high",
+				},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if got, ok := settings["effortLevel"].(string); !ok || got != "high" {
+		t.Fatalf("expected effortLevel=high, got %#v", settings["effortLevel"])
+	}
+}
+
+func TestBuildClaudeSettingsAgentSpecificEffortLevelOverride(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					ReasoningEffort: "high",
+					AgentSpecific: map[string]any{
+						"effortLevel": "low",
+					},
+				},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if got, ok := settings["effortLevel"].(string); !ok || got != "low" {
+		t.Fatalf("expected effortLevel override=low, got %#v", settings["effortLevel"])
+	}
+}
+
 func TestBuildClaudeSettingsAgentSpecificWithApprovals(t *testing.T) {
 	t.Parallel()
 	enabled := true

@@ -25,16 +25,18 @@ type AgentsConfig struct {
 
 // AgentConfig is for agents that support enablement and model selection.
 type AgentConfig struct {
-	Enabled *bool  `toml:"enabled"`
-	Model   string `toml:"model"`
+	Enabled         *bool  `toml:"enabled"`
+	Model           string `toml:"model"`
+	ReasoningEffort string `toml:"reasoning_effort"`
 }
 
 // ClaudeConfig extends AgentConfig with Claude-specific settings.
 type ClaudeConfig struct {
-	Enabled        *bool          `toml:"enabled"`
-	Model          string         `toml:"model"`
-	LocalConfigDir *bool          `toml:"local_config_dir"`
-	AgentSpecific  map[string]any `toml:"agent_specific"`
+	Enabled         *bool          `toml:"enabled"`
+	Model           string         `toml:"model"`
+	ReasoningEffort string         `toml:"reasoning_effort"`
+	LocalConfigDir  *bool          `toml:"local_config_dir"`
+	AgentSpecific   map[string]any `toml:"agent_specific"`
 }
 
 // EnableOnlyConfig is for agents that support enablement but not model selection.

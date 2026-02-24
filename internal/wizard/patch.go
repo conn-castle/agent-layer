@@ -43,6 +43,18 @@ type tomlDocument struct {
 	order    []string
 }
 
+var preferredWizardSectionOrder = []string{
+	"approvals",
+	"agents.gemini",
+	"agents.claude",
+	"agents.claude-vscode",
+	"agents.codex",
+	"agents.vscode",
+	"agents.antigravity",
+	"mcp",
+	"warnings",
+}
+
 // PatchConfig applies wizard choices to TOML config content.
 // content is the current config; choices holds selections; returns updated content or error.
 func PatchConfig(content string, choices *Choices) (string, error) {
@@ -81,7 +93,7 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 
 	removeWarnings := choices.WarningsEnabledTouched && !choices.WarningsEnabled
 
-	for _, name := range templateDoc.order {
+	for _, name := range orderedWizardSections(templateDoc.order) {
 		if name == "warnings" && removeWarnings {
 			continue
 		}
@@ -129,6 +141,35 @@ func choosePreamble(current []string, template []string) []string {
 	return template
 }
 
+func orderedWizardSections(templateOrder []string) []string {
+	seen := make(map[string]struct{}, len(templateOrder))
+	ordered := make([]string, 0, len(templateOrder))
+
+	for _, name := range preferredWizardSectionOrder {
+		if containsString(templateOrder, name) {
+			ordered = append(ordered, name)
+			seen[name] = struct{}{}
+		}
+	}
+	for _, name := range templateOrder {
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		ordered = append(ordered, name)
+		seen[name] = struct{}{}
+	}
+	return ordered
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 // selectSectionBlock picks the current block when present, otherwise the template block.
 func selectSectionBlock(current *tomlBlock, template *tomlBlock) *tomlBlock {
 	if current != nil {
@@ -158,6 +199,9 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		}
 		if choices.ClaudeModelTouched {
 			setOptionalKeyValue(block, templateBlock, "model", choices.ClaudeModel, "enabled")
+		}
+		if choices.ClaudeReasoningTouched {
+			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.ClaudeReasoning, "model")
 		}
 		if choices.ClaudeLocalConfigDirTouched {
 			if choices.ClaudeLocalConfigDir {
@@ -292,28 +336,53 @@ func sanitizeMCPServerBlock(block *tomlBlock) {
 	}
 }
 
-// extractMCPBlockKeyValue returns the unquoted value for a key in a TOML block.
-// lines are the raw block lines; key is the key to search for.
-// Tracks multiline string state to avoid parsing content inside multiline strings.
-func extractMCPBlockKeyValue(lines []string, key string) string {
+type tomlLineWalkResult struct {
+	advanceTo int
+	stop      bool
+}
+
+func walkTomlLinesOutsideMultiline(lines []string, fn func(i int, line string, state tomlStringState) tomlLineWalkResult) {
 	state := tomlStateNone
-	for _, line := range lines {
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		if IsTomlStateInMultiline(state) {
 			_, state = ScanTomlLineForComment(line, state)
 			continue
 		}
+
+		result := fn(i, line, state)
+		if result.advanceTo < i {
+			result.advanceTo = i
+		}
+
+		for j := i; j <= result.advanceTo && j < len(lines); j++ {
+			_, state = ScanTomlLineForComment(lines[j], state)
+		}
+		if result.stop {
+			return
+		}
+		i = result.advanceTo
+	}
+}
+
+// extractMCPBlockKeyValue returns the unquoted value for a key in a TOML block.
+// lines are the raw block lines; key is the key to search for.
+// Tracks multiline string state to avoid parsing content inside multiline strings.
+func extractMCPBlockKeyValue(lines []string, key string) string {
+	value := ""
+	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
+			return tomlLineWalkResult{}
 		}
-		k, value, ok := parseKeyValueWithState(trimmed, key, state)
+		k, parsedValue, ok := parseKeyValueWithState(trimmed, key, state)
 		if ok && k == key {
-			return strings.Trim(value, "\"'")
+			value = strings.Trim(parsedValue, "\"'")
+			return tomlLineWalkResult{stop: true}
 		}
-		_, state = ScanTomlLineForComment(line, state)
-	}
-	return ""
+		return tomlLineWalkResult{}
+	})
+	return value
 }
 
 // removeKeyFromBlock removes all uncommented lines for the given key from a block,
@@ -323,30 +392,20 @@ func extractMCPBlockKeyValue(lines []string, key string) string {
 // Tracks multiline string state to avoid matching content inside multiline strings.
 func removeKeyFromBlock(block *tomlBlock, key string) {
 	type lineRange struct{ start, end int }
-	state := tomlStateNone
 	var ranges []lineRange
-	for i := 0; i < len(block.lines); i++ {
-		line := block.lines[i]
-		if IsTomlStateInMultiline(state) {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
-		}
+	walkTomlLinesOutsideMultiline(block.lines, func(i int, line string, state tomlStringState) tomlLineWalkResult {
 		parsed, ok := parseKeyLineWithState(line, key, state)
 		if !ok {
 			// Check for dotted sub-key (e.g., "headers.foo = val" when key is "headers").
 			parsed, ok = parseDottedPrefixLine(line, key)
 		}
-		_, state = ScanTomlLineForComment(line, state)
 		if ok && !parsed.commented {
 			endIdx := multilineValueEndIndex(block.lines, i)
 			ranges = append(ranges, lineRange{i, endIdx})
-			// Advance state through any skipped continuation lines.
-			for j := i + 1; j <= endIdx && j < len(block.lines); j++ {
-				_, state = ScanTomlLineForComment(block.lines[j], state)
-			}
-			i = endIdx
+			return tomlLineWalkResult{advanceTo: endIdx}
 		}
-	}
+		return tomlLineWalkResult{}
+	})
 	// Remove in reverse order to avoid index shifting.
 	for i := len(ranges) - 1; i >= 0; i-- {
 		r := ranges[i]
@@ -658,20 +717,18 @@ type keyLine struct {
 // Returns false if the key is not present.
 // Tracks multiline string state to avoid parsing content inside multiline strings.
 func findKeyLine(lines []string, key string) (keyLine, bool) {
-	state := tomlStateNone
-	for _, line := range lines {
-		// Skip lines inside multiline strings.
-		if IsTomlStateInMultiline(state) {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
-		}
+	result := keyLine{}
+	found := false
+	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
 		parsed, ok := parseKeyLineWithState(line, key, state)
 		if ok {
-			return parsed, true
+			result = parsed
+			found = true
+			return tomlLineWalkResult{stop: true}
 		}
-		_, state = ScanTomlLineForComment(line, state)
-	}
-	return keyLine{}, false
+		return tomlLineWalkResult{}
+	})
+	return result, found
 }
 
 // parseKeyLineWithState parses a key/value assignment line with explicit state tracking.
@@ -736,23 +793,17 @@ func ensureCommented(line string) string {
 func replaceOrInsertLine(block *tomlBlock, key string, newLine string, afterKey string) {
 	var matches []int
 	uncommentedIndex := -1
-	state := tomlStateNone
-	for i, line := range block.lines {
-		// Skip lines inside multiline strings.
-		if IsTomlStateInMultiline(state) {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
-		}
+	walkTomlLinesOutsideMultiline(block.lines, func(i int, line string, state tomlStringState) tomlLineWalkResult {
 		parsed, ok := parseKeyLineWithState(line, key, state)
-		_, state = ScanTomlLineForComment(line, state)
 		if !ok {
-			continue
+			return tomlLineWalkResult{}
 		}
 		matches = append(matches, i)
 		if !parsed.commented && uncommentedIndex == -1 {
 			uncommentedIndex = i
 		}
-	}
+		return tomlLineWalkResult{}
+	})
 	if len(matches) > 0 {
 		replaceAt := matches[0]
 		if uncommentedIndex >= 0 {
@@ -780,17 +831,16 @@ func findInsertIndex(lines []string, afterKey string) int {
 		return 0
 	}
 	if afterKey != "" {
-		state := tomlStateNone
-		for i, line := range lines {
-			// Skip lines inside multiline strings.
-			if IsTomlStateInMultiline(state) {
-				_, state = ScanTomlLineForComment(line, state)
-				continue
-			}
+		insertAt := -1
+		walkTomlLinesOutsideMultiline(lines, func(i int, line string, state tomlStringState) tomlLineWalkResult {
 			if _, ok := parseKeyLineWithState(line, afterKey, state); ok {
-				return i + 1
+				insertAt = i + 1
+				return tomlLineWalkResult{stop: true}
 			}
-			_, state = ScanTomlLineForComment(line, state)
+			return tomlLineWalkResult{}
+		})
+		if insertAt >= 0 {
+			return insertAt
 		}
 	}
 	if len(lines) > 0 {
