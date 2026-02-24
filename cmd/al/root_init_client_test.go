@@ -264,6 +264,9 @@ func TestSyncCommand_WithWarnings(t *testing.T) {
 func TestSyncCommand_QuietSuppressesWarnings(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepoWithWarnings(t, root)
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "al")
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newSyncCmd()
 		cmd.Flags().Bool("quiet", false, "")
