@@ -61,6 +61,9 @@ func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) 
 			"allow": allow,
 		}
 	}
+	if project.Config.Agents.Claude.ReasoningEffort != "" && !config.HasAgentSpecificKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
+		settings["effortLevel"] = project.Config.Agents.Claude.ReasoningEffort
+	}
 
 	if len(project.Config.Agents.Claude.AgentSpecific) > 0 {
 		for key, value := range project.Config.Agents.Claude.AgentSpecific {

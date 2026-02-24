@@ -85,3 +85,20 @@ func TestHuhUI_RunFormSuccess(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, called)
 }
+
+func TestHuhUI_RunFormMapsUserAbortToWizardBack(t *testing.T) {
+	ui := &HuhUI{isTerminal: func() bool { return true }}
+	origRunForm := runFormFunc
+	t.Cleanup(func() {
+		runFormFunc = origRunForm
+	})
+
+	runFormFunc = func(form *huh.Form) error {
+		assert.NotNil(t, form)
+		return huh.ErrUserAborted
+	}
+
+	var res string
+	err := ui.Input("Title", &res)
+	assert.ErrorIs(t, err, errWizardBack)
+}

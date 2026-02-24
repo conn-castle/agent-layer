@@ -480,6 +480,88 @@ func TestRollbackUpgradeSnapshotState_NoTargets(t *testing.T) {
 	}
 }
 
+func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir docs/agent-layer: %v", err)
+	}
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
+	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o644); err != nil {
+		t.Fatalf("write current version: %v", err)
+	}
+	if err := os.WriteFile(roadmapPath, []byte("new roadmap\n"), 0o644); err != nil {
+		t.Fatalf("write current roadmap: %v", err)
+	}
+
+	filePerm := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "always-restore-version",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &filePerm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			},
+			{
+				Path:          "docs/agent-layer/ROADMAP.md",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &filePerm,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("old roadmap\n")),
+			},
+		},
+	}
+
+	// Simulate a target list that omits .agent-layer/al.version.
+	if err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, []string{roadmapPath}); err != nil {
+		t.Fatalf("rollbackUpgradeSnapshotState: %v", err)
+	}
+
+	versionBytes, err := os.ReadFile(versionPath)
+	if err != nil {
+		t.Fatalf("read restored version: %v", err)
+	}
+	if string(versionBytes) != "0.5.0\n" {
+		t.Fatalf("restored version = %q, want %q", string(versionBytes), "0.5.0\n")
+	}
+	roadmapBytes, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatalf("read restored roadmap: %v", err)
+	}
+	if string(roadmapBytes) != "old roadmap\n" {
+		t.Fatalf("restored roadmap = %q, want %q", string(roadmapBytes), "old roadmap\n")
+	}
+}
+
+func TestRollbackUpgradeSnapshotState_VersionEntryPathError(t *testing.T) {
+	root := string([]byte{0})
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "invalid-version-entry",
+		CreatedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusApplied,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          pinVersionRelPath,
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.5.0\n")),
+			},
+		},
+	}
+
+	err := rollbackUpgradeSnapshotState(root, RealSystem{}, snapshot, nil)
+	if err == nil {
+		t.Fatal("expected path resolution error")
+	}
+}
+
 func TestRollbackUpgradeSnapshotState_RemoveErrorFallbackRelativePath(t *testing.T) {
 	root := string([]byte{0})
 	target := filepath.Join(t.TempDir(), "target.txt")
@@ -573,6 +655,70 @@ func TestRestoreUpgradeSnapshotEntriesAtRoot_ErrorBranches(t *testing.T) {
 			t.Fatalf("expected write error, got %v", err)
 		}
 	})
+
+	t.Run("symlink parent mkdir error", func(t *testing.T) {
+		root := t.TempDir()
+		linkPath := filepath.Join(root, ".agent-layer", "al.version")
+		faults := newFaultSystem(RealSystem{})
+		faults.mkdirErrs[normalizePath(filepath.Dir(linkPath))] = errors.New("mkdir boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{
+				Path:       ".agent-layer/al.version",
+				Kind:       upgradeSnapshotEntryKindSymlink,
+				LinkTarget: ".agent-layer/target.txt",
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "mkdir boom") {
+			t.Fatalf("expected parent mkdir error, got %v", err)
+		}
+	})
+
+	t.Run("symlink create error", func(t *testing.T) {
+		root := t.TempDir()
+		linkPath := filepath.Join(root, ".agent-layer", "al.version")
+		faults := newFaultSystem(RealSystem{})
+		faults.symlinkErrs[normalizePath(linkPath)] = errors.New("symlink boom")
+		err := restoreUpgradeSnapshotEntriesAtRoot(root, faults, []upgradeSnapshotEntry{
+			{
+				Path:       ".agent-layer/al.version",
+				Kind:       upgradeSnapshotEntryKindSymlink,
+				LinkTarget: ".agent-layer/target.txt",
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "symlink boom") {
+			t.Fatalf("expected symlink error, got %v", err)
+		}
+	})
+}
+
+func TestRestoreUpgradeSnapshotEntriesAtRoot_RestoresSymlinkEntries(t *testing.T) {
+	root := t.TempDir()
+	entries := []upgradeSnapshotEntry{
+		{
+			Path:       ".agent-layer/al.version",
+			Kind:       upgradeSnapshotEntryKindSymlink,
+			LinkTarget: ".agent-layer/target.txt",
+		},
+	}
+	if err := restoreUpgradeSnapshotEntriesAtRoot(root, RealSystem{}, entries); err != nil {
+		t.Fatalf("restoreUpgradeSnapshotEntriesAtRoot: %v", err)
+	}
+
+	linkPath := filepath.Join(root, ".agent-layer", "al.version")
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		t.Fatalf("lstat restored symlink: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("restored path mode = %v, want symlink", info.Mode())
+	}
+	target, err := os.Readlink(linkPath)
+	if err != nil {
+		t.Fatalf("readlink restored symlink: %v", err)
+	}
+	if target != ".agent-layer/target.txt" {
+		t.Fatalf("restored symlink target = %q, want %q", target, ".agent-layer/target.txt")
+	}
 }
 
 func TestRollbackUpgradeSnapshot_MalformedSnapshotFailsLoudly(t *testing.T) {
@@ -960,7 +1106,7 @@ func TestCreateUpgradeSnapshot_SuccessAndCaptureError(t *testing.T) {
 
 	faults := newFaultSystem(RealSystem{})
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
-	faults.statErrs[normalizePath(versionPath)] = errors.New("stat failed")
+	faults.lstatErrs[normalizePath(versionPath)] = errors.New("lstat failed")
 	inst = &installer{root: root, sys: faults}
 	if _, err := inst.createUpgradeSnapshot(); err == nil {
 		t.Fatal("expected createUpgradeSnapshot error")
@@ -1076,38 +1222,180 @@ func TestCaptureUpgradeSnapshotTarget_AbsentThenFile(t *testing.T) {
 	}
 }
 
-func TestCaptureUpgradeSnapshotTarget_StatError(t *testing.T) {
+func TestCaptureUpgradeSnapshotTarget_CapturesSymlink(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, ".agent-layer", "al.version")
-	faults := newFaultSystem(RealSystem{})
-	faults.statErrs[normalizePath(path)] = errors.New("stat failed")
-	inst := &installer{root: root, sys: faults}
-
-	err := inst.captureUpgradeSnapshotTarget(path, map[string]upgradeSnapshotEntry{})
-	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
-		t.Fatalf("expected stat error, got %v", err)
-	}
-}
-
-func TestCaptureUpgradeSnapshotDirectory_UnsupportedSymlink(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, ".agent-layer", "tmp")
+	dir := filepath.Join(root, ".agent-layer")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
 	target := filepath.Join(root, ".agent-layer", "target.txt")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write target file: %v", err)
+	if err := os.WriteFile(target, []byte("payload"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
 	}
-	link := filepath.Join(dir, "link.txt")
+	link := filepath.Join(root, ".agent-layer", "al.version")
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatalf("create symlink: %v", err)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
+	entries := make(map[string]upgradeSnapshotEntry)
+	if err := inst.captureUpgradeSnapshotTarget(link, entries); err != nil {
+		t.Fatalf("capture symlink target: %v", err)
+	}
+
+	entry, ok := entries[".agent-layer/al.version"]
+	if !ok {
+		t.Fatalf("expected symlink entry, got keys: %v", entries)
+	}
+	if entry.Kind != upgradeSnapshotEntryKindSymlink {
+		t.Fatalf("entry kind = %q, want %q", entry.Kind, upgradeSnapshotEntryKindSymlink)
+	}
+	if entry.LinkTarget != target {
+		t.Fatalf("link target = %q, want %q", entry.LinkTarget, target)
+	}
+	if entry.ContentBase64 != "" {
+		t.Fatalf("expected empty content for symlink entry, got %q", entry.ContentBase64)
+	}
+}
+
+func TestCaptureUpgradeSnapshotTarget_StatError(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".agent-layer", "al.version")
+	faults := newFaultSystem(RealSystem{})
+	faults.lstatErrs[normalizePath(path)] = errors.New("lstat failed")
+	inst := &installer{root: root, sys: faults}
+
+	err := inst.captureUpgradeSnapshotTarget(path, map[string]upgradeSnapshotEntry{})
+	if err == nil || !strings.Contains(err.Error(), "failed to lstat") {
+		t.Fatalf("expected lstat error, got %v", err)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkEntryWithoutFollowingTarget(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	target := filepath.Join(root, ".agent-layer", "target.bin")
+	targetBytes := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 0x01, 0x02}
+	if err := os.WriteFile(target, targetBytes, 0o644); err != nil {
+		t.Fatalf("write target file: %v", err)
+	}
+	link := filepath.Join(dir, "icon.link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	entries := make(map[string]upgradeSnapshotEntry)
+	if err := inst.captureUpgradeSnapshotDirectory(dir, entries); err != nil {
+		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
+	}
+	entry, ok := entries[".agent-layer/tmp/icon.link"]
+	if !ok {
+		t.Fatalf("expected symlink snapshot entry, got keys: %v", entries)
+	}
+	if entry.Kind != upgradeSnapshotEntryKindSymlink {
+		t.Fatalf("entry kind = %q, want %q", entry.Kind, upgradeSnapshotEntryKindSymlink)
+	}
+	if entry.ContentBase64 != "" {
+		t.Fatalf("expected no captured file content for symlink, got %q", entry.ContentBase64)
+	}
+	if entry.LinkTarget != target {
+		t.Fatalf("link target = %q, want %q", entry.LinkTarget, target)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_CapturesExternalSymlinkWithoutReadingTarget(t *testing.T) {
+	root := t.TempDir()
+	external := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	target := filepath.Join(external, "outside.txt")
+	if err := os.WriteFile(target, []byte("outside"), 0o644); err != nil {
+		t.Fatalf("write external target file: %v", err)
+	}
+	link := filepath.Join(dir, "outside.link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	entries := make(map[string]upgradeSnapshotEntry)
+	if err := inst.captureUpgradeSnapshotDirectory(dir, entries); err != nil {
+		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
+	}
+	entry, ok := entries[".agent-layer/tmp/outside.link"]
+	if !ok {
+		t.Fatalf("expected external symlink snapshot entry, got keys: %v", entries)
+	}
+	if entry.Kind != upgradeSnapshotEntryKindSymlink {
+		t.Fatalf("entry kind = %q, want %q", entry.Kind, upgradeSnapshotEntryKindSymlink)
+	}
+	if entry.ContentBase64 != "" {
+		t.Fatalf("expected no content for symlink entry, got %q", entry.ContentBase64)
+	}
+	if entry.LinkTarget != target {
+		t.Fatalf("link target = %q, want %q", entry.LinkTarget, target)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkToDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	targetDir := filepath.Join(root, ".agent-layer", "target-dir")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	link := filepath.Join(dir, "dir-link")
+	if err := os.Symlink(targetDir, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	entries := map[string]upgradeSnapshotEntry{}
+	if err := inst.captureUpgradeSnapshotDirectory(dir, entries); err != nil {
+		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
+	}
+	entry, ok := entries[".agent-layer/tmp/dir-link"]
+	if !ok {
+		t.Fatalf("expected symlink snapshot entry, got keys: %v", entries)
+	}
+	if entry.Kind != upgradeSnapshotEntryKindSymlink {
+		t.Fatalf("entry kind = %q, want %q", entry.Kind, upgradeSnapshotEntryKindSymlink)
+	}
+	if entry.LinkTarget != targetDir {
+		t.Fatalf("link target = %q, want %q", entry.LinkTarget, targetDir)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_SymlinkReadlinkError(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir dir: %v", err)
+	}
+	target := filepath.Join(root, ".agent-layer", "target.bin")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write target file: %v", err)
+	}
+	link := filepath.Join(dir, "broken.png")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	faults := newFaultSystem(RealSystem{})
+	faults.readlinkErrs[normalizePath(link)] = errors.New("readlink failed")
+	inst := &installer{root: root, sys: faults}
 	err := inst.captureUpgradeSnapshotDirectory(dir, map[string]upgradeSnapshotEntry{})
-	if err == nil || !strings.Contains(err.Error(), "unsupported file type") {
-		t.Fatalf("expected unsupported file type error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "failed to read symlink") {
+		t.Fatalf("expected readlink failure, got %v", err)
 	}
 }
 
@@ -1283,6 +1571,44 @@ func TestValidateUpgradeSnapshotEntry_RejectsInvalidEntry(t *testing.T) {
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("x")),
 			},
 			want: "must not set content_base64",
+		},
+		{
+			name: "file has link target",
+			entry: upgradeSnapshotEntry{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("x")),
+				LinkTarget:    ".agent-layer/target.txt",
+			},
+			want: "must not set link_target",
+		},
+		{
+			name: "symlink missing target",
+			entry: upgradeSnapshotEntry{
+				Path: ".agent-layer/al.version",
+				Kind: upgradeSnapshotEntryKindSymlink,
+			},
+			want: "requires link_target",
+		},
+		{
+			name: "symlink has content",
+			entry: upgradeSnapshotEntry{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindSymlink,
+				LinkTarget:    ".agent-layer/target.txt",
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("x")),
+			},
+			want: "must not set content_base64",
+		},
+		{
+			name: "symlink has perm",
+			entry: upgradeSnapshotEntry{
+				Path:       ".agent-layer/al.version",
+				Kind:       upgradeSnapshotEntryKindSymlink,
+				LinkTarget: ".agent-layer/target.txt",
+				Perm:       &perm,
+			},
+			want: "must not set perm",
 		},
 		{
 			name: "invalid kind",
@@ -1488,8 +1814,16 @@ func (s *writeFailOnceSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }
 
+func (s *writeFailOnceSystem) Lstat(name string) (os.FileInfo, error) {
+	return s.base.Lstat(name)
+}
+
 func (s *writeFailOnceSystem) ReadFile(name string) ([]byte, error) {
 	return s.base.ReadFile(name)
+}
+
+func (s *writeFailOnceSystem) Readlink(name string) (string, error) {
+	return s.base.Readlink(name)
 }
 
 func (s *writeFailOnceSystem) LookupEnv(key string) (string, bool) {
@@ -1506,6 +1840,10 @@ func (s *writeFailOnceSystem) RemoveAll(path string) error {
 
 func (s *writeFailOnceSystem) Rename(oldpath string, newpath string) error {
 	return s.base.Rename(oldpath, newpath)
+}
+
+func (s *writeFailOnceSystem) Symlink(oldname string, newname string) error {
+	return s.base.Symlink(oldname, newname)
 }
 
 func (s *writeFailOnceSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
@@ -1528,8 +1866,16 @@ func (s walkCallbackErrSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }
 
+func (s walkCallbackErrSystem) Lstat(name string) (os.FileInfo, error) {
+	return s.base.Lstat(name)
+}
+
 func (s walkCallbackErrSystem) ReadFile(name string) ([]byte, error) {
 	return s.base.ReadFile(name)
+}
+
+func (s walkCallbackErrSystem) Readlink(name string) (string, error) {
+	return s.base.Readlink(name)
 }
 
 func (s walkCallbackErrSystem) LookupEnv(key string) (string, bool) {
@@ -1546,6 +1892,10 @@ func (s walkCallbackErrSystem) RemoveAll(path string) error {
 
 func (s walkCallbackErrSystem) Rename(oldpath string, newpath string) error {
 	return s.base.Rename(oldpath, newpath)
+}
+
+func (s walkCallbackErrSystem) Symlink(oldname string, newname string) error {
+	return s.base.Symlink(oldname, newname)
 }
 
 func (s walkCallbackErrSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
@@ -1567,6 +1917,17 @@ func TestValidateUpgradeSnapshotEntry_EmptyFile(t *testing.T) {
 	err := validateUpgradeSnapshotEntry(entry)
 	if err != nil {
 		t.Fatalf("expected nil error for empty file snapshot entry, got: %v", err)
+	}
+}
+
+func TestValidateUpgradeSnapshotEntry_Symlink(t *testing.T) {
+	entry := upgradeSnapshotEntry{
+		Path:       ".agent-layer/al.version",
+		Kind:       upgradeSnapshotEntryKindSymlink,
+		LinkTarget: ".agent-layer/target.txt",
+	}
+	if err := validateUpgradeSnapshotEntry(entry); err != nil {
+		t.Fatalf("expected nil error for symlink snapshot entry, got: %v", err)
 	}
 }
 

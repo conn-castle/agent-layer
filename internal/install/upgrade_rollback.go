@@ -112,6 +112,10 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 		return err
 	}
 	scopedTargets := uniqueNormalizedPaths(targets)
+	scopedTargets, err := ensureVersionRollbackTarget(root, snapshot.Entries, scopedTargets)
+	if err != nil {
+		return err
+	}
 	if len(scopedTargets) == 0 {
 		return nil
 	}
@@ -158,15 +162,37 @@ func rollbackUpgradeSnapshotState(root string, sys System, snapshot upgradeSnaps
 	return restoreUpgradeSnapshotEntriesAtRoot(root, sys, filteredEntries)
 }
 
+func ensureVersionRollbackTarget(root string, entries []upgradeSnapshotEntry, targets []string) ([]string, error) {
+	versionEntryPath := ""
+	for _, entry := range entries {
+		if entry.Path == pinVersionRelPath {
+			versionEntryPath = entry.Path
+			break
+		}
+	}
+	if versionEntryPath == "" {
+		return targets, nil
+	}
+
+	versionAbsPath, err := snapshotEntryAbsPath(root, versionEntryPath)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueNormalizedPaths(append(targets, versionAbsPath)), nil
+}
+
 func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgradeSnapshotEntry) error {
 	dirs := make([]upgradeSnapshotEntry, 0)
 	files := make([]upgradeSnapshotEntry, 0)
+	symlinks := make([]upgradeSnapshotEntry, 0)
 	for _, entry := range entries {
 		switch entry.Kind {
 		case upgradeSnapshotEntryKindDir:
 			dirs = append(dirs, entry)
 		case upgradeSnapshotEntryKindFile:
 			files = append(files, entry)
+		case upgradeSnapshotEntryKindSymlink:
+			symlinks = append(symlinks, entry)
 		case upgradeSnapshotEntryKindAbsent:
 			// Absent entries are intentionally no-op on restore because the reset phase
 			// already removed all rollback targets, leaving these paths absent again.
@@ -181,6 +207,9 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 	})
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Path < files[j].Path
+	})
+	sort.Slice(symlinks, func(i, j int) bool {
+		return symlinks[i].Path < symlinks[j].Path
 	})
 
 	for _, entry := range dirs {
@@ -206,6 +235,25 @@ func restoreUpgradeSnapshotEntriesAtRoot(root string, sys System, entries []upgr
 		}
 		if err := sys.WriteFileAtomic(absPath, content, permFromSnapshot(entry.Perm, 0o644)); err != nil {
 			return fmt.Errorf(messages.InstallFailedWriteFmt, absPath, err)
+		}
+	}
+	for _, entry := range symlinks {
+		absPath, err := snapshotEntryAbsPath(root, entry.Path)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(entry.LinkTarget) == "" {
+			return fmt.Errorf("symlink snapshot entry %s requires link_target", entry.Path)
+		}
+		if err := sys.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+			return fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, err)
+		}
+		// Defensively remove any pre-existing file/symlink at the target path.
+		// The rollback reset phase should have already cleared it, but this
+		// prevents EEXIST if the function is called outside a full rollback flow.
+		_ = sys.RemoveAll(absPath)
+		if err := sys.Symlink(entry.LinkTarget, absPath); err != nil {
+			return fmt.Errorf(messages.InstallFailedRestoreSymlinkFmt, entry.Path, err)
 		}
 	}
 	return nil

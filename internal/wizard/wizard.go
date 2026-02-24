@@ -22,6 +22,7 @@ var (
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
 	loadConfigLenientFunc     = config.LoadConfigLenient
+	errWizardBack             = errors.New("wizard back requested")
 	errWizardCancelled        = errors.New("wizard cancelled")
 )
 
@@ -42,6 +43,10 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 	proceed, err := ensureWizardConfig(root, configPath, ui, pinVersion, out)
 	if err != nil {
+		if errors.Is(err, errWizardBack) {
+			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			return nil
+		}
 		return err
 	}
 	if !proceed {
@@ -73,7 +78,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 	}
 
 	if err := promptWizardFlow(root, ui, cfg, choices); err != nil {
-		if errors.Is(err, errWizardCancelled) {
+		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 			return nil
 		}
@@ -81,6 +86,10 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 	}
 
 	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out); err != nil {
+		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
+			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			return nil
+		}
 		return err
 	}
 
@@ -147,6 +156,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 
 	choices.GeminiModel = cfg.Config.Agents.Gemini.Model
 	choices.ClaudeModel = cfg.Config.Agents.Claude.Model
+	choices.ClaudeReasoning = cfg.Config.Agents.Claude.ReasoningEffort
 	if cfg.Config.Agents.Claude.LocalConfigDir != nil {
 		choices.ClaudeLocalConfigDir = *cfg.Config.Agents.Claude.LocalConfigDir
 	}
@@ -187,7 +197,72 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	return choices, nil
 }
 
+type wizardFlowStep int
+
+const (
+	wizardFlowStepApproval wizardFlowStep = iota
+	wizardFlowStepAgents
+	wizardFlowStepModels
+	wizardFlowStepMCPDefaults
+	wizardFlowStepSecrets
+	wizardFlowStepWarnings
+)
+
 func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Choices) error {
+	step := wizardFlowStepApproval
+	for {
+		snapshot := choices.Clone()
+		var err error
+
+		switch step {
+		case wizardFlowStepApproval:
+			err = promptApprovalMode(ui, choices)
+		case wizardFlowStepAgents:
+			err = promptEnabledAgents(ui, choices)
+		case wizardFlowStepModels:
+			err = promptModels(ui, choices)
+		case wizardFlowStepMCPDefaults:
+			err = promptDefaultMCPServers(ui, cfg, choices)
+		case wizardFlowStepSecrets:
+			err = promptSecrets(root, ui, choices)
+		case wizardFlowStepWarnings:
+			err = promptWarnings(ui, choices)
+		default:
+			return nil
+		}
+
+		if err == nil {
+			if step == wizardFlowStepWarnings {
+				return nil
+			}
+			step++
+			continue
+		}
+
+		if !errors.Is(err, errWizardBack) {
+			return err
+		}
+
+		if snapshot != nil {
+			*choices = *snapshot
+		}
+
+		if step == wizardFlowStepApproval {
+			exit, confirmErr := confirmWizardExitOnFirstStepEscape(ui)
+			if confirmErr != nil {
+				return confirmErr
+			}
+			if exit {
+				return errWizardCancelled
+			}
+			continue
+		}
+
+		step--
+	}
+}
+
+func promptApprovalMode(ui UI, choices *Choices) error {
 	approvalModeLabel, ok := approvalModeLabelForValue(choices.ApprovalMode)
 	if !ok {
 		return fmt.Errorf(messages.WizardUnknownApprovalModeFmt, choices.ApprovalMode)
@@ -201,24 +276,20 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 	}
 	choices.ApprovalMode = approvalModeValue
 	choices.ApprovalModeTouched = true
+	return nil
+}
 
+func promptEnabledAgents(ui UI, choices *Choices) error {
 	enabledAgents := enabledAgentIDs(choices.EnabledAgents)
 	if err := ui.MultiSelect(messages.WizardEnableAgentsTitle, SupportedAgents(), &enabledAgents); err != nil {
 		return err
 	}
 	choices.EnabledAgents = agentIDSet(enabledAgents)
 	choices.EnabledAgentsTouched = true
+	return nil
+}
 
-	if err := promptModels(ui, choices); err != nil {
-		return err
-	}
-	if err := promptDefaultMCPServers(ui, cfg, choices); err != nil {
-		return err
-	}
-	if err := promptSecrets(root, ui, choices); err != nil {
-		return err
-	}
-
+func promptWarnings(ui UI, choices *Choices) error {
 	warningsEnabled := choices.WarningsEnabled
 	if err := ui.Confirm(messages.WizardEnableWarningsPrompt, &warningsEnabled); err != nil {
 		return err
@@ -226,6 +297,17 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 	choices.WarningsEnabled = warningsEnabled
 	choices.WarningsEnabledTouched = true
 	return nil
+}
+
+func confirmWizardExitOnFirstStepEscape(ui UI) (bool, error) {
+	exit := true
+	if err := ui.Confirm(messages.WizardFirstStepEscapeExitPrompt, &exit); err != nil {
+		if errors.Is(err, errWizardBack) {
+			return false, nil
+		}
+		return false, err
+	}
+	return exit, nil
 }
 
 func promptModels(ui UI, choices *Choices) error {
@@ -245,6 +327,16 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.ClaudeModelTouched = true
+		if config.ClaudeModelSupportsReasoningEffort(choices.ClaudeModel) {
+			if err := selectOptionalValue(ui, messages.WizardClaudeReasoningEffortTitle, ClaudeReasoningEfforts(), &choices.ClaudeReasoning); err != nil {
+				return err
+			}
+			choices.ClaudeReasoningTouched = true
+		} else if choices.ClaudeReasoning != "" {
+			// Clear reasoning effort when the selected model does not support it.
+			choices.ClaudeReasoning = ""
+			choices.ClaudeReasoningTouched = true
+		}
 	}
 	if choices.EnabledAgents[AgentClaude] || choices.EnabledAgents[AgentClaudeVSCode] {
 		claudeLocalConfigDir := choices.ClaudeLocalConfigDir

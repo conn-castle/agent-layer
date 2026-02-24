@@ -28,12 +28,6 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
-- Backlog 2026-02-19 readable-upgrade-diff: Improve upgrade diff readability with color coding
-    Priority: Medium. Area: upgrades / UX
-    Description: Improve upgrade diff formatting so users can quickly and confidently understand what changed.
-    Acceptance criteria: Upgrade diffs render with clear color coding (at minimum) for additions/removals and remain legible in standard terminal workflows.
-    Notes: Prefer a format that also improves scanability beyond color when possible (grouping, labels, or concise summaries).
-
 - Backlog 2026-02-16 skill-install: Install community skills from external sources
     Priority: Low. Area: skills / ecosystem
     Description: Allow users to install agentskills.io-compliant skills from GitHub repos or a registry (e.g., `al skill add <repo>` or `al skill add <name>`).

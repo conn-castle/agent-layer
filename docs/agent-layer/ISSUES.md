@@ -27,87 +27,20 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-02-23 wizard-claude-model-catalog-stale: Wizard Claude model options are stale/non-canonical
-    Priority: High. Area: wizard / model selection correctness.
-    Description: Wizard currently offers values like `sonnet-4.6` and `opus-4.6`, but Claude Code supports aliases `default`, `sonnet`, `opus`, `haiku`, `sonnet[1m]`, `opusplan` (and full model names like `claude-sonnet-4-6` / `claude-opus-4-6`).
-    Next step: Update `agents.claude.model` field catalog and wizard prompts/tests to use the canonical supported selectors above, removing stale values.
-
-- Issue 2026-02-23 reasoning-effort-parity: Support reasoning effort for Claude and Gemini when available
-    Priority: Medium. Area: clients / model configuration.
-    Description: We need consistent handling of `reasoning_effort` for Claude (supported now) and Gemini when the selected model/provider exposes that capability, instead of uneven or missing support across clients.
-    Next step: Add capability-aware mapping and validation per client/model, then add tests covering supported and unsupported paths so behavior fails loudly when unsupported.
-
-- Issue 2026-02-23 upg-diff-unchanged-lines: Upgrade diff preview marks unchanged lines as additions/removals
-    Priority: High. Area: upgrade / diff preview correctness.
-    Description: `al upgrade` diff output showed lines rendered as both `-` and `+` even though content appears unchanged (for example `/.gemini/`, `/.claude/`, and trailing-space-only changes in `COMMANDS.md`), making the preview misleading.
-    Next step: Investigate diff generation/normalization in upgrade managed-file comparison, then ensure unchanged lines are not emitted as content changes (or explicitly label whitespace-only changes).
-
-- Issue 2026-02-23 upg-snapshot-binary-support: Upgrade snapshot rejects binary files in captured path
-    Priority: High. Area: upgrade / snapshot reliability.
-    Description: Running `al upgrade` failed with `unsupported file type for snapshot path .../docs/assets/icon.png`, indicating snapshot capture cannot handle non-text assets inside selected paths.
-    Next step: Update snapshot capture/restore to support arbitrary file types (including binary) across nested paths; add regression test coverage using a PNG fixture.
-
 - Issue 2026-02-22 config-key-style-unify: Config key naming mixes kebab-case and snake_case
     Priority: Medium. Area: config schema / UX.
     Description: The config currently mixes naming styles (for example `agents.claude-vscode` vs `agents.codex.agent_specific` and `reasoning_effort`), which makes the schema feel inconsistent and harder to learn.
     Next step: Define one canonical key style based on TOML/client ecosystem best practice, then migrate all config keys, templates, docs, and tests to that convention.
-
-- Issue 2026-02-20 gemini-http-transport-url: Gemini sync maps SSE servers to httpUrl instead of url
-    Priority: Medium. Area: sync / Gemini MCP.
-    Description: `buildGeminiSettings` in `internal/sync/gemini.go:98-103` always maps HTTP transport servers to `httpUrl` (streamable HTTP) regardless of the resolved `HTTPTransport` value. Gemini CLI distinguishes `httpUrl` (streamable HTTP) from `url` (SSE). The default `http_transport` is `"sse"` (`resolvers.go:76-78`), so any custom HTTP server without explicit `http_transport = "streamable"` would be written to the wrong field. Current seeded defaults are unaffected because `tavily` explicitly sets `http_transport = "streamable"`.
-    Next step: Check `server.HTTPTransport` in the Gemini build loop: use `url` for SSE, `httpUrl` for streamable. Add test coverage for both transport sub-types.
-
-- Issue 2026-02-20 wizard-config-order-preferences: Audit wizard config write order and align it to preferred priority
-    Priority: Medium. Area: wizard / UX.
-    Description: Wizard output currently follows canonical template order, and the current sequence may not match a priority order optimized for human readers/editors of `config.toml`.
-    Next step: Audit the current wizard-managed section/server ordering, gather preferred order from the user, then update template/patch ordering logic and tests to enforce that sequence.
-
-- Issue 2026-02-20 exit-code-flatten: Subprocess exit codes flattened to 1 by all client launchers
-    Priority: Medium. Area: clients / UX.
-    Description: `al claude`, `al gemini`, `al codex`, etc. all exit with code 1 regardless of the subprocess's actual exit code. The subprocess error is wrapped via `fmt.Errorf` and cobra's top-level handler calls `os.Exit(1)` for any error. E2E test confirmed: mock exits 42, al claude exits 1. Users and scripts cannot distinguish between different failure modes based on exit code.
-    Next step: Type-assert `*exec.ExitError` in launch code, extract `.ExitCode()`, and pass it to `os.Exit()` for subprocess failures. Update e2e test to assert propagated code.
-
-- Issue 2026-02-20 wizard-profile-silent-overwrite: Wizard profile mode silently overwrites corrupt config without detection or warning
-    Priority: Low. Area: wizard / UX.
-    Description: `al wizard --profile X --yes` reads the existing config.toml as raw bytes (never parses as TOML), shows a diff preview, and overwrites with the profile. It does not detect or warn about TOML corruption. This is by design (profile mode is a forceful replacement), but may surprise users who don't realize their custom config was lost.
-    Next step: Consider adding a warning when the existing config fails TOML parsing, so users know they're replacing a corrupt file. The backup (config.toml.bak) is already created.
-
-- Issue 2026-02-19 upg-snapshot-recover-version-target: Snapshot recovery restores to prior version, not upgrade start version
-    Priority: High. Area: install / rollback correctness.
-    Description: During upgrade flows that create a snapshot, invoking recovery does not restore the environment to the version at upgrade start; it restores only to the immediately prior version state. This violates the expectation that upgrade/rollback flows are always safe and dependable.
-    Next step: E2E scenario 055 covers the basic upgrade/rollback path and asserts version restoration. Investigate edge cases where "prior version" differs from "upgrade-start version", add a dedicated test, and enforce the correct recovery target.
-    Notes: Reliability contract: `al upgrade` must always work, including rollback correctness.
-
-- Issue 2026-02-19 toml-multiline-state-dup: Multiline TOML state tracking duplicated across 7 functions in wizard/patch.go
-    Priority: Low. Area: wizard / maintainability.
-    Description: The pattern of checking `IsTomlStateInMultiline(state)` / `ScanTomlLineForComment(line, state)` is repeated in `extractMCPBlockKeyValue`, `removeKeyFromBlock`, `findKeyLine`, `parseKeyLineWithState`, `replaceOrInsertLine`, `findInsertIndex`, and the bracket-depth loop in `multilineValueEndIndex`. v0.8.3 added two more instances. A shared line iterator that advances state and yields parsed lines would consolidate this.
-    Next step: Extract a `tomlBlockIterator` or equivalent that encapsulates state tracking and yields non-multiline-content lines, then refactor all 7 call sites.
-
-- Issue 2026-02-18 config-new-field-checklist: Future new required config fields must include migration manifest entry
-    Priority: Medium. Area: config / backwards compatibility.
-    Description: v0.8.1 added `agents.claude-vscode.enabled` as required, breaking pre-v0.8.1 configs. Fixed by config resilience (lenient parsing + interactive upgrade prompts). Any future new required field must include a `config_set_default` operation in the release's migration manifest (`internal/templates/migrations/<version>.json`).
-    Next step: Add a CI lint or code review checklist item that enforces: any new nil-check in `Validate()` must have a matching `config_set_default` operation in the migration manifest.
 
 - Issue 2026-02-16 skill-standard-rename: Rename slash-commands to skills and align with standard
     Priority: High. Area: slash-commands / skills.
     Description: Slash-commands should be renamed to "skills" to align with the established skill standard. This includes supporting supplemental folders within the skill directory and updating `al doctor` to verify compatibility using the standard toolset.
     Next step: Perform a global rename of slash-command terminology and implement structural/validation updates to match the skill standard.
 
-- Issue 2026-02-15 upg-config-toml-roundtrip: Config migrations strip user TOML comments/formatting
-    Priority: Medium. Area: install / UX.
-    Description: `upgrade_migrations.go` decodes `.agent-layer/config.toml` into a map and re-marshals after key/default migrations, which removes user comments and original key ordering.
-    Next step: Preserve comments/order for simple key migrations (line-level edit or AST-preserving strategy), or explicitly document this destructive formatting side effect.
-    Notes: Explicitly deferred in the Upgrade continuation scope; wizard/profile flows now show rewrite previews and backup files before write.
-
 - Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
     Priority: Low. Area: install / maintainability.
     Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
     Next step: Audit current method count (Phase 11 is complete). If it exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`). Scheduled in Phase 13 (maintenance).
-
-- Issue 2026-02-09 web-seo: Update website metadata, SEO, and favicon
-    Priority: Medium. Area: website / marketing.
-    Description: The website needs professional metadata, SEO optimization, and a proper favicon to improve visibility and professional appearance.
-    Next step: Audit `site/` for missing meta tags and favicon, then implement them.
 
 - Issue 2026-02-08 tmpl-mk: Slash-command templates reference non-existent Makefile targets
     Priority: Low. Area: templates / developer experience.

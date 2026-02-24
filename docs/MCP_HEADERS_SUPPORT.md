@@ -21,12 +21,12 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 
 **File (repo-local):** `.gemini/settings.json`
 
-**HTTP server with headers:**
+**SSE HTTP server with headers (default `http_transport = "sse"`):**
 ```json
 {
   "mcpServers": {
     "my-server": {
-      "httpUrl": "https://api.example.com/mcp",
+      "url": "https://api.example.com/mcp",
       "headers": {
         "Authorization": "Bearer ${MY_API_TOKEN}",
         "X-Custom-Header": "Value"
@@ -39,6 +39,7 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 Notes:
 
 * Gemini CLI settings files support environment variable references inside string values (e.g., `${MY_API_TOKEN}`), so you can keep secrets out of the file by referencing env vars.
+* Agent Layer emits `url` for SSE transport and `httpUrl` for streamable HTTP transport (`http_transport = "streamable"`).
 * If your goal is to reduce tool count from a “huge” server, Gemini also supports `includeTools` / `excludeTools` on the server entry (client-side tool filtering).
 
 ### 2) Claude Code

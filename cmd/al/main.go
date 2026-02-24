@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 )
 
 var maybeExecFunc = dispatch.MaybeExec
+var executeFunc = execute
 
 // Version, Commit, and BuildDate are overridden at build time.
 var (
@@ -62,29 +64,40 @@ func runMain(args []string, stdout io.Writer, stderr io.Writer, exit func(int)) 
 		dispatchStderr = io.Discard
 	}
 	if !shouldBypassDispatch(args) {
-		if err := maybeExecFunc(args, Version, cwd, dispatchStderr, exit); err != nil {
-			if errors.Is(err, dispatch.ErrDispatched) {
-				return
-			}
-			var silent *SilentExitError
-			if errors.As(err, &silent) {
-				exit(silent.Code)
-				return
-			}
-			_, _ = fmt.Fprintln(stderr, err)
-			exit(1)
+		if handleRunError(maybeExecFunc(args, Version, cwd, dispatchStderr, exit), stderr, exit, true) {
 			return
 		}
 	}
-	if err := execute(args, stdout, stderr); err != nil {
-		var silent *SilentExitError
-		if errors.As(err, &silent) {
-			exit(silent.Code)
-			return
-		}
+	if handleRunError(executeFunc(args, stdout, stderr), stderr, exit, false) {
+		return
+	}
+}
+
+func handleRunError(err error, stderr io.Writer, exit func(int), allowDispatched bool) bool {
+	if err == nil {
+		return false
+	}
+	if allowDispatched && errors.Is(err, dispatch.ErrDispatched) {
+		return true
+	}
+	var silent *SilentExitError
+	if errors.As(err, &silent) {
+		exit(silent.Code)
+		return true
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
 		_, _ = fmt.Fprintln(stderr, err)
-		exit(1)
+		code := exitErr.ExitCode()
+		if code <= 0 {
+			code = 1
+		}
+		exit(code)
+		return true
 	}
+	_, _ = fmt.Fprintln(stderr, err)
+	exit(1)
+	return true
 }
 
 // shouldBypassDispatch reports whether dispatch should be skipped for this invocation.

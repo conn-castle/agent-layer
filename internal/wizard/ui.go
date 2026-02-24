@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/huh"
@@ -49,7 +50,11 @@ func (ui *HuhUI) runForm(form *huh.Form) error {
 	if err := ui.ensureInteractive(); err != nil {
 		return err
 	}
-	return runFormFunc(form)
+	err := runFormFunc(form)
+	if errors.Is(err, huh.ErrUserAborted) {
+		return errWizardBack
+	}
+	return err
 }
 
 // Select renders a single-choice prompt.

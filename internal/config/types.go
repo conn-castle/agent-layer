@@ -24,17 +24,22 @@ type AgentsConfig struct {
 }
 
 // AgentConfig is for agents that support enablement and model selection.
+// ReasoningEffort is present so the TOML decoder accepts the key without
+// raising an unknown-key error; the validator then provides a specific
+// error message for agents that do not support reasoning effort (e.g. Gemini).
 type AgentConfig struct {
-	Enabled *bool  `toml:"enabled"`
-	Model   string `toml:"model"`
+	Enabled         *bool  `toml:"enabled"`
+	Model           string `toml:"model"`
+	ReasoningEffort string `toml:"reasoning_effort"`
 }
 
 // ClaudeConfig extends AgentConfig with Claude-specific settings.
 type ClaudeConfig struct {
-	Enabled        *bool          `toml:"enabled"`
-	Model          string         `toml:"model"`
-	LocalConfigDir *bool          `toml:"local_config_dir"`
-	AgentSpecific  map[string]any `toml:"agent_specific"`
+	Enabled         *bool          `toml:"enabled"`
+	Model           string         `toml:"model"`
+	ReasoningEffort string         `toml:"reasoning_effort"`
+	LocalConfigDir  *bool          `toml:"local_config_dir"`
+	AgentSpecific   map[string]any `toml:"agent_specific"`
 }
 
 // EnableOnlyConfig is for agents that support enablement but not model selection.

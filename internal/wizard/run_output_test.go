@@ -29,6 +29,23 @@ func TestRunWithWriter_InstallCancelledPrintsToWriter(t *testing.T) {
 	require.Contains(t, out.String(), messages.WizardExitWithoutChanges)
 }
 
+func TestRunWithWriter_InstallEscapeBackPrintsToWriter(t *testing.T) {
+	root := t.TempDir()
+	ui := &MockUI{
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardInstallPrompt {
+				return errWizardBack
+			}
+			return nil
+		},
+	}
+
+	var out bytes.Buffer
+	err := RunWithWriter(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", &out)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), messages.WizardExitWithoutChanges)
+}
+
 func TestRunWithWriter_ApplyCancelledPrintsToWriter(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)

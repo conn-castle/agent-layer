@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -642,11 +643,8 @@ func writeSinglePreviewBlock(out io.Writer, preview install.DiffPreview) error {
 	if _, err := fmt.Fprintln(out, "    diff:"); err != nil {
 		return err
 	}
-	lines := strings.Split(strings.TrimRight(preview.UnifiedDiff, "\n"), "\n")
-	for _, line := range lines {
-		if _, err := fmt.Fprintf(out, "      %s\n", line); err != nil {
-			return err
-		}
+	if err := writeUnifiedDiff(out, preview.UnifiedDiff, shouldColorizeDiffOutput(), "      "); err != nil {
+		return err
 	}
 	return nil
 }
@@ -671,6 +669,7 @@ func printDiffPreviews(out io.Writer, header string, previews []install.DiffPrev
 	if _, err := fmt.Fprintln(out); err != nil {
 		return err
 	}
+	colorize := shouldColorizeDiffOutput()
 	for _, preview := range previews {
 		if strings.TrimSpace(preview.UnifiedDiff) == "" {
 			continue
@@ -678,10 +677,59 @@ func printDiffPreviews(out io.Writer, header string, previews []install.DiffPrev
 		if _, err := fmt.Fprintf(out, "Diff for %s:\n", preview.Path); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprint(out, preview.UnifiedDiff); err != nil {
+		if err := writeUnifiedDiff(out, preview.UnifiedDiff, colorize, ""); err != nil {
 			return err
 		}
 		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func shouldColorizeDiffOutput() bool {
+	return isTerminal() && !color.NoColor
+}
+
+var (
+	diffColorAdded   = color.New(color.FgGreen)
+	diffColorRemoved = color.New(color.FgRed)
+	diffColorHunk    = color.New(color.FgCyan)
+)
+
+func formatUnifiedDiffLine(line string, colorize bool) string {
+	if !colorize {
+		return line
+	}
+	switch {
+	case strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++"):
+		return diffColorAdded.Sprint(line)
+	case strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---"):
+		return diffColorRemoved.Sprint(line)
+	case strings.HasPrefix(line, "@@"):
+		return diffColorHunk.Sprint(line)
+	default:
+		return line
+	}
+}
+
+func writeUnifiedDiff(out io.Writer, diff string, colorize bool, indent string) error {
+	trimmed := strings.TrimRight(diff, "\n")
+	lines := strings.Split(trimmed, "\n")
+	hasTrailingNewline := strings.HasSuffix(diff, "\n")
+	for idx, line := range lines {
+		formatted := formatUnifiedDiffLine(line, colorize)
+		if indent != "" {
+			formatted = indent + formatted
+		}
+		isLast := idx == len(lines)-1
+		if isLast && !hasTrailingNewline {
+			if _, err := fmt.Fprint(out, formatted); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := fmt.Fprintln(out, formatted); err != nil {
 			return err
 		}
 	}

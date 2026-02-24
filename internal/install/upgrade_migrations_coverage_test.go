@@ -2374,6 +2374,10 @@ func (s *readFailOnNthSystem) Stat(name string) (os.FileInfo, error) {
 	return s.base.Stat(name)
 }
 
+func (s *readFailOnNthSystem) Lstat(name string) (os.FileInfo, error) {
+	return s.base.Lstat(name)
+}
+
 func (s *readFailOnNthSystem) ReadFile(name string) ([]byte, error) {
 	if normalizePath(name) == normalizePath(s.target) {
 		s.calls++
@@ -2382,6 +2386,10 @@ func (s *readFailOnNthSystem) ReadFile(name string) ([]byte, error) {
 		}
 	}
 	return s.base.ReadFile(name)
+}
+
+func (s *readFailOnNthSystem) Readlink(name string) (string, error) {
+	return s.base.Readlink(name)
 }
 
 func (s *readFailOnNthSystem) LookupEnv(key string) (string, bool) {
@@ -2398,6 +2406,10 @@ func (s *readFailOnNthSystem) RemoveAll(path string) error {
 
 func (s *readFailOnNthSystem) Rename(oldpath string, newpath string) error {
 	return s.base.Rename(oldpath, newpath)
+}
+
+func (s *readFailOnNthSystem) Symlink(oldname string, newname string) error {
+	return s.base.Symlink(oldname, newname)
 }
 
 func (s *readFailOnNthSystem) WalkDir(root string, fn fs.WalkDirFunc) error {

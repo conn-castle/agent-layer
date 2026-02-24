@@ -85,6 +85,41 @@ enabled = false
 	assert.Less(t, idxMCP, idxWarnings)
 }
 
+func TestOrderedWizardSections_UsesPreferredOrderWithTemplateFallback(t *testing.T) {
+	templateOrder := []string{
+		"warnings",
+		"mcp",
+		"agents.gemini",
+		"approvals",
+		"custom.section",
+		"agents.codex",
+	}
+	got := orderedWizardSections(templateOrder)
+	want := []string{
+		"approvals",
+		"agents.gemini",
+		"agents.codex",
+		"mcp",
+		"warnings",
+		"custom.section",
+	}
+	require.Equal(t, want, got)
+}
+
+func TestPreferredWizardSectionOrder_CoversAllSupportedAgents(t *testing.T) {
+	agents := SupportedAgents()
+	sectionSet := make(map[string]struct{}, len(preferredWizardSectionOrder))
+	for _, name := range preferredWizardSectionOrder {
+		sectionSet[name] = struct{}{}
+	}
+	for _, agent := range agents {
+		key := "agents." + agent
+		if _, ok := sectionSet[key]; !ok {
+			t.Errorf("SupportedAgents() includes %q but preferredWizardSectionOrder is missing %q", agent, key)
+		}
+	}
+}
+
 func TestPatchConfig_MCPServerOrdering(t *testing.T) {
 	defaults, err := loadDefaultMCPServers()
 	require.NoError(t, err)
@@ -398,6 +433,22 @@ enabled = true
 	require.NoError(t, err)
 
 	assert.Contains(t, out, `model = "gpt-5"`)
+}
+
+func TestPatchConfig_SetClaudeReasoningEffort(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+model = "opus"
+`
+	choices := NewChoices()
+	choices.ClaudeReasoningTouched = true
+	choices.ClaudeReasoning = "high"
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `reasoning_effort = "high"`)
 }
 
 func TestPatchConfig_EnableWarnings(t *testing.T) {

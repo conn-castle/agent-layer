@@ -14,33 +14,46 @@ import (
 // faultSystem is a test helper that allows deterministic error injection for the
 // installer System interface without chmod-based permission tricks.
 type faultSystem struct {
-	base       System
-	statErrs   map[string]error
-	readErrs   map[string]error
-	walkErrs   map[string]error
-	mkdirErrs  map[string]error
-	removeErrs map[string]error
-	renameErrs map[string]error
-	writeErrs  map[string]error
-	lookupEnvs map[string]*string
+	base         System
+	lstatErrs    map[string]error
+	statErrs     map[string]error
+	readErrs     map[string]error
+	readlinkErrs map[string]error
+	walkErrs     map[string]error
+	mkdirErrs    map[string]error
+	removeErrs   map[string]error
+	renameErrs   map[string]error
+	symlinkErrs  map[string]error
+	writeErrs    map[string]error
+	lookupEnvs   map[string]*string
 }
 
 func newFaultSystem(base System) *faultSystem {
 	return &faultSystem{
-		base:       base,
-		statErrs:   map[string]error{},
-		readErrs:   map[string]error{},
-		walkErrs:   map[string]error{},
-		mkdirErrs:  map[string]error{},
-		removeErrs: map[string]error{},
-		renameErrs: map[string]error{},
-		writeErrs:  map[string]error{},
-		lookupEnvs: map[string]*string{},
+		base:         base,
+		lstatErrs:    map[string]error{},
+		statErrs:     map[string]error{},
+		readErrs:     map[string]error{},
+		readlinkErrs: map[string]error{},
+		walkErrs:     map[string]error{},
+		mkdirErrs:    map[string]error{},
+		removeErrs:   map[string]error{},
+		renameErrs:   map[string]error{},
+		symlinkErrs:  map[string]error{},
+		writeErrs:    map[string]error{},
+		lookupEnvs:   map[string]*string{},
 	}
 }
 
 func normalizePath(path string) string {
 	return filepath.Clean(path)
+}
+
+func (f *faultSystem) Lstat(name string) (os.FileInfo, error) {
+	if err, ok := f.lstatErrs[normalizePath(name)]; ok {
+		return nil, err
+	}
+	return f.base.Lstat(name)
 }
 
 func (f *faultSystem) Stat(name string) (os.FileInfo, error) {
@@ -55,6 +68,13 @@ func (f *faultSystem) ReadFile(name string) ([]byte, error) {
 		return nil, err
 	}
 	return f.base.ReadFile(name)
+}
+
+func (f *faultSystem) Readlink(name string) (string, error) {
+	if err, ok := f.readlinkErrs[normalizePath(name)]; ok {
+		return "", err
+	}
+	return f.base.Readlink(name)
 }
 
 func (f *faultSystem) LookupEnv(key string) (string, bool) {
@@ -86,6 +106,13 @@ func (f *faultSystem) Rename(oldpath string, newpath string) error {
 		return err
 	}
 	return f.base.Rename(oldpath, newpath)
+}
+
+func (f *faultSystem) Symlink(oldname string, newname string) error {
+	if err, ok := f.symlinkErrs[normalizePath(newname)]; ok {
+		return err
+	}
+	return f.base.Symlink(oldname, newname)
 }
 
 func (f *faultSystem) WalkDir(root string, fn fs.WalkDirFunc) error {

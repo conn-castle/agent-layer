@@ -21,7 +21,7 @@ const (
 	WizardSummaryWarningMCPSchemaTokensServerFmt = "- mcp_schema_tokens_server_threshold = %d\n"
 	WizardSummaryAgentFmt                        = "- %s"
 	WizardSummaryAgentModelFmt                   = "- %s: %s"
-	WizardSummaryCodexModelReasoningFmt          = "%s (%s)"
-	WizardSummaryCodexReasoningFmt               = "reasoning: %s"
+	WizardSummaryModelReasoningFmt               = "%s (%s)"
+	WizardSummaryReasoningFmt                    = "reasoning: %s"
 	WizardSummaryClaudeLocalConfigDir            = "\nClaude credential isolation: enabled (per-repo login)\n"
 )

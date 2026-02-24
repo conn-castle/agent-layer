@@ -326,6 +326,7 @@ Incomplete:
 - wizard-polish
   Description: Identify friction points in `al init` and `al wizard` by walking through them as a first-time user. Reduce unnecessary prompts, improve default selections, and add inline help.
   Acceptance criteria: First-time `al init` completes in fewer steps with better defaults. Wizard explains what each option does.
+  Progress: 2026-02-24 delivered a scoped wizard slice (Escape back-navigation with first-step exit confirmation, clearer back/cancel guidance on touched prompts, and warning when profile mode is replacing a TOML-corrupt existing config). Remaining phase scope still includes broader first-time `al init` flow reduction/default tuning.
 - error-audit
   Description: Review all user-facing error messages in the CLI. Ensure each one is actionable (not just "error: failed").
   Acceptance criteria: No error message leaves the user without a next step. Common errors include remediation commands.

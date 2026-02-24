@@ -164,7 +164,7 @@ func (inst *installer) pinVersionDiffPreview(relPath string, ownership Ownership
 
 func renderTruncatedUnifiedDiff(fromName string, toName string, fromContent string, toContent string, maxLines int) (string, bool) {
 	limit := normalizeDiffMaxLines(maxLines)
-	diff := udiff.Unified(fromName, toName, fromContent, toContent)
+	diff := normalizeUnifiedDiffPreview(udiff.Unified(fromName, toName, fromContent, toContent))
 	lines := splitDiffLines(diff)
 	if len(lines) <= limit {
 		return ensureTrailingNewline(strings.Join(lines, "\n")), false
@@ -193,6 +193,137 @@ func ensureTrailingNewline(content string) string {
 		return content
 	}
 	return content + "\n"
+}
+
+func normalizeUnifiedDiffPreview(diff string) string {
+	lines := splitDiffLines(diff)
+	if len(lines) == 0 {
+		return ""
+	}
+	collapsed := make([]string, 0, len(lines))
+	for idx := 0; idx < len(lines); {
+		line := lines[idx]
+		if isUnifiedDiffChangeLine(line) {
+			end := idx
+			for end < len(lines) && isUnifiedDiffChangeLine(lines[end]) {
+				end++
+			}
+			collapsed = append(collapsed, collapseEquivalentDiffRun(lines[idx:end])...)
+			idx = end
+			continue
+		}
+		collapsed = append(collapsed, line)
+		idx++
+	}
+	pruned := pruneEmptyUnifiedDiffHunks(collapsed)
+	if !hasUnifiedDiffChangeLine(pruned) {
+		return ""
+	}
+	return ensureTrailingNewline(strings.Join(pruned, "\n"))
+}
+
+func isUnifiedDiffChangeLine(line string) bool {
+	if strings.HasPrefix(line, "--- ") || strings.HasPrefix(line, "+++ ") {
+		return false
+	}
+	return strings.HasPrefix(line, "-") || strings.HasPrefix(line, "+")
+}
+
+func collapseEquivalentDiffRun(run []string) []string {
+	if len(run) == 0 {
+		return nil
+	}
+	removedByNormalized := make(map[string][]int)
+	addedByNormalized := make(map[string][]int)
+	for idx, line := range run {
+		if strings.HasPrefix(line, "-") {
+			key := normalizeComparableDiffPayload(line[1:])
+			removedByNormalized[key] = append(removedByNormalized[key], idx)
+		}
+		if strings.HasPrefix(line, "+") {
+			key := normalizeComparableDiffPayload(line[1:])
+			addedByNormalized[key] = append(addedByNormalized[key], idx)
+		}
+	}
+
+	skip := make([]bool, len(run))
+	for key, removedIndexes := range removedByNormalized {
+		addedIndexes := addedByNormalized[key]
+		pairCount := len(removedIndexes)
+		if len(addedIndexes) < pairCount {
+			pairCount = len(addedIndexes)
+		}
+		for idx := 0; idx < pairCount; idx++ {
+			skip[removedIndexes[idx]] = true
+			skip[addedIndexes[idx]] = true
+		}
+	}
+
+	out := make([]string, 0, len(run))
+	for idx, line := range run {
+		if skip[idx] {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out
+}
+
+func normalizeComparableDiffPayload(payload string) string {
+	return strings.TrimRight(payload, " \t")
+}
+
+func pruneEmptyUnifiedDiffHunks(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	firstHunk := -1
+	for idx, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			firstHunk = idx
+			break
+		}
+	}
+	if firstHunk < 0 {
+		return lines
+	}
+
+	prefix := lines[:firstHunk]
+	out := make([]string, 0, len(lines))
+	out = append(out, prefix...)
+	keptHunks := 0
+	for idx := firstHunk; idx < len(lines); {
+		if !strings.HasPrefix(lines[idx], "@@") {
+			out = append(out, lines[idx])
+			idx++
+			continue
+		}
+		hunkHeader := lines[idx]
+		end := idx + 1
+		for end < len(lines) && !strings.HasPrefix(lines[end], "@@") {
+			end++
+		}
+		hunkBody := lines[idx+1 : end]
+		if hasUnifiedDiffChangeLine(hunkBody) {
+			out = append(out, hunkHeader)
+			out = append(out, hunkBody...)
+			keptHunks++
+		}
+		idx = end
+	}
+	if keptHunks == 0 {
+		return nil
+	}
+	return out
+}
+
+func hasUnifiedDiffChangeLine(lines []string) bool {
+	for _, line := range lines {
+		if isUnifiedDiffChangeLine(line) {
+			return true
+		}
+	}
+	return false
 }
 
 func sectionAwareMarkerForPath(relPath string) (string, bool) {

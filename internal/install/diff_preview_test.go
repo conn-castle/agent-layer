@@ -36,6 +36,78 @@ func TestRenderTruncatedUnifiedDiff(t *testing.T) {
 	}
 }
 
+func TestRenderTruncatedUnifiedDiff_IgnoresTrailingWhitespaceOnlyChanges(t *testing.T) {
+	from := "stable\nline with spaces   \n"
+	to := "stable\nline with spaces\n"
+
+	diff, truncated := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if truncated {
+		t.Fatal("did not expect truncation")
+	}
+	if strings.Contains(diff, "-line with spaces") || strings.Contains(diff, "+line with spaces") {
+		t.Fatalf("expected trailing-whitespace-only lines to be suppressed, got:\n%s", diff)
+	}
+}
+
+func TestRenderTruncatedUnifiedDiff_CollapsesEquivalentMovedLines(t *testing.T) {
+	from := "/.gemini/\n/.claude/\n"
+	to := "/.claude/\n/.gemini/\n"
+
+	diff, truncated := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	if truncated {
+		t.Fatal("did not expect truncation")
+	}
+	if diff != "" {
+		t.Fatalf("expected fully equivalent move-only diff to collapse to empty output, got:\n%s", diff)
+	}
+	if strings.Contains(diff, "-/.gemini/") || strings.Contains(diff, "+/.gemini/") ||
+		strings.Contains(diff, "-/.claude/") || strings.Contains(diff, "+/.claude/") {
+		t.Fatalf("expected equivalent moved lines to be suppressed, got:\n%s", diff)
+	}
+}
+
+func TestNormalizeUnifiedDiffPreview_RemovesEmptyHunksAndKeepsRealChanges(t *testing.T) {
+	raw := strings.Join([]string{
+		"--- a.txt",
+		"+++ b.txt",
+		"@@ -1,1 +1,1 @@",
+		"-old value   ",
+		"+old value",
+		"@@ -3,1 +3,1 @@",
+		"-removed",
+		"+added",
+		"",
+	}, "\n")
+
+	normalized := normalizeUnifiedDiffPreview(raw)
+	if strings.Contains(normalized, "@@ -1,1 +1,1 @@") {
+		t.Fatalf("expected empty first hunk to be removed, got:\n%s", normalized)
+	}
+	if !strings.Contains(normalized, "@@ -3,1 +3,1 @@") {
+		t.Fatalf("expected non-empty second hunk to remain, got:\n%s", normalized)
+	}
+	if !strings.Contains(normalized, "-removed") || !strings.Contains(normalized, "+added") {
+		t.Fatalf("expected second hunk changes to remain, got:\n%s", normalized)
+	}
+}
+
+func TestCollapseEquivalentDiffRun_PreservesUnmatchedChanges(t *testing.T) {
+	run := []string{
+		"-same",
+		"+same",
+		"-removed-only",
+		"+added-only",
+	}
+
+	filtered := collapseEquivalentDiffRun(run)
+	if len(filtered) != 2 {
+		t.Fatalf("filtered run length = %d, want 2 (%v)", len(filtered), filtered)
+	}
+	if filtered[0] != "-removed-only" || filtered[1] != "+added-only" {
+		t.Fatalf("unexpected filtered run: %v", filtered)
+	}
+}
+
 func TestSplitSectionAwareContent(t *testing.T) {
 	content := []byte("# Header\n\n" + ownershipMarkerEntriesStart + "\n- user entry\n")
 	managed, user, err := splitSectionAwareContent("docs/agent-layer/ISSUES.md", ownershipMarkerEntriesStart, content)

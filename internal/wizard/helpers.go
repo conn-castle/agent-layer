@@ -216,7 +216,7 @@ func agentModelSummary(agent string, c *Choices) string {
 	case AgentGemini:
 		return c.GeminiModel
 	case AgentClaude:
-		return c.ClaudeModel
+		return claudeModelSummary(c)
 	case AgentCodex:
 		return codexModelSummary(c)
 	default:
@@ -224,17 +224,30 @@ func agentModelSummary(agent string, c *Choices) string {
 	}
 }
 
+func claudeModelSummary(c *Choices) string {
+	if c.ClaudeModel != "" && c.ClaudeReasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.ClaudeModel, c.ClaudeReasoning)
+	}
+	if c.ClaudeModel != "" {
+		return c.ClaudeModel
+	}
+	if c.ClaudeReasoning != "" {
+		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.ClaudeReasoning)
+	}
+	return ""
+}
+
 // codexModelSummary returns the combined Codex model and reasoning summary.
 // c holds wizard choices; returns the summary text.
 func codexModelSummary(c *Choices) string {
 	if c.CodexModel != "" && c.CodexReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryCodexModelReasoningFmt, c.CodexModel, c.CodexReasoning)
+		return fmt.Sprintf(messages.WizardSummaryModelReasoningFmt, c.CodexModel, c.CodexReasoning)
 	}
 	if c.CodexModel != "" {
 		return c.CodexModel
 	}
 	if c.CodexReasoning != "" {
-		return fmt.Sprintf(messages.WizardSummaryCodexReasoningFmt, c.CodexReasoning)
+		return fmt.Sprintf(messages.WizardSummaryReasoningFmt, c.CodexReasoning)
 	}
 	return ""
 }

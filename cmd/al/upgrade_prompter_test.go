@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fatih/color"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -199,6 +202,90 @@ func TestPrintDiffPreviews(t *testing.T) {
 	}
 }
 
+// enableTestColorOutput configures the fatih/color library and isTerminal stub
+// to force ANSI color output in tests. The fatih/color library reads NO_COLOR
+// at init time and caches the result in color.NoColor, so we must both clear
+// the env var and explicitly set the package-level bool. If fatih/color adds
+// additional environment checks in future versions, this helper may need
+// updating to account for them.
+func enableTestColorOutput(t *testing.T) {
+	t.Helper()
+	t.Setenv("NO_COLOR", "")
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origNoColor := color.NoColor
+	color.NoColor = false
+	t.Cleanup(func() { color.NoColor = origNoColor })
+}
+
+// disableTestColorOutput configures the fatih/color library to suppress ANSI
+// output. See enableTestColorOutput for context on the fatih/color coupling.
+func disableTestColorOutput(t *testing.T) {
+	t.Helper()
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origNoColor := color.NoColor
+	color.NoColor = true
+	t.Cleanup(func() { color.NoColor = origNoColor })
+}
+
+func TestPrintDiffPreviews_ColorizedWhenInteractive(t *testing.T) {
+	enableTestColorOutput(t)
+
+	var buf bytes.Buffer
+	previews := []install.DiffPreview{
+		{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n"},
+	}
+	if err := printDiffPreviews(&buf, "Header", previews); err != nil {
+		t.Fatalf("printDiffPreviews colorized: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected ANSI color sequences in output:\n%s", output)
+	}
+	if !strings.Contains(output, "Diff for file-a.txt:") {
+		t.Fatalf("expected diff label in output:\n%s", output)
+	}
+}
+
+func TestPrintDiffPreviews_NoColorFallback(t *testing.T) {
+	disableTestColorOutput(t)
+
+	var buf bytes.Buffer
+	previews := []install.DiffPreview{
+		{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"},
+	}
+	if err := printDiffPreviews(&buf, "Header", previews); err != nil {
+		t.Fatalf("printDiffPreviews no-color: %v", err)
+	}
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Fatalf("expected plain output without ANSI color sequences:\n%s", buf.String())
+	}
+}
+
+func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
+	enableTestColorOutput(t)
+
+	var buf bytes.Buffer
+	preview := install.DiffPreview{Path: "file-a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n"}
+	if err := writeSinglePreviewBlock(&buf, preview); err != nil {
+		t.Fatalf("writeSinglePreviewBlock colorized: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected ANSI color sequences in output:\n%s", output)
+	}
+	if !strings.Contains(output, "    diff:") {
+		t.Fatalf("expected diff label in output:\n%s", output)
+	}
+}
+
 func TestReadinessSummaryAndAction(t *testing.T) {
 	ids := []string{
 		"unrecognized_config_keys",
@@ -329,5 +416,120 @@ func TestWriteUpgradeSkippedCategoryNotes_NotExplicit(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("expected no output for non-explicit policy, got %q", buf.String())
+	}
+}
+
+func TestBuildUpgradePrompter_ConfigSetDefaultFallbackAcceptDecline(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
+
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
+
+	accepted, err := p.ConfigSetDefault("new.required", "alpha", "needed for test", nil)
+	if err != nil {
+		t.Fatalf("ConfigSetDefault accept: %v", err)
+	}
+	if accepted != "alpha" {
+		t.Fatalf("accepted value = %v, want %q", accepted, "alpha")
+	}
+
+	_, err = p.ConfigSetDefault("new.required", "beta", "needed for test", nil)
+	if err == nil || !strings.Contains(err.Error(), "user declined default value") {
+		t.Fatalf("expected decline error, got %v", err)
+	}
+}
+
+func TestBuildUpgradePrompter_ConfigSetDefaultBypassesPromptWhenYes(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true}, nil)
+	value, err := p.ConfigSetDefault("new.required", true, "needed for test", &config.FieldDef{
+		Key:  "new.required",
+		Type: config.FieldBool,
+	})
+	if err != nil {
+		t.Fatalf("ConfigSetDefault yes-mode: %v", err)
+	}
+	if value != true {
+		t.Fatalf("value = %v, want true", value)
+	}
+}
+
+func TestBuildUpgradePrompter_OverwriteAllUnifiedFallbackPrompts(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
+
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
+	managed, memory, err := p.OverwriteAllUnified(
+		[]install.DiffPreview{{Path: ".agent-layer/commands.allow"}},
+		[]install.DiffPreview{{Path: "docs/agent-layer/ROADMAP.md"}},
+	)
+	if err != nil {
+		t.Fatalf("OverwriteAllUnified fallback: %v", err)
+	}
+	if !managed {
+		t.Fatal("expected managed overwrite approval")
+	}
+	if memory {
+		t.Fatal("expected memory overwrite rejection")
+	}
+}
+
+func TestPrintDiffPreviews_WriteError(t *testing.T) {
+	out := &errorWriter{failAfter: 0}
+	err := printDiffPreviews(out, "header", []install.DiffPreview{{Path: "a"}})
+	if err == nil || !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("expected write failure, got %v", err)
+	}
+}
+
+func TestWriteReadinessSection_TruncatesDetails(t *testing.T) {
+	var buf bytes.Buffer
+	checks := []install.UpgradeReadinessCheck{
+		{
+			ID:      "unrecognized_config_keys",
+			Summary: "summary ignored for known IDs",
+			Details: []string{"one", "two", "three", "four"},
+		},
+	}
+
+	if err := writeReadinessSection(&buf, checks); err != nil {
+		t.Fatalf("writeReadinessSection: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "recommendation:") {
+		t.Fatalf("expected recommendation line, got:\n%s", output)
+	}
+	if !strings.Contains(output, "note: ... and 1 more") {
+		t.Fatalf("expected detail truncation line, got:\n%s", output)
+	}
+}
+
+func TestWriteUpgradeSummary_NoReadinessWarnings(t *testing.T) {
+	var buf bytes.Buffer
+	plan := install.UpgradePlan{
+		MigrationReport: install.UpgradeMigrationReport{
+			Entries: []install.UpgradeMigrationEntry{
+				{Status: install.UpgradeMigrationStatusPlanned},
+				{Status: install.UpgradeMigrationStatusNoop},
+			},
+		},
+	}
+	if err := writeUpgradeSummary(&buf, plan); err != nil {
+		t.Fatalf("writeUpgradeSummary: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "migrations planned: 1") {
+		t.Fatalf("expected planned migration count, got:\n%s", output)
+	}
+	if !strings.Contains(output, "needs review before apply: no") {
+		t.Fatalf("expected no-review summary, got:\n%s", output)
 	}
 }

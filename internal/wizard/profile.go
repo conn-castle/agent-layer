@@ -48,6 +48,9 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 	if err != nil {
 		return err
 	}
+	if _, err := config.ParseConfigLenient(currentConfig, configPath); err != nil {
+		_, _ = fmt.Fprintf(out, messages.WizardProfileExistingConfigInvalidWarnFmt+"\n", err)
+	}
 
 	preview := strings.TrimSpace(udiff.Unified(
 		".agent-layer/config.toml (current)",

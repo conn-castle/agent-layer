@@ -96,6 +96,125 @@ enabled = false
 	}
 }
 
+func TestLoadConfigClaudeReasoningEffortValid(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.toml")
+	content := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+model = "opus"
+reasoning_effort = "high"
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Agents.Claude.ReasoningEffort != "high" {
+		t.Fatalf("unexpected claude reasoning effort: %q", cfg.Agents.Claude.ReasoningEffort)
+	}
+}
+
+func TestLoadConfigGeminiReasoningEffortUnsupported(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.toml")
+	content := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+reasoning_effort = "high"
+
+[agents.claude]
+enabled = true
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "agents.gemini.reasoning_effort is not supported") {
+		t.Fatalf("expected unsupported reasoning effort error, got: %v", err)
+	}
+}
+
+func TestLoadConfigClaudeReasoningEffortRequiresOpusModel(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config.toml")
+	content := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+
+[agents.claude]
+enabled = true
+model = "sonnet"
+reasoning_effort = "high"
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = true
+
+[agents.vscode]
+enabled = true
+
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if !strings.Contains(err.Error(), "requires an Opus model") {
+		t.Fatalf("expected model compatibility error, got: %v", err)
+	}
+}
+
 func TestSubstituteEnvVars(t *testing.T) {
 	env := map[string]string{
 		"TOKEN": "abc",

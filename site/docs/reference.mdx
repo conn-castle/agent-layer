@@ -40,10 +40,13 @@ mode = "all"
 enabled = true
 # model is optional; when omitted, the client uses its default.
 # model = "..."
+# reasoning_effort is not currently supported for Gemini in Agent Layer.
 
 [agents.claude]
 enabled = true
 # model = "..."
+# reasoning_effort is optional for Opus models only.
+# reasoning_effort = "medium" # low | medium | high
 # local_config_dir isolates Claude Code auth, caches, and user settings per repo.
 # When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
 # For al vscode, CLAUDE_CONFIG_DIR is set only when both local_config_dir
@@ -118,7 +121,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 
 ### Agents
 
-Each agent has an `enabled` flag and optional `model` value. Codex also supports `reasoning_effort`, which is optional; omit it (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude-vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
+Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`) for Opus models; Codex supports `reasoning_effort` with its own set of options. Omit `reasoning_effort` (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude-vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
 
 Supported agents:
 
@@ -439,13 +442,21 @@ Use it when you want to get to a safe, working configuration quickly, or when yo
 - `.agent-layer/config.toml`
 - `.agent-layer/.env`
 
-The wizard rewrites `config.toml` in the template-defined order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
+The wizard rewrites `config.toml` in a deterministic preferred section order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
 
 Additional modes:
 
 - `al wizard --profile /path/to/profile.toml`: preview-only profile rewrite diff
 - `al wizard --profile /path/to/profile.toml --yes`: apply profile and run sync
 - `al wizard --cleanup-backups`: delete `.agent-layer/config.toml.bak` and `.agent-layer/.env.bak`
+
+**Navigation**
+
+- **Arrow keys**: Navigate options
+- **Space**: Toggle selection (multi-select steps)
+- **Enter**: Confirm and continue
+- **Esc**: Go back to the previous wizard step (first step asks for exit confirmation)
+- **Ctrl+C**: Cancel immediately
 
 Secret prompt controls:
 

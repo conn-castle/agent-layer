@@ -35,20 +35,18 @@ run_scenario_error_propagation() {
   # Verify mock received env vars even on failure path
   assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
 
-  # ---- Verify exit code flattening (Issue exit-code-flatten): al claude
-  # always exits 1 regardless of the subprocess exit code. Cobra wraps all
-  # errors and main.go calls os.Exit(1). The subprocess's actual exit code
-  # is lost because *exec.ExitError is never type-asserted.
-  # When Issue exit-code-flatten is fixed, update this to expect 42.
+  # ---- Verify subprocess exit code propagation (Issue exit-code-flatten fixed):
+  # al claude should preserve the subprocess exit code in runMain when launch
+  # returns a wrapped *exec.ExitError.
   reset_mock_claude_log
   export MOCK_CLAUDE_EXIT_CODE=42
 
   local rc42=0
   (cd "$repo_dir" && al claude >/dev/null 2>&1) || rc42=$?
-  if [[ $rc42 -eq 1 ]]; then
-    pass "al claude flattens exit code 42 to 1 (Issue exit-code-flatten)"
+  if [[ $rc42 -eq 42 ]]; then
+    pass "al claude propagates exit code 42 from subprocess"
   else
-    fail "al claude should flatten exit code 42 to 1, got $rc42 (has exit-code-flatten been fixed? update this test)"
+    fail "al claude should propagate exit code 42, got $rc42"
   fi
 
   # Reset to default

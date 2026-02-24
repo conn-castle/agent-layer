@@ -3,13 +3,16 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/dispatch"
+	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestMainVersion(t *testing.T) {
@@ -311,6 +314,60 @@ func TestRunMain_SilentExitError(t *testing.T) {
 	if out.String() != "" {
 		t.Fatalf("expected no output, got %q", out.String())
 	}
+}
+
+func TestRunMain_DispatchWrappedExitErrorPropagatesCode(t *testing.T) {
+	orig := maybeExecFunc
+	defer func() { maybeExecFunc = orig }()
+	maybeExecFunc = func(args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+		return fmt.Errorf("dispatch failed: %w", wrappedExitError(t, 42))
+	}
+
+	var out bytes.Buffer
+	exitCode := 0
+	runMain([]string{"al"}, &out, &out, func(code int) { exitCode = code })
+	if exitCode != 42 {
+		t.Fatalf("expected exit 42, got %d", exitCode)
+	}
+	if !strings.Contains(out.String(), "dispatch failed:") {
+		t.Fatalf("expected wrapped error output, got %q", out.String())
+	}
+}
+
+func TestRunMain_ExecuteWrappedExitErrorPropagatesCode(t *testing.T) {
+	origMaybeExec := maybeExecFunc
+	maybeExecFunc = func(args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
+		return nil
+	}
+	t.Cleanup(func() { maybeExecFunc = origMaybeExec })
+
+	origExecute := executeFunc
+	executeFunc = func(args []string, stdout io.Writer, stderr io.Writer) error {
+		return fmt.Errorf("execute failed: %w", wrappedExitError(t, 43))
+	}
+	t.Cleanup(func() { executeFunc = origExecute })
+
+	var out bytes.Buffer
+	exitCode := 0
+	runMain([]string{"al"}, &out, &out, func(code int) { exitCode = code })
+	if exitCode != 43 {
+		t.Fatalf("expected exit 43, got %d", exitCode)
+	}
+	if !strings.Contains(out.String(), "execute failed:") {
+		t.Fatalf("expected wrapped error output, got %q", out.String())
+	}
+}
+
+func wrappedExitError(t *testing.T, code int) error {
+	t.Helper()
+	binDir := t.TempDir()
+	testutil.WriteStubWithExit(t, binDir, "fail", code)
+	cmd := exec.Command(filepath.Join(binDir, "fail"))
+	err := cmd.Run()
+	if err == nil {
+		t.Fatalf("expected non-zero exit from stub")
+	}
+	return err
 }
 
 func TestVersionString(t *testing.T) {

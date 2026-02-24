@@ -193,7 +193,7 @@ To pre-warm a release binary in cache (for offline/air-gapped runs), use `al upg
 
 `al upgrade` also executes embedded per-release migration manifests before template writes (for example file renames/deletes and config key transitions). If the prior source version cannot be resolved, source-agnostic migrations still run and source-gated migrations are skipped with explicit report output.
 
-Upgrade previews now include line-level diffs in both `al upgrade plan` and interactive `al upgrade` prompts. By default, each file preview is truncated to 40 lines; raise this with `--diff-lines N` when needed.
+Upgrade previews now include line-level diffs in both `al upgrade plan` and interactive `al upgrade` prompts. By default, each file preview is truncated to 40 lines; raise this with `--diff-lines N` when needed. In interactive terminals, diff hunks are colorized for scanability; non-interactive and no-color runs stay plain text.
 
 
 `al doctor` always checks for newer releases and warns if you're behind. `al init` also warns when your installed CLI is out of date, unless you set `--version`, `AL_VERSION`, or `AL_NO_NETWORK`.
@@ -211,7 +211,7 @@ Run `al wizard` any time to interactively configure the most important settings:
 
 - **Approvals Mode** (all, mcp, commands, none, yolo)
 - **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity)
-- **Model Selection** (optional; leave blank to use client defaults, including Codex reasoning effort)
+- **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 
@@ -232,9 +232,10 @@ al wizard --cleanup-backups
 - **Arrow keys**: Navigate
 - **Space**: Toggle selection (multi-select)
 - **Enter**: Confirm/Continue
-- **Esc/Ctrl+C**: Cancel
+- **Esc**: Go back to the previous wizard step (first step asks for exit confirmation)
+- **Ctrl+C**: Cancel immediately
 
-The wizard rewrites `config.toml` in the template-defined order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
+The wizard rewrites `config.toml` in a deterministic preferred section order and creates backups (`.bak`) before modifying `.agent-layer/config.toml` or `.agent-layer/.env`. Inline comments on modified lines may be moved to leading comments or removed; the original formatting is preserved in the backup files.
 When prompted for required MCP secrets, type `skip` to disable that server for this run or `cancel` to exit without applying changes.
 
 ---
@@ -295,11 +296,14 @@ mode = "all"
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
+# reasoning_effort is not currently supported for Gemini in Agent Layer.
 
 [agents.claude]
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
+# reasoning_effort is optional for Opus models only.
+# reasoning_effort = "medium" # low | medium | high
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # These are shallow-merged at the top level into .claude/settings.json.
 # Nested objects are replaced (not deep-merged).

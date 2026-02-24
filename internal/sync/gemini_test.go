@@ -143,6 +143,13 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 						Headers:   map[string]string{"X-Token": "${TOKEN}"},
 					},
 					{
+						ID:            "http-streamable",
+						Enabled:       &enabled,
+						Transport:     "http",
+						HTTPTransport: "streamable",
+						URL:           "https://streamable.example.com?token=${TOKEN}",
+					},
+					{
 						ID:        "stdio",
 						Enabled:   &enabled,
 						Transport: "stdio",
@@ -167,11 +174,21 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	}
 	// Gemini preserves ${VAR} placeholders - Gemini CLI resolves them at runtime.
 	httpServer := settings.MCPServers["http"]
-	if httpServer.HTTPURL != "https://example.com?token=${TOKEN}" {
-		t.Fatalf("unexpected http url: %s", httpServer.HTTPURL)
+	if httpServer.URL != "https://example.com?token=${TOKEN}" {
+		t.Fatalf("unexpected sse url: %s", httpServer.URL)
+	}
+	if httpServer.HTTPURL != "" {
+		t.Fatalf("expected empty streamable url for sse server, got %q", httpServer.HTTPURL)
 	}
 	if httpServer.Headers["X-Token"] != "${TOKEN}" {
 		t.Fatalf("unexpected header value: %s", httpServer.Headers["X-Token"])
+	}
+	streamableServer := settings.MCPServers["http-streamable"]
+	if streamableServer.HTTPURL != "https://streamable.example.com?token=${TOKEN}" {
+		t.Fatalf("unexpected streamable http url: %s", streamableServer.HTTPURL)
+	}
+	if streamableServer.URL != "" {
+		t.Fatalf("expected empty sse url for streamable server, got %q", streamableServer.URL)
 	}
 	stdioServer := settings.MCPServers["stdio"]
 	if stdioServer.Command != "tool-${TOKEN}" {

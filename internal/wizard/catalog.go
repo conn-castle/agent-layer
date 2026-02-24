@@ -76,6 +76,11 @@ func ClaudeModels() []string {
 	return config.FieldOptionValues("agents.claude.model")
 }
 
+// ClaudeReasoningEfforts returns supported Claude reasoning effort values.
+func ClaudeReasoningEfforts() []string {
+	return config.FieldOptionValues("agents.claude.reasoning_effort")
+}
+
 // CodexModels returns supported Codex model values from the config field catalog.
 func CodexModels() []string {
 	return config.FieldOptionValues("agents.codex.model")
