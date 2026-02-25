@@ -329,3 +329,30 @@ func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T)
 	require.Equal(t, "", choices.CodexReasoning)
 	require.False(t, choices.CodexReasoningTouched)
 }
+
+func TestPromptWizardFlow_CtrlCExitsImmediatelyWithoutConfirmation(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = ApprovalAll
+
+	var exitConfirmCalls int
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == messages.WizardApprovalModeTitle {
+				// Ctrl+C returns errWizardCancelled, not errWizardBack.
+				return errWizardCancelled
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardFirstStepEscapeExitPrompt {
+				exitConfirmCalls++
+			}
+			return nil
+		},
+	}
+
+	cfg := &config.ProjectConfig{Config: config.Config{}}
+	err := promptWizardFlow(t.TempDir(), ui, cfg, choices)
+	require.ErrorIs(t, err, errWizardCancelled)
+	require.Equal(t, 0, exitConfirmCalls, "Ctrl+C should exit immediately without asking for confirmation")
+}

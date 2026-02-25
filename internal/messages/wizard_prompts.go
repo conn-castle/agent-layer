@@ -42,5 +42,4 @@ const (
 	WizardLeaveBlankOption                    = "Leave blank (use client default)"
 	WizardCustomOption                        = "Custom..."
 	WizardCustomPromptFmt                     = "Custom %s"
-	WizardMultiSelectDescription              = "Arrow keys to navigate, Space to toggle, Enter to continue, Esc to go back."
 )

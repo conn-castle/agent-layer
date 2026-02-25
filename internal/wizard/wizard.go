@@ -43,7 +43,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 	proceed, err := ensureWizardConfig(root, configPath, ui, pinVersion, out)
 	if err != nil {
-		if errors.Is(err, errWizardBack) {
+		if errors.Is(err, errWizardBack) || errors.Is(err, errWizardCancelled) {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 			return nil
 		}
