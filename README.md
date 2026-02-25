@@ -1,6 +1,15 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/conn-castle/agent-layer-web/main/static/img/branding/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/conn-castle/agent-layer-web/main/static/img/branding/logo.svg">
+  <img src="https://raw.githubusercontent.com/conn-castle/agent-layer-web/main/static/img/branding/logo.svg" alt="Agent Layer logo" width="120">
+</picture>
+
 # Agent Layer
 
 One repo-local source of truth for instructions, slash commands, MCP servers, and approvals across coding agents.
+
+[![Downloads](https://img.shields.io/github/downloads/conn-castle/agent-layer/total)](https://github.com/conn-castle/agent-layer/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/conn-castle/agent-layer/ci.yml?branch=main&label=CI)](https://github.com/conn-castle/agent-layer/actions/workflows/ci.yml)
 
 Agent Layer keeps AI-assisted development consistent across tools by generating each client’s required config from a single `.agent-layer/` folder. Install `al` once per machine, run `al init` per repo, then run `al <client>` (e.g., `al claude`) to sync and launch.
 

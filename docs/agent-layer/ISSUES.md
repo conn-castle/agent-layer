@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-25 go-126-deps-audit: Upgrade to Go v1.26.0 and audit outdated dependencies
+    Priority: Medium. Area: build/toolchain / dependency management.
+    Description: The repository should be upgraded to Go `v1.26.0` and reviewed for additional outdated packages/modules to reduce drift and compatibility risk.
+    Next step: Update the Go toolchain target/version references, run dependency update checks, and prepare a scoped upgrade plan with compatibility test results.
+    Notes: Prefer latest stable compatible versions; if any upgrade is breaking, document impact and sequence fixes before rollout.
+
 - Issue 2026-02-25 playwright-headless-parity: Evaluate headless Playwright mode without functional regressions
     Priority: Medium. Area: test automation / Playwright runner UX.
     Description: Playwright running in headed mode is noisy and disruptive during normal development. We should assess whether headless can be the default while preserving behavior.
