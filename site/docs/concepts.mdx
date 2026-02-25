@@ -15,7 +15,7 @@ One important design choice follows from that: Agent Layer is repo-local. Differ
 ## In this page
 
 - [Single source of truth](#single-source-of-truth)
-- [Per-repo credential isolation](#per-repo-credential-isolation)
+- [Per-repo isolation](#per-repo-credential-isolation)
 - [Approvals and safety](#approvals-and-safety)
 - [MCP servers](#mcp-servers)
 - [Project memory](#project-memory)
@@ -94,9 +94,10 @@ Use them sparingly:
 
 If you find yourself carrying many permanent overrides, that is usually a sign the setting should become a first-class key in `.agent-layer/config.toml`.
 
-## Per-repo credential isolation
+<a id="per-repo-credential-isolation"></a>
+## Per-repo isolation
 
-Agent Layer gives each repository its own agent credentials so work in one repo never leaks into another. This matters whenever you use different accounts per project, work across client boundaries, or want a security boundary between sensitive and exploratory repos.
+Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex credential isolation is fully supported. Claude settings and caches isolation is supported, but Claude auth credential isolation is blocked by an upstream limitation (see below).
 
 ### How it works
 
@@ -112,19 +113,23 @@ local_config_dir = true
 
 When enabled, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local `.claude-config/` directory. For VS Code, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir = true` and `[agents.claude-vscode]` is enabled.
 
+:::caution Known upstream limitation
+Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`. This means `local_config_dir` isolates settings and caches but **not** authentication. Per-repo login isolation does not work until this is fixed upstream. This has been reported to the Claude Code team.
+:::
+
 ### Trade-offs
 
-Enabling per-repo isolation means you will reauthenticate once per repository the first time you open it after enabling the setting. After that initial login, credentials are cached locally in the repo and subsequent launches are seamless.
+Enabling per-repo isolation means settings and caches are scoped to the repository. Auth remains shared globally due to the upstream limitation above.
 
-Claude isolation is opt-in (default `false`) because always-on isolation would force a reauthentication in every existing repo. Teams that need isolation can enable it per-repo; teams that prefer shared global credentials keep the default.
+Claude isolation is opt-in (default `false`) because always-on isolation would duplicate config state in every existing repo. Teams that want settings and caches isolation can enable it per-repo; teams that prefer shared global config keep the default.
 
 ### When to enable it
 
-- You use different Claude accounts for different clients or projects
-- You want a hard security boundary between repos (no credential sharing)
-- You work on repos with different billing or access tiers
+- You want per-repo settings and caches isolation
+- You want different Claude non-auth defaults or cache state per repository
+- You want repo-specific Claude settings and caches profiles without affecting other repositories
 
-If none of these apply, the default (shared global `~/.claude/`) works fine and avoids per-repo reauthentication.
+If none of these apply, the default (shared global `~/.claude/`) works fine and keeps one shared settings and caches profile across repositories.
 
 ## Approvals and safety
 

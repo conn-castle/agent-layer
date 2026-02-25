@@ -135,7 +135,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		return UpgradePlan{}, err
 	}
 
-	templateEntries, err := inst.currentTemplateEntries()
+	templateEntries, err := inst.templates().currentTemplateEntries()
 	if err != nil {
 		return UpgradePlan{}, err
 	}
@@ -159,7 +159,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 			}
 			return UpgradePlan{}, fmt.Errorf(messages.InstallFailedStatFmt, absPath, err)
 		}
-		matches, err := inst.matchTemplate(inst.sys, absPath, entry.templatePath, info)
+		matches, err := inst.templates().matchTemplate(inst.sys, absPath, entry.templatePath, info)
 		if err != nil {
 			return UpgradePlan{}, err
 		}
@@ -169,10 +169,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		// For section-aware files, only the managed section (above the marker)
 		// determines upgrade eligibility. User entries below the marker are
 		// expected to differ and do not require an upgrade action.
-		if sectionMatch, sErr := inst.sectionAwareTemplateMatch(entry.relPath, absPath, entry.templatePath); sErr == nil && sectionMatch {
+		if sectionMatch, sErr := inst.templates().sectionAwareTemplateMatch(entry.relPath, absPath, entry.templatePath); sErr == nil && sectionMatch {
 			continue
 		}
-		ownership, err := inst.classifyOwnershipDetail(entry.relPath, entry.templatePath)
+		ownership, err := inst.ownership().classifyOwnershipDetail(entry.relPath, entry.templatePath)
 		if err != nil {
 			return UpgradePlan{}, err
 		}
@@ -183,7 +183,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		})
 	}
 
-	orphans, err := inst.templateOrphans(templateEntries)
+	orphans, err := inst.templates().templateOrphans(templateEntries)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
@@ -196,7 +196,7 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		return UpgradePlan{}, err
 	}
 
-	pinDiff, err := inst.pinVersionDiff()
+	pinDiff, err := inst.templates().pinVersionDiff()
 	if err != nil {
 		return UpgradePlan{}, err
 	}
@@ -257,7 +257,7 @@ func toUpgradeChanges(changes []upgradeChangeWithTemplate) []UpgradeChange {
 	return out
 }
 
-func (inst *installer) currentTemplateEntries() ([]templatedPath, error) {
+func (inst templateManager) currentTemplateEntries() ([]templatedPath, error) {
 	files := inst.managedTemplateFiles()
 	entries := make([]templatedPath, 0, len(files))
 	for _, file := range files {
@@ -287,7 +287,7 @@ func (inst *installer) currentTemplateEntries() ([]templatedPath, error) {
 	return entries, nil
 }
 
-func (inst *installer) templateOrphans(templateEntries []templatedPath) ([]upgradeChangeWithTemplate, error) {
+func (inst templateManager) templateOrphans(templateEntries []templatedPath) ([]upgradeChangeWithTemplate, error) {
 	templatePaths := make(map[string]struct{}, len(templateEntries))
 	for _, entry := range templateEntries {
 		templatePaths[entry.relPath] = struct{}{}
@@ -308,7 +308,7 @@ func (inst *installer) templateOrphans(templateEntries []templatedPath) ([]upgra
 
 	orphans := make([]upgradeChangeWithTemplate, 0, len(orphanSet))
 	for relPath := range orphanSet {
-		ownership, err := inst.classifyOrphanOwnershipDetail(relPath)
+		ownership, err := inst.ownership().classifyOrphanOwnershipDetail(relPath)
 		if err != nil {
 			return nil, err
 		}
@@ -323,7 +323,7 @@ func (inst *installer) templateOrphans(templateEntries []templatedPath) ([]upgra
 	return orphans, nil
 }
 
-func (inst *installer) walkTemplateOrphans(root string, templatePaths map[string]struct{}, orphanSet map[string]struct{}) error {
+func (inst templateManager) walkTemplateOrphans(root string, templatePaths map[string]struct{}, orphanSet map[string]struct{}) error {
 	if _, err := inst.sys.Stat(root); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -437,7 +437,7 @@ func detectUpgradeRenames(
 // below the marker are expected to differ and are not considered for matching.
 // Returns (false, nil) for non-section-aware files so the caller falls through
 // to the standard full-content comparison path.
-func (inst *installer) sectionAwareTemplateMatch(relPath string, absPath string, templatePath string) (bool, error) {
+func (inst templateManager) sectionAwareTemplateMatch(relPath string, absPath string, templatePath string) (bool, error) {
 	policy := ownershipPolicyForPath(relPath)
 	if policy != ownershipPolicyMemoryEntries && policy != ownershipPolicyMemoryRoadmap {
 		return false, nil
@@ -493,7 +493,7 @@ func upgradeChangeAt(changes []upgradeChangeWithTemplate, idx int) (upgradeChang
 	return changes[idx], true
 }
 
-func (inst *installer) pinVersionDiff() (UpgradePinVersionDiff, error) {
+func (inst templateManager) pinVersionDiff() (UpgradePinVersionDiff, error) {
 	path := filepath.Join(inst.root, ".agent-layer", "al.version")
 	data, err := inst.sys.ReadFile(path)
 	current := ""

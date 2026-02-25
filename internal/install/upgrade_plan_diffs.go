@@ -127,11 +127,11 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 }
 
 func (inst *installer) allTemplatePathByRel() (map[string]string, error) {
-	managed, err := inst.managedTemplatePathByRel()
+	managed, err := inst.templates().managedTemplatePathByRel()
 	if err != nil {
 		return nil, err
 	}
-	memory, err := inst.memoryTemplatePathByRel()
+	memory, err := inst.templates().memoryTemplatePathByRel()
 	if err != nil {
 		return nil, err
 	}

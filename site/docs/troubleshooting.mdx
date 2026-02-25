@@ -186,16 +186,20 @@ If you want the fully managed setup in VS Code, use `al vscode` (or the generate
 
 This is primarily a VS Code fallback, and applies only when `local_config_dir = true` is set under `[agents.claude]`.
 
-When `local_config_dir` is enabled, `al claude` sets a repo-local `CLAUDE_CONFIG_DIR`, so Claude Code uses the repo-local `.claude-config/` for user-level configuration (authentication, caches, settings). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `[agents.claude-vscode]` is enabled.
+When `local_config_dir` is enabled, `al claude` sets a repo-local `CLAUDE_CONFIG_DIR`, so Claude Code uses the repo-local `.claude-config/` for user-level configuration (settings and caches). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `[agents.claude-vscode]` is enabled.
 
-If you launch VS Code without Agent Layer's repo-local launcher, the Claude extension will not receive the repo-local `CLAUDE_CONFIG_DIR`. In that case, the extension uses your global `~/.claude/` configuration, so authentication and settings are shared across repositories.
+:::caution Known upstream limitation
+Claude Code currently stores OAuth/auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`. This means `local_config_dir` isolates settings and caches but **not** authentication. Per-repo login isolation does not work until this is fixed upstream. This has been reported to the Claude Code team.
+:::
+
+If you launch VS Code without Agent Layer's repo-local launcher, the Claude extension will not receive the repo-local `CLAUDE_CONFIG_DIR`. In that case, the extension uses your global `~/.claude/` configuration, so settings are shared across repositories.
 
 When `local_config_dir` is disabled (the default), Claude always uses the global `~/.claude/` configuration regardless of how VS Code is launched.
 
 Tradeoffs (VS Code without launcher, with `local_config_dir` enabled):
 
-- Claude auth/state is shared across repositories (which can be convenient, but is less isolated).
-- You cannot use different Claude accounts per repo.
+- Claude settings and caches are shared across repositories (which can be convenient, but is less isolated).
+- Auth is always shared across repositories due to the upstream limitation above.
 
 If you want the fully managed setup in VS Code with `local_config_dir` enabled, use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CLAUDE_CONFIG_DIR`.
 

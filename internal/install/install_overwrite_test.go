@@ -669,7 +669,7 @@ func TestListManagedDiffs_TemplateFileDiffError(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.listManagedDiffs()
+	_, err := inst.templates().listManagedDiffs()
 	if err == nil {
 		t.Fatalf("expected error from template file diff")
 	}
@@ -689,7 +689,7 @@ func TestListMemoryDiffs_Success(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	diffs, err := inst.listMemoryDiffs()
+	diffs, err := inst.templates().listMemoryDiffs()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -706,7 +706,7 @@ func TestListMemoryDiffs_TemplateWalkError(t *testing.T) {
 	t.Cleanup(func() { templates.WalkFunc = original })
 
 	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	_, err := inst.listMemoryDiffs()
+	_, err := inst.templates().listMemoryDiffs()
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -730,7 +730,7 @@ func TestAppendTemplateDirDiffs_StatError(t *testing.T) {
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	diffs := make(map[string]struct{})
-	err := inst.appendTemplateDirDiffs(diffs, templateDir{
+	err := inst.templates().appendTemplateDirDiffs(diffs, templateDir{
 		templateRoot: "instructions",
 		destRoot:     instrDir,
 	})
@@ -757,7 +757,7 @@ func TestTemplateFileMatches_ReadFileError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error reading gitignore.block")
 	}
@@ -783,7 +783,7 @@ func TestTemplateFileMatches_ReadTemplateError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from template read")
 	}

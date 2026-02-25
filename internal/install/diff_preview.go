@@ -34,7 +34,7 @@ func normalizeDiffMaxLines(value int) int {
 }
 
 func (inst *installer) buildManagedDiffPreviews(entries []LabeledPath) ([]DiffPreview, map[string]DiffPreview, error) {
-	templatePathByRel, err := inst.managedTemplatePathByRel()
+	templatePathByRel, err := inst.templates().managedTemplatePathByRel()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -46,7 +46,7 @@ func (inst *installer) buildManagedDiffPreviews(entries []LabeledPath) ([]DiffPr
 }
 
 func (inst *installer) buildMemoryDiffPreviews(entries []LabeledPath) ([]DiffPreview, map[string]DiffPreview, error) {
-	templatePathByRel, err := inst.memoryTemplatePathByRel()
+	templatePathByRel, err := inst.templates().memoryTemplatePathByRel()
 	if err != nil {
 		return nil, nil, err
 	}

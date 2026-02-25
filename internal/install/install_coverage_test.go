@@ -215,7 +215,7 @@ func TestWriteTemplateFiles_AgentOnlyAlwaysOverwriteCalled_AndErrorPropagates(t 
 		sys:  fs,
 	}
 
-	err := inst.writeTemplateFiles()
+	err := inst.templates().writeTemplateFiles()
 	if err == nil || !strings.Contains(err.Error(), "write boom") {
 		t.Fatalf("expected write boom error, got %v", err)
 	}
@@ -236,7 +236,7 @@ func TestWriteTemplateFiles_ManagedTemplateReadError_Propagates(t *testing.T) {
 		sys:  RealSystem{},
 	}
 
-	err := inst.writeTemplateFiles()
+	err := inst.templates().writeTemplateFiles()
 	if err == nil || !strings.Contains(err.Error(), "template boom") {
 		t.Fatalf("expected template boom error, got %v", err)
 	}

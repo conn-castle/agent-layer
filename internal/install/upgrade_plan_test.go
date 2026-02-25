@@ -302,7 +302,7 @@ func TestPinVersionDiff_EdgeCases(t *testing.T) {
 	}
 
 	inst := &installer{root: root, pinVersion: "1.2.3", sys: RealSystem{}}
-	diff, err := inst.pinVersionDiff()
+	diff, err := inst.templates().pinVersionDiff()
 	if err != nil {
 		t.Fatalf("pinVersionDiff missing file: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestPinVersionDiff_EdgeCases(t *testing.T) {
 	if err := os.WriteFile(path, []byte("\n"), 0o644); err != nil {
 		t.Fatalf("write empty pin: %v", err)
 	}
-	diff, err = inst.pinVersionDiff()
+	diff, err = inst.templates().pinVersionDiff()
 	if err != nil {
 		t.Fatalf("pinVersionDiff empty file: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestPinVersionDiff_EdgeCases(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not-semver\n"), 0o644); err != nil {
 		t.Fatalf("write corrupt pin: %v", err)
 	}
-	diff, err = inst.pinVersionDiff()
+	diff, err = inst.templates().pinVersionDiff()
 	if err != nil {
 		t.Fatalf("pinVersionDiff corrupt file: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestPinVersionDiff_RemoveNoneAndReadError(t *testing.T) {
 	}
 
 	inst := &installer{root: root, pinVersion: "", sys: RealSystem{}}
-	diff, err := inst.pinVersionDiff()
+	diff, err := inst.templates().pinVersionDiff()
 	if err != nil {
 		t.Fatalf("pinVersionDiff remove: %v", err)
 	}
@@ -455,7 +455,7 @@ func TestPinVersionDiff_RemoveNoneAndReadError(t *testing.T) {
 	}
 
 	inst.pinVersion = "1.2.3"
-	diff, err = inst.pinVersionDiff()
+	diff, err = inst.templates().pinVersionDiff()
 	if err != nil {
 		t.Fatalf("pinVersionDiff none: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestPinVersionDiff_RemoveNoneAndReadError(t *testing.T) {
 	readFault := newFaultSystem(RealSystem{})
 	readFault.readErrs[normalizePath(pinPath)] = errors.New("read boom")
 	inst.sys = readFault
-	if _, err := inst.pinVersionDiff(); err == nil {
+	if _, err := inst.templates().pinVersionDiff(); err == nil {
 		t.Fatal("expected read error")
 	}
 }

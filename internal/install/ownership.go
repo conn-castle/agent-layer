@@ -92,7 +92,7 @@ func (o OwnershipLabel) State() OwnershipState {
 }
 
 // classifyOwnership classifies a template diff ownership label.
-func (inst *installer) classifyOwnership(relPath string, templatePath string) (OwnershipLabel, error) {
+func (inst ownershipClassifier) classifyOwnership(relPath string, templatePath string) (OwnershipLabel, error) {
 	result, err := inst.classifyOwnershipDetail(relPath, templatePath)
 	if err != nil {
 		return "", err
@@ -101,7 +101,7 @@ func (inst *installer) classifyOwnership(relPath string, templatePath string) (O
 }
 
 // classifyOwnershipDetail classifies a template diff and returns rich ownership metadata.
-func (inst *installer) classifyOwnershipDetail(relPath string, templatePath string) (ownershipClassification, error) {
+func (inst ownershipClassifier) classifyOwnershipDetail(relPath string, templatePath string) (ownershipClassification, error) {
 	localPath := filepath.Join(inst.root, filepath.FromSlash(relPath))
 	localBytes, err := inst.sys.ReadFile(localPath)
 	if err != nil {
@@ -115,7 +115,7 @@ func (inst *installer) classifyOwnershipDetail(relPath string, templatePath stri
 }
 
 // classifyOrphanOwnership classifies template orphans and returns a user-facing label.
-func (inst *installer) classifyOrphanOwnership(relPath string) (OwnershipLabel, error) {
+func (inst ownershipClassifier) classifyOrphanOwnership(relPath string) (OwnershipLabel, error) {
 	result, err := inst.classifyOrphanOwnershipDetail(relPath)
 	if err != nil {
 		return "", err
@@ -124,7 +124,7 @@ func (inst *installer) classifyOrphanOwnership(relPath string) (OwnershipLabel, 
 }
 
 // classifyOrphanOwnershipDetail classifies template orphans and returns rich ownership metadata.
-func (inst *installer) classifyOrphanOwnershipDetail(relPath string) (ownershipClassification, error) {
+func (inst ownershipClassifier) classifyOrphanOwnershipDetail(relPath string) (ownershipClassification, error) {
 	localPath := filepath.Join(inst.root, filepath.FromSlash(relPath))
 	localBytes, err := inst.sys.ReadFile(localPath)
 	if err != nil {
@@ -139,7 +139,7 @@ func (inst *installer) classifyOrphanOwnershipDetail(relPath string) (ownershipC
 	return inst.classifyAgainstBaseline(relPath, localBytes, nil, true)
 }
 
-func (inst *installer) classifyAgainstBaseline(
+func (inst ownershipClassifier) classifyAgainstBaseline(
 	relPath string,
 	localBytes []byte,
 	targetTemplateBytes []byte,
@@ -231,7 +231,7 @@ type baselineMetadata struct {
 	reasons    []string
 }
 
-func (inst *installer) resolveBaselineComparable(relPath string, localComp ownershipComparable) (ownershipComparable, baselineMetadata, error) {
+func (inst ownershipClassifier) resolveBaselineComparable(relPath string, localComp ownershipComparable) (ownershipComparable, baselineMetadata, error) {
 	reasons := make([]string, 0)
 
 	canonicalState, err := readManagedBaselineState(inst.root, inst.sys)
@@ -323,7 +323,7 @@ func (inst *installer) resolveBaselineComparable(relPath string, localComp owner
 	return ownershipComparable{}, baselineMetadata{reasons: reasons}, nil
 }
 
-func (inst *installer) readLegacyDocsBaselineComparable(relPath string) (ownershipComparable, bool, error) {
+func (inst ownershipClassifier) readLegacyDocsBaselineComparable(relPath string) (ownershipComparable, bool, error) {
 	if !strings.HasPrefix(relPath, "docs/agent-layer/") {
 		return ownershipComparable{}, false, nil
 	}

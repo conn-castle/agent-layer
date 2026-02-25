@@ -134,7 +134,7 @@ func TestClassifyOrphanOwnership_DocsAgentLayer_UsesBaseline(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	ownership, err := inst.classifyOrphanOwnership("docs/agent-layer/ROADMAP.md")
+	ownership, err := inst.ownership().classifyOrphanOwnership("docs/agent-layer/ROADMAP.md")
 	if err != nil {
 		t.Fatalf("classifyOrphanOwnership: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestClassifyOrphanOwnership_TemplatesDocs_AlwaysUpstream(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	ownership, err := inst.classifyOrphanOwnership(".agent-layer/templates/docs/ROADMAP.md")
+	ownership, err := inst.ownership().classifyOrphanOwnership(".agent-layer/templates/docs/ROADMAP.md")
 	if err != nil {
 		t.Fatalf("classifyOrphanOwnership: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestClassifyOrphanOwnership_DocsMissingBaselineAndDefaultFallback(t *testin
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	ownership, err := inst.classifyOrphanOwnership("docs/agent-layer/ISSUES.md")
+	ownership, err := inst.ownership().classifyOrphanOwnership("docs/agent-layer/ISSUES.md")
 	if err != nil {
 		t.Fatalf("classifyOrphanOwnership docs: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestClassifyOrphanOwnership_DocsMissingBaselineAndDefaultFallback(t *testin
 		t.Fatalf("docs missing baseline ownership = %s, want %s", ownership, OwnershipUnknownNoBaseline)
 	}
 
-	ownership, err = inst.classifyOrphanOwnership(".agent-layer/slash-commands/local-orphan.md")
+	ownership, err = inst.ownership().classifyOrphanOwnership(".agent-layer/slash-commands/local-orphan.md")
 	if err != nil {
 		t.Fatalf("classifyOrphanOwnership default: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestClassifyAgainstBaseline_FromCanonicalMixedAndReordered(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	mixed, err := inst.classifyAgainstBaseline(
+	mixed, err := inst.ownership().classifyAgainstBaseline(
 		relPath,
 		[]byte("git status\ngit diff\ngit rev-parse --show-toplevel\n"),
 		[]byte("git status\ngit diff\ngit log --oneline\n"),
@@ -254,7 +254,7 @@ func TestClassifyAgainstBaseline_FromCanonicalMixedAndReordered(t *testing.T) {
 		t.Fatalf("missing local delta reason in %#v", mixed.ReasonCodes)
 	}
 
-	reordered, err := inst.classifyAgainstBaseline(
+	reordered, err := inst.ownership().classifyAgainstBaseline(
 		relPath,
 		[]byte("git diff\ngit status\n"),
 		[]byte("git status\ngit diff\n"),
@@ -293,7 +293,7 @@ func TestClassifyAgainstBaseline_PolicyMismatchReturnsUnknown(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	result, err := inst.classifyAgainstBaseline(relPath, []byte("git status\n"), []byte("git status\n"), false)
+	result, err := inst.ownership().classifyAgainstBaseline(relPath, []byte("git status\n"), []byte("git status\n"), false)
 	if err != nil {
 		t.Fatalf("classifyAgainstBaseline: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestResolveBaselineComparable_PinManifestAndLegacyPaths(t *testing.T) {
 		t.Fatalf("write pin: %v", err)
 	}
 
-	_, meta, err := inst.resolveBaselineComparable(relPath, localComp)
+	_, meta, err := inst.ownership().resolveBaselineComparable(relPath, localComp)
 	if err != nil {
 		t.Fatalf("resolveBaselineComparable missing manifest: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestResolveBaselineComparable_PinManifestAndLegacyPaths(t *testing.T) {
 	if err := os.WriteFile(legacyPath, []byte("# BACKLOG\n\nmissing marker\n"), 0o644); err != nil {
 		t.Fatalf("write legacy docs: %v", err)
 	}
-	_, _, err = inst.readLegacyDocsBaselineComparable(docsRelPath)
+	_, _, err = inst.ownership().readLegacyDocsBaselineComparable(docsRelPath)
 	if err == nil {
 		t.Fatal("expected parse error for malformed legacy docs snapshot")
 	}
@@ -367,7 +367,7 @@ func TestResolveBaselineComparable_ReadErrors(t *testing.T) {
 		t.Fatalf("write corrupted baseline: %v", err)
 	}
 	inst := &installer{root: root, sys: RealSystem{}}
-	if _, _, err := inst.resolveBaselineComparable(relPath, localComp); err == nil {
+	if _, _, err := inst.ownership().resolveBaselineComparable(relPath, localComp); err == nil {
 		t.Fatal("expected canonical baseline decode error")
 	}
 
@@ -379,7 +379,7 @@ func TestResolveBaselineComparable_ReadErrors(t *testing.T) {
 		t.Fatalf("remove state file: %v", err)
 	}
 	inst = &installer{root: root, sys: readFault}
-	if _, _, err := inst.resolveBaselineComparable(relPath, localComp); err == nil {
+	if _, _, err := inst.ownership().resolveBaselineComparable(relPath, localComp); err == nil {
 		t.Fatal("expected pin read error")
 	}
 }

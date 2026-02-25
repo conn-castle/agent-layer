@@ -20,7 +20,7 @@ const templateGitignoreBlock = "gitignore.block"
 // These files are considered part of the upgradeable template surface area:
 // they appear in `al upgrade plan`, are eligible for overwrite prompts, and are
 // captured in managed baseline evidence.
-func (inst *installer) managedTemplateFiles() []templateFile {
+func (inst templateManager) managedTemplateFiles() []templateFile {
 	root := inst.root
 	return []templateFile{
 		{filepath.Join(root, ".agent-layer", "commands.allow"), "commands.allow", 0o644},
@@ -31,7 +31,7 @@ func (inst *installer) managedTemplateFiles() []templateFile {
 // userOwnedSeedFiles lists user-owned files under .agent-layer that are required
 // for Agent Layer to operate, but should never be overwritten during init or
 // upgrade flows. They are seeded only when missing.
-func (inst *installer) userOwnedSeedFiles() []templateFile {
+func (inst templateManager) userOwnedSeedFiles() []templateFile {
 	root := inst.root
 	return []templateFile{
 		{filepath.Join(root, ".agent-layer", "config.toml"), "config.toml", 0o644},
@@ -41,7 +41,7 @@ func (inst *installer) userOwnedSeedFiles() []templateFile {
 
 // agentOnlyFiles lists agent-owned files under .agent-layer that are safe to
 // overwrite unconditionally and should not be surfaced as upgrade actions.
-func (inst *installer) agentOnlyFiles() []templateFile {
+func (inst templateManager) agentOnlyFiles() []templateFile {
 	root := inst.root
 	return []templateFile{
 		{filepath.Join(root, ".agent-layer", ".gitignore"), "agent-layer.gitignore", 0o644},
@@ -50,7 +50,7 @@ func (inst *installer) agentOnlyFiles() []templateFile {
 
 // knownTemplateFiles returns all template-related file paths that should be
 // treated as known (never "unknown") within .agent-layer.
-func (inst *installer) knownTemplateFiles() []templateFile {
+func (inst templateManager) knownTemplateFiles() []templateFile {
 	out := make([]templateFile, 0, len(inst.managedTemplateFiles())+len(inst.userOwnedSeedFiles())+len(inst.agentOnlyFiles()))
 	out = append(out, inst.managedTemplateFiles()...)
 	out = append(out, inst.userOwnedSeedFiles()...)
@@ -59,7 +59,7 @@ func (inst *installer) knownTemplateFiles() []templateFile {
 }
 
 // managedTemplateDirs lists template-managed directories under .agent-layer.
-func (inst *installer) managedTemplateDirs() []templateDir {
+func (inst templateManager) managedTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
 		{"instructions", filepath.Join(root, ".agent-layer", "instructions")},
@@ -69,7 +69,7 @@ func (inst *installer) managedTemplateDirs() []templateDir {
 }
 
 // memoryTemplateDirs lists template-managed memory directories under docs/agent-layer.
-func (inst *installer) memoryTemplateDirs() []templateDir {
+func (inst templateManager) memoryTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
 		{"docs/agent-layer", filepath.Join(root, "docs", "agent-layer")},
@@ -77,7 +77,7 @@ func (inst *installer) memoryTemplateDirs() []templateDir {
 }
 
 // allTemplateDirs returns managed and memory template directories.
-func (inst *installer) allTemplateDirs() []templateDir {
+func (inst templateManager) allTemplateDirs() []templateDir {
 	managed := inst.managedTemplateDirs()
 	memory := inst.memoryTemplateDirs()
 	dirs := make([]templateDir, 0, len(managed)+len(memory))
@@ -87,7 +87,7 @@ func (inst *installer) allTemplateDirs() []templateDir {
 }
 
 // listManagedDiffs returns relative paths for managed files that differ from templates.
-func (inst *installer) listManagedDiffs() ([]string, error) {
+func (inst templateManager) listManagedDiffs() ([]string, error) {
 	labeled, err := inst.listManagedLabeledDiffs()
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func (inst *installer) listManagedDiffs() ([]string, error) {
 }
 
 // listManagedLabeledDiffs returns managed diffs with ownership labels.
-func (inst *installer) listManagedLabeledDiffs() ([]LabeledPath, error) {
+func (inst templateManager) listManagedLabeledDiffs() ([]LabeledPath, error) {
 	diffs := make(map[string]struct{})
 	if err := inst.appendTemplateFileDiffs(diffs, inst.managedTemplateFiles()); err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (inst *installer) listManagedLabeledDiffs() ([]LabeledPath, error) {
 }
 
 // listMemoryDiffs returns relative paths for memory files that differ from templates.
-func (inst *installer) listMemoryDiffs() ([]string, error) {
+func (inst templateManager) listMemoryDiffs() ([]string, error) {
 	labeled, err := inst.listMemoryLabeledDiffs()
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func labeledDiffPaths(labeled []LabeledPath) []string {
 }
 
 // listMemoryLabeledDiffs returns memory diffs with ownership labels.
-func (inst *installer) listMemoryLabeledDiffs() ([]LabeledPath, error) {
+func (inst templateManager) listMemoryLabeledDiffs() ([]LabeledPath, error) {
 	diffs := make(map[string]struct{})
 	for _, dir := range inst.memoryTemplateDirs() {
 		if err := inst.appendTemplateDirDiffs(diffs, dir); err != nil {
@@ -149,7 +149,7 @@ func (inst *installer) listMemoryLabeledDiffs() ([]LabeledPath, error) {
 }
 
 // appendTemplateFileDiffs adds relative paths for files that differ from templates.
-func (inst *installer) appendTemplateFileDiffs(diffs map[string]struct{}, files []templateFile) error {
+func (inst templateManager) appendTemplateFileDiffs(diffs map[string]struct{}, files []templateFile) error {
 	sys := inst.sys
 	for _, file := range files {
 		info, err := sys.Stat(file.path)
@@ -171,7 +171,7 @@ func (inst *installer) appendTemplateFileDiffs(diffs map[string]struct{}, files 
 }
 
 // appendTemplateDirDiffs adds relative paths for directory template diffs.
-func (inst *installer) appendTemplateDirDiffs(diffs map[string]struct{}, dir templateDir) error {
+func (inst templateManager) appendTemplateDirDiffs(diffs map[string]struct{}, dir templateDir) error {
 	entries, err := inst.templateDirEntries(dir)
 	if err != nil {
 		return err
@@ -222,7 +222,7 @@ func sortedKeys(entries map[string]struct{}) []string {
 	return keys
 }
 
-func (inst *installer) buildLabeledDiffs(paths []string, templatePathByRel map[string]string) ([]LabeledPath, error) {
+func (inst templateManager) buildLabeledDiffs(paths []string, templatePathByRel map[string]string) ([]LabeledPath, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
@@ -232,7 +232,7 @@ func (inst *installer) buildLabeledDiffs(paths []string, templatePathByRel map[s
 		templatePath := templatePathByRel[relPath]
 		ownership := OwnershipLocalCustomization
 		if templatePath != "" {
-			classified, err := inst.classifyOwnership(relPath, templatePath)
+			classified, err := inst.ownership().classifyOwnership(relPath, templatePath)
 			if err != nil {
 				return nil, err
 			}
@@ -246,15 +246,15 @@ func (inst *installer) buildLabeledDiffs(paths []string, templatePathByRel map[s
 	return out, nil
 }
 
-func (inst *installer) managedTemplatePathByRel() (map[string]string, error) {
+func (inst templateManager) managedTemplatePathByRel() (map[string]string, error) {
 	return inst.templatePathByRel(inst.managedTemplateDirs(), true)
 }
 
-func (inst *installer) memoryTemplatePathByRel() (map[string]string, error) {
+func (inst templateManager) memoryTemplatePathByRel() (map[string]string, error) {
 	return inst.templatePathByRel(inst.memoryTemplateDirs(), false)
 }
 
-func (inst *installer) templatePathByRel(dirs []templateDir, includeManagedFiles bool) (map[string]string, error) {
+func (inst templateManager) templatePathByRel(dirs []templateDir, includeManagedFiles bool) (map[string]string, error) {
 	m := make(map[string]string)
 	if includeManagedFiles {
 		for _, file := range inst.managedTemplateFiles() {
@@ -275,7 +275,7 @@ func (inst *installer) templatePathByRel(dirs []templateDir, includeManagedFiles
 	return m, nil
 }
 
-func (inst *installer) writeTemplateDirCached(dir templateDir) error {
+func (inst templateManager) writeTemplateDirCached(dir templateDir) error {
 	entries, err := inst.templateDirEntries(dir)
 	if err != nil {
 		return err
@@ -296,7 +296,7 @@ func (inst *installer) writeTemplateDirCached(dir templateDir) error {
 	return nil
 }
 
-func (inst *installer) writeSectionAwareTemplateFile(path string, templatePath string, perm fs.FileMode, relPath string, marker string) error {
+func (inst templateManager) writeSectionAwareTemplateFile(path string, templatePath string, perm fs.FileMode, relPath string, marker string) error {
 	_, err := inst.sys.Stat(path)
 	if err == nil {
 		localBytes, readErr := inst.sys.ReadFile(path)
@@ -342,7 +342,7 @@ func (inst *installer) writeSectionAwareTemplateFile(path string, templatePath s
 	return writeTemplateFileWithMatch(inst.sys, path, templatePath, perm, inst.shouldOverwrite, inst.recordDiff, inst.matchTemplate)
 }
 
-func (inst *installer) templateDirEntries(dir templateDir) ([]templateEntry, error) {
+func (inst templateManager) templateDirEntries(dir templateDir) ([]templateEntry, error) {
 	if inst.templateEntries == nil {
 		inst.templateEntries = make(map[string][]templateEntry)
 	}
@@ -381,7 +381,7 @@ func normalizeRelPath(path string) string {
 	return strings.ReplaceAll(filepath.ToSlash(path), "\\", "/")
 }
 
-func (inst *installer) matchTemplate(sys System, path string, templatePath string, info fs.FileInfo) (bool, error) {
+func (inst templateManager) matchTemplate(sys System, path string, templatePath string, info fs.FileInfo) (bool, error) {
 	if sys == nil {
 		sys = inst.sys
 	}
@@ -408,7 +408,7 @@ func (inst *installer) matchTemplate(sys System, path string, templatePath strin
 	return matches, nil
 }
 
-func (inst *installer) matchCacheKey(path string, templatePath string) string {
+func (inst templateManager) matchCacheKey(path string, templatePath string) string {
 	return path + "\n" + templatePath
 }
 

@@ -283,7 +283,7 @@ func writeManagedBaselineState(root string, sys System, state managedBaselineSta
 }
 
 func buildCurrentTemplateManifest(inst *installer, generatedAt time.Time) (templateManifest, error) {
-	entries, err := inst.currentTemplateEntries()
+	entries, err := inst.templates().currentTemplateEntries()
 	if err != nil {
 		return templateManifest{}, err
 	}
@@ -397,11 +397,11 @@ func (inst *installer) writeManagedBaselineIfConsistent(source BaselineStateSour
 	if inst == nil || inst.sys == nil {
 		return nil
 	}
-	managedDiffs, err := inst.listManagedDiffs()
+	managedDiffs, err := inst.templates().listManagedDiffs()
 	if err != nil {
 		return err
 	}
-	memoryDiffs, err := inst.listMemoryDiffs()
+	memoryDiffs, err := inst.templates().listMemoryDiffs()
 	if err != nil {
 		return err
 	}

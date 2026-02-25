@@ -35,13 +35,13 @@ All notable changes to this project will be documented in this file.
 ## v0.8.6 - 2026-02-23
 
 ### Added
-- `al wizard` now prompts to enable per-repo Claude credential isolation (`local_config_dir`) when Claude or Claude VS Code is enabled. Default is `false` (shared global credentials); selecting `true` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for separate logins per repository.
+- `al wizard` now prompts to enable per-repo Claude settings and caches isolation (`local_config_dir`) when Claude or Claude VS Code is enabled. Default is `false` (shared global config); selecting `true` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for separate settings and caches per repository.
 
 ### Fixed
 - `.gitignore` template inline comments on `/.claude/` and `/.claude-config/` patterns were treated by Git as part of the literal pattern, causing both directories to not be gitignored. Comments moved to their own lines. Affected users (v0.8.5 installs): run `al upgrade` or `al sync` to pick up the corrected template.
 
 ### Improved
-- Per-repo credential isolation (separate Claude and Codex logins per repository) is now documented as a core feature in the README comparison table, key properties, and a dedicated [Per-repo credential isolation](https://conn-castle.github.io/agent-layer-web/docs/concepts#per-repo-credential-isolation) section in the site concepts page.
+- Per-repo isolation is now documented as a core feature in the README comparison table, key properties, and a dedicated [Per-repo credential isolation](https://conn-castle.github.io/agent-layer-web/docs/concepts#per-repo-credential-isolation) section in the site concepts page (Codex auth isolation plus Claude settings and caches isolation; Claude auth remains shared due to an upstream limitation).
 
 ## v0.8.5 - 2026-02-23
 

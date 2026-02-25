@@ -117,7 +117,7 @@ func Run(root string, opts Options) error {
 		}
 		inst.pinVersion = normalized
 	}
-	if err := inst.createDirs(); err != nil {
+	if err := inst.upgrades().ensureBaseDirs(); err != nil {
 		return err
 	}
 	if overwrite {
@@ -133,7 +133,7 @@ func Run(root string, opts Options) error {
 		if err != nil {
 			return err
 		}
-		if err := inst.runUpgradeTransaction(&snapshot); err != nil {
+		if err := inst.upgrades().runUpgradeTransaction(&snapshot); err != nil {
 			return err
 		}
 	} else {
@@ -144,8 +144,8 @@ func Run(root string, opts Options) error {
 		}
 		steps := []func() error{
 			inst.writeVersionFile,
-			inst.writeTemplateFiles,
-			inst.writeTemplateDirs,
+			inst.templates().writeTemplateFiles,
+			inst.templates().writeTemplateDirs,
 			inst.updateGitignore,
 			inst.writeVSCodeLaunchers,
 		}
@@ -172,12 +172,12 @@ type transactionStep struct {
 	rollbackTargets func() []string
 }
 
-func (inst *installer) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
+func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
 	steps := []transactionStep{
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
-		{name: "writeTemplateFiles", run: inst.writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
-		{name: "writeTemplateDirs", run: inst.writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
+		{name: "writeTemplateFiles", run: inst.templates().writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
+		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
 		{name: "updateGitignore", run: inst.updateGitignore, rollbackTargets: inst.updateGitignoreTargetPaths},
 		{name: "writeVSCodeLaunchers", run: inst.writeVSCodeLaunchers, rollbackTargets: inst.writeVSCodeLaunchersTargetPaths},
 		{name: "handleUnknowns", run: inst.handleUnknowns, rollbackTargets: inst.handleUnknownsTargetPaths},
@@ -272,7 +272,7 @@ func validatePrompter(prompter Prompter, overwrite bool) error {
 	return nil
 }
 
-func (inst *installer) createDirs() error {
+func (inst upgradeOrchestrator) ensureBaseDirs() error {
 	root := inst.root
 	sys := inst.sys
 	dirs := []string{
@@ -294,7 +294,7 @@ func (inst *installer) writeVSCodeLaunchers() error {
 	return launchers.WriteVSCodeLaunchers(inst.sys, inst.root)
 }
 
-func (inst *installer) writeTemplateFiles() error {
+func (inst templateManager) writeTemplateFiles() error {
 	// User-owned required files: seed only when missing; never overwrite.
 	for _, file := range inst.userOwnedSeedFiles() {
 		if err := writeTemplateIfMissing(inst.sys, file.path, file.template, file.perm); err != nil {
@@ -372,7 +372,7 @@ func (inst *installer) writeVersionFile() error {
 	return nil
 }
 
-func (inst *installer) writeTemplateDirs() error {
+func (inst templateManager) writeTemplateDirs() error {
 	for _, dir := range inst.allTemplateDirs() {
 		if err := inst.writeTemplateDirCached(dir); err != nil {
 			return err

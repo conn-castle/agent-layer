@@ -8,7 +8,7 @@ Key properties:
 - Local-first, no telemetry
 - Deterministic outputs from canonical inputs
 - Explicit approvals and command allowlists
-- Per-repo credential isolation (separate Claude and Codex logins per repository)
+- Per-repo credential isolation (Codex logins per repository; Claude settings and caches isolation with auth pending upstream fix)
 
 Comparison:
 
@@ -17,7 +17,7 @@ Comparison:
 | duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
 | inconsistent approvals and command policies | consistent approvals and allowlists |
 | MCP servers added in one client and forgotten in another | generated MCP config for every supported client |
-| shared global credentials across repos | per-repo credential isolation for Claude and Codex |
+| shared global credentials across repos | per-repo credential isolation for Codex; per-repo settings and caches isolation for Claude |
 | no single place to review or audit changes | audit in version control |
 
 If Agent Layer improves your workflow, please consider starring the repository. Stars help new users discover the project.
@@ -481,7 +481,7 @@ Some clients discover slash commands via MCP prompts. Agent Layer provides an **
 
 - When `[agents.vscode]` is enabled, `CODEX_HOME` is set for the Codex extension.
 - When `[agents.claude-vscode]` is enabled, Claude files (`.mcp.json`, `.claude/settings.json`) are generated. YOLO mode sets `claudeCode.allowDangerouslySkipPermissions` in `.vscode/settings.json`.
-- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo credential isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude-vscode]` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled.
+- When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo settings and caches isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude-vscode]` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled. Note: auth credentials are stored globally in Claude Code's OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation).
 - VS Code settings are generated when either agent is enabled.
 - Supports `--no-sync` to skip sync before opening VS Code.
 
@@ -500,7 +500,8 @@ If you use the CLI-based launchers, install the `code` command from inside VS Co
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
-**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different repo, you will need to reauthenticate with Codex. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude authentication is also per repo (via `CLAUDE_CONFIG_DIR`). This keeps credentials isolated and enables different accounts per repo.
+**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different repo, you will need to reauthenticate with Codex. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude settings and caches are isolated per repo (via `CLAUDE_CONFIG_DIR`). **Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally until this is fixed upstream.
+
 For contributor-level implementation details, see `docs/architecture/vscode-launch.md`.
 
 ---

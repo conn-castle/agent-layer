@@ -27,6 +27,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-25 playwright-headless-parity: Evaluate headless Playwright mode without functional regressions
+    Priority: Medium. Area: test automation / Playwright runner UX.
+    Description: Playwright running in headed mode is noisy and disruptive during normal development. We should assess whether headless can be the default while preserving behavior.
+    Next step: Run representative Playwright flows in headed vs headless mode, document any behavior differences, and only switch defaults if parity is confirmed.
+    Notes: Keep an explicit opt-in path for headed runs for local debugging even if headless becomes the default.
+
+- Issue 2026-02-25 claude-auth-ignores-config-dir: Claude Code auth ignores CLAUDE_CONFIG_DIR (upstream)
+    Priority: Medium. Area: agents.claude / auth isolation.
+    Description: Claude Code stores OAuth credentials in the OS credential store (macOS Keychain under service `"Claude Code-credentials"`, Linux via libsecret/gnome-keyring) using a fixed service name, regardless of `CLAUDE_CONFIG_DIR`. Per-repo login isolation does not work. Reported upstream.
+    Next step: Track upstream fix. The fix would need Claude Code to namespace credential-store entries by `CLAUDE_CONFIG_DIR` (e.g., `"Claude Code-credentials-<hash>"`).
+    Notes: No clean workaround exists. macOS Keychain is system-wide and keyed by service name, not directory path. `XDG_CONFIG_HOME` does not affect Keychain. Symlinks are not per-repo. A `security` CLI wrapper could intercept calls but is fragile and unsupportable.
+
 - Issue 2026-02-22 config-key-style-unify: Config key naming mixes kebab-case and snake_case
     Priority: Medium. Area: config schema / UX.
     Description: The config currently mixes naming styles (for example `agents.claude-vscode` vs `agents.codex.agent_specific` and `reasoning_effort`), which makes the schema feel inconsistent and harder to learn.
@@ -36,11 +48,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: High. Area: slash-commands / skills.
     Description: Slash-commands should be renamed to "skills" to align with the established skill standard. This includes supporting supplemental folders within the skill directory and updating `al doctor` to verify compatibility using the standard toolset.
     Next step: Perform a global rename of slash-command terminology and implement structural/validation updates to match the skill standard.
-
-- Issue 2026-02-12 3c5f958f: installer struct accumulating responsibilities
-    Priority: Low. Area: install / maintainability.
-    Description: The `installer` struct in `internal/install/` has 23 fields and 57+ methods spread across 8+ files. While logically grouped, this concentration increases coupling risk as features continue to be added.
-    Next step: Audit current method count (Phase 11 is complete). If it exceeds ~70, extract sub-structs (e.g., `templateManager`, `ownershipClassifier`). Scheduled in Phase 13 (maintenance).
 
 - Issue 2026-02-08 tmpl-mk: Slash-command templates reference non-existent Makefile targets
     Priority: Low. Area: templates / developer experience.
