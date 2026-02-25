@@ -27,6 +27,7 @@ var (
 	osRename            = os.Rename
 	osStat              = os.Stat
 	osCreateTemp        = os.CreateTemp
+	osFileSync          = (*os.File).Sync
 	httpClient          = &http.Client{Timeout: 30 * time.Second}
 	dispatchSleep       = time.Sleep
 )
@@ -94,7 +95,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 			_ = tmp.Close()
 			return err
 		}
-		if err := tmp.Sync(); err != nil {
+		if err := osFileSync(tmp); err != nil {
 			_ = tmp.Close()
 			return fmt.Errorf(messages.DispatchSyncTempFileFmt, err)
 		}

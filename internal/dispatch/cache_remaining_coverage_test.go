@@ -9,9 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -43,10 +41,6 @@ func TestEnsureCachedBinaryWithSystem_MkdirAllErrorBranch(t *testing.T) {
 }
 
 func TestEnsureCachedBinaryWithSystem_SyncErrorBranch(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("sync behavior for os.DevNull differs on windows")
-	}
-
 	version := "1.0.0"
 	content := "binary-content"
 	osName, arch, err := platformStrings()
@@ -72,23 +66,21 @@ func TestEnsureCachedBinaryWithSystem_SyncErrorBranch(t *testing.T) {
 	releaseBaseURL = server.URL
 	t.Cleanup(func() { releaseBaseURL = origURL })
 
-	origCreateTemp := osCreateTemp
-	osCreateTemp = func(dir, pattern string) (*os.File, error) {
-		devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-		if err != nil {
-			return nil, err
-		}
-		dupFD, err := syscall.Dup(int(devNull.Fd()))
-		_ = devNull.Close()
-		if err != nil {
-			return nil, err
-		}
-		return os.NewFile(uintptr(dupFD), filepath.Join(dir, "sync-error.tmp")), nil
+	origFileSync := osFileSync
+	osFileSync = func(*os.File) error {
+		return errors.New("forced sync failure")
 	}
-	t.Cleanup(func() { osCreateTemp = origCreateTemp })
+	t.Cleanup(func() { osFileSync = origFileSync })
 
-	if _, err := ensureCachedBinary(t.TempDir(), version, io.Discard); err == nil || !strings.Contains(err.Error(), "sync temp file") {
+	_, err = ensureCachedBinary(t.TempDir(), version, io.Discard)
+	if err == nil {
+		t.Fatal("expected sync temp file error")
+	}
+	if !strings.Contains(err.Error(), "sync temp file") {
 		t.Fatalf("expected sync temp file error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "forced sync failure") {
+		t.Fatalf("expected forced sync failure detail, got %v", err)
 	}
 }
 
