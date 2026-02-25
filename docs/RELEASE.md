@@ -61,14 +61,20 @@ CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>
 
 ## Website publish details (agent-layer-web)
 The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`.
+Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally unsupported.
 That command:
 1. Copies `site/pages/` into `agent-layer-web/src/pages/`, deleting the destination first.
 2. Copies `site/docs/` into `agent-layer-web/docs/`, deleting the destination first.
 3. Overwrites `agent-layer-web/CHANGELOG.md` with this repo’s `CHANGELOG.md`.
 4. Removes any existing versioned docs for this tag, then runs `npx docusaurus docs:version X.Y.Z` to snapshot the docs into `versioned_docs/version-X.Y.Z/` and `versioned_sidebars/version-X.Y.Z-sidebars.json`.
-5. Rewrites `versions.json` (dedupe + newest-first sort).
+5. Rewrites `versions.json` (dedupe + newest-first sort), then applies retention:
+   - keep the newest 4 patch releases from the newest minor line,
+   - keep the newest patch release for each of the newest 4 minor lines (including the newest minor line),
+   - keep stable releases only (prereleases are dropped),
+   - keep the union of those sets in newest-first order.
+6. Prunes dropped versions from both `versioned_docs/version-<version>/` and `versioned_sidebars/version-<version>-sidebars.json`.
 
-Historical docs are preserved because each release snapshots a new `versioned_docs/version-X.Y.Z/` directory. Only the directory for the current tag is removed/recreated for idempotency.
+Historical docs are retained by the policy above. The current tag is always removed/recreated first for idempotency before retention is applied.
 
 Required secrets for the tap PR:
 - `HOMEBREW_TAP_APP_ID`

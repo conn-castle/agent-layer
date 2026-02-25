@@ -23,7 +23,7 @@ func TestValidateTagFormat(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid", "v1.2.3", false},
-		{"valid prerelease", "v1.2.3-rc.1", false},
+		{"invalid prerelease", "v1.2.3-rc.1", true},
 		{"missing v", "1.2.3", true},
 		{"missing patch", "v1.2", true},
 	}
@@ -70,6 +70,14 @@ func TestParseVersion(t *testing.T) {
 	if _, err := parseVersion("1.2.3a"); err == nil {
 		t.Fatal("expected error for version with invalid patch")
 	}
+
+	if _, err := parseVersion("1.2.3-rc/1"); err == nil {
+		t.Fatal("expected error for prerelease with invalid character")
+	}
+
+	if _, err := parseVersion("1.2.3-rc..1"); err == nil {
+		t.Fatal("expected error for prerelease with empty identifier")
+	}
 }
 
 func TestComparePrerelease(t *testing.T) {
@@ -110,13 +118,46 @@ func TestComparePrerelease(t *testing.T) {
 func TestNormalizeVersionsJSON(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
-	data := []string{"0.2.0", "0.1.0", "0.2.0", "0.2.0-rc.1", "0.2.0-rc.10", "0.2.0-rc.2", "0.10.0"}
+	data := []string{
+		"0.8.3",
+		"0.8.7",
+		"0.8.6",
+		"0.8.5",
+		"0.8.4",
+		"0.8.2",
+		"0.8.1",
+		"0.8.0",
+		"0.7.0",
+		"0.6.1",
+		"0.6.0",
+		"0.8.7",
+	}
 	payload, err := json.Marshal(data)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	if err := os.WriteFile(versionsPath, payload, 0o644); err != nil {
 		t.Fatalf("write versions.json: %v", err)
+	}
+
+	for _, v := range []string{
+		"0.8.7", "0.8.6", "0.8.5", "0.8.4", "0.8.3", "0.8.2", "0.8.1", "0.8.0", "0.7.0", "0.6.1", "0.6.0",
+	} {
+		docsDir := filepath.Join(repo, "versioned_docs", "version-"+v)
+		if err := os.MkdirAll(docsDir, 0o755); err != nil {
+			t.Fatalf("mkdir docs dir for %s: %v", v, err)
+		}
+		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write docs file for %s: %v", v, err)
+		}
+
+		sidebarsDir := filepath.Join(repo, "versioned_sidebars")
+		if err := os.MkdirAll(sidebarsDir, 0o755); err != nil {
+			t.Fatalf("mkdir sidebars dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(sidebarsDir, "version-"+v+"-sidebars.json"), []byte("{}"), 0o644); err != nil {
+			t.Fatalf("write sidebar for %s: %v", v, err)
+		}
 	}
 
 	if err := normalizeVersionsJSON(repo); err != nil {
@@ -131,9 +172,199 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	want := []string{"0.10.0", "0.2.0", "0.2.0-rc.10", "0.2.0-rc.2", "0.2.0-rc.1", "0.1.0"}
+	want := []string{"0.8.7", "0.8.6", "0.8.5", "0.8.4", "0.7.0", "0.6.1"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("unexpected order: %v", got)
+	}
+
+	for _, v := range []string{"0.8.3", "0.8.2", "0.8.1", "0.8.0", "0.6.0"} {
+		if _, err := os.Stat(filepath.Join(repo, "versioned_docs", "version-"+v)); !os.IsNotExist(err) {
+			t.Fatalf("expected dropped docs artifact removed for %s", v)
+		}
+		if _, err := os.Stat(filepath.Join(repo, "versioned_sidebars", "version-"+v+"-sidebars.json")); !os.IsNotExist(err) {
+			t.Fatalf("expected dropped sidebar artifact removed for %s", v)
+		}
+	}
+
+	for _, v := range []string{"0.8.7", "0.8.6", "0.8.5", "0.8.4", "0.7.0", "0.6.1"} {
+		if _, err := os.Stat(filepath.Join(repo, "versioned_docs", "version-"+v)); err != nil {
+			t.Fatalf("expected retained docs artifact for %s: %v", v, err)
+		}
+		if _, err := os.Stat(filepath.Join(repo, "versioned_sidebars", "version-"+v+"-sidebars.json")); err != nil {
+			t.Fatalf("expected retained sidebar artifact for %s: %v", v, err)
+		}
+	}
+}
+
+func TestSelectRetainedVersions_SparseHistory(t *testing.T) {
+	sorted := []string{"1.3.2", "1.3.1", "1.2.0", "1.1.5"}
+
+	retained, dropped, err := selectRetainedVersions(sorted)
+	if err != nil {
+		t.Fatalf("selectRetainedVersions: %v", err)
+	}
+
+	if strings.Join(retained, ",") != strings.Join(sorted, ",") {
+		t.Fatalf("unexpected retained versions: %v", retained)
+	}
+	if len(dropped) != 0 {
+		t.Fatalf("expected no dropped versions, got %v", dropped)
+	}
+}
+
+func TestSelectRetainedVersions_DropsPrereleases(t *testing.T) {
+	sorted := []string{
+		"1.5.2",
+		"1.5.2-rc.2",
+		"1.5.2-rc.1",
+		"1.5.1",
+		"1.5.0",
+		"1.4.9",
+		"1.3.8",
+		"1.2.7",
+	}
+
+	retained, dropped, err := selectRetainedVersions(sorted)
+	if err != nil {
+		t.Fatalf("selectRetainedVersions: %v", err)
+	}
+
+	wantRetained := []string{"1.5.2", "1.5.1", "1.5.0", "1.4.9", "1.3.8", "1.2.7"}
+	if strings.Join(retained, ",") != strings.Join(wantRetained, ",") {
+		t.Fatalf("unexpected retained versions: %v", retained)
+	}
+
+	wantDropped := []string{"1.5.2-rc.2", "1.5.2-rc.1"}
+	if strings.Join(dropped, ",") != strings.Join(wantDropped, ",") {
+		t.Fatalf("unexpected dropped versions: %v", dropped)
+	}
+}
+
+func TestSelectRetainedVersions_PrereleaseOnly(t *testing.T) {
+	if _, _, err := selectRetainedVersions([]string{"1.2.3-rc.1"}); err == nil || !strings.Contains(err.Error(), "no stable releases") {
+		t.Fatalf("expected no stable releases error, got %v", err)
+	}
+}
+
+func TestNormalizeVersionsJSON_Idempotent(t *testing.T) {
+	repo := t.TempDir()
+	versions := []string{
+		"0.8.7",
+		"0.8.6",
+		"0.8.5",
+		"0.8.4",
+		"0.8.3",
+		"0.7.0",
+		"0.6.1",
+	}
+	data, err := json.Marshal(versions)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	versionsPath := filepath.Join(repo, "versions.json")
+	if err := os.WriteFile(versionsPath, data, 0o644); err != nil {
+		t.Fatalf("write versions.json: %v", err)
+	}
+
+	for _, v := range []string{"0.8.7", "0.8.3"} {
+		docsDir := filepath.Join(repo, "versioned_docs", "version-"+v)
+		if err := os.MkdirAll(docsDir, 0o755); err != nil {
+			t.Fatalf("mkdir docs dir for %s: %v", v, err)
+		}
+		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o644); err != nil {
+			t.Fatalf("write docs file for %s: %v", v, err)
+		}
+
+		sidebarsDir := filepath.Join(repo, "versioned_sidebars")
+		if err := os.MkdirAll(sidebarsDir, 0o755); err != nil {
+			t.Fatalf("mkdir sidebars dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(sidebarsDir, "version-"+v+"-sidebars.json"), []byte("{}"), 0o644); err != nil {
+			t.Fatalf("write sidebar for %s: %v", v, err)
+		}
+	}
+
+	if err := normalizeVersionsJSON(repo); err != nil {
+		t.Fatalf("first normalize: %v", err)
+	}
+	firstOutput, err := os.ReadFile(versionsPath)
+	if err != nil {
+		t.Fatalf("read first versions.json: %v", err)
+	}
+
+	if err := normalizeVersionsJSON(repo); err != nil {
+		t.Fatalf("second normalize: %v", err)
+	}
+	secondOutput, err := os.ReadFile(versionsPath)
+	if err != nil {
+		t.Fatalf("read second versions.json: %v", err)
+	}
+
+	if string(firstOutput) != string(secondOutput) {
+		t.Fatalf("expected idempotent output; first=%q second=%q", firstOutput, secondOutput)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "versioned_docs", "version-0.8.3")); !os.IsNotExist(err) {
+		t.Fatalf("expected dropped docs artifact removed after rerun")
+	}
+	if _, err := os.Stat(filepath.Join(repo, "versioned_sidebars", "version-0.8.3-sidebars.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected dropped sidebar artifact removed after rerun")
+	}
+}
+
+func TestPruneDroppedVersionArtifacts_RemoveSidebarError(t *testing.T) {
+	repo := t.TempDir()
+	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.2.3-sidebars.json")
+	if err := os.MkdirAll(sidebarPath, 0o755); err != nil {
+		t.Fatalf("mkdir sidebar path as directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write nested file: %v", err)
+	}
+
+	if err := pruneDroppedVersionArtifacts(repo, []string{"1.2.3"}); err == nil {
+		t.Fatal("expected remove sidebar error when sidebar path is a directory")
+	}
+}
+
+func TestNormalizeVersionsJSON_DoesNotWriteWhenPruneFails(t *testing.T) {
+	repo := t.TempDir()
+	versions := []string{"1.0.4", "1.0.3", "1.0.2", "1.0.1", "1.0.0"}
+	data, err := json.Marshal(versions)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	versionsPath := filepath.Join(repo, "versions.json")
+	if err := os.WriteFile(versionsPath, data, 0o644); err != nil {
+		t.Fatalf("write versions.json: %v", err)
+	}
+
+	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.0.0")
+	if err := os.MkdirAll(droppedDocs, 0o755); err != nil {
+		t.Fatalf("mkdir dropped docs: %v", err)
+	}
+
+	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.0.0-sidebars.json")
+	if err := os.MkdirAll(sidebarPath, 0o755); err != nil {
+		t.Fatalf("mkdir sidebar path as directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write nested sidebar file: %v", err)
+	}
+
+	if err := normalizeVersionsJSON(repo); err == nil {
+		t.Fatal("expected normalize error when prune fails")
+	}
+
+	out, err := os.ReadFile(versionsPath)
+	if err != nil {
+		t.Fatalf("read versions.json: %v", err)
+	}
+	var got []string
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if strings.Join(got, ",") != strings.Join(versions, ",") {
+		t.Fatalf("expected versions.json unchanged on prune failure, got %v", got)
 	}
 }
 
@@ -868,6 +1099,20 @@ func TestNormalizeVersionsJSON_StableVsPrerelease(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o644); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
+
+	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.0.0-rc.1")
+	if err := os.MkdirAll(droppedDocs, 0o755); err != nil {
+		t.Fatalf("mkdir prerelease docs dir: %v", err)
+	}
+	sidebarsDir := filepath.Join(repo, "versioned_sidebars")
+	if err := os.MkdirAll(sidebarsDir, 0o755); err != nil {
+		t.Fatalf("mkdir sidebars dir: %v", err)
+	}
+	droppedSidebar := filepath.Join(sidebarsDir, "version-1.0.0-rc.1-sidebars.json")
+	if err := os.WriteFile(droppedSidebar, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write prerelease sidebar: %v", err)
+	}
+
 	if err := normalizeVersionsJSON(repo); err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
@@ -879,12 +1124,33 @@ func TestNormalizeVersionsJSON_StableVsPrerelease(t *testing.T) {
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(got) != 2 || got[0] != "1.0.0" {
-		t.Fatalf("expected stable release first, got %v", got)
+	if len(got) != 1 || got[0] != "1.0.0" {
+		t.Fatalf("expected only stable release retained, got %v", got)
+	}
+	if _, err := os.Stat(droppedDocs); !os.IsNotExist(err) {
+		t.Fatalf("expected prerelease docs removed")
+	}
+	if _, err := os.Stat(droppedSidebar); !os.IsNotExist(err) {
+		t.Fatalf("expected prerelease sidebar removed")
 	}
 }
 
-func TestNormalizeVersionsJSON_SortBranches(t *testing.T) {
+func TestNormalizeVersionsJSON_PrereleaseOnly(t *testing.T) {
+	repo := t.TempDir()
+	versions := []string{"1.0.0-rc.1"}
+	data, err := json.Marshal(versions)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o644); err != nil {
+		t.Fatalf("write versions.json: %v", err)
+	}
+	if err := normalizeVersionsJSON(repo); err == nil || !strings.Contains(err.Error(), "no stable releases") {
+		t.Fatalf("expected no stable releases error, got %v", err)
+	}
+}
+
+func TestNormalizeVersionsJSON_InvalidVersion(t *testing.T) {
 	repo := t.TempDir()
 	versions := []string{"1.0.0", "2.0.0", "1.0.1", "1.0.0-rc.1", "bad"}
 	data, err := json.Marshal(versions)
@@ -894,10 +1160,28 @@ func TestNormalizeVersionsJSON_SortBranches(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o644); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
-	if err := normalizeVersionsJSON(repo); err != nil {
-		t.Fatalf("normalize: %v", err)
+	if err := normalizeVersionsJSON(repo); err == nil || !strings.Contains(err.Error(), "invalid version") {
+		t.Fatalf("expected invalid version error, got %v", err)
 	}
-	out, err := os.ReadFile(filepath.Join(repo, "versions.json"))
+}
+
+func TestNormalizeVersionsJSON_PrereleasePathTraversalRejected(t *testing.T) {
+	repo := t.TempDir()
+	versions := []string{"1.0.0", "1.0.0-../../../../outside"}
+	data, err := json.Marshal(versions)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	versionsPath := filepath.Join(repo, "versions.json")
+	if err := os.WriteFile(versionsPath, data, 0o644); err != nil {
+		t.Fatalf("write versions.json: %v", err)
+	}
+
+	if err := normalizeVersionsJSON(repo); err == nil || !strings.Contains(err.Error(), "invalid prerelease") {
+		t.Fatalf("expected invalid prerelease error, got %v", err)
+	}
+
+	out, err := os.ReadFile(versionsPath)
 	if err != nil {
 		t.Fatalf("read versions.json: %v", err)
 	}
@@ -905,14 +1189,8 @@ func TestNormalizeVersionsJSON_SortBranches(t *testing.T) {
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got[0] != "bad" {
-		t.Fatalf("expected fallback string compare to keep 'bad' first, got %v", got)
-	}
-	if got[1] != "2.0.0" {
-		t.Fatalf("expected major version to sort next, got %v", got)
-	}
-	if !strings.HasPrefix(strings.Join(got, ","), "bad,2.0.0") {
-		t.Fatalf("unexpected order: %v", got)
+	if strings.Join(got, ",") != strings.Join(versions, ",") {
+		t.Fatalf("expected versions.json unchanged on error, got %v", got)
 	}
 }
 

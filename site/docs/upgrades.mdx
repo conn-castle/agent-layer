@@ -20,6 +20,7 @@ If guidance in other docs is shorter or summarized, this page is the source of t
 - [Upgrade event model](#upgrade-event-model)
 - [Compatibility guarantees](#compatibility-guarantees)
 - [Migration rules by release](#migration-rules-by-release)
+- [Documentation version retention and access](#documentation-version-retention-and-access)
 - [OS and shell capability matrix](#os-and-shell-capability-matrix)
 - [Commitment level and limitations](#commitment-level-and-limitations)
 - [Upgrade checklist](./upgrade-checklist)
@@ -99,6 +100,24 @@ How this table is maintained:
 - Add or update a row for every release.
 - If a release includes `breaking/manual` items, list exact required actions.
 - If no special migration is needed, keep the row explicit to avoid ambiguity.
+
+## Documentation version retention and access
+
+Agent Layer website docs are versioned per release, then retained with a bounded policy to keep the published set stable and small:
+
+1. Keep the newest 4 patch releases from the newest minor line.
+2. Keep the newest patch release for each of the newest 4 minor lines (including the newest minor line).
+3. Keep stable releases only (prereleases are dropped).
+4. Keep the union of both sets in newest-first order.
+
+How to access older docs:
+
+1. Use the docs version selector in the website navigation to switch between retained versions.
+2. If a version is not listed there, it has been pruned from the hosted site by retention policy.
+3. For pruned versions:
+   - Use the [Changelog](/changelog) for release-level historical behavior.
+   - Browse source docs at the matching tag in the main repo:
+     - `https://github.com/conn-castle/agent-layer/tree/vX.Y.Z/site/docs`
 
 ### Ownership baseline and manifest policy
 

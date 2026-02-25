@@ -167,7 +167,7 @@ func repoRoot() (string, error) {
 	return "", fmt.Errorf("could not find repo root (no go.mod found)")
 }
 
-var tagRegexp = regexp.MustCompile(`^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$`)
+var tagRegexp = regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
 
 var execCommandContext = exec.CommandContext
 var osStatFunc = os.Stat
@@ -175,9 +175,14 @@ var osReadFileFunc = os.ReadFile
 var osWriteFileFunc = os.WriteFile
 var filepathWalkFunc = filepath.Walk
 
+const (
+	retainNewestMinorPatches = 4
+	retainRecentMinorLines   = 4
+)
+
 func validateTagFormat(tag string) error {
 	if !tagRegexp.MatchString(tag) {
-		return fmt.Errorf("invalid tag format: %s (expected vX.Y.Z or vX.Y.Z-prerelease)", tag)
+		return fmt.Errorf("invalid tag format: %s (expected vX.Y.Z)", tag)
 	}
 	return nil
 }
@@ -315,6 +320,9 @@ func parseVersion(s string) (version, error) {
 	parts := strings.SplitN(s, "-", 2)
 	core := parts[0]
 	if len(parts) > 1 {
+		if err := validatePrerelease(parts[1]); err != nil {
+			return v, err
+		}
 		v.prerelease = parts[1]
 	}
 
@@ -338,6 +346,31 @@ func parseVersion(s string) (version, error) {
 	}
 
 	return v, nil
+}
+
+func validatePrerelease(prerelease string) error {
+	if prerelease == "" {
+		return fmt.Errorf("invalid prerelease: empty identifier")
+	}
+
+	identifiers := strings.Split(prerelease, ".")
+	for _, identifier := range identifiers {
+		if identifier == "" {
+			return fmt.Errorf("invalid prerelease %q: empty identifier", prerelease)
+		}
+		for i := 0; i < len(identifier); i++ {
+			char := identifier[i]
+			isLower := char >= 'a' && char <= 'z'
+			isUpper := char >= 'A' && char <= 'Z'
+			isDigit := char >= '0' && char <= '9'
+			if isLower || isUpper || isDigit || char == '-' {
+				continue
+			}
+			return fmt.Errorf("invalid prerelease %q: identifier %q contains invalid character %q", prerelease, identifier, char)
+		}
+	}
+
+	return nil
 }
 
 // comparePrerelease compares two prerelease strings according to SemVer precedence rules.
@@ -408,6 +441,102 @@ func parseNumericIdentifier(s string) (int, bool) {
 	return n, true
 }
 
+// minorKey returns the major.minor grouping key for a parsed version.
+func minorKey(v version) string {
+	return fmt.Sprintf("%d.%d", v.major, v.minor)
+}
+
+// selectRetainedVersions applies the release retention policy to a newest-first
+// sorted version list and returns the retained and dropped versions in
+// newest-first order. Prerelease versions are never retained.
+func selectRetainedVersions(sorted []string) (retained []string, dropped []string, err error) {
+	if len(sorted) == 0 {
+		return nil, nil, nil
+	}
+
+	parsed := make([]version, len(sorted))
+	for i, v := range sorted {
+		parsedVersion, parseErr := parseVersion(v)
+		if parseErr != nil {
+			return nil, nil, fmt.Errorf("invalid version %q in versions.json: %w", v, parseErr)
+		}
+		parsed[i] = parsedVersion
+	}
+
+	stableSorted := make([]string, 0, len(sorted))
+	stableParsed := make([]version, 0, len(sorted))
+	for i, v := range sorted {
+		if parsed[i].prerelease != "" {
+			continue
+		}
+		stableSorted = append(stableSorted, v)
+		stableParsed = append(stableParsed, parsed[i])
+	}
+	if len(stableSorted) == 0 {
+		return nil, nil, fmt.Errorf("versions.json contains no stable releases")
+	}
+
+	selected := make(map[string]struct{})
+
+	// Keep the most recent patch releases from the newest minor line.
+	newestMinor := minorKey(stableParsed[0])
+	newestMinorCount := 0
+	for i, v := range stableSorted {
+		if minorKey(stableParsed[i]) != newestMinor {
+			continue
+		}
+		if newestMinorCount >= retainNewestMinorPatches {
+			continue
+		}
+		selected[v] = struct{}{}
+		newestMinorCount++
+	}
+
+	// Keep the newest patch release from each recent minor line (including newest).
+	minorLinesSeen := make(map[string]struct{})
+	minorLinesSelected := 0
+	for i, v := range stableSorted {
+		key := minorKey(stableParsed[i])
+		if _, seen := minorLinesSeen[key]; seen {
+			continue
+		}
+		minorLinesSeen[key] = struct{}{}
+		if minorLinesSelected >= retainRecentMinorLines {
+			continue
+		}
+		selected[v] = struct{}{}
+		minorLinesSelected++
+	}
+
+	for _, v := range sorted {
+		if _, keep := selected[v]; keep {
+			retained = append(retained, v)
+			continue
+		}
+		dropped = append(dropped, v)
+	}
+
+	return retained, dropped, nil
+}
+
+// pruneDroppedVersionArtifacts removes versioned docs and sidebars for each
+// dropped version from the website repository checkout.
+func pruneDroppedVersionArtifacts(repoB string, dropped []string) error {
+	for _, v := range dropped {
+		versionedDocsPath := filepath.Join(repoB, "versioned_docs", "version-"+v)
+		if err := os.RemoveAll(versionedDocsPath); err != nil {
+			return fmt.Errorf("remove versioned docs for %s: %w", v, err)
+		}
+
+		versionedSidebarPath := filepath.Join(repoB, "versioned_sidebars", "version-"+v+"-sidebars.json")
+		if err := os.Remove(versionedSidebarPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove versioned sidebar for %s: %w", v, err)
+		}
+	}
+
+	return nil
+}
+
 func normalizeVersionsJSON(repoB string) error {
 	versionsPath := filepath.Join(repoB, "versions.json")
 	if _, err := osStatFunc(versionsPath); os.IsNotExist(err) {
@@ -467,10 +596,23 @@ func normalizeVersionsJSON(repoB string) error {
 		return comparePrerelease(vi.prerelease, vj.prerelease) > 0
 	})
 
-	newData, err := json.MarshalIndent(unique, "", "  ")
+	retained, dropped, err := selectRetainedVersions(unique)
 	if err != nil {
 		return err
 	}
 
-	return osWriteFileFunc(versionsPath, append(newData, '\n'), 0644)
+	newData, err := json.MarshalIndent(retained, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	if err := pruneDroppedVersionArtifacts(repoB, dropped); err != nil {
+		return err
+	}
+
+	if err := osWriteFileFunc(versionsPath, append(newData, '\n'), 0644); err != nil {
+		return err
+	}
+
+	return nil
 }

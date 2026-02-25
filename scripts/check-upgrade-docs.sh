@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$release_tag" ]] || die "missing required --tag (example: --tag v0.7.0)"
-[[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || die "invalid tag format: $release_tag"
+[[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid tag format: $release_tag (expected stable tag vX.Y.Z)"
 [[ -f "$upgrades_file" ]] || die "upgrades file not found: $upgrades_file"
 [[ -f "$changelog_file" ]] || die "changelog file not found: $changelog_file"
 
