@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 - `al <client>` commands now support `--quiet` / `-q` for one-off quiet runs that suppress Agent Layer informational output while preserving client output and error exit behavior.
 - Added end-to-end coverage for quiet Claude runs to ensure `al claude --quiet` emits no Agent Layer output and still launches correctly.
 - Wizard back-navigation support: pressing `Esc` now moves to the previous step, with explicit first-step exit confirmation and deterministic state rollback behavior for partial selections.
+- Wizard `Ctrl+C` now exits immediately without saving, distinct from `Esc` (back). Both keys are shown as hints in the bottom navigation bar (`esc back • ctrl+c exit`).
 - Config guardrail test for required fields: automated enforcement now checks that newly required config fields have matching `config_set_default` migration coverage (with explicit legacy baseline allowlist).
 - Claude reasoning-effort support in wizard/config/sync paths (`low|medium|high`), including projection into `.claude/settings.json` as `effortLevel`.
 
@@ -28,6 +29,7 @@ All notable changes to this project will be documented in this file.
 - Documentation and default config comments now describe quiet-mode behavior and its interaction with `al doctor` (which always prints warnings).
 - Validation and warning messaging now includes `quiet` as a first-class supported noise mode.
 - Expanded test coverage for wizard back-navigation state transitions, profile corruption warning paths, reasoning-effort capability validation, Claude sync projection behavior, and upgrade diff color/no-color rendering.
+- Added PTY integration tests for wizard Esc/Ctrl+C keystroke classification, validating the full chain from raw terminal bytes through bubbletea to error classification.
 - Updated project memory/docs (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `README.md`) to reflect completed sprint scope and release-facing behavior.
 
 ## v0.8.6 - 2026-02-23
