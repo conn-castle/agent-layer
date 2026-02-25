@@ -152,7 +152,7 @@ enabled = true
 [agents.claude]
 enabled = false
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 
 [agents.codex]
@@ -215,7 +215,7 @@ enabled = true
 [agents.claude]
 enabled = false
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 
 [agents.codex]
@@ -282,7 +282,7 @@ enabled = true
 [agents.claude]
 enabled = false
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 
 [agents.codex]
@@ -360,7 +360,7 @@ enabled = true
 [agents.claude]
 enabled = false
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 
 [agents.codex]
@@ -426,7 +426,7 @@ enabled = true
 [agents.claude]
 enabled = false
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 
 [agents.codex]

@@ -36,7 +36,7 @@ Claude per-repo settings and caches isolation is opt-in. If you set `local_confi
 
 **Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally. Per-repo login isolation (e.g., separate work and personal accounts) does not work until this is fixed upstream. This has been reported to the Claude Code team.
 
-For VS Code, keep `[agents.claude-vscode] enabled = true` so the extension receives the repo-local `CLAUDE_CONFIG_DIR`. Without the launcher path, VS Code falls back to global `~/.claude/` behavior.
+For VS Code, keep `[agents.claude_vscode] enabled = true` so the extension receives the repo-local `CLAUDE_CONFIG_DIR`. Without the launcher path, VS Code falls back to global `~/.claude/` behavior.
 
 By default (`local_config_dir` absent or `false`), Claude uses your global `~/.claude/` configuration and settings are shared across repositories.
 

@@ -159,7 +159,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]

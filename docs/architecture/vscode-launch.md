@@ -33,7 +33,7 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
    - `.vscode/settings.json` managed markers are not malformed/duplicated
 5. Launch sets environment variables based on enabled agents:
    - `CODEX_HOME=<repo>/.codex` when `agents.vscode` is enabled (cleared when disabled to prevent stale inheritance)
-   - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude-vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (cleared otherwise to prevent stale inheritance)
+   - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude_vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (cleared otherwise to prevent stale inheritance)
 6. Executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
 
 ## Managed settings architecture

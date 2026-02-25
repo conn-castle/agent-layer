@@ -22,7 +22,7 @@ enabled = true
 # reasoning_effort = "medium" # low | medium | high
 # local_config_dir isolates Claude Code settings and caches per repo.
 # When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
-# For al vscode, CLAUDE_CONFIG_DIR is set when both this and agents.claude-vscode
+# For al vscode, CLAUDE_CONFIG_DIR is set when both this and agents.claude_vscode
 # are enabled. Otherwise, al vscode clears only stale repo-local values and
 # preserves user-defined non-repo values.
 # Note: auth credentials are stored globally by Claude Code in the OS credential store
@@ -35,7 +35,7 @@ enabled = true
 # Overlapping keys override Agent Layer-managed values and trigger a sync warning.
 # [agents.claude.agent_specific]
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]

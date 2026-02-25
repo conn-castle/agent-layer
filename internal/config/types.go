@@ -17,7 +17,7 @@ type ApprovalsConfig struct {
 type AgentsConfig struct {
 	Gemini       AgentConfig      `toml:"gemini"`
 	Claude       ClaudeConfig     `toml:"claude"`
-	ClaudeVSCode EnableOnlyConfig `toml:"claude-vscode"`
+	ClaudeVSCode EnableOnlyConfig `toml:"claude_vscode"`
 	Codex        CodexConfig      `toml:"codex"`
 	VSCode       EnableOnlyConfig `toml:"vscode"`
 	Antigravity  EnableOnlyConfig `toml:"antigravity"`

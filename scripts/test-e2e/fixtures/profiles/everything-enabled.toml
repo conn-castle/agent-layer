@@ -11,7 +11,7 @@ enabled = true
 enabled = true
 local_config_dir = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]

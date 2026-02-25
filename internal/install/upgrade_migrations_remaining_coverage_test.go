@@ -184,7 +184,7 @@ func TestExecuteConfigMigrations_AdditionalErrorBranches(t *testing.T) {
 		op := upgradeMigrationOperation{
 			ID:        "cfg-default-prompt",
 			Kind:      upgradeMigrationKindConfigSetDefault,
-			Key:       "agents.claude-vscode.enabled",
+			Key:       "agents.claude_vscode.enabled",
 			Value:     []byte("true"),
 			Rationale: "prompt error branch",
 		}

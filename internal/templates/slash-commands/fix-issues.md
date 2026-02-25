@@ -261,6 +261,7 @@ Preferred sources for commands (in order):
 - `turbo run test`
 - `npm/pnpm/yarn test`
 - documented commands in README/CONTRIBUTING
+- For `make` targets, verify target existence before invocation (for example, `make -n test-fast >/dev/null 2>&1`) and skip missing targets without treating that as a failure.
 
 If no commands exist:
 - run the most basic available checks (e.g., compile/typecheck/syntax check) only if the repo clearly supports them

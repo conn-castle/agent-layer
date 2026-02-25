@@ -92,6 +92,7 @@ Examples of acceptable “already present” dead-code runners:
 - `just dead-code`
 - `turbo run dead-code`
 - `npm/pnpm/yarn run dead-code`
+- For `make` targets, verify target existence before invocation (for example, `make -n dead-code >/dev/null 2>&1`) and skip missing targets without treating that as a failure.
 
 Do **not** introduce a new dead-code tool by default.
 
@@ -252,6 +253,7 @@ Prefer repo-defined “fast lane” commands:
 - `turbo run test`
 - `npm/pnpm/yarn test`
 - any documented “quick checks” in the README/CONTRIBUTING
+- For `make` targets, verify target existence before invocation (for example, `make -n test-fast >/dev/null 2>&1`) and skip missing targets without treating that as a failure.
 
 If none exist, choose ecosystem-appropriate defaults **only when clearly indicated by repo files**:
 

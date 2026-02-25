@@ -114,7 +114,7 @@ Incomplete:
 
 ## Phase 12 ✅ — High-leverage quick wins
 - Added `approvals.mode = "yolo"` with per-client full-auto projections and single-line sync/launch acknowledgements.
-- Added `[agents.claude-vscode]` and unified VS Code launch behavior under `al vscode`.
+- Added `[agents.claude_vscode]` and unified VS Code launch behavior under `al vscode`.
 - Recorded the decision to not implement a standalone `al launch-plan` command.
 - Clarified agent commit instructions and fixed `al vscode` positional-arg handling to avoid unconditional `.` appends.
 
@@ -143,7 +143,7 @@ Incomplete:
 - [ ] skill-template-migration: Convert embedded template skills from flat `.md` to agentskills.io directory format (`<name>/SKILL.md`).
 - [ ] skill-review-plan: Implement a "review-plan" skill with a standardized mechanism to locate and identify the active plan. (From BACKLOG)
 - [ ] skill-ordering-guide: Add a skills workflow guide to documentation explaining recommended skill sequences for common workflows (feature dev, bug fix, code review). (From BACKLOG e5f6a7b)
-- [ ] skill-template-refs: Audit and fix template skills that reference non-existent Makefile targets (e.g., `make test-fast`, `make dead-code`). Add stronger guards or conditional checks. (From ISSUES tmpl-mk)
+- [x] skill-template-refs: Audit and fix template skills that reference non-existent Makefile targets (e.g., `make test-fast`, `make dead-code`). Add stronger guards or conditional checks. (From ISSUES tmpl-mk)
 
 ### Task details
 - skill-rename

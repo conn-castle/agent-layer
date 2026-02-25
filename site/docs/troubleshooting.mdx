@@ -186,7 +186,7 @@ If you want the fully managed setup in VS Code, use `al vscode` (or the generate
 
 This is primarily a VS Code fallback, and applies only when `local_config_dir = true` is set under `[agents.claude]`.
 
-When `local_config_dir` is enabled, `al claude` sets a repo-local `CLAUDE_CONFIG_DIR`, so Claude Code uses the repo-local `.claude-config/` for user-level configuration (settings and caches). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `[agents.claude-vscode]` is enabled.
+When `local_config_dir` is enabled, `al claude` sets a repo-local `CLAUDE_CONFIG_DIR`, so Claude Code uses the repo-local `.claude-config/` for user-level configuration (settings and caches). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `[agents.claude_vscode]` is enabled.
 
 :::caution Known upstream limitation
 Claude Code currently stores OAuth/auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`. This means `local_config_dir` isolates settings and caches but **not** authentication. Per-repo login isolation does not work until this is fixed upstream. This has been reported to the Claude Code team.

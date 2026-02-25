@@ -297,12 +297,12 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 		}
 	}
 	// .vscode/settings.json is shared (generated when either agent is enabled),
-	// so it should NOT be flagged when claude-vscode is enabled.
+	// so it should NOT be flagged when claude_vscode is enabled.
 	if strings.Contains(joined, ".vscode/settings.json") {
-		t.Fatalf("unexpected .vscode/settings.json in disabled details when claude-vscode is enabled, got %q", joined)
+		t.Fatalf("unexpected .vscode/settings.json in disabled details when claude_vscode is enabled, got %q", joined)
 	}
 	// Prompts and launchers are vscode-only, so they SHOULD be flagged
-	// even when claude-vscode is enabled (vscode is disabled).
+	// even when claude_vscode is enabled (vscode is disabled).
 	for _, expected := range []string{
 		".vscode/prompts/alpha.prompt.md",
 		".agent-layer/open-vscode.command",

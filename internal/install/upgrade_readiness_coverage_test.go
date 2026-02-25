@@ -187,25 +187,25 @@ func TestDetectVSCodeNoSyncStaleness_ClaudeVSCodeOnlyEnabled(t *testing.T) {
 		t.Fatalf("detectVSCodeNoSyncStaleness: %v", err)
 	}
 	if check == nil {
-		t.Fatal("expected readiness finding for claude-vscode-only config with missing managed block")
+		t.Fatal("expected readiness finding for claude_vscode-only config with missing managed block")
 	}
 	joined := strings.Join(check.Details, "\n")
 	if !strings.Contains(joined, "missing Agent Layer managed block") {
 		t.Fatalf("expected missing managed block detail, got %#v", check.Details)
 	}
-	// .vscode/mcp.json and prompts are only generated for agents.vscode, not claude-vscode.
+	// .vscode/mcp.json and prompts are only generated for agents.vscode, not claude_vscode.
 	if strings.Contains(joined, ".vscode/mcp.json") {
-		t.Fatalf("should not flag .vscode/mcp.json for claude-vscode-only config, got %#v", check.Details)
+		t.Fatalf("should not flag .vscode/mcp.json for claude_vscode-only config, got %#v", check.Details)
 	}
 	if strings.Contains(joined, "prompts") {
-		t.Fatalf("should not flag .vscode/prompts for claude-vscode-only config, got %#v", check.Details)
+		t.Fatalf("should not flag .vscode/prompts for claude_vscode-only config, got %#v", check.Details)
 	}
-	// Claude outputs (.mcp.json, .claude/settings.json) should be flagged when claude-vscode is enabled.
+	// Claude outputs (.mcp.json, .claude/settings.json) should be flagged when claude_vscode is enabled.
 	if !strings.Contains(joined, ".mcp.json") {
-		t.Fatalf("expected .mcp.json to be flagged for claude-vscode-only config, got %#v", check.Details)
+		t.Fatalf("expected .mcp.json to be flagged for claude_vscode-only config, got %#v", check.Details)
 	}
 	if !strings.Contains(joined, ".claude/settings.json") {
-		t.Fatalf("expected .claude/settings.json to be flagged for claude-vscode-only config, got %#v", check.Details)
+		t.Fatalf("expected .claude/settings.json to be flagged for claude_vscode-only config, got %#v", check.Details)
 	}
 }
 

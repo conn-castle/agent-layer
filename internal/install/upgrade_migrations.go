@@ -638,6 +638,9 @@ func deleteNestedConfigValue(cfg map[string]any, parts []string) (bool, error) {
 	if len(parts) == 0 {
 		return false, fmt.Errorf("config key path is required")
 	}
+	// Track parent tables so we can prune empty ones after deletion.
+	parents := make([]map[string]any, 0, len(parts))
+	parents = append(parents, cfg)
 	current := cfg
 	for idx := 0; idx < len(parts)-1; idx++ {
 		value, ok := current[parts[idx]]
@@ -649,12 +652,20 @@ func deleteNestedConfigValue(cfg map[string]any, parts []string) (bool, error) {
 			return false, fmt.Errorf("config key path %s traverses non-table value", strings.Join(parts[:idx+1], "."))
 		}
 		current = nested
+		parents = append(parents, current)
 	}
 	leaf := parts[len(parts)-1]
 	if _, ok := current[leaf]; !ok {
 		return false, nil
 	}
 	delete(current, leaf)
+	// Prune empty intermediate tables left behind by the deletion.
+	// Walk backward from the deepest parent to the root (exclusive).
+	for i := len(parents) - 1; i > 0; i-- {
+		if len(parents[i]) == 0 {
+			delete(parents[i-1], parts[i-1])
+		}
+	}
 	return true, nil
 }
 

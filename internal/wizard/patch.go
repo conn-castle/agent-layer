@@ -8,8 +8,8 @@
 //  1. Comment preservation: go-toml's ToTomlString() loses inline comments and
 //     rearranges leading comments. Users expect their config formatting to be preserved.
 //
-//  2. Deterministic output: The wizard rewrites config.toml in template-defined order
-//     (Decision f7a3c9d). Custom parsing lets us control exact output ordering.
+//  2. Deterministic output: The wizard rewrites config.toml in preferred section order
+//     (Decision wizard-order-policy). Custom parsing lets us control exact output ordering.
 //
 //  3. Key positioning: When clearing optional keys (like model=""), we convert them
 //     to commented lines rather than deleting them, preserving the template structure.
@@ -47,7 +47,7 @@ var preferredWizardSectionOrder = []string{
 	"approvals",
 	"agents.gemini",
 	"agents.claude",
-	"agents.claude-vscode",
+	"agents.claude_vscode",
 	"agents.codex",
 	"agents.vscode",
 	"agents.antigravity",
@@ -210,7 +210,7 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 				setCommentedKeyLine(block, templateBlock, "local_config_dir", "model")
 			}
 		}
-	case "agents.claude-vscode":
+	case "agents.claude_vscode":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
 		}

@@ -213,7 +213,7 @@ If you change generated files, those edits will be overwritten the next time you
 :::
 
 :::note
-The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value, so you will need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude-vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, isolating settings and caches per repository.
+The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value, so you will need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude_vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, isolating settings and caches per repository.
 
 **Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally until this is fixed upstream.
 

@@ -71,7 +71,7 @@ func TestRunWithWriter_LenientFallbackOnBrokenConfig(t *testing.T) {
 	// lenient fallback triggers.
 	origLoad := loadProjectConfigFunc
 	loadProjectConfigFunc = func(root string) (*config.ProjectConfig, error) {
-		return nil, fmt.Errorf("%w: agents.claude-vscode.enabled is required", config.ErrConfigValidation)
+		return nil, fmt.Errorf("%w: agents.claude_vscode.enabled is required", config.ErrConfigValidation)
 	}
 	t.Cleanup(func() { loadProjectConfigFunc = origLoad })
 

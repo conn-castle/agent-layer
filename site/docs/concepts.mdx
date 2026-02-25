@@ -111,7 +111,7 @@ enabled = true
 local_config_dir = true
 ```
 
-When enabled, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local `.claude-config/` directory. For VS Code, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir = true` and `[agents.claude-vscode]` is enabled.
+When enabled, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local `.claude-config/` directory. For VS Code, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir = true` and `[agents.claude_vscode]` is enabled.
 
 :::caution Known upstream limitation
 Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`. This means `local_config_dir` isolates settings and caches but **not** authentication. Per-repo login isolation does not work until this is fixed upstream. This has been reported to the Claude Code team.

@@ -451,7 +451,7 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		}
 	}
 
-	// .mcp.json and .claude/settings.json are generated when claude OR claude-vscode is enabled.
+	// .mcp.json and .claude/settings.json are generated when claude OR claude_vscode is enabled.
 	// The Claude extension in VS Code depends on these, so they must be fresh for --no-sync.
 	claudeEnabled := cfg.Agents.Claude.Enabled != nil && *cfg.Agents.Claude.Enabled
 	if claudeEnabled || claudeVSCodeEnabled {
@@ -565,7 +565,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			}},
 		},
 		// .mcp.json and .claude/settings.json are generated when either agents.claude
-		// or agents.claude-vscode is enabled.
+		// or agents.claude_vscode is enabled.
 		{
 			agent:   "claude",
 			enabled: combinedBoolOr(cfg.Agents.Claude.Enabled, cfg.Agents.ClaudeVSCode.Enabled),
@@ -593,7 +593,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				{root: filepath.Join(inst.root, ".agent", "skills"), suffix: "SKILL.md"},
 			},
 		},
-		// .vscode/settings.json is generated when either agents.vscode or agents.claude-vscode is enabled.
+		// .vscode/settings.json is generated when either agents.vscode or agents.claude_vscode is enabled.
 		{
 			agent:   "vscode",
 			enabled: combinedBoolOr(cfg.Agents.VSCode.Enabled, cfg.Agents.ClaudeVSCode.Enabled),

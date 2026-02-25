@@ -23,7 +23,7 @@ enabled = true
 enabled = true
 model = "claude-sonnet-4-5-20250929"
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
