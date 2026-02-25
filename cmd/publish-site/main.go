@@ -606,11 +606,11 @@ func normalizeVersionsJSON(repoB string) error {
 		return err
 	}
 
-	if err := pruneDroppedVersionArtifacts(repoB, dropped); err != nil {
+	if err := osWriteFileFunc(versionsPath, append(newData, '\n'), 0644); err != nil {
 		return err
 	}
 
-	if err := osWriteFileFunc(versionsPath, append(newData, '\n'), 0644); err != nil {
+	if err := pruneDroppedVersionArtifacts(repoB, dropped); err != nil {
 		return err
 	}
 

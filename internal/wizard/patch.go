@@ -55,6 +55,10 @@ var preferredWizardSectionOrder = []string{
 	"warnings",
 }
 
+var legacySectionAliases = map[string]string{
+	"agents.claude-vscode": "agents.claude_vscode",
+}
+
 // PatchConfig applies wizard choices to TOML config content.
 // content is the current config; choices holds selections; returns updated content or error.
 func PatchConfig(content string, choices *Choices) (string, error) {
@@ -70,6 +74,7 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 
 	templateDoc := parseTomlDocument(templateContent)
 	currentDoc := parseTomlDocument(content)
+	normalizeLegacySectionAliases(&currentDoc)
 
 	if (choices.EnabledMCPServersTouched || choices.RestoreMissingMCPServers) && len(choices.DefaultMCPServers) == 0 {
 		return "", fmt.Errorf(messages.WizardDefaultMCPServersRequired)
@@ -912,6 +917,66 @@ func parseTomlDocument(content string) tomlDocument {
 		arrays:   arrays,
 		order:    order,
 	}
+}
+
+func normalizeLegacySectionAliases(doc *tomlDocument) {
+	for legacyName, canonicalName := range legacySectionAliases {
+		legacyBlock, hasLegacy := doc.sections[legacyName]
+		if !hasLegacy {
+			continue
+		}
+
+		if _, hasCanonical := doc.sections[canonicalName]; !hasCanonical {
+			migrated := cloneBlock(legacyBlock)
+			migrated.name = canonicalName
+			if len(migrated.lines) > 0 {
+				migrated.lines[0] = rewriteSectionHeaderLine(migrated.lines[0], canonicalName)
+			}
+			doc.sections[canonicalName] = migrated
+		}
+
+		delete(doc.sections, legacyName)
+		doc.order = applyLegacyAliasToOrder(doc.order, legacyName, canonicalName)
+	}
+}
+
+func rewriteSectionHeaderLine(line string, sectionName string) string {
+	leading := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	trimmed := strings.TrimSpace(line)
+	commentPos, _ := ScanTomlLineForComment(trimmed, tomlStateNone)
+	comment := ""
+	if commentPos >= 0 {
+		comment = strings.TrimSpace(trimmed[commentPos:])
+	}
+	rewritten := "[" + sectionName + "]"
+	if comment != "" {
+		rewritten += " " + comment
+	}
+	return leading + rewritten
+}
+
+func applyLegacyAliasToOrder(order []string, legacyName string, canonicalName string) []string {
+	normalized := make([]string, 0, len(order))
+	canonicalSeen := false
+	for _, name := range order {
+		switch name {
+		case legacyName:
+			if canonicalSeen {
+				continue
+			}
+			normalized = append(normalized, canonicalName)
+			canonicalSeen = true
+		case canonicalName:
+			if canonicalSeen {
+				continue
+			}
+			normalized = append(normalized, canonicalName)
+			canonicalSeen = true
+		default:
+			normalized = append(normalized, name)
+		}
+	}
+	return normalized
 }
 
 // parseTomlHeader detects a TOML table header line and extracts its name.

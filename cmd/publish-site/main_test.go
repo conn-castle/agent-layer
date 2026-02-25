@@ -326,7 +326,7 @@ func TestPruneDroppedVersionArtifacts_RemoveSidebarError(t *testing.T) {
 	}
 }
 
-func TestNormalizeVersionsJSON_DoesNotWriteWhenPruneFails(t *testing.T) {
+func TestNormalizeVersionsJSON_WritesBeforePrune(t *testing.T) {
 	repo := t.TempDir()
 	versions := []string{"1.0.4", "1.0.3", "1.0.2", "1.0.1", "1.0.0"}
 	data, err := json.Marshal(versions)
@@ -363,8 +363,42 @@ func TestNormalizeVersionsJSON_DoesNotWriteWhenPruneFails(t *testing.T) {
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if strings.Join(got, ",") != strings.Join(versions, ",") {
-		t.Fatalf("expected versions.json unchanged on prune failure, got %v", got)
+	want := []string{"1.0.4", "1.0.3", "1.0.2", "1.0.1"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected versions.json to be written before prune, got %v", got)
+	}
+}
+
+func TestNormalizeVersionsJSON_WriteErrorSkipsPrune(t *testing.T) {
+	repo := t.TempDir()
+	versionsPath := filepath.Join(repo, "versions.json")
+	if err := os.WriteFile(versionsPath, []byte("[\"1.0.4\",\"1.0.3\",\"1.0.2\",\"1.0.1\",\"1.0.0\"]"), 0o644); err != nil {
+		t.Fatalf("write versions.json: %v", err)
+	}
+
+	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.0.0")
+	if err := os.MkdirAll(droppedDocs, 0o755); err != nil {
+		t.Fatalf("mkdir dropped docs: %v", err)
+	}
+
+	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.0.0-sidebars.json")
+	if err := os.MkdirAll(filepath.Dir(sidebarPath), 0o755); err != nil {
+		t.Fatalf("mkdir sidebars dir: %v", err)
+	}
+	if err := os.WriteFile(sidebarPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write sidebar: %v", err)
+	}
+
+	withWriteFileError(t, versionsPath, os.ErrPermission)
+	if err := normalizeVersionsJSON(repo); err == nil || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("expected write error, got %v", err)
+	}
+
+	if _, err := os.Stat(droppedDocs); err != nil {
+		t.Fatalf("expected dropped docs to remain when write fails, stat err=%v", err)
+	}
+	if _, err := os.Stat(sidebarPath); err != nil {
+		t.Fatalf("expected dropped sidebar to remain when write fails, stat err=%v", err)
 	}
 }
 
