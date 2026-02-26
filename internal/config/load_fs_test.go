@@ -211,7 +211,7 @@ func TestLoadSkillsFS_DirectorySkill(t *testing.T) {
 	fsys := fstest.MapFS{
 		".agent-layer/skills":                {Mode: fs.ModeDir},
 		".agent-layer/skills/alpha":          {Mode: fs.ModeDir},
-		".agent-layer/skills/alpha/SKILL.md": {Data: []byte("---\nname: alpha\ndescription: dir\nlicense: MIT\n---\n\nBody")},
+		".agent-layer/skills/alpha/SKILL.md": {Data: []byte("---\nname: alpha\ndescription: dir\nlicense: MIT\ncompatibility: requires git\nmetadata:\n  owner: team\nallowed-tools: Read\n---\n\nBody")},
 	}
 
 	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
@@ -220,6 +220,12 @@ func TestLoadSkillsFS_DirectorySkill(t *testing.T) {
 	}
 	if len(skills) != 1 || skills[0].Name != "alpha" {
 		t.Fatalf("unexpected skills: %#v", skills)
+	}
+	if skills[0].License != "MIT" || skills[0].Compatibility != "requires git" || skills[0].AllowedTools != "Read" {
+		t.Fatalf("unexpected parsed optional fields: %#v", skills[0])
+	}
+	if skills[0].Metadata["owner"] != "team" {
+		t.Fatalf("unexpected metadata: %#v", skills[0].Metadata)
 	}
 }
 

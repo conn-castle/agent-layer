@@ -41,6 +41,12 @@ func TestLoadSkills_FlatFilesSorted(t *testing.T) {
 	if skills[0].Body != "Do the thing." {
 		t.Fatalf("unexpected body: %q", skills[0].Body)
 	}
+	if skills[0].License != "" || skills[0].Compatibility != "" || skills[0].AllowedTools != "" {
+		t.Fatalf("expected optional fields to be empty: %#v", skills[0])
+	}
+	if skills[0].Metadata != nil {
+		t.Fatalf("expected metadata to be nil, got %#v", skills[0].Metadata)
+	}
 	if skills[0].SourcePath == "" {
 		t.Fatalf("expected source path to be set")
 	}
@@ -55,11 +61,11 @@ func TestLoadSkills_DirectoryFormat(t *testing.T) {
 name: alpha
 description: Directory skill
 license: MIT
-compatibility:
-  codex: ">=0.1"
+compatibility: requires git, jq, and internet access
 metadata:
   owner: team
-allowed-tools: ["ripgrep"]
+  version: "1.0"
+allowed-tools: Bash(git:*) Read
 ---
 
 Body.`
@@ -79,6 +85,18 @@ Body.`
 	}
 	if skills[0].Description != "Directory skill" {
 		t.Fatalf("unexpected description: %q", skills[0].Description)
+	}
+	if skills[0].License != "MIT" {
+		t.Fatalf("unexpected license: %q", skills[0].License)
+	}
+	if skills[0].Compatibility != "requires git, jq, and internet access" {
+		t.Fatalf("unexpected compatibility: %q", skills[0].Compatibility)
+	}
+	if skills[0].AllowedTools != "Bash(git:*) Read" {
+		t.Fatalf("unexpected allowed-tools: %q", skills[0].AllowedTools)
+	}
+	if len(skills[0].Metadata) != 2 || skills[0].Metadata["owner"] != "team" || skills[0].Metadata["version"] != "1.0" {
+		t.Fatalf("unexpected metadata: %#v", skills[0].Metadata)
 	}
 }
 
@@ -149,6 +167,11 @@ func TestParseSkillErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "missing description") {
 		t.Fatalf("expected missing description error, got %v", err)
 	}
+
+	err = parseSkillErr("---\ndescription:\n---\n")
+	if err == nil || !strings.Contains(err.Error(), "description is empty") {
+		t.Fatalf("expected empty description error, got %v", err)
+	}
 }
 
 func TestParseSkill_UnknownFrontMatterAllowed(t *testing.T) {
@@ -162,43 +185,86 @@ func TestParseSkill_UnknownFrontMatterAllowed(t *testing.T) {
 	}
 }
 
-func TestParseNameScalar(t *testing.T) {
-	name, err := parseName([]string{"name: \"hello\""})
+func TestParseSkill_NameEmpty(t *testing.T) {
+	_, err := parseSkill("---\nname: \"\"\ndescription: test\n---\n")
+	if err == nil || !strings.Contains(err.Error(), "name is empty") {
+		t.Fatalf("expected name-empty error, got %v", err)
+	}
+}
+
+func TestParseSkill_NameMultilineRejected(t *testing.T) {
+	_, err := parseSkill("---\nname: |-\n  alpha\ndescription: test\n---\n")
+	if err == nil || !strings.Contains(err.Error(), "name must be a single line scalar") {
+		t.Fatalf("expected multiline-name error, got %v", err)
+	}
+}
+
+func TestParseSkill_OptionalFieldsTrimmed(t *testing.T) {
+	content := `---
+description: desc
+license: "  MIT  "
+compatibility: "  needs docker  "
+allowed-tools: "  Bash(git:*) Read  "
+metadata:
+  owner: team
+---
+`
+	parsed, err := parseSkill(content)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("parseSkill error: %v", err)
 	}
-	if name != "hello" {
-		t.Fatalf("unexpected name: %q", name)
-	}
-}
-
-func TestParseNameEmpty(t *testing.T) {
-	_, err := parseName([]string{"name:"})
-	if err == nil {
-		t.Fatalf("expected error")
+	if parsed.license != "MIT" || parsed.compatibility != "needs docker" || parsed.allowedTools != "Bash(git:*) Read" {
+		t.Fatalf("unexpected optional values: %#v", parsed)
 	}
 }
 
-func TestParseNameMultilineRejected(t *testing.T) {
-	_, err := parseName([]string{"name: |-", "  alpha"})
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestParseDescriptionScalar(t *testing.T) {
-	desc, err := parseDescription([]string{"description: \"hello\""})
+func TestParseSkill_FoldedAndLiteralDescriptions(t *testing.T) {
+	folded, err := parseSkill(`---
+description: >-
+  First line
+  Second line
+---
+`)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("parse folded description: %v", err)
 	}
-	if desc != "hello" {
-		t.Fatalf("unexpected description: %q", desc)
+	if folded.description != "First line Second line" {
+		t.Fatalf("unexpected folded description: %q", folded.description)
+	}
+
+	literal, err := parseSkill(`---
+description: |
+  First line
+  Second line
+---
+`)
+	if err != nil {
+		t.Fatalf("parse literal description: %v", err)
+	}
+	if literal.description != "First line\nSecond line" {
+		t.Fatalf("unexpected literal description: %q", literal.description)
 	}
 }
 
-func TestParseDescriptionBlockEmpty(t *testing.T) {
-	_, err := parseDescription([]string{"description: >-"})
-	if err == nil {
-		t.Fatalf("expected error")
+func TestParseSkill_TypeMismatchErrors(t *testing.T) {
+	tests := []string{
+		"---\ndescription: test\ncompatibility:\n  codex: \">=0.1\"\n---\n",
+		"---\ndescription: test\nallowed-tools:\n  - Read\n---\n",
+		"---\ndescription: test\nmetadata:\n  owner: 7\n---\n",
+	}
+	for _, content := range tests {
+		if _, err := parseSkill(content); err == nil || !strings.Contains(err.Error(), "invalid front matter type") {
+			t.Fatalf("expected front matter type error, got %v for %q", err, content)
+		}
+	}
+}
+
+func TestParseSkill_EmptyOptionalStringsTreatedAsAbsent(t *testing.T) {
+	parsed, err := parseSkill("---\ndescription: test\nlicense: \"\"\ncompatibility: \"  \"\nallowed-tools:\n---\n")
+	if err != nil {
+		t.Fatalf("parseSkill error: %v", err)
+	}
+	if parsed.license != "" || parsed.compatibility != "" || parsed.allowedTools != "" {
+		t.Fatalf("expected empty optional fields to normalize to empty strings, got %#v", parsed)
 	}
 }

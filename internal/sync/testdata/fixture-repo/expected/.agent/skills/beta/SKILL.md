@@ -1,8 +1,7 @@
 ---
 name: beta
 description: >-
-  Second command does something useful for testing wrap lines in codex
-  skills.
+  Second command does something useful for testing wrap lines in codex skills.
 ---
 
 <!--

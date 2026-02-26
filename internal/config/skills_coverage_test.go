@@ -51,59 +51,26 @@ func TestLoadSkills_ParseError(t *testing.T) {
 	}
 }
 
-func TestParseDescription_EmptyValue(t *testing.T) {
-	_, err := parseDescription([]string{"description:"})
-	if err == nil {
-		t.Fatalf("expected error for empty description")
-	}
-	if !strings.Contains(err.Error(), "description is empty") {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseSkill_InvalidFrontMatterSyntax(t *testing.T) {
+	_, err := parseSkill("---\ndescription: test\nmetadata: [\n---\n")
+	if err == nil || !strings.Contains(err.Error(), "invalid front matter") {
+		t.Fatalf("expected invalid front matter syntax error, got %v", err)
 	}
 }
 
-func TestParseDescription_EmptyBlock(t *testing.T) {
-	_, err := parseDescription([]string{"description: >-", "  "})
-	if err == nil {
-		t.Fatalf("expected error for empty block")
-	}
-	if !strings.Contains(err.Error(), "description is empty") {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseSkill_LegacyUnquotedColonScalarRejected(t *testing.T) {
+	_, err := parseSkill("---\ndescription: legacy parser style: value\n---\n")
+	if err == nil || !strings.Contains(err.Error(), "invalid front matter") {
+		t.Fatalf("expected invalid front matter error, got %v", err)
 	}
 }
 
-func TestParseDescription_MissingDescription(t *testing.T) {
-	_, err := parseDescription([]string{"name: test", "version: 1"})
-	if err == nil {
-		t.Fatalf("expected error for missing description")
-	}
-	if !strings.Contains(err.Error(), "missing description") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestParseDescription_EmptyLines(t *testing.T) {
-	_, err := parseDescription([]string{})
-	if err == nil {
-		t.Fatalf("expected error for empty lines")
-	}
-	if !strings.Contains(err.Error(), "missing description") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestParseDescription_MultiLineBlockTerminates(t *testing.T) {
-	// Multi-line description that terminates when encountering a non-indented line
-	lines := []string{
-		"description: >-",
-		"  First line of description",
-		"  Second line of description",
-		"another_field: value",
-	}
-	desc, err := parseDescription(lines)
+func TestParseSkill_MetadataNilWhenEmpty(t *testing.T) {
+	parsed, err := parseSkill("---\ndescription: test\nmetadata: {}\n---\n")
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("parseSkill error: %v", err)
 	}
-	if desc != "First line of description Second line of description" {
-		t.Fatalf("expected combined description, got %q", desc)
+	if parsed.metadata != nil {
+		t.Fatalf("expected nil metadata for empty map, got %#v", parsed.metadata)
 	}
 }

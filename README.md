@@ -461,9 +461,13 @@ These files are user-editable; customize them for your team's preferences.
 
 These files are user-editable; define the workflows you want your agents to run.
 
-- One Markdown file per skill.
-- Filename (without `.md`) is the canonical skill name.
-- Frontmatter supports `description` (required).
+- Source formats:
+  - Flat file: `.agent-layer/skills/<name>.md`
+  - Directory format: `.agent-layer/skills/<name>/SKILL.md`
+- Canonical skill name is derived from filename/directory name; optional `name` frontmatter must match when present.
+- Supported frontmatter fields:
+  - Required: `description`
+  - Optional: `name`, `license`, `compatibility`, `metadata`, `allowed-tools`
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
 
 ### Approved commands: `.agent-layer/commands.allow`

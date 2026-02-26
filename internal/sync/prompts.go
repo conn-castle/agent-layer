@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	yaml "go.yaml.in/yaml/v3"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -89,7 +91,7 @@ func removeStalePromptFiles(sys System, promptDir string, wanted map[string]stru
 }
 
 // skillContentBuilder builds skill file content for a skill.
-type skillContentBuilder func(cmd config.Skill) string
+type skillContentBuilder func(cmd config.Skill) (string, error)
 
 // writeSkillFiles generates skill files in the specified directory using the provided content builder.
 func writeSkillFiles(sys System, skillsDir string, commands []config.Skill, buildContent skillContentBuilder) error {
@@ -105,7 +107,10 @@ func writeSkillFiles(sys System, skillsDir string, commands []config.Skill, buil
 			return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillDir, err)
 		}
 		path := filepath.Join(skillDir, "SKILL.md")
-		content := buildContent(cmd)
+		content, err := buildContent(cmd)
+		if err != nil {
+			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
+		}
 		if err := sys.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
 			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 		}
@@ -126,20 +131,13 @@ func WriteAntigravitySkills(sys System, root string, commands []config.Skill) er
 	return writeSkillFiles(sys, skillsDir, commands, buildAntigravitySkill)
 }
 
-func buildCodexSkill(cmd config.Skill) string {
+func buildCodexSkill(cmd config.Skill) (string, error) {
 	var builder strings.Builder
-	builder.WriteString("---\n")
-	builder.WriteString("name: ")
-	builder.WriteString(cmd.Name)
-	builder.WriteString("\n")
-	builder.WriteString("description: >-\n")
-	wrapped := wrapDescription(cmd.Description, 72)
-	for _, line := range wrapped {
-		builder.WriteString("  ")
-		builder.WriteString(line)
-		builder.WriteString("\n")
+	frontMatter, err := buildSkillFrontMatter(cmd)
+	if err != nil {
+		return "", err
 	}
-	builder.WriteString("---\n\n")
+	builder.WriteString(frontMatter)
 	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
 	builder.WriteString("\n# ")
 	builder.WriteString(cmd.Name)
@@ -152,24 +150,17 @@ func buildCodexSkill(cmd config.Skill) string {
 			builder.WriteString("\n")
 		}
 	}
-	return builder.String()
+	return builder.String(), nil
 }
 
 // buildAntigravitySkill returns the Antigravity SKILL.md content for a skill.
-func buildAntigravitySkill(cmd config.Skill) string {
+func buildAntigravitySkill(cmd config.Skill) (string, error) {
 	var builder strings.Builder
-	builder.WriteString("---\n")
-	builder.WriteString("name: ")
-	builder.WriteString(cmd.Name)
-	builder.WriteString("\n")
-	builder.WriteString("description: >-\n")
-	wrapped := wrapDescription(cmd.Description, 72)
-	for _, line := range wrapped {
-		builder.WriteString("  ")
-		builder.WriteString(line)
-		builder.WriteString("\n")
+	frontMatter, err := buildSkillFrontMatter(cmd)
+	if err != nil {
+		return "", err
 	}
-	builder.WriteString("---\n\n")
+	builder.WriteString(frontMatter)
 	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
 	if cmd.Body != "" {
 		builder.WriteString("\n")
@@ -178,35 +169,92 @@ func buildAntigravitySkill(cmd config.Skill) string {
 			builder.WriteString("\n")
 		}
 	}
-	return builder.String()
+	return builder.String(), nil
 }
 
-func wrapDescription(text string, width int) []string {
-	if width <= 0 {
-		return []string{text}
+func buildSkillFrontMatter(cmd config.Skill) (string, error) {
+	root := &yaml.Node{Kind: yaml.MappingNode}
+	appendFrontMatterScalar(root, "name", strings.TrimSpace(cmd.Name))
+	appendFrontMatterDescription(root, strings.TrimSpace(cmd.Description))
+	appendFrontMatterOptionalScalar(root, "license", strings.TrimSpace(cmd.License))
+	appendFrontMatterOptionalScalar(root, "compatibility", strings.TrimSpace(cmd.Compatibility))
+	appendFrontMatterMetadata(root, normalizeMetadata(cmd.Metadata))
+	appendFrontMatterOptionalScalar(root, "allowed-tools", strings.TrimSpace(cmd.AllowedTools))
+
+	var yamlBody strings.Builder
+	encoder := yaml.NewEncoder(&yamlBody)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(root); err != nil {
+		return "", err
 	}
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return []string{""}
+	if err := encoder.Close(); err != nil {
+		return "", err
 	}
-	var lines []string
-	var current string
-	for _, word := range words {
-		if current == "" {
-			current = word
-			continue
-		}
-		if len(current)+1+len(word) > width {
-			lines = append(lines, current)
-			current = word
-			continue
-		}
-		current = current + " " + word
+
+	var frontMatter strings.Builder
+	frontMatter.WriteString("---\n")
+	frontMatter.WriteString(strings.TrimSuffix(yamlBody.String(), "\n"))
+	frontMatter.WriteString("\n---\n\n")
+	return frontMatter.String(), nil
+}
+
+func appendFrontMatterScalar(root *yaml.Node, key string, value string) {
+	root.Content = append(root.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: value},
+	)
+}
+
+func appendFrontMatterDescription(root *yaml.Node, description string) {
+	style := yaml.FoldedStyle
+	if strings.Contains(description, "\n") {
+		style = yaml.LiteralStyle
 	}
-	if current != "" {
-		lines = append(lines, current)
+	root.Content = append(root.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "description"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: description, Style: style},
+	)
+}
+
+func appendFrontMatterOptionalScalar(root *yaml.Node, key string, value string) {
+	if value == "" {
+		return
 	}
-	return lines
+	appendFrontMatterScalar(root, key, value)
+}
+
+func appendFrontMatterMetadata(root *yaml.Node, metadata map[string]string) {
+	if len(metadata) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(metadata))
+	for key := range metadata {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	metadataNode := &yaml.Node{Kind: yaml.MappingNode}
+	for _, key := range keys {
+		metadataNode.Content = append(metadataNode.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: metadata[key]},
+		)
+	}
+	root.Content = append(root.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "metadata"},
+		metadataNode,
+	)
+}
+
+func normalizeMetadata(metadata map[string]string) map[string]string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	normalized := make(map[string]string, len(metadata))
+	for key, value := range metadata {
+		normalized[key] = value
+	}
+	return normalized
 }
 
 func generatedSkillSourcePath(cmd config.Skill) string {

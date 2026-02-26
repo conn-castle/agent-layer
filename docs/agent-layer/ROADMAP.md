@@ -138,7 +138,8 @@ Incomplete:
 ### Tasks
 - [x] skill-rename: Global rename of "slash-commands" → "skills" across codebase (source directory `.agent-layer/slash-commands/` → `.agent-layer/skills/`), config references, template content, CLI output, documentation, and memory files. Add an upgrade migration to move existing user directories.
 - [x] skill-source-format: Support both flat `.md` files (simple skills) and full agentskills.io directory format (`<name>/SKILL.md` with optional `scripts/`, `references/`, `assets/`) as skill sources. Flat files remain supported for simplicity; directory format enables full standard compliance and community skill portability.
-- [ ] skill-frontmatter: Extend the skill parser to handle all agentskills.io frontmatter fields (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`) and pass them through to generated outputs.
+- [x] skill-frontmatter: Extend the skill parser to handle all agentskills.io frontmatter fields (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`) and pass them through to generated outputs.
+- [ ] skill-validator-go: Implement a reusable skill validator in Go following the agentskills reference design (`skills-ref`) and integrate it into `al doctor` skill checks.
 - [ ] skill-validation: Update `al doctor` to validate skills against the agentskills.io spec (name conventions, required frontmatter, size recommendations, directory name matching).
 - [ ] skill-template-migration: Convert embedded template skills from flat `.md` to agentskills.io directory format (`<name>/SKILL.md`).
 - [ ] skill-review-plan: Implement a "review-plan" skill with a standardized mechanism to locate and identify the active plan. (From BACKLOG)
@@ -156,6 +157,9 @@ Incomplete:
 - skill-frontmatter
   Description: Extend the YAML frontmatter parser to extract all agentskills.io fields beyond `description`. Pass additional fields through to generated SKILL.md outputs for Codex, Antigravity, and future clients.
   Acceptance criteria: All agentskills.io frontmatter fields are parsed and preserved in generated outputs.
+- skill-validator-go
+  Description: Create a dedicated Go skill-validation package modeled after the [agentskills `skills-ref` reference design](https://github.com/agentskills/agentskills/tree/main/skills-ref): separate parse and validate responsibilities, include metadata-level and directory-level validation entrypoints, and emit deterministic validation findings. Wire this validator into `al doctor` so skill checks run through the shared validator instead of ad hoc doctor-only checks.
+  Acceptance criteria: A reusable Go validator API exists with unit coverage for spec-rule enforcement, and `al doctor` uses that validator for skill diagnostics.
 - skill-validation
   Description: Add skill validation checks to `al doctor`: name conventions (lowercase, hyphens only, no consecutive hyphens, matches directory name), required frontmatter (`name`, `description`), SKILL.md size recommendation (< 500 lines), and directory structure conventions.
   Acceptance criteria: `al doctor` reports warnings for non-compliant skills.
@@ -167,6 +171,7 @@ Incomplete:
 - No references to "slash-commands" remain in codebase, config, docs, or CLI output.
 - Source skills in `.agent-layer/skills/` support both flat `.md` and directory `SKILL.md` formats.
 - Generated skill outputs for all clients are agentskills.io-compliant (valid `name`, `description` frontmatter).
+- A reusable Go skill validator aligned with the `skills-ref` reference design exists and is used by `al doctor`.
 - `al doctor` validates skill format compliance.
 - Upgrade migration moves existing `slash-commands/` to `skills/` seamlessly.
 - Skills workflow guide is published in documentation.

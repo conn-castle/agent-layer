@@ -1,5 +1,5 @@
 ---
-description: Language-agnostic cleanup pass: optionally remove dead code (only if tooling exists), polish comments and micro-refactor without behavior changes, and split oversized source files so they stay under a configurable line limit.
+description: "Language-agnostic cleanup pass: optionally remove dead code (only if tooling exists), polish comments and micro-refactor without behavior changes, and split oversized source files so they stay under a configurable line limit."
 ---
 
 # Tidy codebase and split oversized files (universal)
