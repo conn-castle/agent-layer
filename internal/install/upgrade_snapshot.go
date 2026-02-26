@@ -487,22 +487,22 @@ func (inst *installer) writeVersionFileTargetPaths() []string {
 }
 
 func (inst *installer) writeTemplateFilesTargetPaths() []string {
-	paths := make([]string, 0, len(inst.managedTemplateFiles())+len(inst.agentOnlyFiles()))
-	for _, file := range inst.managedTemplateFiles() {
+	paths := make([]string, 0, len(inst.templates().managedTemplateFiles())+len(inst.templates().agentOnlyFiles()))
+	for _, file := range inst.templates().managedTemplateFiles() {
 		paths = append(paths, file.path)
 	}
-	for _, file := range inst.agentOnlyFiles() {
+	for _, file := range inst.templates().agentOnlyFiles() {
 		paths = append(paths, file.path)
 	}
 	return uniqueNormalizedPaths(paths)
 }
 
 func (inst *installer) writeTemplateDirsTargetPaths() []string {
-	paths := make([]string, 0, len(inst.managedTemplateDirs())+len(inst.memoryTemplateDirs()))
-	for _, dir := range inst.managedTemplateDirs() {
+	paths := make([]string, 0, len(inst.templates().managedTemplateDirs())+len(inst.templates().memoryTemplateDirs()))
+	for _, dir := range inst.templates().managedTemplateDirs() {
 		paths = append(paths, dir.destRoot)
 	}
-	for _, dir := range inst.memoryTemplateDirs() {
+	for _, dir := range inst.templates().memoryTemplateDirs() {
 		paths = append(paths, dir.destRoot)
 	}
 	return uniqueNormalizedPaths(paths)
@@ -533,13 +533,13 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 
 	add(filepath.Join(root, ".agent-layer", "al.version"))
 	add(filepath.Join(root, ".agent-layer", ".gitignore"))
-	for _, file := range inst.managedTemplateFiles() {
+	for _, file := range inst.templates().managedTemplateFiles() {
 		add(file.path)
 	}
-	for _, dir := range inst.managedTemplateDirs() {
+	for _, dir := range inst.templates().managedTemplateDirs() {
 		add(dir.destRoot)
 	}
-	for _, dir := range inst.memoryTemplateDirs() {
+	for _, dir := range inst.templates().memoryTemplateDirs() {
 		add(dir.destRoot)
 	}
 	add(filepath.Join(root, ".gitignore"))

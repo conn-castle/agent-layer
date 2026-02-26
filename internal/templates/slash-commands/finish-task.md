@@ -197,6 +197,7 @@ Attempt, in order, depending on what exists in the repository:
 - `turbo run test --filter=...` (if turbo is present and configured)
 - `npm/pnpm/yarn test` (if package scripts define a fast lane)
 - any documented “quick checks” in `README.md` / `CONTRIBUTING.md`
+- For `make` targets, verify target existence before invocation (for example, `make -n test-fast >/dev/null 2>&1`) and skip missing targets without treating that as a failure.
 
 If no credible commands exist:
 - run the smallest applicable sanity check (compile/typecheck/syntax) only if the repo clearly supports it

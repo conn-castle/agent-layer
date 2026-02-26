@@ -198,7 +198,7 @@ mode = "all"
 enabled = true
 [agents.claude]
 enabled = true
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 [agents.codex]
 enabled = false
@@ -243,7 +243,7 @@ func TestCheckConfig_LenientFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write a valid TOML config that is missing required fields (e.g. claude-vscode).
+	// Write a valid TOML config that is missing required fields (e.g. claude_vscode).
 	// Strict loading will fail but lenient loading should succeed.
 	partialConfig := `
 [approvals]
@@ -290,8 +290,8 @@ enabled = false
 	if results[0].Status != StatusFail {
 		t.Fatalf("expected FAIL status, got %s", results[0].Status)
 	}
-	if !strings.Contains(results[0].Message, "claude-vscode") {
-		t.Fatalf("expected validation error about claude-vscode, got: %s", results[0].Message)
+	if !strings.Contains(results[0].Message, "claude_vscode") {
+		t.Fatalf("expected validation error about claude_vscode, got: %s", results[0].Message)
 	}
 	if results[0].Recommendation != messages.DoctorConfigLoadLenientRecommend {
 		t.Fatalf("expected lenient recommendation, got: %s", results[0].Recommendation)
@@ -327,7 +327,7 @@ func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write a valid TOML config that fails strict validation (missing claude-vscode).
+	// Write a valid TOML config that fails strict validation (missing claude_vscode).
 	partialConfig := `
 [approvals]
 mode = "all"
@@ -456,7 +456,7 @@ mode = "all"
 enabled = true
 [agents.claude]
 enabled = true
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 model = "some-model"
 [agents.codex]

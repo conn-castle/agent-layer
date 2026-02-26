@@ -4,53 +4,28 @@ package wizard
 
 import (
 	"errors"
+	"io"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/creack/pty"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/term"
 )
 
-// runFormInPTY creates a real pseudo-terminal, builds a huh form with the
-// same key components as HuhUI.runForm (wizardKeyMap, formFilter, hintField),
-// and returns the classified error after the form processes the pre-buffered
-// keystroke.
+// runFormInPTY builds a huh form with the same key components as
+// HuhUI.runForm (wizardKeyMap, formFilter, hintField), feeds raw key bytes
+// through Bubble Tea input parsing, and returns the classified result.
 //
 // This validates the full chain: raw byte → bubbletea input parser →
 // tea.KeyMsg → formFilter → huh Quit binding → CancelCmd → InterruptMsg →
 // formFilter conversion → ErrUserAborted → ctrlCAbort classification.
-//
-// Note: the production path (runForm) also sets tea.WithOutput(os.Stderr) and
-// tea.WithReportFocus(); here we redirect I/O to the PTY and omit focus
-// reporting since neither affects keystroke classification.
 func runFormInPTY(t *testing.T, keyBytes []byte) error {
 	t.Helper()
 
-	ptmx, tty, err := pty.Open()
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = tty.Close()
-		_ = ptmx.Close()
-	})
-	require.NoError(t, pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80}))
-
-	// Put the slave in raw mode before bubbletea starts. This clears ISIG
-	// so that 0x03 (Ctrl+C) is treated as a data byte rather than generating
-	// SIGINT. bubbletea will call MakeRaw again when it initialises, which
-	// is effectively a no-op since the terminal is already raw.
-	_, err = term.MakeRaw(int(tty.Fd()))
-	require.NoError(t, err)
-
-	// Buffer the keystroke in the PTY before starting the form. The byte(s)
-	// sit in the kernel buffer until bubbletea's input reader consumes them.
-	// This avoids any dependency on startup-event timing (e.g. WindowSizeMsg)
-	// which varies across environments and test runners.
-	_, err = ptmx.Write(keyBytes)
-	require.NoError(t, err)
+	inputR, inputW := io.Pipe()
+	t.Cleanup(func() { _ = inputR.Close() })
+	t.Cleanup(func() { _ = inputW.Close() })
 
 	ui := &HuhUI{isTerminal: func() bool { return true }}
 
@@ -60,21 +35,23 @@ func runFormInPTY(t *testing.T, keyBytes []byte) error {
 			newHintField(huh.NewInput().Title("PTY Test").Value(&val)),
 		),
 	)
+	form.WithAccessible(false)
 	form.WithKeyMap(wizardKeyMap())
 	form.WithProgramOptions(
-		tea.WithInput(tty),
-		tea.WithOutput(tty),
+		tea.WithInput(inputR),
+		tea.WithOutput(io.Discard),
 		tea.WithFilter(ui.formFilter()),
 	)
 
-	// Drain PTY master output to prevent the form from blocking on writes.
 	go func() {
-		buf := make([]byte, 4096)
-		for {
-			if _, err := ptmx.Read(buf); err != nil {
-				return
-			}
-		}
+		// Allow Bubble Tea to finish program startup so the first key byte is
+		// consumed by the input parser instead of racing with initialization.
+		time.Sleep(50 * time.Millisecond)
+		_, _ = inputW.Write(keyBytes)
+		// Keep the stream open briefly so a lone Esc can be recognized as a
+		// complete escape keypress rather than part of an escape sequence.
+		time.Sleep(350 * time.Millisecond)
+		_ = inputW.Close()
 	}()
 
 	// Run the form; classify the result the same way runForm does.

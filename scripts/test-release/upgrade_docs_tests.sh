@@ -65,6 +65,12 @@ EOF
     fail "check-upgrade-docs: unexpected failure for non-breaking release row: $stderr"
   fi
 
+  if "$script_path" --tag v0.7.0-rc.1 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" --repo-root "$tmp_dir" >/dev/null 2>&1; then
+    fail "check-upgrade-docs: should fail for prerelease tags"
+  else
+    pass "check-upgrade-docs: fails for prerelease tags"
+  fi
+
   if "$script_path" --tag v0.9.9 --upgrades-file "$upgrades_ok" --changelog-file "$changelog_file" --repo-root "$tmp_dir" >/dev/null 2>&1; then
     fail "check-upgrade-docs: should fail when release row is missing"
   else

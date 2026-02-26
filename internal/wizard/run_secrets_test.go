@@ -27,7 +27,7 @@ mode = "all"
 enabled = false
 [agents.claude]
 enabled = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -92,7 +92,7 @@ mode = "all"
 enabled = false
 [agents.claude]
 enabled = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 [agents.codex]
 enabled = false

@@ -85,6 +85,28 @@ enabled = false
 	assert.Less(t, idxMCP, idxWarnings)
 }
 
+func TestPatchConfig_MigratesLegacyClaudeVSCodeSection(t *testing.T) {
+	content := `
+[agents.claude-vscode] # legacy
+enabled = true
+
+[agents.vscode]
+enabled = false
+`
+	out, err := PatchConfig(content, NewChoices())
+	require.NoError(t, err)
+
+	doc := parseTomlDocument(out)
+	if _, exists := doc.sections["agents.claude-vscode"]; exists {
+		t.Fatal("expected legacy section to be removed")
+	}
+	block, exists := doc.sections["agents.claude_vscode"]
+	require.True(t, exists, "expected canonical section to exist")
+	require.NotEmpty(t, block.lines)
+	assert.Equal(t, "[agents.claude_vscode] # legacy", strings.TrimSpace(block.lines[0]))
+	assert.Contains(t, strings.Join(block.lines, "\n"), "enabled = true")
+}
+
 func TestOrderedWizardSections_UsesPreferredOrderWithTemplateFallback(t *testing.T) {
 	templateOrder := []string{
 		"warnings",

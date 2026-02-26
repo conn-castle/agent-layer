@@ -327,7 +327,7 @@ func TestBuildUpgradeReadinessChecks_MissingRequiredConfigFields(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	// Write a config that is valid TOML but missing required fields (e.g. claude-vscode).
+	// Write a config that is valid TOML but missing required fields (e.g. claude_vscode).
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	partialConfig := `
 [approvals]
@@ -358,8 +358,8 @@ enabled = false
 		t.Fatalf("expected %s check", readinessCheckMissingRequiredConfigFields)
 	}
 	joined := strings.Join(check.Details, "\n")
-	if !strings.Contains(joined, "claude-vscode") {
-		t.Fatalf("expected validation error about claude-vscode, got %q", joined)
+	if !strings.Contains(joined, "claude_vscode") {
+		t.Fatalf("expected validation error about claude_vscode, got %q", joined)
 	}
 }
 

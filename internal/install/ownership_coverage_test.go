@@ -20,7 +20,7 @@ func TestClassifyOwnership_PropagatesReadError(t *testing.T) {
 	sys.readErrs[normalizePath(localPath)] = errors.New("read boom")
 
 	inst := &installer{root: root, sys: sys}
-	if _, err := inst.classifyOwnership(commandsAllowRelPath, "commands.allow"); err == nil || !strings.Contains(err.Error(), "read boom") {
+	if _, err := inst.ownership().classifyOwnership(commandsAllowRelPath, "commands.allow"); err == nil || !strings.Contains(err.Error(), "read boom") {
 		t.Fatalf("expected read error, got %v", err)
 	}
 }
@@ -45,7 +45,7 @@ func TestClassifyOwnershipDetail_TemplateReadError(t *testing.T) {
 	t.Cleanup(func() { templates.ReadFunc = original })
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	if _, err := inst.classifyOwnershipDetail(commandsAllowRelPath, "commands.allow"); err == nil || !strings.Contains(err.Error(), "template boom") {
+	if _, err := inst.ownership().classifyOwnershipDetail(commandsAllowRelPath, "commands.allow"); err == nil || !strings.Contains(err.Error(), "template boom") {
 		t.Fatalf("expected template read error, got %v", err)
 	}
 }
@@ -58,7 +58,7 @@ func TestClassifyOrphanOwnership_PropagatesReadError(t *testing.T) {
 	sys.readErrs[normalizePath(localPath)] = errors.New("read boom")
 
 	inst := &installer{root: root, sys: sys}
-	if _, err := inst.classifyOrphanOwnership(relPath); err == nil || !strings.Contains(err.Error(), "read boom") {
+	if _, err := inst.ownership().classifyOrphanOwnership(relPath); err == nil || !strings.Contains(err.Error(), "read boom") {
 		t.Fatalf("expected orphan read error, got %v", err)
 	}
 }
@@ -69,7 +69,7 @@ func TestClassifyAgainstBaseline_TargetParseError(t *testing.T) {
 	localBytes := []byte("# ISSUES\n\n<!-- ENTRIES START -->\n")
 	targetBytes := []byte("# ISSUES\n\n(no marker)\n")
 
-	if _, err := inst.classifyAgainstBaseline(relPath, localBytes, targetBytes, false); err == nil || !strings.Contains(err.Error(), "parse target comparable") {
+	if _, err := inst.ownership().classifyAgainstBaseline(relPath, localBytes, targetBytes, false); err == nil || !strings.Contains(err.Error(), "parse target comparable") {
 		t.Fatalf("expected parse target comparable error, got %v", err)
 	}
 }
@@ -85,7 +85,7 @@ func TestClassifyAgainstBaseline_PropagatesBaselineError(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	if _, err := inst.classifyAgainstBaseline(commandsAllowRelPath, []byte("git status\n"), []byte("git status\n"), false); err == nil {
+	if _, err := inst.ownership().classifyAgainstBaseline(commandsAllowRelPath, []byte("git status\n"), []byte("git status\n"), false); err == nil {
 		t.Fatal("expected baseline decode error")
 	}
 }
@@ -115,7 +115,7 @@ func TestResolveBaselineComparable_PinManifestDecodeError(t *testing.T) {
 	}
 	inst := &installer{root: root, sys: RealSystem{}}
 
-	if _, _, err := inst.resolveBaselineComparable(commandsAllowRelPath, localComp); err == nil || !strings.Contains(err.Error(), "decode template manifest") {
+	if _, _, err := inst.ownership().resolveBaselineComparable(commandsAllowRelPath, localComp); err == nil || !strings.Contains(err.Error(), "decode template manifest") {
 		t.Fatalf("expected manifest decode error, got %v", err)
 	}
 }
@@ -165,7 +165,7 @@ func TestResolveBaselineComparable_PinManifestPolicyMismatchAddsReason(t *testin
 	}
 	inst := &installer{root: root, sys: RealSystem{}}
 
-	_, meta, err := inst.resolveBaselineComparable(commandsAllowRelPath, localComp)
+	_, meta, err := inst.ownership().resolveBaselineComparable(commandsAllowRelPath, localComp)
 	if err != nil {
 		t.Fatalf("resolveBaselineComparable: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestResolveBaselineComparable_MatchAnyOtherManifestAddsReason(t *testing.T)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, meta, err := inst.resolveBaselineComparable(commandsAllowRelPath, localComp)
+	_, meta, err := inst.ownership().resolveBaselineComparable(commandsAllowRelPath, localComp)
 	if err != nil {
 		t.Fatalf("resolveBaselineComparable: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestResolveBaselineComparable_MatchAnyOtherManifestErrorPropagates(t *testi
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	if _, _, err := inst.resolveBaselineComparable(commandsAllowRelPath, localComp); err == nil || !strings.Contains(err.Error(), "walk boom") {
+	if _, _, err := inst.ownership().resolveBaselineComparable(commandsAllowRelPath, localComp); err == nil || !strings.Contains(err.Error(), "walk boom") {
 		t.Fatalf("expected walk error, got %v", err)
 	}
 }

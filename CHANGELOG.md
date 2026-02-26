@@ -1,6 +1,25 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.8.8 - 2026-02-25
+
+### Added
+- Added embedded upgrade migration manifest support for `v0.8.8` to canonicalize the Claude VS Code agent key from `agents.claude-vscode.enabled` to `agents.claude_vscode.enabled` and enforce a default for the canonical key.
+- Expanded branch-coverage suites across upgrade/install, dispatch, wizard PTY interactions, and command paths to harden release confidence.
+
+### Changed
+- Canonical config/docs naming now uses `[agents.claude_vscode]` (snake_case). Legacy `[agents.claude-vscode]` remains accepted at load time and is migrated during upgrade.
+- Release and upgrade-doc validation checks are stricter, including stronger release workflow/docs contract assertions and stable-tag publishing guardrails.
+- `cmd/publish-site` release version-retention and versioned-doc pruning behavior is more robust for deterministic stable release publication.
+
+### Fixed
+- Made dispatch cache sync-error coverage deterministic by injecting sync failures in tests instead of relying on platform-specific `/dev/null` behavior.
+- Aligned upgrade/readiness messaging and docs references to the canonical `claude_vscode` key to avoid mixed-key guidance.
+
+### Improved
+- Removed obsolete Claude-specific GitHub workflow files in favor of the current release/verification workflow set.
+- Updated README and site docs for key-name consistency and release guidance clarity.
+
 ## v0.8.7 - 2026-02-24
 
 ### Added
@@ -35,13 +54,13 @@ All notable changes to this project will be documented in this file.
 ## v0.8.6 - 2026-02-23
 
 ### Added
-- `al wizard` now prompts to enable per-repo Claude credential isolation (`local_config_dir`) when Claude or Claude VS Code is enabled. Default is `false` (shared global credentials); selecting `true` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for separate logins per repository.
+- `al wizard` now prompts to enable per-repo Claude settings and caches isolation (`local_config_dir`) when Claude or Claude VS Code is enabled. Default is `false` (shared global config); selecting `true` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for separate settings and caches per repository.
 
 ### Fixed
 - `.gitignore` template inline comments on `/.claude/` and `/.claude-config/` patterns were treated by Git as part of the literal pattern, causing both directories to not be gitignored. Comments moved to their own lines. Affected users (v0.8.5 installs): run `al upgrade` or `al sync` to pick up the corrected template.
 
 ### Improved
-- Per-repo credential isolation (separate Claude and Codex logins per repository) is now documented as a core feature in the README comparison table, key properties, and a dedicated [Per-repo credential isolation](https://conn-castle.github.io/agent-layer-web/docs/concepts#per-repo-credential-isolation) section in the site concepts page.
+- Per-repo isolation is now documented as a core feature in the README comparison table, key properties, and a dedicated [Per-repo credential isolation](https://conn-castle.github.io/agent-layer-web/docs/concepts#per-repo-credential-isolation) section in the site concepts page (Codex auth isolation plus Claude settings and caches isolation; Claude auth remains shared due to an upstream limitation).
 
 ## v0.8.5 - 2026-02-23
 

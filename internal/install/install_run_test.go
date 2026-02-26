@@ -85,14 +85,14 @@ func TestRunRejectsInvalidPinVersion(t *testing.T) {
 	}
 }
 
-func TestCreateDirsError(t *testing.T) {
+func TestEnsureBaseDirsError(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	inst := &installer{root: file, sys: RealSystem{}}
-	if err := inst.createDirs(); err == nil {
+	if err := inst.upgrades().ensureBaseDirs(); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -400,7 +400,7 @@ func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	diffs, err := inst.listManagedDiffs()
+	diffs, err := inst.templates().listManagedDiffs()
 	if err != nil {
 		t.Fatalf("listManagedDiffs: %v", err)
 	}

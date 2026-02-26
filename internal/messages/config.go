@@ -24,7 +24,7 @@ const (
 	ConfigGeminiEnabledRequiredFmt                 = "%s: agents.gemini.enabled is required"
 	ConfigGeminiReasoningEffortUnsupportedFmt      = "%s: agents.gemini.reasoning_effort is not supported in this release"
 	ConfigClaudeEnabledRequiredFmt                 = "%s: agents.claude.enabled is required"
-	ConfigClaudeVSCodeEnabledRequiredFmt           = "%s: agents.claude-vscode.enabled is required"
+	ConfigClaudeVSCodeEnabledRequiredFmt           = "%s: agents.claude_vscode.enabled is required"
 	ConfigCodexEnabledRequiredFmt                  = "%s: agents.codex.enabled is required"
 	ConfigVSCodeEnabledRequiredFmt                 = "%s: agents.vscode.enabled is required"
 	ConfigAntigravityEnabledRequiredFmt            = "%s: agents.antigravity.enabled is required"

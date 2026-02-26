@@ -29,26 +29,27 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Decision 2026-01-17 e5f6a7b: MCP architecture (external servers + internal prompt server)
     Decision: External MCP servers are user-defined in `config.toml`. The internal prompt server (`al mcp-prompts`) exposes slash commands automatically and is not user-configured.
     Reason: Users need arbitrary MCP servers while slash command discovery should be consistent and automatic.
-
-- Decision 2026-01-17 f6a7b8c: Approvals policy (4-mode system)
-    Decision: Implement `approvals.mode` with four options: `all`, `mcp`, `commands`, `none`. Project the closest supported behavior per client.
-    Reason: A small fixed set is easier to understand than per-client knobs; behavior may differ slightly across clients.
+    Tradeoffs: Internal prompt server behavior is less customizable than external servers, but stays consistent across clients.
 
 - Decision 2026-01-17 a7b8c9d: VS Code launchers for CODEX_HOME
     Decision: Provide repo-specific VS Code launchers that set `CODEX_HOME` at process start.
     Reason: The Codex extension reads `CODEX_HOME` only at startup; launchers ensure correct repo context.
+    Tradeoffs: Launching through generated scripts is required to guarantee repo-scoped Codex context.
 
 - Decision 2026-01-17 c9d0e1f: Antigravity limited support
     Decision: Antigravity supports instructions and slash commands only (no MCP, no approvals). Slash commands map to skills at `.agent/skills/<command>/SKILL.md`.
     Reason: Antigravity integration is best-effort; core clients (Gemini, Claude, VS Code, Codex) have full parity.
+    Tradeoffs: Antigravity users get reduced functionality compared with core clients.
 
 - Decision 2026-01-18 e1f2a3b: Secret handling (Codex exception)
     Decision: Generated configs use client-specific placeholder syntax so secrets are never embedded. Exception: Codex embeds secrets in URLs/env and uses `bearer_token_env_var` for headers. Shell environment takes precedence over `.agent-layer/.env`.
     Reason: Prevents accidental secret exposure; Codex limitations require an exception.
+    Tradeoffs: Cross-client secret behavior is not fully uniform because Codex has transport-specific constraints.
 
 - Decision 2026-01-22 f1e2d3c: Distribution model (global CLI with per-repo pinning)
     Decision: Ship a single globally installed `al` CLI with per-repo version pinning via `.agent-layer/al.version` and cached binaries.
     Reason: A single entrypoint reduces support burden while pinning keeps multi-repo setups reproducible.
+    Tradeoffs: Pin management adds operational complexity and requires explicit upgrade flows.
 
 - Decision 2026-01-24 a1b2c3d: Ignore unexpected working tree changes
     Decision: Agents will not pause, warn, or stop due to unexpected working tree changes (unstaged or staged files not created by the agent).
@@ -85,11 +86,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Keep the template file clean and user-editable while ensuring the root `.gitignore` stays managed and consistent.
     Tradeoffs: Legacy blocks with markers/hash now require `al upgrade` to restore the template file before `al sync` will succeed.
 
-- Decision 2026-02-05 f7a3c9d: Wizard config output uses canonical template order
-    Decision: The wizard always rewrites `config.toml` in the template-defined order, rather than preserving the existing file layout.
-    Reason: Produces deterministic output and reinforces that the wizard is the authoritative manager of config structure.
-    Tradeoffs: Manual layout tweaks and some inline comment placement may be reordered on each wizard run.
-
 - Decision 2026-02-07 p0a-init-dispatch: Bypass repo-pin dispatch for `al init`
     Decision: `al init` now bypasses repo-pin binary dispatch and always executes on the invoking CLI binary.
     Reason: Upgrade operations must not be executed by an older repo-pinned version that is being replaced.
@@ -114,11 +110,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al upgrade plan` ownership classification now uses committed per-release manifests (`internal/templates/manifests/*.json`) and canonical repo baseline state (`.agent-layer/state/managed-baseline.json`) with section-aware policies (`memory_entries_v1`, `memory_roadmap_v1`, `allowlist_lines_v1`), and emits `unknown_no_baseline` when evidence is insufficient.
     Reason: Distinguishes upstream template deltas from true local customization without runtime network/tag lookups and avoids silent guesses in ambiguous cases.
     Tradeoffs: Release workflow must generate/commit manifests for each tag; repos lacking credible baseline evidence may show `unknown no baseline` until a baseline refresh run (for example `al upgrade`).
-
-- Decision 2026-02-10 cov-stab: Replace chmod-based error injection with function-variable stubs
-    Decision: Replace all `chmod 0o000`/`0o444` + `t.Skip` error injection in tests with deterministic function-variable stubs (`var osFunc = os.Func` + path-selective overrides + `t.Cleanup` restore).
-    Reason: chmod-based tests skipped on platforms that don't enforce permission denial (macOS root, CI), causing non-deterministic coverage between CI and local runs.
-    Tradeoffs: Adds package-level function variables to production code; acceptable since the pattern is already established in `cmd/al/` and `internal/install/`.
 
 - Decision 2026-02-10 p1c-init-upgrade-ownership: Init scaffolding only; user-owned config/env; agent-only .gitignore
     Decision: `al init` is one-time scaffolding (errors if `.agent-layer/` already exists). Upgrades/repairs are done via `al upgrade plan` + `al upgrade`. `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned and seeded only when missing (never overwritten by init/upgrade). `.agent-layer/.gitignore` is agent-owned internal and is always overwritten and excluded from upgrade plans/diffs.
@@ -185,11 +176,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Keep default sync/upgrade behavior deterministic while preserving an intentional path for teams that want fastest-updating external MCP tools.
     Tradeoffs: Pinned defaults can lag upstream MCP releases until Agent Layer updates the template versions.
 
-- Decision 2026-02-15 p7a-warning-noise-guardrail: Noise reduction cannot hide critical warnings
-    Decision: Added `warnings.noise_mode` with conservative behavior: `reduce` suppresses only warnings marked suppressible and non-critical; critical warnings are always shown.
-    Reason: Allow lower-noise daily output without creating a blind spot for high-risk upgrade/config policy failures.
-    Tradeoffs: Some warning noise remains in reduce mode by design.
-
 - Decision 2026-02-15 p7b-wizard-profile-preview-default: Profile mode is preview-first with explicit apply
     Decision: `al wizard --profile` defaults to preview-only rewrite diffs and requires `--yes` for writes; secret prompts support explicit `skip` and `cancel`; backups are cleaned only via explicit `--cleanup-backups`.
     Reason: Keep non-interactive wizard usage safe in CI/automation and avoid accidental config rewrites.
@@ -210,20 +196,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Users running in sandboxed/ephemeral environments want to skip all permission prompts without per-client manual configuration.
     Tradeoffs: YOLO bypasses all safety prompts; a single-line `[yolo]` acknowledgement on stderr (not a structured warning) informs users on every sync and launch. The template config comment and documentation carry the risk explanation. No `al doctor` warning — YOLO is a deliberate choice, not a health issue.
 
-- Decision 2026-02-17 p12-claude-vscode-no-mcp-filter: claude-vscode is NOT an independent MCP client filter
-    Decision: `claude-vscode` is not added to `validClients` for MCP server filtering. The `"claude"` client filter covers both Claude Code CLI and Claude VS Code extension. The two share `.mcp.json` and `.claude/settings.json`. `[agents.claude-vscode]` is a config-only concept; `al vscode` is the unified VS Code launcher.
-    Reason: The Claude VS Code extension reads `.mcp.json` from the project root — the same file used by Claude Code CLI. Independent MCP filtering is not possible without separate output files, which would conflict with the extension's expected paths.
-    Tradeoffs: Users cannot enable different MCP servers for Claude CLI vs Claude VS Code extension. Both always see the same MCP configuration.
-
-- Decision 2026-02-17 p12-unified-vscode-launcher: Single `al vscode` command handles both Codex and Claude extensions
-    Decision: Remove `al claude-vscode` as a separate CLI command. `al vscode` is enabled when either `agents.vscode` or `agents.claude-vscode` is true. `CODEX_HOME` is set only when `agents.vscode` is enabled. `[agents.claude-vscode]` remains as a config-only concept controlling which VS Code extension settings are projected during sync.
-    Reason: VS Code is a single IDE. Users install both extensions in the same instance. Having two separate launch commands forces users to choose or run both (opening VS Code twice). One command is simpler and correct.
-    Tradeoffs: Users who only have `agents.claude-vscode` enabled will not get `CODEX_HOME` set (correct — they don't want Codex). Users who want both must enable both config sections.
-
-- Decision 2026-02-18 config-migrate: Config migration step between unmarshal and validate
-    Decision: Add `Config.Migrate()` as a mandatory step in `ParseConfig` between TOML unmarshal and `Validate`. New required config fields added in a release must include a corresponding backfill in `Migrate()` that defaults the field to the pre-existence behavior (e.g., disabled).
-    Reason: Without migration, adding a new required field breaks all existing configs and locks users out of every command including `al wizard` and `al upgrade`.
-    Tradeoffs: The migration step silently fills in defaults rather than failing loudly; accepted because the defaults are deterministic and match pre-existence behavior.
+- Decision 2026-02-17 p12-unified-vscode-launcher: Unified VS Code launcher and shared Claude MCP scope
+    Decision: Use a single `al vscode` command for Codex and Claude VS Code extension launches. The Claude VS Code config section remains config-only (`[agents.claude_vscode]`), and Claude MCP filtering is shared with CLI via the `"claude"` client filter because both surfaces read the same `.mcp.json`/`.claude/settings.json`.
+    Reason: VS Code is a single runtime surface, and separate launcher/MCP-filter paths would duplicate behavior while conflicting with extension file-path expectations.
+    Tradeoffs: Users cannot configure separate MCP server sets for Claude CLI vs Claude VS Code extension; both use the same Claude-scoped MCP configuration.
 
 - Decision 2026-02-18 config-resilience: Replace silent Migrate() with lenient parsing + interactive upgrade prompts (supersedes config-migrate)
     Decision: Remove `Config.Migrate()` entirely. Instead: (1) add `ParseConfigLenient`/`LoadConfigLenient` that unmarshal without validation, (2) `al wizard` and `al doctor` fall back to lenient loading so they always work on broken configs, (3) `al upgrade` uses `config_set_default` migration operations that prompt the user interactively for new required field values, (4) runtime commands (`al sync`, `al claude`, etc.) remain strict and fail with actionable guidance.
@@ -234,11 +210,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: When source version is known, all manifests between source (exclusive) and target (inclusive) are loaded and applied in order with per-operation deduplication by ID. When source is unknown, only the target manifest is loaded (backward compatible). Migrations that missed a release are placed in the next release's manifest with an expanded `min_prior_version`.
     Reason: Without chaining, users jumping multiple versions (e.g., 0.8.0 → 0.8.2) miss intermediate migrations. The v0.8.1 config migration shipped after the binary, so it was moved to 0.8.2's manifest to catch all users.
     Tradeoffs: Manifest ordering depends on semver sort of filenames; manifests must have unique operation IDs across the chain or later duplicates are silently skipped.
-
-- Decision 2026-02-19 wizard-mcp-sanitize: Wizard sanitizes transport-incompatible MCP server fields during patch
-    Decision: `buildMCPServerBlocks` in `internal/wizard/patch.go` now calls `sanitizeMCPServerBlock` on every server block, removing fields that are invalid for the server's transport type (e.g., `headers`/`url`/`http_transport` on stdio servers; `command`/`args`/`env` on http servers). Commented-out lines are preserved.
-    Reason: Without sanitization, a config with transport-incompatible fields (e.g., headers on a stdio server) could not be repaired by `al wizard` — the wizard would complete all prompts but sync would fail at the end with a validation error, creating a circular "run wizard to fix" loop.
-    Tradeoffs: The wizard silently removes invalid fields rather than prompting about them; accepted because the removed fields have no valid meaning for the transport type and keeping them causes a hard block.
 
 - Decision 2026-02-18 config-field-catalog: Shared config field catalog in `internal/config/fields.go`
     Decision: Centralize config field metadata (type, valid options, required flag, allow-custom) in a single registry. Wizard and upgrade prompts derive option lists from the catalog instead of maintaining separate hardcoded slices. `validate.go` derives approval mode validation from the catalog. Upgrade `config_set_default` prompts receive field metadata to show type-aware numbered choices (bool true/false, enum options) instead of yes/no.
@@ -255,34 +226,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: The v0.8.3 wizard sanitization only worked for inline table format. TOML dotted keys (`headers.Foo = "val"`) were invisible to `parseKeyLineWithState` because it requires `key =` (equals after key), not `key.` (dot after key). Users with dotted-key headers on stdio servers would run the wizard and still get validation errors.
     Tradeoffs: Quoted root keys (`"headers".Foo = "val"`) remain unsupported; accepted because this format is extremely rare and the validation-level sanitization provides a safety net regardless of TOML syntax.
 
-- Decision 2026-02-19 e2e-scenario-framework: Replace monolithic test-e2e.sh with scenario-based bash framework
-    Decision: Replaced the monolithic `scripts/test-e2e.sh` with a scenario-based framework: orchestrator + harness + auto-discovered scenario files. Uses contract-level assertions over mock claude argv/env (not snapshot comparison). `defaults.toml` is generated at runtime from `internal/templates/config.toml` to prevent drift.
-    Reason: The monolithic script could not test user workflows end-to-end (init → wizard → sync → launch) because `al claude` calls `exec.Command("claude")`. A mock claude binary on PATH enables full-pipeline testing. Scenario isolation prevents interference between tests.
-    Tradeoffs: Upgrade scenarios require `AL_E2E_VERSION` set to a real version with a migration manifest; they skip with WARN when using the default `0.0.0`.
-
-- Decision 2026-02-19 e2e-dynamic-upgrade-binaries: Download old release binaries instead of committing fixture directories
-    Decision: Upgrade scenarios download old release binaries from GitHub and run `old_binary init --no-wizard` to create authentic `.agent-layer/` state. Tests both the oldest supported version (v0.8.0) and the latest published release as upgrade sources.
-    Reason: Committed fixture directories duplicated the full `.agent-layer/` state and required manual capture/maintenance. Using real binaries produces authentic state and automatically tests the latest release upgrade path.
-    Tradeoffs: The sanitization scenario injects synthetic bad fields via `sed` after init rather than using a pre-built fixture.
-
-- Decision 2026-02-19 e2e-two-lane-hermetic: Two-lane e2e strategy — offline by default, online opt-in
-    Decision: `make test-e2e` is fully offline/hermetic by default (reads only from persistent cache at `~/.cache/al-e2e/bin/`). `make test-e2e-online` (or `AL_E2E_ONLINE=1`) enables GitHub API calls and binary downloads. `AL_E2E_REQUIRE_UPGRADE=1` makes missing binaries a hard failure (for CI with pre-cached binaries). Latest release version can be pinned via `AL_E2E_LATEST_VERSION`.
-    Reason: Network-dependent tests in the default path cause flaky CI from rate limits, outages, and network policies — failures that don't reflect product regressions.
-    Tradeoffs: Developers must run `make test-e2e-online` once to populate the binary cache before offline upgrade tests work. CI needs a prefetch step or pre-cached binaries.
-
-- Decision 2026-02-20 e2e-anti-rubber-stamp: E2E assertions must validate specific behavior, not just "no crash"
-    Decision: E2E scenarios validate specific output content (error messages, config state, MCP permissions) rather than just checking exit codes and absence of panics. Key patterns: (1) upgrade scenarios increment `E2E_UPGRADE_SCENARIO_COUNT` to fail if zero upgrade tests silently skip in CI, (2) state-change scenarios (doctor, rollback, idempotency) hash `.agent-layer/` state before/after operations, (3) error-path scenarios assert exact error messages from Go source, (4) happy-path scenarios check `assert_no_crash_markers` for Go crash indicators.
-    Reason: Tests that only check "no panic" or "exit 0" are rubber stamps — they pass regardless of whether the feature actually works. The wizard recovery test discovered that `al wizard --yes` (without `--profile`) doesn't report corrupt config errors because the terminal check precedes config loading.
-    Tradeoffs: More assertions per scenario means more maintenance when output format changes; accepted because the cost of false-green tests is higher.
-
 - Decision 2026-02-20 e2e-mandatory-upgrade-ci: Upgrade scenarios mandatory in CI via auto-detected manifest version (supersedes e2e-two-lane-hermetic skip behavior)
-    Decision: `test-e2e.sh` auto-detects the latest migration manifest version from `internal/templates/migrations/` when `AL_E2E_VERSION` is unset, replacing the previous `0.0.0` default that silently skipped all upgrade scenarios. `make ci` now uses `test-e2e-ci` which sets `AL_E2E_ONLINE=1` and `AL_E2E_REQUIRE_UPGRADE=1`. CI caches e2e binaries at `~/.cache/al-e2e/bin/`.
-    Reason: Upgrade scenarios were not exercised in any automated CI. The `0.0.0` default meant 7 upgrade scenarios silently skipped on every PR. 100% of e2e tests must run in CI as the final check before release.
-    Tradeoffs: `make ci` now requires network access to download old release binaries on first run (cached afterwards). `make test-e2e` (offline) still works for local dev with cached binaries.
-
-- Decision 2026-02-20 e2e-literal-arg-matching: Mock arg assertions use literal string comparison, not regex
-    Decision: `assert_mock_agent_has_arg` / `assert_claude_mock_has_arg` (and their `_lacks_arg` variants) now use a bash `while read` loop with `[[ "$val" == "$arg" ]]` instead of `grep "^ARG_[0-9]*=${arg}$"`.
-    Reason: Regex-based matching treated `.` and other characters as wildcards. `gemini-2.5-pro` would match `geminiX2X5-pro` where X is any character. Literal comparison prevents false positives.
+    Decision: E2E testing uses a scenario-based bash harness with contract-level assertions, authentic upgrade source state from downloaded prior release binaries, mandatory upgrade coverage in CI (`test-e2e-ci` with online + required-upgrade flags), and HOME isolation to avoid host config pollution.
+    Reason: The previous monolithic flow allowed silent upgrade-scenario skips and weak "no-crash" checks, reducing confidence in real user workflows (`init -> upgrade -> sync -> launch`).
+    Tradeoffs: First CI/local online runs require network access and cache warm-up; scenario assertions are stricter and need upkeep when intentional output changes.
 
 - Decision 2026-02-20 gemini-auto-trust: `al sync` auto-trusts repo in `~/.gemini/trustedFolders.json`
     Decision: When Gemini is enabled, `al sync` writes the repo root as `TRUST_FOLDER` to `~/.gemini/trustedFolders.json` (outside the repo). Failures produce a non-fatal warning, never a sync error.
@@ -292,31 +239,17 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Decision 2026-02-20 config-catalog-scope: Field catalog is wizard-managed fields, not full schema
     Decision: The field catalog (fields.go) covers fields that the wizard prompts for and upgrade migrations reference. It is not a complete TOML schema inventory. Fields like warnings.noise_mode and warnings.version_update_on_sync are valid config keys but not in the catalog because they are not wizard-managed.
     Reason: Catalog entries carry wizard UI metadata (options, descriptions, AllowCustom). Adding entries for non-interactive fields would add maintenance burden with no UX benefit.
+    Tradeoffs: Catalog metadata and strict schema validation must remain aligned when adding new wizard-managed fields.
 
-- Decision 2026-02-20 gemini-trust-export: Export `UserHomeDir` test seam to prevent cross-package test pollution
-    Decision: Export `sync.UserHomeDir` (was `userHomeDir`) so cross-package tests (`cmd/al/`, `internal/clients/`) can stub the home directory used by `EnsureGeminiTrustedFolder`.
-    Reason: Tests that called sync with Gemini enabled were appending temp dirs to the real `~/.gemini/trustedFolders.json` because they could not stub the unexported variable.
-    Tradeoffs: The exported variable is a test seam only; follows the established `updatewarn.CheckForUpdate` pattern.
-
-- Decision 2026-02-20 config-enable-only-strict: Enable-only agents reject unknown TOML keys via strict decode
-    Decision: Introduced `EnableOnlyConfig` struct (Enabled only, no Model) for claude-vscode, vscode, and antigravity agents. `ParseConfig` now runs a strict TOML decode (`DisallowUnknownFields`) after permissive unmarshal, rejecting unknown keys like `model` on enable-only agents. `ParseConfigLenient` (wizard, doctor) is unaffected.
-    Reason: Users could set `agents.vscode.model = "..."` and get zero feedback that the field was silently ignored — no production code reads Model from these agents. Strict decode catches this at config load time with a clear error.
-    Tradeoffs: Any unknown key in config.toml now fails `ParseConfig`. The upgrade readiness `unrecognized_config_keys` check becomes partially redundant (config loading fails first), but remains useful for pre-upgrade diagnostics on lenient-loaded configs.
-
-- Decision 2026-02-20 unknown-key-repairable: Unknown-key errors are repairable via wizard/doctor (follow-up to config-enable-only-strict)
-    Decision: Wrap unknown-key errors with `ErrConfigValidation` and include repair guidance (`al wizard` / `al doctor`). This allows wizard and doctor lenient fallback to trigger for unknown keys, just as it does for missing-field validation errors.
-    Reason: Without the sentinel wrapper, unknown-key errors hard-failed both repair tools — the exact tools the user should run to fix the config. The wizard rewrites config from scratch (removing unknown keys) and the doctor should report them as a repairable FAIL, not an unrecoverable error.
-    Tradeoffs: None significant; unknown keys are a config schema issue semantically equivalent to validation errors.
+- Decision 2026-02-20 unknown-key-repairable: Strict unknown-key validation with lenient repair path
+    Decision: Runtime config parsing rejects unknown TOML keys via strict decode (including enable-only agent sections), while unknown-key failures are wrapped as `ErrConfigValidation` so `al wizard` and `al doctor` can still load leniently and guide repair.
+    Reason: Silent unknown-key acceptance hid invalid config (for example, unsupported agent fields), but hard-failing repair tools made recovery impossible.
+    Tradeoffs: Runtime commands fail fast on unknown keys until users repair config through wizard/doctor or manual edits.
 
 - Decision 2026-02-21 upg-config-toml-destructive: Config migrations use destructive TOML formatting
     Decision: `upgrade_migrations.go` continues to use `tomlv2.Marshal` for config updates, which strips user comments and reorders keys.
     Reason: Full TOML preservation is complex and the wizard/profile flows already provide previews and backups, mitigating the risk of unexpected data loss.
     Tradeoffs: Users lose manual formatting/comments in `config.toml` when a migration executes; accepted for implementation simplicity and deterministic output.
-
-- Decision 2026-02-21 e2e-home-isolation: E2E orchestrator redirects HOME to prevent host pollution
-    Decision: `test-e2e.sh` pins `AL_E2E_BIN_CACHE` to the real cache path, then redirects `HOME` to `$E2E_TMP_ROOT/home` before running scenarios. `E2E_ORIG_HOME` is exported for scenarios that need the real home.
-    Reason: Compiled E2E binaries call `os.UserHomeDir()` which resolves via `HOME`. Without isolation, `EnsureGeminiTrustedFolder` writes temp-dir entries to the real `~/.gemini/trustedFolders.json`.
-    Tradeoffs: Scenarios that depend on real home-directory state must use `E2E_ORIG_HOME` explicitly; the gemini-trust scenarios already isolate HOME locally and are unaffected.
 
 - Decision 2026-02-22 agent-specific-key-rename: Rename agent passthrough key from `custom` to `agent_specific`
     Decision: Replace `agents.<client>.custom` with `agents.<client>.agent_specific` across schema, sync/warning logic, templates, docs, tests, and e2e scenarios; no backward-compatibility alias is kept.
@@ -325,23 +258,18 @@ A rolling log of important, non-obvious decisions that materially affect future 
 
 - Decision 2026-02-22 claude-config-dir: Opt-in repo-local `CLAUDE_CONFIG_DIR` via `local_config_dir` config field
     Decision: Gate `CLAUDE_CONFIG_DIR=<repo>/.claude-config` behind `[agents.claude] local_config_dir = true` (opt-in, default false). When enabled, `al claude` uses warn-and-preserve on mismatch and `al vscode` uses config-flag-based set/unset (matching `CODEX_HOME` pattern). Use `.claude-config/` (not `.claude/`) to avoid collision with the project-level `.claude/settings.json` generated by `al sync`. Keep `.claude-config/` in the gitignore block unconditionally.
-    Reason: Claude Code writes a user-level `settings.json` to `CLAUDE_CONFIG_DIR` that would collide with Agent Layer's project-level `.claude/settings.json`. The UX cost (two `.claude*` directories, per-repo re-auth) makes always-on inappropriate. Users who want per-repo credential isolation and multi-account support enable it explicitly.
-    Tradeoffs: Users must opt in and reauthenticate per repo on first launch; disabled by default means no isolation unless configured.
+    Reason: Claude Code writes a user-level `settings.json` to `CLAUDE_CONFIG_DIR` that would collide with Agent Layer's project-level `.claude/settings.json`. The UX cost (two `.claude*` directories) makes always-on inappropriate. Users who want per-repo settings and caches isolation enable it explicitly.
+    Tradeoffs: Disabled by default means no isolation unless configured. Note: Claude Code stores auth in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR` (upstream limitation), so `local_config_dir` currently isolates settings and caches but not auth.
 
 - Decision 2026-02-23 mcp-prompts-dispatch-bypass: Prompt server runs on invoking CLI binary
     Decision: `al mcp-prompts` now bypasses repo-pin dispatch (same as `al init`/`al upgrade`), and sync prefers local source `go run <repo>/cmd/al mcp-prompts` when available.
     Reason: MCP stdio startup must not depend on a PATH shim or cached pinned binary that may be missing or non-runnable for the requested pin.
     Tradeoffs: In source repos, prompt-server execution may use local `go run` behavior instead of the globally installed pinned binary path.
 
-- Decision 2026-02-24 quiet-mode: Extend warnings.noise_mode + add --quiet flag
-    Decision: Extend `warnings.noise_mode` with `quiet` and add `--quiet`/`-q` to suppress agent-layer informational output (warnings, update checks, dispatch banners) everywhere except `al doctor`, which always prints warnings. Dispatch uses a configurable stderr writer, and `al sync --quiet` returns `SilentExitError` to preserve exit codes without output. No new config section or env var.
-    Reason: A single verbosity knob keeps the UX simple while enabling zero-noise passthrough for scripted usage.
-    Tradeoffs: Older pinned binaries will not honor `quiet` (flag is stripped on dispatch; config value is unknown), so they may emit noise until upgraded.
-
-- Decision 2026-02-24 quiet-supersedes-p7a: Quiet mode may hide critical warnings
-    Decision: `noise_mode = "quiet"` suppresses all warnings (including critical). The p7a guardrail remains enforced for `reduce` only.
-    Reason: Quiet mode is an explicit user opt-in for zero informational output; suppressing critical warnings is intentional in that mode.
-    Tradeoffs: Users can miss high-risk warnings when quiet is enabled; guidance in README/config comments makes this risk explicit.
+- Decision 2026-02-24 quiet-supersedes-p7a: Warnings verbosity policy (`reduce`, `quiet`, and `--quiet`)
+    Decision: `warnings.noise_mode` supports `reduce` and `quiet`, and `--quiet`/`-q` provides command-line suppression. `reduce` suppresses only non-critical suppressible warnings; `quiet` suppresses all warnings (including critical) except `al doctor`, which always prints warnings.
+    Reason: Users need one coherent verbosity model that serves both safer daily use (`reduce`) and zero-noise scripted flows (`quiet`/`--quiet`).
+    Tradeoffs: Quiet mode can hide high-risk warnings by design, and older pinned binaries may ignore quiet behavior until upgraded.
 
 - Decision 2026-02-24 wizard-order-policy: Wizard config writes now use explicit preferred section order (supersedes f7a3c9d)
     Decision: Wizard-managed `config.toml` writes iterate an explicit preferred section order (`approvals`, enabled agents, `mcp`, `warnings`) instead of relying on template parse order as the implicit ordering source.
@@ -357,3 +285,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Add an automated guardrail test that enforces migration-manifest `config_set_default` coverage for required config fields introduced after baseline version `0.8.1`, with an explicit allowlist for legacy required fields that predate manifest enforcement.
     Reason: A naive all-fields check would fail forever because historical required fields existed before migration manifests had operations.
     Tradeoffs: The baseline allowlist must be maintained deliberately when introducing new required fields; stale allowlist entries can hide drift if not reviewed.
+
+- Decision 2026-02-25 config-key-style-snake-case: Canonical config keys use snake_case
+    Decision: Use snake_case for `.agent-layer/config.toml` keys and table names; rename `[agents.claude-vscode]` to `[agents.claude_vscode]` and ship a source-agnostic v0.8.8 migration (`config_rename_key` + `config_set_default`) for compatibility.
+    Reason: Mixed kebab-case and snake_case in one schema increased learning friction and caused avoidable drift across templates, docs, and tests.
+    Tradeoffs: Repos that skip `al upgrade`/`al wizard` will fail strict parsing until the key is renamed, while historical release artifacts still reference the legacy key for provenance.
+
+- Decision 2026-02-25 docs-retention-policy: Website publish enforces docs version retention and artifact pruning
+    Decision: `cmd/publish-site` now enforces a bounded stable-release retention policy after `docs:version`: keep up to 4 newest patch releases from the newest minor line plus the newest patch release for each of the newest 4 minor lines, drop prerelease entries, and prune dropped versions from `versions.json`, `versioned_docs/`, and `versioned_sidebars/`. Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally rejected.
+    Reason: Unbounded version snapshots in `agent-layer-web` grow maintenance and deploy footprint over time; retention must be enforced in the publisher because deploy only publishes `main`.
+    Tradeoffs: Older historical docs snapshots beyond the retention window are intentionally removed on each release publish; maintainers must run publisher manually if immediate cleanup is needed before the next release. Prerelease docs publication is unavailable until prerelease support is explicitly reintroduced end-to-end.

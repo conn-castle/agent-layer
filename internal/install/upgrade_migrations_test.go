@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -555,6 +556,140 @@ func TestLoadUpgradeMigrationManifest_0_8_2_HasConfigSetDefault(t *testing.T) {
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_8_8_RenamesAndBackfillsClaudeVSCodeKey(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.8.8")
+	if err != nil {
+		t.Fatalf("load 0.8.8 manifest: %v", err)
+	}
+	if len(manifest.Operations) != 2 {
+		t.Fatalf("expected 2 operations, got %d", len(manifest.Operations))
+	}
+
+	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
+	for _, op := range manifest.Operations {
+		byID[op.ID] = op
+	}
+
+	renameOp, ok := byID["a-rename-claude-vscode-enabled-key"]
+	if !ok {
+		t.Fatalf("missing rename operation, got IDs: %v", mapKeys(byID))
+	}
+	if renameOp.Kind != upgradeMigrationKindConfigRenameKey {
+		t.Fatalf("rename op kind = %q, want %q", renameOp.Kind, upgradeMigrationKindConfigRenameKey)
+	}
+	if renameOp.From != "agents.claude-vscode.enabled" {
+		t.Fatalf("rename op from = %q, want %q", renameOp.From, "agents.claude-vscode.enabled")
+	}
+	if renameOp.To != "agents.claude_vscode.enabled" {
+		t.Fatalf("rename op to = %q, want %q", renameOp.To, "agents.claude_vscode.enabled")
+	}
+	if !renameOp.SourceAgnostic {
+		t.Fatal("expected rename op source_agnostic = true")
+	}
+
+	defaultOp, ok := byID["b-set-default-claude_vscode-enabled"]
+	if !ok {
+		t.Fatalf("missing set-default operation, got IDs: %v", mapKeys(byID))
+	}
+	if defaultOp.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("set-default op kind = %q, want %q", defaultOp.Kind, upgradeMigrationKindConfigSetDefault)
+	}
+	if defaultOp.Key != "agents.claude_vscode.enabled" {
+		t.Fatalf("set-default op key = %q, want %q", defaultOp.Key, "agents.claude_vscode.enabled")
+	}
+	if !defaultOp.SourceAgnostic {
+		t.Fatal("expected set-default op source_agnostic = true")
+	}
+	if string(defaultOp.Value) != "false" {
+		t.Fatalf("set-default op value = %q, want %q", string(defaultOp.Value), "false")
+	}
+	if manifest.MinPriorVersion != "0.8.0" {
+		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.8.0")
+	}
+}
+
+func TestMigration_0_8_8_ProducesValidConfig(t *testing.T) {
+	// Start with a realistic pre-migration config that uses the legacy
+	// kebab-case key [agents.claude-vscode]. After rename,
+	// the result must pass strict config parsing (no empty legacy table).
+	legacyConfig := strings.Join([]string{
+		"[approvals]",
+		`mode = "all"`,
+		"",
+		"[agents.gemini]",
+		"enabled = false",
+		"",
+		"[agents.claude]",
+		"enabled = true",
+		"",
+		"[agents.claude-vscode]",
+		"enabled = true",
+		"",
+		"[agents.codex]",
+		"enabled = false",
+		"",
+		"[agents.vscode]",
+		"enabled = false",
+		"",
+		"[agents.antigravity]",
+		"enabled = false",
+		"",
+		"[warnings]",
+		"instruction_token_threshold = 10000",
+		"mcp_server_threshold = 5",
+		"mcp_tools_total_threshold = 40",
+		"mcp_server_tools_threshold = 25",
+		"mcp_schema_tokens_total_threshold = 25000",
+		"mcp_schema_tokens_server_threshold = 10000",
+	}, "\n")
+
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cfgPath := filepath.Join(alDir, "config.toml")
+	if err := os.WriteFile(cfgPath, []byte(legacyConfig), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+
+	// Execute the rename migration.
+	changed, err := inst.executeConfigRenameKeyMigration(
+		"agents.claude-vscode.enabled",
+		"agents.claude_vscode.enabled",
+	)
+	if err != nil {
+		t.Fatalf("rename migration: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected rename to apply")
+	}
+
+	// Read resulting config and verify it passes strict parsing.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	cfg, err := config.ParseConfig(data, cfgPath)
+	if err != nil {
+		t.Fatalf("strict config parse failed after migration: %v", err)
+	}
+	if cfg.Agents.ClaudeVSCode.Enabled == nil || !*cfg.Agents.ClaudeVSCode.Enabled {
+		t.Fatal("expected agents.claude_vscode.enabled = true after migration")
+	}
+}
+
+func mapKeys(m map[string]upgradeMigrationOperation) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func TestListMigrationManifestVersions(t *testing.T) {
 	versions, err := listMigrationManifestVersions()
 	if err != nil {
@@ -579,6 +714,9 @@ func TestListMigrationManifestVersions(t *testing.T) {
 	}
 	if !containsString(versions, "0.8.2") {
 		t.Fatalf("expected 0.8.2 in versions, got %v", versions)
+	}
+	if !containsString(versions, "0.8.8") {
+		t.Fatalf("expected 0.8.8 in versions, got %v", versions)
 	}
 }
 

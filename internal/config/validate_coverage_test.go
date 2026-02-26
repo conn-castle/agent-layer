@@ -40,9 +40,9 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 			errContains: "agents.claude.enabled is required",
 		},
 		{
-			name:        "missing claude-vscode enabled",
+			name:        "missing claude_vscode enabled",
 			modify:      func(c *Config) { c.Agents.ClaudeVSCode.Enabled = nil },
-			errContains: "agents.claude-vscode.enabled is required",
+			errContains: "agents.claude_vscode.enabled is required",
 		},
 		{
 			name:        "missing codex enabled",

@@ -108,7 +108,7 @@ func TestBuildVSCodeSettingsClaudeVSCodeYOLO(t *testing.T) {
 		t.Fatalf("buildVSCodeSettings error: %v", err)
 	}
 	if settings.ClaudeCodeAllowDangerouslySkipPerms == nil || !*settings.ClaudeCodeAllowDangerouslySkipPerms {
-		t.Fatal("expected ClaudeCodeAllowDangerouslySkipPerms=true when claude-vscode enabled + yolo")
+		t.Fatal("expected ClaudeCodeAllowDangerouslySkipPerms=true when claude_vscode enabled + yolo")
 	}
 }
 

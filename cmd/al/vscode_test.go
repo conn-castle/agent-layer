@@ -44,7 +44,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 
 [agents.codex]
@@ -84,7 +84,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -109,7 +109,7 @@ enabled = true
 		return &v
 	}, vscode.Launch, false, nil)
 	if err != nil {
-		t.Fatalf("expected success when claude-vscode is enabled: %v", err)
+		t.Fatalf("expected success when claude_vscode is enabled: %v", err)
 	}
 }
 

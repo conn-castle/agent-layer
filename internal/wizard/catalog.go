@@ -6,7 +6,7 @@ import "github.com/conn-castle/agent-layer/internal/config"
 const (
 	AgentGemini       = "gemini"
 	AgentClaude       = "claude"
-	AgentClaudeVSCode = "claude-vscode"
+	AgentClaudeVSCode = "claude_vscode"
 	AgentCodex        = "codex"
 	AgentVSCode       = "vscode"
 	AgentAntigravity  = "antigravity"
@@ -17,7 +17,7 @@ func supportedAgentKeys() []string {
 	return []string{
 		"agents.gemini.enabled",
 		"agents.claude.enabled",
-		"agents.claude-vscode.enabled",
+		"agents.claude_vscode.enabled",
 		"agents.codex.enabled",
 		"agents.vscode.enabled",
 		"agents.antigravity.enabled",

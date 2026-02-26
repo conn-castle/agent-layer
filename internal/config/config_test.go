@@ -21,7 +21,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -71,7 +71,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -111,7 +111,7 @@ enabled = true
 model = "opus"
 reasoning_effort = "high"
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -150,7 +150,7 @@ reasoning_effort = "high"
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -190,7 +190,7 @@ enabled = true
 model = "sonnet"
 reasoning_effort = "high"
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -269,7 +269,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -317,7 +317,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -373,7 +373,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]

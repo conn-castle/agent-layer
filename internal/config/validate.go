@@ -57,9 +57,9 @@ func ClaudeModelSupportsReasoningEffort(model string) bool {
 }
 
 // validClients lists clients that can appear in mcp.servers[].clients.
-// "claude-vscode" is intentionally absent — the Claude VS Code extension shares
+// "claude_vscode" is intentionally absent — the Claude VS Code extension shares
 // .mcp.json with Claude CLI, so "claude" covers both.
-// See Decision p12-claude-vscode-no-mcp-filter.
+// See Decision p12-unified-vscode-launcher.
 var validClients = map[string]struct{}{
 	"gemini":      {},
 	"claude":      {},

@@ -211,6 +211,7 @@ func TestPrintDiffPreviews(t *testing.T) {
 func enableTestColorOutput(t *testing.T) {
 	t.Helper()
 	t.Setenv("NO_COLOR", "")
+	t.Setenv("TERM", "xterm-256color")
 
 	origIsTerminal := isTerminal
 	isTerminal = func() bool { return true }
@@ -219,12 +220,25 @@ func enableTestColorOutput(t *testing.T) {
 	origNoColor := color.NoColor
 	color.NoColor = false
 	t.Cleanup(func() { color.NoColor = origNoColor })
+
+	origAdded := diffColorAdded
+	origRemoved := diffColorRemoved
+	origHunk := diffColorHunk
+	diffColorAdded = color.New(color.FgGreen)
+	diffColorRemoved = color.New(color.FgRed)
+	diffColorHunk = color.New(color.FgCyan)
+	t.Cleanup(func() {
+		diffColorAdded = origAdded
+		diffColorRemoved = origRemoved
+		diffColorHunk = origHunk
+	})
 }
 
 // disableTestColorOutput configures the fatih/color library to suppress ANSI
 // output. See enableTestColorOutput for context on the fatih/color coupling.
 func disableTestColorOutput(t *testing.T) {
 	t.Helper()
+	t.Setenv("TERM", "xterm-256color")
 
 	origIsTerminal := isTerminal
 	isTerminal = func() bool { return true }
@@ -233,6 +247,18 @@ func disableTestColorOutput(t *testing.T) {
 	origNoColor := color.NoColor
 	color.NoColor = true
 	t.Cleanup(func() { color.NoColor = origNoColor })
+
+	origAdded := diffColorAdded
+	origRemoved := diffColorRemoved
+	origHunk := diffColorHunk
+	diffColorAdded = color.New(color.FgGreen)
+	diffColorRemoved = color.New(color.FgRed)
+	diffColorHunk = color.New(color.FgCyan)
+	t.Cleanup(func() {
+		diffColorAdded = origAdded
+		diffColorRemoved = origRemoved
+		diffColorHunk = origHunk
+	})
 }
 
 func TestPrintDiffPreviews_ColorizedWhenInteractive(t *testing.T) {

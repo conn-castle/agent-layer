@@ -99,7 +99,7 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 		}
 	}
 
-	// Claude extension settings: only when agents.claude-vscode is enabled.
+	// Claude extension settings: only when agents.claude_vscode is enabled.
 	if claudeVSCodeEnabled && isYOLO {
 		trueVal := true
 		settings.ClaudeCodeAllowDangerouslySkipPerms = &trueVal

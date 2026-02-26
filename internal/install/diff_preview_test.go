@@ -307,7 +307,7 @@ func TestBuildSingleDiffPreview_SectionAwareMarkerError(t *testing.T) {
 		sys:          RealSystem{},
 		diffMaxLines: 20,
 	}
-	templatePathByRel, err := inst.memoryTemplatePathByRel()
+	templatePathByRel, err := inst.templates().memoryTemplatePathByRel()
 	if err != nil {
 		t.Fatalf("memoryTemplatePathByRel: %v", err)
 	}

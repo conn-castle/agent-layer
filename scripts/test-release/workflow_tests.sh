@@ -46,6 +46,23 @@ run_workflow_consistency_tests() {
     fail "workflow-consistency: release workflow missing apt packages from CI:$missing"
   fi
 
+  # Stable tag validation must happen in build-release before the release
+  # publish step, otherwise prerelease tags can publish artifacts before
+  # failing downstream jobs.
+  local stable_tag_check_line publish_release_line
+  stable_tag_check_line=$(grep -n 'name: Validate stable release tag format' "$release_workflow" | head -n1 | cut -d: -f1 || true)
+  publish_release_line=$(grep -n 'name: Publish release' "$release_workflow" | head -n1 | cut -d: -f1 || true)
+
+  if [[ -z "$stable_tag_check_line" ]]; then
+    fail "workflow-consistency: missing stable release tag validation step"
+  elif [[ -z "$publish_release_line" ]]; then
+    fail "workflow-consistency: missing publish release step"
+  elif (( stable_tag_check_line < publish_release_line )); then
+    pass "workflow-consistency: stable tag validation runs before publish release"
+  else
+    fail "workflow-consistency: stable tag validation must run before publish release"
+  fi
+
   # Structural integrity: verify files required by the release workflow exist.
   # The release workflow validates cmd/publish-site/main.go and site/ at runtime
   # (line ~97-102 of release.yml). Catching their absence here prevents a green

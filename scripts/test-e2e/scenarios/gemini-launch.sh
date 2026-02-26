@@ -23,7 +23,7 @@ model = "gemini-3.1-pro"
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]

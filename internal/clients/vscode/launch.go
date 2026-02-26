@@ -35,7 +35,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		env = clients.SetEnv(env, "CODEX_HOME", codexHome)
 	} else {
 		// Clear any inherited CODEX_HOME so the Codex extension does not pick up
-		// stale config when only claude-vscode is enabled.
+		// stale config when only claude_vscode is enabled.
 		env = clients.UnsetEnv(env, "CODEX_HOME")
 	}
 

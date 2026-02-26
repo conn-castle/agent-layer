@@ -106,7 +106,32 @@ func ParseConfigLenient(data []byte, source string) (*Config, error) {
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
 	}
+	applyLegacyConfigAliases(data, &cfg)
 	return &cfg, nil
+}
+
+// applyLegacyConfigAliases carries forward values from legacy config keys
+// that were renamed in migration manifests but not yet migrated on disk.
+// This ensures repair tools (wizard, doctor) see the correct enabled state
+// even when the migration has not run yet.
+func applyLegacyConfigAliases(data []byte, cfg *Config) {
+	var raw map[string]any
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	agents, ok := raw["agents"].(map[string]any)
+	if !ok {
+		return
+	}
+	// Legacy: [agents.claude-vscode] → [agents.claude_vscode]
+	// (v0.8.8 migration config_rename_key)
+	if legacy, ok := agents["claude-vscode"].(map[string]any); ok {
+		if cfg.Agents.ClaudeVSCode.Enabled == nil {
+			if val, ok := legacy["enabled"].(bool); ok {
+				cfg.Agents.ClaudeVSCode.Enabled = &val
+			}
+		}
+	}
 }
 
 // LoadConfigLenient reads .agent-layer/config.toml without validation.

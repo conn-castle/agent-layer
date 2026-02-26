@@ -24,7 +24,7 @@ mode = "none"
 enabled = false
 [agents.claude]
 enabled = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -96,7 +96,7 @@ mode = "none"
 enabled = false
 [agents.claude]
 enabled = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -142,7 +142,7 @@ mode = "none"
 enabled = false
 [agents.claude]
 enabled = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -185,7 +185,7 @@ mode = "all"
 enabled = false
 [agents.claude]
 enabled = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -230,7 +230,7 @@ enabled = false
 [agents.claude]
 enabled = true
 # local_config_dir = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = false
 [agents.codex]
 enabled = false
@@ -293,7 +293,7 @@ enabled = false
 [agents.claude]
 enabled = false
 # local_config_dir = false
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 [agents.codex]
 enabled = false
@@ -317,7 +317,7 @@ enabled = false
 		},
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
 			if title == "Enable Agents" {
-				*selected = []string{"claude-vscode"}
+				*selected = []string{"claude_vscode"}
 			}
 			if title == "Enable Default MCP Servers" {
 				*selected = []string{}

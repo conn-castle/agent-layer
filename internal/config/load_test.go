@@ -31,7 +31,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -112,7 +112,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -168,7 +168,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -221,7 +221,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -272,7 +272,7 @@ enabled = true
 [agents.claude]
 enabled = true
 
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 
 [agents.codex]
@@ -356,7 +356,7 @@ func TestLoadTemplateConfigReadError(t *testing.T) {
 }
 
 func TestParseConfigLenient_ValidTOMLMissingRequiredFields(t *testing.T) {
-	// A pre-v0.8.1 config missing [agents.claude-vscode] should succeed
+	// A pre-v0.8.1 config missing [agents.claude_vscode] should succeed
 	// with lenient parsing even though strict ParseConfig would reject it.
 	toml := `
 [approvals]
@@ -382,12 +382,12 @@ enabled = false
 		t.Fatalf("expected lenient parse to succeed, got: %v", err)
 	}
 	if cfg.Agents.ClaudeVSCode.Enabled != nil {
-		t.Fatal("expected claude-vscode.enabled to be nil (missing from config)")
+		t.Fatal("expected claude_vscode.enabled to be nil (missing from config)")
 	}
 	// Strict parse should fail on the same input.
 	_, strictErr := ParseConfig([]byte(toml), "test")
 	if strictErr == nil {
-		t.Fatal("expected strict ParseConfig to fail for missing claude-vscode.enabled")
+		t.Fatal("expected strict ParseConfig to fail for missing claude_vscode.enabled")
 	}
 }
 
@@ -426,6 +426,63 @@ enabled = true
 	}
 }
 
+func TestParseConfigLenient_LegacyClaudeVSCodeAlias(t *testing.T) {
+	// Pre-migration config uses the legacy kebab-case key.
+	tomlData := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = false
+
+[agents.claude]
+enabled = true
+
+[agents.claude-vscode]
+enabled = true
+
+[agents.codex]
+enabled = false
+
+[agents.vscode]
+enabled = false
+
+[agents.antigravity]
+enabled = false
+`
+	cfg, err := ParseConfigLenient([]byte(tomlData), "test")
+	if err != nil {
+		t.Fatalf("ParseConfigLenient: %v", err)
+	}
+	if cfg.Agents.ClaudeVSCode.Enabled == nil {
+		t.Fatal("expected claude_vscode.enabled to be carried from legacy claude-vscode key")
+	}
+	if !*cfg.Agents.ClaudeVSCode.Enabled {
+		t.Fatal("expected claude_vscode.enabled = true")
+	}
+}
+
+func TestParseConfigLenient_LegacyAliasDoesNotOverrideNewKey(t *testing.T) {
+	// When both old and new keys exist, the new key takes precedence.
+	tomlData := `
+[agents.claude-vscode]
+enabled = true
+
+[agents.claude_vscode]
+enabled = false
+`
+	cfg, err := ParseConfigLenient([]byte(tomlData), "test")
+	if err != nil {
+		t.Fatalf("ParseConfigLenient: %v", err)
+	}
+	if cfg.Agents.ClaudeVSCode.Enabled == nil {
+		t.Fatal("expected claude_vscode.enabled to be set")
+	}
+	if *cfg.Agents.ClaudeVSCode.Enabled {
+		t.Fatal("expected new key (false) to take precedence over legacy key (true)")
+	}
+}
+
 func TestLoadConfigLenient_MissingFile(t *testing.T) {
 	_, err := LoadConfigLenient("/nonexistent/config.toml")
 	if err == nil {
@@ -455,7 +512,7 @@ mode = "all"
 }
 
 func TestParseConfig_RejectsUnknownKeys(t *testing.T) {
-	// agents.claude-vscode uses EnableOnlyConfig (no Model field),
+	// agents.claude_vscode uses EnableOnlyConfig (no Model field),
 	// so "model" is an unknown key that strict decode must reject.
 	data := `
 [approvals]
@@ -464,7 +521,7 @@ mode = "all"
 enabled = true
 [agents.claude]
 enabled = true
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 model = "some-model"
 [agents.codex]
@@ -476,7 +533,7 @@ enabled = true
 `
 	_, err := ParseConfig([]byte(data), "test")
 	if err == nil {
-		t.Fatal("expected error for unknown key agents.claude-vscode.model")
+		t.Fatal("expected error for unknown key agents.claude_vscode.model")
 	}
 	if !strings.Contains(err.Error(), "unrecognized") {
 		t.Fatalf("expected unrecognized key error, got: %v", err)
@@ -501,7 +558,7 @@ enabled = true
 enabled = true
 [agents.claude.agent_specific]
 features.example_feature = true
-[agents.claude-vscode]
+[agents.claude_vscode]
 enabled = true
 [agents.codex]
 enabled = true

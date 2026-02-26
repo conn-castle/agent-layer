@@ -125,12 +125,12 @@ func TestTemplateOrphans_ClassifyOrphanOwnershipDetailError(t *testing.T) {
 	sys := newFaultSystem(RealSystem{})
 	sys.readErrs[normalizePath(orphanPath)] = errors.New("read boom")
 	inst := &installer{root: root, sys: sys}
-	templateEntries, err := inst.currentTemplateEntries()
+	templateEntries, err := inst.templates().currentTemplateEntries()
 	if err != nil {
 		t.Fatalf("currentTemplateEntries: %v", err)
 	}
 
-	if _, err := inst.templateOrphans(templateEntries); err == nil || !strings.Contains(err.Error(), "read boom") {
+	if _, err := inst.templates().templateOrphans(templateEntries); err == nil || !strings.Contains(err.Error(), "read boom") {
 		t.Fatalf("expected orphan classify read error, got %v", err)
 	}
 }
@@ -150,11 +150,11 @@ func TestTemplateOrphans_SortsOrphans(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	templateEntries, err := inst.currentTemplateEntries()
+	templateEntries, err := inst.templates().currentTemplateEntries()
 	if err != nil {
 		t.Fatalf("currentTemplateEntries: %v", err)
 	}
-	orphans, err := inst.templateOrphans(templateEntries)
+	orphans, err := inst.templates().templateOrphans(templateEntries)
 	if err != nil {
 		t.Fatalf("templateOrphans: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestWalkTemplateOrphans_MissingRootReturnsNil(t *testing.T) {
 	templatePaths := map[string]struct{}{}
 	orphanSet := map[string]struct{}{}
 	missingRoot := filepath.Join(root, "does-not-exist")
-	if err := inst.walkTemplateOrphans(missingRoot, templatePaths, orphanSet); err != nil {
+	if err := inst.templates().walkTemplateOrphans(missingRoot, templatePaths, orphanSet); err != nil {
 		t.Fatalf("expected nil for missing root, got %v", err)
 	}
 }
@@ -188,7 +188,7 @@ func TestWalkTemplateOrphans_CallbackErrorPropagates(t *testing.T) {
 	inst := &installer{root: root, sys: callbackErrSystem{RealSystem{}}}
 	templatePaths := map[string]struct{}{}
 	orphanSet := map[string]struct{}{}
-	if err := inst.walkTemplateOrphans(existing, templatePaths, orphanSet); err == nil || !strings.Contains(err.Error(), "callback boom") {
+	if err := inst.templates().walkTemplateOrphans(existing, templatePaths, orphanSet); err == nil || !strings.Contains(err.Error(), "callback boom") {
 		t.Fatalf("expected callback boom error, got %v", err)
 	}
 }
@@ -255,7 +255,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 		sys := newFaultSystem(RealSystem{})
 		sys.readErrs[normalizePath(absPath)] = errors.New("read boom")
 		inst.sys = sys
-		_, err := inst.sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "docs/agent-layer/ISSUES.md")
+		_, err := inst.templates().sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "docs/agent-layer/ISSUES.md")
 		if err == nil || !strings.Contains(err.Error(), "read boom") {
 			t.Fatalf("expected read error, got %v", err)
 		}
@@ -266,7 +266,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 		if err := os.WriteFile(absPath, []byte("# ok\n\n<!-- ENTRIES START -->\n"), 0o644); err != nil {
 			t.Fatalf("write local: %v", err)
 		}
-		_, err := inst.sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "missing-template.md")
+		_, err := inst.templates().sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "missing-template.md")
 		if err == nil {
 			t.Fatal("expected template read error")
 		}
@@ -277,7 +277,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 		if err := os.WriteFile(absPath, []byte("# missing marker\n"), 0o644); err != nil {
 			t.Fatalf("write local: %v", err)
 		}
-		match, err := inst.sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "docs/agent-layer/ISSUES.md")
+		match, err := inst.templates().sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "docs/agent-layer/ISSUES.md")
 		if err != nil {
 			t.Fatalf("sectionAwareTemplateMatch: %v", err)
 		}
@@ -291,7 +291,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 		if err := os.WriteFile(absPath, []byte("# ok\n\n<!-- ENTRIES START -->\n"), 0o644); err != nil {
 			t.Fatalf("write local: %v", err)
 		}
-		match, err := inst.sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "commands.allow")
+		match, err := inst.templates().sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "commands.allow")
 		if err != nil {
 			t.Fatalf("sectionAwareTemplateMatch: %v", err)
 		}

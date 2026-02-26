@@ -70,7 +70,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	}
 
 	// VS Code block — granular split:
-	// WriteVSCodeSettings fires for vscode OR claude-vscode.
+	// WriteVSCodeSettings fires for vscode OR claude_vscode.
 	// WriteVSCodeMCPConfig, WriteVSCodePrompts, WriteVSCodeLaunchers fire for vscode only.
 	vscodeEnabled := agentEnabled(agents.VSCode.Enabled)
 	claudeVSCodeEnabled := agentEnabled(agents.ClaudeVSCode.Enabled)
@@ -96,7 +96,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		steps = append(steps, func() error { return WriteGeminiSettings(sys, root, project) })
 	}
 
-	// Claude files (.mcp.json, .claude/settings.json) fire when claude OR claude-vscode enabled.
+	// Claude files (.mcp.json, .claude/settings.json) fire when claude OR claude_vscode enabled.
 	claudeEnabled := agentEnabled(agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,

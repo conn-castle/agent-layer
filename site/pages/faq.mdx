@@ -31,12 +31,14 @@ The Codex VS Code extension reads `CODEX_HOME` at startup. Agent Layer sets a re
 
 If you prefer to avoid the VS Code launcher for Codex, use the global MCP fallback so VS Code can continue to discover your MCP servers. See [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
 
-## Why does Claude ask me to sign in again per repo?
-Claude per-repo authentication is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating authentication, caches, and settings per repository. This lets you maintain separate work and personal accounts without credential overlap.
+## Why doesn't Claude keep separate sign-ins per repo?
+Claude per-repo settings and caches isolation is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating settings and caches per repository.
 
-For VS Code, keep `[agents.claude-vscode] enabled = true` so the extension receives the repo-local `CLAUDE_CONFIG_DIR`. Without the launcher path, VS Code falls back to global `~/.claude/` behavior.
+**Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally. Per-repo login isolation (e.g., separate work and personal accounts) does not work until this is fixed upstream. This has been reported to the Claude Code team.
 
-By default (`local_config_dir` absent or `false`), Claude uses your global `~/.claude/` configuration and authentication is shared across repositories.
+For VS Code, keep `[agents.claude_vscode] enabled = true` so the extension receives the repo-local `CLAUDE_CONFIG_DIR`. Without the launcher path, VS Code falls back to global `~/.claude/` behavior.
+
+By default (`local_config_dir` absent or `false`), Claude uses your global `~/.claude/` configuration and settings are shared across repositories.
 
 For Claude-specific fallback details, see [/docs/troubleshooting#global-config-fallback-for-vs-code-claude](/docs/troubleshooting#global-config-fallback-for-vs-code-claude).
 

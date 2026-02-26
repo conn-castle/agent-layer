@@ -114,100 +114,19 @@ Incomplete:
 
 ## Phase 12 ✅ — High-leverage quick wins
 - Added `approvals.mode = "yolo"` with per-client full-auto projections and single-line sync/launch acknowledgements.
-- Added `[agents.claude-vscode]` and unified VS Code launch behavior under `al vscode`.
+- Added `[agents.claude_vscode]` and unified VS Code launch behavior under `al vscode`.
 - Recorded the decision to not implement a standalone `al launch-plan` command.
 - Clarified agent commit instructions and fixed `al vscode` positional-arg handling to avoid unconditional `.` appends.
 
-## Phase 13 — Maintenance and quality sweep
+## Phase 13 ✅ — Maintenance and quality sweep
+- Completed the testing/config/upgrade maintenance scope, including deterministic warning ordering, helper consolidation in `internal/testutil`, envfile round-trip hardening, strict enable-only config decoding, upgrade snapshot/list/pinning polish, and race-check command coverage.
+- Refactored `internal/install` with explicit coordinator components (`templateManager`, `ownershipClassifier`, `upgradeOrchestrator`) while preserving behavior under existing install/upgrade test contracts.
+- Reduced direct `installer` method surface from 105 to 70 methods and updated call boundaries throughout install and upgrade flows.
 
-### Goal
-- Clean up accumulated tech debt across the codebase.
-- Consolidate duplicated test helpers and fix known correctness issues.
-- Polish the upgrade subsystem with deferred improvements.
-
-### Tasks
-
-#### Testing and DRY
-- [x] warn-deterministic-order: Sort MCP collision warning subjects before emission so output order is deterministic regardless of map iteration. Add a contract test for `CheckMCPServers` output ordering. (From ISSUES)
-- [x] test-coverage-parity: Align local and CI test coverage reporting so developers can verify coverage locally before pushing. (From ISSUES)
-- [x] testutil-consolidate: Create `internal/testutil` package and consolidate duplicated test helpers: `writeStub` (5+ packages), `writeStubWithExit` (5+ packages), `writeStubExpectArg` (2 packages), `boolPtr` (3 packages), `withWorkingDir` (2 packages). (From ISSUES stub-dup, 3c5f958c, 3c5f958d)
-- [x] envfile-roundtrip: Fix asymmetric envfile encode/decode and add round-trip property tests. (From ISSUES envfile-asym)
-
-#### Wizard and config
-- [x] cfg-enable-only-strict: Split enable-only agents (`claude-vscode`, `vscode`, `antigravity`) to `EnableOnlyConfig`, reject unknown TOML keys via strict decode, and keep unknown-key failures repairable through wizard/doctor lenient fallback with guidance. (From DECISIONS config-enable-only-strict + unknown-key-repairable)
-- [x] wiz-globals: Convert mutable exported catalog variables in `internal/wizard/catalog.go` to functions returning fresh copies. Remove confirmed dead code in `approval_modes.go` and `helpers.go`. (From ISSUES)
-- [x] upg-config-roundtrip: Preserve user TOML comments and key ordering during config migrations, or document the destructive formatting as intentional. (From ISSUES)
-
-#### Upgrade polish
-- [x] upg-ver-diff-ignore: Suppress `al.version` diffs during upgrade plan/apply since updating the version is the primary goal of an upgrade. (From ISSUES)
-- [x] upg-snapshot-polish: Address snapshot scope (lazy snapshotting), scoped restore filtering, and per-snapshot size guards. (From ISSUES upg-snapshot-scope, upg-scoped-restore, upg-snapshot-size)
-- [x] upg-rollback-audit: Add schema/status extension for manual rollback auditability in snapshot system. (From ISSUES)
-- [x] upg-snapshot-list: Add `al upgrade rollback --list` (or `al upgrade snapshots`) to show available snapshots without manual directory inspection. (From BACKLOG)
-- [x] upg-ver-pinning: Decide on and implement a supported workflow for upgrading to intermediate versions (`al upgrade --version X.Y.Z` or equivalent). (From ISSUES upg-ver)
-
-#### Structural
-- [ ] installer-struct: Evaluate whether the `installer` struct (23 fields, 57+ methods) should be split into sub-structs (e.g., `templateManager`, `ownershipClassifier`). Extract if method count has grown. (From ISSUES 3c5f958f)
-
-#### Workflow and CI
-- [x] gemini-trust-test-seam: Export `sync.UserHomeDir` test seam and update cross-package tests to stub Gemini trust writes, preventing host `~/.gemini/trustedFolders.json` pollution during tests. (From DECISIONS gemini-trust-export)
-- [x] race-target: Add a canonical race-check command (e.g., `make test-race`) targeting concurrency-critical packages and document it in COMMANDS.md. (From ISSUES)
-
-### Exit criteria
-- MCP collision warnings are emitted in deterministic sorted order with a contract test.
-- Duplicated test helpers (including `writeStub`) are consolidated into `internal/testutil`.
-- Envfile round-trip property tests pass.
-- Local test coverage matches CI coverage.
-- Wizard exported globals are immutable; dead code is removed.
-- Upgrade plan suppresses `al.version` noise.
-- Snapshot list command is available for upgrade rollback discovery.
-- Remaining upgrade polish items are addressed or explicitly documented as intentional.
-- A canonical race-check command exists in the Makefile and is documented in COMMANDS.md.
-
-## Phase 14 — Documentation and website improvements
-
-### Goal
-- Website is polished, searchable, and makes a strong first impression for new users.
-- Documentation is comprehensive, discoverable, and optimized for both humans and agents.
-
-### Tasks
-- [x] vsc-launch (Priority: High, Area: documentation / launchers): Produced architecture documentation in `docs/architecture/vscode-launch.md`, linked from contributor docs.
-- [ ] websearch (Priority: Medium, Area: website / documentation): Add a global website search bar for docs/pages discovery (client-side index or service-backed), with relevant results integrated into the site header UX.
-- [ ] web-seo (Priority: Medium, Area: website / marketing): Update website metadata, SEO tags, Open Graph / social cards, and favicon for professional visibility. (From ISSUES)
-- [ ] web-docs-copy-btn (Priority: Medium, Area: website / UX): Add a "Copy for Agent" button to each documentation page that copies clean, LLM-optimized page content to the clipboard. (From BACKLOG)
-- [ ] analytics (Priority: Medium, Area: website): Integrate privacy-respecting analytics (e.g., Plausible) to monitor visitor patterns and guide content priorities. (From BACKLOG)
-- [ ] public-roadmap (Priority: Medium, Area: documentation): Transform the internal roadmap into a public-facing page on the website that communicates project direction and upcoming features. (From BACKLOG f1a2b3c)
-
-### Task details
-- vsc-launch
-  Description: Document how VS Code is launched by the CLI, especially the unique/odd path that is currently undocumented.
-  Acceptance criteria: Docs are added or updated and clearly explain launch flow/design choices.
-  Notes: Completed.
-- websearch
-  Description: Add global docs search on the website to improve navigation and discovery of guides/features/reference content.
-  Acceptance criteria: Search bar is integrated in site header and returns relevant results from documentation pages.
-  Notes: Consider client-side indexing (e.g., FlexSearch) versus managed services (e.g., Algolia).
-- web-seo
-  Description: Audit `site/` for missing meta tags, Open Graph tags, social cards, and favicon, then implement them.
-  Acceptance criteria: Website has proper `<meta>` tags, OG tags, social card preview, and favicon.
-- web-docs-copy-btn
-  Description: Add a button to the top of each documentation page that copies the page text/markdown to the clipboard. Show a brief success indicator (e.g., toast or icon change).
-  Acceptance criteria: Documentation pages feature a visible button; clicking it copies clean content to the clipboard.
-  Notes: Ensure the copied content is well-formatted for LLM consumption (no navigation elements, no boilerplate).
-- analytics
-  Description: Integrate tracking and analytics into the project website.
-  Acceptance criteria: Visitor data is accessible via an analytics dashboard. Privacy compliance (GDPR/CCPA) is addressed.
-  Notes: Prefer privacy-respecting alternatives (Plausible, Fathom) over Google Analytics.
-- public-roadmap
-  Description: Convert the internal ROADMAP.md into a public-facing documentation page on the website.
-  Acceptance criteria: Roadmap is accessible on the website, clearly communicates direction, and remains easy for agents to keep current.
-
-### Exit criteria
-- VS Code launch architecture documentation exists and is linked from contributor-facing docs.
-- Website search is available in the header and returns relevant documentation results.
-- Website has professional metadata, favicon, and SEO optimization.
-- Documentation pages have a "Copy for Agent" button.
-- Analytics are integrated with privacy compliance.
-- Public roadmap is accessible on the website.
+## Phase 14 ✅ — Documentation and website improvements
+- Completed VS Code launch architecture documentation and linked it from contributor-facing website docs.
+- Completed website polish work in the web repo: global search, SEO/social metadata and favicon updates, and documentation "Copy for Agent" UX.
+- Integrated Google Analytics 4 with consent defaults and removed the public-roadmap item from this phase scope.
 
 ## Phase 15 — Skills standard alignment (agentskills.io)
 
@@ -224,7 +143,7 @@ Incomplete:
 - [ ] skill-template-migration: Convert embedded template skills from flat `.md` to agentskills.io directory format (`<name>/SKILL.md`).
 - [ ] skill-review-plan: Implement a "review-plan" skill with a standardized mechanism to locate and identify the active plan. (From BACKLOG)
 - [ ] skill-ordering-guide: Add a skills workflow guide to documentation explaining recommended skill sequences for common workflows (feature dev, bug fix, code review). (From BACKLOG e5f6a7b)
-- [ ] skill-template-refs: Audit and fix template skills that reference non-existent Makefile targets (e.g., `make test-fast`, `make dead-code`). Add stronger guards or conditional checks. (From ISSUES tmpl-mk)
+- [x] skill-template-refs: Audit and fix template skills that reference non-existent Makefile targets (e.g., `make test-fast`, `make dead-code`). Add stronger guards or conditional checks. (From ISSUES tmpl-mk)
 
 ### Task details
 - skill-rename

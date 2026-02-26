@@ -261,7 +261,7 @@ func TestLaunchVSCode_ClearsInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(t *
 		t.Fatalf("read env file: %v", err)
 	}
 	if strings.Contains(string(got), "CLAUDE_CONFIG_DIR=") {
-		t.Fatal("expected inherited CLAUDE_CONFIG_DIR to be cleared when agents.claude-vscode is disabled")
+		t.Fatal("expected inherited CLAUDE_CONFIG_DIR to be cleared when agents.claude_vscode is disabled")
 	}
 }
 
@@ -387,7 +387,7 @@ func TestLaunchVSCode_ClearsCLAUDECONFIGDIRWhenLocalConfigDirDisabled(t *testing
 		t.Fatalf("write stub: %v", err)
 	}
 
-	// claude-vscode enabled but local_config_dir not set (nil) — should clear.
+	// claude_vscode enabled but local_config_dir not set (nil) — should clear.
 	claudeVSCodeEnabled := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{

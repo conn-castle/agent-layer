@@ -213,11 +213,11 @@ If you change generated files, those edits will be overwritten the next time you
 :::
 
 :::note
-The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value, so you will need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude-vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, providing isolated authentication and credential separation across repositories.
+The Codex VS Code extension reads `CODEX_HOME` at startup. Repo-local launchers set a per-repo value, so you will need to reauthenticate with Codex when opening a different repo. If you enable `local_config_dir = true` under `[agents.claude]` (and `[agents.claude_vscode]` is enabled), the Claude extension also receives a per-repo `CLAUDE_CONFIG_DIR`, isolating settings and caches per repository.
+
+**Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally until this is fixed upstream.
 
 If you prefer to launch VS Code without the repo-local launcher, see the Codex and Claude fallback guidance in troubleshooting: [Global MCP server fallback for VS Code (Codex)](./troubleshooting#global-mcp-server-fallback-for-vs-code-codex) and [Global config fallback for VS Code (Claude)](./troubleshooting#global-config-fallback-for-vs-code-claude).
-
-Enabling repo-local `CLAUDE_CONFIG_DIR` means Claude authentication state becomes repo-scoped, so expect a one-time reauthentication the first time you open each repository after setting `local_config_dir = true`.
 :::
 
 ### Safe to delete

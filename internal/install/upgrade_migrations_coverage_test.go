@@ -428,6 +428,31 @@ func TestExecuteConfigRenameKeyMigration_Branches(t *testing.T) {
 		}
 	})
 
+	t.Run("rename prunes empty source tables", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents]\n[agents.claude-vscode]\nenabled = true\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigRenameKeyMigration("agents.claude-vscode.enabled", "agents.claude_vscode.enabled")
+		if err != nil {
+			t.Fatalf("executeConfigRenameKeyMigration: %v", err)
+		}
+		if !changed {
+			t.Fatal("expected key rename")
+		}
+		cfg, _, _, err := inst.readMigrationConfigMap()
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		// Verify the new key exists.
+		if val, exists, gErr := getNestedConfigValue(cfg, []string{"agents", "claude_vscode", "enabled"}); gErr != nil || !exists || val != true {
+			t.Fatalf("expected agents.claude_vscode.enabled=true, got val=%v exists=%v err=%v", val, exists, gErr)
+		}
+		// Verify the empty source table was pruned.
+		if _, exists, _ := getNestedConfigValue(cfg, []string{"agents", "claude-vscode"}); exists {
+			t.Fatal("expected empty agents.claude-vscode table to be pruned")
+		}
+	})
+
 	t.Run("non-table traversal and write failures", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestConfigFile(t, root, "from = \"x\"\n")

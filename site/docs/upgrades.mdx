@@ -20,6 +20,7 @@ If guidance in other docs is shorter or summarized, this page is the source of t
 - [Upgrade event model](#upgrade-event-model)
 - [Compatibility guarantees](#compatibility-guarantees)
 - [Migration rules by release](#migration-rules-by-release)
+- [Documentation version retention and access](#documentation-version-retention-and-access)
 - [OS and shell capability matrix](#os-and-shell-capability-matrix)
 - [Commitment level and limitations](#commitment-level-and-limitations)
 - [Upgrade checklist](./upgrade-checklist)
@@ -79,8 +80,9 @@ Migration rules are published per release and versioned with docs/release notes.
 
 | Target release | Supported source release lines | Event summary | Required manual actions | Notes |
 | --- | --- | --- | --- | --- |
+| `v0.8.8` | `0.8.x`, `0.7.x` (via migration chaining) | `safe auto`: Canonicalized Claude VS Code config key naming to snake_case (`agents.claude_vscode.enabled`), strengthened release/docs contract checks, and hardened stable-release docs publishing/version retention behavior. | No manual action required; run `al upgrade plan` then `al upgrade`. If any custom automation or docs still reference `agents.claude-vscode.enabled`, update them to `agents.claude_vscode.enabled`. | Migration manifest includes `config_rename_key` (`agents.claude-vscode.enabled` -> `agents.claude_vscode.enabled`) and `config_set_default` (`agents.claude_vscode.enabled = false`) to keep required-field invariants intact. |
 | `v0.8.7` | `0.8.x`, `0.7.x` (via migration chaining) | `safe auto`: Added quiet-mode support across runtime surfaces (`warnings.noise_mode = "quiet"` and one-off `--quiet`/`-q` client flags), plus wizard/config hardening and diff UX improvements: Escape back-navigation with first-step exit confirmation, explicit wizard section ordering policy, profile warning when replacing TOML-corrupt config, Claude reasoning-effort support (`low|medium|high`) with fail-loud model validation, explicit Gemini reasoning-effort unsupported-path errors, multiline TOML patch maintainability refactor, and colorized interactive upgrade diffs (plain-text fallback preserved). | No manual action required; run `al upgrade plan` then `al upgrade`. Optionally set `warnings.noise_mode = "quiet"` or use `al <client> --quiet` for one-off runs. Optionally set `[agents.claude] reasoning_effort = "low|medium|high"` when using supported Claude models. | No migration operations required. Existing configs remain valid. `noise_mode` now accepts `quiet`; new required-field migration guardrail test enforces future `config_set_default` parity for required fields introduced after baseline `0.8.1`. |
-| `v0.8.6` | `0.8.x`, `0.7.x` (via migration chaining) | `safe auto`: Fixed `.gitignore` template where inline comments on `/.claude/` and `/.claude-config/` patterns caused Git to treat them as literal pattern text, leaving both directories unignored. `al wizard` now prompts for per-repo Claude credential isolation (`local_config_dir`). Documentation now highlights per-repo credential isolation as a core feature. | No manual action required; run `al upgrade plan` then `al upgrade`. Users who installed v0.8.5 in a new repo should verify `.claude/` is gitignored after upgrading. | No config schema changes. Template hash will change due to the gitignore fix. |
+| `v0.8.6` | `0.8.x`, `0.7.x` (via migration chaining) | `safe auto`: Fixed `.gitignore` template where inline comments on `/.claude/` and `/.claude-config/` patterns caused Git to treat them as literal pattern text, leaving both directories unignored. `al wizard` now prompts for opt-in repo-local Claude settings and caches isolation (`local_config_dir`). Documentation now clarifies that Claude auth remains globally shared due to an upstream credential-store limitation. | No manual action required; run `al upgrade plan` then `al upgrade`. Users who installed v0.8.5 in a new repo should verify `.claude/` is gitignored after upgrading. | No config schema changes. Template hash will change due to the gitignore fix. |
 | `v0.8.5` | `0.8.x`, `0.7.x` (via migration chaining) | `safe auto`: Consolidated release that includes strict unknown-key config validation, improved `.env` parsing, deterministic MCP tool-collision warnings, Gemini trusted-folder auto-write behavior, snapshot validation for zero-byte files, `al upgrade rollback --list`, agent-specific Claude/Codex passthrough config (`agents.<agent>.agent_specific`), opt-in repo-local Claude config isolation (`agents.claude.local_config_dir`), and hardened prompt-server dispatch/root validation for `al mcp-prompts`. | No manual action required; run `al upgrade plan` then `al upgrade`. Optionally enable new behavior by setting `local_config_dir = true` and/or adding `agent_specific` keys under Claude/Codex agent sections. | No migration operations are required. If Gemini trust-file writes fail, sync still completes and emits a warning with manual trust guidance. Config schema is unchanged. |
 | `v0.8.4` | `0.8.x`, `0.7.x` (via migration chaining) | `safe auto`: Config validation now silently strips transport-incompatible MCP fields instead of erroring. Version dispatch diagnostic no longer prints twice during version-pinned dispatch. Wizard config patching handles dotted sub-key removal. New scenario-based e2e test framework (internal). | No manual action required; run `al upgrade plan` then `al upgrade`. | No config schema changes. Configs that previously failed validation due to leftover transport-incompatible fields (e.g., `headers` on a stdio server) will now load successfully. |
 | `v0.8.3` | `0.8.x`, `0.7.x` (via migration chaining) | `safe auto`: Bug fixes only. `al doctor` no longer produces false "missing environment variables" warnings for MCP servers that reference built-in variables like `${AL_REPO_ROOT}`. `al wizard` now removes transport-incompatible fields (e.g., `headers` on stdio servers) during config patching, fixing a circular error where the wizard completed but sync failed. | No manual action required; run `al upgrade plan` then `al upgrade`. | No config schema changes. |
@@ -99,6 +101,24 @@ How this table is maintained:
 - Add or update a row for every release.
 - If a release includes `breaking/manual` items, list exact required actions.
 - If no special migration is needed, keep the row explicit to avoid ambiguity.
+
+## Documentation version retention and access
+
+Agent Layer website docs are versioned per release, then retained with a bounded policy to keep the published set stable and small:
+
+1. Keep the newest 4 patch releases from the newest minor line.
+2. Keep the newest patch release for each of the newest 4 minor lines (including the newest minor line).
+3. Keep stable releases only (prereleases are dropped).
+4. Keep the union of both sets in newest-first order.
+
+How to access older docs:
+
+1. Use the docs version selector in the website navigation to switch between retained versions.
+2. If a version is not listed there, it has been pruned from the hosted site by retention policy.
+3. For pruned versions:
+   - Use the [Changelog](/changelog) for release-level historical behavior.
+   - Browse source docs at the matching tag in the main repo:
+     - `https://github.com/conn-castle/agent-layer/tree/vX.Y.Z/site/docs`
 
 ### Ownership baseline and manifest policy
 

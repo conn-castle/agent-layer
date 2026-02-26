@@ -85,7 +85,7 @@ func (inst *installer) resolveUnifiedOverwriteAllDecisions() error {
 		return fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
 
-	managedDiffs, err := inst.listManagedLabeledDiffs()
+	managedDiffs, err := inst.templates().listManagedLabeledDiffs()
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (inst *installer) resolveUnifiedOverwriteAllDecisions() error {
 	}
 	inst.managedDiffPreviews = managedIndex
 
-	memoryDiffs, err := inst.listMemoryLabeledDiffs()
+	memoryDiffs, err := inst.templates().listMemoryLabeledDiffs()
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func (inst *installer) shouldOverwriteAllManaged() (bool, error) {
 	if inst.prompter == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
-	diffs, err := inst.listManagedLabeledDiffs()
+	diffs, err := inst.templates().listManagedLabeledDiffs()
 	if err != nil {
 		return false, err
 	}
@@ -170,7 +170,7 @@ func (inst *installer) shouldOverwriteAllMemory() (bool, error) {
 	if inst.prompter == nil {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
-	diffs, err := inst.listMemoryLabeledDiffs()
+	diffs, err := inst.templates().listMemoryLabeledDiffs()
 	if err != nil {
 		return false, err
 	}
@@ -227,12 +227,12 @@ func (inst *installer) lookupDiffPreview(relPath string) (DiffPreview, error) {
 		return preview, nil
 	}
 	absPath := filepath.Join(inst.root, filepath.FromSlash(relPath))
-	templatePathByRel, err := inst.managedTemplatePathByRel()
+	templatePathByRel, err := inst.templates().managedTemplatePathByRel()
 	if err != nil {
 		return DiffPreview{}, err
 	}
 	if inst.isMemoryPath(absPath) {
-		templatePathByRel, err = inst.memoryTemplatePathByRel()
+		templatePathByRel, err = inst.templates().memoryTemplatePathByRel()
 		if err != nil {
 			return DiffPreview{}, err
 		}
@@ -265,7 +265,7 @@ func (inst *installer) diffPreviewEntry(relPath string, templatePathByRel map[st
 	if strings.TrimSpace(templatePath) == "" {
 		return LabeledPath{}, fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, relPath)
 	}
-	ownership, err := inst.classifyOwnership(relPath, templatePath)
+	ownership, err := inst.ownership().classifyOwnership(relPath, templatePath)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return LabeledPath{}, err

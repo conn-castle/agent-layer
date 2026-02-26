@@ -55,7 +55,7 @@ func TestWriteSectionAwareTemplateFile_CreatesMissingFile(t *testing.T) {
 	}
 	relPath := filepath.ToSlash(filepath.Join("docs", "agent-layer", "ISSUES.md"))
 	destPath := filepath.Join(root, filepath.FromSlash(relPath))
-	if err := inst.writeSectionAwareTemplateFile(destPath, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart); err != nil {
+	if err := inst.templates().writeSectionAwareTemplateFile(destPath, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart); err != nil {
 		t.Fatalf("writeSectionAwareTemplateFile: %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestWriteSectionAwareTemplateFile_CreatesMissingFile(t *testing.T) {
 
 func TestBuildLabeledDiffs_NormalizesRelativePath(t *testing.T) {
 	inst := &installer{}
-	labeled, err := inst.buildLabeledDiffs([]string{".agent-layer\\commands.allow"}, map[string]string{})
+	labeled, err := inst.templates().buildLabeledDiffs([]string{".agent-layer\\commands.allow"}, map[string]string{})
 	if err != nil {
 		t.Fatalf("buildLabeledDiffs: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestBuildLabeledDiffs_UsesSlashNormalizedTemplateMapping(t *testing.T) {
 		root: root,
 		sys:  RealSystem{},
 	}
-	_, err := inst.buildLabeledDiffs(
+	_, err := inst.templates().buildLabeledDiffs(
 		[]string{".agent-layer\\commands.allow"},
 		map[string]string{
 			".agent-layer/commands.allow": "missing-template",
@@ -142,7 +142,7 @@ func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat config.toml: %v", err)
 	}
-	if _, err := inst.matchTemplate(RealSystem{}, path, "config.toml", info); err != nil {
+	if _, err := inst.templates().matchTemplate(RealSystem{}, path, "config.toml", info); err != nil {
 		t.Fatalf("prime cache: %v", err)
 	}
 
@@ -152,7 +152,7 @@ func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
 	}
 	t.Cleanup(func() { templates.ReadFunc = original })
 
-	if err := writeTemplateFileWithMatch(RealSystem{}, path, "config.toml", 0o644, nil, nil, inst.matchTemplate); err != nil {
+	if err := writeTemplateFileWithMatch(RealSystem{}, path, "config.toml", 0o644, nil, nil, inst.templates().matchTemplate); err != nil {
 		t.Fatalf("expected cached match to skip template read: %v", err)
 	}
 }
@@ -332,7 +332,7 @@ func TestWriteTemplateFiles_GitignoreBlockError(t *testing.T) {
 		t.Fatalf("mkdir block: %v", err)
 	}
 
-	err := inst.writeTemplateFiles()
+	err := inst.templates().writeTemplateFiles()
 	if err == nil {
 		t.Fatalf("expected error from gitignore.block write")
 	}
@@ -351,7 +351,7 @@ func TestWriteTemplateFiles_WriteError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(alDir, 0o755) })
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	err := inst.writeTemplateFiles()
+	err := inst.templates().writeTemplateFiles()
 	if err == nil {
 		t.Fatalf("expected error from template file write")
 	}
@@ -374,7 +374,7 @@ func TestWriteTemplateDirs_WriteError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) })
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	err := inst.writeTemplateDirs()
+	err := inst.templates().writeTemplateDirs()
 	if err == nil {
 		t.Fatalf("expected error from template dir write")
 	}
@@ -576,7 +576,7 @@ func TestListManagedDiffs_DirDiffError(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.listManagedDiffs()
+	_, err := inst.templates().listManagedDiffs()
 	if err == nil {
 		t.Fatalf("expected error from dir diff")
 	}
@@ -595,7 +595,7 @@ func TestWriteTemplateDirCached_Success(t *testing.T) {
 		destRoot:     instrDir,
 	}
 
-	err := inst.writeTemplateDirCached(dir)
+	err := inst.templates().writeTemplateDirCached(dir)
 	if err != nil {
 		t.Fatalf("writeTemplateDirCached error: %v", err)
 	}
@@ -640,7 +640,7 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 		destRoot:     instrDir,
 	}
 
-	err := inst.writeTemplateDirCached(dir)
+	err := inst.templates().writeTemplateDirCached(dir)
 	if err == nil {
 		t.Fatalf("expected error writing to read-only dir")
 	}
@@ -654,13 +654,13 @@ func TestTemplateDirEntries_Cached(t *testing.T) {
 		destRoot:     filepath.Join(root, ".agent-layer", "instructions"),
 	}
 
-	entries1, err := inst.templateDirEntries(dir)
+	entries1, err := inst.templates().templateDirEntries(dir)
 	if err != nil {
 		t.Fatalf("templateDirEntries error: %v", err)
 	}
 
 	// Second call should use cache
-	entries2, err := inst.templateDirEntries(dir)
+	entries2, err := inst.templates().templateDirEntries(dir)
 	if err != nil {
 		t.Fatalf("templateDirEntries error: %v", err)
 	}
@@ -685,7 +685,7 @@ func TestMatchTemplate_NilSys(t *testing.T) {
 	info, _ := os.Stat(configPath)
 
 	// Call with nil sys - should use inst.sys
-	matches, err := inst.matchTemplate(nil, configPath, "config.toml", info)
+	matches, err := inst.templates().matchTemplate(nil, configPath, "config.toml", info)
 	if err != nil {
 		t.Fatalf("matchTemplate error: %v", err)
 	}
@@ -708,7 +708,7 @@ func TestMatchTemplate_NoInfo(t *testing.T) {
 	inst := &installer{root: root, sys: RealSystem{}}
 
 	// Call with nil info - should still work, just not use cache
-	matches, err := inst.matchTemplate(RealSystem{}, configPath, "config.toml", nil)
+	matches, err := inst.templates().matchTemplate(RealSystem{}, configPath, "config.toml", nil)
 	if err != nil {
 		t.Fatalf("matchTemplate error: %v", err)
 	}
@@ -736,7 +736,7 @@ func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	matches, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	matches, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err != nil {
 		t.Fatalf("matchTemplate error: %v", err)
 	}
@@ -760,7 +760,7 @@ func TestTemplateFileMatches_GitignoreBlockNoMatch(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	matches, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	matches, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err != nil {
 		t.Fatalf("matchTemplate error: %v", err)
 	}
@@ -791,7 +791,7 @@ func TestAppendTemplateFileDiffs_StatError(t *testing.T) {
 	files := []templateFile{
 		{path: configPath, template: "config.toml", perm: 0o644},
 	}
-	err := inst.appendTemplateFileDiffs(diffs, files)
+	err := inst.templates().appendTemplateFileDiffs(diffs, files)
 	if err == nil {
 		t.Fatalf("expected error from stat failure")
 	}
@@ -825,7 +825,7 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 	}
 
 	diffs := make(map[string]struct{})
-	err := inst.appendTemplateDirDiffs(diffs, dir)
+	err := inst.templates().appendTemplateDirDiffs(diffs, dir)
 	if err == nil {
 		t.Fatalf("expected error from stat failure")
 	}
@@ -845,7 +845,7 @@ func TestWriteTemplateDirCached_EntriesError(t *testing.T) {
 		destRoot:     filepath.Join(root, "instructions"),
 	}
 
-	err := inst.writeTemplateDirCached(dir)
+	err := inst.templates().writeTemplateDirCached(dir)
 	if err == nil {
 		t.Fatalf("expected error from walk failure")
 	}
@@ -866,7 +866,7 @@ func TestTemplateDirEntries_WalkCallbackError(t *testing.T) {
 		destRoot:     filepath.Join(root, "instructions"),
 	}
 
-	_, err := inst.templateDirEntries(dir)
+	_, err := inst.templates().templateDirEntries(dir)
 	if err == nil {
 		t.Fatalf("expected error from walk callback")
 	}
@@ -887,7 +887,7 @@ func TestTemplateDirEntries_UnexpectedPath(t *testing.T) {
 		destRoot:     filepath.Join(root, "instructions"),
 	}
 
-	_, err := inst.templateDirEntries(dir)
+	_, err := inst.templates().templateDirEntries(dir)
 	if err == nil {
 		t.Fatalf("expected error for unexpected path")
 	}
@@ -946,7 +946,7 @@ func TestTemplateFileMatches_ReadError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from read failure")
 	}
@@ -975,7 +975,7 @@ func TestTemplateFileMatches_TemplateReadError(t *testing.T) {
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
-	_, err := inst.matchTemplate(inst.sys, blockPath, "gitignore.block", info)
+	_, err := inst.templates().matchTemplate(inst.sys, blockPath, "gitignore.block", info)
 	if err == nil {
 		t.Fatalf("expected error from template read failure")
 	}
@@ -994,7 +994,7 @@ func TestAppendTemplateFileDiffs_StatErrorInjected(t *testing.T) {
 	sys := newFaultSystem(RealSystem{})
 	sys.statErrs[normalizePath(path)] = errors.New("stat boom")
 	inst := &installer{root: root, sys: sys}
-	if err := inst.appendTemplateFileDiffs(map[string]struct{}{}, []templateFile{{
+	if err := inst.templates().appendTemplateFileDiffs(map[string]struct{}{}, []templateFile{{
 		path:     path,
 		template: "commands.allow",
 		perm:     0o644,
@@ -1015,7 +1015,7 @@ func TestAppendTemplateDirDiffs_SectionAwareErrorsAndDiffs(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	err := inst.appendTemplateDirDiffs(map[string]struct{}{}, templateDir{
+	err := inst.templates().appendTemplateDirDiffs(map[string]struct{}{}, templateDir{
 		templateRoot: "docs/agent-layer",
 		destRoot:     memoryDir,
 	})
@@ -1037,7 +1037,7 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	diffs := map[string]struct{}{}
-	if err := inst.appendTemplateDirDiffs(diffs, templateDir{
+	if err := inst.templates().appendTemplateDirDiffs(diffs, templateDir{
 		templateRoot: "instructions",
 		destRoot:     instructionsDir,
 	}); err != nil {
@@ -1060,7 +1060,7 @@ func TestWriteTemplateDirCached_SectionAwareError(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	err := inst.writeTemplateDirCached(templateDir{
+	err := inst.templates().writeTemplateDirCached(templateDir{
 		templateRoot: "docs/agent-layer",
 		destRoot:     memoryDir,
 	})
@@ -1087,7 +1087,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 			t.Fatalf("mkdir path: %v", err)
 		}
 		t.Cleanup(func() { _ = os.RemoveAll(path) })
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err == nil || !strings.Contains(err.Error(), "failed to read") {
 			t.Fatalf("expected read error, got %v", err)
 		}
@@ -1106,7 +1106,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 			return original(name)
 		}
 		t.Cleanup(func() { templates.ReadFunc = original })
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err == nil || !strings.Contains(err.Error(), "failed to read template") {
 			t.Fatalf("expected template read error, got %v", err)
 		}
@@ -1116,7 +1116,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 		if err := os.WriteFile(path, []byte("# no marker\n"), 0o644); err != nil {
 			t.Fatalf("write issues: %v", err)
 		}
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err == nil {
 			t.Fatalf("expected local split error")
 		}
@@ -1135,7 +1135,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 			return original(name)
 		}
 		t.Cleanup(func() { templates.ReadFunc = original })
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err == nil {
 			t.Fatalf("expected template split error")
 		}
@@ -1166,7 +1166,7 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 				},
 			},
 		}
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err == nil || !strings.Contains(err.Error(), "prompt boom") {
 			t.Fatalf("expected overwrite prompt error, got %v", err)
 		}
@@ -1182,7 +1182,7 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 				OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return false, nil },
 			},
 		}
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err != nil {
 			t.Fatalf("writeSectionAwareTemplateFile: %v", err)
 		}
@@ -1203,7 +1203,7 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 				OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
 			},
 		}
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err == nil || !strings.Contains(err.Error(), "failed to write") {
 			t.Fatalf("expected write error, got %v", err)
 		}
@@ -1213,7 +1213,7 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 		sys := newFaultSystem(RealSystem{})
 		sys.statErrs[normalizePath(path)] = errors.New("stat boom")
 		inst := &installer{root: root, sys: sys}
-		err := inst.writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
+		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
 		if err == nil || !strings.Contains(err.Error(), "failed to stat") {
 			t.Fatalf("expected stat error, got %v", err)
 		}
