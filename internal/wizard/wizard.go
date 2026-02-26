@@ -56,7 +56,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 	cfg, err := loadProjectConfigFunc(root)
 	if err != nil {
 		if !errors.Is(err, config.ErrConfigValidation) {
-			// Non-validation failure (env, instructions, slash commands, etc.) —
+			// Non-validation failure (env, instructions, skills, etc.) —
 			// lenient config fallback would not help; propagate the real error.
 			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
 		}

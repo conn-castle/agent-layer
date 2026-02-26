@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "target_version": "0.9.0",
+  "min_prior_version": "0.8.0",
+  "operations": [
+    {
+      "id": "a-rename-claude-vscode-enabled-key",
+      "kind": "config_rename_key",
+      "from": "agents.claude-vscode.enabled",
+      "to": "agents.claude_vscode.enabled",
+      "rationale": "Canonicalize config keys to snake_case by renaming the Claude VS Code agent table key.",
+      "source_agnostic": true
+    },
+    {
+      "id": "b-set-default-claude_vscode-enabled",
+      "kind": "config_set_default",
+      "key": "agents.claude_vscode.enabled",
+      "value": false,
+      "rationale": "Ensure required agents.claude_vscode.enabled exists after key-style migration.",
+      "source_agnostic": true
+    },
+    {
+      "id": "c-rename-slash-commands-dir-to-skills",
+      "kind": "rename_file",
+      "from": ".agent-layer/slash-commands",
+      "to": ".agent-layer/skills",
+      "rationale": "Rename the legacy slash-commands source directory to skills while preserving user-authored files.",
+      "source_agnostic": true
+    }
+  ]
+}

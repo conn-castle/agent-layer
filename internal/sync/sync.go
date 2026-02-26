@@ -65,7 +65,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	if agentEnabled(agents.Codex.Enabled) {
 		steps = append(steps,
 			func() error { return WriteCodexInstructions(sys, root, project.Instructions) },
-			func() error { return WriteCodexSkills(sys, root, project.SlashCommands) },
+			func() error { return WriteCodexSkills(sys, root, project.Skills) },
 		)
 	}
 
@@ -82,14 +82,14 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	}
 	if vscodeEnabled {
 		steps = append(steps,
-			func() error { return WriteVSCodePrompts(sys, root, project.SlashCommands) },
+			func() error { return WriteVSCodePrompts(sys, root, project.Skills) },
 			func() error { return WriteVSCodeMCPConfig(sys, root, project) },
 			func() error { return launchers.WriteVSCodeLaunchers(sys, root) },
 		)
 	}
 
 	if agentEnabled(agents.Antigravity.Enabled) {
-		steps = append(steps, func() error { return WriteAntigravitySkills(sys, root, project.SlashCommands) })
+		steps = append(steps, func() error { return WriteAntigravitySkills(sys, root, project.Skills) })
 	}
 
 	if agentEnabled(agents.Gemini.Enabled) {

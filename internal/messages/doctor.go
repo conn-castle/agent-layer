@@ -21,7 +21,7 @@ const (
 	DoctorDirExistsFmt                = "Directory exists: %s"
 
 	DoctorConfigLoadFailedFmt        = "Failed to load configuration: %v"
-	DoctorConfigLoadRecommend        = "Check .agent-layer/ for missing or malformed files (config.toml, .env, instructions/, slash-commands/, commands.allow)."
+	DoctorConfigLoadRecommend        = "Check .agent-layer/ for missing or malformed files (config.toml, .env, instructions/, skills/, commands.allow)."
 	DoctorConfigLoadLenientRecommend = "Run 'al wizard' to fix or 'al upgrade' to apply missing fields."
 	DoctorConfigLoaded               = "Configuration loaded successfully"
 

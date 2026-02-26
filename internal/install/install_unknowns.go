@@ -123,7 +123,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	root := inst.root
 	add(filepath.Join(root, ".agent-layer"))
 	add(filepath.Join(root, ".agent-layer", "instructions"))
-	add(filepath.Join(root, ".agent-layer", "slash-commands"))
+	add(filepath.Join(root, ".agent-layer", "skills"))
 	add(filepath.Join(root, ".agent-layer", "templates"))
 	add(filepath.Join(root, ".agent-layer", "templates", "docs"))
 	add(filepath.Join(root, ".agent-layer", "state"))
@@ -164,7 +164,7 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	if err := addTemplatePaths("instructions", filepath.Join(root, ".agent-layer", "instructions")); err != nil {
 		return nil, err
 	}
-	if err := addTemplatePaths("slash-commands", filepath.Join(root, ".agent-layer", "slash-commands")); err != nil {
+	if err := addTemplatePaths("skills", filepath.Join(root, ".agent-layer", "skills")); err != nil {
 		return nil, err
 	}
 	if err := addTemplatePaths("docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs")); err != nil {

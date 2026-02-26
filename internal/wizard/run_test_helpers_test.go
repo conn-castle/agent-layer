@@ -13,7 +13,7 @@ func setupRepo(t *testing.T, root string) {
 	require.NoError(t, os.MkdirAll(configDir, 0755))
 	require.NoError(t, os.Mkdir(filepath.Join(configDir, "instructions"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte(""), 0644))
-	require.NoError(t, os.Mkdir(filepath.Join(configDir, "slash-commands"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(configDir, "skills"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0644))
 }
 

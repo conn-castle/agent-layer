@@ -7,7 +7,7 @@ description: >-
 
 <!--
   GENERATED FILE
-  Source: .agent-layer/slash-commands/beta.md
+  Source: .agent-layer/skills/beta.md
   Regenerate: al sync
 -->
 

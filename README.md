@@ -6,7 +6,7 @@
 
 # Agent Layer
 
-One repo-local source of truth for instructions, slash commands, MCP servers, and approvals across coding agents.
+One repo-local source of truth for instructions, skills, MCP servers, and approvals across coding agents.
 
 [![Downloads](https://img.shields.io/github/downloads/conn-castle/agent-layer/total)](https://github.com/conn-castle/agent-layer/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/conn-castle/agent-layer/ci.yml?branch=main&label=CI)](https://github.com/conn-castle/agent-layer/actions/workflows/ci.yml)
@@ -37,7 +37,7 @@ If Agent Layer improves your workflow, please consider starring the repository. 
 
 MCP = Model Context Protocol (tool/data servers).
 
-| Client | Instructions | Slash commands | MCP servers | Approved commands |
+| Client | Instructions | Skills | MCP servers | Approved commands |
 |---|---:|---:|---:|---:|
 | Gemini CLI | ✅ | ✅ | ✅ | ✅ |
 | Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
@@ -48,8 +48,8 @@ MCP = Model Context Protocol (tool/data servers).
 | Antigravity | ✅ | ✅ | ❌ | ❌ |
 
 Notes:
-- VS Code/Codex "slash commands" are generated in their native formats (prompt files / skills).
-- Antigravity slash commands are generated as skills in `.agent/skills/<command>/SKILL.md`.
+- VS Code/Codex "skills" are generated in their native formats (prompt files / skills).
+- Antigravity skills are generated as skills in `.agent/skills/<command>/SKILL.md`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
 - Antigravity does not support MCP servers because it only reads from the home directory and does not load repo-local `.gemini/` or `.agent/` MCP configs.
 
@@ -258,7 +258,7 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
   - `config.toml` (main configuration; human-editable)
   - `al.version` (repo pin; required)
   - `instructions/` (numbered `*.md` fragments; lexicographic order)
-  - `slash-commands/` (workflow markdown; one file per command)
+  - `skills/` (workflow markdown; one file per command)
   - `commands.allow` (approved shell commands; line-based)
   - `gitignore.block` (managed `.gitignore` block template; customize here)
   - `.gitignore` (ignores repo-local launchers, template copies, and backups inside `.agent-layer/`)
@@ -267,7 +267,7 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
 Repo-local launchers and template copies live under `.agent-layer/` and are ignored by `.agent-layer/.gitignore`.
 
 ### Project memory (required; teams can commit or ignore)
-Default instructions and slash commands rely on these files existing, along with any additional memory files your team adopts.
+Default instructions and skills rely on these files existing, along with any additional memory files your team adopts.
 
 Common memory files include:
 - `docs/agent-layer/ISSUES.md`
@@ -288,7 +288,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 ## Configuration (human-editable)
 
-You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings) and `.agent-layer/.env` (secrets); it does not touch instructions, slash commands, or `commands.allow`.
+You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings) and `.agent-layer/.env` (secrets); it does not touch instructions, skills, or `commands.allow`.
 
 ### `.agent-layer/config.toml`
 
@@ -457,12 +457,12 @@ These files are user-editable; customize them for your team's preferences.
 - Files are concatenated in **lexicographic order**
 - Use numeric prefixes for stable priority (e.g., `00_core.md`, `10_style.md`, `20_repo.md`)
 
-### Slash commands: `.agent-layer/slash-commands/`
+### Skills: `.agent-layer/skills/`
 
 These files are user-editable; define the workflows you want your agents to run.
 
-- One Markdown file per command.
-- Filename (without `.md`) is the canonical command name.
+- One Markdown file per skill.
+- Filename (without `.md`) is the canonical skill name.
 - Frontmatter supports `description` (required).
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
 
@@ -475,7 +475,7 @@ These files are user-editable; define the workflows you want your agents to run.
 
 ## MCP prompt server (internal)
 
-Some clients discover slash commands via MCP prompts. Agent Layer provides an **internal MCP prompt server** automatically.
+Some clients discover skills via MCP prompts. Agent Layer provides an **internal MCP prompt server** automatically.
 
 - You do not configure this in `config.toml`.
 - It is generated and wired into client configs by `al sync`.
@@ -612,7 +612,7 @@ To customize the managed block, edit `.agent-layer/gitignore.block` and re-run `
 ## Design goals
 
 - Make installation and day-to-day usage trivial
-- Provide consistent core features across clients (instructions, slash commands, config generation, MCP servers, sync-on-run)
+- Provide consistent core features across clients (instructions, skills, config generation, MCP servers, sync-on-run)
 - Reduce moving parts by shipping a single global CLI and keeping `.agent-layer/` config-first with minimal repo-local launchers
 
 ## Changelog

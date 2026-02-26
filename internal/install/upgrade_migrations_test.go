@@ -2,6 +2,7 @@ package install
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -244,15 +245,15 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.6.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	findIssuesPath := filepath.Join(root, ".agent-layer", "slash-commands", "find-issues.md")
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("slash-commands/find-issues.md")
+	findIssuesTemplate, err := templates.Read("skills/find-issues.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	legacyPath := filepath.Join(root, ".agent-layer", "slash-commands", "find-issues-legacy.md")
+	legacyPath := filepath.Join(root, ".agent-layer", "skills", "find-issues-legacy.md")
 	if err := os.WriteFile(legacyPath, findIssuesTemplate, 0o644); err != nil {
 		t.Fatalf("write legacy path: %v", err)
 	}
@@ -265,9 +266,9 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
     {
       "id": "rename_find_issues",
       "kind": "rename_file",
-      "rationale": "Move legacy slash command path",
-      "from": ".agent-layer/slash-commands/find-issues-legacy.md",
-      "to": ".agent-layer/slash-commands/find-issues.md"
+      "rationale": "Move legacy skill path",
+      "from": ".agent-layer/skills/find-issues-legacy.md",
+      "to": ".agent-layer/skills/find-issues.md"
     }
   ]
 }`)
@@ -279,10 +280,10 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if len(plan.TemplateRenames) != 0 {
 		t.Fatalf("expected hash-rename inference to be filtered by manifest coverage, got %#v", plan.TemplateRenames)
 	}
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/slash-commands/find-issues.md") != nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues.md") != nil {
 		t.Fatal("expected manifest-covered addition to be filtered")
 	}
-	if findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/slash-commands/find-issues-legacy.md") != nil {
+	if findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/find-issues-legacy.md") != nil {
 		t.Fatal("expected manifest-covered orphan to be filtered")
 	}
 	if len(plan.MigrationReport.Entries) != 1 {
@@ -335,7 +336,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 	}
 
 	// Remove find-issues.md so the template system would add it back.
-	findIssuesPath := filepath.Join(root, ".agent-layer", "slash-commands", "find-issues.md")
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues: %v", err)
 	}
@@ -350,10 +351,10 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
     {
       "id": "rename_find_issues",
       "kind": "rename_file",
-      "rationale": "Move legacy slash command path",
+      "rationale": "Move legacy skill path",
       "source_agnostic": true,
-      "from": ".agent-layer/slash-commands/find-issues-legacy.md",
-      "to": ".agent-layer/slash-commands/find-issues.md"
+      "from": ".agent-layer/skills/find-issues-legacy.md",
+      "to": ".agent-layer/skills/find-issues.md"
     }
   ]
 }`)
@@ -364,7 +365,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 	}
 	// The rename source doesn't exist, so the migration will no-op. The
 	// destination path must NOT be filtered from additions.
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/slash-commands/find-issues.md") == nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues.md") == nil {
 		t.Fatal("expected no-op migration destination to appear as template addition in plan")
 	}
 }
@@ -375,15 +376,15 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	findIssuesPath := filepath.Join(root, ".agent-layer", "slash-commands", "find-issues.md")
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("slash-commands/find-issues.md")
+	findIssuesTemplate, err := templates.Read("skills/find-issues.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	legacyPath := filepath.Join(root, ".agent-layer", "slash-commands", "find-issues-legacy.md")
+	legacyPath := filepath.Join(root, ".agent-layer", "skills", "find-issues-legacy.md")
 	if err := os.WriteFile(legacyPath, findIssuesTemplate, 0o644); err != nil {
 		t.Fatalf("write legacy path: %v", err)
 	}
@@ -396,9 +397,9 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
     {
       "id": "rename_find_issues",
       "kind": "rename_file",
-      "rationale": "Move legacy slash command path",
-      "from": ".agent-layer/slash-commands/find-issues-legacy.md",
-      "to": ".agent-layer/slash-commands/find-issues.md"
+      "rationale": "Move legacy skill path",
+      "from": ".agent-layer/skills/find-issues-legacy.md",
+      "to": ".agent-layer/skills/find-issues.md"
     }
   ]
 }`)
@@ -406,10 +407,10 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.7.0"}); err != nil {
 		t.Fatalf("upgrade run: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "slash-commands", "find-issues.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "find-issues.md")); err != nil {
 		t.Fatalf("expected find-issues after migration+upgrade: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "slash-commands", "find-issues-legacy.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "find-issues-legacy.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected legacy file to be removed, stat err = %v", err)
 	}
 }
@@ -603,12 +604,121 @@ func TestLoadUpgradeMigrationManifest_0_8_8_RenamesAndBackfillsClaudeVSCodeKey(t
 	if string(defaultOp.Value) != "false" {
 		t.Fatalf("set-default op value = %q, want %q", string(defaultOp.Value), "false")
 	}
+
 	if manifest.MinPriorVersion != "0.8.0" {
 		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.8.0")
 	}
 }
 
-func TestMigration_0_8_8_ProducesValidConfig(t *testing.T) {
+func TestLoadUpgradeMigrationManifest_0_9_0_IncludesSkillDirectoryRename(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.9.0")
+	if err != nil {
+		t.Fatalf("load 0.9.0 manifest: %v", err)
+	}
+	if len(manifest.Operations) != 3 {
+		t.Fatalf("expected 3 operations, got %d", len(manifest.Operations))
+	}
+
+	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
+	for _, op := range manifest.Operations {
+		byID[op.ID] = op
+	}
+
+	renameDirOp, ok := byID["c-rename-slash-commands-dir-to-skills"]
+	if !ok {
+		t.Fatalf("missing slash-commands rename operation, got IDs: %v", mapKeys(byID))
+	}
+	if renameDirOp.Kind != upgradeMigrationKindRenameFile {
+		t.Fatalf("rename-dir op kind = %q, want %q", renameDirOp.Kind, upgradeMigrationKindRenameFile)
+	}
+	if renameDirOp.From != ".agent-layer/slash-commands" {
+		t.Fatalf("rename-dir op from = %q, want %q", renameDirOp.From, ".agent-layer/slash-commands")
+	}
+	if renameDirOp.To != ".agent-layer/skills" {
+		t.Fatalf("rename-dir op to = %q, want %q", renameDirOp.To, ".agent-layer/skills")
+	}
+	if !renameDirOp.SourceAgnostic {
+		t.Fatal("expected rename-dir op source_agnostic = true")
+	}
+}
+
+func TestMigration_0_9_0_RenamesSlashCommandsDirectoryAndIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	legacyDir := filepath.Join(root, ".agent-layer", "slash-commands")
+	legacyFile := filepath.Join(legacyDir, "custom.md")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+	if err := os.WriteFile(legacyFile, []byte("custom skill\n"), 0o644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.9.0", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	if _, err := os.Stat(legacyDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected legacy dir removed, stat err = %v", err)
+	}
+	migratedFile := filepath.Join(root, ".agent-layer", "skills", "custom.md")
+	got, err := os.ReadFile(migratedFile)
+	if err != nil {
+		t.Fatalf("read migrated file: %v", err)
+	}
+	if string(got) != "custom skill\n" {
+		t.Fatalf("unexpected migrated content: %q", string(got))
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "c-rename-slash-commands-dir-to-skills"); !ok || entry.Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("expected applied rename-dir migration entry, got %#v ok=%v", entry, ok)
+	}
+
+	// Re-running the same target migration should no-op without error.
+	var warnSecond bytes.Buffer
+	instSecond := &installer{root: root, pinVersion: "0.9.0", sys: RealSystem{}, warnWriter: &warnSecond}
+	if err := instSecond.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations (second): %v", err)
+	}
+	if err := instSecond.runMigrations(); err != nil {
+		t.Fatalf("runMigrations (second): %v", err)
+	}
+	if entry, ok := migrationReportEntryByID(instSecond.migrationReport.Entries, "c-rename-slash-commands-dir-to-skills"); !ok || entry.Status != UpgradeMigrationStatusNoop {
+		t.Fatalf("expected no-op rename-dir migration entry on second run, got %#v ok=%v", entry, ok)
+	}
+}
+
+func TestMigration_0_9_0_FailsWhenSlashCommandsAndSkillsBothExist(t *testing.T) {
+	root := t.TempDir()
+	legacyDir := filepath.Join(root, ".agent-layer", "slash-commands")
+	newDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+	if err := os.MkdirAll(newDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDir, "alpha.md"), []byte("legacy\n"), 0o644); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, "alpha.md"), []byte("new\n"), 0o644); err != nil {
+		t.Fatalf("write new file: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.9.0", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	err := inst.runMigrations()
+	if err == nil || !containsAll(err.Error(), "execute migration", "c-rename-slash-commands-dir-to-skills", "target already exists") {
+		t.Fatalf("expected fail-loud rename collision error, got %v", err)
+	}
+}
+
+func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 	// Start with a realistic pre-migration config that uses the legacy
 	// kebab-case key [agents.claude-vscode]. After rename,
 	// the result must pass strict config parsing (no empty legacy table).
@@ -690,6 +800,15 @@ func mapKeys(m map[string]upgradeMigrationOperation) []string {
 	return keys
 }
 
+func migrationReportEntryByID(entries []UpgradeMigrationEntry, id string) (UpgradeMigrationEntry, bool) {
+	for _, entry := range entries {
+		if entry.ID == id {
+			return entry, true
+		}
+	}
+	return UpgradeMigrationEntry{}, false
+}
+
 func TestListMigrationManifestVersions(t *testing.T) {
 	versions, err := listMigrationManifestVersions()
 	if err != nil {
@@ -717,6 +836,9 @@ func TestListMigrationManifestVersions(t *testing.T) {
 	}
 	if !containsString(versions, "0.8.8") {
 		t.Fatalf("expected 0.8.8 in versions, got %v", versions)
+	}
+	if !containsString(versions, "0.9.0") {
+		t.Fatalf("expected 0.9.0 in versions, got %v", versions)
 	}
 }
 

@@ -179,7 +179,7 @@ func TestInitCommandPromptNoDeclinesWizard(t *testing.T) {
 func TestClientCommandsMissingConfig(t *testing.T) {
 	t.Setenv(config.BuiltinRepoRootEnvVar, "")
 	originalPromptServer := runPromptServer
-	runPromptServer = func(ctx context.Context, version string, commands []config.SlashCommand) error {
+	runPromptServer = func(ctx context.Context, version string, commands []config.Skill) error {
 		t.Fatalf("runPromptServer should not be called when .agent-layer is missing")
 		return nil
 	}
@@ -221,7 +221,7 @@ func TestClientCommandsSuccess(t *testing.T) {
 
 	original := runPromptServer
 	t.Cleanup(func() { runPromptServer = original })
-	runPromptServer = func(ctx context.Context, version string, commands []config.SlashCommand) error {
+	runPromptServer = func(ctx context.Context, version string, commands []config.Skill) error {
 		return nil
 	}
 
@@ -315,7 +315,7 @@ func TestWizardCommand(t *testing.T) {
 func TestCommandsGetwdError(t *testing.T) {
 	t.Setenv(config.BuiltinRepoRootEnvVar, "")
 	originalPromptServer := runPromptServer
-	runPromptServer = func(ctx context.Context, version string, commands []config.SlashCommand) error {
+	runPromptServer = func(ctx context.Context, version string, commands []config.Skill) error {
 		t.Fatalf("runPromptServer should not be called when getwd fails")
 		return nil
 	}

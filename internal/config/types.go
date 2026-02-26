@@ -92,8 +92,8 @@ type InstructionFile struct {
 	Content string
 }
 
-// SlashCommand represents a parsed slash command with metadata and body.
-type SlashCommand struct {
+// Skill represents a parsed skill with metadata and body.
+type Skill struct {
 	Name        string
 	Description string
 	Body        string
@@ -105,7 +105,7 @@ type ProjectConfig struct {
 	Config        Config
 	Env           map[string]string
 	Instructions  []InstructionFile
-	SlashCommands []SlashCommand
+	Skills        []Skill
 	CommandsAllow []string
 	Root          string
 }

@@ -59,7 +59,7 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 	cfg, err := config.LoadProjectConfig(root)
 	if err != nil {
 		if !errors.Is(err, config.ErrConfigValidation) {
-			// Non-validation failure (env, instructions, slash commands, etc.) —
+			// Non-validation failure (env, instructions, skills, etc.) —
 			// lenient config fallback would not help.
 			results = append(results, Result{
 				Status:         StatusFail,

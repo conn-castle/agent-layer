@@ -50,8 +50,3 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Claude Code stores OAuth credentials in the OS credential store (macOS Keychain under service `"Claude Code-credentials"`, Linux via libsecret/gnome-keyring) using a fixed service name, regardless of `CLAUDE_CONFIG_DIR`. Per-repo login isolation does not work. Reported upstream.
     Next step: Track upstream and repo tracking issues (`https://github.com/anthropics/claude-code/issues/20553`, `https://github.com/conn-castle/agent-layer/issues/78`). The fix would need Claude Code to namespace credential-store entries by `CLAUDE_CONFIG_DIR` (e.g., `"Claude Code-credentials-<hash>"`).
     Notes: No clean workaround exists. macOS Keychain is system-wide and keyed by service name, not directory path. `XDG_CONFIG_HOME` does not affect Keychain. Symlinks are not per-repo. A `security` CLI wrapper could intercept calls but is fragile and unsupportable.
-
-- Issue 2026-02-16 skill-standard-rename: Rename slash-commands to skills and align with standard
-    Priority: High. Area: slash-commands / skills.
-    Description: Slash-commands should be renamed to "skills" to align with the established skill standard. This includes supporting supplemental folders within the skill directory and updating `al doctor` to verify compatibility using the standard toolset.
-    Next step: Perform a global rename of slash-command terminology and implement structural/validation updates to match the skill standard.

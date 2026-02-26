@@ -174,6 +174,35 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 		}
 	})
 
+	t.Run("source directory renames into empty destination directory", func(t *testing.T) {
+		root := t.TempDir()
+		fromPath := filepath.Join(root, ".agent-layer", "slash-commands")
+		toPath := filepath.Join(root, ".agent-layer", "skills")
+		if err := os.MkdirAll(fromPath, 0o755); err != nil {
+			t.Fatalf("mkdir from: %v", err)
+		}
+		if err := os.MkdirAll(toPath, 0o755); err != nil {
+			t.Fatalf("mkdir to: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(fromPath, "custom.md"), []byte("custom\n"), 0o644); err != nil {
+			t.Fatalf("write source file: %v", err)
+		}
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeRenameMigration(".agent-layer/slash-commands", ".agent-layer/skills")
+		if err != nil {
+			t.Fatalf("executeRenameMigration: %v", err)
+		}
+		if !changed {
+			t.Fatal("expected rename to apply")
+		}
+		if _, err := os.Stat(fromPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected source dir removed, stat err = %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(toPath, "custom.md")); err != nil {
+			t.Fatalf("expected destination file after rename: %v", err)
+		}
+	})
+
 	t.Run("destination stat failure", func(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")

@@ -372,7 +372,7 @@ func TestWriteMigrationReportSection_WithEntries(t *testing.T) {
 			{
 				ID:         "rename_find_issues",
 				Kind:       "rename_file",
-				Rationale:  "Move legacy slash command path",
+				Rationale:  "Move legacy skill path",
 				Status:     install.UpgradeMigrationStatusSkippedUnknownSource,
 				SkipReason: "source version is unknown",
 			},

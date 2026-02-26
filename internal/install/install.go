@@ -277,7 +277,7 @@ func (inst upgradeOrchestrator) ensureBaseDirs() error {
 	sys := inst.sys
 	dirs := []string{
 		filepath.Join(root, ".agent-layer", "instructions"),
-		filepath.Join(root, ".agent-layer", "slash-commands"),
+		filepath.Join(root, ".agent-layer", "skills"),
 		filepath.Join(root, ".agent-layer", "templates", "docs"),
 		filepath.Join(root, ".agent-layer", "tmp", "runs"),
 		filepath.Join(root, "docs", "agent-layer"),

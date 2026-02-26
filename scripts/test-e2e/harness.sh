@@ -626,7 +626,7 @@ assert_al_init_structure() {
   assert_file_exists "$dir/.agent-layer/config.toml" "init created config.toml"
   assert_file_exists "$dir/.agent-layer/al.version" "init created al.version"
   assert_dir_exists "$dir/.agent-layer/instructions" "init created instructions/"
-  assert_dir_exists "$dir/.agent-layer/slash-commands" "init created slash-commands/"
+  assert_dir_exists "$dir/.agent-layer/skills" "init created skills/"
   assert_file_exists "$dir/.agent-layer/.env" "init created .env"
   assert_file_exists "$dir/.agent-layer/commands.allow" "init created commands.allow"
 }
@@ -803,8 +803,8 @@ assert_generated_files_unchanged() {
 }
 
 # _snapshot_agent_layer_state <dir> — compute SHA-256 hashes of core .agent-layer/
-# state files (config, version, env, instructions, slash-commands). Prints sorted
-# hash lines to stdout.
+# state files (config, version, env, instructions, and all files under skills/).
+# Prints sorted hash lines to stdout.
 _snapshot_agent_layer_state() {
   local dir="$1"
   local al_dir="$dir/.agent-layer"
@@ -817,12 +817,12 @@ _snapshot_agent_layer_state() {
         [[ -f "$f" ]] && portable_sha256 "$f"
       done
     fi
-    if [[ -d "$al_dir/slash-commands" ]]; then
-      for f in "$al_dir/slash-commands"/*.md; do
+    if [[ -d "$al_dir/skills" ]]; then
+      while IFS= read -r f; do
         [[ -f "$f" ]] && portable_sha256 "$f"
-      done
+      done < <(find "$al_dir/skills" -type f | LC_ALL=C sort)
     fi
-  } | sort
+  } | LC_ALL=C sort
 }
 
 # _snapshot_all_state <dir> — combined snapshot of sync outputs and core

@@ -16,7 +16,7 @@ After you complete this page, you will have:
 
 Agent Layer does not replace your client, and it does not run as a hosted service. It runs locally, writes files into your repo, and lets you keep the “source of truth” close to the code it governs.
 
-This is enough to be productive immediately. The refinements (custom slash commands, additional MCP servers, version pinning) can be layered in as your needs grow.
+This is enough to be productive immediately. The refinements (custom skills, additional MCP servers, version pinning) can be layered in as your needs grow.
 
 ## In this page
 
@@ -86,7 +86,7 @@ From here on, treat `al <client>` as your entry point. Syncing happens first so 
 Edit these files to make the agent behave the way you want:
 
 - `.agent-layer/instructions/` for global rules and preferences
-- `.agent-layer/slash-commands/` for reusable workflows
+- `.agent-layer/skills/` for reusable workflows
 - `.agent-layer/commands.allow` to define approved shell command prefixes
 - `.agent-layer/config.toml` for approvals, agent enablement, models, MCP servers, and warnings
 
@@ -150,7 +150,7 @@ Typical layout:
 .agent-layer/
   config.toml          # approvals, agents, models, MCP servers, warnings
   instructions/        # numbered instruction fragments
-  slash-commands/      # one file per command
+  skills/            # one file per skill
   commands.allow       # approved shell command prefixes
   al.version           # repo pin (required)
   .env                 # secrets (always gitignored)

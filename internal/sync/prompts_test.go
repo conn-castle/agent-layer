@@ -9,10 +9,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
-const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/test.md\n  Regenerate: al sync\n-->\n"
+const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/skills/test.md\n  Regenerate: al sync\n-->\n"
 
 func TestBuildVSCodePrompt(t *testing.T) {
-	cmd := config.SlashCommand{Name: "alpha", Body: "Body"}
+	cmd := config.Skill{Name: "alpha", Body: "Body"}
 	content := buildVSCodePrompt(cmd)
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in prompt")
@@ -45,7 +45,7 @@ func TestWriteVSCodePromptsWriteError(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(promptDir, "alpha.prompt.md"), 0o755); err != nil {
 		t.Fatalf("mkdir prompt: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Body: "Body"}}
 	if err := WriteVSCodePrompts(RealSystem{}, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -99,7 +99,7 @@ func TestRemoveStalePromptFiles(t *testing.T) {
 }
 
 func TestBuildCodexSkill(t *testing.T) {
-	cmd := config.SlashCommand{Name: "alpha", Description: "desc", Body: "Body"}
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
 	content := buildCodexSkill(cmd)
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in skill")
@@ -113,7 +113,7 @@ func TestBuildCodexSkill(t *testing.T) {
 }
 
 func TestBuildAntigravitySkill(t *testing.T) {
-	cmd := config.SlashCommand{Name: "alpha", Description: "desc", Body: "Body"}
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
 	content := buildAntigravitySkill(cmd)
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in skill")
@@ -152,7 +152,7 @@ func TestWriteCodexSkillsWriteError(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
 		t.Fatalf("mkdir SKILL.md: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	if err := WriteCodexSkills(RealSystem{}, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -181,7 +181,7 @@ func TestWriteAntigravitySkillsWriteError(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
 		t.Fatalf("mkdir SKILL.md: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	if err := WriteAntigravitySkills(RealSystem{}, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -197,7 +197,7 @@ func TestWriteAntigravitySkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteAntigravitySkills(RealSystem{}, root, cmds)
 	if err == nil {
 		t.Fatalf("expected error for skill dir creation failure")
@@ -218,7 +218,7 @@ func TestWriteCodexSkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteCodexSkills(RealSystem{}, root, cmds)
 	if err == nil {
 		t.Fatalf("expected error for skill dir creation failure")
@@ -312,5 +312,17 @@ func TestHasGeneratedMarker(t *testing.T) {
 	_, err = hasGeneratedMarker(RealSystem{}, filepath.Join(dir, "dir"))
 	if err == nil {
 		t.Fatalf("expected error for directory path")
+	}
+}
+
+func TestGeneratedSkillSourcePath(t *testing.T) {
+	cmd := config.Skill{Name: "alpha"}
+	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha.md" {
+		t.Fatalf("unexpected default source path: %q", got)
+	}
+
+	cmd.SourcePath = filepath.Join("/tmp/repo", ".agent-layer", "skills", "alpha", "SKILL.md")
+	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
+		t.Fatalf("unexpected normalized source path: %q", got)
 	}
 }

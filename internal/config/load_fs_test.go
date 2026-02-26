@@ -178,32 +178,74 @@ func TestLoadInstructionsFS_ReadError(t *testing.T) {
 	}
 }
 
-func TestLoadSlashCommandsFS_InvalidCommand(t *testing.T) {
+func TestLoadSkillsFS_InvalidCommand(t *testing.T) {
 	fsys := fstest.MapFS{
-		".agent-layer/slash-commands":        {Mode: fs.ModeDir},
-		".agent-layer/slash-commands/bad.md": {Data: []byte("no front matter")},
+		".agent-layer/skills":        {Mode: fs.ModeDir},
+		".agent-layer/skills/bad.md": {Data: []byte("no front matter")},
 	}
 
-	_, err := LoadSlashCommandsFS(fsys, "root", ".agent-layer/slash-commands")
+	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
 	if err == nil {
-		t.Fatalf("expected error for invalid slash command")
+		t.Fatalf("expected error for invalid skill")
 	}
 }
 
-func TestLoadSlashCommandsFS_ReadError(t *testing.T) {
+func TestLoadSkillsFS_ReadError(t *testing.T) {
 	base := fstest.MapFS{
-		".agent-layer/slash-commands":        {Mode: fs.ModeDir},
-		".agent-layer/slash-commands/cmd.md": {Data: []byte("---\ndescription: test\n---\n")},
+		".agent-layer/skills":        {Mode: fs.ModeDir},
+		".agent-layer/skills/cmd.md": {Data: []byte("---\ndescription: test\n---\n")},
 	}
 	fsys := errorFS{
 		FS:      base,
-		errPath: ".agent-layer/slash-commands/cmd.md",
+		errPath: ".agent-layer/skills/cmd.md",
 		err:     fs.ErrPermission,
 	}
 
-	_, err := LoadSlashCommandsFS(fsys, "root", ".agent-layer/slash-commands")
+	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
 	if err == nil {
-		t.Fatalf("expected error when slash command file cannot be read")
+		t.Fatalf("expected error when skill file cannot be read")
+	}
+}
+
+func TestLoadSkillsFS_DirectorySkill(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/skills":                {Mode: fs.ModeDir},
+		".agent-layer/skills/alpha":          {Mode: fs.ModeDir},
+		".agent-layer/skills/alpha/SKILL.md": {Data: []byte("---\nname: alpha\ndescription: dir\nlicense: MIT\n---\n\nBody")},
+	}
+
+	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("LoadSkillsFS: %v", err)
+	}
+	if len(skills) != 1 || skills[0].Name != "alpha" {
+		t.Fatalf("unexpected skills: %#v", skills)
+	}
+}
+
+func TestLoadSkillsFS_DuplicateConflict(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/skills":              {Mode: fs.ModeDir},
+		".agent-layer/skills/foo.md":       {Data: []byte("---\ndescription: flat\n---\n")},
+		".agent-layer/skills/foo":          {Mode: fs.ModeDir},
+		".agent-layer/skills/foo/SKILL.md": {Data: []byte("---\ndescription: dir\n---\n")},
+	}
+
+	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err == nil || !strings.Contains(err.Error(), "duplicate skill name") {
+		t.Fatalf("expected duplicate-skill error, got %v", err)
+	}
+}
+
+func TestLoadSkillsFS_DirectoryMissingSkillFile(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/skills":       {Mode: fs.ModeDir},
+		".agent-layer/skills/alpha": {Mode: fs.ModeDir},
+	}
+
+	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err == nil || !strings.Contains(err.Error(), "missing SKILL.md") {
+		t.Fatalf("expected missing SKILL.md error, got %v", err)
 	}
 }
 

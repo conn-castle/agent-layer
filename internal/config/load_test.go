@@ -17,8 +17,8 @@ func TestLoadProjectConfig(t *testing.T) {
 	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SlashCommandsDir, 0o755); err != nil {
-		t.Fatalf("mkdir slash commands: %v", err)
+	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
 	}
 
 	config := `
@@ -57,8 +57,8 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
@@ -74,8 +74,8 @@ Do it.`
 	if len(project.Instructions) != 1 {
 		t.Fatalf("expected 1 instruction, got %d", len(project.Instructions))
 	}
-	if len(project.SlashCommands) != 1 {
-		t.Fatalf("expected 1 slash command, got %d", len(project.SlashCommands))
+	if len(project.Skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(project.Skills))
 	}
 	if len(project.CommandsAllow) != 1 || project.CommandsAllow[0] != "git status" {
 		t.Fatalf("unexpected commands allow: %v", project.CommandsAllow)
@@ -99,8 +99,8 @@ func TestLoadProjectConfigMissingEnv(t *testing.T) {
 	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SlashCommandsDir, 0o755); err != nil {
-		t.Fatalf("mkdir slash commands: %v", err)
+	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
 [approvals]
@@ -135,8 +135,8 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
@@ -155,8 +155,8 @@ func TestLoadProjectConfigMissingInstructions(t *testing.T) {
 	root := t.TempDir()
 	paths := DefaultPaths(root)
 
-	if err := os.MkdirAll(paths.SlashCommandsDir, 0o755); err != nil {
-		t.Fatalf("mkdir slash commands: %v", err)
+	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
 [approvals]
@@ -191,8 +191,8 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
@@ -204,7 +204,7 @@ Do it.`
 	}
 }
 
-func TestLoadProjectConfigMissingSlashCommands(t *testing.T) {
+func TestLoadProjectConfigMissingSkills(t *testing.T) {
 	root := t.TempDir()
 	paths := DefaultPaths(root)
 
@@ -247,8 +247,8 @@ enabled = false
 	}
 
 	_, err := LoadProjectConfig(root)
-	if err == nil || !strings.Contains(err.Error(), "missing slash commands directory") {
-		t.Fatalf("expected missing slash commands error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing skills directory") {
+		t.Fatalf("expected missing skills error, got %v", err)
 	}
 }
 
@@ -259,8 +259,8 @@ func TestLoadProjectConfigMissingCommandsAllow(t *testing.T) {
 	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SlashCommandsDir, 0o755); err != nil {
-		t.Fatalf("mkdir slash commands: %v", err)
+	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
 [approvals]
@@ -298,8 +298,8 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 
 	_, err := LoadProjectConfig(root)

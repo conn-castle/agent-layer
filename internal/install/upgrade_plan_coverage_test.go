@@ -77,7 +77,7 @@ func TestBuildUpgradePlan_ClassifyOwnershipDetailError(t *testing.T) {
 
 func TestBuildUpgradePlan_DetectUpgradeRenamesError(t *testing.T) {
 	root := t.TempDir()
-	orphanPath := filepath.Join(root, ".agent-layer", "slash-commands", "orphan-coverage-test.md")
+	orphanPath := filepath.Join(root, ".agent-layer", "skills", "orphan-coverage-test.md")
 	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o755); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
@@ -206,8 +206,8 @@ func TestDetectUpgradeRenames_SortsRenames(t *testing.T) {
 		t.Fatalf("read commands.allow template: %v", err)
 	}
 
-	orphanZ := filepath.Join(root, ".agent-layer", "slash-commands", "z.md")
-	orphanA := filepath.Join(root, ".agent-layer", "slash-commands", "a.md")
+	orphanZ := filepath.Join(root, ".agent-layer", "skills", "z.md")
+	orphanA := filepath.Join(root, ".agent-layer", "skills", "a.md")
 	if err := os.MkdirAll(filepath.Dir(orphanZ), 0o755); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
@@ -223,8 +223,8 @@ func TestDetectUpgradeRenames_SortsRenames(t *testing.T) {
 		{path: ".agent-layer/add-allow.allow", templatePath: "commands.allow"},
 	}
 	orphans := []upgradeChangeWithTemplate{
-		{path: ".agent-layer/slash-commands/z.md"},
-		{path: ".agent-layer/slash-commands/a.md"},
+		{path: ".agent-layer/skills/z.md"},
+		{path: ".agent-layer/skills/a.md"},
 	}
 
 	renames, remainingAdditions, remainingOrphans, err := detectUpgradeRenames(inst, additions, orphans)
@@ -237,7 +237,7 @@ func TestDetectUpgradeRenames_SortsRenames(t *testing.T) {
 	if len(renames) != 2 {
 		t.Fatalf("expected 2 renames, got %d", len(renames))
 	}
-	if renames[0].From != ".agent-layer/slash-commands/a.md" {
+	if renames[0].From != ".agent-layer/skills/a.md" {
 		t.Fatalf("expected sorted renames, got %#v", renames)
 	}
 }

@@ -21,7 +21,7 @@ func TestMCPPromptsCmdRunE_Success(t *testing.T) {
 	t.Cleanup(func() { runPromptServer = original })
 
 	called := false
-	runPromptServer = func(ctx context.Context, version string, commands []config.SlashCommand) error {
+	runPromptServer = func(ctx context.Context, version string, commands []config.Skill) error {
 		called = true
 		if ctx == nil {
 			t.Fatal("expected non-nil context")
@@ -30,7 +30,7 @@ func TestMCPPromptsCmdRunE_Success(t *testing.T) {
 			t.Fatalf("expected version %q, got %q", Version, version)
 		}
 		if len(commands) != 1 || commands[0].Name != "alpha" {
-			t.Fatalf("unexpected slash commands payload: %#v", commands)
+			t.Fatalf("unexpected skills payload: %#v", commands)
 		}
 		return nil
 	}
@@ -57,7 +57,7 @@ func TestMCPPromptsCmdRunE_PropagatesRunnerError(t *testing.T) {
 	t.Cleanup(func() { runPromptServer = original })
 
 	wantErr := errors.New("prompt server failed")
-	runPromptServer = func(context.Context, string, []config.SlashCommand) error {
+	runPromptServer = func(context.Context, string, []config.Skill) error {
 		return wantErr
 	}
 

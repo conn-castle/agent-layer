@@ -6,7 +6,7 @@ description: >-
 
 <!--
   GENERATED FILE
-  Source: .agent-layer/slash-commands/alpha.md
+  Source: .agent-layer/skills/alpha.md
   Regenerate: al sync
 -->
 

@@ -8,14 +8,14 @@ import (
 	"testing"
 )
 
-func TestLoadSlashCommands_ReadDirError(t *testing.T) {
-	_, err := LoadSlashCommands("/non-existent/dir")
+func TestLoadSkills_ReadDirError(t *testing.T) {
+	_, err := LoadSkills("/non-existent/dir")
 	if err == nil {
 		t.Fatalf("expected error from ReadDir")
 	}
 }
 
-func TestLoadSlashCommands_ReadFileError(t *testing.T) {
+func TestLoadSkills_ReadFileError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.md")
 	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
@@ -31,13 +31,13 @@ func TestLoadSlashCommands_ReadFileError(t *testing.T) {
 	}
 	t.Cleanup(func() { osReadFileFunc = orig })
 
-	_, err := LoadSlashCommands(dir)
+	_, err := LoadSkills(dir)
 	if err == nil {
 		t.Fatalf("expected error from ReadFile")
 	}
 }
 
-func TestLoadSlashCommands_ParseError(t *testing.T) {
+func TestLoadSkills_ParseError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "invalid.md")
 	// Invalid content (no frontmatter)
@@ -45,9 +45,9 @@ func TestLoadSlashCommands_ParseError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	_, err := LoadSlashCommands(dir)
+	_, err := LoadSkills(dir)
 	if err == nil {
-		t.Fatalf("expected error from parseSlashCommand")
+		t.Fatalf("expected error from parseSkill")
 	}
 }
 

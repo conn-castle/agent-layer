@@ -220,7 +220,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(configDir, "slash-commands"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(configDir, "skills"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0644); err != nil {
@@ -274,7 +274,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
@@ -355,7 +355,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
@@ -415,7 +415,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
@@ -478,7 +478,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {

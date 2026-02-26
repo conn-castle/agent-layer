@@ -24,7 +24,7 @@ func newMcpPromptsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return runPromptServer(cmd.Context(), Version, project.SlashCommands)
+			return runPromptServer(cmd.Context(), Version, project.Skills)
 		},
 	}
 

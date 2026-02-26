@@ -11,7 +11,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-const promptHeaderTemplate = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/%s.md\n  Regenerate: al sync\n-->\n"
+const promptHeaderTemplate = "<!--\n  GENERATED FILE\n  Source: %s\n  Regenerate: al sync\n-->\n"
 
 const (
 	generatedMarkerHeader     = "GENERATED FILE"
@@ -19,8 +19,8 @@ const (
 	generatedMarkerRegenerate = "Regenerate: al sync"
 )
 
-// WriteVSCodePrompts generates VS Code prompt files for slash commands.
-func WriteVSCodePrompts(sys System, root string, commands []config.SlashCommand) error {
+// WriteVSCodePrompts generates VS Code prompt files for skills.
+func WriteVSCodePrompts(sys System, root string, commands []config.Skill) error {
 	promptDir := filepath.Join(root, ".vscode", "prompts")
 	if err := sys.MkdirAll(promptDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, promptDir, err)
@@ -39,13 +39,13 @@ func WriteVSCodePrompts(sys System, root string, commands []config.SlashCommand)
 	return removeStalePromptFiles(sys, promptDir, wanted)
 }
 
-func buildVSCodePrompt(cmd config.SlashCommand) string {
+func buildVSCodePrompt(cmd config.Skill) string {
 	var builder strings.Builder
 	builder.WriteString("---\n")
 	builder.WriteString("name: ")
 	builder.WriteString(cmd.Name)
 	builder.WriteString("\n---\n")
-	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, cmd.Name))
+	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
 	if cmd.Body != "" {
 		builder.WriteString(cmd.Body)
 		if !strings.HasSuffix(cmd.Body, "\n") {
@@ -88,11 +88,11 @@ func removeStalePromptFiles(sys System, promptDir string, wanted map[string]stru
 	return nil
 }
 
-// skillContentBuilder builds skill file content for a slash command.
-type skillContentBuilder func(cmd config.SlashCommand) string
+// skillContentBuilder builds skill file content for a skill.
+type skillContentBuilder func(cmd config.Skill) string
 
 // writeSkillFiles generates skill files in the specified directory using the provided content builder.
-func writeSkillFiles(sys System, skillsDir string, commands []config.SlashCommand, buildContent skillContentBuilder) error {
+func writeSkillFiles(sys System, skillsDir string, commands []config.Skill, buildContent skillContentBuilder) error {
 	if err := sys.MkdirAll(skillsDir, 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillsDir, err)
 	}
@@ -114,19 +114,19 @@ func writeSkillFiles(sys System, skillsDir string, commands []config.SlashComman
 	return removeStaleSkillDirs(sys, skillsDir, wanted)
 }
 
-// WriteCodexSkills generates Codex skill files for slash commands.
-func WriteCodexSkills(sys System, root string, commands []config.SlashCommand) error {
+// WriteCodexSkills generates Codex skill files for skills.
+func WriteCodexSkills(sys System, root string, commands []config.Skill) error {
 	skillsDir := filepath.Join(root, ".codex", "skills")
 	return writeSkillFiles(sys, skillsDir, commands, buildCodexSkill)
 }
 
-// WriteAntigravitySkills generates Antigravity skill files for slash commands.
-func WriteAntigravitySkills(sys System, root string, commands []config.SlashCommand) error {
+// WriteAntigravitySkills generates Antigravity skill files for skills.
+func WriteAntigravitySkills(sys System, root string, commands []config.Skill) error {
 	skillsDir := filepath.Join(root, ".agent", "skills")
 	return writeSkillFiles(sys, skillsDir, commands, buildAntigravitySkill)
 }
 
-func buildCodexSkill(cmd config.SlashCommand) string {
+func buildCodexSkill(cmd config.Skill) string {
 	var builder strings.Builder
 	builder.WriteString("---\n")
 	builder.WriteString("name: ")
@@ -140,7 +140,7 @@ func buildCodexSkill(cmd config.SlashCommand) string {
 		builder.WriteString("\n")
 	}
 	builder.WriteString("---\n\n")
-	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, cmd.Name))
+	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
 	builder.WriteString("\n# ")
 	builder.WriteString(cmd.Name)
 	builder.WriteString("\n\n")
@@ -155,8 +155,8 @@ func buildCodexSkill(cmd config.SlashCommand) string {
 	return builder.String()
 }
 
-// buildAntigravitySkill returns the Antigravity SKILL.md content for a slash command.
-func buildAntigravitySkill(cmd config.SlashCommand) string {
+// buildAntigravitySkill returns the Antigravity SKILL.md content for a skill.
+func buildAntigravitySkill(cmd config.Skill) string {
 	var builder strings.Builder
 	builder.WriteString("---\n")
 	builder.WriteString("name: ")
@@ -170,7 +170,7 @@ func buildAntigravitySkill(cmd config.SlashCommand) string {
 		builder.WriteString("\n")
 	}
 	builder.WriteString("---\n\n")
-	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, cmd.Name))
+	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
 	if cmd.Body != "" {
 		builder.WriteString("\n")
 		builder.WriteString(cmd.Body)
@@ -207,6 +207,23 @@ func wrapDescription(text string, width int) []string {
 		lines = append(lines, current)
 	}
 	return lines
+}
+
+func generatedSkillSourcePath(cmd config.Skill) string {
+	defaultPath := filepath.ToSlash(filepath.Join(".agent-layer", "skills", cmd.Name+".md"))
+	source := strings.TrimSpace(cmd.SourcePath)
+	if source == "" {
+		return defaultPath
+	}
+	normalized := filepath.ToSlash(source)
+	if strings.HasPrefix(normalized, ".agent-layer/") {
+		return normalized
+	}
+	marker := "/.agent-layer/"
+	if idx := strings.Index(normalized, marker); idx >= 0 {
+		return normalized[idx+1:]
+	}
+	return defaultPath
 }
 
 func removeStaleSkillDirs(sys System, skillsDir string, wanted map[string]struct{}) error {

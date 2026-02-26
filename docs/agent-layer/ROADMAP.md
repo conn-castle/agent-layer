@@ -136,8 +136,8 @@ Incomplete:
 - Skills are validated, documented, and support supplemental directories for complex skills.
 
 ### Tasks
-- [ ] skill-rename: Global rename of "slash-commands" → "skills" across codebase (source directory `.agent-layer/slash-commands/` → `.agent-layer/skills/`), config references, template content, CLI output, documentation, and memory files. Add an upgrade migration to move existing user directories.
-- [ ] skill-source-format: Support both flat `.md` files (simple skills) and full agentskills.io directory format (`<name>/SKILL.md` with optional `scripts/`, `references/`, `assets/`) as skill sources. Flat files remain supported for simplicity; directory format enables full standard compliance and community skill portability.
+- [x] skill-rename: Global rename of "slash-commands" → "skills" across codebase (source directory `.agent-layer/slash-commands/` → `.agent-layer/skills/`), config references, template content, CLI output, documentation, and memory files. Add an upgrade migration to move existing user directories.
+- [x] skill-source-format: Support both flat `.md` files (simple skills) and full agentskills.io directory format (`<name>/SKILL.md` with optional `scripts/`, `references/`, `assets/`) as skill sources. Flat files remain supported for simplicity; directory format enables full standard compliance and community skill portability.
 - [ ] skill-frontmatter: Extend the skill parser to handle all agentskills.io frontmatter fields (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`) and pass them through to generated outputs.
 - [ ] skill-validation: Update `al doctor` to validate skills against the agentskills.io spec (name conventions, required frontmatter, size recommendations, directory name matching).
 - [ ] skill-template-migration: Convert embedded template skills from flat `.md` to agentskills.io directory format (`<name>/SKILL.md`).

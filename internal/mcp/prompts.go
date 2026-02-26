@@ -14,12 +14,12 @@ import (
 type promptServerRunner func(ctx context.Context, server *mcp.Server) error
 
 // RunPromptServer starts an MCP prompt server over stdio.
-func RunPromptServer(ctx context.Context, version string, commands []config.SlashCommand) error {
+func RunPromptServer(ctx context.Context, version string, commands []config.Skill) error {
 	return runPromptServer(ctx, version, commands, defaultPromptServerRunner)
 }
 
 // runPromptServer builds the MCP prompt server and runs it using the provided runner.
-func runPromptServer(ctx context.Context, version string, commands []config.SlashCommand, runner promptServerRunner) error {
+func runPromptServer(ctx context.Context, version string, commands []config.Skill, runner promptServerRunner) error {
 	if runner == nil {
 		return fmt.Errorf(messages.McpRunPromptServerFailedFmt, errors.New("prompt server runner is nil"))
 	}
@@ -48,7 +48,7 @@ func defaultPromptServerRunner(ctx context.Context, server *mcp.Server) error {
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
-func promptHandler(cmd config.SlashCommand) func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+func promptHandler(cmd config.Skill) func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	return func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 		return &mcp.GetPromptResult{
 			Description: cmd.Description,

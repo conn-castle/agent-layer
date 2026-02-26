@@ -82,13 +82,13 @@ func TestHandleUnknowns_DeleteAllTrue_DeletesUnknowns(t *testing.T) {
 	}
 }
 
-func TestBuildKnownPaths_SlashCommandsWalkCallbackError_Propagates(t *testing.T) {
+func TestBuildKnownPaths_SkillsWalkCallbackError_Propagates(t *testing.T) {
 	original := templates.WalkFunc
 	templates.WalkFunc = func(root string, fn fs.WalkDirFunc) error {
 		switch root {
 		case "instructions":
 			return nil
-		case "slash-commands":
+		case "skills":
 			return fn(root+"/bad", nil, errors.New("walk boom"))
 		default:
 			return nil

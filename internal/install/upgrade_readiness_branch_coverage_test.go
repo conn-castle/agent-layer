@@ -229,7 +229,7 @@ func TestDetectVSCodeNoSyncStaleness_ClaudeBranches(t *testing.T) {
 
 func TestReadinessFilesystemWalkErrCallbackBranches(t *testing.T) {
 	root := t.TempDir()
-	mdRoot := filepath.Join(root, ".agent-layer", "slash-commands")
+	mdRoot := filepath.Join(root, ".agent-layer", "skills")
 	promptRoot := filepath.Join(root, ".vscode", "prompts")
 	if err := os.MkdirAll(mdRoot, 0o755); err != nil {
 		t.Fatalf("mkdir markdown root: %v", err)

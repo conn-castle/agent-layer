@@ -341,7 +341,7 @@ It is scaffolding: it creates the files that make behavior explicit and repeatab
 
 Typical `.agent-layer/` files include:
 
-- `config.toml` (seeded if missing; user-owned), `commands.allow`, `instructions/`, `slash-commands/`
+- `config.toml` (seeded if missing; user-owned), `commands.allow`, `instructions/`, `skills/`
 - `al.version` (repo pin; required)
 - `.env` (seeded if missing; user-owned secrets, always gitignored)
 - `.gitignore` (internal ignores) and `gitignore.block` (root `.gitignore` template)
@@ -477,19 +477,19 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 **What it does**
 
 - Validates `.agent-layer/config.toml`
-- Reads `.agent-layer/instructions/`, `.agent-layer/slash-commands/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
+- Reads `.agent-layer/instructions/`, `.agent-layer/skills/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
 - Regenerates client outputs and launchers
 
 **Steps (high level)**
 
 1. Load and validate `config.toml`, then resolve secrets from `.agent-layer/.env`.
-2. Parse instructions and slash commands to build client-specific outputs.
+2. Parse instructions and skills to build client-specific outputs.
 3. Write generated configs and launchers for enabled clients.
 4. Emit warnings if any thresholds in `[warnings]` are exceeded.
 
-**Slash command format**
+**Skill format**
 
-Each file in `.agent-layer/slash-commands/` must be a Markdown file with YAML frontmatter:
+Each file in `.agent-layer/skills/` must be a Markdown file with YAML frontmatter:
 
 - `description` (required): short description of the command
 
