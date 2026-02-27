@@ -465,13 +465,14 @@ These files are user-editable; define the workflows you want your agents to run.
   - Flat file: `.agent-layer/skills/<name>.md`
   - Directory format: `.agent-layer/skills/<name>/SKILL.md` (canonical; `skill.md` is accepted as a compatibility fallback)
 - Frontmatter fields:
-  - Required: `name`, `description` (`al doctor` warns when missing)
+  - Required: `name`, `description`
   - Optional: `license`, `compatibility`, `metadata`, `allowed-tools`
 - `name` validation (`al doctor`):
   - NFKC-normalized and compared against the canonical source name (filename stem or directory name) using normalization-aware matching
   - Maximum 64 Unicode characters, lowercase letters/digits/hyphens only, and no leading/trailing/consecutive hyphens
 - Length limits (`al doctor`): `description` max 1024 Unicode characters; `compatibility` max 500 Unicode characters.
 - Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
+- Missing or empty `description` is a load/sync error (fail-loud); it is not warning-only.
 - Directory-format skills should use `SKILL.md`; lowercase `skill.md` loads but triggers an `al doctor` warning.
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
 - Recommended skill sequences for common workflows are documented in [docs/agent-layer/SKILLS_WORKFLOWS.md](docs/agent-layer/SKILLS_WORKFLOWS.md).
