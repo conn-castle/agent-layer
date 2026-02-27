@@ -23,7 +23,7 @@ One important design choice follows from that: Agent Layer is repo-local. Differ
 
 ## Single source of truth
 
-Agent Layer centralizes instructions, slash commands, approvals, and MCP server configuration under `.agent-layer/`, then projects them into each client's native format. This is the anchor idea behind everything else in the system. It replaces “copy this config everywhere” with “define it once and regenerate.”
+Agent Layer centralizes instructions, skills, approvals, and MCP server configuration under `.agent-layer/`, then projects them into each client's native format. This is the anchor idea behind everything else in the system. It replaces “copy this config everywhere” with “define it once and regenerate.”
 
 Every client expects different config files and conventions. If you edit those files directly, they drift and you lose consistency across tools. With Agent Layer, you edit the canonical inputs once and let the outputs be disposable.
 
@@ -37,7 +37,7 @@ The canonical inputs live in `.agent-layer/`:
 
 - `config.toml` for structured configuration
 - `instructions/` for agent rules and guidance
-- `slash-commands/` for repeatable workflows
+- `skills/` for repeatable workflows
 - `commands.allow` for approved shell command prefixes
 - `.env` for secrets
 
@@ -300,7 +300,7 @@ For the full checklist, see [Doctor](./reference#doctor).
 
 ### Internal MCP prompt server
 
-Agent Layer includes an internal MCP prompt server for slash commands. It is always generated and wired into client configs and does not appear in `config.toml`.
+Agent Layer includes an internal MCP prompt server for skills. It is always generated and wired into client configs and does not appear in `config.toml`.
 
 ### Common pitfalls
 

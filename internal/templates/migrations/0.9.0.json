@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "target_version": "0.9.0",
+  "min_prior_version": "0.8.0",
+  "operations": [
+    {
+      "id": "a-rename-claude-vscode-enabled-key",
+      "kind": "config_rename_key",
+      "from": "agents.claude-vscode.enabled",
+      "to": "agents.claude_vscode.enabled",
+      "rationale": "Canonicalize config keys to snake_case by renaming the Claude VS Code agent table key.",
+      "source_agnostic": true
+    },
+    {
+      "id": "b-set-default-claude_vscode-enabled",
+      "kind": "config_set_default",
+      "key": "agents.claude_vscode.enabled",
+      "value": false,
+      "rationale": "Ensure required agents.claude_vscode.enabled exists after key-style migration.",
+      "source_agnostic": true
+    },
+    {
+      "id": "c-rename-slash-commands-dir-to-skills",
+      "kind": "rename_file",
+      "from": ".agent-layer/slash-commands",
+      "to": ".agent-layer/skills",
+      "rationale": "Rename the legacy slash-commands source directory to skills while preserving user-authored files.",
+      "source_agnostic": true
+    },
+    {
+      "id": "d-rename-audit-documentation-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/audit-documentation.md",
+      "to": ".agent-layer/skills/audit-documentation/SKILL.md",
+      "rationale": "Migrate embedded audit-documentation skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "e-rename-boost-coverage-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/boost-coverage.md",
+      "to": ".agent-layer/skills/boost-coverage/SKILL.md",
+      "rationale": "Migrate embedded boost-coverage skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "f-rename-cleanup-code-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/cleanup-code.md",
+      "to": ".agent-layer/skills/cleanup-code/SKILL.md",
+      "rationale": "Migrate embedded cleanup-code skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "g-rename-continue-roadmap-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/continue-roadmap.md",
+      "to": ".agent-layer/skills/continue-roadmap/SKILL.md",
+      "rationale": "Migrate embedded continue-roadmap skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "h-rename-find-issues-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/find-issues.md",
+      "to": ".agent-layer/skills/find-issues/SKILL.md",
+      "rationale": "Migrate embedded find-issues skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "i-rename-finish-task-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/finish-task.md",
+      "to": ".agent-layer/skills/finish-task/SKILL.md",
+      "rationale": "Migrate embedded finish-task skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "j-rename-fix-issues-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/fix-issues.md",
+      "to": ".agent-layer/skills/fix-issues/SKILL.md",
+      "rationale": "Migrate embedded fix-issues skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "k-rename-fix-tests-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/fix-tests.md",
+      "to": ".agent-layer/skills/fix-tests/SKILL.md",
+      "rationale": "Migrate embedded fix-tests skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    },
+    {
+      "id": "l-rename-update-roadmap-skill-to-directory-format",
+      "kind": "rename_file",
+      "from": ".agent-layer/skills/update-roadmap.md",
+      "to": ".agent-layer/skills/update-roadmap/SKILL.md",
+      "rationale": "Migrate embedded update-roadmap skill template from flat file to agentskills directory format.",
+      "source_agnostic": true
+    }
+  ]
+}

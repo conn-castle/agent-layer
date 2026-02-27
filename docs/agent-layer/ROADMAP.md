@@ -128,48 +128,12 @@ Incomplete:
 - Completed website polish work in the web repo: global search, SEO/social metadata and favicon updates, and documentation "Copy for Agent" UX.
 - Integrated Google Analytics 4 with consent defaults and removed the public-roadmap item from this phase scope.
 
-## Phase 15 — Skills standard alignment (agentskills.io)
-
-### Goal
-- Fully align with the [agentskills.io](https://agentskills.io/specification) open standard for portable agent skills.
-- Rename "slash-commands" to "skills" throughout the entire codebase, config, templates, docs, and CLI output.
-- Skills are validated, documented, and support supplemental directories for complex skills.
-
-### Tasks
-- [ ] skill-rename: Global rename of "slash-commands" → "skills" across codebase (source directory `.agent-layer/slash-commands/` → `.agent-layer/skills/`), config references, template content, CLI output, documentation, and memory files. Add an upgrade migration to move existing user directories.
-- [ ] skill-source-format: Support both flat `.md` files (simple skills) and full agentskills.io directory format (`<name>/SKILL.md` with optional `scripts/`, `references/`, `assets/`) as skill sources. Flat files remain supported for simplicity; directory format enables full standard compliance and community skill portability.
-- [ ] skill-frontmatter: Extend the skill parser to handle all agentskills.io frontmatter fields (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`) and pass them through to generated outputs.
-- [ ] skill-validation: Update `al doctor` to validate skills against the agentskills.io spec (name conventions, required frontmatter, size recommendations, directory name matching).
-- [ ] skill-template-migration: Convert embedded template skills from flat `.md` to agentskills.io directory format (`<name>/SKILL.md`).
-- [ ] skill-review-plan: Implement a "review-plan" skill with a standardized mechanism to locate and identify the active plan. (From BACKLOG)
-- [ ] skill-ordering-guide: Add a skills workflow guide to documentation explaining recommended skill sequences for common workflows (feature dev, bug fix, code review). (From BACKLOG e5f6a7b)
-- [x] skill-template-refs: Audit and fix template skills that reference non-existent Makefile targets (e.g., `make test-fast`, `make dead-code`). Add stronger guards or conditional checks. (From ISSUES tmpl-mk)
-
-### Task details
-- skill-rename
-  Description: Rename all references from "slash-commands" to "skills" throughout the project. This includes the source directory (`.agent-layer/slash-commands/` → `.agent-layer/skills/`), Go types/functions, config keys, CLI help text, embedded templates, generated comments, documentation, and memory files. Add an upgrade migration that moves the user's existing `slash-commands/` directory to `skills/`.
-  Acceptance criteria: Zero references to "slash-command(s)" remain in codebase, config, templates, docs, or CLI output. Upgrade migration handles existing installations.
-- skill-source-format
-  Description: The skill loader should support two source formats: (1) flat files `.agent-layer/skills/<name>.md` for simple single-file skills, and (2) directories `.agent-layer/skills/<name>/SKILL.md` for full agentskills.io skills with supplemental `scripts/`, `references/`, and `assets/` subdirectories. Both formats produce the same `Skill` struct for downstream projection.
-  Acceptance criteria: Both flat-file and directory skills load correctly. Directory skills can include supplemental files that are referenced from SKILL.md. Generated outputs for all clients are agentskills.io-compliant.
-  Notes: This dual-format approach lets simple skills stay simple (one file) while enabling community skills and complex skills to use the full standard. The directory format is the canonical agentskills.io format and should be the recommended default for new skills.
-- skill-frontmatter
-  Description: Extend the YAML frontmatter parser to extract all agentskills.io fields beyond `description`. Pass additional fields through to generated SKILL.md outputs for Codex, Antigravity, and future clients.
-  Acceptance criteria: All agentskills.io frontmatter fields are parsed and preserved in generated outputs.
-- skill-validation
-  Description: Add skill validation checks to `al doctor`: name conventions (lowercase, hyphens only, no consecutive hyphens, matches directory name), required frontmatter (`name`, `description`), SKILL.md size recommendation (< 500 lines), and directory structure conventions.
-  Acceptance criteria: `al doctor` reports warnings for non-compliant skills.
-- skill-review-plan
-  Description: Create a skill that allows agents to review and critique a development plan. Requires a standardized discovery mechanism to locate the active plan.
-  Acceptance criteria: A "review-plan" skill is available. Agents can reliably identify the current plan to be reviewed.
-
-### Exit criteria
-- No references to "slash-commands" remain in codebase, config, docs, or CLI output.
-- Source skills in `.agent-layer/skills/` support both flat `.md` and directory `SKILL.md` formats.
-- Generated skill outputs for all clients are agentskills.io-compliant (valid `name`, `description` frontmatter).
-- `al doctor` validates skill format compliance.
-- Upgrade migration moves existing `slash-commands/` to `skills/` seamlessly.
-- Skills workflow guide is published in documentation.
+## Phase 15 ✅ — Skills standard alignment (agentskills.io)
+- Added a reusable `internal/skillvalidator` package with parse/validate separation, deterministic findings, Unicode NFKC-aware name checks, rune-based length limits, and normalization-aware name/path matching.
+- Integrated skill validation into `al doctor` with dedicated diagnostics and tests, including explicit warnings when directory-format skills use non-canonical lowercase `skill.md`.
+- Added directory loader compatibility for lowercase `skill.md` with canonical `SKILL.md` precedence, keeping parser behavior backward-compatible for existing repos.
+- Migrated embedded template skills to directory format (`skills/<name>/SKILL.md`), updated embed patterns/tests/manifests/migrations, and added the `review-plan` skill with deterministic `*.plan.md` discovery guidance.
+- Published the skills workflow ordering guide in [SKILLS_WORKFLOWS.md](./SKILLS_WORKFLOWS.md) and aligned public docs (`README.md`, `site/docs/reference.mdx`) with current frontmatter/spec rules.
 
 ## Phase 16 — Profiles and multi-config
 

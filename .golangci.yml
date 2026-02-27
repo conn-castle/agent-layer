@@ -108,7 +108,7 @@ linters:
           - gosec
         text: G101
       # G602 false positives on well-bounded line iteration
-      - path: internal/config/slash_commands\.go$
+      - path: internal/config/skills\.go$
         linters:
           - gosec
         text: G602

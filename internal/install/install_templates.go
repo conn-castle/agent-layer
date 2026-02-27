@@ -63,7 +63,7 @@ func (inst templateManager) managedTemplateDirs() []templateDir {
 	root := inst.root
 	return []templateDir{
 		{"instructions", filepath.Join(root, ".agent-layer", "instructions")},
-		{"slash-commands", filepath.Join(root, ".agent-layer", "slash-commands")},
+		{"skills", filepath.Join(root, ".agent-layer", "skills")},
 		{"docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs")},
 	}
 }

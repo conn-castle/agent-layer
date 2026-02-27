@@ -12,6 +12,7 @@ const (
 	DoctorCheckNameConfig    = "Config"
 	DoctorCheckNameSecrets   = "Secrets"
 	DoctorCheckNameAgents    = "Agents"
+	DoctorCheckNameSkills    = "Skills"
 	DoctorCheckNameUpdate    = "Update"
 
 	DoctorMissingRequiredDirFmt       = "Missing required directory: %s"
@@ -21,7 +22,7 @@ const (
 	DoctorDirExistsFmt                = "Directory exists: %s"
 
 	DoctorConfigLoadFailedFmt        = "Failed to load configuration: %v"
-	DoctorConfigLoadRecommend        = "Check .agent-layer/ for missing or malformed files (config.toml, .env, instructions/, slash-commands/, commands.allow)."
+	DoctorConfigLoadRecommend        = "Check .agent-layer/ for missing or malformed files (config.toml, .env, instructions/, skills/, commands.allow)."
 	DoctorConfigLoadLenientRecommend = "Run 'al wizard' to fix or 'al upgrade' to apply missing fields."
 	DoctorConfigLoaded               = "Configuration loaded successfully"
 
@@ -33,6 +34,13 @@ const (
 
 	DoctorAgentEnabledFmt  = "Agent enabled: %s"
 	DoctorAgentDisabledFmt = "Agent disabled: %s"
+
+	DoctorSkillsValidatedFmt       = "Skills validated successfully (%d checked)"
+	DoctorSkillsNoneConfigured     = "No skills configured for validation."
+	DoctorSkillValidationWarnFmt   = "%s: %s"
+	DoctorSkillValidationRecommend = "Update skill frontmatter/path conventions in .agent-layer/skills to match agentskills.io recommendations."
+	DoctorSkillValidationFailedFmt = "Failed to validate skill %s: %v"
+	DoctorSkillsLoadFailedFmt      = "Failed to load skills from %s: %v"
 
 	DoctorUpdateSkippedFmt          = "Update check skipped because %s is set"
 	DoctorUpdateSkippedRecommendFmt = "Unset %s to check for updates."

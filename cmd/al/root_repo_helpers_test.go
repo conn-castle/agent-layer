@@ -22,8 +22,8 @@ func writeTestRepo(t *testing.T, root string) {
 	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SlashCommandsDir, 0o755); err != nil {
-		t.Fatalf("mkdir slash commands: %v", err)
+	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
@@ -65,8 +65,8 @@ description: test
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "alpha.md"), []byte(command), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "alpha.md"), []byte(command), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
@@ -99,8 +99,8 @@ func writeTestRepoWithWarnings(t *testing.T, root string) {
 	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SlashCommandsDir, 0o755); err != nil {
-		t.Fatalf("mkdir slash commands: %v", err)
+	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
 		t.Fatalf("mkdir docs: %v", err)

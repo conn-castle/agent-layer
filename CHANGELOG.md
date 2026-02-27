@@ -1,6 +1,30 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.9.0 - 2026-02-27
+
+### Added
+- Added a reusable `internal/skillvalidator` package with parse/validate separation and deterministic findings for agentskills.io-aligned skill validation.
+- Added `al doctor` skills diagnostics for standards checks (unknown frontmatter keys, name/path mismatches, and non-canonical directory filenames such as `skill.md`).
+- Added release manifests for `v0.9.0`: `internal/templates/migrations/0.9.0.json` and `internal/templates/manifests/0.9.0.json`.
+
+### Changed
+- Renamed legacy "slash command" source and output terminology to "skills" across config, sync pipelines, templates, and docs.
+- Canonicalized source layout to `.agent-layer/skills/`, with migrations that rename legacy `.agent-layer/slash-commands/` and embedded skill template paths.
+- Skill frontmatter parsing/generation now uses YAML (`go.yaml.in/yaml/v3`) with support for `name`, `description`, `license`, `compatibility`, `metadata`, and `allowed-tools`, while keeping unknown fields parse-tolerant for portability.
+- Increased skill parser/validator single-line scanner caps to `8 MiB` to reduce token-limit failures on large single-line skill content.
+- Documentation now explicitly states that missing or empty skill `description` is load-enforced (fail-loud), while missing `name` remains backward-compatible with doctor warnings.
+
+### Fixed
+- `al doctor` lenient-config fallback now best-effort loads skills, preventing false "No skills configured" results when strict config validation fails.
+- Skill name handling is now Unicode NFKC-aware across loading and validation paths, preventing false duplicates/mismatches for normalization-equivalent names.
+- Skill metadata and text limits now use rune counts (not bytes), and validation now rejects empty names and non-ASCII digit forms in slug normalization.
+- Directory-format loading now accepts lowercase `skill.md` as a compatibility fallback while preserving canonical `SKILL.md` precedence.
+
+### Improved
+- Expanded automated coverage across skill loading/validation, upgrade migrations, prompt generation, install ownership/readiness checks, and docs surfaces touched by the skills-standard migration.
+- Updated default embedded skills to canonical agentskills directory format (`skills/<name>/SKILL.md`) and aligned memory/workflow docs for Phase 15 completion.
+
 ## v0.8.8 - 2026-02-25
 
 ### Added

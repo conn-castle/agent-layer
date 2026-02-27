@@ -295,3 +295,18 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `cmd/publish-site` now enforces a bounded stable-release retention policy after `docs:version`: keep up to 4 newest patch releases from the newest minor line plus the newest patch release for each of the newest 4 minor lines, drop prerelease entries, and prune dropped versions from `versions.json`, `versioned_docs/`, and `versioned_sidebars/`. Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally rejected.
     Reason: Unbounded version snapshots in `agent-layer-web` grow maintenance and deploy footprint over time; retention must be enforced in the publisher because deploy only publishes `main`.
     Tradeoffs: Older historical docs snapshots beyond the retention window are intentionally removed on each release publish; maintainers must run publisher manually if immediate cleanup is needed before the next release. Prerelease docs publication is unavailable until prerelease support is explicitly reintroduced end-to-end.
+
+- Decision 2026-02-26 phase15-frontmatter-parser-yaml-v3: Skill frontmatter parsing uses `go.yaml.in/yaml/v3` with strict per-field validation
+    Decision: For Phase 15 `skill-frontmatter`, parse and serialize skill frontmatter with `go.yaml.in/yaml/v3`, enforce required/typed fields in code (`description` required, `metadata` string-map, `compatibility`/`allowed-tools` string), and keep unknown keys parse-tolerant until validator work lands.
+    Reason: YAML parsing replaces brittle line-scanning while preserving fail-loud behavior and enabling metadata serialization needed for generated Codex/Antigravity SKILL.md outputs.
+    Tradeoffs: `go.yaml.in/yaml/v3` keeps us on the stable v3 API surface; migration to `go.yaml.in/yaml/v4` is deferred to a separate follow-up issue to avoid expanding Phase 15 scope.
+
+- Decision 2026-02-26 phase15-frontmatter-parser-yaml-org-path: Skill frontmatter uses maintained YAML module path directly (supersedes phase15-frontmatter-parser-yaml-v3)
+    Decision: Replace first-party YAML usage with `go.yaml.in/yaml/v3` and disallow direct imports of `gopkg.in/yaml.v3` in this repository.
+    Reason: Avoid direct reliance on the archived `gopkg.in` YAML module path while preserving stable behavior and avoiding pre-release `v4` adoption.
+    Tradeoffs: `gopkg.in/yaml.v3` may still appear transitively until upstream dependencies migrate; full graph removal requires broader dependency upgrades outside this scoped change.
+
+- Decision 2026-02-26 phase15-skill-parse-validate-separation: Keep skill parsing tolerant and enforce spec in validator/doctor
+    Decision: `internal/config` skill parsing remains backward-compatible (path-derived canonical names, unknown frontmatter tolerated, no hard requirement for frontmatter `name` at parse time), while Phase 15 spec checks are enforced in `internal/skillvalidator` and surfaced as `al doctor` skill warnings.
+    Reason: Existing repos contain flat legacy skills that would break under strict parse-time enforcement; validator-level diagnostics preserve upgradeability while still driving standards alignment.
+    Tradeoffs: Non-compliant skills can still load/sync until users act on doctor warnings; strict enforcement can be added later only with an explicit migration path.

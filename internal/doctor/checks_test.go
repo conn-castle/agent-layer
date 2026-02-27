@@ -220,7 +220,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(configDir, "slash-commands"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(configDir, "skills"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0644); err != nil {
@@ -274,7 +274,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
@@ -320,6 +320,171 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback_LoadsSkillsForDoctor(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillPath := filepath.Join(configDir, "skills", "alpha.md")
+	skillContent := `---
+name: alpha
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	if len(cfg.Skills) != 1 {
+		t.Fatalf("expected 1 loaded skill, got %d", len(cfg.Skills))
+	}
+
+	skillResults := CheckSkills(cfg)
+	if len(skillResults) != 1 {
+		t.Fatalf("expected 1 skill result, got %d: %#v", len(skillResults), skillResults)
+	}
+	if skillResults[0].Message == messages.DoctorSkillsNoneConfigured {
+		t.Fatalf("unexpected no-skills message while skill files exist: %#v", skillResults)
+	}
+}
+
+func TestCheckConfig_LenientFallback_MissingSkillsDir_DoesNotAddSkillsFailure(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	for _, result := range results {
+		if result.CheckName == messages.DoctorCheckNameSkills {
+			t.Fatalf("did not expect skills failure for missing skills directory: %#v", results)
+		}
+	}
+	if len(results) != 1 || results[0].CheckName != messages.DoctorCheckNameConfig || results[0].Status != StatusFail {
+		t.Fatalf("expected single config fail result, got %#v", results)
+	}
+
+	skillResults := CheckSkills(cfg)
+	if len(skillResults) != 1 || skillResults[0].Message != messages.DoctorSkillsNoneConfigured {
+		t.Fatalf("expected no-skills configured result, got %#v", skillResults)
+	}
+}
+
+func TestCheckConfig_LenientFallback_SkillsPathIsFile_ReportsLoadFailure(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "skills"), []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+
+	var foundSkillsLoadFailure bool
+	for _, result := range results {
+		if result.CheckName != messages.DoctorCheckNameSkills {
+			continue
+		}
+		foundSkillsLoadFailure = true
+		if !strings.Contains(result.Message, "Failed to load skills from .agent-layer/skills") {
+			t.Fatalf("unexpected skills load failure message: %q", result.Message)
+		}
+		if strings.Contains(result.Message, "Failed to validate skill") {
+			t.Fatalf("unexpected per-skill validation wording for directory load failure: %q", result.Message)
+		}
+	}
+	if !foundSkillsLoadFailure {
+		t.Fatalf("expected skills load failure result, got %#v", results)
+	}
+}
+
 func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
@@ -355,7 +520,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
@@ -415,7 +580,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
@@ -478,7 +643,7 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "slash-commands"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
@@ -564,5 +729,112 @@ func TestCheckAgents(t *testing.T) {
 	}
 	if statusMap["Agent disabled: Codex"] != StatusWarn {
 		t.Error("Codex should be disabled (nil)")
+	}
+}
+
+func TestCheckSkills_NoSkills(t *testing.T) {
+	cfg := &config.ProjectConfig{}
+	results := CheckSkills(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusOK {
+		t.Fatalf("status = %s, want %s", results[0].Status, StatusOK)
+	}
+	if results[0].CheckName != messages.DoctorCheckNameSkills {
+		t.Fatalf("check name = %q, want %q", results[0].CheckName, messages.DoctorCheckNameSkills)
+	}
+	if results[0].Message != messages.DoctorSkillsNoneConfigured {
+		t.Fatalf("message = %q, want %q", results[0].Message, messages.DoctorSkillsNoneConfigured)
+	}
+}
+
+func TestCheckSkills_Compliant(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	skillPath := filepath.Join(skillsDir, "alpha.md")
+	content := `---
+name: alpha
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	cfg := &config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: "alpha", SourcePath: skillPath},
+		},
+	}
+	results := CheckSkills(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusOK {
+		t.Fatalf("status = %s, want %s", results[0].Status, StatusOK)
+	}
+	if !strings.Contains(results[0].Message, "Skills validated successfully") {
+		t.Fatalf("unexpected message: %q", results[0].Message)
+	}
+}
+
+func TestCheckSkills_Warnings(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	skillPath := filepath.Join(skillsDir, "alpha.md")
+	content := `---
+description: test
+foo: bar
+---
+Body.
+`
+	if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	cfg := &config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: "alpha", SourcePath: skillPath},
+		},
+	}
+	results := CheckSkills(cfg)
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 warning results, got %d: %#v", len(results), results)
+	}
+	for _, result := range results {
+		if result.Status != StatusWarn {
+			t.Fatalf("status = %s, want %s (%#v)", result.Status, StatusWarn, result)
+		}
+		if result.CheckName != messages.DoctorCheckNameSkills {
+			t.Fatalf("check name = %q, want %q", result.CheckName, messages.DoctorCheckNameSkills)
+		}
+	}
+}
+
+func TestCheckSkills_ParseFailure(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: "missing", SourcePath: filepath.Join(root, ".agent-layer", "skills", "missing.md")},
+		},
+	}
+	results := CheckSkills(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusFail {
+		t.Fatalf("status = %s, want %s", results[0].Status, StatusFail)
+	}
+	if results[0].Recommendation != messages.DoctorSkillValidationRecommend {
+		t.Fatalf("recommendation = %q, want %q", results[0].Recommendation, messages.DoctorSkillValidationRecommend)
 	}
 }

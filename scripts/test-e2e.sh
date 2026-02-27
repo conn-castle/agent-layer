@@ -37,6 +37,10 @@ while IFS= read -r env_name; do
   esac
 done < <(env | awk -F= '/^AL_/ {print $1}')
 
+# Avoid host-specific client config variables leaking into scenarios.
+unset CLAUDE_CONFIG_DIR
+unset CODEX_HOME
+
 export AL_NO_NETWORK=1
 
 # If AL_E2E_VERSION is not set, auto-detect the latest migration manifest

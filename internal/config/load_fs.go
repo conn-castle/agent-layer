@@ -41,7 +41,7 @@ func LoadProjectConfigFS(fsys fs.FS, root string) (*ProjectConfig, error) {
 		return nil, err
 	}
 
-	slashCommands, err := LoadSlashCommandsFS(fsys, root, paths.SlashCommandsDir)
+	skills, err := LoadSkillsFS(fsys, root, paths.SkillsDir)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func LoadProjectConfigFS(fsys fs.FS, root string) (*ProjectConfig, error) {
 		Config:        *cfg,
 		Env:           env,
 		Instructions:  instructions,
-		SlashCommands: slashCommands,
+		Skills:        skills,
 		CommandsAllow: commandsAllow,
 		Root:          root,
 	}, nil
@@ -128,48 +128,26 @@ func LoadInstructionsFS(fsys fs.FS, root string, dir string) ([]InstructionFile,
 	return files, nil
 }
 
-// LoadSlashCommandsFS reads .agent-layer/slash-commands/*.md from fsys in lexicographic order.
+// LoadSkillsFS reads .agent-layer/skills from fsys.
 // root is used for path resolution when dir is absolute; dir is used for error messages.
-func LoadSlashCommandsFS(fsys fs.FS, root string, dir string) ([]SlashCommand, error) {
-	entries, err := readDirFS(fsys, root, dir)
-	if err != nil {
-		return nil, fmt.Errorf(messages.ConfigMissingSlashCommandsDirFmt, dir, err)
-	}
-
-	var names []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasSuffix(name, ".md") {
-			names = append(names, name)
-		}
-	}
-
-	sort.Strings(names)
-
-	commands := make([]SlashCommand, 0, len(names))
-	for _, name := range names {
-		path := filepath.Join(dir, name)
-		data, err := readFileFS(fsys, root, path)
-		if err != nil {
-			return nil, fmt.Errorf(messages.ConfigFailedReadSlashCommandFmt, path, err)
-		}
-		data = bytes.TrimPrefix(data, utf8BOM)
-		description, body, err := parseSlashCommand(string(data))
-		if err != nil {
-			return nil, fmt.Errorf(messages.ConfigInvalidSlashCommandFmt, path, err)
-		}
-		commands = append(commands, SlashCommand{
-			Name:        strings.TrimSuffix(name, ".md"),
-			Description: description,
-			Body:        body,
-			SourcePath:  path,
-		})
-	}
-
-	return commands, nil
+func LoadSkillsFS(fsys fs.FS, root string, dir string) ([]Skill, error) {
+	return loadSkills(
+		dir,
+		func(path string) ([]skillDirEntry, error) {
+			entries, err := readDirFS(fsys, root, path)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]skillDirEntry, 0, len(entries))
+			for _, entry := range entries {
+				out = append(out, skillDirEntry{name: entry.Name(), isDir: entry.IsDir()})
+			}
+			return out, nil
+		},
+		func(path string) ([]byte, error) {
+			return readFileFS(fsys, root, path)
+		},
+	)
 }
 
 // LoadCommandsAllowFS reads .agent-layer/commands.allow from fsys into a slice of prefixes.

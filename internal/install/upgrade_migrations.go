@@ -398,6 +398,30 @@ func (inst *installer) executeRenameMigration(fromRel string, toRel string) (boo
 
 	toInfo, err := inst.sys.Stat(toPath)
 	if err == nil {
+		if fromInfo.IsDir() && toInfo.IsDir() {
+			dirNotEmptyErr := errors.New("directory is not empty")
+			walkErr := inst.sys.WalkDir(toPath, func(path string, d fs.DirEntry, walkErr error) error {
+				if walkErr != nil {
+					return walkErr
+				}
+				if filepath.Clean(path) == filepath.Clean(toPath) {
+					return nil
+				}
+				return dirNotEmptyErr
+			})
+			if walkErr != nil && !errors.Is(walkErr, dirNotEmptyErr) {
+				return false, fmt.Errorf(messages.InstallFailedReadFmt, toPath, walkErr)
+			}
+			if walkErr == nil {
+				if removeErr := inst.sys.RemoveAll(toPath); removeErr != nil {
+					return false, fmt.Errorf("remove empty rename destination %s: %w", toRel, removeErr)
+				}
+				if renameErr := inst.sys.Rename(fromPath, toPath); renameErr != nil {
+					return false, fmt.Errorf("rename %s -> %s: %w", fromRel, toRel, renameErr)
+				}
+				return true, nil
+			}
+		}
 		if fromInfo.Mode().IsRegular() && toInfo.Mode().IsRegular() {
 			fromBytes, readFromErr := inst.sys.ReadFile(fromPath)
 			if readFromErr != nil {

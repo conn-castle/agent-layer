@@ -21,8 +21,8 @@ func TestDefaultPaths(t *testing.T) {
 	if paths.InstructionsDir != filepath.Join(root, ".agent-layer", "instructions") {
 		t.Fatalf("unexpected instructions dir: %s", paths.InstructionsDir)
 	}
-	if paths.SlashCommandsDir != filepath.Join(root, ".agent-layer", "slash-commands") {
-		t.Fatalf("unexpected slash commands dir: %s", paths.SlashCommandsDir)
+	if paths.SkillsDir != filepath.Join(root, ".agent-layer", "skills") {
+		t.Fatalf("unexpected skills dir: %s", paths.SkillsDir)
 	}
 	if paths.CommandsAllow != filepath.Join(root, ".agent-layer", "commands.allow") {
 		t.Fatalf("unexpected commands allow path: %s", paths.CommandsAllow)

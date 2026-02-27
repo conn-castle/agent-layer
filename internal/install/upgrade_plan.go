@@ -295,7 +295,7 @@ func (inst templateManager) templateOrphans(templateEntries []templatedPath) ([]
 
 	managedRoots := []string{
 		filepath.Join(inst.root, ".agent-layer", "instructions"),
-		filepath.Join(inst.root, ".agent-layer", "slash-commands"),
+		filepath.Join(inst.root, ".agent-layer", "skills"),
 		filepath.Join(inst.root, ".agent-layer", "templates", "docs"),
 		filepath.Join(inst.root, "docs", "agent-layer"),
 	}

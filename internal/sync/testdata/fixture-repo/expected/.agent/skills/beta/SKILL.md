@@ -1,13 +1,12 @@
 ---
 name: beta
 description: >-
-  Second command does something useful for testing wrap lines in codex
-  skills.
+  Second command does something useful for testing wrap lines in codex skills.
 ---
 
 <!--
   GENERATED FILE
-  Source: .agent-layer/slash-commands/beta.md
+  Source: .agent-layer/skills/beta.md
   Regenerate: al sync
 -->
 

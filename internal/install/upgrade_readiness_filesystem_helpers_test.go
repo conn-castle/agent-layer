@@ -12,7 +12,7 @@ import (
 
 func TestCountMarkdownFiles_ErrorBranches(t *testing.T) {
 	root := t.TempDir()
-	markdownRoot := filepath.Join(root, ".agent-layer", "slash-commands")
+	markdownRoot := filepath.Join(root, ".agent-layer", "skills")
 	if err := os.MkdirAll(markdownRoot, 0o755); err != nil {
 		t.Fatalf("mkdir markdown root: %v", err)
 	}

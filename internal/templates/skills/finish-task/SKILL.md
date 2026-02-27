@@ -1,5 +1,6 @@
 ---
-description: Post-task wrap-up: reflect on recent changes, update project memory files with compact deduplicated entries, run fast verification, and summarize.
+name: finish-task
+description: "Post-task wrap-up: reflect on recent changes, update project memory files with compact deduplicated entries, run fast verification, and summarize."
 ---
 
 # Post-task cleanup and project memory update

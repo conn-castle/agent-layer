@@ -1,4 +1,5 @@
 ---
+name: boost-coverage
 description: Iteratively raise coverage by selecting the lowest-covered eligible file, adding tests, and repeating until the repo-defined coverage threshold is met, using coverage commands documented in COMMANDS.md.
 ---
 

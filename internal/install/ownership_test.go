@@ -172,7 +172,7 @@ func TestClassifyOrphanOwnership_DocsMissingBaselineAndDefaultFallback(t *testin
 	if err := os.WriteFile(docsPath, []byte("# ISSUES\n\nLocal header\n\n<!-- ENTRIES START -->\n"), 0o644); err != nil {
 		t.Fatalf("write docs orphan: %v", err)
 	}
-	defaultPath := filepath.Join(root, ".agent-layer", "slash-commands", "local-orphan.md")
+	defaultPath := filepath.Join(root, ".agent-layer", "skills", "local-orphan.md")
 	if err := os.MkdirAll(filepath.Dir(defaultPath), 0o755); err != nil {
 		t.Fatalf("mkdir default orphan dir: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestClassifyOrphanOwnership_DocsMissingBaselineAndDefaultFallback(t *testin
 		t.Fatalf("docs missing baseline ownership = %s, want %s", ownership, OwnershipUnknownNoBaseline)
 	}
 
-	ownership, err = inst.ownership().classifyOrphanOwnership(".agent-layer/slash-commands/local-orphan.md")
+	ownership, err = inst.ownership().classifyOrphanOwnership(".agent-layer/skills/local-orphan.md")
 	if err != nil {
 		t.Fatalf("classifyOrphanOwnership default: %v", err)
 	}

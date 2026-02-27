@@ -1,4 +1,5 @@
 ---
+name: fix-tests
 description: Run repo-defined checks (e.g., lint/format/pre-commit/tests) in a loop, fixing failures until all checks pass.
 ---
 

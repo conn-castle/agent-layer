@@ -92,12 +92,16 @@ type InstructionFile struct {
 	Content string
 }
 
-// SlashCommand represents a parsed slash command with metadata and body.
-type SlashCommand struct {
-	Name        string
-	Description string
-	Body        string
-	SourcePath  string
+// Skill represents a parsed skill with metadata and body.
+type Skill struct {
+	Name          string
+	Description   string
+	License       string
+	Compatibility string
+	Metadata      map[string]string
+	AllowedTools  string
+	Body          string
+	SourcePath    string
 }
 
 // ProjectConfig is the fully loaded configuration state for sync and launch.
@@ -105,7 +109,7 @@ type ProjectConfig struct {
 	Config        Config
 	Env           map[string]string
 	Instructions  []InstructionFile
-	SlashCommands []SlashCommand
+	Skills        []Skill
 	CommandsAllow []string
 	Root          string
 }

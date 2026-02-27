@@ -1,5 +1,6 @@
 ---
-description: Issue-driven maintenance loop: triage ISSUES.md, produce an explicit implementation plan, pause for human approval, then execute, audit, and verify—updating ISSUES.md throughout.
+name: fix-issues
+description: "Issue-driven maintenance loop: triage ISSUES.md, produce an explicit implementation plan, pause for human approval, then execute, audit, and verify—updating ISSUES.md throughout."
 ---
 
 # Issue-driven maintenance loop (plan → execute → audit → verify)

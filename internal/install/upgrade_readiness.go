@@ -433,11 +433,11 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 
 	// .vscode/prompts/ is only generated when agents.vscode is enabled.
 	if vscodeEnabled {
-		slashCount, err := countMarkdownFiles(inst, filepath.Join(inst.root, ".agent-layer", "slash-commands"))
+		skillCount, err := countMarkdownFiles(inst, filepath.Join(inst.root, ".agent-layer", "skills"))
 		if err != nil {
 			return nil, err
 		}
-		if slashCount > 0 {
+		if skillCount > 0 {
 			promptDir := filepath.Join(inst.root, ".vscode", "prompts")
 			promptFiles, newestPrompt, promptErr := listGeneratedFilesWithSuffix(inst, promptDir, ".prompt.md")
 			if promptErr != nil {

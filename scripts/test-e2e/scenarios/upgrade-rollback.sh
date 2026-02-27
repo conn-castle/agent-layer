@@ -14,7 +14,7 @@ run_scenario_upgrade_rollback() {
   assert_al_version_content "$repo_dir" "$E2E_OLDEST_VERSION"
 
   # Snapshot entire .agent-layer/ state before upgrade (config, version, env,
-  # instructions, slash-commands) — not just config.toml.
+  # instructions, skills) — not just config.toml.
   local pre_snapshot="$E2E_TMP_ROOT/rollback-pre-upgrade.txt"
   _snapshot_agent_layer_state "$repo_dir" > "$pre_snapshot"
 

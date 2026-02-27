@@ -341,7 +341,7 @@ It is scaffolding: it creates the files that make behavior explicit and repeatab
 
 Typical `.agent-layer/` files include:
 
-- `config.toml` (seeded if missing; user-owned), `commands.allow`, `instructions/`, `slash-commands/`
+- `config.toml` (seeded if missing; user-owned), `commands.allow`, `instructions/`, `skills/`
 - `al.version` (repo pin; required)
 - `.env` (seeded if missing; user-owned secrets, always gitignored)
 - `.gitignore` (internal ignores) and `gitignore.block` (root `.gitignore` template)
@@ -477,26 +477,43 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 **What it does**
 
 - Validates `.agent-layer/config.toml`
-- Reads `.agent-layer/instructions/`, `.agent-layer/slash-commands/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
+- Reads `.agent-layer/instructions/`, `.agent-layer/skills/`, `.agent-layer/commands.allow`, and `.agent-layer/.env`
 - Regenerates client outputs and launchers
 
 **Steps (high level)**
 
 1. Load and validate `config.toml`, then resolve secrets from `.agent-layer/.env`.
-2. Parse instructions and slash commands to build client-specific outputs.
+2. Parse instructions and skills to build client-specific outputs.
 3. Write generated configs and launchers for enabled clients.
 4. Emit warnings if any thresholds in `[warnings]` are exceeded.
 
-**Slash command format**
+**Skill format**
 
-Each file in `.agent-layer/slash-commands/` must be a Markdown file with YAML frontmatter:
+`.agent-layer/skills/` supports two source formats:
 
-- `description` (required): short description of the command
+- Flat: `.agent-layer/skills/<name>.md`
+- Directory: `.agent-layer/skills/<name>/SKILL.md` (canonical; lowercase `skill.md` is accepted as a compatibility fallback)
+
+Frontmatter fields:
+
+- Required: `name`, `description`
+- Optional: `license`, `compatibility`, `metadata`, `allowed-tools`
+
+Validation notes (`al doctor`):
+
+- Name checks are NFKC-normalized and normalization-aware when matching `name` to the canonical source name.
+- Name limits: max 64 Unicode characters, lowercase letters/digits/hyphens only, no leading/trailing/consecutive hyphens.
+- Description limit: max 1024 Unicode characters.
+- Compatibility limit (when present): max 500 Unicode characters.
+- Missing `name` remains load-compatible (name is derived from path), but `al doctor` warns.
+- Missing or empty `description` fails load/sync (fail-loud).
+- Directory skills using lowercase `skill.md` load for compatibility, but `al doctor` warns to use canonical `SKILL.md`.
 
 Example:
 
 ```md
 ---
+name: code-audit
 description: Run a code quality audit.
 ---
 # Your command body here

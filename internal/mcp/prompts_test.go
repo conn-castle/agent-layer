@@ -18,7 +18,7 @@ func TestRunPromptServerInvokesRunner(t *testing.T) {
 		return nil
 	}
 
-	commands := []config.SlashCommand{
+	commands := []config.Skill{
 		{Name: "alpha", Description: "desc", Body: "body"},
 	}
 	if err := runPromptServer(context.Background(), "v1", commands, runner); err != nil {
@@ -48,7 +48,7 @@ func TestRunPromptServerNilRunner(t *testing.T) {
 }
 
 func TestPromptHandler(t *testing.T) {
-	cmd := config.SlashCommand{
+	cmd := config.Skill{
 		Name:        "alpha",
 		Description: "desc",
 		Body:        "body",

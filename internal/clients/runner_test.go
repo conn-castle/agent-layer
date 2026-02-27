@@ -343,7 +343,7 @@ func writeMinimalRepo(t *testing.T, root string) {
 	t.Cleanup(func() { sync.UserHomeDir = origHome })
 
 	paths := config.DefaultPaths(root)
-	dirs := []string{paths.InstructionsDir, paths.SlashCommandsDir}
+	dirs := []string{paths.InstructionsDir, paths.SkillsDir}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
@@ -394,8 +394,8 @@ description: test
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "alpha.md"), []byte(command), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "alpha.md"), []byte(command), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)
@@ -409,7 +409,7 @@ Do it.`
 func writeMinimalRepoWithMode(t *testing.T, root string, mode string) {
 	t.Helper()
 	paths := config.DefaultPaths(root)
-	dirs := []string{paths.InstructionsDir, paths.SlashCommandsDir}
+	dirs := []string{paths.InstructionsDir, paths.SkillsDir}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
@@ -460,8 +460,8 @@ description: test
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SlashCommandsDir, "alpha.md"), []byte(command), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "alpha.md"), []byte(command), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o644); err != nil {
 		t.Fatalf("write commands allow: %v", err)

@@ -261,28 +261,28 @@ func TestDetectVSCodeNoSyncStaleness_SettingsStatError(t *testing.T) {
 	}
 }
 
-func TestDetectVSCodeNoSyncStaleness_SlashCommandsStatError(t *testing.T) {
+func TestDetectVSCodeNoSyncStaleness_SkillsStatError(t *testing.T) {
 	root := t.TempDir()
-	slashRoot := filepath.Join(root, ".agent-layer", "slash-commands")
+	skillsRoot := filepath.Join(root, ".agent-layer", "skills")
 	sys := newFaultSystem(RealSystem{})
-	sys.statErrs[normalizePath(slashRoot)] = errors.New("stat boom")
+	sys.statErrs[normalizePath(skillsRoot)] = errors.New("stat boom")
 	inst := &installer{root: root, sys: sys}
 
 	cfg := config.Config{Agents: config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}}}
 	_, err := detectVSCodeNoSyncStaleness(inst, &cfg, filepath.Join(root, ".agent-layer", "config.toml"), time.Now())
 	if err == nil || !strings.Contains(err.Error(), "stat boom") {
-		t.Fatalf("expected slash-commands stat error, got %v", err)
+		t.Fatalf("expected skills stat error, got %v", err)
 	}
 }
 
 func TestDetectVSCodeNoSyncStaleness_PromptWalkError(t *testing.T) {
 	root := t.TempDir()
-	slashRoot := filepath.Join(root, ".agent-layer", "slash-commands")
-	if err := os.MkdirAll(slashRoot, 0o755); err != nil {
-		t.Fatalf("mkdir slash root: %v", err)
+	skillsRoot := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
+		t.Fatalf("mkdir skills root: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(slashRoot, "alpha.md"), []byte("alpha"), 0o644); err != nil {
-		t.Fatalf("write slash command: %v", err)
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha.md"), []byte("alpha"), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
 	}
 	promptRoot := filepath.Join(root, ".vscode", "prompts")
 	if err := os.MkdirAll(promptRoot, 0o755); err != nil {

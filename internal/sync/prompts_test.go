@@ -9,10 +9,10 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 )
 
-const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/slash-commands/test.md\n  Regenerate: al sync\n-->\n"
+const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/skills/test.md\n  Regenerate: al sync\n-->\n"
 
 func TestBuildVSCodePrompt(t *testing.T) {
-	cmd := config.SlashCommand{Name: "alpha", Body: "Body"}
+	cmd := config.Skill{Name: "alpha", Body: "Body"}
 	content := buildVSCodePrompt(cmd)
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in prompt")
@@ -45,7 +45,7 @@ func TestWriteVSCodePromptsWriteError(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(promptDir, "alpha.prompt.md"), 0o755); err != nil {
 		t.Fatalf("mkdir prompt: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Body: "Body"}}
 	if err := WriteVSCodePrompts(RealSystem{}, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -99,10 +99,16 @@ func TestRemoveStalePromptFiles(t *testing.T) {
 }
 
 func TestBuildCodexSkill(t *testing.T) {
-	cmd := config.SlashCommand{Name: "alpha", Description: "desc", Body: "Body"}
-	content := buildCodexSkill(cmd)
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
+	content, err := buildCodexSkill(cmd)
+	if err != nil {
+		t.Fatalf("buildCodexSkill error: %v", err)
+	}
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in skill")
+	}
+	if !strings.Contains(content, "description: >-") {
+		t.Fatalf("expected folded description in frontmatter")
 	}
 	if !strings.Contains(content, "# alpha") {
 		t.Fatalf("expected heading in skill")
@@ -113,8 +119,11 @@ func TestBuildCodexSkill(t *testing.T) {
 }
 
 func TestBuildAntigravitySkill(t *testing.T) {
-	cmd := config.SlashCommand{Name: "alpha", Description: "desc", Body: "Body"}
-	content := buildAntigravitySkill(cmd)
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
+	content, err := buildAntigravitySkill(cmd)
+	if err != nil {
+		t.Fatalf("buildAntigravitySkill error: %v", err)
+	}
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in skill")
 	}
@@ -126,6 +135,93 @@ func TestBuildAntigravitySkill(t *testing.T) {
 	}
 	if !strings.HasSuffix(content, "\n") {
 		t.Fatalf("expected trailing newline")
+	}
+}
+
+func TestBuildSkillFrontMatter_FieldOrderAndMetadataSorting(t *testing.T) {
+	cmd := config.Skill{
+		Name:          "alpha",
+		Description:   "desc",
+		License:       "MIT",
+		Compatibility: "requires git",
+		Metadata: map[string]string{
+			"z-key": "last",
+			"a-key": "first",
+		},
+		AllowedTools: "Bash(git:*) Read",
+	}
+
+	content, err := buildAntigravitySkill(cmd)
+	if err != nil {
+		t.Fatalf("buildAntigravitySkill error: %v", err)
+	}
+
+	expectedOrder := []string{
+		"name:",
+		"description:",
+		"license:",
+		"compatibility:",
+		"metadata:",
+		"allowed-tools:",
+	}
+	last := -1
+	for _, token := range expectedOrder {
+		idx := strings.Index(content, token)
+		if idx == -1 {
+			t.Fatalf("expected token %q in output", token)
+		}
+		if idx < last {
+			t.Fatalf("expected token %q after previous token, got output:\n%s", token, content)
+		}
+		last = idx
+	}
+
+	idxA := strings.Index(content, "a-key:")
+	idxZ := strings.Index(content, "z-key:")
+	if idxA == -1 || idxZ == -1 {
+		t.Fatalf("expected metadata keys in output, got:\n%s", content)
+	}
+	if idxA > idxZ {
+		t.Fatalf("expected sorted metadata keys, got:\n%s", content)
+	}
+}
+
+func TestBuildSkillFrontMatter_OmitsEmptyOptionalFields(t *testing.T) {
+	cmd := config.Skill{
+		Name:          "alpha",
+		Description:   "desc",
+		License:       "",
+		Compatibility: "  ",
+		Metadata:      map[string]string{},
+		AllowedTools:  "",
+	}
+
+	content, err := buildCodexSkill(cmd)
+	if err != nil {
+		t.Fatalf("buildCodexSkill error: %v", err)
+	}
+	if strings.Contains(content, "license:") {
+		t.Fatalf("did not expect license field in output:\n%s", content)
+	}
+	if strings.Contains(content, "compatibility:") {
+		t.Fatalf("did not expect compatibility field in output:\n%s", content)
+	}
+	if strings.Contains(content, "metadata:") {
+		t.Fatalf("did not expect metadata field in output:\n%s", content)
+	}
+	if strings.Contains(content, "allowed-tools:") {
+		t.Fatalf("did not expect allowed-tools field in output:\n%s", content)
+	}
+}
+
+func TestBuildSkillFrontMatter_UsesLiteralDescriptionForMultiline(t *testing.T) {
+	cmd := config.Skill{Name: "alpha", Description: "line1\nline2"}
+	content, err := buildAntigravitySkill(cmd)
+	if err != nil {
+		t.Fatalf("buildAntigravitySkill error: %v", err)
+	}
+	if !strings.Contains(content, "description: |-") {
+		t.Fatalf("expected literal description style for multiline description, got:\n%s", content)
 	}
 }
 
@@ -152,7 +248,7 @@ func TestWriteCodexSkillsWriteError(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
 		t.Fatalf("mkdir SKILL.md: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	if err := WriteCodexSkills(RealSystem{}, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -181,7 +277,7 @@ func TestWriteAntigravitySkillsWriteError(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
 		t.Fatalf("mkdir SKILL.md: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	if err := WriteAntigravitySkills(RealSystem{}, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
@@ -197,7 +293,7 @@ func TestWriteAntigravitySkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteAntigravitySkills(RealSystem{}, root, cmds)
 	if err == nil {
 		t.Fatalf("expected error for skill dir creation failure")
@@ -218,28 +314,13 @@ func TestWriteCodexSkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	cmds := []config.SlashCommand{{Name: "alpha", Description: "desc", Body: "Body"}}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteCodexSkills(RealSystem{}, root, cmds)
 	if err == nil {
 		t.Fatalf("expected error for skill dir creation failure")
 	}
 	if !strings.Contains(err.Error(), "failed to create") {
 		t.Fatalf("expected mkdir error, got %v", err)
-	}
-}
-
-func TestWrapDescription(t *testing.T) {
-	lines := wrapDescription("one two three four", 5)
-	if len(lines) < 2 {
-		t.Fatalf("expected wrapped lines, got %v", lines)
-	}
-	lines = wrapDescription("single", 0)
-	if len(lines) != 1 || lines[0] != "single" {
-		t.Fatalf("unexpected wrap result: %v", lines)
-	}
-	lines = wrapDescription("", 10)
-	if len(lines) != 1 || lines[0] != "" {
-		t.Fatalf("unexpected wrap result for empty: %v", lines)
 	}
 }
 
@@ -312,5 +393,17 @@ func TestHasGeneratedMarker(t *testing.T) {
 	_, err = hasGeneratedMarker(RealSystem{}, filepath.Join(dir, "dir"))
 	if err == nil {
 		t.Fatalf("expected error for directory path")
+	}
+}
+
+func TestGeneratedSkillSourcePath(t *testing.T) {
+	cmd := config.Skill{Name: "alpha"}
+	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha.md" {
+		t.Fatalf("unexpected default source path: %q", got)
+	}
+
+	cmd.SourcePath = filepath.Join("/tmp/repo", ".agent-layer", "skills", "alpha", "SKILL.md")
+	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
+		t.Fatalf("unexpected normalized source path: %q", got)
 	}
 }

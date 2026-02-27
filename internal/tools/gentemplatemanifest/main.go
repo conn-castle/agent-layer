@@ -136,7 +136,7 @@ func collectTemplateSources(root string) ([]templateSource, error) {
 			dests:        templateDestPaths(name),
 		})
 	}
-	dirs := []string{"instructions", "slash-commands", "docs/agent-layer"}
+	dirs := []string{"instructions", "skills", "docs/agent-layer"}
 	for _, dir := range dirs {
 		absDir := filepath.Join(root, templateRoot, dir)
 		if _, err := os.Stat(absDir); err != nil {
@@ -225,9 +225,9 @@ func templateDestPaths(templatePath string) []string {
 	case strings.HasPrefix(templatePath, "instructions/"):
 		suffix := strings.TrimPrefix(templatePath, "instructions/")
 		return []string{filepath.ToSlash(filepath.Join(".agent-layer/instructions", suffix))}
-	case strings.HasPrefix(templatePath, "slash-commands/"):
-		suffix := strings.TrimPrefix(templatePath, "slash-commands/")
-		return []string{filepath.ToSlash(filepath.Join(".agent-layer/slash-commands", suffix))}
+	case strings.HasPrefix(templatePath, "skills/"):
+		suffix := strings.TrimPrefix(templatePath, "skills/")
+		return []string{filepath.ToSlash(filepath.Join(".agent-layer/skills", suffix))}
 	case strings.HasPrefix(templatePath, "docs/agent-layer/"):
 		suffix := strings.TrimPrefix(templatePath, "docs/agent-layer/")
 		return []string{
