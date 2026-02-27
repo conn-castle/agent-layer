@@ -108,6 +108,21 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		}
 		partial.Env = config.WithBuiltInEnv(env, root)
 
+		// Best-effort: load skills so CheckSkills does not incorrectly report
+		// "No skills configured" when lenient config fallback is active.
+		paths := config.DefaultPaths(root)
+		skills, skillsErr := config.LoadSkills(paths.SkillsDir)
+		if skillsErr != nil {
+			results = append(results, Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameSkills,
+				Message:        fmt.Sprintf(messages.DoctorSkillValidationFailedFmt, relPathForDoctor(root, paths.SkillsDir), skillsErr),
+				Recommendation: messages.DoctorSkillValidationRecommend,
+			})
+		} else {
+			partial.Skills = skills
+		}
+
 		return results, partial
 	}
 
