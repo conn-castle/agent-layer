@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	yaml "go.yaml.in/yaml/v3"
+	"golang.org/x/text/unicode/norm"
 )
 
 var (
-	utf8BOM      = []byte{0xEF, 0xBB, 0xBF}
-	skillNameExp = regexp.MustCompile(`^[a-z0-9]([a-z0-9]*(-[a-z0-9]+)*)?$`)
+	utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 )
 
 const (
@@ -177,22 +178,23 @@ func ValidateMetadata(parsed ParsedSkill) []Finding {
 	if parsed.Name == nil {
 		findings = append(findings, warning(FindingCodeNameMissing, parsed.SourcePath, "missing required frontmatter field \"name\""))
 	} else {
-		name := strings.TrimSpace(*parsed.Name)
+		name := normalizeSkillName(*parsed.Name)
 		if name == "" {
 			findings = append(findings, warning(FindingCodeNameMissing, parsed.SourcePath, "frontmatter field \"name\" must be non-empty"))
 		} else {
-			if len(name) > MaxSkillNameLength {
+			nameRuneCount := utf8.RuneCountInString(name)
+			if nameRuneCount > MaxSkillNameLength {
 				findings = append(findings, warning(
 					FindingCodeNameTooLong,
 					parsed.SourcePath,
-					fmt.Sprintf("frontmatter field \"name\" exceeds %d characters (%d)", MaxSkillNameLength, len(name)),
+					fmt.Sprintf("frontmatter field \"name\" exceeds %d characters (%d)", MaxSkillNameLength, nameRuneCount),
 				))
 			}
-			if !skillNameExp.MatchString(name) {
+			if !isValidSkillName(name) {
 				findings = append(findings, warning(
 					FindingCodeNameInvalid,
 					parsed.SourcePath,
-					"frontmatter field \"name\" must match ^[a-z0-9]([a-z0-9]*(-[a-z0-9]+)*)?$",
+					"frontmatter field \"name\" must contain only lowercase letters, digits, and hyphens; it cannot start or end with a hyphen",
 				))
 			}
 			if strings.Contains(name, "--") {
@@ -211,22 +213,22 @@ func ValidateMetadata(parsed ParsedSkill) []Finding {
 		description := strings.TrimSpace(*parsed.Description)
 		if description == "" {
 			findings = append(findings, warning(FindingCodeDescriptionMissing, parsed.SourcePath, "frontmatter field \"description\" must be non-empty"))
-		} else if len(description) > MaxDescriptionLength {
+		} else if descriptionRuneCount := utf8.RuneCountInString(description); descriptionRuneCount > MaxDescriptionLength {
 			findings = append(findings, warning(
 				FindingCodeDescriptionTooLong,
 				parsed.SourcePath,
-				fmt.Sprintf("frontmatter field \"description\" exceeds %d characters (%d)", MaxDescriptionLength, len(description)),
+				fmt.Sprintf("frontmatter field \"description\" exceeds %d characters (%d)", MaxDescriptionLength, descriptionRuneCount),
 			))
 		}
 	}
 
 	if _, ok := keySet["compatibility"]; ok && parsed.Compatibility != nil {
 		compatibility := strings.TrimSpace(*parsed.Compatibility)
-		if len(compatibility) > MaxCompatibilityLength {
+		if compatibilityRuneCount := utf8.RuneCountInString(compatibility); compatibilityRuneCount > MaxCompatibilityLength {
 			findings = append(findings, warning(
 				FindingCodeCompatibilityTooLong,
 				parsed.SourcePath,
-				fmt.Sprintf("frontmatter field \"compatibility\" exceeds %d characters (%d)", MaxCompatibilityLength, len(compatibility)),
+				fmt.Sprintf("frontmatter field \"compatibility\" exceeds %d characters (%d)", MaxCompatibilityLength, compatibilityRuneCount),
 			))
 		}
 	}
@@ -247,12 +249,13 @@ func ValidateDirectory(parsed ParsedSkill) []Finding {
 	}
 
 	if parsed.Name != nil {
-		name := strings.TrimSpace(*parsed.Name)
-		if name != "" && name != parsed.CanonicalName {
+		name := normalizeSkillName(*parsed.Name)
+		canonical := normalizeSkillName(parsed.CanonicalName)
+		if name != "" && name != canonical {
 			findings = append(findings, warning(
 				FindingCodeNamePathMismatch,
 				parsed.SourcePath,
-				fmt.Sprintf("frontmatter field \"name\" (%q) must match canonical source name %q", name, parsed.CanonicalName),
+				fmt.Sprintf("frontmatter field \"name\" (%q) must match canonical source name %q", strings.TrimSpace(*parsed.Name), parsed.CanonicalName),
 			))
 		}
 	}
@@ -387,10 +390,30 @@ func ensureMetadataMap(node *yaml.Node) error {
 
 func canonicalNameForPath(path string) (string, SourceFormat) {
 	base := filepath.Base(path)
-	if base == "SKILL.md" {
+	if base == "SKILL.md" || base == "skill.md" {
 		return filepath.Base(filepath.Dir(path)), SourceFormatDirectory
 	}
 	return strings.TrimSuffix(base, filepath.Ext(base)), SourceFormatFlat
+}
+
+func normalizeSkillName(name string) string {
+	return strings.TrimSpace(norm.NFKC.String(name))
+}
+
+func isValidSkillName(name string) bool {
+	if name == "" {
+		return false
+	}
+	if strings.HasPrefix(name, "-") || strings.HasSuffix(name, "-") {
+		return false
+	}
+	for _, r := range name {
+		if r == '-' || (r >= '0' && r <= '9') || unicode.IsLower(r) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func sortFindings(findings []Finding) {

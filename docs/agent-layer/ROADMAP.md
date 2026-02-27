@@ -129,10 +129,11 @@ Incomplete:
 - Integrated Google Analytics 4 with consent defaults and removed the public-roadmap item from this phase scope.
 
 ## Phase 15 ✅ — Skills standard alignment (agentskills.io)
-- Added a reusable `internal/skillvalidator` package with parse/validate separation, deterministic findings, and agentskills-aligned metadata/directory validation coverage.
-- Integrated skill validation into `al doctor` with dedicated skill diagnostics and tests, keeping parser behavior backward-compatible (path-derived canonical names, tolerant parse layer).
+- Added a reusable `internal/skillvalidator` package with parse/validate separation, deterministic findings, Unicode NFKC-aware name checks, rune-based length limits, and normalization-aware name/path matching.
+- Integrated skill validation into `al doctor` with dedicated diagnostics and tests, including explicit warnings when directory-format skills use non-canonical lowercase `skill.md`.
+- Added directory loader compatibility for lowercase `skill.md` with canonical `SKILL.md` precedence, keeping parser behavior backward-compatible for existing repos.
 - Migrated embedded template skills to directory format (`skills/<name>/SKILL.md`), updated embed patterns/tests/manifests/migrations, and added the `review-plan` skill with deterministic `*.plan.md` discovery guidance.
-- Published the skills workflow ordering guide in [SKILLS_WORKFLOWS.md](./SKILLS_WORKFLOWS.md) and aligned README guidance for required skill frontmatter and directory-format recommendations.
+- Published the skills workflow ordering guide in [SKILLS_WORKFLOWS.md](./SKILLS_WORKFLOWS.md) and aligned public docs (`README.md`, `site/docs/reference.mdx`) with current frontmatter/spec rules.
 
 ## Phase 16 — Profiles and multi-config
 

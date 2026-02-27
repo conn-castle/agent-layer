@@ -71,6 +71,35 @@ Body.
 	}
 }
 
+func TestParseSkillSource_DirectoryLowercaseSkillFile(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "beta")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir beta: %v", err)
+	}
+	path := filepath.Join(dir, "skill.md")
+	content := `---
+name: beta
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write directory skill: %v", err)
+	}
+
+	parsed, err := ParseSkillSource(path)
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
+	}
+	if parsed.SourceFormat != SourceFormatDirectory {
+		t.Fatalf("source format = %q, want %q", parsed.SourceFormat, SourceFormatDirectory)
+	}
+	if parsed.CanonicalName != "beta" {
+		t.Fatalf("canonical name = %q, want %q", parsed.CanonicalName, "beta")
+	}
+}
+
 func TestValidateParsedSkill_MissingNameWarning(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "alpha.md")
@@ -119,7 +148,7 @@ Body.
 	}
 }
 
-func TestValidateParsedSkill_NameRegexAndConsecutiveHyphen(t *testing.T) {
+func TestValidateParsedSkill_ConsecutiveHyphenOnly(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "my--skill.md")
 	content := `---
@@ -137,8 +166,8 @@ Body.
 		t.Fatalf("ParseSkillSource: %v", err)
 	}
 	findings := ValidateParsedSkill(parsed)
-	if !hasFinding(findings, FindingCodeNameInvalid) {
-		t.Fatalf("expected %s finding, got %#v", FindingCodeNameInvalid, findings)
+	if hasFinding(findings, FindingCodeNameInvalid) {
+		t.Fatalf("consecutive hyphens should not trigger %s (separate finding exists), got %#v", FindingCodeNameInvalid, findings)
 	}
 	if !hasFinding(findings, FindingCodeNameConsecutiveHyphens) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeNameConsecutiveHyphens, findings)
@@ -165,6 +194,52 @@ Body.
 	findings := ValidateParsedSkill(parsed)
 	if hasFinding(findings, FindingCodeNameInvalid) || hasFinding(findings, FindingCodeNameConsecutiveHyphens) {
 		t.Fatalf("expected no name-format finding, got %#v", findings)
+	}
+}
+
+func TestValidateParsedSkill_NameAllowsUnicodeLowercaseLetters(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "naïve-2.md")
+	content := `---
+name: naïve-2
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	parsed, err := ParseSkillSource(path)
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
+	}
+	findings := ValidateParsedSkill(parsed)
+	if hasFinding(findings, FindingCodeNameInvalid) {
+		t.Fatalf("expected unicode lowercase name to be valid, got %#v", findings)
+	}
+}
+
+func TestValidateParsedSkill_NameRejectsUppercaseUnicodeLetters(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "éclair.md")
+	content := `---
+name: Éclair
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	parsed, err := ParseSkillSource(path)
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
+	}
+	findings := ValidateParsedSkill(parsed)
+	if !hasFinding(findings, FindingCodeNameInvalid) {
+		t.Fatalf("expected %s finding, got %#v", FindingCodeNameInvalid, findings)
 	}
 }
 
@@ -195,10 +270,12 @@ Body.
 func TestValidateParsedSkill_LengthConstraints(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "alpha.md")
+	descriptionTooLong := strings.Repeat("界", MaxDescriptionLength+1)
+	compatibilityTooLong := strings.Repeat("漢", MaxCompatibilityLength+1)
 	content := `---
 name: alpha
-description: ` + strings.Repeat("d", MaxDescriptionLength+1) + `
-compatibility: ` + strings.Repeat("c", MaxCompatibilityLength+1) + `
+description: ` + descriptionTooLong + `
+compatibility: ` + compatibilityTooLong + `
 ---
 Body.
 `
@@ -216,6 +293,23 @@ Body.
 	}
 	if !hasFinding(findings, FindingCodeCompatibilityTooLong) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeCompatibilityTooLong, findings)
+	}
+}
+
+func TestValidateParsedSkill_NameLengthCountsRunes(t *testing.T) {
+	longName := strings.Repeat("é", MaxSkillNameLength+1)
+	parsed := ParsedSkill{
+		SourcePath:      "/tmp/test/" + longName + ".md",
+		CanonicalName:   longName,
+		SourceFormat:    SourceFormatFlat,
+		LineCount:       5,
+		FrontMatterKeys: []string{"description", "name"},
+		Name:            strPtr(longName),
+		Description:     strPtr("test"),
+	}
+	findings := ValidateParsedSkill(parsed)
+	if !hasFinding(findings, FindingCodeNameTooLong) {
+		t.Fatalf("expected %s finding, got %#v", FindingCodeNameTooLong, findings)
 	}
 }
 
@@ -243,6 +337,33 @@ Body.
 	findings := ValidateParsedSkill(parsed)
 	if !hasFinding(findings, FindingCodeNamePathMismatch) {
 		t.Fatalf("expected %s finding, got %#v", FindingCodeNamePathMismatch, findings)
+	}
+}
+
+func TestValidateParsedSkill_NamePathMatchUsesNFKCNormalization(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "café")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir café: %v", err)
+	}
+	path := filepath.Join(dir, "SKILL.md")
+	content := `---
+name: café
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	parsed, err := ParseSkillSource(path)
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
+	}
+	findings := ValidateParsedSkill(parsed)
+	if hasFinding(findings, FindingCodeNamePathMismatch) {
+		t.Fatalf("expected no %s finding for canonically equivalent names, got %#v", FindingCodeNamePathMismatch, findings)
 	}
 }
 

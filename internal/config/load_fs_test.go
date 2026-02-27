@@ -229,6 +229,64 @@ func TestLoadSkillsFS_DirectorySkill(t *testing.T) {
 	}
 }
 
+func TestLoadSkillsFS_DirectorySkillNameMatchUsesNFKCNormalization(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/skills":               {Mode: fs.ModeDir},
+		".agent-layer/skills/café":          {Mode: fs.ModeDir},
+		".agent-layer/skills/café/SKILL.md": {Data: []byte("---\nname: café\ndescription: dir\n---\n\nBody")},
+	}
+
+	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("LoadSkillsFS: %v", err)
+	}
+	if len(skills) != 1 || skills[0].Name != "café" {
+		t.Fatalf("unexpected skills: %#v", skills)
+	}
+}
+
+func TestLoadSkillsFS_DirectorySkillLowercaseFallback(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/skills":                {Mode: fs.ModeDir},
+		".agent-layer/skills/alpha":          {Mode: fs.ModeDir},
+		".agent-layer/skills/alpha/skill.md": {Data: []byte("---\nname: alpha\ndescription: dir\n---\n\nBody")},
+	}
+
+	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("LoadSkillsFS: %v", err)
+	}
+	if len(skills) != 1 || skills[0].Name != "alpha" {
+		t.Fatalf("unexpected skills: %#v", skills)
+	}
+	if skills[0].SourcePath != ".agent-layer/skills/alpha/skill.md" {
+		t.Fatalf("expected fallback source path, got %q", skills[0].SourcePath)
+	}
+}
+
+func TestLoadSkillsFS_DirectorySkillPrefersCanonicalFilename(t *testing.T) {
+	fsys := fstest.MapFS{
+		".agent-layer/skills":                {Mode: fs.ModeDir},
+		".agent-layer/skills/alpha":          {Mode: fs.ModeDir},
+		".agent-layer/skills/alpha/SKILL.md": {Data: []byte("---\nname: alpha\ndescription: canonical\n---\n\nBody")},
+		".agent-layer/skills/alpha/skill.md": {Data: []byte("---\nname: alpha\ndescription: fallback\n---\n\nBody")},
+	}
+
+	skills, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("LoadSkillsFS: %v", err)
+	}
+	if len(skills) != 1 || skills[0].Name != "alpha" {
+		t.Fatalf("unexpected skills: %#v", skills)
+	}
+	if skills[0].Description != "canonical" {
+		t.Fatalf("expected canonical file to win, got %q", skills[0].Description)
+	}
+	if skills[0].SourcePath != ".agent-layer/skills/alpha/SKILL.md" {
+		t.Fatalf("expected canonical source path, got %q", skills[0].SourcePath)
+	}
+}
+
 func TestLoadSkillsFS_DuplicateConflict(t *testing.T) {
 	fsys := fstest.MapFS{
 		".agent-layer/skills":              {Mode: fs.ModeDir},
@@ -250,8 +308,8 @@ func TestLoadSkillsFS_DirectoryMissingSkillFile(t *testing.T) {
 	}
 
 	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
-	if err == nil || !strings.Contains(err.Error(), "missing SKILL.md") {
-		t.Fatalf("expected missing SKILL.md error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing SKILL.md or skill.md") {
+		t.Fatalf("expected missing SKILL.md or skill.md error, got %v", err)
 	}
 }
 

@@ -258,7 +258,7 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
   - `config.toml` (main configuration; human-editable)
   - `al.version` (repo pin; required)
   - `instructions/` (numbered `*.md` fragments; lexicographic order)
-  - `skills/` (workflow markdown; one file per command)
+  - `skills/` (workflow markdown; one skill source per command, as flat files or `SKILL.md` directories)
   - `commands.allow` (approved shell commands; line-based)
   - `gitignore.block` (managed `.gitignore` block template; customize here)
   - `.gitignore` (ignores repo-local launchers, template copies, and backups inside `.agent-layer/`)
@@ -463,13 +463,16 @@ These files are user-editable; define the workflows you want your agents to run.
 
 - Source formats:
   - Flat file: `.agent-layer/skills/<name>.md`
-  - Directory format: `.agent-layer/skills/<name>/SKILL.md`
-- Canonical skill name is derived from filename/directory name.
-- Supported frontmatter fields:
-  - Required: `name`, `description` — `al doctor` warns when missing.
+  - Directory format: `.agent-layer/skills/<name>/SKILL.md` (canonical; `skill.md` is accepted as a compatibility fallback)
+- Frontmatter fields:
+  - Required: `name`, `description` (`al doctor` warns when missing)
   - Optional: `license`, `compatibility`, `metadata`, `allowed-tools`
-  - When present, `name` must match the canonical source name (filename stem or directory name).
-  - Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
+- `name` validation (`al doctor`):
+  - NFKC-normalized and compared against the canonical source name (filename stem or directory name) using normalization-aware matching
+  - Maximum 64 Unicode characters, lowercase letters/digits/hyphens only, and no leading/trailing/consecutive hyphens
+- Length limits (`al doctor`): `description` max 1024 Unicode characters; `compatibility` max 500 Unicode characters.
+- Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
+- Directory-format skills should use `SKILL.md`; lowercase `skill.md` loads but triggers an `al doctor` warning.
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
 - Recommended skill sequences for common workflows are documented in [docs/agent-layer/SKILLS_WORKFLOWS.md](docs/agent-layer/SKILLS_WORKFLOWS.md).
 

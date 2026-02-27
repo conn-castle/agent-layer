@@ -489,14 +489,30 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 
 **Skill format**
 
-Each file in `.agent-layer/skills/` must be a Markdown file with YAML frontmatter:
+`.agent-layer/skills/` supports two source formats:
 
-- `description` (required): short description of the command
+- Flat: `.agent-layer/skills/<name>.md`
+- Directory: `.agent-layer/skills/<name>/SKILL.md` (canonical; lowercase `skill.md` is accepted as a compatibility fallback)
+
+Frontmatter fields:
+
+- Required: `name`, `description`
+- Optional: `license`, `compatibility`, `metadata`, `allowed-tools`
+
+Validation notes (`al doctor`):
+
+- Name checks are NFKC-normalized and normalization-aware when matching `name` to the canonical source name.
+- Name limits: max 64 Unicode characters, lowercase letters/digits/hyphens only, no leading/trailing/consecutive hyphens.
+- Description limit: max 1024 Unicode characters.
+- Compatibility limit (when present): max 500 Unicode characters.
+- Missing `name` remains load-compatible (name is derived from path), but `al doctor` warns.
+- Directory skills using lowercase `skill.md` load for compatibility, but `al doctor` warns to use canonical `SKILL.md`.
 
 Example:
 
 ```md
 ---
+name: code-audit
 description: Run a code quality audit.
 ---
 # Your command body here

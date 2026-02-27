@@ -57,7 +57,7 @@ const (
 	ConfigSkillNameEmpty                 = "name is empty"
 	ConfigSkillNameInvalidMultiline      = "name must be a single line scalar"
 	ConfigSkillNameMismatchFmt           = "skill in %s has name %q, expected %q"
-	ConfigSkillDirMissingSkillFileFmt    = "invalid skill directory %s: missing SKILL.md"
+	ConfigSkillDirMissingSkillFileFmt    = "invalid skill directory %s: missing SKILL.md or skill.md"
 	ConfigSkillDuplicateNameFmt          = "duplicate skill name %q from %s and %s"
 
 	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"

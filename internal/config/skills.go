@@ -5,13 +5,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -57,7 +57,7 @@ type skillSource struct {
 
 // LoadSkills reads .agent-layer/skills from disk and supports both source formats:
 // - .agent-layer/skills/<name>.md
-// - .agent-layer/skills/<name>/SKILL.md
+// - .agent-layer/skills/<name>/SKILL.md (canonical; fallback to skill.md for compatibility)
 func LoadSkills(dir string) ([]Skill, error) {
 	return loadSkills(dir,
 		func(path string) ([]skillDirEntry, error) {
@@ -93,7 +93,7 @@ func loadSkills(dir string, readDir skillReadDir, readFile skillReadFile) ([]Ski
 			continue
 		}
 		if entry.isDir {
-			if err := loadDirectorySkill(byName, dir, entry.name, readFile); err != nil {
+			if err := loadDirectorySkill(byName, dir, entry.name, readDir, readFile); err != nil {
 				return nil, err
 			}
 			continue
@@ -132,7 +132,7 @@ func loadFlatSkill(byName map[string]skillSource, root string, fileName string, 
 	}
 
 	name := strings.TrimSuffix(fileName, ".md")
-	if parsed.name != "" && parsed.name != name {
+	if parsed.name != "" && !skillNamesEqual(parsed.name, name) {
 		return fmt.Errorf(messages.ConfigSkillNameMismatchFmt, path, parsed.name, name)
 	}
 
@@ -149,13 +149,39 @@ func loadFlatSkill(byName map[string]skillSource, root string, fileName string, 
 	return registerSkill(byName, skill)
 }
 
-func loadDirectorySkill(byName map[string]skillSource, root string, dirName string, readFile skillReadFile) error {
-	skillPath := filepath.Join(root, dirName, "SKILL.md")
+func loadDirectorySkill(byName map[string]skillSource, root string, dirName string, readDir skillReadDir, readFile skillReadFile) error {
+	skillDirPath := filepath.Join(root, dirName)
+	entries, err := readDir(skillDirPath)
+	if err != nil {
+		return fmt.Errorf(messages.ConfigFailedReadSkillFmt, skillDirPath, err)
+	}
+
+	hasCanonical := false
+	hasFallback := false
+	for _, entry := range entries {
+		if entry.isDir {
+			continue
+		}
+		switch entry.name {
+		case "SKILL.md":
+			hasCanonical = true
+		case "skill.md":
+			hasFallback = true
+		}
+	}
+
+	skillPath := ""
+	switch {
+	case hasCanonical:
+		skillPath = filepath.Join(skillDirPath, "SKILL.md")
+	case hasFallback:
+		skillPath = filepath.Join(skillDirPath, "skill.md")
+	default:
+		return fmt.Errorf(messages.ConfigSkillDirMissingSkillFileFmt, skillDirPath)
+	}
+
 	data, err := readFile(skillPath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
-			return fmt.Errorf(messages.ConfigSkillDirMissingSkillFileFmt, filepath.Join(root, dirName))
-		}
 		return fmt.Errorf(messages.ConfigFailedReadSkillFmt, skillPath, err)
 	}
 
@@ -165,8 +191,8 @@ func loadDirectorySkill(byName map[string]skillSource, root string, dirName stri
 	}
 
 	name := dirName
-	if parsed.name != "" && parsed.name != dirName {
-		return fmt.Errorf(messages.ConfigSkillNameMismatchFmt, skillPath, parsed.name, dirName)
+	if parsed.name != "" && !skillNamesEqual(parsed.name, name) {
+		return fmt.Errorf(messages.ConfigSkillNameMismatchFmt, skillPath, parsed.name, name)
 	}
 
 	skill := Skill{
@@ -352,6 +378,14 @@ func normalizeOptionalSkillValue(value *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*value)
+}
+
+func normalizeSkillName(value string) string {
+	return strings.TrimSpace(norm.NFKC.String(value))
+}
+
+func skillNamesEqual(left string, right string) bool {
+	return normalizeSkillName(left) == normalizeSkillName(right)
 }
 
 func normalizeSkillMetadata(metadata map[string]string) map[string]string {

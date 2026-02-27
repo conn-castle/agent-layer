@@ -102,6 +102,103 @@ Body.`
 	}
 }
 
+func TestLoadSkills_DirectoryFormat_LowercaseSkillFileFallback(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "skills")
+	content := `---
+name: alpha
+description: Directory skill
+---
+
+Body.`
+	files := map[string][]byte{
+		filepath.Join(dir, "alpha", "skill.md"): []byte(content),
+	}
+	skills, err := loadSkills(
+		dir,
+		func(path string) ([]skillDirEntry, error) {
+			switch path {
+			case dir:
+				return []skillDirEntry{{name: "alpha", isDir: true}}, nil
+			case filepath.Join(dir, "alpha"):
+				return []skillDirEntry{{name: "skill.md", isDir: false}}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+		func(path string) ([]byte, error) {
+			data, ok := files[path]
+			if !ok {
+				return nil, os.ErrNotExist
+			}
+			return data, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("loadSkills error: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(skills))
+	}
+	if skills[0].SourcePath != filepath.Join(dir, "alpha", "skill.md") {
+		t.Fatalf("expected fallback source path, got %q", skills[0].SourcePath)
+	}
+}
+
+func TestLoadSkills_DirectoryFormat_PrefersCanonicalSkillFileName(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "skills")
+	canonicalContent := `---
+name: alpha
+description: Canonical
+---
+
+Body.`
+	fallbackContent := `---
+name: alpha
+description: Fallback
+---
+
+Body.`
+	files := map[string][]byte{
+		filepath.Join(dir, "alpha", "SKILL.md"): []byte(canonicalContent),
+		filepath.Join(dir, "alpha", "skill.md"): []byte(fallbackContent),
+	}
+	skills, err := loadSkills(
+		dir,
+		func(path string) ([]skillDirEntry, error) {
+			switch path {
+			case dir:
+				return []skillDirEntry{{name: "alpha", isDir: true}}, nil
+			case filepath.Join(dir, "alpha"):
+				return []skillDirEntry{
+					{name: "SKILL.md", isDir: false},
+					{name: "skill.md", isDir: false},
+				}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+		func(path string) ([]byte, error) {
+			data, ok := files[path]
+			if !ok {
+				return nil, os.ErrNotExist
+			}
+			return data, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("loadSkills error: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(skills))
+	}
+	if skills[0].Description != "Canonical" {
+		t.Fatalf("expected canonical file to win, got %q", skills[0].Description)
+	}
+	if skills[0].SourcePath != filepath.Join(dir, "alpha", "SKILL.md") {
+		t.Fatalf("expected canonical source path, got %q", skills[0].SourcePath)
+	}
+}
+
 func TestLoadSkills_DirectoryFormat_NameDerivedWhenFrontMatterNameMissing(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
@@ -125,6 +222,33 @@ Body.`
 	}
 	if skills[0].Name != "alpha" {
 		t.Fatalf("expected derived skill name alpha, got %q", skills[0].Name)
+	}
+}
+
+func TestLoadSkills_DirectoryFormat_NameMatchUsesNFKCNormalization(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "café"), 0o755); err != nil {
+		t.Fatalf("mkdir café: %v", err)
+	}
+	content := `---
+name: café
+description: Directory skill
+---
+
+Body.`
+	if err := os.WriteFile(filepath.Join(dir, "café", "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	skills, err := LoadSkills(dir)
+	if err != nil {
+		t.Fatalf("LoadSkills error: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(skills))
+	}
+	if skills[0].Name != "café" {
+		t.Fatalf("expected derived canonical name café, got %q", skills[0].Name)
 	}
 }
 
@@ -153,8 +277,8 @@ func TestLoadSkills_DirectoryMissingSkillFile(t *testing.T) {
 	}
 
 	_, err := LoadSkills(dir)
-	if err == nil || !strings.Contains(err.Error(), "missing SKILL.md") {
-		t.Fatalf("expected missing SKILL.md error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing SKILL.md or skill.md") {
+		t.Fatalf("expected missing SKILL.md or skill.md error, got %v", err)
 	}
 }
 
