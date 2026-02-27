@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.9.0",
-  "generated_at_utc": "2026-02-26T23:11:58Z",
+  "generated_at_utc": "2026-02-27T17:17:53Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
