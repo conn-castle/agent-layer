@@ -21,6 +21,11 @@ const (
 	yamlTagNull = "!!null"
 )
 
+const (
+	skillScannerInitialBufferSize = 64 * 1024
+	skillScannerMaxTokenSize      = 1024 * 1024
+)
+
 type skillDirEntry struct {
 	name  string
 	isDir bool
@@ -218,6 +223,7 @@ func registerSkill(byName map[string]skillSource, skill Skill) error {
 
 func parseSkill(content string) (parsedSkill, error) {
 	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, skillScannerInitialBufferSize), skillScannerMaxTokenSize)
 	if !scanner.Scan() {
 		return parsedSkill{}, fmt.Errorf(messages.ConfigSkillMissingContent)
 	}
