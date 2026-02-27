@@ -320,6 +320,74 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback_LoadsSkillsForDoctor(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillPath := filepath.Join(configDir, "skills", "alpha.md")
+	skillContent := `---
+name: alpha
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	if len(cfg.Skills) != 1 {
+		t.Fatalf("expected 1 loaded skill, got %d", len(cfg.Skills))
+	}
+
+	skillResults := CheckSkills(cfg)
+	if len(skillResults) != 1 {
+		t.Fatalf("expected 1 skill result, got %d: %#v", len(skillResults), skillResults)
+	}
+	if skillResults[0].Message == messages.DoctorSkillsNoneConfigured {
+		t.Fatalf("unexpected no-skills message while skill files exist: %#v", skillResults)
+	}
+}
+
 func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
