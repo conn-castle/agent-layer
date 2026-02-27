@@ -296,10 +296,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Unbounded version snapshots in `agent-layer-web` grow maintenance and deploy footprint over time; retention must be enforced in the publisher because deploy only publishes `main`.
     Tradeoffs: Older historical docs snapshots beyond the retention window are intentionally removed on each release publish; maintainers must run publisher manually if immediate cleanup is needed before the next release. Prerelease docs publication is unavailable until prerelease support is explicitly reintroduced end-to-end.
 
-- Decision 2026-02-26 phase15-frontmatter-parser-yaml-v3: Skill frontmatter parsing uses `gopkg.in/yaml.v3` with strict per-field validation
-    Decision: For Phase 15 `skill-frontmatter`, parse and serialize skill frontmatter with `gopkg.in/yaml.v3`, enforce required/typed fields in code (`description` required, `metadata` string-map, `compatibility`/`allowed-tools` string), and keep unknown keys parse-tolerant until validator work lands.
+- Decision 2026-02-26 phase15-frontmatter-parser-yaml-v3: Skill frontmatter parsing uses `go.yaml.in/yaml/v3` with strict per-field validation
+    Decision: For Phase 15 `skill-frontmatter`, parse and serialize skill frontmatter with `go.yaml.in/yaml/v3`, enforce required/typed fields in code (`description` required, `metadata` string-map, `compatibility`/`allowed-tools` string), and keep unknown keys parse-tolerant until validator work lands.
     Reason: YAML parsing replaces brittle line-scanning while preserving fail-loud behavior and enabling metadata serialization needed for generated Codex/Antigravity SKILL.md outputs.
-    Tradeoffs: `gopkg.in/yaml.v3` is from an upstream-unmaintained repository; migration to `go.yaml.in/yaml/v4` is deferred to a separate follow-up issue to avoid expanding Phase 15 scope.
+    Tradeoffs: `go.yaml.in/yaml/v3` keeps us on the stable v3 API surface; migration to `go.yaml.in/yaml/v4` is deferred to a separate follow-up issue to avoid expanding Phase 15 scope.
 
 - Decision 2026-02-26 phase15-frontmatter-parser-yaml-org-path: Skill frontmatter uses maintained YAML module path directly (supersedes phase15-frontmatter-parser-yaml-v3)
     Decision: Replace first-party YAML usage with `go.yaml.in/yaml/v3` and disallow direct imports of `gopkg.in/yaml.v3` in this repository.
