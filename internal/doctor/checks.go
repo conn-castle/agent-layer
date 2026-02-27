@@ -108,44 +108,44 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		}
 		partial.Env = config.WithBuiltInEnv(env, root)
 
-			// Best-effort: load skills so CheckSkills does not incorrectly report
-			// "No skills configured" when lenient config fallback is active.
-			paths := config.DefaultPaths(root)
-			skillsRelPath := relPathForDoctor(root, paths.SkillsDir)
-			skillsDirInfo, statErr := os.Stat(paths.SkillsDir)
-			switch {
-			case errors.Is(statErr, os.ErrNotExist):
-				// Missing skills directory is valid for repos with no skills.
-			case statErr != nil:
+		// Best-effort: load skills so CheckSkills does not incorrectly report
+		// "No skills configured" when lenient config fallback is active.
+		paths := config.DefaultPaths(root)
+		skillsRelPath := relPathForDoctor(root, paths.SkillsDir)
+		skillsDirInfo, statErr := os.Stat(paths.SkillsDir)
+		switch {
+		case errors.Is(statErr, os.ErrNotExist):
+			// Missing skills directory is valid for repos with no skills.
+		case statErr != nil:
+			results = append(results, Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameSkills,
+				Message:        fmt.Sprintf(messages.DoctorSkillsLoadFailedFmt, skillsRelPath, statErr),
+				Recommendation: messages.DoctorSkillValidationRecommend,
+			})
+		case !skillsDirInfo.IsDir():
+			results = append(results, Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameSkills,
+				Message:        fmt.Sprintf(messages.DoctorSkillsLoadFailedFmt, skillsRelPath, fmt.Sprintf(messages.DoctorPathNotDirFmt, skillsRelPath)),
+				Recommendation: messages.DoctorSkillValidationRecommend,
+			})
+		default:
+			skills, skillsErr := config.LoadSkills(paths.SkillsDir)
+			if skillsErr != nil {
 				results = append(results, Result{
 					Status:         StatusFail,
 					CheckName:      messages.DoctorCheckNameSkills,
-					Message:        fmt.Sprintf(messages.DoctorSkillsLoadFailedFmt, skillsRelPath, statErr),
+					Message:        fmt.Sprintf(messages.DoctorSkillsLoadFailedFmt, skillsRelPath, skillsErr),
 					Recommendation: messages.DoctorSkillValidationRecommend,
 				})
-			case !skillsDirInfo.IsDir():
-				results = append(results, Result{
-					Status:         StatusFail,
-					CheckName:      messages.DoctorCheckNameSkills,
-					Message:        fmt.Sprintf(messages.DoctorSkillsLoadFailedFmt, skillsRelPath, fmt.Sprintf(messages.DoctorPathNotDirFmt, skillsRelPath)),
-					Recommendation: messages.DoctorSkillValidationRecommend,
-				})
-			default:
-				skills, skillsErr := config.LoadSkills(paths.SkillsDir)
-				if skillsErr != nil {
-					results = append(results, Result{
-						Status:         StatusFail,
-						CheckName:      messages.DoctorCheckNameSkills,
-						Message:        fmt.Sprintf(messages.DoctorSkillsLoadFailedFmt, skillsRelPath, skillsErr),
-						Recommendation: messages.DoctorSkillValidationRecommend,
-					})
-				} else {
-					partial.Skills = skills
-				}
+			} else {
+				partial.Skills = skills
 			}
-
-			return results, partial
 		}
+
+		return results, partial
+	}
 
 	results = append(results, Result{
 		Status:    StatusOK,
