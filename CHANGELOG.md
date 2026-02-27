@@ -1,6 +1,27 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.9.0 - 2026-02-27
+
+### Added
+- Added a reusable `internal/skillvalidator` package with parse/validate separation and deterministic findings for agentskills.io-aligned skill validation.
+- Added `al doctor` diagnostics for skills validation, including explicit warnings when directory-format skills use lowercase `skill.md` instead of canonical `SKILL.md`.
+- Added release manifests for `v0.9.0`: `internal/templates/migrations/0.9.0.json` and `internal/templates/manifests/0.9.0.json`.
+
+### Changed
+- Renamed legacy "slash command" source and output terminology to "skills" across config, sync pipelines, templates, and docs.
+- Canonicalized source layout to `.agent-layer/skills/`, with migrations that rename legacy `.agent-layer/slash-commands/` and embedded skill template paths.
+- Skill frontmatter parsing/generation now uses YAML with support for agentskills fields (`name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`) and tolerant handling of additional fields for portability.
+
+### Fixed
+- Skill name handling is now Unicode NFKC-aware across loading and validation paths, preventing false duplicates/mismatches for normalization-equivalent names.
+- Skill metadata length limits now use rune counts (not bytes), and validation now rejects empty names and non-ASCII digit forms in slug normalization.
+- Directory-format loading now accepts lowercase `skill.md` as a compatibility fallback while preserving canonical `SKILL.md` precedence.
+
+### Improved
+- Expanded automated coverage across skill loading/validation, upgrade migrations, prompt generation, install ownership/readiness checks, and docs surfaces touched by the skills-standard migration.
+- Updated default embedded skills to canonical agentskills directory format (`skills/<name>/SKILL.md`) and aligned memory/workflow docs for Phase 15 completion.
+
 ## v0.8.8 - 2026-02-25
 
 ### Added
