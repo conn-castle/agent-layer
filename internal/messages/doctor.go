@@ -40,6 +40,7 @@ const (
 	DoctorSkillValidationWarnFmt   = "%s: %s"
 	DoctorSkillValidationRecommend = "Update skill frontmatter/path conventions in .agent-layer/skills to match agentskills.io recommendations."
 	DoctorSkillValidationFailedFmt = "Failed to validate skill %s: %v"
+	DoctorSkillsLoadFailedFmt      = "Failed to load skills from %s: %v"
 
 	DoctorUpdateSkippedFmt          = "Update check skipped because %s is set"
 	DoctorUpdateSkippedRecommendFmt = "Unset %s to check for updates."
