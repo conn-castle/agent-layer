@@ -2,6 +2,7 @@ package templates
 
 import (
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,5 +73,51 @@ func TestWalkTemplates(t *testing.T) {
 	}
 	if !seen {
 		t.Fatalf("expected to see at least one instruction template")
+	}
+}
+
+func TestReadReviewPlanSkillTemplate(t *testing.T) {
+	data, err := Read("skills/review-plan/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, ".agent-layer/tmp/*.plan.md") {
+		t.Fatalf("expected plan glob discovery in review-plan template")
+	}
+	if !strings.Contains(content, "<workflow>.<run-id>.plan.md") {
+		t.Fatalf("expected standard artifact naming in review-plan template")
+	}
+	if !strings.Contains(content, "If no valid plan artifact exists") {
+		t.Fatalf("expected explicit no-plan fallback in review-plan template")
+	}
+}
+
+func TestSkillTemplatesIncludeRequiredFrontMatter(t *testing.T) {
+	err := Walk("skills", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) != "SKILL.md" {
+			t.Fatalf("unexpected skill template path %q: expected SKILL.md files only", path)
+		}
+		data, err := Read(path)
+		if err != nil {
+			return err
+		}
+		content := string(data)
+		if !strings.Contains(content, "\nname: ") {
+			t.Fatalf("expected name frontmatter in %s", path)
+		}
+		if !strings.Contains(content, "\ndescription:") {
+			t.Fatalf("expected description frontmatter in %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk error: %v", err)
 	}
 }

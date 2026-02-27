@@ -566,3 +566,110 @@ func TestCheckAgents(t *testing.T) {
 		t.Error("Codex should be disabled (nil)")
 	}
 }
+
+func TestCheckSkills_NoSkills(t *testing.T) {
+	cfg := &config.ProjectConfig{}
+	results := CheckSkills(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusOK {
+		t.Fatalf("status = %s, want %s", results[0].Status, StatusOK)
+	}
+	if results[0].CheckName != messages.DoctorCheckNameSkills {
+		t.Fatalf("check name = %q, want %q", results[0].CheckName, messages.DoctorCheckNameSkills)
+	}
+	if results[0].Message != messages.DoctorSkillsNoneConfigured {
+		t.Fatalf("message = %q, want %q", results[0].Message, messages.DoctorSkillsNoneConfigured)
+	}
+}
+
+func TestCheckSkills_Compliant(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	skillPath := filepath.Join(skillsDir, "alpha.md")
+	content := `---
+name: alpha
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	cfg := &config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: "alpha", SourcePath: skillPath},
+		},
+	}
+	results := CheckSkills(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusOK {
+		t.Fatalf("status = %s, want %s", results[0].Status, StatusOK)
+	}
+	if !strings.Contains(results[0].Message, "Skills validated successfully") {
+		t.Fatalf("unexpected message: %q", results[0].Message)
+	}
+}
+
+func TestCheckSkills_Warnings(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	skillPath := filepath.Join(skillsDir, "alpha.md")
+	content := `---
+description: test
+foo: bar
+---
+Body.
+`
+	if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	cfg := &config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: "alpha", SourcePath: skillPath},
+		},
+	}
+	results := CheckSkills(cfg)
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 warning results, got %d: %#v", len(results), results)
+	}
+	for _, result := range results {
+		if result.Status != StatusWarn {
+			t.Fatalf("status = %s, want %s (%#v)", result.Status, StatusWarn, result)
+		}
+		if result.CheckName != messages.DoctorCheckNameSkills {
+			t.Fatalf("check name = %q, want %q", result.CheckName, messages.DoctorCheckNameSkills)
+		}
+	}
+}
+
+func TestCheckSkills_ParseFailure(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: "missing", SourcePath: filepath.Join(root, ".agent-layer", "skills", "missing.md")},
+		},
+	}
+	results := CheckSkills(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusFail {
+		t.Fatalf("status = %s, want %s", results[0].Status, StatusFail)
+	}
+	if results[0].Recommendation != messages.DoctorSkillValidationRecommend {
+		t.Fatalf("recommendation = %q, want %q", results[0].Recommendation, messages.DoctorSkillValidationRecommend)
+	}
+}

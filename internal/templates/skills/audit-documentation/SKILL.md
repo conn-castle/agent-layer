@@ -1,4 +1,5 @@
 ---
+name: audit-documentation
 description: Audit all Markdown documentation for accuracy and cross-document consistency against the repository (static validation only). Produce a reviewable report and ask the user which findings to fix, log to ISSUES.md, or ignore.
 ---
 

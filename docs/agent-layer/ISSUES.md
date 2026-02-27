@@ -27,6 +27,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-02-26 skill-validator-unicode-nfkc: Add full Unicode/NFKC skill-name validation support
+    Priority: Low. Area: skills / validation.
+    Description: The current validator enforces the ASCII baseline rules (`[a-z0-9-]`, no `--`, length cap) but does not yet implement Unicode lowercase alphanumeric handling with NFKC normalization from the full agentskills specification.
+    Next step: Extend name validation with NFKC normalization and Unicode-aware lowercase/alphanumeric checks, then add conformance tests for mixed-script and normalized-equivalent inputs.
+    Notes: Keep parse/validate separation and deterministic finding output unchanged.
+
+- Issue 2026-02-26 skill-file-lowercase-fallback: Accept lowercase `skill.md` for directory-format compatibility
+    Priority: Low. Area: skills / loader compatibility.
+    Description: Directory-format skills currently require `SKILL.md`; the reference implementation also accepts lowercase `skill.md`, so imported community skills may fail validation/loading unnecessarily.
+    Next step: Add a backward-compatible lowercase fallback lookup with explicit precedence (`SKILL.md` first), plus tests for mixed-case and duplicate-file edge cases.
+    Notes: Non-blocking interop gap; keep uppercase `SKILL.md` as the canonical output format.
+
 - Issue 2026-02-26 doctor-config-errors-explicit: Make `al doctor` config error guidance explicit and corrective (https://github.com/conn-castle/agent-layer/issues/80)
     Priority: High. Area: doctor / config diagnostics UX.
     Description: Current `al doctor` failures for config validation (for example unrecognized keys) are too generic and do not clearly identify the exact offending keys/sections and concrete repair path.

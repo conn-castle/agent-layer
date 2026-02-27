@@ -150,6 +150,15 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 				return err
 			}
 			if entry.IsDir() {
+				if path == templateRoot {
+					add(destRoot)
+					return nil
+				}
+				rel := strings.TrimPrefix(path, templateRoot+"/")
+				if rel == path {
+					return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
+				}
+				add(filepath.Join(destRoot, rel))
 				return nil
 			}
 			rel := strings.TrimPrefix(path, templateRoot+"/")

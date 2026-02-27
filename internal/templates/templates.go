@@ -7,7 +7,7 @@ import (
 
 // FS contains the embedded default templates for installation and generation.
 //
-//go:embed config.toml commands.allow env gitignore.block agent-layer.gitignore instructions/*.md skills/*.md docs/agent-layer/*.md launchers manifests/*.json migrations/*.json
+//go:embed config.toml commands.allow env gitignore.block agent-layer.gitignore instructions/*.md skills/*/SKILL.md docs/agent-layer/*.md launchers manifests/*.json migrations/*.json
 var FS embed.FS
 
 // ReadFunc is the function used by Read. Tests can replace it to simulate errors.

@@ -347,6 +347,21 @@ func TestBuildKnownPaths_IncludesUpgradeSnapshots(t *testing.T) {
 	}
 }
 
+func TestScanUnknowns_NoUnknownsAfterFreshRun(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	if rel := inst.relativeUnknowns(); len(rel) != 0 {
+		t.Fatalf("expected no unknown paths after fresh run, got %v", rel)
+	}
+}
+
 func TestRelativeUnknowns_Empty(t *testing.T) {
 	inst := &installer{
 		unknowns: nil,

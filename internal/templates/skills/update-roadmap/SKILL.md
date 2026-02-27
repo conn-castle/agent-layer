@@ -1,4 +1,5 @@
 ---
+name: update-roadmap
 description: Propose roadmap updates by integrating a coherent slice of the BACKLOG into existing (or new) ROADMAP phases, cross-checking ISSUES/DECISIONS/README for alignment. Report-first with easy partial approval.
 ---
 

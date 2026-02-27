@@ -12,6 +12,7 @@ const (
 	DoctorCheckNameConfig    = "Config"
 	DoctorCheckNameSecrets   = "Secrets"
 	DoctorCheckNameAgents    = "Agents"
+	DoctorCheckNameSkills    = "Skills"
 	DoctorCheckNameUpdate    = "Update"
 
 	DoctorMissingRequiredDirFmt       = "Missing required directory: %s"
@@ -33,6 +34,12 @@ const (
 
 	DoctorAgentEnabledFmt  = "Agent enabled: %s"
 	DoctorAgentDisabledFmt = "Agent disabled: %s"
+
+	DoctorSkillsValidatedFmt       = "Skills validated successfully (%d checked)"
+	DoctorSkillsNoneConfigured     = "No skills configured for validation."
+	DoctorSkillValidationWarnFmt   = "%s: %s"
+	DoctorSkillValidationRecommend = "Update skill frontmatter/path conventions in .agent-layer/skills to match agentskills.io recommendations."
+	DoctorSkillValidationFailedFmt = "Failed to validate skill %s: %v"
 
 	DoctorUpdateSkippedFmt          = "Update check skipped because %s is set"
 	DoctorUpdateSkippedRecommendFmt = "Unset %s to check for updates."

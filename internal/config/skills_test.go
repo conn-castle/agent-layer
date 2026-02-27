@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 const skillContent = `---
@@ -97,6 +99,32 @@ Body.`
 	}
 	if len(skills[0].Metadata) != 2 || skills[0].Metadata["owner"] != "team" || skills[0].Metadata["version"] != "1.0" {
 		t.Fatalf("unexpected metadata: %#v", skills[0].Metadata)
+	}
+}
+
+func TestLoadSkills_DirectoryFormat_NameDerivedWhenFrontMatterNameMissing(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir alpha: %v", err)
+	}
+	content := `---
+description: Directory skill
+---
+
+Body.`
+	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	skills, err := LoadSkills(dir)
+	if err != nil {
+		t.Fatalf("LoadSkills error: %v", err)
+	}
+	if len(skills) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(skills))
+	}
+	if skills[0].Name != "alpha" {
+		t.Fatalf("expected derived skill name alpha, got %q", skills[0].Name)
 	}
 }
 
@@ -256,6 +284,54 @@ func TestParseSkill_TypeMismatchErrors(t *testing.T) {
 		if _, err := parseSkill(content); err == nil || !strings.Contains(err.Error(), "invalid front matter type") {
 			t.Fatalf("expected front matter type error, got %v for %q", err, content)
 		}
+	}
+}
+
+func TestParseSkill_NullMetadataAccepted(t *testing.T) {
+	parsed, err := parseSkill("---\ndescription: test\nmetadata: ~\n---\n")
+	if err != nil {
+		t.Fatalf("parseSkill error: %v", err)
+	}
+	if parsed.metadata != nil {
+		t.Fatalf("expected nil metadata for null value, got %#v", parsed.metadata)
+	}
+
+	parsed, err = parseSkill("---\ndescription: test\nmetadata: null\n---\n")
+	if err != nil {
+		t.Fatalf("parseSkill error: %v", err)
+	}
+	if parsed.metadata != nil {
+		t.Fatalf("expected nil metadata for null value, got %#v", parsed.metadata)
+	}
+}
+
+func TestParseSkill_NullDescriptionFails(t *testing.T) {
+	_, err := parseSkill("---\ndescription: null\n---\n")
+	if err == nil {
+		t.Fatal("expected error for null description")
+	}
+	if !strings.Contains(err.Error(), messages.ConfigSkillDescriptionEmpty) {
+		t.Fatalf("expected %q error, got %v", messages.ConfigSkillDescriptionEmpty, err)
+	}
+}
+
+func TestParseSkill_NullOptionalStringFieldsTreatedAsAbsent(t *testing.T) {
+	parsed, err := parseSkill("---\ndescription: test\nlicense: null\ncompatibility: ~\nallowed-tools: null\n---\n")
+	if err != nil {
+		t.Fatalf("parseSkill error: %v", err)
+	}
+	if parsed.license != "" || parsed.compatibility != "" || parsed.allowedTools != "" {
+		t.Fatalf("expected null optional fields to normalize to empty strings, got %#v", parsed)
+	}
+}
+
+func TestParseSkill_NullNameFails(t *testing.T) {
+	_, err := parseSkill("---\nname: null\ndescription: test\n---\n")
+	if err == nil {
+		t.Fatal("expected error for null name")
+	}
+	if !strings.Contains(err.Error(), messages.ConfigSkillNameEmpty) {
+		t.Fatalf("expected %q error, got %v", messages.ConfigSkillNameEmpty, err)
 	}
 }
 

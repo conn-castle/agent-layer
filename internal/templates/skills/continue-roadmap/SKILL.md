@@ -1,4 +1,5 @@
 ---
+name: continue-roadmap
 description: Continue executing the roadmap by selecting the next actionable task(s) in the active incomplete phase, producing an approval-gated implementation plan, then implementing, verifying, and updating ROADMAP/ISSUES/DECISIONS/COMMANDS.
 ---
 

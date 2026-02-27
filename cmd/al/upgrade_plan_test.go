@@ -315,11 +315,11 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 		t.Fatalf("write issues: %v", err)
 	}
 
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues skill: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("skills/find-issues.md")
+	findIssuesTemplate, err := templates.Read("skills/find-issues/SKILL.md")
 	if err != nil {
 		t.Fatalf("read find-issues template: %v", err)
 	}

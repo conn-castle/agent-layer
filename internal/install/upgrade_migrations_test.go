@@ -245,11 +245,11 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.6.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("skills/find-issues.md")
+	findIssuesTemplate, err := templates.Read("skills/find-issues/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
       "kind": "rename_file",
       "rationale": "Move legacy skill path",
       "from": ".agent-layer/skills/find-issues-legacy.md",
-      "to": ".agent-layer/skills/find-issues.md"
+      "to": ".agent-layer/skills/find-issues/SKILL.md"
     }
   ]
 }`)
@@ -280,7 +280,7 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if len(plan.TemplateRenames) != 0 {
 		t.Fatalf("expected hash-rename inference to be filtered by manifest coverage, got %#v", plan.TemplateRenames)
 	}
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues.md") != nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues/SKILL.md") != nil {
 		t.Fatal("expected manifest-covered addition to be filtered")
 	}
 	if findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/find-issues-legacy.md") != nil {
@@ -335,13 +335,13 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	// Remove find-issues.md so the template system would add it back.
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
+	// Remove find-issues/SKILL.md so the template system would add it back.
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues: %v", err)
 	}
 	// Do NOT create the legacy source file — the rename will no-op because
-	// the source is absent. The plan must still show find-issues.md as an
+	// the source is absent. The plan must still show find-issues/SKILL.md as an
 	// addition so the user knows the template writer will create it.
 	withMigrationManifestOverride(t, "0.7.0", `{
   "schema_version": 1,
@@ -354,7 +354,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
       "rationale": "Move legacy skill path",
       "source_agnostic": true,
       "from": ".agent-layer/skills/find-issues-legacy.md",
-      "to": ".agent-layer/skills/find-issues.md"
+      "to": ".agent-layer/skills/find-issues/SKILL.md"
     }
   ]
 }`)
@@ -365,7 +365,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 	}
 	// The rename source doesn't exist, so the migration will no-op. The
 	// destination path must NOT be filtered from additions.
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues.md") == nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues/SKILL.md") == nil {
 		t.Fatal("expected no-op migration destination to appear as template addition in plan")
 	}
 }
@@ -376,11 +376,11 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("skills/find-issues.md")
+	findIssuesTemplate, err := templates.Read("skills/find-issues/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
       "kind": "rename_file",
       "rationale": "Move legacy skill path",
       "from": ".agent-layer/skills/find-issues-legacy.md",
-      "to": ".agent-layer/skills/find-issues.md"
+      "to": ".agent-layer/skills/find-issues/SKILL.md"
     }
   ]
 }`)
@@ -407,7 +407,7 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.7.0"}); err != nil {
 		t.Fatalf("upgrade run: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "find-issues.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")); err != nil {
 		t.Fatalf("expected find-issues after migration+upgrade: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "find-issues-legacy.md")); !os.IsNotExist(err) {
@@ -615,8 +615,8 @@ func TestLoadUpgradeMigrationManifest_0_9_0_IncludesSkillDirectoryRename(t *test
 	if err != nil {
 		t.Fatalf("load 0.9.0 manifest: %v", err)
 	}
-	if len(manifest.Operations) != 3 {
-		t.Fatalf("expected 3 operations, got %d", len(manifest.Operations))
+	if len(manifest.Operations) != 12 {
+		t.Fatalf("expected 12 operations, got %d", len(manifest.Operations))
 	}
 
 	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
@@ -639,6 +639,23 @@ func TestLoadUpgradeMigrationManifest_0_9_0_IncludesSkillDirectoryRename(t *test
 	}
 	if !renameDirOp.SourceAgnostic {
 		t.Fatal("expected rename-dir op source_agnostic = true")
+	}
+
+	renameFindIssuesOp, ok := byID["h-rename-find-issues-skill-to-directory-format"]
+	if !ok {
+		t.Fatalf("missing find-issues migration operation, got IDs: %v", mapKeys(byID))
+	}
+	if renameFindIssuesOp.Kind != upgradeMigrationKindRenameFile {
+		t.Fatalf("find-issues op kind = %q, want %q", renameFindIssuesOp.Kind, upgradeMigrationKindRenameFile)
+	}
+	if renameFindIssuesOp.From != ".agent-layer/skills/find-issues.md" {
+		t.Fatalf("find-issues op from = %q, want %q", renameFindIssuesOp.From, ".agent-layer/skills/find-issues.md")
+	}
+	if renameFindIssuesOp.To != ".agent-layer/skills/find-issues/SKILL.md" {
+		t.Fatalf("find-issues op to = %q, want %q", renameFindIssuesOp.To, ".agent-layer/skills/find-issues/SKILL.md")
+	}
+	if !renameFindIssuesOp.SourceAgnostic {
+		t.Fatal("expected find-issues op source_agnostic = true")
 	}
 }
 

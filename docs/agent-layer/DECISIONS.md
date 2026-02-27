@@ -305,3 +305,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Replace first-party YAML usage with `go.yaml.in/yaml/v3` and disallow direct imports of `gopkg.in/yaml.v3` in this repository.
     Reason: Avoid direct reliance on the archived `gopkg.in` YAML module path while preserving stable behavior and avoiding pre-release `v4` adoption.
     Tradeoffs: `gopkg.in/yaml.v3` may still appear transitively until upstream dependencies migrate; full graph removal requires broader dependency upgrades outside this scoped change.
+
+- Decision 2026-02-26 phase15-skill-parse-validate-separation: Keep skill parsing tolerant and enforce spec in validator/doctor
+    Decision: `internal/config` skill parsing remains backward-compatible (path-derived canonical names, unknown frontmatter tolerated, no hard requirement for frontmatter `name` at parse time), while Phase 15 spec checks are enforced in `internal/skillvalidator` and surfaced as `al doctor` skill warnings.
+    Reason: Existing repos contain flat legacy skills that would break under strict parse-time enforcement; validator-level diagnostics preserve upgradeability while still driving standards alignment.
+    Tradeoffs: Non-compliant skills can still load/sync until users act on doctor warnings; strict enforcement can be added later only with an explicit migration path.

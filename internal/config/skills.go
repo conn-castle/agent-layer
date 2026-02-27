@@ -373,10 +373,16 @@ func parseFrontMatterStringField(field string, node *yaml.Node) (string, error) 
 	if node.Tag != "" && node.Tag != yamlTagStr && node.Tag != yamlTagNull {
 		return "", fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, fmt.Sprintf("%s must be a string", field))
 	}
+	if node.Tag == yamlTagNull {
+		return "", nil
+	}
 	return node.Value, nil
 }
 
 func parseFrontMatterMetadata(node *yaml.Node) (map[string]string, error) {
+	if node.Kind == yaml.ScalarNode && node.Tag == yamlTagNull {
+		return nil, nil
+	}
 	if node.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, "metadata must be a string map")
 	}

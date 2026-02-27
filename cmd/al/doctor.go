@@ -83,6 +83,9 @@ func newDoctorCmd() *cobra.Command {
 
 				// 4. Check Agents
 				allResults = append(allResults, doctor.CheckAgents(cfg)...)
+
+				// 5. Check Skills
+				allResults = append(allResults, doctor.CheckSkills(cfg)...)
 			}
 
 			hasFail := false

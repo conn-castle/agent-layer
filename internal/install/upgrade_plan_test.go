@@ -43,11 +43,11 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	}
 
 	// Simulate a rename candidate by moving one managed template file to an orphan path.
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues.md")
+	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
 	if err := os.Remove(findIssuesPath); err != nil {
 		t.Fatalf("remove find-issues skill: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("skills/find-issues.md")
+	findIssuesTemplate, err := templates.Read("skills/find-issues/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template skill: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	if rename.From != ".agent-layer/skills/find-issues-legacy.md" {
 		t.Fatalf("unexpected rename from path: %s", rename.From)
 	}
-	if rename.To != ".agent-layer/skills/find-issues.md" {
+	if rename.To != ".agent-layer/skills/find-issues/SKILL.md" {
 		t.Fatalf("unexpected rename to path: %s", rename.To)
 	}
 	if rename.Confidence != UpgradeRenameConfidenceHigh {

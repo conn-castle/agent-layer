@@ -464,11 +464,14 @@ These files are user-editable; define the workflows you want your agents to run.
 - Source formats:
   - Flat file: `.agent-layer/skills/<name>.md`
   - Directory format: `.agent-layer/skills/<name>/SKILL.md`
-- Canonical skill name is derived from filename/directory name; optional `name` frontmatter must match when present.
+- Canonical skill name is derived from filename/directory name.
 - Supported frontmatter fields:
-  - Required: `description`
-  - Optional: `name`, `license`, `compatibility`, `metadata`, `allowed-tools`
+  - Required: `name`, `description` — `al doctor` warns when missing.
+  - Optional: `license`, `compatibility`, `metadata`, `allowed-tools`
+  - When present, `name` must match the canonical source name (filename stem or directory name).
+  - Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
+- Recommended skill sequences for common workflows are documented in [docs/agent-layer/SKILLS_WORKFLOWS.md](docs/agent-layer/SKILLS_WORKFLOWS.md).
 
 ### Approved commands: `.agent-layer/commands.allow`
 

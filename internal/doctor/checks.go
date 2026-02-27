@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillvalidator"
 )
 
 var (
@@ -198,4 +201,72 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 		}
 	}
 	return results
+}
+
+// CheckSkills validates configured skills against agentskills-aligned conventions.
+func CheckSkills(cfg *config.ProjectConfig) []Result {
+	if cfg == nil {
+		return nil
+	}
+	if len(cfg.Skills) == 0 {
+		return []Result{{
+			Status:    StatusOK,
+			CheckName: messages.DoctorCheckNameSkills,
+			Message:   messages.DoctorSkillsNoneConfigured,
+		}}
+	}
+
+	skills := append([]config.Skill(nil), cfg.Skills...)
+	sort.Slice(skills, func(i, j int) bool {
+		if skills[i].SourcePath == skills[j].SourcePath {
+			return skills[i].Name < skills[j].Name
+		}
+		return skills[i].SourcePath < skills[j].SourcePath
+	})
+
+	results := make([]Result, 0)
+	for _, skill := range skills {
+		parsed, err := skillvalidator.ParseSkillSource(skill.SourcePath)
+		if err != nil {
+			results = append(results, Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameSkills,
+				Message:        fmt.Sprintf(messages.DoctorSkillValidationFailedFmt, relPathForDoctor(cfg.Root, skill.SourcePath), err),
+				Recommendation: messages.DoctorSkillValidationRecommend,
+			})
+			continue
+		}
+		findings := skillvalidator.ValidateParsedSkill(parsed)
+		if len(findings) == 0 {
+			continue
+		}
+		for _, finding := range findings {
+			results = append(results, Result{
+				Status:         StatusWarn,
+				CheckName:      messages.DoctorCheckNameSkills,
+				Message:        fmt.Sprintf(messages.DoctorSkillValidationWarnFmt, relPathForDoctor(cfg.Root, finding.Path), finding.Message),
+				Recommendation: messages.DoctorSkillValidationRecommend,
+			})
+		}
+	}
+
+	if len(results) > 0 {
+		return results
+	}
+	return []Result{{
+		Status:    StatusOK,
+		CheckName: messages.DoctorCheckNameSkills,
+		Message:   fmt.Sprintf(messages.DoctorSkillsValidatedFmt, len(skills)),
+	}}
+}
+
+func relPathForDoctor(root string, path string) string {
+	if strings.TrimSpace(root) == "" {
+		return filepath.ToSlash(path)
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return filepath.ToSlash(path)
+	}
+	return filepath.ToSlash(rel)
 }
