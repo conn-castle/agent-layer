@@ -351,6 +351,18 @@ func TestParseSkill_NameMultilineRejected(t *testing.T) {
 	}
 }
 
+func TestParseSkill_LongLineDoesNotFail(t *testing.T) {
+	longLine := strings.Repeat("a", 70*1024)
+	content := "---\ndescription: test\n---\n" + longLine + "\n"
+	parsed, err := parseSkill(content)
+	if err != nil {
+		t.Fatalf("parseSkill error for long line: %v", err)
+	}
+	if parsed.body != longLine {
+		t.Fatalf("unexpected long-line body length: got %d want %d", len(parsed.body), len(longLine))
+	}
+}
+
 func TestParseSkill_OptionalFieldsTrimmed(t *testing.T) {
 	content := `---
 description: desc
