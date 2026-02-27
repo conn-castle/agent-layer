@@ -23,7 +23,7 @@ const (
 
 const (
 	skillScannerInitialBufferSize = 64 * 1024
-	skillScannerMaxTokenSize      = 1024 * 1024
+	skillScannerMaxTokenSize      = 16 * 1024 * 1024
 )
 
 type skillDirEntry struct {
