@@ -100,6 +100,24 @@ Body.
 	}
 }
 
+func TestParseSkillSource_LongLineDoesNotFail(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "alpha.md")
+	longLine := strings.Repeat("a", 70*1024)
+	content := "---\nname: alpha\ndescription: test\n---\n" + longLine + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	parsed, err := ParseSkillSource(path)
+	if err != nil {
+		t.Fatalf("ParseSkillSource: %v", err)
+	}
+	if parsed.LineCount < 5 {
+		t.Fatalf("unexpected line count for long-line skill: %d", parsed.LineCount)
+	}
+}
+
 func TestValidateParsedSkill_MissingNameWarning(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "alpha.md")
