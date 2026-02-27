@@ -40,5 +40,7 @@ jobs:
         run: make tools
       - name: CI checks
         run: make ci
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Build release artifacts (dry run)
         run: make release-dist AL_VERSION=ci DIST_DIR=dist

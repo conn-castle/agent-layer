@@ -213,7 +213,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
 
 - Decision 2026-02-18 config-field-catalog: Shared config field catalog in `internal/config/fields.go`
     Decision: Centralize config field metadata (type, valid options, required flag, allow-custom) in a single registry. Wizard and upgrade prompts derive option lists from the catalog instead of maintaining separate hardcoded slices. `validate.go` derives approval mode validation from the catalog. Upgrade `config_set_default` prompts receive field metadata to show type-aware numbered choices (bool true/false, enum options) instead of yes/no.
-    Reason: Config field options were duplicated across `wizard/catalog.go` (option lists), `validate.go` (valid value maps), and had no way to flow to the upgrade prompter. A shared catalog provides a single source of truth and enables richer upgrade prompts.
+    Reason: Config field options were duplicated across `internal/wizard/catalog.go` (option lists), `validate.go` (valid value maps), and had no way to flow to the upgrade prompter. A shared catalog provides a single source of truth and enables richer upgrade prompts.
     Tradeoffs: Adding a new config field now requires updating `internal/config/fields.go` in addition to `types.go`/`validate.go`; accepted because the catalog is the natural place to document field constraints.
 
 - Decision 2026-02-19 validate-mcp-sanitize: Validation silently strips transport-incompatible MCP fields (supersedes wizard-only approach)
@@ -310,3 +310,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `internal/config` skill parsing remains backward-compatible (path-derived canonical names, unknown frontmatter tolerated, no hard requirement for frontmatter `name` at parse time), while Phase 15 spec checks are enforced in `internal/skillvalidator` and surfaced as `al doctor` skill warnings.
     Reason: Existing repos contain flat legacy skills that would break under strict parse-time enforcement; validator-level diagnostics preserve upgradeability while still driving standards alignment.
     Tradeoffs: Non-compliant skills can still load/sync until users act on doctor warnings; strict enforcement can be added later only with an explicit migration path.
+
+- Decision 2026-02-27 e2e-github-api-auth: E2E harness authenticates GitHub API calls with GITHUB_TOKEN
+    Decision: `resolve_latest_release_version()` in `scripts/test-e2e/harness.sh` now passes `GITHUB_TOKEN` (or `GH_TOKEN`) as a Bearer token in the Authorization header when available. CI workflow exports `GITHUB_TOKEN` to the `make ci` step.
+    Reason: Unauthenticated GitHub API calls are rate-limited to 60 req/hr per IP. GitHub Actions runners share IPs, causing intermittent CI failures when the rate limit is hit during the "Resolve upgrade binaries" phase.
+    Tradeoffs: Authenticated requests raise the limit to 5000 req/hr but require a token; unauthenticated fallback is preserved for local offline runs.

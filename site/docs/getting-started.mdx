@@ -86,7 +86,7 @@ From here on, treat `al <client>` as your entry point. Syncing happens first so 
 Edit these files to make the agent behave the way you want:
 
 - `.agent-layer/instructions/` for global rules and preferences
-- `.agent-layer/skills/` for reusable workflows
+- `.agent-layer/skills/` for reusable workflows (aligned with the [agentskills.io specification](https://agentskills.io/specification))
 - `.agent-layer/commands.allow` to define approved shell command prefixes
 - `.agent-layer/config.toml` for approvals, agent enablement, models, MCP servers, and warnings
 
@@ -150,7 +150,7 @@ Typical layout:
 .agent-layer/
   config.toml          # approvals, agents, models, MCP servers, warnings
   instructions/        # numbered instruction fragments
-  skills/            # one file per skill
+  skills/             # <name>.md or <name>/SKILL.md
   commands.allow       # approved shell command prefixes
   al.version           # repo pin (required)
   .env                 # secrets (always gitignored)
@@ -160,6 +160,8 @@ Typical layout:
   state/managed-baseline.json # managed ownership baseline state
   tmp/                 # agent-only artifacts
 ```
+
+Skill sources follow the [agentskills.io specification](https://agentskills.io/specification). Agent Layer supports both flat and directory formats; for directory skills, canonical `SKILL.md` is preferred and lowercase `skill.md` remains a compatibility fallback that triggers an `al doctor` warning.
 
 ### Project memory (`docs/agent-layer/`)
 

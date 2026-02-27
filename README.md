@@ -9,7 +9,6 @@
 One repo-local source of truth for instructions, skills, MCP servers, and approvals across coding agents.
 
 [![Downloads](https://img.shields.io/github/downloads/conn-castle/agent-layer/total)](https://github.com/conn-castle/agent-layer/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/conn-castle/agent-layer/ci.yml?branch=main&label=CI)](https://github.com/conn-castle/agent-layer/actions/workflows/ci.yml)
 
 Agent Layer keeps AI-assisted development consistent across tools by generating each client’s required config from a single `.agent-layer/` folder. Install `al` once per machine, run `al init` per repo, then run `al <client>` (e.g., `al claude`) to sync and launch.
 
@@ -461,6 +460,8 @@ These files are user-editable; customize them for your team's preferences.
 
 These files are user-editable; define the workflows you want your agents to run.
 
+Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/specification), and `al doctor` validates configured skills against agentskills-aligned conventions.
+
 - Source formats:
   - Flat file: `.agent-layer/skills/<name>.md`
   - Directory format: `.agent-layer/skills/<name>/SKILL.md` (canonical; `skill.md` is accepted as a compatibility fallback)
@@ -471,6 +472,7 @@ These files are user-editable; define the workflows you want your agents to run.
   - NFKC-normalized and compared against the canonical source name (filename stem or directory name) using normalization-aware matching
   - Maximum 64 Unicode characters, lowercase letters/digits/hyphens only, and no leading/trailing/consecutive hyphens
 - Length limits (`al doctor`): `description` max 1024 Unicode characters; `compatibility` max 500 Unicode characters.
+- Size recommendation (`al doctor`): warns when a skill source exceeds 500 lines.
 - Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
 - Missing or empty `description` is a load/sync error (fail-loud); it is not warning-only.
 - Directory-format skills should use `SKILL.md`; lowercase `skill.md` loads but triggers an `al doctor` warning.
