@@ -26,7 +26,7 @@ const (
 
 const (
 	skillSourceScannerInitialBufferSize = 64 * 1024
-	skillSourceScannerMaxTokenSize      = 16 * 1024 * 1024
+	skillSourceScannerMaxTokenSize      = 8 * 1024 * 1024
 )
 
 const (
