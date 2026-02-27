@@ -333,13 +333,21 @@ _e2e_bin_cache_dir() {
 # resolve_latest_release_version — query GitHub for the latest release tag.
 # Prints the version without the "v" prefix (e.g. "0.8.3"). Returns 1 on
 # failure. Requires AL_E2E_ONLINE=1 (makes a network call).
+# Uses GITHUB_TOKEN or GH_TOKEN for authentication when available, avoiding
+# the unauthenticated rate limit (60 req/hr per IP).
 resolve_latest_release_version() {
   if [[ "${AL_E2E_ONLINE:-}" != "1" ]]; then
     return 1
   fi
+  local auth_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  local auth_args=()
+  if [[ -n "$auth_token" ]]; then
+    auth_args=(-H "Authorization: Bearer $auth_token")
+  fi
   local response tag
   response=$(curl -fsSL \
     -H "Accept: application/vnd.github+json" \
+    "${auth_args[@]+"${auth_args[@]}"}" \
     "https://api.github.com/repos/conn-castle/agent-layer/releases/latest" 2>/dev/null) || return 1
   # Extract tag_name without jq (minimise dependencies).
   tag=$(echo "$response" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')

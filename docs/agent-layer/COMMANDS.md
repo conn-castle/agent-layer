@@ -110,6 +110,14 @@ Run from: repo root
 Prerequisites: `make tools` has been run
 Notes: Uses `gotestsum` for nicer output.
 
+- Run e2e harness self-tests (auth, helpers)
+```bash
+make test-e2e-harness
+```
+Run from: repo root
+Prerequisites: none
+Notes: Validates harness infrastructure (token auth, helpers) without running full e2e scenarios.
+
 - Run race detector on concurrency-critical packages
 ```bash
 make test-race

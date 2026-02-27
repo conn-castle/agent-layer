@@ -97,7 +97,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_RO
 # Optional thresholds for warning checks. Omit or comment out to disable.
 # Warn when a newer Agent Layer version is available during sync runs.
 version_update_on_sync = true
-# Warning output noise control: "default" keeps all warnings, "reduce" hides suppressible non-critical warnings.
+# Warning output noise control: "default" keeps all warnings, "reduce" hides suppressible non-critical warnings,
+# and "quiet" suppresses agent-layer informational output (warnings still print in `al doctor`).
 noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
@@ -214,6 +215,7 @@ Set `noise_mode` to control warning verbosity:
 
 - `default`: keep all warnings (recommended)
 - `reduce`: hide only suppressible non-critical warnings
+- `quiet`: suppress agent-layer informational output (warnings still print in `al doctor`)
 
 ### Validation rules
 
@@ -489,6 +491,8 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 
 **Skill format**
 
+Skill sources align with the [agentskills.io specification](https://agentskills.io/specification), with explicit backward-compatibility behavior documented below.
+
 `.agent-layer/skills/` supports two source formats:
 
 - Flat: `.agent-layer/skills/<name>.md`
@@ -505,6 +509,7 @@ Validation notes (`al doctor`):
 - Name limits: max 64 Unicode characters, lowercase letters/digits/hyphens only, no leading/trailing/consecutive hyphens.
 - Description limit: max 1024 Unicode characters.
 - Compatibility limit (when present): max 500 Unicode characters.
+- Size recommendation: `al doctor` warns when a skill source exceeds 500 lines.
 - Missing `name` remains load-compatible (name is derived from path), but `al doctor` warns.
 - Missing or empty `description` fails load/sync (fail-loud).
 - Directory skills using lowercase `skill.md` load for compatibility, but `al doctor` warns to use canonical `SKILL.md`.

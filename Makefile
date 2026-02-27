@@ -180,12 +180,16 @@ release-dist: test-release ## Build release artifacts (cross-compile)
 setup: ## Run one-time setup for this clone
 	@./scripts/setup.sh
 
+.PHONY: test-e2e-harness
+test-e2e-harness: ## Run e2e harness self-tests (auth, helpers)
+	@./scripts/test-e2e/test-harness-auth.sh
+
 .PHONY: test-e2e-ci
 test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios required)
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint coverage test-release test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint coverage test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local checks during development (format + lint + coverage + release tests)
