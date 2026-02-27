@@ -17,25 +17,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/harness.sh"
 
 # ---------------------------------------------------------------------------
-# Mock curl — simulates GitHub API rate limiting for unauthenticated requests.
-# Accepts requests that include "Authorization: Bearer" or "Authorization: token"
-# headers and returns a valid release JSON. Rejects all others with exit 22
-# (curl -f convention for 403).
+# Mock curl — simulates GitHub API auth/rate limiting responses.
+# Mode is controlled by MOCK_CURL_MODE:
+# - auth-required (default): succeed only with Authorization header.
+# - auth-fails: fail when Authorization header is present, succeed otherwise.
+# - unauth-ok: succeed regardless of Authorization header.
 # ---------------------------------------------------------------------------
 MOCK_BIN_DIR="$(mktemp -d)"
 trap 'rm -rf "$MOCK_BIN_DIR"' EXIT
 
 cat > "$MOCK_BIN_DIR/curl" <<'MOCK_CURL'
 #!/usr/bin/env bash
-# Mock curl: require an Authorization header to succeed.
+# Mock curl behavior controlled by MOCK_CURL_MODE.
+mode="${MOCK_CURL_MODE:-auth-required}"
 has_auth=0
-for arg in "$@"; do
-  case "$arg" in
-    Authorization:\ Bearer\ *|Authorization:\ token\ *)
-      has_auth=1
-      ;;
-  esac
-done
 
 # Walk args to find -H values (curl passes header as next arg after -H).
 i=0
@@ -54,14 +49,29 @@ while [[ $i -lt ${#args[@]} ]]; do
   i=$((i + 1))
 done
 
-if [[ $has_auth -eq 1 ]]; then
-  # Simulate a valid GitHub release response.
-  echo '{"tag_name": "v0.8.8", "name": "v0.8.8"}'
-  exit 0
-else
-  # Simulate 403 rate-limit (curl -f returns 22 on HTTP 4xx).
-  exit 22
-fi
+case "$mode" in
+  auth-required)
+    if [[ $has_auth -eq 1 ]]; then
+      echo '{"tag_name": "v0.8.8", "name": "v0.8.8"}'
+      exit 0
+    fi
+    exit 22
+    ;;
+  auth-fails)
+    if [[ $has_auth -eq 1 ]]; then
+      exit 22
+    fi
+    echo '{"tag_name": "v0.8.8", "name": "v0.8.8"}'
+    exit 0
+    ;;
+  unauth-ok)
+    echo '{"tag_name": "v0.8.8", "name": "v0.8.8"}'
+    exit 0
+    ;;
+  *)
+    exit 2
+    ;;
+esac
 MOCK_CURL
 chmod +x "$MOCK_BIN_DIR/curl"
 
@@ -75,6 +85,7 @@ export AL_E2E_ONLINE=1
 section "Harness auth: resolve_latest_release_version"
 
 # --- Case 1: With GITHUB_TOKEN set, the function must pass the token -------
+export MOCK_CURL_MODE="auth-required"
 export GITHUB_TOKEN="ghp_test_mock_token_value"
 unset GH_TOKEN 2>/dev/null || true
 
@@ -89,6 +100,7 @@ else
 fi
 
 # --- Case 2: With GH_TOKEN set (fallback), the function must pass it -------
+export MOCK_CURL_MODE="auth-required"
 unset GITHUB_TOKEN 2>/dev/null || true
 export GH_TOKEN="ghp_test_gh_token_value"
 
@@ -103,6 +115,7 @@ else
 fi
 
 # --- Case 3: Without any token, function still attempts (unauthenticated) --
+export MOCK_CURL_MODE="auth-required"
 unset GITHUB_TOKEN 2>/dev/null || true
 unset GH_TOKEN 2>/dev/null || true
 
@@ -116,6 +129,21 @@ else
   # This is expected: unauthenticated calls may succeed on a real API but
   # fail when rate-limited. The mock rejects unauthenticated calls.
   pass "resolve_latest_release_version succeeded without token (unexpected but not wrong)"
+fi
+
+# --- Case 4: Auth fails, fallback to unauthenticated ----------------------
+export MOCK_CURL_MODE="auth-fails"
+export GITHUB_TOKEN="ghp_test_stale_token_value"
+unset GH_TOKEN 2>/dev/null || true
+
+result=""
+rc=0
+result=$(resolve_latest_release_version) || rc=$?
+
+if [[ $rc -eq 0 && "$result" == "0.8.8" ]]; then
+  pass "resolve_latest_release_version falls back when auth fails"
+else
+  fail "resolve_latest_release_version should fall back on auth failure (got rc=$rc, result='$result')"
 fi
 
 # ---------------------------------------------------------------------------

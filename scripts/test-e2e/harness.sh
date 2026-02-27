@@ -339,16 +339,23 @@ resolve_latest_release_version() {
   if [[ "${AL_E2E_ONLINE:-}" != "1" ]]; then
     return 1
   fi
-  local auth_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-  local auth_args=()
-  if [[ -n "$auth_token" ]]; then
-    auth_args=(-H "Authorization: Bearer $auth_token")
-  fi
   local response tag
-  response=$(curl -fsSL \
-    -H "Accept: application/vnd.github+json" \
-    "${auth_args[@]+"${auth_args[@]}"}" \
-    "https://api.github.com/repos/conn-castle/agent-layer/releases/latest" 2>/dev/null) || return 1
+  local auth_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [[ -n "$auth_token" ]]; then
+    response=$(curl -fsSL \
+      -H "Accept: application/vnd.github+json" \
+      -H "Authorization: Bearer $auth_token" \
+      "https://api.github.com/repos/conn-castle/agent-layer/releases/latest" 2>/dev/null) || {
+      warn "GitHub API auth failed; retrying unauthenticated request" >&2
+      response=$(curl -fsSL \
+        -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/conn-castle/agent-layer/releases/latest" 2>/dev/null) || return 1
+    }
+  else
+    response=$(curl -fsSL \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/conn-castle/agent-layer/releases/latest" 2>/dev/null) || return 1
+  fi
   # Extract tag_name without jq (minimise dependencies).
   tag=$(echo "$response" | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//;s/".*//')
   if [[ -z "$tag" ]]; then

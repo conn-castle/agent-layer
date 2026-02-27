@@ -269,7 +269,7 @@ func ValidateParsedSkill(parsed ParsedSkill) []Finding {
 		findings = append(findings, warning(
 			FindingCodeSizeRecommendation,
 			parsed.SourcePath,
-			fmt.Sprintf("SKILL.md is %d lines; keep skill instructions under %d lines when possible", parsed.LineCount, MaxRecommendedSkillLines),
+			fmt.Sprintf("skill source is %d lines; keep skill instructions under %d lines when possible", parsed.LineCount, MaxRecommendedSkillLines),
 		))
 	}
 	sortFindings(findings)
