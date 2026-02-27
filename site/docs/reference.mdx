@@ -506,6 +506,7 @@ Validation notes (`al doctor`):
 - Description limit: max 1024 Unicode characters.
 - Compatibility limit (when present): max 500 Unicode characters.
 - Missing `name` remains load-compatible (name is derived from path), but `al doctor` warns.
+- Missing or empty `description` fails load/sync (fail-loud).
 - Directory skills using lowercase `skill.md` load for compatibility, but `al doctor` warns to use canonical `SKILL.md`.
 
 Example:
