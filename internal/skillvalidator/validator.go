@@ -25,6 +25,11 @@ const (
 )
 
 const (
+	skillSourceScannerInitialBufferSize = 64 * 1024
+	skillSourceScannerMaxTokenSize      = 1024 * 1024
+)
+
+const (
 	// MaxSkillNameLength is the maximum accepted length for skill frontmatter name.
 	MaxSkillNameLength = 64
 	// MaxDescriptionLength is the maximum accepted length for skill description.
@@ -118,6 +123,7 @@ func ParseSkillSource(path string) (ParsedSkill, error) {
 	lineCount := countLines(content)
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, skillSourceScannerInitialBufferSize), skillSourceScannerMaxTokenSize)
 	if !scanner.Scan() {
 		return ParsedSkill{}, fmt.Errorf("skill source %s is empty", path)
 	}
