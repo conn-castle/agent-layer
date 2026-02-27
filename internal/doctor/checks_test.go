@@ -388,6 +388,103 @@ Body.
 	}
 }
 
+func TestCheckConfig_LenientFallback_MissingSkillsDir_DoesNotAddSkillsFailure(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	for _, result := range results {
+		if result.CheckName == messages.DoctorCheckNameSkills {
+			t.Fatalf("did not expect skills failure for missing skills directory: %#v", results)
+		}
+	}
+	if len(results) != 1 || results[0].CheckName != messages.DoctorCheckNameConfig || results[0].Status != StatusFail {
+		t.Fatalf("expected single config fail result, got %#v", results)
+	}
+
+	skillResults := CheckSkills(cfg)
+	if len(skillResults) != 1 || skillResults[0].Message != messages.DoctorSkillsNoneConfigured {
+		t.Fatalf("expected no-skills configured result, got %#v", skillResults)
+	}
+}
+
+func TestCheckConfig_LenientFallback_SkillsPathIsFile_ReportsLoadFailure(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "skills"), []byte("not-a-directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+
+	var foundSkillsLoadFailure bool
+	for _, result := range results {
+		if result.CheckName != messages.DoctorCheckNameSkills {
+			continue
+		}
+		foundSkillsLoadFailure = true
+		if !strings.Contains(result.Message, "Failed to load skills from .agent-layer/skills") {
+			t.Fatalf("unexpected skills load failure message: %q", result.Message)
+		}
+		if strings.Contains(result.Message, "Failed to validate skill") {
+			t.Fatalf("unexpected per-skill validation wording for directory load failure: %q", result.Message)
+		}
+	}
+	if !foundSkillsLoadFailure {
+		t.Fatalf("expected skills load failure result, got %#v", results)
+	}
+}
+
 func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
