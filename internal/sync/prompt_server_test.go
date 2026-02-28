@@ -32,6 +32,48 @@ func TestResolvePromptServerCommandUsesGlobalBinary(t *testing.T) {
 	}
 }
 
+func TestResolvePromptServerCommandExportedUsesGlobalBinary(t *testing.T) {
+	t.Parallel()
+	sys := &MockSystem{
+		LookPathFunc: func(file string) (string, error) {
+			if file != "al" {
+				return "", errors.New("unexpected lookup")
+			}
+			return "/usr/local/bin/al", nil
+		},
+	}
+
+	command, args, err := ResolvePromptServerCommand(sys, t.TempDir())
+	if err != nil {
+		t.Fatalf("ResolvePromptServerCommand error: %v", err)
+	}
+	if command != "al" {
+		t.Fatalf("expected al, got %q", command)
+	}
+	if len(args) != 1 || args[0] != "mcp-prompts" {
+		t.Fatalf("unexpected args: %#v", args)
+	}
+}
+
+func TestResolvePromptServerCommandRequiresSystem(t *testing.T) {
+	t.Parallel()
+
+	_, _, err := ResolvePromptServerCommand(nil, t.TempDir())
+	if err == nil {
+		t.Fatalf("expected error for nil system")
+	}
+}
+
+func TestResolvePromptServerCommandRequiresTypedNilSystem(t *testing.T) {
+	t.Parallel()
+
+	var sys *MockSystem
+	_, _, err := ResolvePromptServerCommand(sys, t.TempDir())
+	if err == nil {
+		t.Fatalf("expected error for typed nil system")
+	}
+}
+
 func TestResolvePromptServerCommandRootEmptyNoGlobalBinary(t *testing.T) {
 	t.Parallel()
 	sys := &MockSystem{
@@ -268,6 +310,19 @@ func TestResolvePromptServerEnv(t *testing.T) {
 	env, err := resolvePromptServerEnv(root)
 	if err != nil {
 		t.Fatalf("resolvePromptServerEnv error: %v", err)
+	}
+	if got := env[config.BuiltinRepoRootEnvVar]; got != root {
+		t.Fatalf("expected %s=%q, got %q", config.BuiltinRepoRootEnvVar, root, got)
+	}
+}
+
+func TestResolvePromptServerEnvExported(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	env, err := ResolvePromptServerEnv(root)
+	if err != nil {
+		t.Fatalf("ResolvePromptServerEnv error: %v", err)
 	}
 	if got := env[config.BuiltinRepoRootEnvVar]; got != root {
 		t.Fatalf("expected %s=%q, got %q", config.BuiltinRepoRootEnvVar, root, got)
