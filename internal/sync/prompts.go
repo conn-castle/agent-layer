@@ -258,7 +258,7 @@ func normalizeMetadata(metadata map[string]string) map[string]string {
 }
 
 func generatedSkillSourcePath(cmd config.Skill) string {
-	defaultPath := filepath.ToSlash(filepath.Join(".agent-layer", "skills", cmd.Name+".md"))
+	defaultPath := filepath.ToSlash(filepath.Join(".agent-layer", "skills", cmd.Name, "SKILL.md"))
 	source := strings.TrimSpace(cmd.SourcePath)
 	if source == "" {
 		return defaultPath

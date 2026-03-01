@@ -443,6 +443,124 @@ func TestUpgradeCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
 	}
 }
 
+func TestWriteMigrationReportSection_SkillsFormatAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.9.0",
+		SourceVersion:       "0.8.8",
+		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:        "d-migrate-all-skills-to-directory-format",
+				Kind:      "migrate_skills_format",
+				Status:    install.UpgradeMigrationStatusPlanned,
+				Rationale: "Migrate flat-format skills",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "BREAKING") {
+		t.Errorf("expected BREAKING annotation for migrate_skills_format entry, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Flat-format skills (<name>.md) will no longer work after this upgrade") {
+		t.Errorf("expected breaking-change detail, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Run 'al upgrade' to confirm and apply the migration") {
+		t.Errorf("expected guidance to run 'al upgrade', got:\n%s", out)
+	}
+}
+
+func TestWriteMigrationReportSection_OtherKindNoAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.7.0",
+		SourceVersion:       "0.6.0",
+		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:        "d-some-rename",
+				Kind:      "rename_file",
+				Status:    install.UpgradeMigrationStatusPlanned,
+				Rationale: "Rename old file",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "BREAKING") {
+		t.Errorf("non-skills-format entry should NOT have BREAKING annotation, got:\n%s", out)
+	}
+}
+
+func TestWriteMigrationReportSection_SkippedSkillsFormatNoAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.9.0",
+		SourceVersion:       "unknown",
+		SourceVersionOrigin: install.UpgradeMigrationSourceUnknown,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:         "d-migrate-all-skills-to-directory-format",
+				Kind:       "migrate_skills_format",
+				Status:     install.UpgradeMigrationStatusSkippedUnknownSource,
+				Rationale:  "Migrate flat-format skills",
+				SkipReason: "source version is unknown",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "BREAKING") {
+		t.Errorf("skipped migrate_skills_format entry should NOT have BREAKING annotation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "reason:") {
+		t.Errorf("expected skip reason in output, got:\n%s", out)
+	}
+}
+
+func TestWriteMigrationReportSection_SkippedSourceTooOldNoAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.9.0",
+		SourceVersion:       "0.5.0",
+		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:         "d-migrate-all-skills-to-directory-format",
+				Kind:       "migrate_skills_format",
+				Status:     install.UpgradeMigrationStatusSkippedSourceTooOld,
+				Rationale:  "Migrate flat-format skills",
+				SkipReason: "source version 0.5.0 is older than min prior version 0.8.0",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "BREAKING") {
+		t.Errorf("skipped_source_too_old migrate_skills_format entry should NOT have BREAKING annotation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "reason:") {
+		t.Errorf("expected skip reason in output, got:\n%s", out)
+	}
+}
+
 func TestUpgradeCmd_VersionFlagValidationError(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {

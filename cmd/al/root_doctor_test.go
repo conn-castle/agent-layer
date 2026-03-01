@@ -467,6 +467,41 @@ func TestCountEnabledMCPServers(t *testing.T) {
 	}
 }
 
+func TestDoctorCommand_FlatSkillsDetectedEvenWhenConfigFails(t *testing.T) {
+	root := t.TempDir()
+	// Set up a repo with invalid config (cfg will be nil) and flat-format skills.
+	writeTestRepoInvalidConfig(t, root)
+	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+
+	// Add a flat-format skill file.
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill.md"), []byte("# test"), 0o644); err != nil {
+		t.Fatalf("write flat skill: %v", err)
+	}
+
+	var out bytes.Buffer
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		cmd.SetOut(&out)
+		err := cmd.RunE(cmd, nil)
+		if err == nil {
+			t.Fatal("expected doctor to fail")
+		}
+	})
+
+	output := out.String()
+	// The FlatSkills check must appear even though config loading failed.
+	if !strings.Contains(output, messages.DoctorCheckNameFlatSkills) {
+		t.Fatalf("expected FlatSkills check in output when config fails, got:\n%s", output)
+	}
+	if !strings.Contains(output, "my-skill.md") {
+		t.Fatalf("expected flat skill filename in output, got:\n%s", output)
+	}
+}
+
 func TestStartMCPDiscoveryReporterZero(t *testing.T) {
 	var output bytes.Buffer
 	reporter, stop := startMCPDiscoveryReporter(nil, &output)

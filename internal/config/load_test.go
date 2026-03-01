@@ -57,7 +57,11 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+	helloDir := filepath.Join(paths.SkillsDir, "hello")
+	if err := os.MkdirAll(helloDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(helloDir, "SKILL.md"), []byte(cmdContent), 0o644); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
@@ -298,7 +302,11 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+	helloDir := filepath.Join(paths.SkillsDir, "hello")
+	if err := os.MkdirAll(helloDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(helloDir, "SKILL.md"), []byte(cmdContent), 0o644); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 

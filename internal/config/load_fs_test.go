@@ -180,8 +180,9 @@ func TestLoadInstructionsFS_ReadError(t *testing.T) {
 
 func TestLoadSkillsFS_InvalidCommand(t *testing.T) {
 	fsys := fstest.MapFS{
-		".agent-layer/skills":        {Mode: fs.ModeDir},
-		".agent-layer/skills/bad.md": {Data: []byte("no front matter")},
+		".agent-layer/skills":              {Mode: fs.ModeDir},
+		".agent-layer/skills/bad":          {Mode: fs.ModeDir},
+		".agent-layer/skills/bad/SKILL.md": {Data: []byte("no front matter")},
 	}
 
 	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
@@ -192,12 +193,13 @@ func TestLoadSkillsFS_InvalidCommand(t *testing.T) {
 
 func TestLoadSkillsFS_ReadError(t *testing.T) {
 	base := fstest.MapFS{
-		".agent-layer/skills":        {Mode: fs.ModeDir},
-		".agent-layer/skills/cmd.md": {Data: []byte("---\ndescription: test\n---\n")},
+		".agent-layer/skills":              {Mode: fs.ModeDir},
+		".agent-layer/skills/cmd":          {Mode: fs.ModeDir},
+		".agent-layer/skills/cmd/SKILL.md": {Data: []byte("---\ndescription: test\n---\n")},
 	}
 	fsys := errorFS{
 		FS:      base,
-		errPath: ".agent-layer/skills/cmd.md",
+		errPath: ".agent-layer/skills/cmd/SKILL.md",
 		err:     fs.ErrPermission,
 	}
 
@@ -287,17 +289,15 @@ func TestLoadSkillsFS_DirectorySkillPrefersCanonicalFilename(t *testing.T) {
 	}
 }
 
-func TestLoadSkillsFS_DuplicateConflict(t *testing.T) {
+func TestLoadSkillsFS_FlatFileReturnsError(t *testing.T) {
 	fsys := fstest.MapFS{
-		".agent-layer/skills":              {Mode: fs.ModeDir},
-		".agent-layer/skills/foo.md":       {Data: []byte("---\ndescription: flat\n---\n")},
-		".agent-layer/skills/foo":          {Mode: fs.ModeDir},
-		".agent-layer/skills/foo/SKILL.md": {Data: []byte("---\ndescription: dir\n---\n")},
+		".agent-layer/skills":        {Mode: fs.ModeDir},
+		".agent-layer/skills/foo.md": {Data: []byte("---\ndescription: flat\n---\n")},
 	}
 
 	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
-	if err == nil || !strings.Contains(err.Error(), "duplicate skill name") {
-		t.Fatalf("expected duplicate-skill error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "flat format is no longer supported") {
+		t.Fatalf("expected flat-format unsupported error, got %v", err)
 	}
 }
 

@@ -246,6 +246,59 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 	return results
 }
 
+// CheckFlatFormatSkills scans .agent-layer/skills/ for stale flat-format .md files
+// at the root level. Returns a FAIL result for each, recommending `al upgrade`.
+func CheckFlatFormatSkills(root string) []Result {
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	info, err := os.Stat(skillsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil // no skills directory — nothing to check
+		}
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameFlatSkills,
+			Message:        fmt.Sprintf(messages.DoctorSkillFlatFormatScanFailedFmt, skillsDir, err),
+			Recommendation: messages.DoctorSkillFlatFormatScanRecommend,
+		}}
+	}
+	if !info.IsDir() {
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameFlatSkills,
+			Message:        fmt.Sprintf(messages.DoctorPathNotDirFmt, ".agent-layer/skills"),
+			Recommendation: messages.DoctorPathNotDirRecommend,
+		}}
+	}
+
+	entries, readErr := os.ReadDir(skillsDir)
+	if readErr != nil {
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameFlatSkills,
+			Message:        fmt.Sprintf(messages.DoctorSkillFlatFormatScanFailedFmt, skillsDir, readErr),
+			Recommendation: messages.DoctorSkillFlatFormatScanRecommend,
+		}}
+	}
+
+	var results []Result
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		if !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		results = append(results, Result{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameFlatSkills,
+			Message:        fmt.Sprintf(messages.DoctorSkillFlatFormatDetectedFmt, entry.Name()),
+			Recommendation: messages.DoctorSkillFlatFormatRecommend,
+		})
+	}
+	return results
+}
+
 // CheckSkills validates configured skills against agentskills-aligned conventions.
 func CheckSkills(cfg *config.ProjectConfig) []Result {
 	if cfg == nil {

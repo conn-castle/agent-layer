@@ -3,7 +3,7 @@ name: beta
 ---
 <!--
   GENERATED FILE
-  Source: .agent-layer/skills/beta.md
+  Source: .agent-layer/skills/beta/SKILL.md
   Regenerate: al sync
 -->
 # Beta

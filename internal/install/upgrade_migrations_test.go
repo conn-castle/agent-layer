@@ -610,13 +610,13 @@ func TestLoadUpgradeMigrationManifest_0_8_8_RenamesAndBackfillsClaudeVSCodeKey(t
 	}
 }
 
-func TestLoadUpgradeMigrationManifest_0_9_0_IncludesSkillDirectoryRename(t *testing.T) {
+func TestLoadUpgradeMigrationManifest_0_9_0_IncludesMigrateSkillsFormat(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.9.0")
 	if err != nil {
 		t.Fatalf("load 0.9.0 manifest: %v", err)
 	}
-	if len(manifest.Operations) != 12 {
-		t.Fatalf("expected 12 operations, got %d", len(manifest.Operations))
+	if len(manifest.Operations) != 4 {
+		t.Fatalf("expected 4 operations, got %d", len(manifest.Operations))
 	}
 
 	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
@@ -641,25 +641,22 @@ func TestLoadUpgradeMigrationManifest_0_9_0_IncludesSkillDirectoryRename(t *test
 		t.Fatal("expected rename-dir op source_agnostic = true")
 	}
 
-	renameFindIssuesOp, ok := byID["h-rename-find-issues-skill-to-directory-format"]
+	migrateOp, ok := byID["d-migrate-all-skills-to-directory-format"]
 	if !ok {
-		t.Fatalf("missing find-issues migration operation, got IDs: %v", mapKeys(byID))
+		t.Fatalf("missing migrate_skills_format operation, got IDs: %v", mapKeys(byID))
 	}
-	if renameFindIssuesOp.Kind != upgradeMigrationKindRenameFile {
-		t.Fatalf("find-issues op kind = %q, want %q", renameFindIssuesOp.Kind, upgradeMigrationKindRenameFile)
+	if migrateOp.Kind != upgradeMigrationKindMigrateSkillsFormat {
+		t.Fatalf("migrate op kind = %q, want %q", migrateOp.Kind, upgradeMigrationKindMigrateSkillsFormat)
 	}
-	if renameFindIssuesOp.From != ".agent-layer/skills/find-issues.md" {
-		t.Fatalf("find-issues op from = %q, want %q", renameFindIssuesOp.From, ".agent-layer/skills/find-issues.md")
+	if migrateOp.Path != ".agent-layer/skills" {
+		t.Fatalf("migrate op path = %q, want %q", migrateOp.Path, ".agent-layer/skills")
 	}
-	if renameFindIssuesOp.To != ".agent-layer/skills/find-issues/SKILL.md" {
-		t.Fatalf("find-issues op to = %q, want %q", renameFindIssuesOp.To, ".agent-layer/skills/find-issues/SKILL.md")
-	}
-	if !renameFindIssuesOp.SourceAgnostic {
-		t.Fatal("expected find-issues op source_agnostic = true")
+	if !migrateOp.SourceAgnostic {
+		t.Fatal("expected migrate op source_agnostic = true")
 	}
 }
 
-func TestMigration_0_9_0_RenamesSlashCommandsDirectoryAndIsIdempotent(t *testing.T) {
+func TestMigration_0_9_0_RenamesSlashCommandsAndMigratesFlatSkills(t *testing.T) {
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, ".agent-layer", "slash-commands")
 	legacyFile := filepath.Join(legacyDir, "custom.md")
@@ -681,7 +678,9 @@ func TestMigration_0_9_0_RenamesSlashCommandsDirectoryAndIsIdempotent(t *testing
 	if _, err := os.Stat(legacyDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected legacy dir removed, stat err = %v", err)
 	}
-	migratedFile := filepath.Join(root, ".agent-layer", "skills", "custom.md")
+	// After rename (slash-commands -> skills) and skills format migration,
+	// custom.md should be at custom/SKILL.md.
+	migratedFile := filepath.Join(root, ".agent-layer", "skills", "custom", "SKILL.md")
 	got, err := os.ReadFile(migratedFile)
 	if err != nil {
 		t.Fatalf("read migrated file: %v", err)
@@ -689,8 +688,16 @@ func TestMigration_0_9_0_RenamesSlashCommandsDirectoryAndIsIdempotent(t *testing
 	if string(got) != "custom skill\n" {
 		t.Fatalf("unexpected migrated content: %q", string(got))
 	}
+	// Flat file should no longer exist.
+	flatFile := filepath.Join(root, ".agent-layer", "skills", "custom.md")
+	if _, err := os.Stat(flatFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected flat file removed, stat err = %v", err)
+	}
 	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "c-rename-slash-commands-dir-to-skills"); !ok || entry.Status != UpgradeMigrationStatusApplied {
 		t.Fatalf("expected applied rename-dir migration entry, got %#v ok=%v", entry, ok)
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "d-migrate-all-skills-to-directory-format"); !ok || entry.Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("expected applied migrate_skills_format entry, got %#v ok=%v", entry, ok)
 	}
 
 	// Re-running the same target migration should no-op without error.
@@ -704,6 +711,9 @@ func TestMigration_0_9_0_RenamesSlashCommandsDirectoryAndIsIdempotent(t *testing
 	}
 	if entry, ok := migrationReportEntryByID(instSecond.migrationReport.Entries, "c-rename-slash-commands-dir-to-skills"); !ok || entry.Status != UpgradeMigrationStatusNoop {
 		t.Fatalf("expected no-op rename-dir migration entry on second run, got %#v ok=%v", entry, ok)
+	}
+	if entry, ok := migrationReportEntryByID(instSecond.migrationReport.Entries, "d-migrate-all-skills-to-directory-format"); !ok || entry.Status != UpgradeMigrationStatusNoop {
+		t.Fatalf("expected no-op migrate_skills_format entry on second run, got %#v ok=%v", entry, ok)
 	}
 }
 
@@ -824,6 +834,284 @@ func migrationReportEntryByID(entries []UpgradeMigrationEntry, id string) (Upgra
 		}
 	}
 	return UpgradeMigrationEntry{}, false
+}
+
+func TestExecuteMigrateSkillsFormat_BasicMigration(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("alpha content\n"), 0o644); err != nil {
+		t.Fatalf("write alpha: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "beta.md"), []byte("beta content\n"), 0o644); err != nil {
+		t.Fatalf("write beta: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("executeMigrateSkillsFormat: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	// Verify flat files were moved to directory format.
+	for _, name := range []string{"alpha", "beta"} {
+		data, readErr := os.ReadFile(filepath.Join(skillsDir, name, "SKILL.md"))
+		if readErr != nil {
+			t.Fatalf("read %s/SKILL.md: %v", name, readErr)
+		}
+		if string(data) != name+" content\n" {
+			t.Fatalf("unexpected %s content: %q", name, string(data))
+		}
+		if _, statErr := os.Stat(filepath.Join(skillsDir, name+".md")); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("expected flat file %s.md to be removed, stat err = %v", name, statErr)
+		}
+	}
+
+	// Verify post-migration success message.
+	warnOut := warn.String()
+	if !strings.Contains(warnOut, "Migrated 2 skill(s) to directory format") {
+		t.Errorf("expected success message with count, got:\n%s", warnOut)
+	}
+	if !strings.Contains(warnOut, "alpha.md  ->  alpha/SKILL.md") {
+		t.Errorf("expected alpha listed in success message, got:\n%s", warnOut)
+	}
+	if !strings.Contains(warnOut, "beta.md  ->  beta/SKILL.md") {
+		t.Errorf("expected beta listed in success message, got:\n%s", warnOut)
+	}
+	if !strings.Contains(warnOut, "Skills migration complete.") {
+		t.Errorf("expected completion line in success message, got:\n%s", warnOut)
+	}
+}
+
+func TestExecuteMigrateSkillsFormat_NoFlatFiles(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("content\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("executeMigrateSkillsFormat: %v", err)
+	}
+	if changed {
+		t.Fatal("expected no-op when no flat files exist")
+	}
+}
+
+func TestExecuteMigrateSkillsFormat_SkillsDirMissing(t *testing.T) {
+	root := t.TempDir()
+	var warn bytes.Buffer
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("executeMigrateSkillsFormat: %v", err)
+	}
+	if changed {
+		t.Fatal("expected no-op when skills dir is absent")
+	}
+}
+
+func TestExecuteMigrateSkillsFormat_ConflictDifferentContent(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Flat file with one content
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("flat content\n"), 0o644); err != nil {
+		t.Fatalf("write flat: %v", err)
+	}
+	// Directory file with different content
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("dir content\n"), 0o644); err != nil {
+		t.Fatalf("write dir: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	_, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
+	if err == nil || !strings.Contains(err.Error(), "conflict") {
+		t.Fatalf("expected conflict error, got %v", err)
+	}
+}
+
+func TestExecuteMigrateSkillsFormat_DuplicateContentCleansUp(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	content := "same content\n"
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write flat: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatalf("write dir: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	changed, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
+	if err != nil {
+		t.Fatalf("executeMigrateSkillsFormat: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed (flat file removed)")
+	}
+	// Flat file should be removed.
+	if _, statErr := os.Stat(filepath.Join(skillsDir, "alpha.md")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected flat file removed, stat err = %v", statErr)
+	}
+	// Directory file should still exist.
+	data, readErr := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md"))
+	if readErr != nil {
+		t.Fatalf("read dir file: %v", readErr)
+	}
+	if string(data) != content {
+		t.Fatalf("unexpected dir content: %q", string(data))
+	}
+	// Duplicate cleanup: success message should show completion without the
+	// "Migrated N skill(s)" header (nothing was moved to a new location).
+	warnOut := warn.String()
+	if strings.Contains(warnOut, "Migrated") {
+		t.Errorf("duplicate cleanup should not show 'Migrated' header, got:\n%s", warnOut)
+	}
+	if !strings.Contains(warnOut, "Skills migration complete.") {
+		t.Errorf("expected completion line for duplicate cleanup, got:\n%s", warnOut)
+	}
+}
+
+func TestExecuteMigrateSkillsFormat_UserCancels(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("content\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	var warn bytes.Buffer
+	prompter := PromptFuncs{
+		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
+			return false, nil // user declines
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}, warnWriter: &warn, prompter: prompter}
+	_, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
+	if err == nil || !strings.Contains(err.Error(), "declined by user") {
+		t.Fatalf("expected decline error, got %v", err)
+	}
+	// Flat file should still exist.
+	if _, statErr := os.Stat(filepath.Join(skillsDir, "alpha.md")); statErr != nil {
+		t.Fatalf("flat file should still exist after decline: %v", statErr)
+	}
+	// Success message must NOT appear when migration is declined.
+	if strings.Contains(warn.String(), "Skills migration complete.") {
+		t.Errorf("success message should not appear when migration is declined")
+	}
+}
+
+func TestPreflightSkillsMigration_DetectsConflicts(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, "skills")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("flat\n"), 0o644); err != nil {
+		t.Fatalf("write flat: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("dir\n"), 0o644); err != nil {
+		t.Fatalf("write dir: %v", err)
+	}
+
+	count, conflicts, err := preflightSkillsMigration(RealSystem{}, skillsDir)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 flat file, got %d", count)
+	}
+	if len(conflicts) != 1 {
+		t.Fatalf("expected 1 conflict, got %d", len(conflicts))
+	}
+	if conflicts[0].SkillName != "alpha" {
+		t.Fatalf("expected conflict for alpha, got %q", conflicts[0].SkillName)
+	}
+}
+
+func TestPreflightSkillsMigration_CountsFlatSkills(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "a.md"), []byte("a\n"), 0o644); err != nil {
+		t.Fatalf("write a: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "b.md"), []byte("b\n"), 0o644); err != nil {
+		t.Fatalf("write b: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(skillsDir, "c"), 0o755); err != nil {
+		t.Fatalf("mkdir c: %v", err)
+	}
+
+	count, conflicts, err := preflightSkillsMigration(RealSystem{}, skillsDir)
+	if err != nil {
+		t.Fatalf("preflight: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 flat files, got %d", count)
+	}
+	if len(conflicts) != 0 {
+		t.Fatalf("expected no conflicts, got %d", len(conflicts))
+	}
+}
+
+func TestPreflightSkillsMigration_PathNotDirectory(t *testing.T) {
+	root := t.TempDir()
+	skillsPath := filepath.Join(root, "skills")
+	if err := os.WriteFile(skillsPath, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatalf("write skills path: %v", err)
+	}
+
+	_, _, err := preflightSkillsMigration(RealSystem{}, skillsPath)
+	if err == nil {
+		t.Fatal("expected error when skills path is not a directory")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("expected non-directory error, got %v", err)
+	}
+}
+
+func TestExecuteMigrateSkillsFormat_PathNotDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	skillsPath := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.WriteFile(skillsPath, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatalf("write skills path: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}, prompter: PromptFuncs{}}
+	_, err := inst.executeMigrateSkillsFormat(".agent-layer/skills")
+	if err == nil {
+		t.Fatal("expected error when skills path is not a directory")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("expected non-directory error, got %v", err)
+	}
 }
 
 func TestListMigrationManifestVersions(t *testing.T) {
@@ -1136,6 +1424,295 @@ func TestPlanUpgradeMigrations_KnownSourceMissingTargetManifestFails(t *testing.
 	}
 	if !strings.Contains(err.Error(), "missing migration manifest") {
 		t.Fatalf("expected 'missing migration manifest' error, got: %v", err)
+	}
+}
+
+// skillsMigrationManifest is the test manifest used by all skills-migration
+// pre-flight tests. It includes a config rename (to verify it is NOT applied
+// when the pre-flight aborts) and the migrate_skills_format operation.
+const skillsMigrationManifest = `{
+  "schema_version": 1,
+  "target_version": "0.9.0",
+  "min_prior_version": "0.8.0",
+  "operations": [
+    {
+      "id": "a-rename-config-key",
+      "kind": "config_rename_key",
+      "rationale": "Normalize config key",
+      "from": "agents.claude-vscode.enabled",
+      "to": "agents.claude_vscode.enabled",
+      "source_agnostic": true
+    },
+    {
+      "id": "d-migrate-all-skills-to-directory-format",
+      "kind": "migrate_skills_format",
+      "path": ".agent-layer/skills",
+      "rationale": "Migrate flat-format skills to directory format.",
+      "source_agnostic": true
+    }
+  ]
+}`
+
+// TestRun_SkillsMigrationDeclinedBeforeMutations verifies that when the user
+// declines the skills-format migration, Run() returns an error, the exact
+// warning banner was printed, and no disk mutations have occurred. The
+// pre-flight confirmation runs before the upgrade transaction, so declining
+// must leave the repository completely untouched.
+func TestRun_SkillsMigrationDeclinedBeforeMutations(t *testing.T) {
+	root := t.TempDir()
+
+	// Seed the repo at version 0.8.8.
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.8.8"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	// Add a flat-format user-authored skill (simulates a pre-upgrade state).
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	flatSkillPath := filepath.Join(skillsDir, "my-custom-skill.md")
+	flatContent := []byte("---\ndescription: Custom skill\n---\nDo something custom.\n")
+	if err := os.WriteFile(flatSkillPath, flatContent, 0o644); err != nil {
+		t.Fatalf("write flat skill: %v", err)
+	}
+
+	// Capture pre-upgrade file state for mutation detection.
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	preVersionContent, err := os.ReadFile(versionPath)
+	if err != nil {
+		t.Fatalf("read pre-upgrade version file: %v", err)
+	}
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	preConfigContent, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read pre-upgrade config: %v", err)
+	}
+
+	withMigrationManifestOverride(t, "0.9.0", skillsMigrationManifest)
+
+	// Track exactly what the prompter callback receives.
+	var promptedSkills []string
+	var promptedConflicts []SkillsMigrationConflict
+	prompter := PromptFuncs{
+		OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+		OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
+		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
+		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
+		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
+			promptedSkills = flatSkills
+			promptedConflicts = conflicts
+			return false, nil // user declines
+		},
+	}
+
+	var warn bytes.Buffer
+	upgradeErr := Run(root, Options{
+		System:     RealSystem{},
+		Overwrite:  true,
+		Prompter:   prompter,
+		PinVersion: "0.9.0",
+		WarnWriter: &warn,
+	})
+
+	// ── Verify error ──
+	if upgradeErr == nil {
+		t.Fatal("expected Run() to return error when user declines skills migration")
+	}
+	if !strings.Contains(upgradeErr.Error(), "skills format migration declined by user") {
+		t.Fatalf("expected exact decline error message, got: %v", upgradeErr)
+	}
+
+	// ── Verify prompter received correct arguments ──
+	if len(promptedSkills) != 1 || promptedSkills[0] != "my-custom-skill" {
+		t.Fatalf("expected prompter to receive [my-custom-skill], got %v", promptedSkills)
+	}
+	if len(promptedConflicts) != 0 {
+		t.Fatalf("expected no conflicts, got %d", len(promptedConflicts))
+	}
+
+	// ── Verify exact warning banner output ──
+	warnOutput := warn.String()
+	expectedLines := []string{
+		"=============================================================",
+		"  BREAKING CHANGE: Skills format migration",
+		"=============================================================",
+		"  Starting with this version, ALL skills must use directory",
+		"  format. The old flat file format (<name>.md) will no longer",
+		"  work after this upgrade.",
+		"  Found 1 flat-format skill(s) that must be migrated:",
+		"    my-custom-skill.md  ->  my-custom-skill/SKILL.md",
+		"  No conflicts detected — all skills can be migrated automatically.",
+	}
+	for _, line := range expectedLines {
+		if !strings.Contains(warnOutput, line) {
+			t.Errorf("warning output missing expected line: %q\n\nFull output:\n%s", line, warnOutput)
+		}
+	}
+	// The warning output must NOT contain conflict-related text or success message.
+	for _, forbidden := range []string{"MIGRATION BLOCKED", "DIFFERENT content", "To fix:", "Skills migration complete."} {
+		if strings.Contains(warnOutput, forbidden) {
+			t.Errorf("warning output should not contain %q for declined migration\n\nFull output:\n%s", forbidden, warnOutput)
+		}
+	}
+
+	// ── Verify NO disk mutations ──
+	// Version file: still 0.8.8, not 0.9.0.
+	postVersionContent, err := os.ReadFile(versionPath)
+	if err != nil {
+		t.Fatalf("read post-upgrade version file: %v", err)
+	}
+	if string(postVersionContent) != string(preVersionContent) {
+		t.Fatalf("version file was mutated: pre=%q post=%q", string(preVersionContent), string(postVersionContent))
+	}
+	// Config: unchanged.
+	postConfigContent, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read post-upgrade config: %v", err)
+	}
+	if string(postConfigContent) != string(preConfigContent) {
+		t.Fatalf("config file was mutated: pre=%q post=%q", string(preConfigContent), string(postConfigContent))
+	}
+	// Flat skill file: still present with original content.
+	postFlatContent, err := os.ReadFile(flatSkillPath)
+	if err != nil {
+		t.Fatalf("flat skill should still exist after declined migration: %v", err)
+	}
+	if string(postFlatContent) != string(flatContent) {
+		t.Fatalf("flat skill content was mutated")
+	}
+	// Directory-format skill: must NOT have been created.
+	dirSkillPath := filepath.Join(skillsDir, "my-custom-skill", "SKILL.md")
+	if _, statErr := os.Stat(dirSkillPath); !os.IsNotExist(statErr) {
+		t.Fatalf("directory-format skill should not exist after declined migration, stat err = %v", statErr)
+	}
+}
+
+// TestRun_SkillsMigrationBlockedByConflict verifies that when a flat-format
+// skill conflicts with an existing directory-format skill (different content),
+// the pre-flight aborts with a clear error and actionable output, and no disk
+// mutations have occurred.
+func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
+	root := t.TempDir()
+
+	// Seed the repo at version 0.8.8.
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.8.8"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	// Create a conflict: flat and directory versions with different content.
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	conflictDir := filepath.Join(skillsDir, "my-skill")
+	if err := os.MkdirAll(conflictDir, 0o755); err != nil {
+		t.Fatalf("mkdir conflict dir: %v", err)
+	}
+	flatPath := filepath.Join(skillsDir, "my-skill.md")
+	if err := os.WriteFile(flatPath, []byte("flat version\n"), 0o644); err != nil {
+		t.Fatalf("write flat: %v", err)
+	}
+	dirPath := filepath.Join(conflictDir, "SKILL.md")
+	if err := os.WriteFile(dirPath, []byte("directory version\n"), 0o644); err != nil {
+		t.Fatalf("write dir: %v", err)
+	}
+
+	// Capture pre-upgrade state.
+	versionPath := filepath.Join(root, ".agent-layer", "al.version")
+	preVersionContent, err := os.ReadFile(versionPath)
+	if err != nil {
+		t.Fatalf("read pre-upgrade version: %v", err)
+	}
+
+	withMigrationManifestOverride(t, "0.9.0", skillsMigrationManifest)
+
+	// The ConfirmSkillsMigrationFunc should NOT be called — conflicts abort
+	// before reaching the confirmation prompt.
+	promptCalled := false
+	prompter := PromptFuncs{
+		OverwriteAllPreviewFunc:       func([]DiffPreview) (bool, error) { return true, nil },
+		OverwriteAllMemoryPreviewFunc: func([]DiffPreview) (bool, error) { return true, nil },
+		OverwritePreviewFunc:          func(DiffPreview) (bool, error) { return true, nil },
+		DeleteUnknownAllFunc:          func([]string) (bool, error) { return true, nil },
+		DeleteUnknownFunc:             func(string) (bool, error) { return true, nil },
+		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
+			promptCalled = true
+			return true, nil
+		},
+	}
+
+	var warn bytes.Buffer
+	upgradeErr := Run(root, Options{
+		System:     RealSystem{},
+		Overwrite:  true,
+		Prompter:   prompter,
+		PinVersion: "0.9.0",
+		WarnWriter: &warn,
+	})
+
+	// ── Verify error ──
+	if upgradeErr == nil {
+		t.Fatal("expected Run() to return error when conflicts exist")
+	}
+	if !strings.Contains(upgradeErr.Error(), "conflict") {
+		t.Fatalf("expected error to mention 'conflict', got: %v", upgradeErr)
+	}
+
+	// ── Verify prompt was NOT called (conflicts block before confirmation) ──
+	if promptCalled {
+		t.Fatal("ConfirmSkillsMigration should not be called when conflicts exist")
+	}
+
+	// ── Verify exact warning output for conflict path ──
+	warnOutput := warn.String()
+	expectedLines := []string{
+		"BREAKING CHANGE: Skills format migration",
+		"  Found 1 flat-format skill(s) that must be migrated:",
+		"    my-skill.md  ->  my-skill/SKILL.md",
+		"  MIGRATION BLOCKED",
+		"  The following skills exist in BOTH flat and directory format",
+		"  with DIFFERENT content. The migration cannot choose which",
+		"  version to keep — you need to resolve this manually.",
+		"    Skill: my-skill",
+		"  To fix: choose which version to keep for each skill above,",
+		"  then delete the other one:",
+		"    Keep directory version:  rm .agent-layer/skills/<name>.md",
+		"    Keep flat version:       rm -r .agent-layer/skills/<name>/",
+		"  Then re-run: al upgrade",
+	}
+	for _, line := range expectedLines {
+		if !strings.Contains(warnOutput, line) {
+			t.Errorf("warning output missing expected line: %q\n\nFull output:\n%s", line, warnOutput)
+		}
+	}
+	// The "no conflicts" line must NOT appear.
+	if strings.Contains(warnOutput, "No conflicts detected") {
+		t.Errorf("warning output should not contain 'No conflicts detected' when conflicts exist\n\nFull output:\n%s", warnOutput)
+	}
+
+	// ── Verify conflict detail includes file paths ──
+	if !strings.Contains(warnOutput, "Flat file:") || !strings.Contains(warnOutput, "Directory:") {
+		t.Errorf("warning output missing conflict file paths\n\nFull output:\n%s", warnOutput)
+	}
+
+	// ── Verify NO disk mutations ──
+	postVersionContent, err := os.ReadFile(versionPath)
+	if err != nil {
+		t.Fatalf("read post-upgrade version: %v", err)
+	}
+	if string(postVersionContent) != string(preVersionContent) {
+		t.Fatalf("version file was mutated: pre=%q post=%q", string(preVersionContent), string(postVersionContent))
+	}
+	// Both flat and directory files should be untouched.
+	flatData, err := os.ReadFile(flatPath)
+	if err != nil {
+		t.Fatalf("flat file should still exist: %v", err)
+	}
+	if string(flatData) != "flat version\n" {
+		t.Fatalf("flat file content was mutated: %q", string(flatData))
+	}
+	dirData, err := os.ReadFile(dirPath)
+	if err != nil {
+		t.Fatalf("dir file should still exist: %v", err)
+	}
+	if string(dirData) != "directory version\n" {
+		t.Fatalf("dir file content was mutated: %q", string(dirData))
 	}
 }
 

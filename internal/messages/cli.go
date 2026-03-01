@@ -65,6 +65,7 @@ const (
 	UpgradeOverwriteMemoryAllPrompt = "Overwrite all existing memory files in docs/agent-layer with template versions?"
 	UpgradeDeleteUnknownAllPrompt   = "Delete all unknown files under .agent-layer?"
 	UpgradeDeleteUnknownPromptFmt   = "Delete %s?"
+	UpgradeSkillsMigrationPromptFmt = "Proceed with migrating %d skill(s) to directory format? (Use 'al upgrade rollback' to undo if needed.)"
 	UpgradeSkipManagedUpdatesInfo   = "Info: skipping managed template updates (pass --apply-managed-updates to include them)."
 	UpgradeSkipMemoryUpdatesInfo    = "Info: skipping memory file updates (pass --apply-memory-updates to include them)."
 	UpgradeSkipDeletionsInfo        = "Info: skipping unknown file deletions (pass --apply-deletions to include them)."

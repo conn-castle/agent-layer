@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -232,5 +233,97 @@ enabled = false
 	}
 	if len(results) != 1 || results[0].Status != StatusOK {
 		t.Errorf("Expected success for valid config, got %v", results)
+	}
+}
+
+func TestCheckFlatFormatSkills_DetectsStaleFiles(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a flat-format skill file
+	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill.md"), []byte("# test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Create a directory-format skill (should be ignored)
+	if err := os.MkdirAll(filepath.Join(skillsDir, "good-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "good-skill", "SKILL.md"), []byte("# ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckFlatFormatSkills(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+	}
+	if results[0].Status != StatusFail {
+		t.Errorf("expected FAIL status, got %s", results[0].Status)
+	}
+	if results[0].CheckName != messages.DoctorCheckNameFlatSkills {
+		t.Errorf("expected check name %q, got %q", messages.DoctorCheckNameFlatSkills, results[0].CheckName)
+	}
+	if !strings.Contains(results[0].Message, "my-skill.md") {
+		t.Errorf("expected message to mention my-skill.md, got %q", results[0].Message)
+	}
+	if results[0].Recommendation != messages.DoctorSkillFlatFormatRecommend {
+		t.Errorf("expected recommendation %q, got %q", messages.DoctorSkillFlatFormatRecommend, results[0].Recommendation)
+	}
+}
+
+func TestCheckFlatFormatSkills_CleanDirectory(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Only directory-format skills
+	if err := os.MkdirAll(filepath.Join(skillsDir, "my-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill", "SKILL.md"), []byte("# ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckFlatFormatSkills(root)
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results for clean directory, got %d: %v", len(results), results)
+	}
+}
+
+func TestCheckFlatFormatSkills_MissingSkillsDir(t *testing.T) {
+	root := t.TempDir()
+	results := CheckFlatFormatSkills(root)
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results for missing skills dir, got %d", len(results))
+	}
+}
+
+func TestCheckFlatFormatSkills_SkillsPathNotDirectory(t *testing.T) {
+	root := t.TempDir()
+	agentLayerDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentLayerDir, "skills"), []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results := CheckFlatFormatSkills(root)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+	}
+	if results[0].Status != StatusFail {
+		t.Fatalf("expected FAIL, got %s", results[0].Status)
+	}
+	if results[0].CheckName != messages.DoctorCheckNameFlatSkills {
+		t.Fatalf("expected check name %q, got %q", messages.DoctorCheckNameFlatSkills, results[0].CheckName)
+	}
+	if !strings.Contains(results[0].Message, ".agent-layer/skills exists but is not a directory") {
+		t.Fatalf("unexpected message: %q", results[0].Message)
+	}
+	if results[0].Recommendation != messages.DoctorPathNotDirRecommend {
+		t.Fatalf("expected recommendation %q, got %q", messages.DoctorPathNotDirRecommend, results[0].Recommendation)
 	}
 }

@@ -7,10 +7,12 @@ All notable changes to this project will be documented in this file.
 - Added a reusable `internal/skillvalidator` package with parse/validate separation and deterministic findings for agentskills.io-aligned skill validation.
 - Added `al doctor` skills diagnostics for standards checks (unknown frontmatter keys, name/path mismatches, and non-canonical directory filenames such as `skill.md`).
 - Added release manifests for `v0.9.0`: `internal/templates/migrations/0.9.0.json` and `internal/templates/manifests/0.9.0.json`.
+- Added `al doctor` check for stale flat-format skill files (`.md` at skills root) with guidance to run `al upgrade`.
 
 ### Changed
 - Renamed legacy "slash command" source and output terminology to "skills" across config, sync pipelines, templates, and docs.
 - Canonicalized source layout to `.agent-layer/skills/`, with migrations that rename legacy `.agent-layer/slash-commands/` and embedded skill template paths.
+- **Breaking:** Flat-format skills (`<name>.md`) are no longer supported by the skill loader. All skills must use directory format (`<name>/SKILL.md`). `al upgrade` migrates both built-in and user-authored skills automatically via a single `migrate_skills_format` operation with pre-flight conflict detection and user confirmation.
 - Skill frontmatter parsing/generation now uses YAML (`go.yaml.in/yaml/v3`) with support for `name`, `description`, `license`, `compatibility`, `metadata`, and `allowed-tools`, while keeping unknown fields parse-tolerant for portability.
 - Increased skill parser/validator single-line scanner caps to `8 MiB` to reduce token-limit failures on large single-line skill content.
 - Documentation now explicitly states that missing or empty skill `description` is load-enforced (fail-loud), while missing `name` remains backward-compatible with doctor warnings.

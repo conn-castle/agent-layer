@@ -259,7 +259,7 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
   - `config.toml` (main configuration; human-editable)
   - `al.version` (repo pin; required)
   - `instructions/` (numbered `*.md` fragments; lexicographic order)
-  - `skills/` (workflow markdown; one skill source per command, as flat files or `SKILL.md` directories)
+  - `skills/` (workflow markdown; one skill source per command, as `<name>/SKILL.md` directories)
   - `commands.allow` (approved shell commands; line-based)
   - `gitignore.block` (managed `.gitignore` block template; customize here)
   - `.gitignore` (ignores repo-local launchers, template copies, and backups inside `.agent-layer/`)
@@ -276,6 +276,7 @@ Common memory files include:
 - `docs/agent-layer/ROADMAP.md`
 - `docs/agent-layer/DECISIONS.md`
 - `docs/agent-layer/COMMANDS.md`
+- `docs/agent-layer/CONTEXT.md`
 
 ### Generated client files (gitignored by default)
 Generated outputs are written into the repo in client-specific formats (examples):
@@ -464,9 +465,8 @@ These files are user-editable; define the workflows you want your agents to run.
 
 Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/specification), and `al doctor` validates configured skills against agentskills-aligned conventions.
 
-- Source formats:
-  - Flat file: `.agent-layer/skills/<name>.md`
-  - Directory format: `.agent-layer/skills/<name>/SKILL.md` (canonical; `skill.md` is accepted as a compatibility fallback)
+- Source format:
+  - Directory: `.agent-layer/skills/<name>/SKILL.md` (canonical; `skill.md` is accepted as a compatibility fallback)
 - Frontmatter fields:
   - Required: `name`, `description`
   - Optional: `license`, `compatibility`, `metadata`, `allowed-tools`

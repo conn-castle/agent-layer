@@ -386,6 +386,17 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownPromptFmt, path)
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
 		},
+		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []install.SkillsMigrationConflict) (bool, error) {
+			// Conflicts always block, even in headless mode.
+			if len(conflicts) > 0 {
+				return false, nil
+			}
+			if policy.yes {
+				return true, nil
+			}
+			prompt := fmt.Sprintf(messages.UpgradeSkillsMigrationPromptFmt, len(flatSkills))
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, true)
+		},
 	}
 }
 
@@ -606,7 +617,7 @@ func (ew *errWriter) println(args ...any) {
 	_, ew.err = fmt.Fprintln(ew.w, args...)
 }
 
-func writeMigrationReportSection(out io.Writer, title string, report install.UpgradeMigrationReport) error {
+func writeMigrationReportSection(out io.Writer, title string, report install.UpgradeMigrationReport) error { //nolint:unparam // title kept for consistency with other write*Section functions
 	ew := &errWriter{w: out}
 	ew.printf("\n%s:\n", title)
 	if len(report.Entries) == 0 {
@@ -622,6 +633,11 @@ func writeMigrationReportSection(out io.Writer, title string, report install.Upg
 		ew.printf("  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale)
 		if entry.SkipReason != "" {
 			ew.printf("    reason: %s\n", entry.SkipReason)
+		}
+		if entry.Kind == "migrate_skills_format" && entry.Status == install.UpgradeMigrationStatusPlanned {
+			ew.println("    BREAKING CHANGE: Flat-format skills (<name>.md) will no longer work after this upgrade.")
+			ew.println("    All flat-format skills in .agent-layer/skills/ will be migrated to directory format (<name>/SKILL.md).")
+			ew.println("    Run 'al upgrade' to confirm and apply the migration.")
 		}
 	}
 	return ew.err

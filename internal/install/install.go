@@ -57,6 +57,7 @@ type installer struct {
 	migrationConfigMigrations []ConfigKeyMigration
 	migrationReport           UpgradeMigrationReport
 	migrationsPrepared        bool
+	skillsMigrationConfirmed  bool
 	sys                       System
 }
 
@@ -127,6 +128,9 @@ func Run(root string, opts Options) error {
 			return err
 		}
 		if err := inst.prepareUpgradeMigrations(); err != nil {
+			return err
+		}
+		if err := inst.preflightAndConfirmSkillsMigration(); err != nil {
 			return err
 		}
 		snapshot, err := inst.createUpgradeSnapshot()

@@ -60,9 +60,10 @@ type skillSource struct {
 	skill Skill
 }
 
-// LoadSkills reads .agent-layer/skills from disk and supports both source formats:
-// - .agent-layer/skills/<name>.md
+// LoadSkills reads .agent-layer/skills from disk.
+// Supported source format:
 // - .agent-layer/skills/<name>/SKILL.md (canonical; fallback to skill.md for compatibility)
+// Flat-format .agent-layer/skills/<name>.md files are rejected with actionable errors.
 func LoadSkills(dir string) ([]Skill, error) {
 	return loadSkills(dir,
 		func(path string) ([]skillDirEntry, error) {
@@ -103,11 +104,9 @@ func loadSkills(dir string, readDir skillReadDir, readFile skillReadFile) ([]Ski
 			}
 			continue
 		}
-		if !strings.HasSuffix(entry.name, ".md") {
-			continue
-		}
-		if err := loadFlatSkill(byName, dir, entry.name, readFile); err != nil {
-			return nil, err
+		if strings.HasSuffix(entry.name, ".md") {
+			name := strings.TrimSuffix(entry.name, ".md")
+			return nil, fmt.Errorf(messages.ConfigSkillFlatFormatUnsupportedFmt, name, entry.name)
 		}
 	}
 
@@ -122,36 +121,6 @@ func loadSkills(dir string, readDir skillReadDir, readFile skillReadFile) ([]Ski
 		skills = append(skills, byName[name].skill)
 	}
 	return skills, nil
-}
-
-func loadFlatSkill(byName map[string]skillSource, root string, fileName string, readFile skillReadFile) error {
-	path := filepath.Join(root, fileName)
-	data, err := readFile(path)
-	if err != nil {
-		return fmt.Errorf(messages.ConfigFailedReadSkillFmt, path, err)
-	}
-
-	parsed, err := parseSkill(string(bytes.TrimPrefix(data, utf8BOM)))
-	if err != nil {
-		return fmt.Errorf(messages.ConfigInvalidSkillFmt, path, err)
-	}
-
-	name := strings.TrimSuffix(fileName, ".md")
-	if parsed.name != "" && !skillNamesEqual(parsed.name, name) {
-		return fmt.Errorf(messages.ConfigSkillNameMismatchFmt, path, parsed.name, name)
-	}
-
-	skill := Skill{
-		Name:          name,
-		Description:   parsed.description,
-		License:       parsed.license,
-		Compatibility: parsed.compatibility,
-		Metadata:      parsed.metadata,
-		AllowedTools:  parsed.allowedTools,
-		Body:          parsed.body,
-		SourcePath:    path,
-	}
-	return registerSkill(byName, skill)
 }
 
 func loadDirectorySkill(byName map[string]skillSource, root string, dirName string, readDir skillReadDir, readFile skillReadFile) error {

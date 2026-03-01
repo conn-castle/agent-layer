@@ -315,3 +315,13 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `resolve_latest_release_version()` in `scripts/test-e2e/harness.sh` now passes `GITHUB_TOKEN` (or `GH_TOKEN`) as a Bearer token in the Authorization header when available. CI workflow exports `GITHUB_TOKEN` to the `make ci` step.
     Reason: Unauthenticated GitHub API calls are rate-limited to 60 req/hr per IP. GitHub Actions runners share IPs, causing intermittent CI failures when the rate limit is hit during the "Resolve upgrade binaries" phase.
     Tradeoffs: Authenticated requests raise the limit to 5000 req/hr but require a token; unauthenticated fallback is preserved for local offline runs.
+
+- Decision 2026-03-01 skills-flat-format-removal: Flat-format skills removed; single migrate_skills_format operation replaces per-skill renames
+    Decision: Remove flat-format (`<name>.md`) skill loading entirely. Replace 9 individual `rename_file` migration operations with a single `migrate_skills_format` operation that scans for all flat skills (built-in and user-authored), runs pre-flight conflict detection, prompts for confirmation, and migrates to directory format (`<name>/SKILL.md`).
+    Reason: The previous approach only migrated built-in skills, leaving user-authored skills stranded. Dual code-path support (flat + directory) added permanent maintenance burden.
+    Tradeoffs: Hard break for repos with flat skills that skip `al upgrade`; accepted because `LoadSkills` returns an actionable error directing users to run `al upgrade`.
+
+- Decision 2026-03-01 context-md-memory-file: Add CONTEXT.md as a sixth memory file for general-purpose project context
+    Decision: Add `docs/agent-layer/CONTEXT.md` as a free-form, section-based memory file using the `memory_entries_v1` ownership policy and `<!-- ENTRIES START -->` marker.
+    Reason: The existing five memory files have specific scopes (issues, backlog, roadmap, decisions, commands); project-wide context (domain concepts, naming conventions, team norms) had no canonical home.
+    Tradeoffs: Adds one more file to the memory surface; accepted because the alternative was agents writing miscellaneous context into inappropriate files or losing it between sessions.

@@ -11,6 +11,12 @@
 1. **Mandatory questions and answers:** If the user asks a direct question, answer it explicitly in the response text before proposing or generating changes.
 2. **Clarify ambiguity before coding:** If a decision is unclear or the prompt is ambiguous, pause and ask for clarification before generating or editing code.
 3. **Root-cause fixes (confirm large refactors):** Prefer fixing the root cause. If the correct fix requires a significant refactor across many files or subsystems, explain the scope and ask for explicit confirmation before proceeding.
+4. **Stop and ask when real tradeoffs exist:** When a decision involves genuine tradeoffs — especially ones that affect architecture or user experience — stop, explain the options and their consequences, and let the human decide. Examples:
+   - **Architecture:** choosing between implementation patterns (polling vs. WebSockets, SQL vs. NoSQL, sync vs. async), introducing a new dependency or framework, changing a data model or storage strategy, adding infrastructure (queues, caches, new services).
+   - **User-facing behavior:** altering API contracts, CLI flags or output format, default values users rely on, error messages, authentication flows, or any change that could surprise existing users.
+   - **Irreversible decisions:** database migrations that drop or reshape data, public API surface changes, removing a feature, changing a serialization format that affects persisted data.
+   - **Multiple valid approaches:** when there is no clearly superior option and the choice has lasting consequences — present the options with pros/cons rather than picking one silently.
+   - **Scope surprises:** the correct fix is significantly larger than what was requested, a dependency upgrade requires cascading changes, or a seemingly simple task reveals a deeper structural problem.
 
 ---
 

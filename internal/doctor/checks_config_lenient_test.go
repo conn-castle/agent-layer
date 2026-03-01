@@ -278,7 +278,11 @@ enabled = false
 	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	skillPath := filepath.Join(configDir, "skills", "alpha.md")
+	alphaDir := filepath.Join(configDir, "skills", "alpha")
+	if err := os.MkdirAll(alphaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillPath := filepath.Join(alphaDir, "SKILL.md")
 	skillContent := `---
 name: alpha
 description: test
@@ -445,8 +449,12 @@ enabled = false
 		t.Fatal(err)
 	}
 	// Malformed YAML frontmatter should make LoadSkills fail.
+	brokenDir := filepath.Join(configDir, "skills", "broken")
+	if err := os.MkdirAll(brokenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	badSkill := "---\nname: [\n---\nBody.\n"
-	if err := os.WriteFile(filepath.Join(configDir, "skills", "broken.md"), []byte(badSkill), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(brokenDir, "SKILL.md"), []byte(badSkill), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {

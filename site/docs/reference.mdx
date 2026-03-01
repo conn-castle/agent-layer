@@ -355,7 +355,7 @@ Typical `.agent-layer/` files include:
 
 Typical project memory files under `docs/agent-layer/`:
 
-- `ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`
+- `ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`
 
 **Wizard prompt**
 
@@ -493,10 +493,9 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 
 Skill sources align with the [agentskills.io specification](https://agentskills.io/specification), with explicit backward-compatibility behavior documented below.
 
-`.agent-layer/skills/` supports two source formats:
+`.agent-layer/skills/` uses directory format:
 
-- Flat: `.agent-layer/skills/<name>.md`
-- Directory: `.agent-layer/skills/<name>/SKILL.md` (canonical; lowercase `skill.md` is accepted as a compatibility fallback)
+- `.agent-layer/skills/<name>/SKILL.md` (canonical; lowercase `skill.md` is accepted as a compatibility fallback)
 
 Frontmatter fields:
 

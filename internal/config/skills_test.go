@@ -18,39 +18,21 @@ description: >-
 Do the thing.
 `
 
-func TestLoadSkills_FlatFilesSorted(t *testing.T) {
+func TestLoadSkills_FlatFormatReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte(skillContent), 0o644); err != nil {
 		t.Fatalf("write b: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "a.md"), []byte(skillContent), 0o644); err != nil {
-		t.Fatalf("write a: %v", err)
-	}
 
-	skills, err := LoadSkills(dir)
-	if err != nil {
-		t.Fatalf("LoadSkills error: %v", err)
+	_, err := LoadSkills(dir)
+	if err == nil {
+		t.Fatal("expected error for flat-format skill")
 	}
-	if len(skills) != 2 {
-		t.Fatalf("expected 2 skills, got %d", len(skills))
+	if !strings.Contains(err.Error(), "flat format is no longer supported") {
+		t.Fatalf("expected flat-format unsupported error, got %v", err)
 	}
-	if skills[0].Name != "a" {
-		t.Fatalf("expected lexicographic order, got %s", skills[0].Name)
-	}
-	if skills[0].Description != "First line Second line" {
-		t.Fatalf("unexpected description: %q", skills[0].Description)
-	}
-	if skills[0].Body != "Do the thing." {
-		t.Fatalf("unexpected body: %q", skills[0].Body)
-	}
-	if skills[0].License != "" || skills[0].Compatibility != "" || skills[0].AllowedTools != "" {
-		t.Fatalf("expected optional fields to be empty: %#v", skills[0])
-	}
-	if skills[0].Metadata != nil {
-		t.Fatalf("expected metadata to be nil, got %#v", skills[0].Metadata)
-	}
-	if skills[0].SourcePath == "" {
-		t.Fatalf("expected source path to be set")
+	if !strings.Contains(err.Error(), "al upgrade") {
+		t.Fatalf("expected upgrade guidance in error, got %v", err)
 	}
 }
 
@@ -252,7 +234,7 @@ Body.`
 	}
 }
 
-func TestLoadSkills_DuplicateFlatAndDirectoryConflict(t *testing.T) {
+func TestLoadSkills_FlatFileRejectsBeforeDirectoryLoads(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "foo.md"), []byte("---\ndescription: flat\n---\n"), 0o644); err != nil {
 		t.Fatalf("write flat: %v", err)
@@ -265,8 +247,8 @@ func TestLoadSkills_DuplicateFlatAndDirectoryConflict(t *testing.T) {
 	}
 
 	_, err := LoadSkills(dir)
-	if err == nil || !strings.Contains(err.Error(), "duplicate skill name") {
-		t.Fatalf("expected duplicate-name error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "flat format is no longer supported") {
+		t.Fatalf("expected flat-format unsupported error, got %v", err)
 	}
 }
 
@@ -284,7 +266,13 @@ func TestLoadSkills_DirectoryMissingSkillFile(t *testing.T) {
 
 func TestLoadSkills_NameMismatch(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "foo.md"), []byte("---\nname: bar\ndescription: test\n---\n"), 0o644); err != nil {
+	// Flat .md at the skills root is now rejected before we even parse
+	// the front-matter, so put the mismatched skill in directory format.
+	skillDir := filepath.Join(dir, "foo")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir foo: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: bar\ndescription: test\n---\n"), 0o644); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
