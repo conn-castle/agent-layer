@@ -96,7 +96,7 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 			if i > 0 {
 				builder.WriteString("\n")
 			}
-			fmt.Fprintf(&builder, "[mcp_servers.%s]\n", server.ID)
+			fmt.Fprintf(&builder, "[mcp_servers.%q]\n", server.ID)
 			switch server.Transport {
 			case config.TransportHTTP:
 				if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {

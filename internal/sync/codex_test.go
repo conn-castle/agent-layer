@@ -345,7 +345,7 @@ func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(
 	}
 
 	rootOverridePos := strings.Index(output, "approval_policy = 'on-request'")
-	mcpTablePos := strings.Index(output, "[mcp_servers.example]\n")
+	mcpTablePos := strings.Index(output, `[mcp_servers."example"]`+"\n")
 	if rootOverridePos == -1 {
 		t.Fatalf("expected agent-specific root override in output:\n%s", output)
 	}
@@ -575,10 +575,10 @@ func TestBuildCodexConfigMultipleServers(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Should have both servers with newline separator
-	if !strings.Contains(output, "[mcp_servers.server1]") {
+	if !strings.Contains(output, `[mcp_servers."server1"]`) {
 		t.Fatalf("missing server1 in output:\n%s", output)
 	}
-	if !strings.Contains(output, "[mcp_servers.server2]") {
+	if !strings.Contains(output, `[mcp_servers."server2"]`) {
 		t.Fatalf("missing server2 in output:\n%s", output)
 	}
 }

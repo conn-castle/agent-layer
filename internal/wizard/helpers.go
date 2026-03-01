@@ -67,7 +67,12 @@ func buildSummary(c *Choices) string {
 
 	sb.WriteString(messages.WizardSummarySecretsHeader)
 	if len(c.Secrets) > 0 {
+		secretKeys := make([]string, 0, len(c.Secrets))
 		for k := range c.Secrets {
+			secretKeys = append(secretKeys, k)
+		}
+		sort.Strings(secretKeys)
+		for _, k := range secretKeys {
 			fmt.Fprintf(&sb, messages.WizardSummaryListItemFmt, k)
 		}
 	} else {

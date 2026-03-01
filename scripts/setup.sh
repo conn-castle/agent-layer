@@ -40,9 +40,12 @@ go_major="${BASH_REMATCH[1]}"
 go_minor="${BASH_REMATCH[2]}"
 go_patch="${BASH_REMATCH[4]:-0}"
 
+go_prerelease="${BASH_REMATCH[5]:-}"
+
 if (( go_major < required_go_major \
   || (go_major == required_go_major && go_minor < required_go_minor) \
-  || (go_major == required_go_major && go_minor == required_go_minor && go_patch < required_go_patch) )); then
+  || (go_major == required_go_major && go_minor == required_go_minor && go_patch < required_go_patch) )) \
+  || (( go_major == required_go_major && go_minor == required_go_minor && go_patch == required_go_patch )) && [[ -n "$go_prerelease" ]]; then
   echo "Go $required_go_version+ is required; found ${go_version_token#go}. Upgrade Go and retry." >&2
   exit 1
 fi
