@@ -90,11 +90,18 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 
 		// Lenient loading succeeded — report the validation error but return
 		// a partial config so downstream checks can still run.
+		configRelPath := relPathForDoctor(root, configPath)
+		message := fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err)
+		recommendation := messages.DoctorConfigLoadLenientRecommend
+		if details, detailsErr := configUnknownKeys(configPath); detailsErr == nil && len(details) > 0 {
+			message = fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, summarizeUnknownKeys(details))
+			recommendation = formatUnknownKeyRecommendation(configRelPath, details)
+		}
 		results = append(results, Result{
 			Status:         StatusFail,
 			CheckName:      messages.DoctorCheckNameConfig,
-			Message:        fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err),
-			Recommendation: messages.DoctorConfigLoadLenientRecommend,
+			Message:        message,
+			Recommendation: recommendation,
 		})
 		partial := &config.ProjectConfig{Config: *lenientCfg, Root: root}
 

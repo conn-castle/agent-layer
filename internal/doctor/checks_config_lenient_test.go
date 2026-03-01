@@ -58,17 +58,15 @@ enabled = false
 	results, cfg := CheckConfig(root)
 
 	// Should report a FAIL result for the validation error.
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+	result := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if result.Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", result.Status)
 	}
-	if results[0].Status != StatusFail {
-		t.Fatalf("expected FAIL status, got %s", results[0].Status)
+	if !strings.Contains(result.Message, "claude_vscode") {
+		t.Fatalf("expected validation error about claude_vscode, got: %s", result.Message)
 	}
-	if !strings.Contains(results[0].Message, "claude_vscode") {
-		t.Fatalf("expected validation error about claude_vscode, got: %s", results[0].Message)
-	}
-	if results[0].Recommendation != messages.DoctorConfigLoadLenientRecommend {
-		t.Fatalf("expected lenient recommendation, got: %s", results[0].Recommendation)
+	if result.Recommendation != messages.DoctorConfigLoadLenientRecommend {
+		t.Fatalf("expected lenient recommendation, got: %s", result.Recommendation)
 	}
 
 	// Should still return a usable config from lenient loading.
@@ -91,6 +89,155 @@ enabled = false
 	agentResults := CheckAgents(cfg)
 	if len(agentResults) == 0 {
 		t.Fatal("expected agent results from lenient config")
+	}
+}
+
+func TestCheckConfig_LenientFallback_UnknownKeysGuidance(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.claude_vscode]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+model = "vscode-model-not-supported"
+reasoning_effort = "nope"
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	configPath := filepath.Join(configDir, "config.toml")
+	details, detailsErr := configUnknownKeys(configPath)
+	if detailsErr != nil {
+		t.Fatalf("expected unknown-key details, got error: %v", detailsErr)
+	}
+	var sawModel, sawReasoning bool
+	for _, detail := range details {
+		if detail.Path == "agents.vscode.model" {
+			sawModel = true
+		}
+		if detail.Path == "agents.vscode.reasoning_effort" {
+			sawReasoning = true
+		}
+	}
+	if !sawModel || !sawReasoning {
+		t.Fatalf("expected unknown-key details for model+reasoning, got: %#v", details)
+	}
+	result := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if result.CheckName != messages.DoctorCheckNameConfig {
+		t.Fatalf("expected Config check name, got %s", result.CheckName)
+	}
+	if result.Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", result.Status)
+	}
+	if !strings.Contains(result.Message, "Failed to load configuration:") {
+		t.Fatalf("expected load failure prefix, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Message, "unrecognized config keys") {
+		t.Fatalf("expected unrecognized keys message, got: %s", result.Message)
+	}
+	expectedSummary := summarizeUnknownKeys(details)
+	if !strings.Contains(result.Message, expectedSummary) {
+		t.Fatalf("expected unknown-key summary %q in message, got: %s", expectedSummary, result.Message)
+	}
+	expectedRecommendation := formatUnknownKeyRecommendation(relPathForDoctor(root, configPath), details)
+	if result.Recommendation != expectedRecommendation {
+		t.Fatalf("unexpected recommendation:\n--- got ---\n%s\n--- want ---\n%s", result.Recommendation, expectedRecommendation)
+	}
+}
+
+func TestCheckConfig_LenientFallback_UnknownKeysGuidance_SuggestsRename(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyKeyConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.claude-vscode]
+enabled = true
+model = "legacy-key-not-supported"
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(legacyKeyConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	result := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if result.Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", result.Status)
+	}
+	if !strings.Contains(result.Message, `unrecognized config keys: agents["claude-vscode"]`) {
+		t.Fatalf("expected unknown key summary in message, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Recommendation, "did you mean agents.claude_vscode?") {
+		t.Fatalf("expected key-rename suggestion, got: %s", result.Recommendation)
 	}
 }
 
@@ -197,8 +344,9 @@ enabled = false
 			t.Fatalf("did not expect skills failure for missing skills directory: %#v", results)
 		}
 	}
-	if len(results) != 1 || results[0].CheckName != messages.DoctorCheckNameConfig || results[0].Status != StatusFail {
-		t.Fatalf("expected single config fail result, got %#v", results)
+	configResult := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if configResult.Status != StatusFail {
+		t.Fatalf("expected config fail result, got %#v", results)
 	}
 
 	skillResults := CheckSkills(cfg)
@@ -259,6 +407,69 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback_InvalidSkillFile_ReportsLoadFailure(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.antigravity]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Malformed YAML frontmatter should make LoadSkills fail.
+	badSkill := "---\nname: [\n---\nBody.\n"
+	if err := os.WriteFile(filepath.Join(configDir, "skills", "broken.md"), []byte(badSkill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+
+	skillsResult := requireResultByCheckName(t, results, messages.DoctorCheckNameSkills)
+	if skillsResult.Status != StatusFail {
+		t.Fatalf("expected skills FAIL status, got %s", skillsResult.Status)
+	}
+	if !strings.Contains(skillsResult.Message, "Failed to load skills from .agent-layer/skills") {
+		t.Fatalf("unexpected skills load failure message: %q", skillsResult.Message)
+	}
+	if skillsResult.Recommendation != messages.DoctorSkillValidationRecommend {
+		t.Fatalf("expected skills recommendation %q, got %q", messages.DoctorSkillValidationRecommend, skillsResult.Recommendation)
+	}
+}
+
 func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
@@ -304,8 +515,9 @@ enabled = false
 	results, cfg := CheckConfig(root)
 
 	// Should report a FAIL result for the validation error.
-	if len(results) != 1 || results[0].Status != StatusFail {
-		t.Fatalf("expected 1 FAIL result, got %d: %v", len(results), results)
+	configResult := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if configResult.Status != StatusFail {
+		t.Fatalf("expected config FAIL result, got %v", results)
 	}
 
 	// Should still return a usable config from lenient loading.

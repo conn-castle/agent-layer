@@ -121,6 +121,7 @@ If a server fails to start with “No such file or directory,” verify the `com
 ### Doctor MCP checks
 
 `al doctor` connects to each enabled MCP server and lists tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
+When config validation fails due to unrecognized keys, `al doctor` reports the detected key paths, schema hints (allowed keys where applicable), and repair options (`al upgrade`, `al wizard`, or manual edits).
 When Claude (including Claude VS Code) or Gemini is enabled, it preflights internal prompt-server command resolution (typically `al mcp-prompts`, or `go run ./cmd/al mcp-prompts` in a source checkout) and verifies generated client configs (for example `.mcp.json`, `.gemini/settings.json`) are in sync; run `al sync` if they are missing or stale.
 
 ---

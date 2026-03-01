@@ -27,12 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-02-26 doctor-config-errors-explicit: Make `al doctor` config error guidance explicit and corrective (https://github.com/conn-castle/agent-layer/issues/80)
-    Priority: High. Area: doctor / config diagnostics UX.
-    Description: Current `al doctor` failures for config validation (for example unrecognized keys) are too generic and do not clearly identify the exact offending keys/sections and concrete repair path.
-    Next step: Update `al doctor` config-failure output to include explicit invalid keys/paths detected, why they are invalid for the current schema/version, and direct copyable remediation options.
-    Notes: Keep strict failure behavior, but improve first-pass operator clarity so users can resolve issues without trial-and-error.
-
 - Issue 2026-02-25 go-126-deps-audit: Upgrade to Go v1.26.0 and audit outdated dependencies
     Priority: Medium. Area: build/toolchain / dependency management.
     Description: The repository should be upgraded to Go `v1.26.0` and reviewed for additional outdated packages/modules to reduce drift and compatibility risk.
