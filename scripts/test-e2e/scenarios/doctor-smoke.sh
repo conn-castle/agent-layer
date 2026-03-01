@@ -10,6 +10,19 @@ run_scenario_doctor_smoke() {
 
   assert_exit_zero_in "$repo_dir" "al init --no-wizard" al init --no-wizard
 
+  # Make prompt-server expectations explicit instead of relying on defaults.
+  local config_path="$repo_dir/.agent-layer/config.toml"
+  local config_tmp="$repo_dir/.agent-layer/config.toml.tmp"
+  assert_file_contains "$config_path" "[agents.gemini]" \
+    "config has [agents.gemini] section"
+  assert_file_contains "$config_path" "[agents.claude]" \
+    "config has [agents.claude] section"
+  sed \
+    -e '/^\[agents\.gemini\]/,/^\[/ s/^enabled = .*/enabled = true/' \
+    -e '/^\[agents\.claude\]/,/^\[/ s/^enabled = .*/enabled = true/' \
+    "$config_path" > "$config_tmp"
+  mv "$config_tmp" "$config_path"
+
   # Doctor validates MCP server secrets from .agent-layer/.env.
   # Default init has no MCP servers enabled, so this is technically unnecessary
   # but mirrors what a real user would have.
@@ -19,9 +32,11 @@ AL_GITHUB_PERSONAL_ACCESS_TOKEN=e2e-test
 AL_TAVILY_API_KEY=e2e-test
 ENVEOF
 
-  # Snapshot .agent-layer/ state before doctor to verify read-only behavior
+  assert_exit_zero_in "$repo_dir" "al sync" al sync
+
+  # Snapshot sync outputs + .agent-layer/ state before doctor to verify read-only behavior
   local pre_doctor_snapshot="$E2E_TMP_ROOT/doctor-pre-snapshot.txt"
-  _snapshot_agent_layer_state "$repo_dir" > "$pre_doctor_snapshot"
+  _snapshot_all_state "$repo_dir" > "$pre_doctor_snapshot"
 
   # Capture doctor output to verify actual check results
   local doctor_output rc=0
@@ -54,6 +69,18 @@ ENVEOF
   assert_output_contains "$doctor_output" "Agents" \
     "doctor output checks agents"
 
+  # Verify doctor checked internal prompt server + client configs
+  assert_output_contains "$doctor_output" "MCPPrompts" \
+    "doctor output checks internal MCP prompt server"
+  assert_output_contains "$doctor_output" "MCPPromptConfig" \
+    "doctor output checks MCP prompt server client config"
+  assert_file_exists "$repo_dir/.mcp.json" "sync generated .mcp.json"
+  assert_output_contains "$doctor_output" ".mcp.json" \
+    "doctor validates .mcp.json prompt server entry"
+  assert_file_exists "$repo_dir/.gemini/settings.json" "sync generated .gemini/settings.json"
+  assert_output_contains "$doctor_output" ".gemini/settings.json" \
+    "doctor validates Gemini prompt server entry"
+
   # Verify doctor ran warning checks
   assert_output_contains "$doctor_output" "Running warning checks" \
     "doctor output ran warning checks"
@@ -66,9 +93,9 @@ ENVEOF
   assert_output_not_contains "$doctor_output" "[FAIL]" \
     "doctor output has no FAIL results"
 
-  # ---- Prove doctor is read-only: .agent-layer/ state unchanged ----
-  assert_agent_layer_state_unchanged "$repo_dir" "$pre_doctor_snapshot" \
-    "doctor did not modify .agent-layer/ state"
+  # ---- Prove doctor is read-only: sync outputs + .agent-layer/ unchanged ----
+  assert_all_state_unchanged "$repo_dir" "$pre_doctor_snapshot" \
+    "doctor did not modify sync outputs or .agent-layer/ state"
 
   # ---- Prove doctor is read-only: al claude still works afterward ----
   install_mock_claude "$repo_dir"

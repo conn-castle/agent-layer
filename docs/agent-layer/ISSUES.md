@@ -27,12 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-02-26 doctor-config-errors-explicit: Make `al doctor` config error guidance explicit and corrective (https://github.com/conn-castle/agent-layer/issues/80)
-    Priority: High. Area: doctor / config diagnostics UX.
-    Description: Current `al doctor` failures for config validation (for example unrecognized keys) are too generic and do not clearly identify the exact offending keys/sections and concrete repair path.
-    Next step: Update `al doctor` config-failure output to include explicit invalid keys/paths detected, why they are invalid for the current schema/version, and direct copyable remediation options.
-    Notes: Keep strict failure behavior, but improve first-pass operator clarity so users can resolve issues without trial-and-error.
-
 - Issue 2026-02-25 go-126-deps-audit: Upgrade to Go v1.26.0 and audit outdated dependencies
     Priority: Medium. Area: build/toolchain / dependency management.
     Description: The repository should be upgraded to Go `v1.26.0` and reviewed for additional outdated packages/modules to reduce drift and compatibility risk.
@@ -44,9 +38,3 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: Playwright running in headed mode is noisy and disruptive during normal development. We should assess whether headless can be the default while preserving behavior.
     Next step: Run representative Playwright flows in headed vs headless mode, document any behavior differences, and only switch defaults if parity is confirmed.
     Notes: Keep an explicit opt-in path for headed runs for local debugging even if headless becomes the default.
-
-- Issue 2026-02-25 claude-auth-ignores-config-dir: Claude Code keychain ACL prevents credential persistence across restarts (upstream)
-    Priority: Medium. Area: agents.claude / auth isolation.
-    Description: Two upstream bugs affect per-`CLAUDE_CONFIG_DIR` credential isolation. Bug 1 (keychain namespacing) is now fixed — Claude Code creates per-config-dir entries as `"Claude Code-credentials-{sha256(path)[:8]}"`. Bug 2 (keychain ACL) is still broken and is the actual blocker: entries are created with `partition_id: apple-tool:` and decrypt authorized only for `/usr/bin/security`, so Claude Code's own binary (`com.anthropic.claude-code`, team `Q6L2SF6YDW`) cannot read them after a restart. Auth must be re-entered in every repo after each reboot.
-    Next step: Track upstream issues. The fix requires Claude Code to set `partition_id` to include `teamid:Q6L2SF6YDW` (or equivalent) so it can read its own keychain entries. Upstream: `anthropics/claude-code#20553` (namespacing, fixed), `anthropics/claude-code#19456` (ACL, still open). Local: `conn-castle/agent-layer#78`.
-    Notes: No workaround exists. The namespacing fix is confirmed working (each `CLAUDE_CONFIG_DIR` gets an independent OAuth session with separate tokens), but the ACL bug nullifies it by preventing reads after restart.

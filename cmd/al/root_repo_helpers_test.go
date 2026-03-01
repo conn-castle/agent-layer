@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -158,5 +159,86 @@ func writeGitignoreBlock(t *testing.T, root string) {
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
 	if err := os.WriteFile(blockPath, templateBytes, 0o644); err != nil {
 		t.Fatalf("write gitignore.block: %v", err)
+	}
+}
+
+func writeDoctorTestRepo(t *testing.T, root string) {
+	t.Helper()
+	writeTestRepo(t, root)
+	ensurePromptServerSourceRoot(t, root)
+	writePromptServerClientConfigs(t, root, true)
+}
+
+func writeDoctorTestRepoWithWarnings(t *testing.T, root string) {
+	t.Helper()
+	writeTestRepoWithWarnings(t, root)
+	ensurePromptServerSourceRoot(t, root)
+	writePromptServerClientConfigs(t, root, true)
+}
+
+func ensurePromptServerSourceRoot(t *testing.T, root string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(root, "cmd", "al"), 0o755); err != nil {
+		t.Fatalf("mkdir cmd/al: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/conn-castle/agent-layer\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+}
+
+func writePromptServerClientConfigs(t *testing.T, root string, trust bool) {
+	t.Helper()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("resolve canonical repo root: %v", err)
+	}
+
+	command, args, err := alsync.ResolvePromptServerCommand(alsync.RealSystem{}, canonicalRoot)
+	if err != nil {
+		t.Fatalf("resolve prompt server command: %v", err)
+	}
+	env, err := alsync.ResolvePromptServerEnv(canonicalRoot)
+	if err != nil {
+		t.Fatalf("resolve prompt server env: %v", err)
+	}
+
+	mcpPayload := map[string]any{
+		"mcpServers": map[string]any{
+			"agent-layer": map[string]any{
+				"type":    config.TransportStdio,
+				"command": command,
+				"args":    args,
+				"env":     map[string]string(env),
+			},
+		},
+	}
+	mcpData, err := json.MarshalIndent(mcpPayload, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal .mcp.json payload: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".mcp.json"), append(mcpData, '\n'), 0o644); err != nil {
+		t.Fatalf("write .mcp.json: %v", err)
+	}
+
+	geminiPath := filepath.Join(root, ".gemini", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o755); err != nil {
+		t.Fatalf("mkdir .gemini: %v", err)
+	}
+	geminiPayload := map[string]any{
+		"mcpServers": map[string]any{
+			"agent-layer": map[string]any{
+				"command": command,
+				"args":    args,
+				"trust":   trust,
+				"env":     map[string]string(env),
+			},
+		},
+	}
+	geminiData, err := json.MarshalIndent(geminiPayload, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal .gemini/settings.json payload: %v", err)
+	}
+	if err := os.WriteFile(geminiPath, append(geminiData, '\n'), 0o644); err != nil {
+		t.Fatalf("write .gemini/settings.json: %v", err)
 	}
 }

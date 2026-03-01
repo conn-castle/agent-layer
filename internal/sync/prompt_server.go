@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -12,6 +13,30 @@ import (
 )
 
 const agentLayerGoModuleLine = "module github.com/conn-castle/agent-layer"
+
+// ResolvePromptServerCommand returns the command and args used to run the internal MCP prompt server.
+// Args: sys provides filesystem/exec access; root is the repo root.
+// Returns: the resolved command/args or an error when resolution fails.
+func ResolvePromptServerCommand(sys System, root string) (string, []string, error) {
+	if sys == nil {
+		return "", nil, errors.New("system is required")
+	}
+	value := reflect.ValueOf(sys)
+	switch value.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface:
+		if value.IsNil() {
+			return "", nil, errors.New("system is required")
+		}
+	}
+	return resolvePromptServerCommand(sys, root)
+}
+
+// ResolvePromptServerEnv returns the environment variables for the internal MCP prompt server.
+// Args: root is the repo root.
+// Returns: ordered env vars or an error when resolution fails.
+func ResolvePromptServerEnv(root string) (OrderedMap[string], error) {
+	return resolvePromptServerEnv(root)
+}
 
 // resolvePromptServerCommand returns the command and args used to run the internal MCP prompt server.
 // It prefers "go run <root>/cmd/al mcp-prompts" when local source is present,

@@ -86,6 +86,11 @@ func newDoctorCmd() *cobra.Command {
 
 				// 5. Check Skills
 				allResults = append(allResults, doctor.CheckSkills(cfg)...)
+
+				// 6. Check Internal MCP Prompt Server
+				allResults = append(allResults, doctor.CheckPromptServer(root, cfg)...)
+				// 7. Check Prompt Server Client Configs
+				allResults = append(allResults, doctor.CheckPromptServerConfig(root, cfg)...)
 			}
 
 			hasFail := false
@@ -96,7 +101,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
-			// 5. Run Warning System (Instructions + MCP)
+			// 8. Run Warning System (Instructions + MCP)
 			// Only run if basic config loaded successfully, otherwise we might crash or be useless.
 			var warningList []warnings.Warning
 			if cfg != nil {

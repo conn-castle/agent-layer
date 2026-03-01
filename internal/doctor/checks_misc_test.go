@@ -52,8 +52,9 @@ enabled = false
 
 	results, cfg := CheckConfig(root)
 
-	if len(results) != 1 || results[0].Status != StatusFail {
-		t.Fatalf("expected 1 FAIL result, got %d: %v", len(results), results)
+	configResult := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if configResult.Status != StatusFail {
+		t.Fatalf("expected config FAIL result, got %v", results)
 	}
 	if cfg == nil {
 		t.Fatal("expected non-nil config from lenient fallback")
@@ -116,17 +117,18 @@ enabled = false
 	results, cfg := CheckConfig(root)
 
 	// Should report a FAIL result for the unknown-key error.
-	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d: %v", len(results), results)
+	configResult := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if configResult.Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", configResult.Status)
 	}
-	if results[0].Status != StatusFail {
-		t.Fatalf("expected FAIL status, got %s", results[0].Status)
+	if !strings.Contains(configResult.Message, "unrecognized") {
+		t.Fatalf("expected unrecognized key error in message, got: %s", configResult.Message)
 	}
-	if !strings.Contains(results[0].Message, "unrecognized") {
-		t.Fatalf("expected unrecognized key error in message, got: %s", results[0].Message)
+	if !strings.Contains(configResult.Recommendation, "agents.claude_vscode.model") {
+		t.Fatalf("expected unknown key path in recommendation, got: %s", configResult.Recommendation)
 	}
-	if results[0].Recommendation != messages.DoctorConfigLoadLenientRecommend {
-		t.Fatalf("expected lenient recommendation, got: %s", results[0].Recommendation)
+	if !strings.Contains(configResult.Recommendation, "al upgrade") || !strings.Contains(configResult.Recommendation, "al wizard") {
+		t.Fatalf("expected upgrade/wizard guidance, got: %s", configResult.Recommendation)
 	}
 
 	// Should still return a usable config from lenient loading.
