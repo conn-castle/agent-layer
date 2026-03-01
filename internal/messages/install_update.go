@@ -32,7 +32,7 @@ const (
 	InstallUpgradeRollbackSnapshotIDRequired         = "upgrade rollback requires a snapshot id"
 	InstallUpgradeRollbackSnapshotIDInvalid          = "invalid snapshot id %q: must not contain path separators"
 	InstallUpgradeRollbackSnapshotNotFoundFmt        = "upgrade snapshot %s not found under %s"
-	InstallUpgradeRollbackSnapshotNotRollbackableFmt = "upgrade snapshot %s is not rollbackable (status %s; expected %s): snapshots are only rollbackable after a completed upgrade writes changes"
+	InstallUpgradeRollbackSnapshotNotRollbackableFmt = "upgrade snapshot %s is not rollbackable (status %s): snapshots are only rollbackable in created or applied state"
 	InstallUpgradeRollbackFailedFmt                  = "rollback snapshot %s failed: %w"
 	InstallUpgradeSnapshotLargeWarningFmt            = "Warning: upgrade snapshot %s is large (%d MB); consider cleaning old snapshots under .agent-layer/state/upgrade-snapshots (threshold: %d MB)\n"
 	InstallDiffPreviewPathRequired                   = "diff preview path is required"

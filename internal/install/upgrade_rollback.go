@@ -50,8 +50,8 @@ func RollbackUpgradeSnapshot(root string, snapshotID string, opts RollbackUpgrad
 	if err != nil {
 		return err
 	}
-	if snapshot.Status != upgradeSnapshotStatusApplied {
-		return fmt.Errorf(messages.InstallUpgradeRollbackSnapshotNotRollbackableFmt, snapshotID, snapshot.Status, upgradeSnapshotStatusApplied)
+	if snapshot.Status != upgradeSnapshotStatusApplied && snapshot.Status != upgradeSnapshotStatusCreated {
+		return fmt.Errorf(messages.InstallUpgradeRollbackSnapshotNotRollbackableFmt, snapshotID, snapshot.Status)
 	}
 
 	targets, err := rollbackTargetsFromSnapshotEntries(root, snapshot.Entries)

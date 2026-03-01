@@ -299,18 +299,66 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	}
 }
 
-func TestRollbackUpgradeSnapshot_RejectsNonAppliedStatuses(t *testing.T) {
+func TestRollbackUpgradeSnapshot_RestoresCreatedSnapshot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	// Simulate a partially-applied upgrade (Ctrl-C after snapshot creation
+	// but before the transaction marked the snapshot as applied).
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.9.0\n"), 0o644); err != nil {
+		t.Fatalf("write current pin: %v", err)
+	}
+
+	permFile := uint32(0o644)
+	snapshot := upgradeSnapshot{
+		SchemaVersion: upgradeSnapshotSchemaVersion,
+		SnapshotID:    "interrupted-upgrade-1",
+		CreatedAtUTC:  time.Date(2026, time.March, 1, 12, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		Status:        upgradeSnapshotStatusCreated,
+		Entries: []upgradeSnapshotEntry{
+			{
+				Path:          ".agent-layer/al.version",
+				Kind:          upgradeSnapshotEntryKindFile,
+				Perm:          &permFile,
+				ContentBase64: base64.StdEncoding.EncodeToString([]byte("0.8.0\n")),
+			},
+		},
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.writeUpgradeSnapshot(snapshot, false); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	if err := RollbackUpgradeSnapshot(root, "interrupted-upgrade-1", RollbackUpgradeSnapshotOptions{System: RealSystem{}}); err != nil {
+		t.Fatalf("rollback of created snapshot should succeed: %v", err)
+	}
+
+	versionBytes, err := os.ReadFile(filepath.Join(root, ".agent-layer", "al.version"))
+	if err != nil {
+		t.Fatalf("read restored pin: %v", err)
+	}
+	if string(versionBytes) != "0.8.0\n" {
+		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "0.8.0\n")
+	}
+
+	restoredSnapshot := latestSnapshot(t, root)
+	if restoredSnapshot.Status != upgradeSnapshotStatusManuallyRolledBack {
+		t.Fatalf("snapshot status = %q, want %q", restoredSnapshot.Status, upgradeSnapshotStatusManuallyRolledBack)
+	}
+}
+
+func TestRollbackUpgradeSnapshot_RejectsNonRollbackableStatuses(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	statuses := []upgradeSnapshotStatus{
-		upgradeSnapshotStatusCreated,
 		upgradeSnapshotStatusAutoRolledBack,
 		upgradeSnapshotStatusRollbackFailed,
 	}
 	for idx, status := range statuses {
 		snapshot := upgradeSnapshot{
 			SchemaVersion: upgradeSnapshotSchemaVersion,
-			SnapshotID:    fmt.Sprintf("non-applied-%d", idx),
+			SnapshotID:    fmt.Sprintf("non-rollbackable-%d", idx),
 			CreatedAtUTC:  time.Date(2026, time.January, 2, 3, 4, idx, 0, time.UTC).Format(time.RFC3339),
 			Status:        status,
 		}
