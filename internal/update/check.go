@@ -105,7 +105,7 @@ func fetchLatestReleaseVersion(ctx context.Context) (string, error) {
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("User-Agent", "agent-layer")
 
-		resp, err := httpClient.Do(req)
+		resp, err := httpClient.Do(req) //nolint:gosec // URL is a constant GitHub API endpoint
 		if err != nil {
 			if shouldRetryLatestCheck(err, 0, attempt) {
 				updateSleep(retryDelay)

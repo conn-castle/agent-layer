@@ -352,7 +352,7 @@ func downloadHTTPClientWithSystem(sys System) *http.Client {
 
 // verifyChecksum computes the SHA-256 of path and compares it to expected.
 func verifyChecksum(path string, expected string) error {
-	file, err := os.Open(path)
+	file, err := os.Open(path) //nolint:gosec // path is an internally-resolved cache file
 	if err != nil {
 		return fmt.Errorf(messages.DispatchOpenFileFmt, path, err)
 	}

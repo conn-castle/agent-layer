@@ -124,7 +124,7 @@ func firstCommandArg(args []string) string {
 			if idx+1 >= len(args) {
 				return ""
 			}
-			return strings.TrimSpace(args[idx+1])
+			return strings.TrimSpace(args[idx+1]) //nolint:gosec // bounds checked on line 124
 		}
 		if strings.HasPrefix(trimmed, "-") {
 			continue

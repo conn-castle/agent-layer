@@ -688,7 +688,7 @@ func TestBuildCodexConfigStdioMissingEnvVarEnv(t *testing.T) {
 						Clients:   []string{"codex"},
 						Transport: "stdio",
 						Command:   "tool",
-						Env:       map[string]string{"TOKEN": "${MISSING_ENV}"},
+						Env:       map[string]string{"TOKEN": "${MISSING_ENV}"}, //nolint:gosec // test data with placeholder syntax
 					},
 				},
 			},

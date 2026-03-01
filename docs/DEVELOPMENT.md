@@ -3,7 +3,7 @@
 This repo is built around determinism: the same inputs should produce the same client outputs locally and in CI. These steps keep tooling pinned, workflows repeatable, and changes reviewable so you can trust what ships.
 
 ## Prerequisites
-- Go 1.25.6+
+- Go 1.26.0+
 - Git
 - Make (via Xcode Command Line Tools on macOS)
 - Recommended: `pre-commit` for local hooks
@@ -13,7 +13,7 @@ This repo is built around determinism: the same inputs should produce the same c
    ```bash
    xcode-select --install
    ```
-2. Install Go 1.25.6+ (from https://go.dev/dl/) and confirm it works:
+2. Install Go 1.26.0+ (from https://go.dev/dl/) and confirm it works:
    ```bash
    go version
    ```

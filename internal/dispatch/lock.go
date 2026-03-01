@@ -66,7 +66,7 @@ func (l *fileLock) release() error {
 func lockFile(file *os.File) error {
 	deadline := time.Now().Add(lockWaitTimeout)
 	for {
-		err := flockFn(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		err := flockFn(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // Fd returns uintptr; safe int cast on 64-bit
 		if err == nil {
 			return nil
 		}
@@ -82,5 +82,5 @@ func lockFile(file *os.File) error {
 
 // unlockFile releases the advisory lock on the file.
 func unlockFile(file *os.File) error {
-	return flockFn(int(file.Fd()), unix.LOCK_UN)
+	return flockFn(int(file.Fd()), unix.LOCK_UN) //nolint:gosec // Fd returns uintptr; safe int cast on 64-bit
 }

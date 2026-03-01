@@ -1307,7 +1307,7 @@ func TestRun(t *testing.T) {
 }
 
 func TestMainError(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelper", "--")
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainHelper", "--") //nolint:gosec // standard test re-exec pattern
 	cmd.Env = append(os.Environ(), "GO_WANT_MAIN=1")
 	if err := cmd.Run(); err == nil {
 		t.Fatal("expected non-zero exit")
@@ -1363,7 +1363,7 @@ func TestHelperProcess(t *testing.T) {
 	if err != nil {
 		os.Exit(1)
 	}
-	if err := os.WriteFile("versions.json", data, 0o644); err != nil {
+	if err := os.WriteFile("versions.json", data, 0o644); err != nil { //nolint:gosec // test helper writing to CWD
 		os.Exit(1)
 	}
 	os.Exit(0)
@@ -1529,7 +1529,7 @@ func withHelperCommand(t *testing.T, extraEnv ...string) {
 	orig := execCommandContext
 	t.Cleanup(func() { execCommandContext = orig })
 	execCommandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-		cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=TestHelperProcess", "--"}, append([]string{name}, args...)...)...)
+		cmd := exec.CommandContext(ctx, os.Args[0], append([]string{"-test.run=TestHelperProcess", "--"}, append([]string{name}, args...)...)...) //nolint:gosec // standard test re-exec pattern
 		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1")
 		cmd.Env = append(cmd.Env, extraEnv...)
 		return cmd

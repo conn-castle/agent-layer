@@ -47,7 +47,7 @@ func buildVSCodePrompt(cmd config.Skill) string {
 	builder.WriteString("name: ")
 	builder.WriteString(cmd.Name)
 	builder.WriteString("\n---\n")
-	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
+	fmt.Fprintf(&builder, promptHeaderTemplate, generatedSkillSourcePath(cmd))
 	if cmd.Body != "" {
 		builder.WriteString(cmd.Body)
 		if !strings.HasSuffix(cmd.Body, "\n") {
@@ -138,7 +138,7 @@ func buildCodexSkill(cmd config.Skill) (string, error) {
 		return "", err
 	}
 	builder.WriteString(frontMatter)
-	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
+	fmt.Fprintf(&builder, promptHeaderTemplate, generatedSkillSourcePath(cmd))
 	builder.WriteString("\n# ")
 	builder.WriteString(cmd.Name)
 	builder.WriteString("\n\n")
@@ -161,7 +161,7 @@ func buildAntigravitySkill(cmd config.Skill) (string, error) {
 		return "", err
 	}
 	builder.WriteString(frontMatter)
-	builder.WriteString(fmt.Sprintf(promptHeaderTemplate, generatedSkillSourcePath(cmd)))
+	fmt.Fprintf(&builder, promptHeaderTemplate, generatedSkillSourcePath(cmd))
 	if cmd.Body != "" {
 		builder.WriteString("\n")
 		builder.WriteString(cmd.Body)

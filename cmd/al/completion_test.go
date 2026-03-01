@@ -479,7 +479,7 @@ func TestFirstWritableFpath_ExecZsh(t *testing.T) {
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
+		cmd := exec.Command(os.Args[0], cs...) //nolint:gosec // standard test re-exec pattern
 		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("FAKE_FPATH_OUTPUT=%s", tempDir))
 		return cmd
 	}
@@ -542,7 +542,7 @@ func TestFirstWritableFpath_ExecZshSkipsEmpty(t *testing.T) {
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		cs := []string{"-test.run=TestHelperProcess", "--", name}
 		cs = append(cs, arg...)
-		cmd := exec.Command(os.Args[0], cs...)
+		cmd := exec.Command(os.Args[0], cs...) //nolint:gosec // standard test re-exec pattern
 		cmd.Env = append(os.Environ(), "GO_WANT_HELPER_PROCESS=1", fmt.Sprintf("FAKE_FPATH_OUTPUT=%s", output))
 		return cmd
 	}

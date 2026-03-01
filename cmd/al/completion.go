@@ -222,6 +222,6 @@ func writableDir(dir string) bool {
 	}
 	name := tmp.Name()
 	_ = tmp.Close()
-	_ = os.Remove(name)
+	_ = os.Remove(name) //nolint:gosec // cleanup of temp file just created above
 	return true
 }
