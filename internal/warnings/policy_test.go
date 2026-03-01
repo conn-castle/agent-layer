@@ -198,7 +198,7 @@ func TestCheckPolicy_CodexHeadersAllowedForms(t *testing.T) {
 					ID:      "srv",
 					Enabled: testutil.BoolPtr(true),
 					URL:     "https://example.com/mcp",
-					Headers: map[string]string{
+					Headers: map[string]string{ //nolint:gosec // test data with placeholder syntax
 						"Authorization": "Bearer ${AL_TOKEN}",
 						"X-Token":       "${AL_TOKEN}",
 					},

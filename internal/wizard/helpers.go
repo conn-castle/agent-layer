@@ -14,7 +14,7 @@ import (
 // Assumes c.DefaultMCPServers has been populated (see wizard.Run).
 func buildSummary(c *Choices) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(messages.WizardSummaryApprovalsFmt, c.ApprovalMode))
+	fmt.Fprintf(&sb, messages.WizardSummaryApprovalsFmt, c.ApprovalMode)
 
 	agents := agentSummaryLines(c)
 	sort.Strings(agents)
@@ -38,7 +38,7 @@ func buildSummary(c *Choices) string {
 		sb.WriteString(messages.WizardSummaryNoneLoaded)
 	case len(mcp) > 0:
 		for _, m := range mcp {
-			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
+			fmt.Fprintf(&sb, messages.WizardSummaryListItemFmt, m)
 		}
 	default:
 		sb.WriteString(messages.WizardSummaryNone)
@@ -48,7 +48,7 @@ func buildSummary(c *Choices) string {
 	if len(restoredMCP) > 0 {
 		sb.WriteString(messages.WizardSummaryRestoredMCPServersHeader)
 		for _, m := range restoredMCP {
-			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
+			fmt.Fprintf(&sb, messages.WizardSummaryListItemFmt, m)
 		}
 	}
 
@@ -59,7 +59,7 @@ func buildSummary(c *Choices) string {
 		sb.WriteString(messages.WizardSummaryNoneLoaded)
 	case len(disabledMCP) > 0:
 		for _, m := range disabledMCP {
-			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, m))
+			fmt.Fprintf(&sb, messages.WizardSummaryListItemFmt, m)
 		}
 	default:
 		sb.WriteString(messages.WizardSummaryNone)
@@ -67,8 +67,13 @@ func buildSummary(c *Choices) string {
 
 	sb.WriteString(messages.WizardSummarySecretsHeader)
 	if len(c.Secrets) > 0 {
+		secretKeys := make([]string, 0, len(c.Secrets))
 		for k := range c.Secrets {
-			sb.WriteString(fmt.Sprintf(messages.WizardSummaryListItemFmt, k))
+			secretKeys = append(secretKeys, k)
+		}
+		sort.Strings(secretKeys)
+		for _, k := range secretKeys {
+			fmt.Fprintf(&sb, messages.WizardSummaryListItemFmt, k)
 		}
 	} else {
 		sb.WriteString(messages.WizardSummaryNone)
@@ -79,12 +84,12 @@ func buildSummary(c *Choices) string {
 		sb.WriteString(messages.WizardSummaryWarningsDisabled)
 		return sb.String()
 	}
-	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningInstructionTokenFmt, c.InstructionTokenThreshold))
-	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPServerFmt, c.MCPServerThreshold))
-	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPToolsTotalFmt, c.MCPToolsTotalThreshold))
-	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPServerToolsFmt, c.MCPServerToolsThreshold))
-	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPSchemaTokensTotalFmt, c.MCPSchemaTokensTotalThreshold))
-	sb.WriteString(fmt.Sprintf(messages.WizardSummaryWarningMCPSchemaTokensServerFmt, c.MCPSchemaTokensServerThreshold))
+	fmt.Fprintf(&sb, messages.WizardSummaryWarningInstructionTokenFmt, c.InstructionTokenThreshold)
+	fmt.Fprintf(&sb, messages.WizardSummaryWarningMCPServerFmt, c.MCPServerThreshold)
+	fmt.Fprintf(&sb, messages.WizardSummaryWarningMCPToolsTotalFmt, c.MCPToolsTotalThreshold)
+	fmt.Fprintf(&sb, messages.WizardSummaryWarningMCPServerToolsFmt, c.MCPServerToolsThreshold)
+	fmt.Fprintf(&sb, messages.WizardSummaryWarningMCPSchemaTokensTotalFmt, c.MCPSchemaTokensTotalThreshold)
+	fmt.Fprintf(&sb, messages.WizardSummaryWarningMCPSchemaTokensServerFmt, c.MCPSchemaTokensServerThreshold)
 
 	return sb.String()
 }

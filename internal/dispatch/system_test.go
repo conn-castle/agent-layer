@@ -28,7 +28,7 @@ func TestRealSystem_ExecBinary(t *testing.T) {
 	}
 
 	// In the parent test process: spawn the subprocess.
-	cmd := exec.Command(os.Args[0], "-test.run=TestRealSystem_ExecBinary")
+	cmd := exec.Command(os.Args[0], "-test.run=TestRealSystem_ExecBinary") //nolint:gosec // standard test re-exec pattern
 	cmd.Env = append(os.Environ(), "GO_TEST_REALSYSTEM_EXECBINARY_SUBPROCESS=1")
 	err := cmd.Run()
 

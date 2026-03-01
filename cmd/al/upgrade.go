@@ -947,7 +947,7 @@ func promptNumberedChoice(in io.Reader, out io.Writer, options []string, default
 		return 0, err
 	}
 	for i, opt := range options {
-		if _, err := fmt.Fprintf(out, "  %d) %s\n", i+1, opt); err != nil {
+		if _, err := fmt.Fprintf(out, "  %d) %s\n", i+1, opt); err != nil { //nolint:gosec // CLI output, not web
 			return 0, err
 		}
 	}
@@ -971,7 +971,7 @@ func promptNumberedChoice(in io.Reader, out io.Writer, options []string, default
 		if errors.Is(err, io.EOF) {
 			return 0, fmt.Errorf("invalid choice %q", input)
 		}
-		if _, retryErr := fmt.Fprintf(out, "Invalid choice. Enter a number between 1 and %d.\n", len(options)); retryErr != nil {
+		if _, retryErr := fmt.Fprintf(out, "Invalid choice. Enter a number between 1 and %d.\n", len(options)); retryErr != nil { //nolint:gosec // CLI output, not web
 			return 0, retryErr
 		}
 	}

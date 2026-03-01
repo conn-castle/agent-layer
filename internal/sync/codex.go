@@ -57,10 +57,10 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	builder.WriteString(codexHeader)
 
 	if project.Config.Agents.Codex.Model != "" && !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "model") {
-		builder.WriteString(fmt.Sprintf("model = %q\n", project.Config.Agents.Codex.Model))
+		fmt.Fprintf(&builder, "model = %q\n", project.Config.Agents.Codex.Model)
 	}
 	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "model_reasoning_effort") {
-		builder.WriteString(fmt.Sprintf("model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort))
+		fmt.Fprintf(&builder, "model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort)
 	}
 	if project.Config.Approvals.Mode == "yolo" {
 		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "approval_policy") {
@@ -96,7 +96,7 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 			if i > 0 {
 				builder.WriteString("\n")
 			}
-			builder.WriteString(fmt.Sprintf("[mcp_servers.%s]\n", server.ID))
+			fmt.Fprintf(&builder, "[mcp_servers.%q]\n", server.ID)
 			switch server.Transport {
 			case config.TransportHTTP:
 				if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
@@ -298,10 +298,10 @@ func buildCodexRules(project *config.ProjectConfig) string {
 		for _, field := range fields {
 			parts = append(parts, fmt.Sprintf("%q", field))
 		}
-		builder.WriteString(fmt.Sprintf(
+		fmt.Fprintf(&builder,
 			"prefix_rule(pattern=[%s], decision=\"allow\", justification=\"agent-layer allowlist\")\n",
 			strings.Join(parts, ", "),
-		))
+		)
 	}
 
 	return builder.String()

@@ -180,7 +180,7 @@ func validatePinnedReleaseVersion(ctx context.Context, pinVersion string) error 
 		return fmt.Errorf(messages.InitCreateReleaseValidationRequestFmt, err)
 	}
 	req.Header.Set("User-Agent", "agent-layer")
-	resp, err := releaseValidationHTTPClient.Do(req)
+	resp, err := releaseValidationHTTPClient.Do(req) //nolint:gosec // URL is a validated GitHub release URL
 	if err != nil {
 		return fmt.Errorf(messages.InitValidateReleaseVersionRequestFmt, normalized, err)
 	}
