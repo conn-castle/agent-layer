@@ -978,3 +978,53 @@ func TestCheckPromptServerConfig_GeminiTrustMismatch(t *testing.T) {
 		t.Fatalf("unexpected message: %s", results[0].Message)
 	}
 }
+
+func TestComparePromptServerSpec_EnvMismatchRedactsValues(t *testing.T) {
+	actual := promptServerSpec{
+		Command: "al",
+		Env: map[string]string{
+			"SECRET": "value-a",
+		},
+	}
+	expected := promptServerSpec{
+		Command: "al",
+		Env: map[string]string{
+			"SECRET": "value-b",
+		},
+	}
+
+	mismatch := comparePromptServerSpec(actual, expected)
+	if !strings.Contains(mismatch, "different values for SECRET") {
+		t.Fatalf("unexpected mismatch: %s", mismatch)
+	}
+	if strings.Contains(mismatch, "value-a") || strings.Contains(mismatch, "value-b") {
+		t.Fatalf("mismatch should redact values, got: %s", mismatch)
+	}
+}
+
+func TestComparePromptServerSpec_RepoRootCanonicalized(t *testing.T) {
+	root := t.TempDir()
+	linkParent := t.TempDir()
+	link := filepath.Join(linkParent, "repo-link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	actual := promptServerSpec{
+		Command: "al",
+		Env: map[string]string{
+			config.BuiltinRepoRootEnvVar: link,
+		},
+	}
+	expected := promptServerSpec{
+		Command: "al",
+		Env: map[string]string{
+			config.BuiltinRepoRootEnvVar: root,
+		},
+	}
+
+	mismatch := comparePromptServerSpec(actual, expected)
+	if mismatch != "" {
+		t.Fatalf("expected no mismatch, got: %s", mismatch)
+	}
+}

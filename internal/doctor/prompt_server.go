@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/projection"
@@ -355,8 +357,12 @@ func comparePromptServerSpec(actual promptServerSpec, expected promptServerSpec)
 	if !equalStringSlice(actual.Args, expected.Args) {
 		diffs = append(diffs, fmt.Sprintf("args expected %v got %v", expected.Args, actual.Args))
 	}
-	if !equalStringMap(actual.Env, expected.Env) {
-		diffs = append(diffs, fmt.Sprintf("env expected %v got %v", expected.Env, actual.Env))
+	actualEnv := normalizeRepoRootEnv(actual.Env)
+	expectedEnv := normalizeRepoRootEnv(expected.Env)
+	if !equalStringMap(actualEnv, expectedEnv) {
+		if summary := envMismatchSummary(expectedEnv, actualEnv); summary != "" {
+			diffs = append(diffs, summary)
+		}
 	}
 	if expected.Trust != nil {
 		actualValue := "nil"
@@ -368,6 +374,85 @@ func comparePromptServerSpec(actual promptServerSpec, expected promptServerSpec)
 		}
 	}
 	return strings.Join(diffs, "; ")
+}
+
+// normalizeRepoRootEnv returns a copy of env with AL_REPO_ROOT canonicalized.
+// Args: env is the env map to normalize.
+// Returns: a copy of env with AL_REPO_ROOT resolved, or nil when env is nil.
+func normalizeRepoRootEnv(env map[string]string) map[string]string {
+	if env == nil {
+		return nil
+	}
+	out := make(map[string]string, len(env))
+	for key, value := range env {
+		if key == config.BuiltinRepoRootEnvVar {
+			if strings.TrimSpace(value) == "" {
+				out[key] = value
+				continue
+			}
+			out[key] = clients.ResolvePath(value)
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+// envMismatchSummary describes env mismatches without exposing values.
+// Args: expected and actual are the env maps to compare.
+// Returns: a descriptive summary string when mismatches exist, otherwise empty.
+func envMismatchSummary(expected map[string]string, actual map[string]string) string {
+	expected = normalizeNilMap(expected)
+	actual = normalizeNilMap(actual)
+
+	var missing []string
+	var extra []string
+	var different []string
+	for key, expectedValue := range expected {
+		actualValue, ok := actual[key]
+		if !ok {
+			missing = append(missing, key)
+			continue
+		}
+		if actualValue != expectedValue {
+			different = append(different, key)
+		}
+	}
+	for key := range actual {
+		if _, ok := expected[key]; !ok {
+			extra = append(extra, key)
+		}
+	}
+
+	if len(missing) == 0 && len(extra) == 0 && len(different) == 0 {
+		return ""
+	}
+
+	sort.Strings(missing)
+	sort.Strings(extra)
+	sort.Strings(different)
+
+	parts := make([]string, 0, 3)
+	if len(missing) > 0 {
+		parts = append(parts, fmt.Sprintf("missing keys %s", strings.Join(missing, ", ")))
+	}
+	if len(extra) > 0 {
+		parts = append(parts, fmt.Sprintf("extra keys %s", strings.Join(extra, ", ")))
+	}
+	if len(different) > 0 {
+		parts = append(parts, fmt.Sprintf("different values for %s", strings.Join(different, ", ")))
+	}
+	return fmt.Sprintf("env %s", strings.Join(parts, "; "))
+}
+
+// normalizeNilMap returns a non-nil env map for comparison.
+// Args: env is the map to normalize.
+// Returns: an empty map when env is nil, otherwise the original map.
+func normalizeNilMap(env map[string]string) map[string]string {
+	if env == nil {
+		return map[string]string{}
+	}
+	return env
 }
 
 // equalStringSlice returns true when both slices have identical values in order.
