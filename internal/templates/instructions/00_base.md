@@ -11,6 +11,12 @@
 1. **Mandatory questions and answers:** If the user asks a direct question, answer it explicitly in the response text before proposing or generating changes.
 2. **Clarify ambiguity before coding:** If a decision is unclear or the prompt is ambiguous, pause and ask for clarification before generating or editing code.
 3. **Root-cause fixes (confirm large refactors):** Prefer fixing the root cause. If the correct fix requires a significant refactor across many files or subsystems, explain the scope and ask for explicit confirmation before proceeding.
+4. **Stop and ask when real tradeoffs exist:** When a decision involves genuine tradeoffs — especially ones that affect architecture or user experience — stop, explain the options and their consequences, and let the human decide. Examples:
+   - **Architecture:** choosing between implementation patterns (polling vs. WebSockets, SQL vs. NoSQL, sync vs. async), introducing a new dependency or framework, changing a data model or storage strategy, adding infrastructure (queues, caches, new services).
+   - **User-facing behavior:** altering API contracts, CLI flags or output format, default values users rely on, error messages, authentication flows, or any change that could surprise existing users.
+   - **Irreversible decisions:** database migrations that drop or reshape data, public API surface changes, removing a feature, changing a serialization format that affects persisted data.
+   - **Multiple valid approaches:** when there is no clearly superior option and the choice has lasting consequences — present the options with pros/cons rather than picking one silently.
+   - **Scope surprises:** the correct fix is significantly larger than what was requested, a dependency upgrade requires cascading changes, or a seemingly simple task reveals a deeper structural problem.
 
 ---
 
@@ -27,7 +33,7 @@
 ## Workflow & Safety
 1. **Read before editing; don’t speculate:** Read and understand relevant files before proposing or making edits. Do not invent code you have not inspected.
 2. **Context economy:** When searching for files or context during implementation, limit exploration to the specific service or directory relevant to the request. Do not scan the entire repository unless necessary.
-3. **Git safety:** Do not stage or commit changes unless the user explicitly asks. When asked, follow repository commit conventions.
+3. **Git safety:** Do not stage or commit changes unless the user explicitly asks. When asked, follow repository commit conventions. Authorization to commit or push applies only to the specific request — a prior authorization does not carry forward to subsequent commits or pushes.
 4. **Temporary artifacts:** Generate **all** agent-only temporary artifacts in `./.agent-layer/tmp` (one-off scripts, scratch files, logs, dumps, debug outputs). Delete them when no longer needed. Any build artifacts or other temporary files for the parent repository must go in their standard locations and never inside `.agent-layer`.
 5. **Schema safety:** Never modify the database schema via raw SQL or direct tool access. Always generate a proper migration file using the project’s migration system, and ask the user to apply it.
 6. **Debugging strategy:** Debugging follows a strict red-then-green loop: reproduce the bug with a persistent automated test case, then fix it. Avoid one-off scripts unless a test case is impossible. If a one-off script is required, place it in `./.agent-layer/tmp` and delete it immediately after use.

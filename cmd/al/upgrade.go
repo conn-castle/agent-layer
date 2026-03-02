@@ -386,6 +386,17 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownPromptFmt, path)
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
 		},
+		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []install.SkillsMigrationConflict) (bool, error) {
+			// Conflicts always block, even in headless mode.
+			if len(conflicts) > 0 {
+				return false, nil
+			}
+			if policy.yes {
+				return true, nil
+			}
+			prompt := fmt.Sprintf(messages.UpgradeSkillsMigrationPromptFmt, len(flatSkills))
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, true)
+		},
 	}
 }
 
@@ -606,7 +617,7 @@ func (ew *errWriter) println(args ...any) {
 	_, ew.err = fmt.Fprintln(ew.w, args...)
 }
 
-func writeMigrationReportSection(out io.Writer, title string, report install.UpgradeMigrationReport) error {
+func writeMigrationReportSection(out io.Writer, title string, report install.UpgradeMigrationReport) error { //nolint:unparam // title kept for consistency with other write*Section functions
 	ew := &errWriter{w: out}
 	ew.printf("\n%s:\n", title)
 	if len(report.Entries) == 0 {
@@ -622,6 +633,15 @@ func writeMigrationReportSection(out io.Writer, title string, report install.Upg
 		ew.printf("  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale)
 		if entry.SkipReason != "" {
 			ew.printf("    reason: %s\n", entry.SkipReason)
+		}
+		if entry.Breaking && entry.Status == install.UpgradeMigrationStatusPlanned {
+			if entry.BreakingNotice != "" {
+				ew.println(color.YellowString("    BREAKING CHANGE: %s", entry.BreakingNotice))
+			}
+			for _, detail := range entry.BreakingDetails {
+				ew.println(color.YellowString("    %s", detail))
+			}
+			ew.println(color.YellowString("    Run 'al upgrade' to confirm and apply the migration."))
 		}
 	}
 	return ew.err
@@ -745,7 +765,7 @@ func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck
 		return err
 	}
 	for _, check := range checks {
-		if _, err := fmt.Fprintf(out, "  - %s\n", readinessSummary(check)); err != nil {
+		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("%s", readinessSummary(check))); err != nil {
 			return err
 		}
 		action := readinessAction(check.ID)
@@ -797,7 +817,8 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 	if _, err := fmt.Fprintf(out, "  - files to rename: %d\n", len(plan.TemplateRenames)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(out, "  - files to review for removal: %d\n", len(plan.TemplateRemovalsOrOrphans)); err != nil {
+	removals := len(plan.TemplateRemovalsOrOrphans)
+	if err := writeHighlightedSummaryLine(out, removals > 0, "files to review for removal: %d", removals); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(out, "  - config updates: %d\n", len(plan.ConfigKeyMigrations)); err != nil {
@@ -806,13 +827,24 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 	if _, err := fmt.Fprintf(out, "  - migrations planned: %d\n", migrationsPlanned); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(out, "  - readiness warnings: %d\n", len(plan.ReadinessChecks)); err != nil {
+	if err := writeHighlightedSummaryLine(out, len(plan.ReadinessChecks) > 0, "readiness warnings: %d", len(plan.ReadinessChecks)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(out, "  - needs review before apply: %s\n", reviewState); err != nil {
+	if err := writeHighlightedSummaryLine(out, needsReview, "needs review before apply: %s", reviewState); err != nil {
 		return err
 	}
 	return nil
+}
+
+// writeHighlightedSummaryLine writes a "  - <text>\n" summary line, optionally
+// highlighted in yellow when highlight is true.
+func writeHighlightedSummaryLine(out io.Writer, highlight bool, format string, a ...any) error {
+	if highlight {
+		_, err := fmt.Fprintf(out, "  - %s\n", color.YellowString(format, a...))
+		return err
+	}
+	_, err := fmt.Fprintf(out, "  - "+format+"\n", a...)
+	return err
 }
 
 func readinessSummary(check install.UpgradeReadinessCheck) string {

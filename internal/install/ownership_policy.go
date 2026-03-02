@@ -39,6 +39,7 @@ var memoryEntriesPaths = map[string]struct{}{
 	"docs/agent-layer/BACKLOG.md":   {},
 	"docs/agent-layer/DECISIONS.md": {},
 	"docs/agent-layer/COMMANDS.md":  {},
+	"docs/agent-layer/CONTEXT.md":   {},
 }
 
 type ownershipComparable struct {

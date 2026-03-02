@@ -63,17 +63,20 @@ const (
 
 // UpgradeMigrationEntry is a deterministic migration-plan/apply record.
 type UpgradeMigrationEntry struct {
-	ID             string                 `json:"id"`
-	Kind           string                 `json:"kind"`
-	Rationale      string                 `json:"rationale"`
-	SourceAgnostic bool                   `json:"source_agnostic"`
-	Status         UpgradeMigrationStatus `json:"status"`
-	SkipReason     string                 `json:"skip_reason,omitempty"`
-	From           string                 `json:"from,omitempty"`
-	To             string                 `json:"to,omitempty"`
-	Path           string                 `json:"path,omitempty"`
-	Key            string                 `json:"key,omitempty"`
-	Value          json.RawMessage        `json:"value,omitempty"`
+	ID              string                 `json:"id"`
+	Kind            string                 `json:"kind"`
+	Rationale       string                 `json:"rationale"`
+	SourceAgnostic  bool                   `json:"source_agnostic"`
+	Status          UpgradeMigrationStatus `json:"status"`
+	SkipReason      string                 `json:"skip_reason,omitempty"`
+	From            string                 `json:"from,omitempty"`
+	To              string                 `json:"to,omitempty"`
+	Path            string                 `json:"path,omitempty"`
+	Key             string                 `json:"key,omitempty"`
+	Value           json.RawMessage        `json:"value,omitempty"`
+	Breaking        bool                   `json:"breaking,omitempty"`
+	BreakingNotice  string                 `json:"breaking_notice,omitempty"`
+	BreakingDetails []string               `json:"breaking_details,omitempty"`
 }
 
 // UpgradeMigrationReport contains deterministic migration planning/execution data for upgrade output.
@@ -96,18 +99,22 @@ const (
 	upgradeMigrationKindDeleteGeneratedArtifact upgradeMigrationOperationKind = "delete_generated_artifact"
 	upgradeMigrationKindConfigRenameKey         upgradeMigrationOperationKind = "config_rename_key"
 	upgradeMigrationKindConfigSetDefault        upgradeMigrationOperationKind = "config_set_default"
+	upgradeMigrationKindMigrateSkillsFormat     upgradeMigrationOperationKind = "migrate_skills_format"
 )
 
 type upgradeMigrationOperation struct {
-	ID             string                        `json:"id"`
-	Kind           upgradeMigrationOperationKind `json:"kind"`
-	Rationale      string                        `json:"rationale"`
-	SourceAgnostic bool                          `json:"source_agnostic,omitempty"`
-	From           string                        `json:"from,omitempty"`
-	To             string                        `json:"to,omitempty"`
-	Path           string                        `json:"path,omitempty"`
-	Key            string                        `json:"key,omitempty"`
-	Value          json.RawMessage               `json:"value,omitempty"`
+	ID              string                        `json:"id"`
+	Kind            upgradeMigrationOperationKind `json:"kind"`
+	Rationale       string                        `json:"rationale"`
+	SourceAgnostic  bool                          `json:"source_agnostic,omitempty"`
+	From            string                        `json:"from,omitempty"`
+	To              string                        `json:"to,omitempty"`
+	Path            string                        `json:"path,omitempty"`
+	Key             string                        `json:"key,omitempty"`
+	Value           json.RawMessage               `json:"value,omitempty"`
+	Breaking        bool                          `json:"breaking,omitempty"`
+	BreakingNotice  string                        `json:"breaking_notice,omitempty"`
+	BreakingDetails []string                      `json:"breaking_details,omitempty"`
 }
 
 type upgradeMigrationManifest struct {
@@ -366,6 +373,8 @@ func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOpera
 		return inst.executeConfigRenameKeyMigration(op.From, op.To)
 	case upgradeMigrationKindConfigSetDefault:
 		return inst.executeConfigSetDefaultMigration(op)
+	case upgradeMigrationKindMigrateSkillsFormat:
+		return inst.executeMigrateSkillsFormat(op.Path)
 	default:
 		return false, fmt.Errorf("unsupported migration kind %q", op.Kind)
 	}
@@ -747,14 +756,21 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
+	case upgradeMigrationKindMigrateSkillsFormat:
+		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		if strings.TrimSpace(pathValue) != "" {
+			paths = append(paths, pathValue)
+		}
 	}
 	return dedupSortedStrings(paths)
 }
 
-// migrationWillCoverPath returns true when the planned operation will actually
-// handle relPath at execution time. This prevents filterCoveredUpgradeChanges
-// from hiding template changes in the plan when a migration would no-op (e.g.,
-// rename source already absent).
+// migrationWillCoverPath returns true when the planned operation will handle
+// relPath at execution time, or when the migration subsumes template changes
+// under the same path (e.g., skills format migration covers all skill content
+// updates). This prevents filterCoveredUpgradeChanges from hiding template
+// changes when a migration would no-op, while allowing migrations that own an
+// entire directory to suppress noisy per-file diffs in the plan output.
 func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperation, relPath string) bool {
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
@@ -784,6 +800,12 @@ func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperatio
 			return false
 		}
 		return true
+	case upgradeMigrationKindMigrateSkillsFormat:
+		// Always cover the skills directory when this migration is planned.
+		// Even if no flat-format files exist, the template writer updates
+		// skill content (frontmatter, quoting) as part of the same release,
+		// and those diffs are noise alongside the migration description.
+		return true
 	default:
 		// Config migrations don't cover file paths in the template sense.
 		return false
@@ -807,15 +829,18 @@ func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigrat
 
 func migrationEntryFromOperation(op upgradeMigrationOperation) UpgradeMigrationEntry {
 	return UpgradeMigrationEntry{
-		ID:             op.ID,
-		Kind:           string(op.Kind),
-		Rationale:      op.Rationale,
-		SourceAgnostic: op.SourceAgnostic,
-		From:           op.From,
-		To:             op.To,
-		Path:           op.Path,
-		Key:            op.Key,
-		Value:          op.Value,
+		ID:              op.ID,
+		Kind:            string(op.Kind),
+		Rationale:       op.Rationale,
+		SourceAgnostic:  op.SourceAgnostic,
+		From:            op.From,
+		To:              op.To,
+		Path:            op.Path,
+		Key:             op.Key,
+		Value:           op.Value,
+		Breaking:        op.Breaking,
+		BreakingNotice:  op.BreakingNotice,
+		BreakingDetails: op.BreakingDetails,
 	}
 }
 
@@ -1168,6 +1193,19 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 	if strings.TrimSpace(op.Rationale) == "" {
 		return fmt.Errorf("migration %s rationale is required", op.ID)
 	}
+	if op.Breaking {
+		if strings.TrimSpace(op.BreakingNotice) == "" {
+			return fmt.Errorf("migration %s marked breaking requires breaking_notice", op.ID)
+		}
+	}
+	if !op.Breaking && (strings.TrimSpace(op.BreakingNotice) != "" || len(op.BreakingDetails) > 0) {
+		return fmt.Errorf("migration %s includes breaking metadata but breaking is false", op.ID)
+	}
+	for _, detail := range op.BreakingDetails {
+		if strings.TrimSpace(detail) == "" {
+			return fmt.Errorf("migration %s has empty breaking_details entry", op.ID)
+		}
+	}
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
 		if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
@@ -1198,8 +1236,384 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 		if err := json.Unmarshal(op.Value, &decoded); err != nil {
 			return fmt.Errorf("migration %s (%s) has invalid value: %w", op.ID, op.Kind, err)
 		}
+	case upgradeMigrationKindMigrateSkillsFormat:
+		if strings.TrimSpace(op.Path) == "" {
+			return fmt.Errorf("migration %s (%s) requires path", op.ID, op.Kind)
+		}
 	default:
 		return fmt.Errorf("migration %s has unsupported kind %q", op.ID, op.Kind)
 	}
 	return nil
+}
+
+// preflightAndConfirmSkillsMigration runs BEFORE any disk mutations to give the
+// user a clear, up-front warning about the breaking skills format change. It
+// scans for flat-format skills, detects conflicts, prints the full warning
+// banner, and obtains explicit user confirmation. Call this from Run() between
+// prepareUpgradeMigrations() and createUpgradeSnapshot().
+func (inst *installer) preflightAndConfirmSkillsMigration() error {
+	// Only relevant when a migrate_skills_format operation is pending.
+	var migrateOp *upgradeMigrationOperation
+	for i := range inst.pendingMigrationOps {
+		if inst.pendingMigrationOps[i].Kind == upgradeMigrationKindMigrateSkillsFormat {
+			migrateOp = &inst.pendingMigrationOps[i]
+			break
+		}
+	}
+	if migrateOp == nil {
+		return nil
+	}
+
+	// Resolve the skills directory. Before migration execution, the directory
+	// might still be at the legacy path (.agent-layer/slash-commands/) if the
+	// preceding rename operation hasn't run yet. Check both locations.
+	postRenamePath, err := snapshotEntryAbsPath(inst.root, filepath.FromSlash(migrateOp.Path))
+	if err != nil {
+		return err
+	}
+	absSkillsDir := postRenamePath
+
+	if _, statErr := inst.sys.Stat(absSkillsDir); statErr != nil {
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Errorf(messages.InstallFailedStatFmt, absSkillsDir, statErr)
+		}
+		// Try the legacy pre-rename path.
+		legacyPath := filepath.Join(inst.root, ".agent-layer", "slash-commands")
+		if _, legacyStatErr := inst.sys.Stat(legacyPath); legacyStatErr != nil {
+			if errors.Is(legacyStatErr, os.ErrNotExist) {
+				// Neither directory exists — no skills to migrate.
+				return nil
+			}
+			return fmt.Errorf(messages.InstallFailedStatFmt, legacyPath, legacyStatErr)
+		}
+		absSkillsDir = legacyPath
+	}
+
+	flatCount, conflicts, preErr := preflightSkillsMigration(inst.sys, absSkillsDir)
+	if preErr != nil {
+		return preErr
+	}
+	if flatCount == 0 {
+		return nil // all skills already in directory format
+	}
+
+	flatSkills, scanErr := listFlatSkillNames(inst.sys, absSkillsDir)
+	if scanErr != nil {
+		return scanErr
+	}
+
+	// ── Warning banner (shown BEFORE any disk mutations) ──
+	out := inst.warnOutput()
+	ew := &errWriter{w: out}
+	ew.println()
+	ew.println("=============================================================")
+	ew.println("  BREAKING CHANGE: Slash-commands renamed to skills")
+	ew.println("=============================================================")
+	ew.println()
+	ew.println("  Slash-commands are being renamed to skills and converted to")
+	ew.println("  directory format. The old flat file format (<name>.md) will")
+	ew.println("  no longer work after this upgrade.")
+	ew.println()
+	ew.printf("  Found %d flat-format skill(s) that must be migrated:\n", len(flatSkills))
+	ew.println()
+	for _, name := range flatSkills {
+		ew.printf("    %s.md  ->  %s/SKILL.md\n", name, name)
+	}
+	if ew.err != nil {
+		return ew.err
+	}
+
+	if len(conflicts) > 0 {
+		ew.println()
+		ew.println("  MIGRATION BLOCKED")
+		ew.println()
+		ew.println("  The following skills exist in BOTH flat and directory format")
+		ew.println("  with DIFFERENT content. The migration cannot choose which")
+		ew.println("  version to keep — you need to resolve this manually.")
+		ew.println()
+		for _, c := range conflicts {
+			ew.printf("    Skill: %s\n", c.SkillName)
+			ew.printf("      Flat file:  %s\n", c.FlatPath)
+			ew.printf("      Directory:  %s\n", c.DirPath)
+			ew.println()
+		}
+		ew.println("  To fix: choose which version to keep for each skill above,")
+		ew.println("  then delete the other one:")
+		ew.println()
+		ew.println("    Keep directory version:  rm .agent-layer/skills/<name>.md")
+		ew.println("    Keep flat version:       rm -r .agent-layer/skills/<name>/")
+		ew.println()
+		ew.println("  Then re-run: al upgrade")
+		ew.println()
+		if ew.err != nil {
+			return ew.err
+		}
+		return fmt.Errorf("skills format migration blocked by %d conflict(s); resolve manually and re-run 'al upgrade'", len(conflicts))
+	}
+
+	ew.println()
+	ew.println("  No conflicts detected — all skills can be migrated automatically.")
+	ew.println()
+	if ew.err != nil {
+		return ew.err
+	}
+
+	// Prompt for confirmation (before any mutations happen).
+	if prompter, ok := inst.prompter.(skillsMigrationPrompter); ok {
+		proceed, promptErr := prompter.ConfirmSkillsMigration(flatSkills, conflicts)
+		if promptErr != nil {
+			return fmt.Errorf("skills migration prompt: %w", promptErr)
+		}
+		if !proceed {
+			return fmt.Errorf("skills format migration declined by user")
+		}
+	}
+
+	inst.skillsMigrationConfirmed = true
+	return nil
+}
+
+// executeMigrateSkillsFormat migrates all flat-format skills (<name>.md) to
+// directory format (<name>/SKILL.md) under relSkillsDir. The user-facing
+// warning and confirmation have already been handled by
+// preflightAndConfirmSkillsMigration() before any disk mutations began.
+func (inst *installer) executeMigrateSkillsFormat(relSkillsDir string) (bool, error) {
+	absSkillsDir, err := snapshotEntryAbsPath(inst.root, filepath.FromSlash(relSkillsDir))
+	if err != nil {
+		return false, err
+	}
+	if _, statErr := inst.sys.Stat(absSkillsDir); statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return false, nil // no skills directory — no-op
+		}
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, absSkillsDir, statErr)
+	}
+
+	flatSkills, scanErr := listFlatSkillNames(inst.sys, absSkillsDir)
+	if scanErr != nil {
+		return false, scanErr
+	}
+	if len(flatSkills) == 0 {
+		return false, nil // no flat files — no-op
+	}
+
+	// Safety check: confirmation must have been obtained during pre-flight.
+	// If not (e.g., tests calling executeMigrateSkillsFormat directly), fall
+	// back to prompting here.
+	if !inst.skillsMigrationConfirmed {
+		_, conflicts, preErr := preflightSkillsMigration(inst.sys, absSkillsDir)
+		if preErr != nil {
+			return false, preErr
+		}
+		if len(conflicts) > 0 {
+			return false, fmt.Errorf("skills format migration blocked by %d conflict(s); resolve manually and re-run 'al upgrade'", len(conflicts))
+		}
+		if prompter, ok := inst.prompter.(skillsMigrationPrompter); ok {
+			proceed, promptErr := prompter.ConfirmSkillsMigration(flatSkills, conflicts)
+			if promptErr != nil {
+				return false, fmt.Errorf("skills migration prompt: %w", promptErr)
+			}
+			if !proceed {
+				return false, fmt.Errorf("skills format migration declined by user")
+			}
+		}
+	}
+
+	// Execute migration, tracking which skills were actually migrated (moved)
+	// vs. duplicates that were just cleaned up.
+	changed := false
+	var migratedNames []string
+	for _, name := range flatSkills {
+		flatPath := filepath.Join(absSkillsDir, name+".md")
+		destDir := filepath.Join(absSkillsDir, name)
+		destPath := filepath.Join(destDir, "SKILL.md")
+
+		// Check if destination already exists (duplicate cleanup case).
+		destInfo, destStatErr := inst.sys.Stat(destPath)
+		destExisted := destStatErr == nil && !destInfo.IsDir()
+		if destStatErr != nil && !errors.Is(destStatErr, os.ErrNotExist) {
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, destPath, destStatErr)
+		}
+
+		migrated, migErr := migrateSingleFlatSkill(inst.sys, flatPath, destDir, destPath)
+		if migErr != nil {
+			return false, fmt.Errorf("migrate skill %s: %w", name, migErr)
+		}
+		if migrated {
+			changed = true
+			if !destExisted {
+				migratedNames = append(migratedNames, name)
+			}
+		}
+	}
+
+	// Print post-migration success summary.
+	if changed {
+		out := inst.warnOutput()
+		ew := &errWriter{w: out}
+		ew.println()
+		if len(migratedNames) > 0 {
+			ew.printf("  Migrated %d skill(s) to directory format:\n", len(migratedNames))
+			ew.println()
+			for _, name := range migratedNames {
+				ew.printf("    %s.md  ->  %s/SKILL.md\n", name, name)
+			}
+			ew.println()
+		}
+		ew.println("  Skills migration complete.")
+		ew.println()
+		if ew.err != nil {
+			return false, ew.err
+		}
+	}
+
+	return changed, nil
+}
+
+// preflightSkillsMigration scans absSkillsDir for flat .md files and checks for
+// conflicts with existing directory-format skills.
+func preflightSkillsMigration(sys System, absSkillsDir string) (flatCount int, conflicts []SkillsMigrationConflict, err error) {
+	entries, readErr := readSkillsDirEntries(sys, absSkillsDir)
+	if readErr != nil {
+		return 0, nil, readErr
+	}
+
+	for _, entry := range entries {
+		if entry.isDir || !strings.HasSuffix(entry.name, ".md") || strings.HasPrefix(entry.name, ".") {
+			continue
+		}
+		flatCount++
+		name := strings.TrimSuffix(entry.name, ".md")
+		flatPath := filepath.Join(absSkillsDir, entry.name)
+		destPath := filepath.Join(absSkillsDir, name, "SKILL.md")
+
+		destInfo, statErr := sys.Stat(destPath)
+		if statErr != nil {
+			if errors.Is(statErr, os.ErrNotExist) {
+				continue // no conflict
+			}
+			return 0, nil, fmt.Errorf(messages.InstallFailedStatFmt, destPath, statErr)
+		}
+		if destInfo.IsDir() {
+			continue
+		}
+
+		// Both exist — check content.
+		flatData, flatReadErr := sys.ReadFile(flatPath)
+		if flatReadErr != nil {
+			return 0, nil, fmt.Errorf(messages.InstallFailedReadFmt, flatPath, flatReadErr)
+		}
+		destData, destReadErr := sys.ReadFile(destPath)
+		if destReadErr != nil {
+			return 0, nil, fmt.Errorf(messages.InstallFailedReadFmt, destPath, destReadErr)
+		}
+		if normalizeTemplateContent(string(flatData)) != normalizeTemplateContent(string(destData)) {
+			conflicts = append(conflicts, SkillsMigrationConflict{
+				SkillName: name,
+				FlatPath:  flatPath,
+				DirPath:   destPath,
+				Reason:    fmt.Sprintf("%s.md and %s/SKILL.md have different content", name, name),
+			})
+		}
+	}
+	return flatCount, conflicts, nil
+}
+
+// listFlatSkillNames returns sorted names (without .md suffix) of flat-format
+// skill files at the root of absSkillsDir.
+func listFlatSkillNames(sys System, absSkillsDir string) ([]string, error) {
+	entries, err := readSkillsDirEntries(sys, absSkillsDir)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.isDir || !strings.HasSuffix(entry.name, ".md") || strings.HasPrefix(entry.name, ".") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(entry.name, ".md"))
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// skillsDirEntry mirrors the info needed from a directory scan.
+type skillsDirEntry struct {
+	name  string
+	isDir bool
+}
+
+// readSkillsDirEntries performs a shallow directory scan of dir (no recursion).
+func readSkillsDirEntries(sys System, dir string) ([]skillsDirEntry, error) {
+	info, statErr := sys.Stat(dir)
+	if statErr != nil {
+		return nil, fmt.Errorf(messages.InstallFailedStatFmt, dir, statErr)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", dir)
+	}
+
+	var entries []skillsDirEntry
+	err := sys.WalkDir(dir, func(walkPath string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if filepath.Clean(walkPath) == filepath.Clean(dir) {
+			return nil
+		}
+		entries = append(entries, skillsDirEntry{name: d.Name(), isDir: d.IsDir()})
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scan skills directory %s: %w", dir, err)
+	}
+	return entries, nil
+}
+
+// migrateSingleFlatSkill moves a flat skill file to directory format. If the
+// destination already exists with the same content, the flat file is removed.
+func migrateSingleFlatSkill(sys System, flatPath string, destDir string, destPath string) (bool, error) {
+	if _, statErr := sys.Stat(flatPath); statErr != nil {
+		if errors.Is(statErr, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, flatPath, statErr)
+	}
+
+	destInfo, destStatErr := sys.Stat(destPath)
+	if destStatErr != nil && !errors.Is(destStatErr, os.ErrNotExist) {
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, destPath, destStatErr)
+	}
+	if destStatErr == nil && !destInfo.IsDir() {
+		// Destination exists — check for same content (duplicate cleanup).
+		flatData, readErr := sys.ReadFile(flatPath)
+		if readErr != nil {
+			return false, fmt.Errorf(messages.InstallFailedReadFmt, flatPath, readErr)
+		}
+		destData, readErr := sys.ReadFile(destPath)
+		if readErr != nil {
+			return false, fmt.Errorf(messages.InstallFailedReadFmt, destPath, readErr)
+		}
+		if normalizeTemplateContent(string(flatData)) == normalizeTemplateContent(string(destData)) {
+			// Same content — remove flat file.
+			if removeErr := sys.RemoveAll(flatPath); removeErr != nil {
+				return false, fmt.Errorf("remove duplicate flat skill %s: %w", flatPath, removeErr)
+			}
+			return true, nil
+		}
+		// Different content should have been caught by preflight.
+		return false, fmt.Errorf("conflict: %s and %s have different content", flatPath, destPath)
+	}
+
+	// Create destination directory and move.
+	if mkErr := sys.MkdirAll(destDir, 0o755); mkErr != nil {
+		return false, fmt.Errorf(messages.InstallFailedCreateDirForFmt, destPath, mkErr)
+	}
+	if renameErr := sys.Rename(flatPath, destPath); renameErr != nil {
+		return false, fmt.Errorf("rename %s -> %s: %w", flatPath, destPath, renameErr)
+	}
+	return true, nil
 }

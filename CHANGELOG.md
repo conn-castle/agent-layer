@@ -1,25 +1,38 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v0.9.0 - 2026-02-27
+## v0.9.0 - 2026-03-01
 
 ### Added
 - Added a reusable `internal/skillvalidator` package with parse/validate separation and deterministic findings for agentskills.io-aligned skill validation.
 - Added `al doctor` skills diagnostics for standards checks (unknown frontmatter keys, name/path mismatches, and non-canonical directory filenames such as `skill.md`).
 - Added release manifests for `v0.9.0`: `internal/templates/migrations/0.9.0.json` and `internal/templates/manifests/0.9.0.json`.
+- Added `al doctor` check for stale flat-format skill files (`.md` at skills root) with guidance to run `al upgrade`.
+- Added `CONTEXT.md` memory file template for general-purpose project context, domain concepts, naming conventions, and lessons learned.
+- Added data-driven breaking-change display: migration manifests now carry `breaking`, `breaking_notice`, and `breaking_details` fields, and the upgrade report renders them generically instead of hardcoding per-kind display logic.
+- Added yellow highlighting for readiness warnings, file-removal counts, and review-needed items in upgrade plan and upgrade output for improved scanability.
+- Upgrade snapshot rollback now accepts snapshots in `created` status, enabling recovery from interrupted upgrades that failed before reaching `applied` status.
 
 ### Changed
 - Renamed legacy "slash command" source and output terminology to "skills" across config, sync pipelines, templates, and docs.
 - Canonicalized source layout to `.agent-layer/skills/`, with migrations that rename legacy `.agent-layer/slash-commands/` and embedded skill template paths.
+- **Breaking:** Flat-format skills (`<name>.md`) are no longer supported by the skill loader. All skills must use directory format (`<name>/SKILL.md`). `al upgrade` migrates both built-in and user-authored skills automatically via a single `migrate_skills_format` operation with pre-flight conflict detection and user confirmation.
 - Skill frontmatter parsing/generation now uses YAML (`go.yaml.in/yaml/v3`) with support for `name`, `description`, `license`, `compatibility`, `metadata`, and `allowed-tools`, while keeping unknown fields parse-tolerant for portability.
 - Increased skill parser/validator single-line scanner caps to `8 MiB` to reduce token-limit failures on large single-line skill content.
 - Documentation now explicitly states that missing or empty skill `description` is load-enforced (fail-loud), while missing `name` remains backward-compatible with doctor warnings.
+- Skills migration user-facing copy updated to "Slash-commands renamed to skills" with data-driven breaking-change notices sourced from the migration manifest.
+- Unknown-file scanning now covers both `.agent-layer/` and `docs/agent-layer/`, with a fresh post-migration re-scan so the unknown-file prompt reflects actual post-migration state instead of stale pre-migration paths.
+- Migration-covered diff suppression now uses ancestor-directory matching, so migrations that own an entire directory (e.g., skills format migration) suppress noisy per-file template diffs in plan output.
+- Git safety instruction now clarifies that commit/push authorization applies only to the specific request and does not carry forward.
 
 ### Fixed
 - `al doctor` lenient-config fallback now best-effort loads skills, preventing false "No skills configured" results when strict config validation fails.
 - Skill name handling is now Unicode NFKC-aware across loading and validation paths, preventing false duplicates/mismatches for normalization-equivalent names.
 - Skill metadata and text limits now use rune counts (not bytes), and validation now rejects empty names and non-ASCII digit forms in slug normalization.
 - Directory-format loading now accepts lowercase `skill.md` as a compatibility fallback while preserving canonical `SKILL.md` precedence.
+
+### Removed
+- Removed `docs/agent-layer/SKILLS_WORKFLOWS.md`; workflow guidance is now provided by individual skill sources.
 
 ### Improved
 - Expanded automated coverage across skill loading/validation, upgrade migrations, prompt generation, install ownership/readiness checks, and docs surfaces touched by the skills-standard migration.

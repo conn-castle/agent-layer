@@ -77,19 +77,23 @@ func newDoctorCmd() *cobra.Command {
 			}
 			allResults = append(allResults, updateResult)
 
+			// 3. Check for stale flat-format skills (runs regardless of config load
+			// state, since flat-format skills cause config loading to fail).
+			allResults = append(allResults, doctor.CheckFlatFormatSkills(root)...)
+
 			if cfg != nil {
-				// 3. Check Secrets
+				// 4. Check Secrets
 				allResults = append(allResults, doctor.CheckSecrets(cfg)...)
 
-				// 4. Check Agents
+				// 5. Check Agents
 				allResults = append(allResults, doctor.CheckAgents(cfg)...)
 
-				// 5. Check Skills
+				// 6. Check Skills
 				allResults = append(allResults, doctor.CheckSkills(cfg)...)
 
-				// 6. Check Internal MCP Prompt Server
+				// 7. Check Internal MCP Prompt Server
 				allResults = append(allResults, doctor.CheckPromptServer(root, cfg)...)
-				// 7. Check Prompt Server Client Configs
+				// 8. Check Prompt Server Client Configs
 				allResults = append(allResults, doctor.CheckPromptServerConfig(root, cfg)...)
 			}
 
@@ -101,7 +105,7 @@ func newDoctorCmd() *cobra.Command {
 				}
 			}
 
-			// 8. Run Warning System (Instructions + MCP)
+			// 9. Run Warning System (Instructions + MCP)
 			// Only run if basic config loaded successfully, otherwise we might crash or be useless.
 			var warningList []warnings.Warning
 			if cfg != nil {

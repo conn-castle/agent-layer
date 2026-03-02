@@ -54,6 +54,13 @@ const (
 	DoctorPromptServerResolvedFmt      = "Internal MCP prompt server resolved: %s"
 	DoctorPromptServerNotRequired      = "No MCP prompt server clients enabled."
 
+	DoctorCheckNameFlatSkills = "FlatSkills"
+
+	DoctorSkillFlatFormatDetectedFmt   = "Found flat-format skill file %q in .agent-layer/skills/; flat format is no longer supported."
+	DoctorSkillFlatFormatRecommend     = "Run 'al upgrade' to migrate flat-format skills to directory format (<name>/SKILL.md)."
+	DoctorSkillFlatFormatScanFailedFmt = "Failed to scan %s for flat-format skills: %v"
+	DoctorSkillFlatFormatScanRecommend = "Ensure .agent-layer/skills/ exists and is readable, then run 'al doctor' again."
+
 	DoctorPromptServerConfigNotRequired      = "No MCP prompt server client configs enabled."
 	DoctorPromptServerConfigResolveFailedFmt = "Failed to resolve internal MCP prompt server for config comparison: %v"
 	DoctorPromptServerConfigMissingFmt       = "Missing %s; internal MCP prompt server will not be configured."

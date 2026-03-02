@@ -208,6 +208,7 @@ func TestClientCommandsMissingConfig(t *testing.T) {
 func TestClientCommandsSuccess(t *testing.T) {
 	root := t.TempDir()
 	writeTestRepo(t, root)
+	t.Setenv(config.BuiltinRepoRootEnvVar, "")
 
 	binDir := t.TempDir()
 	testutil.WriteStub(t, binDir, "gemini")

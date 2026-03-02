@@ -984,6 +984,17 @@ func TestLoadAndValidateUpgradeMigrationManifest_Errors(t *testing.T) {
 			{ID: "delete-gen", Kind: upgradeMigrationKindDeleteGeneratedArtifact, Rationale: "r", Path: "a.md"},
 			{ID: "cfg-rename", Kind: upgradeMigrationKindConfigRenameKey, Rationale: "r", From: "a.b", To: "a.c"},
 			{ID: "cfg-default", Kind: upgradeMigrationKindConfigSetDefault, Rationale: "r", Key: "a.b", Value: json.RawMessage(`"x"`)},
+			{
+				ID:             "breaking-delete",
+				Kind:           upgradeMigrationKindDeleteFile,
+				Rationale:      "breaking delete",
+				Path:           "a.md",
+				Breaking:       true,
+				BreakingNotice: "Breaking change notice",
+				BreakingDetails: []string{
+					"detail line",
+				},
+			},
 		}
 		for _, op := range validCases {
 			if err := validateUpgradeMigrationOperation(op); err != nil {
@@ -1005,6 +1016,40 @@ func TestLoadAndValidateUpgradeMigrationManifest_Errors(t *testing.T) {
 			{op: upgradeMigrationOperation{ID: "x", Kind: upgradeMigrationKindConfigSetDefault, Rationale: "r", Key: "a..b", Value: json.RawMessage(`"x"`)}, wantErr: "invalid key"},
 			{op: upgradeMigrationOperation{ID: "x", Kind: upgradeMigrationKindConfigSetDefault, Rationale: "r", Key: "a.b"}, wantErr: "requires value"},
 			{op: upgradeMigrationOperation{ID: "x", Kind: upgradeMigrationKindConfigSetDefault, Rationale: "r", Key: "a.b", Value: json.RawMessage(`{`)}, wantErr: "invalid value"},
+			{
+				op: upgradeMigrationOperation{
+					ID:        "x",
+					Kind:      upgradeMigrationKindDeleteFile,
+					Rationale: "r",
+					Path:      "a.md",
+					Breaking:  true,
+				},
+				wantErr: "requires breaking_notice",
+			},
+			{
+				op: upgradeMigrationOperation{
+					ID:             "x",
+					Kind:           upgradeMigrationKindDeleteFile,
+					Rationale:      "r",
+					Path:           "a.md",
+					BreakingNotice: "has notice but missing breaking flag",
+				},
+				wantErr: "breaking metadata but breaking is false",
+			},
+			{
+				op: upgradeMigrationOperation{
+					ID:             "x",
+					Kind:           upgradeMigrationKindDeleteFile,
+					Rationale:      "r",
+					Path:           "a.md",
+					Breaking:       true,
+					BreakingNotice: "valid notice",
+					BreakingDetails: []string{
+						"",
+					},
+				},
+				wantErr: "empty breaking_details entry",
+			},
 			{op: upgradeMigrationOperation{ID: "x", Kind: "unknown", Rationale: "r"}, wantErr: "unsupported kind"},
 		}
 		for idx, tc := range invalidCases {

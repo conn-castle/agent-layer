@@ -14,15 +14,24 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
+// unknownScanRoots returns the directories scanned for untracked files.
+func (inst *installer) unknownScanRoots() []string {
+	return []string{
+		filepath.Join(inst.root, ".agent-layer"),
+		filepath.Join(inst.root, "docs", "agent-layer"),
+	}
+}
+
 func (inst *installer) scanUnknowns() error {
 	known, err := inst.buildKnownPaths()
 	if err != nil {
 		return err
 	}
 
-	root := filepath.Join(inst.root, ".agent-layer")
-	if err := inst.scanUnknownRoot(root, known); err != nil {
-		return err
+	for _, root := range inst.unknownScanRoots() {
+		if err := inst.scanUnknownRoot(root, known); err != nil {
+			return err
+		}
 	}
 	inst.sortUnknowns()
 	return nil
@@ -55,22 +64,34 @@ func (inst *installer) scanUnknownRoot(root string, known map[string]struct{}) e
 	})
 }
 
+// handleUnknowns prompts the user about files under .agent-layer/ and
+// docs/agent-layer/ that are not tracked by Agent Layer. It performs a fresh
+// scan at call time so the list reflects the actual post-migration state (the
+// early scanUnknowns call captures unknowns for snapshot/rollback safety but
+// may include paths that migrations have since moved or deleted).
 func (inst *installer) handleUnknowns() error {
-	if len(inst.unknowns) == 0 || !inst.overwrite {
+	if !inst.overwrite {
+		return nil
+	}
+	unknowns, err := inst.scanCurrentUnknowns()
+	if err != nil {
+		return err
+	}
+	if len(unknowns) == 0 {
 		return nil
 	}
 	if inst.prompter == nil {
 		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
 	}
-	rel := inst.relativeUnknowns()
+	rel := inst.relativePathList(unknowns)
 	deleteAll, err := inst.prompter.DeleteUnknownAll(rel)
 	if err != nil {
 		return err
 	}
 	if deleteAll {
-		return inst.deleteUnknowns(inst.unknowns)
+		return inst.deleteUnknowns(unknowns)
 	}
-	for _, path := range inst.unknowns {
+	for _, path := range unknowns {
 		relPath := inst.relativePath(path)
 		deletePath, err := inst.prompter.DeleteUnknown(relPath)
 		if err != nil {
@@ -83,6 +104,61 @@ func (inst *installer) handleUnknowns() error {
 		}
 	}
 	return nil
+}
+
+// scanCurrentUnknowns performs a fresh scan for unknown files, returning the
+// list directly without modifying inst.unknowns (which is preserved for
+// snapshot rollback safety).
+func (inst *installer) scanCurrentUnknowns() ([]string, error) {
+	known, err := inst.buildKnownPaths()
+	if err != nil {
+		return nil, err
+	}
+	var unknowns []string
+	for _, root := range inst.unknownScanRoots() {
+		found, walkErr := inst.walkUnknownsInRoot(root, known)
+		if walkErr != nil {
+			return nil, walkErr
+		}
+		unknowns = append(unknowns, found...)
+	}
+	sort.Slice(unknowns, func(i, j int) bool {
+		return inst.relativePath(unknowns[i]) < inst.relativePath(unknowns[j])
+	})
+	return unknowns, nil
+}
+
+// walkUnknownsInRoot walks a single directory tree and returns paths not in known.
+func (inst *installer) walkUnknownsInRoot(root string, known map[string]struct{}) ([]string, error) {
+	sys := inst.sys
+	if _, err := sys.Stat(root); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf(messages.InstallFailedStatFmt, root, err)
+	}
+	var unknowns []string
+	walkErr := sys.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		clean := filepath.Clean(path)
+		if clean == filepath.Clean(root) {
+			return nil
+		}
+		if _, ok := known[clean]; ok {
+			return nil
+		}
+		unknowns = append(unknowns, clean)
+		if entry.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return unknowns, nil
 }
 
 func (inst *installer) deleteUnknowns(paths []string) error {
@@ -108,6 +184,19 @@ func (inst *installer) relativeUnknowns() []string {
 	}
 	rel := make([]string, 0, len(inst.unknowns))
 	for _, path := range inst.unknowns {
+		rel = append(rel, inst.relativePath(path))
+	}
+	sort.Strings(rel)
+	return rel
+}
+
+// relativePathList converts absolute paths to root-relative paths, sorted.
+func (inst *installer) relativePathList(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	rel := make([]string, 0, len(paths))
+	for _, path := range paths {
 		rel = append(rel, inst.relativePath(path))
 	}
 	sort.Strings(rel)
@@ -179,6 +268,13 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	if err := addTemplatePaths("docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs")); err != nil {
 		return nil, err
 	}
+
+	// docs/agent-layer/ output directory (memory files written outside .agent-layer).
+	add(filepath.Join(root, "docs", "agent-layer"))
+	if err := addTemplatePaths("docs/agent-layer", filepath.Join(root, "docs", "agent-layer")); err != nil {
+		return nil, err
+	}
+
 	if err := inst.addExistingKnownPaths(snapshotDir, add); err != nil {
 		return nil, err
 	}

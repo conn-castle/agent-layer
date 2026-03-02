@@ -15,6 +15,7 @@ func TestOwnershipPolicyForPath(t *testing.T) {
 		{path: commandsAllowRelPath, want: ownershipPolicyAllowlist},
 		{path: "docs/agent-layer/ROADMAP.md", want: ownershipPolicyMemoryRoadmap},
 		{path: "docs/agent-layer/BACKLOG.md", want: ownershipPolicyMemoryEntries},
+		{path: "docs/agent-layer/CONTEXT.md", want: ownershipPolicyMemoryEntries},
 		{path: ".agent-layer/config.toml", want: ""},
 	}
 	for _, tc := range cases {

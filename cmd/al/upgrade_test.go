@@ -443,6 +443,131 @@ func TestUpgradeCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
 	}
 }
 
+func TestWriteMigrationReportSection_BreakingAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.9.0",
+		SourceVersion:       "0.8.8",
+		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:              "d-migrate-all-skills-to-directory-format",
+				Kind:            "migrate_skills_format",
+				Status:          install.UpgradeMigrationStatusPlanned,
+				Rationale:       "Migrate flat-format skills",
+				Breaking:        true,
+				BreakingNotice:  "Slash-commands are being renamed to skills and converted to directory format.",
+				BreakingDetails: []string{".agent-layer/slash-commands/<name>.md  →  .agent-layer/skills/<name>/SKILL.md"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "BREAKING CHANGE: Slash-commands are being renamed") {
+		t.Errorf("expected BREAKING CHANGE annotation from manifest, got:\n%s", out)
+	}
+	if !strings.Contains(out, ".agent-layer/slash-commands/<name>.md") {
+		t.Errorf("expected breaking detail from manifest, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Run 'al upgrade' to confirm and apply the migration") {
+		t.Errorf("expected guidance to run 'al upgrade', got:\n%s", out)
+	}
+}
+
+func TestWriteMigrationReportSection_NonBreakingNoAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.7.0",
+		SourceVersion:       "0.6.0",
+		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:        "d-some-rename",
+				Kind:      "rename_file",
+				Status:    install.UpgradeMigrationStatusPlanned,
+				Rationale: "Rename old file",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "BREAKING") {
+		t.Errorf("non-breaking entry should NOT have BREAKING annotation, got:\n%s", out)
+	}
+}
+
+func TestWriteMigrationReportSection_SkippedBreakingNoAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.9.0",
+		SourceVersion:       "unknown",
+		SourceVersionOrigin: install.UpgradeMigrationSourceUnknown,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:             "d-migrate-all-skills-to-directory-format",
+				Kind:           "migrate_skills_format",
+				Status:         install.UpgradeMigrationStatusSkippedUnknownSource,
+				Rationale:      "Migrate flat-format skills",
+				SkipReason:     "source version is unknown",
+				Breaking:       true,
+				BreakingNotice: "Slash-commands are being renamed to skills.",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "BREAKING") {
+		t.Errorf("skipped breaking entry should NOT have BREAKING annotation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "reason:") {
+		t.Errorf("expected skip reason in output, got:\n%s", out)
+	}
+}
+
+func TestWriteMigrationReportSection_SkippedSourceTooOldBreakingNoAnnotation(t *testing.T) {
+	report := install.UpgradeMigrationReport{
+		TargetVersion:       "0.9.0",
+		SourceVersion:       "0.5.0",
+		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
+		Entries: []install.UpgradeMigrationEntry{
+			{
+				ID:             "d-migrate-all-skills-to-directory-format",
+				Kind:           "migrate_skills_format",
+				Status:         install.UpgradeMigrationStatusSkippedSourceTooOld,
+				Rationale:      "Migrate flat-format skills",
+				SkipReason:     "source version 0.5.0 is older than min prior version 0.8.0",
+				Breaking:       true,
+				BreakingNotice: "Slash-commands are being renamed to skills.",
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeMigrationReportSection(&buf, "Migrations", report); err != nil {
+		t.Fatalf("writeMigrationReportSection: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "BREAKING") {
+		t.Errorf("skipped breaking entry should NOT have BREAKING annotation, got:\n%s", out)
+	}
+	if !strings.Contains(out, "reason:") {
+		t.Errorf("expected skip reason in output, got:\n%s", out)
+	}
+}
+
 func TestUpgradeCmd_VersionFlagValidationError(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {

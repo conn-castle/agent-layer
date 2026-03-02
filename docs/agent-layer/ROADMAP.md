@@ -133,7 +133,7 @@ Incomplete:
 - Integrated skill validation into `al doctor` with dedicated diagnostics and tests, including explicit warnings when directory-format skills use non-canonical lowercase `skill.md`.
 - Added directory loader compatibility for lowercase `skill.md` with canonical `SKILL.md` precedence, keeping parser behavior backward-compatible for existing repos.
 - Migrated embedded template skills to directory format (`skills/<name>/SKILL.md`), updated embed patterns/tests/manifests/migrations, and added the `review-plan` skill with deterministic `*.plan.md` discovery guidance.
-- Published the skills workflow ordering guide in [SKILLS_WORKFLOWS.md](./SKILLS_WORKFLOWS.md) and aligned public docs (`README.md`, `site/docs/reference.mdx`) with current frontmatter/spec rules.
+- Aligned public docs (`README.md`, `site/docs/reference.mdx`) with current frontmatter/spec rules and added individual skill-level workflow guidance.
 
 ## Phase 16 — Profiles and multi-config
 

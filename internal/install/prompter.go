@@ -42,6 +42,7 @@ type PromptFuncs struct {
 	DeleteUnknownAllFunc           PromptDeleteUnknownAllFunc
 	DeleteUnknownFunc              PromptDeleteUnknownFunc
 	ConfigSetDefaultFunc           PromptConfigSetDefaultFunc
+	ConfirmSkillsMigrationFunc     PromptConfirmSkillsMigrationFunc
 }
 
 // OverwriteAll prompts the user to confirm overwriting all given paths.
@@ -113,6 +114,37 @@ func (p PromptFuncs) ConfigSetDefault(key string, manifestValue any, rationale s
 		return manifestValue, nil
 	}
 	return p.ConfigSetDefaultFunc(key, manifestValue, rationale, field)
+}
+
+// SkillsMigrationConflict describes a flat-format skill that conflicts with an
+// existing directory-format skill (different content at both locations).
+type SkillsMigrationConflict struct {
+	SkillName string
+	FlatPath  string
+	DirPath   string
+	Reason    string
+}
+
+// skillsMigrationPrompter is an optional interface that a Prompter can
+// implement to confirm skills-format migration with the user. When the
+// Prompter does not implement this interface (or the callback is nil),
+// migration proceeds automatically (headless default).
+type skillsMigrationPrompter interface {
+	ConfirmSkillsMigration(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error)
+}
+
+// PromptConfirmSkillsMigrationFunc asks the user to confirm the skills-format
+// migration. It receives the list of flat skills to migrate and any detected
+// conflicts. Returns true to proceed, false to abort.
+type PromptConfirmSkillsMigrationFunc func(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error)
+
+// ConfirmSkillsMigration prompts the user to confirm skills-format migration.
+// Returns true (proceed) when no callback is set (headless default).
+func (p PromptFuncs) ConfirmSkillsMigration(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error) {
+	if p.ConfirmSkillsMigrationFunc == nil {
+		return true, nil
+	}
+	return p.ConfirmSkillsMigrationFunc(flatSkills, conflicts)
 }
 
 type promptValidator interface {

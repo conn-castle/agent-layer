@@ -398,7 +398,7 @@ func TestHasGeneratedMarker(t *testing.T) {
 
 func TestGeneratedSkillSourcePath(t *testing.T) {
 	cmd := config.Skill{Name: "alpha"}
-	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha.md" {
+	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
 		t.Fatalf("unexpected default source path: %q", got)
 	}
 

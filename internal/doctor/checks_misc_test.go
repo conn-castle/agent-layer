@@ -217,10 +217,10 @@ func TestCheckSkills_NoSkills(t *testing.T) {
 func TestCheckSkills_Compliant(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
-	skillPath := filepath.Join(skillsDir, "alpha.md")
+	skillPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
 	content := `---
 name: alpha
 description: test
@@ -251,10 +251,10 @@ Body.
 func TestCheckSkills_Warnings(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
-	skillPath := filepath.Join(skillsDir, "alpha.md")
+	skillPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
 	content := `---
 description: test
 foo: bar
@@ -289,7 +289,7 @@ func TestCheckSkills_ParseFailure(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Root: root,
 		Skills: []config.Skill{
-			{Name: "missing", SourcePath: filepath.Join(root, ".agent-layer", "skills", "missing.md")},
+			{Name: "missing", SourcePath: filepath.Join(root, ".agent-layer", "skills", "missing", "SKILL.md")},
 		},
 	}
 	results := CheckSkills(cfg)

@@ -27,6 +27,19 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-03-02 color-gating-consistency: Centralize CLI color gating beyond fatih/color built-in detection
+    Priority: Low. Area: CLI output / color handling.
+    Description: `color.YellowString()` gates ANSI output via fatih/color's global `NoColor` flag (terminal detection + `NO_COLOR` env var), but `shouldColorizeDiffOutput()` uses a separate `isTerminal() && !color.NoColor` check for unified-diff rendering with custom `color.New()` objects. The two gating mechanisms are inconsistent — `color.YellowString()` self-gates while diff colors require explicit gating. If Cobra's `io.Writer` is redirected (e.g., `cmd.SetOut()` in tests or embedding), `color.YellowString()` still checks `os.Stdout` for terminal detection, which could emit ANSI codes to non-terminal outputs.
+    Next step: Audit all CLI color usage and evaluate whether a unified color-gating helper (wrapping both `color.YellowString`-style calls and `color.New()`-style calls) is warranted, or whether fatih/color's built-in detection is sufficient for all current surfaces.
+    Notes: Deferred from PR #85 review. Current codebase uses `color.YellowString()` consistently in `doctor.go`, `upgrade.go` summary/readiness/breaking sections. The diff renderer is the only surface with explicit gating via `shouldColorizeDiffOutput()`.
+
+- Issue 2026-03-02 mcp-skill-resource-gap: MCP prompt integration drops skill resource access
+    Priority: High. Area: skills / MCP prompt server.
+    Description: Agent Skills spec supports optional `scripts/`, `references/`, and `assets/` with on-demand loading, but agent-layer MCP prompts expose only `SKILL.md` body text and no resource-access mechanism or skill-path context.
+    Next step: Extend skill loading and MCP prompt serving to include discoverable skill root/resource access (or add an internal tool/resource API) and add coverage tests using a skill with subfolders.
+    GitHub: https://github.com/conn-castle/agent-layer/issues/86
+    Notes: `internal/config/skills.go` parses only `SKILL.md`; `internal/mcp/prompts.go` returns `cmd.Body` only; `internal/sync/prompts.go` generates only `SKILL.md` in client skill outputs.
+
 - Issue 2026-02-25 playwright-headless-parity: Evaluate headless Playwright mode without functional regressions
     Priority: Medium. Area: test automation / Playwright runner UX.
     Description: Playwright running in headed mode is noisy and disruptive during normal development. We should assess whether headless can be the default while preserving behavior.

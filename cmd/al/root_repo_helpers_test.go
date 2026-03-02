@@ -66,7 +66,11 @@ description: test
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "alpha.md"), []byte(command), 0o644); err != nil {
+	alphaDir := filepath.Join(paths.SkillsDir, "alpha")
+	if err := os.MkdirAll(alphaDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte(command), 0o644); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {

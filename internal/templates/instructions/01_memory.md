@@ -6,8 +6,9 @@
 - `docs/agent-layer/ROADMAP.md` — numbered phases; guides architecture and sequencing.
 - `docs/agent-layer/DECISIONS.md` — rolling log of important, non-obvious decisions (brief).
 - `docs/agent-layer/COMMANDS.md` — canonical, repeatable development workflow commands for this repository (build, test, lint/format, typecheck, coverage, migrations, scripts).
+- `docs/agent-layer/CONTEXT.md` — general-purpose project-specific context (domain concepts, architectural context, naming conventions, external dependencies, team norms).
 
-After this list, refer to memory files by filename only (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md).
+After this list, refer to memory files by filename only (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, CONTEXT.md).
 
 **Formatting instructions are in each memory file.** Before writing to a memory file, open it and follow its “Purpose”/“Format” section and insertion markers.
 
