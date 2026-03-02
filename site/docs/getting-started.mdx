@@ -161,7 +161,7 @@ Typical layout:
   tmp/                 # agent-only artifacts
 ```
 
-Skill sources follow the [agentskills.io specification](https://agentskills.io/specification). Agent Layer supports both flat and directory formats; for directory skills, canonical `SKILL.md` is preferred and lowercase `skill.md` remains a compatibility fallback that triggers an `al doctor` warning.
+Skill sources follow the [agentskills.io specification](https://agentskills.io/specification). All skills use directory format (`.agent-layer/skills/<name>/SKILL.md`). Canonical `SKILL.md` is preferred; lowercase `skill.md` is accepted as a compatibility fallback but triggers an `al doctor` warning.
 
 ### Project memory (`docs/agent-layer/`)
 

@@ -479,7 +479,7 @@ Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/
 - Missing or empty `description` is a load/sync error (fail-loud); it is not warning-only.
 - Directory-format skills should use `SKILL.md`; lowercase `skill.md` loads but triggers an `al doctor` warning.
 - Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
-- Recommended skill sequences for common workflows are documented in [docs/agent-layer/SKILLS_WORKFLOWS.md](docs/agent-layer/SKILLS_WORKFLOWS.md).
+- Workflow guidance is provided by individual skill sources under `.agent-layer/skills/`.
 
 ### Approved commands: `.agent-layer/commands.allow`
 

@@ -321,6 +321,11 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: The previous approach only migrated built-in skills, leaving user-authored skills stranded. Dual code-path support (flat + directory) added permanent maintenance burden.
     Tradeoffs: Hard break for repos with flat skills that skip `al upgrade`; accepted because `LoadSkills` returns an actionable error directing users to run `al upgrade`.
 
+- Decision 2026-03-01 breaking-change-metadata: Breaking-change display is data-driven from migration manifests
+    Decision: Move breaking-change notices and details into the migration manifest (`breaking`, `breaking_notice`, `breaking_details` fields) instead of hardcoding per-kind display logic in the upgrade report renderer.
+    Reason: Hardcoded display logic couples the renderer to specific migration kinds and requires code changes for every new breaking migration. Data-driven display lets future breaking migrations carry their own user-facing copy without touching the renderer.
+    Tradeoffs: Migration manifest validation is now stricter (breaking requires notice; notice/details require breaking flag); accepted because manifest authoring is a release-time activity with clear validation feedback.
+
 - Decision 2026-03-01 context-md-memory-file: Add CONTEXT.md as a sixth memory file for general-purpose project context
     Decision: Add `docs/agent-layer/CONTEXT.md` as a free-form, section-based memory file using the `memory_entries_v1` ownership policy and `<!-- ENTRIES START -->` marker.
     Reason: The existing five memory files have specific scopes (issues, backlog, roadmap, decisions, commands); project-wide context (domain concepts, naming conventions, team norms) had no canonical home.
