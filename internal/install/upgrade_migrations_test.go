@@ -654,6 +654,15 @@ func TestLoadUpgradeMigrationManifest_0_9_0_IncludesMigrateSkillsFormat(t *testi
 	if !migrateOp.SourceAgnostic {
 		t.Fatal("expected migrate op source_agnostic = true")
 	}
+	if !migrateOp.Breaking {
+		t.Fatal("expected migrate op breaking = true")
+	}
+	if migrateOp.BreakingNotice == "" {
+		t.Fatal("expected migrate op breaking_notice to be set")
+	}
+	if len(migrateOp.BreakingDetails) == 0 {
+		t.Fatal("expected migrate op breaking_details to be non-empty")
+	}
 }
 
 func TestMigration_0_9_0_RenamesSlashCommandsAndMigratesFlatSkills(t *testing.T) {
@@ -1533,11 +1542,11 @@ func TestRun_SkillsMigrationDeclinedBeforeMutations(t *testing.T) {
 	warnOutput := warn.String()
 	expectedLines := []string{
 		"=============================================================",
-		"  BREAKING CHANGE: Skills format migration",
+		"  BREAKING CHANGE: Slash-commands renamed to skills",
 		"=============================================================",
-		"  Starting with this version, ALL skills must use directory",
-		"  format. The old flat file format (<name>.md) will no longer",
-		"  work after this upgrade.",
+		"  Slash-commands are being renamed to skills and converted to",
+		"  directory format. The old flat file format (<name>.md) will",
+		"  no longer work after this upgrade.",
 		"  Found 1 flat-format skill(s) that must be migrated:",
 		"    my-custom-skill.md  ->  my-custom-skill/SKILL.md",
 		"  No conflicts detected — all skills can be migrated automatically.",
@@ -1662,7 +1671,7 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 	// ── Verify exact warning output for conflict path ──
 	warnOutput := warn.String()
 	expectedLines := []string{
-		"BREAKING CHANGE: Skills format migration",
+		"BREAKING CHANGE: Slash-commands renamed to skills",
 		"  Found 1 flat-format skill(s) that must be migrated:",
 		"    my-skill.md  ->  my-skill/SKILL.md",
 		"  MIGRATION BLOCKED",

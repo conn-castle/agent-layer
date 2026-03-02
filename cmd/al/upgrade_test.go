@@ -443,17 +443,20 @@ func TestUpgradeCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
 	}
 }
 
-func TestWriteMigrationReportSection_SkillsFormatAnnotation(t *testing.T) {
+func TestWriteMigrationReportSection_BreakingAnnotation(t *testing.T) {
 	report := install.UpgradeMigrationReport{
 		TargetVersion:       "0.9.0",
 		SourceVersion:       "0.8.8",
 		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
 		Entries: []install.UpgradeMigrationEntry{
 			{
-				ID:        "d-migrate-all-skills-to-directory-format",
-				Kind:      "migrate_skills_format",
-				Status:    install.UpgradeMigrationStatusPlanned,
-				Rationale: "Migrate flat-format skills",
+				ID:              "d-migrate-all-skills-to-directory-format",
+				Kind:            "migrate_skills_format",
+				Status:          install.UpgradeMigrationStatusPlanned,
+				Rationale:       "Migrate flat-format skills",
+				Breaking:        true,
+				BreakingNotice:  "Slash-commands are being renamed to skills and converted to directory format.",
+				BreakingDetails: []string{".agent-layer/slash-commands/<name>.md  →  .agent-layer/skills/<name>/SKILL.md"},
 			},
 		},
 	}
@@ -464,18 +467,18 @@ func TestWriteMigrationReportSection_SkillsFormatAnnotation(t *testing.T) {
 	}
 
 	out := buf.String()
-	if !strings.Contains(out, "BREAKING") {
-		t.Errorf("expected BREAKING annotation for migrate_skills_format entry, got:\n%s", out)
+	if !strings.Contains(out, "BREAKING CHANGE: Slash-commands are being renamed") {
+		t.Errorf("expected BREAKING CHANGE annotation from manifest, got:\n%s", out)
 	}
-	if !strings.Contains(out, "Flat-format skills (<name>.md) will no longer work after this upgrade") {
-		t.Errorf("expected breaking-change detail, got:\n%s", out)
+	if !strings.Contains(out, ".agent-layer/slash-commands/<name>.md") {
+		t.Errorf("expected breaking detail from manifest, got:\n%s", out)
 	}
 	if !strings.Contains(out, "Run 'al upgrade' to confirm and apply the migration") {
 		t.Errorf("expected guidance to run 'al upgrade', got:\n%s", out)
 	}
 }
 
-func TestWriteMigrationReportSection_OtherKindNoAnnotation(t *testing.T) {
+func TestWriteMigrationReportSection_NonBreakingNoAnnotation(t *testing.T) {
 	report := install.UpgradeMigrationReport{
 		TargetVersion:       "0.7.0",
 		SourceVersion:       "0.6.0",
@@ -497,22 +500,24 @@ func TestWriteMigrationReportSection_OtherKindNoAnnotation(t *testing.T) {
 
 	out := buf.String()
 	if strings.Contains(out, "BREAKING") {
-		t.Errorf("non-skills-format entry should NOT have BREAKING annotation, got:\n%s", out)
+		t.Errorf("non-breaking entry should NOT have BREAKING annotation, got:\n%s", out)
 	}
 }
 
-func TestWriteMigrationReportSection_SkippedSkillsFormatNoAnnotation(t *testing.T) {
+func TestWriteMigrationReportSection_SkippedBreakingNoAnnotation(t *testing.T) {
 	report := install.UpgradeMigrationReport{
 		TargetVersion:       "0.9.0",
 		SourceVersion:       "unknown",
 		SourceVersionOrigin: install.UpgradeMigrationSourceUnknown,
 		Entries: []install.UpgradeMigrationEntry{
 			{
-				ID:         "d-migrate-all-skills-to-directory-format",
-				Kind:       "migrate_skills_format",
-				Status:     install.UpgradeMigrationStatusSkippedUnknownSource,
-				Rationale:  "Migrate flat-format skills",
-				SkipReason: "source version is unknown",
+				ID:             "d-migrate-all-skills-to-directory-format",
+				Kind:           "migrate_skills_format",
+				Status:         install.UpgradeMigrationStatusSkippedUnknownSource,
+				Rationale:      "Migrate flat-format skills",
+				SkipReason:     "source version is unknown",
+				Breaking:       true,
+				BreakingNotice: "Slash-commands are being renamed to skills.",
 			},
 		},
 	}
@@ -524,25 +529,27 @@ func TestWriteMigrationReportSection_SkippedSkillsFormatNoAnnotation(t *testing.
 
 	out := buf.String()
 	if strings.Contains(out, "BREAKING") {
-		t.Errorf("skipped migrate_skills_format entry should NOT have BREAKING annotation, got:\n%s", out)
+		t.Errorf("skipped breaking entry should NOT have BREAKING annotation, got:\n%s", out)
 	}
 	if !strings.Contains(out, "reason:") {
 		t.Errorf("expected skip reason in output, got:\n%s", out)
 	}
 }
 
-func TestWriteMigrationReportSection_SkippedSourceTooOldNoAnnotation(t *testing.T) {
+func TestWriteMigrationReportSection_SkippedSourceTooOldBreakingNoAnnotation(t *testing.T) {
 	report := install.UpgradeMigrationReport{
 		TargetVersion:       "0.9.0",
 		SourceVersion:       "0.5.0",
 		SourceVersionOrigin: install.UpgradeMigrationSourcePin,
 		Entries: []install.UpgradeMigrationEntry{
 			{
-				ID:         "d-migrate-all-skills-to-directory-format",
-				Kind:       "migrate_skills_format",
-				Status:     install.UpgradeMigrationStatusSkippedSourceTooOld,
-				Rationale:  "Migrate flat-format skills",
-				SkipReason: "source version 0.5.0 is older than min prior version 0.8.0",
+				ID:             "d-migrate-all-skills-to-directory-format",
+				Kind:           "migrate_skills_format",
+				Status:         install.UpgradeMigrationStatusSkippedSourceTooOld,
+				Rationale:      "Migrate flat-format skills",
+				SkipReason:     "source version 0.5.0 is older than min prior version 0.8.0",
+				Breaking:       true,
+				BreakingNotice: "Slash-commands are being renamed to skills.",
 			},
 		},
 	}
@@ -554,7 +561,7 @@ func TestWriteMigrationReportSection_SkippedSourceTooOldNoAnnotation(t *testing.
 
 	out := buf.String()
 	if strings.Contains(out, "BREAKING") {
-		t.Errorf("skipped_source_too_old migrate_skills_format entry should NOT have BREAKING annotation, got:\n%s", out)
+		t.Errorf("skipped breaking entry should NOT have BREAKING annotation, got:\n%s", out)
 	}
 	if !strings.Contains(out, "reason:") {
 		t.Errorf("expected skip reason in output, got:\n%s", out)

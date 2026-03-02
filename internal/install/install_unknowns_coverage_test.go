@@ -41,12 +41,8 @@ func TestScanUnknownRoot_RootDoesNotExist_ReturnsNil(t *testing.T) {
 }
 
 func TestHandleUnknowns_MissingPrompter_ReturnsError(t *testing.T) {
-	inst := &installer{
-		overwrite: true,
-		unknowns:  []string{"a"},
-		prompter:  nil,
-		sys:       RealSystem{},
-	}
+	inst, _ := setupUnknownFile(t)
+	inst.prompter = nil
 
 	if err := inst.handleUnknowns(); err == nil {
 		t.Fatalf("expected error")
@@ -67,7 +63,6 @@ func TestHandleUnknowns_DeleteAllTrue_DeletesUnknowns(t *testing.T) {
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		unknowns:  []string{unknownPath},
 		sys:       RealSystem{},
 		prompter: PromptFuncs{
 			DeleteUnknownAllFunc: func([]string) (bool, error) { return true, nil },

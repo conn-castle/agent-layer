@@ -63,17 +63,20 @@ const (
 
 // UpgradeMigrationEntry is a deterministic migration-plan/apply record.
 type UpgradeMigrationEntry struct {
-	ID             string                 `json:"id"`
-	Kind           string                 `json:"kind"`
-	Rationale      string                 `json:"rationale"`
-	SourceAgnostic bool                   `json:"source_agnostic"`
-	Status         UpgradeMigrationStatus `json:"status"`
-	SkipReason     string                 `json:"skip_reason,omitempty"`
-	From           string                 `json:"from,omitempty"`
-	To             string                 `json:"to,omitempty"`
-	Path           string                 `json:"path,omitempty"`
-	Key            string                 `json:"key,omitempty"`
-	Value          json.RawMessage        `json:"value,omitempty"`
+	ID              string                 `json:"id"`
+	Kind            string                 `json:"kind"`
+	Rationale       string                 `json:"rationale"`
+	SourceAgnostic  bool                   `json:"source_agnostic"`
+	Status          UpgradeMigrationStatus `json:"status"`
+	SkipReason      string                 `json:"skip_reason,omitempty"`
+	From            string                 `json:"from,omitempty"`
+	To              string                 `json:"to,omitempty"`
+	Path            string                 `json:"path,omitempty"`
+	Key             string                 `json:"key,omitempty"`
+	Value           json.RawMessage        `json:"value,omitempty"`
+	Breaking        bool                   `json:"breaking,omitempty"`
+	BreakingNotice  string                 `json:"breaking_notice,omitempty"`
+	BreakingDetails []string               `json:"breaking_details,omitempty"`
 }
 
 // UpgradeMigrationReport contains deterministic migration planning/execution data for upgrade output.
@@ -100,15 +103,18 @@ const (
 )
 
 type upgradeMigrationOperation struct {
-	ID             string                        `json:"id"`
-	Kind           upgradeMigrationOperationKind `json:"kind"`
-	Rationale      string                        `json:"rationale"`
-	SourceAgnostic bool                          `json:"source_agnostic,omitempty"`
-	From           string                        `json:"from,omitempty"`
-	To             string                        `json:"to,omitempty"`
-	Path           string                        `json:"path,omitempty"`
-	Key            string                        `json:"key,omitempty"`
-	Value          json.RawMessage               `json:"value,omitempty"`
+	ID              string                        `json:"id"`
+	Kind            upgradeMigrationOperationKind `json:"kind"`
+	Rationale       string                        `json:"rationale"`
+	SourceAgnostic  bool                          `json:"source_agnostic,omitempty"`
+	From            string                        `json:"from,omitempty"`
+	To              string                        `json:"to,omitempty"`
+	Path            string                        `json:"path,omitempty"`
+	Key             string                        `json:"key,omitempty"`
+	Value           json.RawMessage               `json:"value,omitempty"`
+	Breaking        bool                          `json:"breaking,omitempty"`
+	BreakingNotice  string                        `json:"breaking_notice,omitempty"`
+	BreakingDetails []string                      `json:"breaking_details,omitempty"`
 }
 
 type upgradeMigrationManifest struct {
@@ -759,10 +765,12 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 	return dedupSortedStrings(paths)
 }
 
-// migrationWillCoverPath returns true when the planned operation will actually
-// handle relPath at execution time. This prevents filterCoveredUpgradeChanges
-// from hiding template changes in the plan when a migration would no-op (e.g.,
-// rename source already absent).
+// migrationWillCoverPath returns true when the planned operation will handle
+// relPath at execution time, or when the migration subsumes template changes
+// under the same path (e.g., skills format migration covers all skill content
+// updates). This prevents filterCoveredUpgradeChanges from hiding template
+// changes when a migration would no-op, while allowing migrations that own an
+// entire directory to suppress noisy per-file diffs in the plan output.
 func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperation, relPath string) bool {
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
@@ -793,15 +801,11 @@ func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperatio
 		}
 		return true
 	case upgradeMigrationKindMigrateSkillsFormat:
-		skillsDir, absErr := snapshotEntryAbsPath(root, normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path))))
-		if absErr != nil {
-			return false
-		}
-		flatCount, _, scanErr := preflightSkillsMigration(sys, skillsDir)
-		if scanErr != nil {
-			return false
-		}
-		return flatCount > 0
+		// Always cover the skills directory when this migration is planned.
+		// Even if no flat-format files exist, the template writer updates
+		// skill content (frontmatter, quoting) as part of the same release,
+		// and those diffs are noise alongside the migration description.
+		return true
 	default:
 		// Config migrations don't cover file paths in the template sense.
 		return false
@@ -825,15 +829,18 @@ func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigrat
 
 func migrationEntryFromOperation(op upgradeMigrationOperation) UpgradeMigrationEntry {
 	return UpgradeMigrationEntry{
-		ID:             op.ID,
-		Kind:           string(op.Kind),
-		Rationale:      op.Rationale,
-		SourceAgnostic: op.SourceAgnostic,
-		From:           op.From,
-		To:             op.To,
-		Path:           op.Path,
-		Key:            op.Key,
-		Value:          op.Value,
+		ID:              op.ID,
+		Kind:            string(op.Kind),
+		Rationale:       op.Rationale,
+		SourceAgnostic:  op.SourceAgnostic,
+		From:            op.From,
+		To:              op.To,
+		Path:            op.Path,
+		Key:             op.Key,
+		Value:           op.Value,
+		Breaking:        op.Breaking,
+		BreakingNotice:  op.BreakingNotice,
+		BreakingDetails: op.BreakingDetails,
 	}
 }
 
@@ -1186,6 +1193,19 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 	if strings.TrimSpace(op.Rationale) == "" {
 		return fmt.Errorf("migration %s rationale is required", op.ID)
 	}
+	if op.Breaking {
+		if strings.TrimSpace(op.BreakingNotice) == "" {
+			return fmt.Errorf("migration %s marked breaking requires breaking_notice", op.ID)
+		}
+	}
+	if !op.Breaking && (strings.TrimSpace(op.BreakingNotice) != "" || len(op.BreakingDetails) > 0) {
+		return fmt.Errorf("migration %s includes breaking metadata but breaking is false", op.ID)
+	}
+	for _, detail := range op.BreakingDetails {
+		if strings.TrimSpace(detail) == "" {
+			return fmt.Errorf("migration %s has empty breaking_details entry", op.ID)
+		}
+	}
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
 		if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
@@ -1282,12 +1302,12 @@ func (inst *installer) preflightAndConfirmSkillsMigration() error {
 	ew := &errWriter{w: out}
 	ew.println()
 	ew.println("=============================================================")
-	ew.println("  BREAKING CHANGE: Skills format migration")
+	ew.println("  BREAKING CHANGE: Slash-commands renamed to skills")
 	ew.println("=============================================================")
 	ew.println()
-	ew.println("  Starting with this version, ALL skills must use directory")
-	ew.println("  format. The old flat file format (<name>.md) will no longer")
-	ew.println("  work after this upgrade.")
+	ew.println("  Slash-commands are being renamed to skills and converted to")
+	ew.println("  directory format. The old flat file format (<name>.md) will")
+	ew.println("  no longer work after this upgrade.")
 	ew.println()
 	ew.printf("  Found %d flat-format skill(s) that must be migrated:\n", len(flatSkills))
 	ew.println()

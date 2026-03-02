@@ -231,12 +231,27 @@ func filterCoveredUpgradeChanges(
 	}
 	filtered := make([]upgradeChangeWithTemplate, 0, len(changes))
 	for _, change := range changes {
-		if _, ok := covered[change.path]; ok {
+		if isCoveredByMigration(change.path, covered) {
 			continue
 		}
 		filtered = append(filtered, change)
 	}
 	return filtered
+}
+
+// isCoveredByMigration returns true when path or any of its ancestor
+// directories appears in the covered set.
+func isCoveredByMigration(path string, covered map[string]struct{}) bool {
+	normalized := normalizeRelPath(path)
+	if _, ok := covered[normalized]; ok {
+		return true
+	}
+	for dir := filepath.Dir(normalized); dir != "." && dir != ""; dir = filepath.Dir(dir) {
+		if _, ok := covered[dir]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func toUpgradeChanges(changes []upgradeChangeWithTemplate) []UpgradeChange {

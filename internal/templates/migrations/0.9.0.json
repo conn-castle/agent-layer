@@ -32,7 +32,12 @@
       "kind": "migrate_skills_format",
       "path": ".agent-layer/skills",
       "rationale": "Migrate all flat-format skills (built-in and user-authored) from <name>.md to <name>/SKILL.md directory format.",
-      "source_agnostic": true
+      "source_agnostic": true,
+      "breaking": true,
+      "breaking_notice": "Slash-commands are being renamed to skills and converted to directory format.",
+      "breaking_details": [
+        ".agent-layer/slash-commands/<name>.md  →  .agent-layer/skills/<name>/SKILL.md"
+      ]
     }
   ]
 }

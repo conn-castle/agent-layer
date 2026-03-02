@@ -634,10 +634,14 @@ func writeMigrationReportSection(out io.Writer, title string, report install.Upg
 		if entry.SkipReason != "" {
 			ew.printf("    reason: %s\n", entry.SkipReason)
 		}
-		if entry.Kind == "migrate_skills_format" && entry.Status == install.UpgradeMigrationStatusPlanned {
-			ew.println("    BREAKING CHANGE: Flat-format skills (<name>.md) will no longer work after this upgrade.")
-			ew.println("    All flat-format skills in .agent-layer/skills/ will be migrated to directory format (<name>/SKILL.md).")
-			ew.println("    Run 'al upgrade' to confirm and apply the migration.")
+		if entry.Breaking && entry.Status == install.UpgradeMigrationStatusPlanned {
+			if entry.BreakingNotice != "" {
+				ew.println(color.YellowString("    BREAKING CHANGE: %s", entry.BreakingNotice))
+			}
+			for _, detail := range entry.BreakingDetails {
+				ew.println(color.YellowString("    %s", detail))
+			}
+			ew.println(color.YellowString("    Run 'al upgrade' to confirm and apply the migration."))
 		}
 	}
 	return ew.err
@@ -761,7 +765,7 @@ func writeReadinessSection(out io.Writer, checks []install.UpgradeReadinessCheck
 		return err
 	}
 	for _, check := range checks {
-		if _, err := fmt.Fprintf(out, "  - %s\n", readinessSummary(check)); err != nil {
+		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("%s", readinessSummary(check))); err != nil {
 			return err
 		}
 		action := readinessAction(check.ID)
@@ -813,8 +817,15 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 	if _, err := fmt.Fprintf(out, "  - files to rename: %d\n", len(plan.TemplateRenames)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(out, "  - files to review for removal: %d\n", len(plan.TemplateRemovalsOrOrphans)); err != nil {
-		return err
+	removals := len(plan.TemplateRemovalsOrOrphans)
+	if removals > 0 {
+		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("files to review for removal: %d", removals)); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintf(out, "  - files to review for removal: %d\n", removals); err != nil {
+			return err
+		}
 	}
 	if _, err := fmt.Fprintf(out, "  - config updates: %d\n", len(plan.ConfigKeyMigrations)); err != nil {
 		return err
@@ -822,11 +833,23 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 	if _, err := fmt.Fprintf(out, "  - migrations planned: %d\n", migrationsPlanned); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(out, "  - readiness warnings: %d\n", len(plan.ReadinessChecks)); err != nil {
-		return err
+	if len(plan.ReadinessChecks) > 0 {
+		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("readiness warnings: %d", len(plan.ReadinessChecks))); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintf(out, "  - readiness warnings: %d\n", len(plan.ReadinessChecks)); err != nil {
+			return err
+		}
 	}
-	if _, err := fmt.Fprintf(out, "  - needs review before apply: %s\n", reviewState); err != nil {
-		return err
+	if needsReview {
+		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("needs review before apply: %s", reviewState)); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintf(out, "  - needs review before apply: %s\n", reviewState); err != nil {
+			return err
+		}
 	}
 	return nil
 }

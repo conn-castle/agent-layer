@@ -25,15 +25,33 @@ func TestScanUnknownRoot_StatError(t *testing.T) {
 	_ = inst.scanUnknowns()
 }
 
-func TestHandleUnknowns_PromptDeleteAllError(t *testing.T) {
+// setupUnknownFile creates a .agent-layer/ directory with a single unknown file
+// and returns the installer and the path to the unknown file. The returned
+// installer has root, overwrite, and sys set — caller must set prompter.
+func setupUnknownFile(t *testing.T) (*installer, string) {
+	t.Helper()
+	root := t.TempDir()
+	alDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(alDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	unknownPath := filepath.Join(alDir, "unknown.txt")
+	if err := os.WriteFile(unknownPath, []byte("data"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
 	inst := &installer{
+		root:      root,
 		overwrite: true,
-		unknowns:  []string{"a"},
 		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			DeleteUnknownAllFunc: func([]string) (bool, error) {
-				return false, errors.New("boom")
-			},
+	}
+	return inst, unknownPath
+}
+
+func TestHandleUnknowns_PromptDeleteAllError(t *testing.T) {
+	inst, _ := setupUnknownFile(t)
+	inst.prompter = PromptFuncs{
+		DeleteUnknownAllFunc: func([]string) (bool, error) {
+			return false, errors.New("boom")
 		},
 	}
 	if err := inst.handleUnknowns(); err == nil {
@@ -42,17 +60,13 @@ func TestHandleUnknowns_PromptDeleteAllError(t *testing.T) {
 }
 
 func TestHandleUnknowns_PromptDeleteError(t *testing.T) {
-	inst := &installer{
-		overwrite: true,
-		unknowns:  []string{"a"},
-		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			DeleteUnknownAllFunc: func([]string) (bool, error) {
-				return false, nil
-			},
-			DeleteUnknownFunc: func(string) (bool, error) {
-				return false, errors.New("boom")
-			},
+	inst, _ := setupUnknownFile(t)
+	inst.prompter = PromptFuncs{
+		DeleteUnknownAllFunc: func([]string) (bool, error) {
+			return false, nil
+		},
+		DeleteUnknownFunc: func(string) (bool, error) {
+			return false, errors.New("boom")
 		},
 	}
 	if err := inst.handleUnknowns(); err == nil {
@@ -65,24 +79,24 @@ func TestHandleUnknowns_DeleteError(t *testing.T) {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
-	// Create file in read-only dir to cause remove error
-	dir := filepath.Join(root, "ro")
-	if err := os.Mkdir(dir, 0o755); err != nil {
+	alDir := filepath.Join(root, ".agent-layer")
+	protectedDir := filepath.Join(alDir, "protected")
+	if err := os.MkdirAll(protectedDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	file := filepath.Join(dir, "file")
+	file := filepath.Join(protectedDir, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	if err := os.Chmod(dir, 0o500); err != nil {
+	// Make dir read-only to prevent deletion.
+	if err := os.Chmod(protectedDir, 0o500); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) })
 
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		unknowns:  []string{file},
 		sys:       RealSystem{},
 		prompter: PromptFuncs{
 			DeleteUnknownAllFunc: func([]string) (bool, error) { return true, nil },
@@ -189,25 +203,15 @@ func TestRelativeUnknowns_WithPaths(t *testing.T) {
 }
 
 func TestHandleUnknowns_IndividualDelete(t *testing.T) {
-	root := t.TempDir()
-	unknownFile := filepath.Join(root, "unknown")
-	if err := os.WriteFile(unknownFile, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
+	inst, unknownFile := setupUnknownFile(t)
 	deleteCalled := false
-	inst := &installer{
-		overwrite: true,
-		unknowns:  []string{unknownFile},
-		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			DeleteUnknownAllFunc: func([]string) (bool, error) {
-				return false, nil
-			},
-			DeleteUnknownFunc: func(string) (bool, error) {
-				deleteCalled = true
-				return true, nil
-			},
+	inst.prompter = PromptFuncs{
+		DeleteUnknownAllFunc: func([]string) (bool, error) {
+			return false, nil
+		},
+		DeleteUnknownFunc: func(string) (bool, error) {
+			deleteCalled = true
+			return true, nil
 		},
 	}
 	if err := inst.handleUnknowns(); err != nil {
@@ -222,14 +226,10 @@ func TestHandleUnknowns_IndividualDelete(t *testing.T) {
 }
 
 func TestHandleUnknowns_MissingIndividualPrompt(t *testing.T) {
-	inst := &installer{
-		overwrite: true,
-		unknowns:  []string{"a"},
-		sys:       RealSystem{},
-		prompter: PromptFuncs{
-			DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
-			// Missing DeleteUnknownFunc
-		},
+	inst, _ := setupUnknownFile(t)
+	inst.prompter = PromptFuncs{
+		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
+		// Missing DeleteUnknownFunc
 	}
 	if err := inst.handleUnknowns(); err == nil {
 		t.Fatalf("expected error")
@@ -241,24 +241,24 @@ func TestHandleUnknowns_IndividualDeleteError(t *testing.T) {
 		t.Skip("skipping permissions test on windows")
 	}
 	root := t.TempDir()
-	dir := filepath.Join(root, "protected")
-	if err := os.Mkdir(dir, 0o755); err != nil {
+	alDir := filepath.Join(root, ".agent-layer")
+	protectedDir := filepath.Join(alDir, "protected")
+	if err := os.MkdirAll(protectedDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	file := filepath.Join(dir, "file")
+	file := filepath.Join(protectedDir, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	// Make dir read-only to prevent deletion
-	if err := os.Chmod(dir, 0o500); err != nil {
+	// Make dir read-only to prevent deletion.
+	if err := os.Chmod(protectedDir, 0o500); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) })
 
 	inst := &installer{
 		root:      root,
 		overwrite: true,
-		unknowns:  []string{file},
 		sys:       RealSystem{},
 		prompter: PromptFuncs{
 			DeleteUnknownAllFunc: func([]string) (bool, error) {
@@ -359,6 +359,96 @@ func TestScanUnknowns_NoUnknownsAfterFreshRun(t *testing.T) {
 	}
 	if rel := inst.relativeUnknowns(); len(rel) != 0 {
 		t.Fatalf("expected no unknown paths after fresh run, got %v", rel)
+	}
+}
+
+func TestHandleUnknowns_DocsAgentLayerOrphan_DetectedAndDeleted(t *testing.T) {
+	root := t.TempDir()
+	// Seed the repo so all template files are present.
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	// Create an orphan file in docs/agent-layer/ that has no template.
+	orphanPath := filepath.Join(root, "docs", "agent-layer", "CUSTOM.md")
+	if err := os.WriteFile(orphanPath, []byte("custom"), 0o644); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+
+	var promptedPaths []string
+	inst := &installer{
+		root:      root,
+		overwrite: true,
+		sys:       RealSystem{},
+		prompter: PromptFuncs{
+			DeleteUnknownAllFunc: func(paths []string) (bool, error) {
+				promptedPaths = paths
+				return true, nil
+			},
+		},
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if len(promptedPaths) != 1 {
+		t.Fatalf("expected 1 prompted path, got %v", promptedPaths)
+	}
+	if promptedPaths[0] != filepath.ToSlash(filepath.Join("docs", "agent-layer", "CUSTOM.md")) {
+		t.Fatalf("unexpected prompted path: %s", promptedPaths[0])
+	}
+	if _, err := os.Stat(orphanPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected orphan to be deleted, got %v", err)
+	}
+}
+
+func TestScanUnknowns_DocsAgentLayerOrphan_Detected(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	orphanPath := filepath.Join(root, "docs", "agent-layer", "ORPHAN.md")
+	if err := os.WriteFile(orphanPath, []byte("orphan"), 0o644); err != nil {
+		t.Fatalf("write orphan: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	rel := inst.relativeUnknowns()
+	if len(rel) != 1 {
+		t.Fatalf("expected 1 unknown, got %v", rel)
+	}
+	expected := filepath.ToSlash(filepath.Join("docs", "agent-layer", "ORPHAN.md"))
+	if rel[0] != expected {
+		t.Fatalf("expected %s, got %s", expected, rel[0])
+	}
+}
+
+func TestBuildKnownPaths_IncludesDocsAgentLayerTemplateFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	inst := &installer{root: root, sys: RealSystem{}}
+	known, err := inst.buildKnownPaths()
+	if err != nil {
+		t.Fatalf("buildKnownPaths: %v", err)
+	}
+	// The docs/agent-layer/ directory itself should be known.
+	docsDir := filepath.Clean(filepath.Join(root, "docs", "agent-layer"))
+	if _, ok := known[docsDir]; !ok {
+		t.Fatalf("expected docs/agent-layer directory to be known")
+	}
+	// At least one template file should exist as a known path under docs/agent-layer/.
+	found := false
+	for path := range known {
+		if len(path) > len(docsDir) && path[:len(docsDir)] == docsDir {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected at least one known path under docs/agent-layer/")
 	}
 }
 

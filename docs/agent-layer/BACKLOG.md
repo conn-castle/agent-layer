@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-03-01 remove-skill-migrations-v010: Remove one-off skill migration code by v0.10.0
+    Priority: Medium. Area: upgrade / skills
+    Description: If support signals are clean by v0.10.0, remove legacy one-off skill migration code paths so we do not carry indefinite compatibility shims.
+    Acceptance criteria: A v0.10.0 task removes obsolete skill migration code while preserving upgrade behavior for supported source versions.
+    Notes: Gate removal on evidence that dropping the migration path does not create user-impacting upgrade regressions.
+
 - Backlog 2026-02-16 skill-install: Install community skills from external sources
     Priority: Low. Area: skills / ecosystem
     Description: Allow users to install agentskills.io-compliant skills from GitHub repos or a registry (e.g., `al skill add <repo>` or `al skill add <name>`).

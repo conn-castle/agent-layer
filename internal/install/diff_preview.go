@@ -38,11 +38,29 @@ func (inst *installer) buildManagedDiffPreviews(entries []LabeledPath) ([]DiffPr
 	if err != nil {
 		return nil, nil, err
 	}
-	previews, err := inst.buildDiffPreviews(entries, templatePathByRel)
+	filtered := inst.filterMigrationCoveredDiffs(entries)
+	previews, err := inst.buildDiffPreviews(filtered, templatePathByRel)
 	if err != nil {
 		return nil, nil, err
 	}
 	return previews, indexDiffPreviews(previews), nil
+}
+
+// filterMigrationCoveredDiffs removes entries whose paths are covered by planned
+// migrations, preventing noisy diffs for files that the migration subsystem will
+// handle (e.g., skill content updates bundled with a format migration).
+func (inst *installer) filterMigrationCoveredDiffs(entries []LabeledPath) []LabeledPath {
+	if len(inst.migrationManifestCoverage) == 0 || len(entries) == 0 {
+		return entries
+	}
+	filtered := make([]LabeledPath, 0, len(entries))
+	for _, entry := range entries {
+		if isCoveredByMigration(entry.Path, inst.migrationManifestCoverage) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 func (inst *installer) buildMemoryDiffPreviews(entries []LabeledPath) ([]DiffPreview, map[string]DiffPreview, error) {
