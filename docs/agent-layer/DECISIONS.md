@@ -330,3 +330,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Add `docs/agent-layer/CONTEXT.md` as a free-form, section-based memory file using the `memory_entries_v1` ownership policy and `<!-- ENTRIES START -->` marker.
     Reason: The existing five memory files have specific scopes (issues, backlog, roadmap, decisions, commands); project-wide context (domain concepts, naming conventions, team norms) had no canonical home.
     Tradeoffs: Adds one more file to the memory surface; accepted because the alternative was agents writing miscellaneous context into inappropriate files or losing it between sessions.
+
+- Decision 2026-03-02 user-owned-conventions: Extract project-specific conventions to user-managed `04_conventions.md`
+    Decision: Move 5 project-specific instruction items (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety) from `00_base.md` into a new `04_conventions.md` that is user-managed: seeded on `al init`, never overwritten on `al upgrade`, and excluded from managed diffs. A new `append_to_file` migration kind enables delivering new conventions to existing users via opt-in migration entries.
+    Reason: Project-specific conventions create noise for projects where they don't apply; separating them lets users curate their own conventions while universal instructions remain managed.
+    Tradeoffs: Conventions are no longer auto-updated during upgrades; new defaults require explicit migration entries to reach existing users.

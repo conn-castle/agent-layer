@@ -105,6 +105,42 @@ make release-dist AL_VERSION=ci DIST_DIR=dist
 ```
 Note: `make ci` includes `make tidy-check`, which fails if `go.mod` or `go.sum` would change. While you are actively editing dependencies, use `make test`, `make lint`, and `make coverage` instead. `make ci` expects tools to be installed via `make tools`. The `make release-dist ...` command mirrors CI's dry-run release artifact build.
 
+## Managing project conventions
+
+`04_conventions.md` contains project-specific defaults (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety). Unlike other instruction files, it is **user-managed**: seeded on `al init` but never overwritten during `al upgrade`. Users can freely edit, add, or remove entries to match their tech stack.
+
+### Ownership model
+- **New projects** (`al init`): `04_conventions.md` is created from the template in `internal/templates/instructions/04_conventions.md`.
+- **Existing projects** (`al upgrade`): the file is never overwritten. User edits are preserved.
+- **Managed diffs**: `04_conventions.md` does not appear in `al upgrade plan` managed diffs.
+
+### Adding a new default convention
+Edit `internal/templates/instructions/04_conventions.md`. This only affects new `al init` — existing users are not impacted.
+
+### Delivering a new convention to existing users via migration
+To add a convention that existing users should see:
+1. Add the convention to `internal/templates/instructions/04_conventions.md` (for new projects).
+2. Add an `append_to_file` migration entry to the next version's migration manifest:
+   ```json
+   {
+     "id": "add_<convention_name>",
+     "kind": "append_to_file",
+     "rationale": "Add <convention description>",
+     "source_agnostic": true,
+     "path": ".agent-layer/instructions/04_conventions.md",
+     "value": "\"- **Convention name:** Convention text.\\n\"",
+     "from": "**Convention name:**"
+   }
+   ```
+   - `path`: the file to append to (relative to repo root).
+   - `value`: JSON-encoded string content to append.
+   - `from`: duplicate-detection match string. If this string is already present in the file, the migration is a no-op.
+3. During `al upgrade`, the migration appends the content to the end of the file and reports it in the upgrade output.
+4. The user can keep, edit, or remove the convention after upgrade.
+
+### Future enhancement
+Per-item accept/reject prompting during upgrade (not yet implemented).
+
 ## Troubleshooting
 - If you see `golangci-lint: command not found` or `goimports: command not found`, run:
   ```bash

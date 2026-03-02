@@ -1725,6 +1725,280 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 	}
 }
 
+func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	if err := os.WriteFile(targetPath, []byte("# Existing content\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_conv",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Add new convention",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"- **New rule:** Do the thing.\n"`),
+		From:      "**New rule:**",
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if !strings.Contains(string(data), "# Existing content") {
+		t.Fatal("expected existing content to be preserved")
+	}
+	if !strings.Contains(string(data), "**New rule:**") {
+		t.Fatal("expected appended content to be present")
+	}
+}
+
+func TestExecuteAppendToFile_NoopWhenMatchPresent(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	original := "# Existing content\n- **New rule:** Do the thing.\n"
+	if err := os.WriteFile(targetPath, []byte(original), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_conv",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Add new convention",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"- **New rule:** Do the thing.\n"`),
+		From:      "**New rule:**",
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if changed {
+		t.Fatal("expected no_op when match is present")
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(data) != original {
+		t.Fatalf("file should not be modified, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
+	root := t.TempDir()
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_new",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Create file with initial content",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"# Conventions\n- **Rule one:** First rule.\n"`),
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if !strings.Contains(string(data), "# Conventions") {
+		t.Fatalf("expected created file to contain content, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_HandlesNoTrailingNewline(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	// No trailing newline.
+	if err := os.WriteFile(targetPath, []byte("# Existing content"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_no_newline",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Append after content without trailing newline",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"- **New rule:** Added.\n"`),
+		From:      "**New rule:**",
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	// Should have a newline between original content and appended content.
+	if !strings.Contains(string(data), "# Existing content\n- **New rule:**") {
+		t.Fatalf("expected newline inserted before appended content, got:\n%q", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_RollbackCoverage(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	if err := os.WriteFile(targetPath, []byte("# Existing\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "append_conv",
+      "kind": "append_to_file",
+      "rationale": "Add new convention",
+      "source_agnostic": true,
+      "path": ".agent-layer/instructions/04_conventions.md",
+      "value": "\"- **New rule:** Something.\\n\"",
+      "from": "**New rule:**"
+    }
+  ]
+}`)
+
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	targetAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"))
+	if !containsString(plan.rollbackTargets, targetAbs) {
+		t.Fatalf("rollback targets missing append path %q: %#v", targetAbs, plan.rollbackTargets)
+	}
+	if _, ok := plan.coveredPaths[".agent-layer/instructions/04_conventions.md"]; !ok {
+		t.Fatalf("expected covered path for append_to_file, got %#v", plan.coveredPaths)
+	}
+}
+
+func TestValidateUpgradeMigrationOperation_AppendToFile(t *testing.T) {
+	// Valid append_to_file operation should pass validation.
+	validOp := upgradeMigrationOperation{
+		ID:        "append_test",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Test append",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"appended content"`),
+	}
+	if err := validateUpgradeMigrationOperation(validOp); err != nil {
+		t.Fatalf("expected valid operation to pass, got: %v", err)
+	}
+
+	// Missing path.
+	missingPath := validOp
+	missingPath.Path = ""
+	if err := validateUpgradeMigrationOperation(missingPath); err == nil {
+		t.Fatal("expected error for missing path")
+	}
+
+	// Missing value.
+	missingValue := validOp
+	missingValue.Value = nil
+	if err := validateUpgradeMigrationOperation(missingValue); err == nil {
+		t.Fatal("expected error for missing value")
+	}
+
+	// Non-string value.
+	nonStringValue := validOp
+	nonStringValue.Value = []byte(`42`)
+	if err := validateUpgradeMigrationOperation(nonStringValue); err == nil {
+		t.Fatal("expected error for non-string value")
+	}
+}
+
+func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, "04_conventions.md"), []byte("# Conventions\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "append_conv",
+      "kind": "append_to_file",
+      "rationale": "Add new convention",
+      "source_agnostic": true,
+      "path": ".agent-layer/instructions/04_conventions.md",
+      "value": "\"- **New rule:** Do the thing.\\n\"",
+      "from": "**New rule:**"
+    }
+  ]
+}`)
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+
+	if len(inst.migrationReport.Entries) != 1 {
+		t.Fatalf("expected one migration report entry, got %d", len(inst.migrationReport.Entries))
+	}
+	if inst.migrationReport.Entries[0].Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("migration status = %q, want %q", inst.migrationReport.Entries[0].Status, UpgradeMigrationStatusApplied)
+	}
+	if !containsAll(warn.String(), "Migration report:", "append_conv") {
+		t.Fatalf("expected migration report output, got %q", warn.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(targetDir, "04_conventions.md"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if !strings.Contains(string(data), "**New rule:**") {
+		t.Fatalf("expected appended content in file, got:\n%s", string(data))
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

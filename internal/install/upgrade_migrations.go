@@ -100,6 +100,7 @@ const (
 	upgradeMigrationKindConfigRenameKey         upgradeMigrationOperationKind = "config_rename_key"
 	upgradeMigrationKindConfigSetDefault        upgradeMigrationOperationKind = "config_set_default"
 	upgradeMigrationKindMigrateSkillsFormat     upgradeMigrationOperationKind = "migrate_skills_format"
+	upgradeMigrationKindAppendToFile            upgradeMigrationOperationKind = "append_to_file"
 )
 
 type upgradeMigrationOperation struct {
@@ -375,6 +376,8 @@ func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOpera
 		return inst.executeConfigSetDefaultMigration(op)
 	case upgradeMigrationKindMigrateSkillsFormat:
 		return inst.executeMigrateSkillsFormat(op.Path)
+	case upgradeMigrationKindAppendToFile:
+		return inst.executeAppendToFile(op)
 	default:
 		return false, fmt.Errorf("unsupported migration kind %q", op.Kind)
 	}
@@ -580,6 +583,54 @@ func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOpera
 	return true, nil
 }
 
+// executeAppendToFile appends content to a file. The content is JSON-encoded
+// in op.Value. If op.From is non-empty, it is used as a duplicate-detection
+// match string: when the string is already present in the file the operation
+// is a no-op. If the target file does not exist it is created.
+func (inst *installer) executeAppendToFile(op upgradeMigrationOperation) (bool, error) {
+	absPath, err := snapshotEntryAbsPath(inst.root, op.Path)
+	if err != nil {
+		return false, err
+	}
+
+	// Decode the content to append from Value (JSON string).
+	var content string
+	if err := json.Unmarshal(op.Value, &content); err != nil {
+		return false, fmt.Errorf("decode append_to_file content for %s: %w", op.Path, err)
+	}
+
+	existing, err := inst.sys.ReadFile(absPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf(messages.InstallFailedReadFmt, absPath, err)
+		}
+		// File doesn't exist — write content as new file.
+		if mkErr := inst.sys.MkdirAll(filepath.Dir(absPath), 0o755); mkErr != nil {
+			return false, fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, mkErr)
+		}
+		if wErr := inst.sys.WriteFileAtomic(absPath, []byte(content), 0o644); wErr != nil {
+			return false, fmt.Errorf(messages.InstallFailedWriteFmt, absPath, wErr)
+		}
+		return true, nil
+	}
+
+	// Duplicate detection: if match string is present, skip.
+	if op.From != "" && strings.Contains(string(existing), op.From) {
+		return false, nil // no_op
+	}
+
+	// Append content to file.
+	merged := string(existing)
+	if !strings.HasSuffix(merged, "\n") {
+		merged += "\n"
+	}
+	merged += content
+	if wErr := inst.sys.WriteFileAtomic(absPath, []byte(merged), 0o644); wErr != nil {
+		return false, fmt.Errorf(messages.InstallFailedWriteFmt, absPath, wErr)
+	}
+	return true, nil
+}
+
 func (inst *installer) readMigrationConfigMap() (map[string]any, string, bool, error) {
 	cfgPath := filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath))
 	data, err := inst.sys.ReadFile(cfgPath)
@@ -761,6 +812,11 @@ func migrationCoveredPaths(op upgradeMigrationOperation) []string {
 		if strings.TrimSpace(pathValue) != "" {
 			paths = append(paths, pathValue)
 		}
+	case upgradeMigrationKindAppendToFile:
+		pathValue := normalizeRelPath(filepath.Clean(filepath.FromSlash(op.Path)))
+		if strings.TrimSpace(pathValue) != "" {
+			paths = append(paths, pathValue)
+		}
 	}
 	return dedupSortedStrings(paths)
 }
@@ -805,6 +861,9 @@ func migrationWillCoverPath(sys System, root string, op upgradeMigrationOperatio
 		// Even if no flat-format files exist, the template writer updates
 		// skill content (frontmatter, quoting) as part of the same release,
 		// and those diffs are noise alongside the migration description.
+		return true
+	case upgradeMigrationKindAppendToFile:
+		// Append migrations always cover their target path.
 		return true
 	default:
 		// Config migrations don't cover file paths in the template sense.
@@ -1239,6 +1298,17 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 	case upgradeMigrationKindMigrateSkillsFormat:
 		if strings.TrimSpace(op.Path) == "" {
 			return fmt.Errorf("migration %s (%s) requires path", op.ID, op.Kind)
+		}
+	case upgradeMigrationKindAppendToFile:
+		if strings.TrimSpace(op.Path) == "" {
+			return fmt.Errorf("migration %s (%s) requires path", op.ID, op.Kind)
+		}
+		if len(op.Value) == 0 {
+			return fmt.Errorf("migration %s (%s) requires value", op.ID, op.Kind)
+		}
+		var decoded string
+		if err := json.Unmarshal(op.Value, &decoded); err != nil {
+			return fmt.Errorf("migration %s (%s) value must be a JSON string: %w", op.ID, op.Kind, err)
 		}
 	default:
 		return fmt.Errorf("migration %s has unsupported kind %q", op.ID, op.Kind)
