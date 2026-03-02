@@ -106,7 +106,7 @@ func loadSkills(dir string, readDir skillReadDir, readFile skillReadFile) ([]Ski
 		}
 		if strings.HasSuffix(entry.name, ".md") {
 			name := strings.TrimSuffix(entry.name, ".md")
-			return nil, fmt.Errorf(messages.ConfigSkillFlatFormatUnsupportedFmt, name, entry.name)
+			return nil, fmt.Errorf(messages.ConfigSkillFlatFormatUnsupportedFmt, name, filepath.Join(dir, entry.name))
 		}
 	}
 

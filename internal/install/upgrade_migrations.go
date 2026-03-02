@@ -1274,14 +1274,19 @@ func (inst *installer) preflightAndConfirmSkillsMigration() error {
 	absSkillsDir := postRenamePath
 
 	if _, statErr := inst.sys.Stat(absSkillsDir); statErr != nil {
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Errorf(messages.InstallFailedStatFmt, absSkillsDir, statErr)
+		}
 		// Try the legacy pre-rename path.
 		legacyPath := filepath.Join(inst.root, ".agent-layer", "slash-commands")
-		if _, legacyStatErr := inst.sys.Stat(legacyPath); legacyStatErr == nil {
-			absSkillsDir = legacyPath
-		} else {
-			// Neither directory exists — no skills to migrate.
-			return nil
+		if _, legacyStatErr := inst.sys.Stat(legacyPath); legacyStatErr != nil {
+			if errors.Is(legacyStatErr, os.ErrNotExist) {
+				// Neither directory exists — no skills to migrate.
+				return nil
+			}
+			return fmt.Errorf(messages.InstallFailedStatFmt, legacyPath, legacyStatErr)
 		}
+		absSkillsDir = legacyPath
 	}
 
 	flatCount, conflicts, preErr := preflightSkillsMigration(inst.sys, absSkillsDir)

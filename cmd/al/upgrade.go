@@ -818,14 +818,8 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 		return err
 	}
 	removals := len(plan.TemplateRemovalsOrOrphans)
-	if removals > 0 {
-		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("files to review for removal: %d", removals)); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(out, "  - files to review for removal: %d\n", removals); err != nil {
-			return err
-		}
+	if err := writeHighlightedSummaryLine(out, removals > 0, "files to review for removal: %d", removals); err != nil {
+		return err
 	}
 	if _, err := fmt.Fprintf(out, "  - config updates: %d\n", len(plan.ConfigKeyMigrations)); err != nil {
 		return err
@@ -833,25 +827,24 @@ func writeUpgradeSummary(out io.Writer, plan install.UpgradePlan) error {
 	if _, err := fmt.Fprintf(out, "  - migrations planned: %d\n", migrationsPlanned); err != nil {
 		return err
 	}
-	if len(plan.ReadinessChecks) > 0 {
-		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("readiness warnings: %d", len(plan.ReadinessChecks))); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(out, "  - readiness warnings: %d\n", len(plan.ReadinessChecks)); err != nil {
-			return err
-		}
+	if err := writeHighlightedSummaryLine(out, len(plan.ReadinessChecks) > 0, "readiness warnings: %d", len(plan.ReadinessChecks)); err != nil {
+		return err
 	}
-	if needsReview {
-		if _, err := fmt.Fprintf(out, "  - %s\n", color.YellowString("needs review before apply: %s", reviewState)); err != nil {
-			return err
-		}
-	} else {
-		if _, err := fmt.Fprintf(out, "  - needs review before apply: %s\n", reviewState); err != nil {
-			return err
-		}
+	if err := writeHighlightedSummaryLine(out, needsReview, "needs review before apply: %s", reviewState); err != nil {
+		return err
 	}
 	return nil
+}
+
+// writeHighlightedSummaryLine writes a "  - <text>\n" summary line, optionally
+// highlighted in yellow when highlight is true.
+func writeHighlightedSummaryLine(out io.Writer, highlight bool, format string, a ...any) error {
+	if highlight {
+		_, err := fmt.Fprintf(out, "  - %s\n", color.YellowString(format, a...))
+		return err
+	}
+	_, err := fmt.Fprintf(out, "  - "+format+"\n", a...)
+	return err
 }
 
 func readinessSummary(check install.UpgradeReadinessCheck) string {
