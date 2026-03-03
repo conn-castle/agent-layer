@@ -27,6 +27,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-03-02 agent-layer-gitignore-missing-open-vscode-sh: Internal `.agent-layer` gitignore template omits `open-vscode.sh`
+    Priority: Medium. Area: templates / launcher artifacts.
+    Description: Generated `.agent-layer/.gitignore` does not include `open-vscode.sh`, so the repo-local launcher script may appear as an unignored file.
+    Next step: Add `open-vscode.sh` to `internal/templates/agent-layer.gitignore` and cover with template/install tests that validate generated `.agent-layer/.gitignore` entries.
+    Notes: Scope is template-source fix only; do not hand-edit generated `.agent-layer/.gitignore`.
+
+- Issue 2026-03-02 upgrade-success-noop-output: `al upgrade` lacks explicit success message on no-op completion
+    Priority: Medium. Area: CLI UX / upgrade command.
+    Description: When `al upgrade` succeeds but has nothing to change, output can end after snapshot/rollback lines with no final confirmation, making completion status ambiguous.
+    Next step: Emit a final success line for no-op and normal-complete paths (for example, `Upgrade successful.`) and cover it with command-output tests.
+    Notes: Repro observed on 2026-03-02 from local run output showing snapshot creation and rollback hint only.
+
 - Issue 2026-03-02 color-gating-consistency: Centralize CLI color gating beyond fatih/color built-in detection
     Priority: Low. Area: CLI output / color handling.
     Description: `color.YellowString()` gates ANSI output via fatih/color's global `NoColor` flag (terminal detection + `NO_COLOR` env var), but `shouldColorizeDiffOutput()` uses a separate `isTerminal() && !color.NoColor` check for unified-diff rendering with custom `color.New()` objects. The two gating mechanisms are inconsistent — `color.YellowString()` self-gates while diff colors require explicit gating. If Cobra's `io.Writer` is redirected (e.g., `cmd.SetOut()` in tests or embedding), `color.YellowString()` still checks `os.Stdout` for terminal detection, which could emit ANSI codes to non-terminal outputs.

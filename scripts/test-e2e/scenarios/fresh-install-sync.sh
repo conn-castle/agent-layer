@@ -17,7 +17,7 @@ run_scenario_fresh_install_sync() {
   assert_generated_artifacts "$repo_dir"
 
   # Verify all instruction shim files have real content, not just existence
-  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_base.md" \
+  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
     "CLAUDE.md includes instruction blocks"
   assert_file_contains "$repo_dir/AGENTS.md" "GENERATED FILE" \
     "AGENTS.md has managed marker"

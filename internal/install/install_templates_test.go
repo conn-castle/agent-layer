@@ -511,7 +511,7 @@ func TestWriteTemplateDirWithOverwrite(t *testing.T) {
 	}
 
 	// Write an existing file that differs
-	existingPath := filepath.Join(destRoot, "00_base.md")
+	existingPath := filepath.Join(destRoot, "00_rules.md")
 	if err := os.WriteFile(existingPath, []byte("different content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestWriteTemplateDirNoOverwrite(t *testing.T) {
 	}
 
 	// Write an existing file that differs
-	existingPath := filepath.Join(destRoot, "00_base.md")
+	existingPath := filepath.Join(destRoot, "00_rules.md")
 	if err := os.WriteFile(existingPath, []byte("different content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestListManagedDiffs_DirDiffError(t *testing.T) {
 	}
 
 	// Create an instruction file as a directory to cause stat error during matchTemplate
-	instrFile := filepath.Join(instrDir, "00_base.md")
+	instrFile := filepath.Join(instrDir, "00_rules.md")
 	if err := os.Mkdir(instrFile, 0o755); err != nil {
 		t.Fatalf("mkdir instruction: %v", err)
 	}
@@ -618,7 +618,7 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write an existing file that differs from template
-	existingFile := filepath.Join(instrDir, "00_base.md")
+	existingFile := filepath.Join(instrDir, "00_rules.md")
 	if err := os.WriteFile(existingFile, []byte("different content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -808,7 +808,7 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 	}
 
 	// Create a file with unreadable permissions to cause stat error
-	basePath := filepath.Join(instrDir, "00_base.md")
+	basePath := filepath.Join(instrDir, "00_rules.md")
 	if err := os.WriteFile(basePath, []byte("content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -1030,7 +1030,7 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 	if err := os.MkdirAll(instructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	targetPath := filepath.Join(instructionsDir, "00_base.md")
+	targetPath := filepath.Join(instructionsDir, "00_rules.md")
 	if err := os.WriteFile(targetPath, []byte("custom instructions\n"), 0o644); err != nil {
 		t.Fatalf("write instruction: %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 		t.Fatalf("appendTemplateDirDiffs: %v", err)
 	}
 
-	if _, ok := diffs[".agent-layer/instructions/00_base.md"]; !ok {
+	if _, ok := diffs[".agent-layer/instructions/00_rules.md"]; !ok {
 		t.Fatalf("expected non-section-aware mismatch to be recorded, got %v", diffs)
 	}
 }
@@ -1224,8 +1224,8 @@ func TestIsUserOwnedInstructionFile(t *testing.T) {
 	if !isUserOwnedInstructionFile("/some/path/04_conventions.md") {
 		t.Fatal("expected 04_conventions.md to be user-owned")
 	}
-	if isUserOwnedInstructionFile("/some/path/00_base.md") {
-		t.Fatal("expected 00_base.md NOT to be user-owned")
+	if isUserOwnedInstructionFile("/some/path/01_base.md") {
+		t.Fatal("expected 01_base.md NOT to be user-owned")
 	}
 	if isUserOwnedInstructionFile("/some/path/other.md") {
 		t.Fatal("expected other.md NOT to be user-owned")

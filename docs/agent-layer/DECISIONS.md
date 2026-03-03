@@ -335,3 +335,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Move 5 project-specific instruction items (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety) from `00_base.md` into a new `04_conventions.md` that is user-managed: seeded on `al init`, never overwritten on `al upgrade`, and excluded from managed diffs. A new `append_to_file` migration kind enables delivering new conventions to existing users via opt-in migration entries.
     Reason: Project-specific conventions create noise for projects where they don't apply; separating them lets users curate their own conventions while universal instructions remain managed.
     Tradeoffs: Conventions are no longer auto-updated during upgrades; new defaults require explicit migration entries to reach existing users.
+
+- Decision 2026-03-02 instruction-reorder-dedup: Reorder instruction files and deduplicate cross-file instructions
+    Decision: Rename instruction files to `00_rules.md`, `01_base.md`, `02_memory.md` (primacy effect: hard constraints load first). Remove 6 cross-file duplicates (keeping one canonical copy each), compress verbose sections (~50% fewer tokens), move UTC-only and No system Python from rules to conventions, add no-over-engineering and verification-closure instructions.
+    Reason: Research shows instruction count and ordering affect model compliance; deduplication reduces ~57 to ~50 instructions and primacy-ordered hard constraints improve adherence.
+    Tradeoffs: File renames require a v0.9.1 migration with 3 `rename_file` + 2 `append_to_file` operations; existing repos must run `al upgrade` to apply renames.

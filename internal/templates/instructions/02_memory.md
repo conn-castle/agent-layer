@@ -1,4 +1,4 @@
-# Dedicated Memory Section (paste into system instructions)
+# Memory
 
 ## Memory files (authoritative, user-editable, agent-maintained)
 - `docs/agent-layer/ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.

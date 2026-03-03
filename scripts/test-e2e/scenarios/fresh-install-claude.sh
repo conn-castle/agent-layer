@@ -13,10 +13,10 @@ run_scenario_fresh_install_claude() {
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
 
   # Verify instruction files were created with real content
-  assert_file_contains "$repo_dir/.agent-layer/instructions/00_base.md" \
-    "Guiding Principles" "instructions/00_base.md has Guiding Principles"
-  assert_file_contains "$repo_dir/.agent-layer/instructions/02_rules.md" \
-    "Rules" "instructions/02_rules.md has Rules header"
+  assert_file_contains "$repo_dir/.agent-layer/instructions/01_base.md" \
+    "Guiding Principles" "instructions/01_base.md has Guiding Principles"
+  assert_file_contains "$repo_dir/.agent-layer/instructions/00_rules.md" \
+    "Rules" "instructions/00_rules.md has Rules header"
 
   install_mock_claude "$repo_dir"
 
@@ -51,8 +51,8 @@ run_scenario_fresh_install_claude() {
   assert_generated_artifacts "$repo_dir"
 
   # CLAUDE.md should contain actual instruction content, not just the marker
-  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_base.md" \
-    "CLAUDE.md includes 00_base.md instruction block"
+  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
+    "CLAUDE.md includes 00_rules.md instruction block"
   assert_file_contains "$repo_dir/CLAUDE.md" "Guiding Principles" \
     "CLAUDE.md has real instruction content"
 

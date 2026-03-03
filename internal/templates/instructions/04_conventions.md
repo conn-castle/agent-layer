@@ -15,3 +15,9 @@ migrations.
 
 ## Data Safety
 - **Schema safety:** Never modify the database schema via raw SQL or direct tool access. Always generate a proper migration file using the project's migration system, and ask the user to apply it.
+
+## Time & Data
+- **UTC-only internals:** Store, compute, and transport time in UTC; local time display is presentation-only.
+
+## Environment
+- **No system Python:** Never use system Python. Always prefer the project virtual environment Python, and if no virtual environment exists, ask the user if you should create one.

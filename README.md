@@ -8,8 +8,6 @@
 
 One repo-local source of truth for instructions, skills, MCP servers, and approvals across coding agents.
 
-[![Downloads](https://img.shields.io/github/downloads/conn-castle/agent-layer/total)](https://github.com/conn-castle/agent-layer/releases)
-
 Agent Layer keeps AI-assisted development consistent across tools by generating each client’s required config from a single `.agent-layer/` folder. Install `al` once per machine, run `al init` per repo, then run `al <client>` (e.g., `al claude`) to sync and launch.
 
 Key properties:

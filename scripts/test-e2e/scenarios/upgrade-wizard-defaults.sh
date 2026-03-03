@@ -44,7 +44,7 @@ run_scenario_upgrade_wizard_defaults() {
   assert_generated_artifacts "$repo_dir"
 
   # Verify CLAUDE.md has real instruction content after full pipeline
-  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_base.md" \
+  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
     "CLAUDE.md has instruction blocks after upgrade+wizard"
 
   cleanup_scenario_dir "$repo_dir"

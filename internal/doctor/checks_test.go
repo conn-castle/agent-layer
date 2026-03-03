@@ -217,7 +217,7 @@ enabled = false
 	if err := os.Mkdir(filepath.Join(configDir, "instructions"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Mkdir(filepath.Join(configDir, "skills"), 0755); err != nil {
