@@ -44,6 +44,41 @@
       "value": "\n## Environment\n- **No system Python:** Never use system Python. Always prefer the project virtual environment Python, and if no virtual environment exists, ask the user if you should create one.\n",
       "rationale": "Move No system Python from rules to conventions.",
       "source_agnostic": true
+    },
+    {
+      "id": "f-delete-skill-cleanup-code",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/cleanup-code",
+      "rationale": "Remove deprecated cleanup-code skill, replaced by mechanical-cleanup.",
+      "source_agnostic": true
+    },
+    {
+      "id": "g-delete-skill-continue-roadmap",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/continue-roadmap",
+      "rationale": "Remove deprecated continue-roadmap skill, replaced by complete-current-phase.",
+      "source_agnostic": true
+    },
+    {
+      "id": "h-delete-skill-find-issues",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/find-issues",
+      "rationale": "Remove deprecated find-issues skill, replaced by resolve-findings.",
+      "source_agnostic": true
+    },
+    {
+      "id": "i-delete-skill-fix-tests",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/fix-tests",
+      "rationale": "Remove deprecated fix-tests skill, replaced by repair-checks.",
+      "source_agnostic": true
+    },
+    {
+      "id": "j-delete-skill-update-roadmap",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/update-roadmap",
+      "rationale": "Remove deprecated update-roadmap skill, replaced by schedule-backlog.",
+      "source_agnostic": true
     }
   ]
 }
