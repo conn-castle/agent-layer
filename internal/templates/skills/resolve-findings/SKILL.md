@@ -52,8 +52,9 @@ Use subagents liberally when available.
 
 Recommended roles:
 1. `Verifier`: checks whether each reported finding is actually valid.
-2. `Fixer`: implements accepted findings.
-3. `Auditor`: reviews the resulting changes for regressions or overreach.
+2. `Execution gatekeeper`: decides whether the accepted finding set should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
+3. `Fixer`: implements accepted findings.
+4. `Auditor`: reviews the resulting changes for regressions or overreach.
 
 ## Global constraints
 
@@ -66,6 +67,7 @@ Recommended roles:
 
 - Required: ask before editing only when the user explicitly limited the run to triage or report review.
 - Required: ask when no valid review report can be found and explicit report selection is needed.
+- Required: ask when an accepted fix would require materially broader scope or a real behavior change beyond the reviewed target.
 - Stay autonomous during verdicting and in-scope fixes when the request includes fixes.
 
 ## Triage workflow
@@ -101,15 +103,27 @@ If zero findings are accepted:
 - record `No accepted findings` in the resolution report
 - stop without editing code
 
-### Phase 3: Implement accepted findings (Fixer)
+### Phase 3: Gate the accepted fix set (Execution gatekeeper)
+
+Choose exactly one verdict for the accepted finding set:
+- `proceed`: the fix set is ready to implement as written
+- `revise`: the plan or task list needs updates first
+- `escalate`: a human checkpoint is actually required
+- `rewrite-because-out-of-scope`: the accepted set should be rewritten to the largest still-in-scope subset before coding
+
+If the verdict is `revise`, update the plan or task list and repeat Phase 2.
+If the verdict is `escalate`, ask the smallest question that unblocks a trustworthy fix set.
+If the verdict is `rewrite-because-out-of-scope`, rewrite the accepted set to the largest still-in-scope subset, defer the rest explicitly, and repeat Phase 2.
+
+### Phase 4: Implement accepted findings (Fixer)
 
 Execution rules:
 - keep scope tight to accepted findings
 - prefer root-cause fixes over surface patches
-- if a fix requires a materially larger refactor than the finding suggests, pause and ask
+- if a fix requires a materially larger refactor than the finding suggests, hand it back to the execution gatekeeper
 - if two accepted findings are duplicates, fix once and note both as resolved by the same change
 
-### Phase 4: Audit the fix set (Auditor)
+### Phase 5: Audit the fix set (Auditor)
 
 After implementation:
 - re-read each accepted finding

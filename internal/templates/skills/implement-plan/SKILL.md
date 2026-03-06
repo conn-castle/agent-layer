@@ -1,9 +1,9 @@
 ---
 name: implement-plan
 description: >-
-  Implement an approved plan and task-list pair, keep changes aligned to the
-  artifacts, and verify code, tests, docs, and memory updates before closing
-  the task.
+  Implement an execution-ready plan and task-list pair, keep changes aligned to
+  the artifacts, and verify code, tests, docs, and memory updates before
+  closing the task.
 ---
 
 # implement-plan
@@ -51,8 +51,9 @@ Use subagents liberally when available.
 
 Recommended roles:
 1. `Context scout`: maps plan steps to actual files and dependencies.
-2. `Implementer`: owns a focused subset of the changes.
-3. `Verifier`: runs commands and checks behavior against the plan.
+2. `Execution gatekeeper`: decides whether the current task batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
+3. `Implementer`: owns a focused subset of the changes.
+4. `Verifier`: runs commands and checks behavior against the plan.
 
 For multi-file work, parallelize read-only exploration first, then implement in reviewable batches.
 
@@ -60,14 +61,17 @@ For multi-file work, parallelize read-only exploration first, then implement in 
 
 - Treat the plan/task pair as the execution contract.
 - Do not start coding without a valid artifact pair or explicit user approval to infer the missing artifact.
-- Keep changes tightly scoped to the approved plan.
+- Keep changes tightly scoped to the plan after the gatekeeper returns `proceed`.
 - Tests, docs, and memory updates are part of implementation when the plan requires them.
 - If new evidence invalidates part of the plan, jump back to the earliest affected task or planning assumption instead of pushing forward.
+- Treat readiness gating as an internal execution decision, not as a reason to ask the user unless a human checkpoint is actually triggered.
 
 ## Human checkpoints
 
 - Required: ask when the plan/task pair is missing, mismatched, or non-latest and the intended pair is unclear.
-- Stay autonomous while executing a clear approved plan.
+- Required: ask when implementation would materially deviate from the plan or change behavior the plan did not settle.
+- Required: ask before destructive or irreversible actions that are not explicitly covered by the plan.
+- Stay autonomous while executing a clear gated plan.
 
 ## Implementation workflow
 
@@ -83,6 +87,16 @@ For multi-file work, parallelize read-only exploration first, then implement in 
    - `ROADMAP.md` and `DECISIONS.md` when the work is architectural
    - `COMMANDS.md` before choosing validation commands
 4. Read the minimum code and docs needed to execute the first task batch.
+5. The execution gatekeeper then chooses exactly one verdict:
+   - `proceed`: the current batch is ready to implement as written
+   - `revise`: the plan or task list needs updates first
+   - `escalate`: a human checkpoint is actually required
+   - `rewrite-because-out-of-scope`: the current batch should be rewritten to an equivalent in-scope slice before coding
+
+If the verdict is `proceed`, continue to Phase 2.
+If the verdict is `revise`, update or regenerate the plan/task pair and restart Phase 1.
+If the verdict is `escalate`, ask the smallest question that unblocks trustworthy execution.
+If the verdict is `rewrite-because-out-of-scope`, rewrite the current task batch or task ordering to stay inside the plan's real scope, record the rewrite in the report, and restart Phase 1.
 
 ### Phase 2: Execute the task list (Implementer)
 
@@ -98,8 +112,8 @@ When a task becomes larger than expected:
 - note the split in the report
 - continue only if scope still matches the plan
 
-If the touched scope accumulates obvious local mechanical complexity, dead scaffolding, or oversized files and the cleanup would remain behavior-preserving and in-scope:
-- use the `mechanical-cleanup` skill
+If the touched scope accumulates obvious local complexity, dead scaffolding, or oversized files and the simplification would remain behavior-preserving and in-scope:
+- use the `simplify-code` skill
 - then continue to Phase 4
 
 ### Phase 3: Track deviations (Implementer)
@@ -112,7 +126,7 @@ If you must deviate from the plan:
   - narrower
   - broader
 
-If the deviation broadens scope materially, stop execution and return to planning instead of freelancing.
+If the deviation broadens scope materially, hand it back to the execution gatekeeper instead of freelancing.
 
 ### Phase 4: Verify against the plan (Verifier)
 

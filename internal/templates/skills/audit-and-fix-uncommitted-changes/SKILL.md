@@ -34,7 +34,7 @@ Do not interpret this skill as permission to review old commits, sweep the whole
 
 ## Inputs
 
-- Global round cap: 4 audit/fix rounds by default. If the user explicitly provides a different cap, use it.
+- No fixed round cap. Run as many audit/fix rounds as needed to converge. In practice, simple changes should converge in 2-3 rounds (minimum 2: at least one fix round plus one confirmation round).
 
 ## Required behavior
 
@@ -48,7 +48,7 @@ At minimum, use:
 Prefer the dedicated skills that already exist:
 - `review-scope`
 - `resolve-findings`
-- `mechanical-cleanup` when a fix exposes obvious local cleanup that remains behavior-preserving and in scope
+- `simplify-code` when a fix exposes obvious local complexity that remains behavior-preserving and in scope
 
 ## Required artifacts
 
@@ -85,7 +85,7 @@ The master report is the human-facing round ledger. It must remain readable with
 - Required: ask when an accepted finding requires materially broader scope, an architectural decision, or a user-visible behavior change beyond the current target.
 - Required: ask when a finding cannot be verified with the available code, tests, or docs.
 - Required: ask when a deferred finding blocks convergence.
-- Required: ask when the same unresolved finding recurs after two fix attempts, the global round cap is reached, or the loop is no longer converging.
+- Required: ask when the same unresolved finding recurs after two fix attempts or the loop is no longer converging.
 - Required: ask before any destructive or irreversible action would be required.
 - Stay autonomous during normal audit/fix/re-audit cycles when the target and accepted fixes are clear.
 
@@ -169,35 +169,37 @@ Include:
 - unresolved Critical count
 - unresolved High count
 
-### Phase 5: Re-audit after Round N (Convergence reviewer)
+### Phase 5: Confirmation round (Convergence gate)
 
-After the fixes land:
-1. rerun the `review-scope` skill on the updated working-tree target
-2. if the new review finds actionable findings, start Round `N + 1`
-3. if the new review appears clean, still verify through the `resolve-findings` skill that there are zero accepted findings
+After Phase 4 of any round that applied fixes, a full confirmation round is required before the run can close.
+
+1. Return to Phase 3 to start Round N+1 as a full audit round on the updated working-tree target.
+2. Run Phase 3 (audit) → Phase 4 (verify) as a complete numbered round.
+3. If Phase 4 of the confirmation round produces zero accepted findings, the run converges — proceed to Phase 6.
+4. If the confirmation round produces accepted findings, fix them, then repeat: the next round becomes the new confirmation candidate.
 
 Convergence rule:
-- stop only when the post-fix audit yields zero actionable findings after verification
+- A run converges only when a full numbered round completes Phase 3 and Phase 4 with zero accepted findings.
+- The confirmation round must be a separate round from any round that applied fixes.
+- The confirmation round must have its own `## Round N Findings` and `## Round N Status` sections in the master report, explicitly stating zero accepted findings.
 
 Severity rule:
-- the final non-clean round may contain only Medium or Low findings, but they still must be fixed before the run can finish
+- the final non-clean round may contain only Medium or Low findings, but they still must be fixed before the confirmation round can begin
 
-If a fix exposes obvious local cleanup that is behavior-preserving and in scope:
-- use the `mechanical-cleanup` skill
-- then rerun the audit before continuing
+If a fix exposes obvious local complexity that is behavior-preserving and in scope:
+- use the `simplify-code` skill
+- then treat the next round as the confirmation candidate
 
-Respect the global round cap from `## Inputs`.
-
-Recommended cap: no more than 4 audit/fix rounds for the same working tree before escalating.
+Escalate if the loop is not converging (same findings recurring, fix attempts not resolving issues, or complexity growing instead of shrinking).
 
 ### Phase 6: Close the run (Reporter)
 
 When the loop converges:
 1. add `## Final Verification` to the master report
-2. state the clean review artifact path
-3. state how many rounds were required
+2. identify which round was the confirmation round and state its artifact path
+3. state how many rounds were required (including the confirmation round)
 4. summarize whether any findings were rejected as false positives
-5. state explicitly that no actionable findings remained after the confirming review
+5. state explicitly that the confirmation round produced zero accepted findings
 
 ## Required master report structure
 
@@ -223,6 +225,13 @@ Round 1 findings:
 Round 1 fixes:
 - Added nil guard and error path coverage (High) — pkg/foo/loader.go, pkg/foo/loader_test.go
 - Added regression test for rejected config branch (Medium) — pkg/foo/loader_test.go
+
+Round 2 findings (confirmation round):
+- No actionable findings.
+
+Round 2 status (confirmation round):
+- Accepted findings: 0
+- Confirmation round: clean
 ```
 
 If a finding reappears in a later round, say so explicitly instead of hiding the recurrence.
@@ -234,16 +243,44 @@ At each major stage, echo the master report path, identify the current target, a
 - selecting the target
 - auditing round N
 - fixing round N findings
-- re-auditing after round N
+- running confirmation round N
 - closing the run
 
 ## Final handoff
 
-After the run:
+After the run, present the results to the user in chat so that every finding and fix is clearly attributed to the round that produced it.
+
+Required chat output structure:
+
 1. Echo the master report path.
-2. Summarize what was fixed in each round, keeping severities attached to each item.
-3. Call out any rejected findings or deferred items that affected convergence.
-4. State whether the confirming review ended with zero actionable findings.
+2. State total rounds, total findings, and final convergence status.
+3. Present a **Key fixes applied** table sorted by Round (primary) then Severity (secondary within a round). Every row must include the Round column so the user can see at a glance which check loop found and fixed each issue.
+4. Below the table, list rejected and deferred findings (if any) with their round numbers.
+5. State which round was the confirmation round and that it ended with zero accepted findings.
+
+Example chat output format:
+
+```text
+Summary:
+- 3 rounds to converge (Round 3 confirmation)
+- 12 findings from 5 parallel reviewers
+- 5 accepted and fixed, 6 rejected, 1 deferred
+
+Key fixes applied (unstaged):
+
+| Round | Severity | Fix                                        | Files                              |
+|-------|----------|--------------------------------------------|------------------------------------|
+| 1     | High     | Added nil guard in loader error path       | pkg/foo/loader.go, loader_test.go  |
+| 1     | Medium   | Added regression test for rejected config  | pkg/foo/loader_test.go             |
+| 1     | Low      | Fixed inconsistent log level               | pkg/foo/logger.go                  |
+| 2     | Medium   | Added missing context cancellation check   | pkg/bar/handler.go, handler_test.go|
+| 2     | Low      | Corrected doc comment on exported function | pkg/bar/handler.go                 |
+
+Rejected (6): [list with round numbers]
+Deferred to ISSUES.md (1): [list with round numbers]
+```
+
+The Round column is required. Do not omit it or collapse multiple rounds into an unlabeled table.
 
 ## Guardrails
 
@@ -252,5 +289,6 @@ After the run:
 - Do not stop once High/Critical findings are gone if actionable Medium/Low findings remain.
 - Do not carry unresolved deferred findings into a clean final report.
 - Do not collapse multiple rounds into one summary.
+- Do not skip the confirmation round. A round that applied fixes cannot also be the confirmation round.
 - Do not modify unrelated code just because it is nearby.
 - Keep each round grounded in concrete review and resolution artifacts.

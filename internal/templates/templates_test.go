@@ -113,9 +113,9 @@ func TestSkillTemplatesContainNormalizedWorkflowGuidance(t *testing.T) {
 			"## Human checkpoints",
 			"ask when no threshold is documented",
 		},
-		"skills/mechanical-cleanup/SKILL.md": {
+		"skills/simplify-code/SKILL.md": {
 			"## Human checkpoints",
-			"ask when no credible verification path exists for a non-trivial cleanup",
+			"ask when no credible verification path exists for a non-trivial change",
 		},
 		"skills/plan-work/SKILL.md": {
 			"## Global constraints",
@@ -190,7 +190,7 @@ func TestSkillTemplatesCaptureArtifactReportConventions(t *testing.T) {
 		"skills/audit-and-fix-uncommitted-changes/SKILL.md": {
 			".agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md",
 			"Create the file with `touch` before writing.",
-			"Recommended cap: no more than 4 audit/fix rounds for the same working tree before escalating.",
+			"Escalate if the loop is not converging",
 		},
 		"skills/implement-plan/SKILL.md": {
 			"Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.",
@@ -208,8 +208,8 @@ func TestSkillTemplatesCaptureArtifactReportConventions(t *testing.T) {
 			".agent-layer/tmp/boost-coverage.<run-id>.report.md",
 			"## Required report structure",
 		},
-		"skills/mechanical-cleanup/SKILL.md": {
-			".agent-layer/tmp/mechanical-cleanup.<run-id>.report.md",
+		"skills/simplify-code/SKILL.md": {
+			".agent-layer/tmp/simplify-code.<run-id>.report.md",
 			"## Required report structure",
 		},
 		"skills/repair-checks/SKILL.md": {
@@ -275,7 +275,7 @@ func TestAuditAndFixUncommittedChangesTemplateUsesSingleEscalationSection(t *tes
 
 	required := []string{
 		"## Human checkpoints",
-		"global round cap is reached",
+		"the loop is no longer converging",
 		"## Final handoff",
 	}
 	for _, snippet := range required {
@@ -340,6 +340,7 @@ func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 	for _, path := range []string{
 		"skills/continue-roadmap/SKILL.md",
 		"skills/find-issues/SKILL.md",
+		"skills/mechanical-cleanup/SKILL.md",
 	} {
 		if _, err := Read(path); err == nil {
 			t.Fatalf("expected removed skill template %s to stay absent", path)

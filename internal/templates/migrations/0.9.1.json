@@ -79,6 +79,13 @@
       "path": ".agent-layer/skills/update-roadmap",
       "rationale": "Remove deprecated update-roadmap skill, replaced by schedule-backlog.",
       "source_agnostic": true
+    },
+    {
+      "id": "k-delete-skill-mechanical-cleanup",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/mechanical-cleanup",
+      "rationale": "Remove deprecated mechanical-cleanup skill, replaced by simplify-code.",
+      "source_agnostic": true
     }
   ]
 }

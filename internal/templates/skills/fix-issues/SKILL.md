@@ -1,25 +1,28 @@
 ---
 name: fix-issues
 description: >-
-  Triage a coherent subset of `ISSUES.md`, write a plan and task list,
-  implement the fixes when the scope is clear enough, audit the touched area,
-  verify the results, and keep `ISSUES.md` current throughout.
+  Fix all open issues in `ISSUES.md` by default: plan the full set, batch into
+  coherent groups for execution, implement, audit, verify, and keep `ISSUES.md`
+  current throughout. Narrow the batch only when the user explicitly limits
+  scope.
 ---
 
 # fix-issues
 
 This is the issue-ledger maintenance workflow.
 It should:
-- choose a reviewable subset of open issues
+- fix all open issues by default
+- organize them into coherent execution batches
 - plan the work explicitly
 - stop only when scope or behavior is not clear enough to proceed safely
-- implement, audit, verify, and close the selected issues
+- implement, audit, verify, and close each batch until all issues are resolved
 
 ## Defaults
 
 - Default mode is plan-first unless the surrounding request clearly includes execution and the selected issue batch is unambiguous.
-- Default issue batch is the smallest coherent subset, capped at 3 issues unless the user says otherwise.
-- Default file-touch budget is reviewable, not exhaustive.
+- Default issue set is all open issues in `ISSUES.md`. Narrow the set only when the user explicitly specifies issue IDs, a count, or a scope limit.
+- When the full set is large, organize issues into coherent execution batches (by shared area, shared prerequisites, or clean verification boundary) and work through all batches sequentially.
+- Default file-touch budget is reviewable per batch, not exhaustive.
 - Default verification depth is the fastest credible repo-defined check, escalating when risk warrants it.
 
 ## Required artifacts
@@ -37,7 +40,7 @@ Create files with `touch` before writing.
 
 Accept any combination of:
 - an issue count or explicit issue identifiers
-- whether this run is plan-only or execute-after-approval
+- whether this run is plan-only or allowed to execute after readiness gating
 - a verification depth preference
 - a scope preference such as targeted or all-selected
 
@@ -48,10 +51,11 @@ Use subagents liberally when available.
 Recommended roles:
 1. `Issue triage lead`: selects the issue batch.
 2. `Planner`: drafts the plan and task artifacts.
-3. `Implementer`: owns the code changes.
-4. `Auditor`: reviews touched areas for regressions and missed fixes.
-5. `Verifier`: runs the repo-defined checks.
-6. `Reporter`: writes the final resolution report.
+3. `Execution gatekeeper`: decides whether the current batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
+4. `Implementer`: owns the code changes.
+5. `Auditor`: reviews touched areas for regressions and missed fixes.
+6. `Verifier`: runs the repo-defined checks.
+7. `Reporter`: writes the final resolution report.
 
 ## Global constraints
 
@@ -60,6 +64,13 @@ Recommended roles:
 - Keep changes reviewable and aligned with repo conventions.
 - Remove resolved issues from `ISSUES.md`; log newly discovered out-of-scope problems instead of silently expanding scope.
 - If new evidence invalidates the plan, jump back to the earliest affected phase instead of continuing on stale assumptions.
+- Treat readiness gating as an internal execution decision, not as a reason to ask the user unless a human checkpoint is actually triggered.
+
+## Human checkpoints
+
+- Required: ask when fixing a selected issue would require a breaking change, broad architectural refactor, or materially larger scope.
+- Required: ask when issue wording and repo evidence still leave the intended fix ambiguous after planning and gating.
+- Stay autonomous while planning, gating, implementing, auditing, and verifying a clear issue batch.
 
 ## Issue workflow
 
@@ -75,14 +86,19 @@ Recommended roles:
    - `COMMANDS.md`
    - `README.md`
 
-### Phase 1: Select the issue batch (Issue triage lead)
+### Phase 1: Select and batch all issues (Issue triage lead)
 
-1. Respect any user-specified issue IDs or count.
-2. Otherwise choose the smallest coherent subset by:
-   - shared area
+1. If the user specified issue IDs or a count, use that as the issue set.
+2. Otherwise select all open issues from `ISSUES.md`.
+3. For each issue, decide whether it is actually an issue or a misplaced backlog feature:
+   - If an issue describes a new user-visible capability rather than a bug, defect, debt, or risk, move it to `BACKLOG.md` and remove it from `ISSUES.md`.
+   - Record every reclassification in the report.
+4. Organize the remaining issue set into coherent execution batches by:
+   - shared area or module
    - shared prerequisite work
    - clean verification boundary
-3. Record deferred issues explicitly.
+5. Order the batches so that prerequisite fixes land first.
+6. State the full issue set, any reclassifications, the batch breakdown, and the execution order before proceeding.
 
 ### Phase 2: Draft the plan and task list (Planner)
 
@@ -100,7 +116,7 @@ The task list must:
 - name the likely target files or modules
 - include tests, docs, and memory work when needed
 
-### Phase 3: Readiness checkpoint (Reporter)
+### Phase 3: Gate the current issue batch (Execution gatekeeper + Reporter)
 
 After writing the artifacts:
 1. echo the plan and task paths
@@ -109,18 +125,25 @@ After writing the artifacts:
    - proposed approach
    - biggest risk
    - verification plan
+3. choose exactly one verdict:
+   - `proceed`: the current batch is ready to implement as written
+   - `revise`: the plan or task list needs updates first
+   - `escalate`: a human checkpoint is actually required
+   - `rewrite-because-out-of-scope`: the issue batch should be narrowed or rewritten before implementation
 
-If the selected issue batch and plan are clear enough, continue.
-If not, stop and resolve the blocker before continuing.
+If the verdict is `proceed`, continue.
+If the verdict is `revise`, update the plan or task list and repeat from Phase 2.
+If the verdict is `escalate`, ask the smallest question that unblocks a trustworthy fix.
+If the verdict is `rewrite-because-out-of-scope`, rewrite the batch to the largest still-in-scope subset, record deferred issues explicitly, and return to the earliest affected phase.
 
-### Phase 4: Implement the approved batch (Implementer)
+### Phase 4: Implement the current batch (Implementer)
 
 1. Fix the selected issues in plan order.
 2. Keep diffs narrow and explainable.
-3. If a selected issue proves materially broader than planned, escalate instead of freelancing.
+3. If a selected issue proves materially broader than planned, hand it back to the execution gatekeeper instead of freelancing.
 
-If the touched scope accumulates obvious local mechanical complexity or dead scaffolding that can be fixed without broadening scope:
-- use the `mechanical-cleanup` skill
+If the touched scope accumulates obvious local complexity or dead scaffolding that can be fixed without broadening scope:
+- use the `simplify-code` skill
 - then continue to Phase 5
 
 ### Phase 5: Audit the touched area (Auditor)
@@ -134,13 +157,23 @@ Review:
 Fix small in-scope follow-on problems immediately.
 Log larger out-of-scope problems instead of expanding the batch.
 
-### Phase 6: Verify and close (Verifier + Reporter)
+### Phase 6: Verify and close the current batch (Verifier + Reporter)
 
-1. Run the best repo-defined verification command for the approved risk level.
+1. Run the best repo-defined verification command for the selected risk level.
 2. Remove resolved issues from `ISSUES.md`.
 3. Add any genuinely new out-of-scope issue entries.
-4. Write `.agent-layer/tmp/fix-issues.<run-id>.report.md` with:
-   - issues fixed
+4. Update the report at `.agent-layer/tmp/fix-issues.<run-id>.report.md` with the batch results.
+
+### Phase 7: Advance to the next batch or close the run (Issue triage lead + Reporter)
+
+If unprocessed batches remain:
+1. Select the next batch from Phase 1's ordering.
+2. Return to Phase 2 to plan the next batch.
+
+If all batches are complete:
+1. Finalize `.agent-layer/tmp/fix-issues.<run-id>.report.md` with:
+   - all issues fixed (by batch)
+   - issues reclassified and moved to `BACKLOG.md`
    - issues deferred or rejected
    - verification performed
    - remaining follow-up
@@ -154,6 +187,8 @@ If it reveals incomplete issue resolution or stale memory/docs, jump back to the
 - Do not leave issue dispositions implicit.
 - Do not weaken checks or lower thresholds to “finish” an issue batch.
 - Do not close issues that were only partially addressed.
+- Do not treat `rewrite-because-out-of-scope` as permission to silently drop selected issues; record the deferrals explicitly.
+- Do not stop after the first batch if unprocessed batches remain.
 
 ## Final handoff
 

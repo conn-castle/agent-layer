@@ -51,6 +51,7 @@ Recommended roles:
 1. `Scout`: gathers focused repo context and constraints.
 2. `Planner`: drafts the plan and task list.
 3. `Critic`: reviews the draft for missing scope, weak verification, and unsafe assumptions.
+4. `Execution gatekeeper`: decides whether the artifact pair should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
 
 If subagents are unavailable, do these passes inline and label them clearly.
 
@@ -60,6 +61,13 @@ If subagents are unavailable, do these passes inline and label them clearly.
 - Do not hide ambiguity inside the plan.
 - Keep the plan grounded in the actual repo context, not generic best-practice filler.
 - Treat tests, docs, and memory updates as first-class planned work when they are affected.
+- Treat execution gating as an internal readiness decision for the artifact pair, not as a reason to ask the user unless a human checkpoint is actually triggered.
+
+## Human checkpoints
+
+- Required: ask when ambiguity would materially change scope, behavior, or architecture.
+- Required: ask when repo context reveals multiple valid approaches with real user-facing or sequencing tradeoffs.
+- Stay autonomous while gathering context, drafting, critiquing, and gating the artifact pair.
 
 ## Planning workflow
 
@@ -148,6 +156,18 @@ Review the plan and task list against this checklist:
 
 If the answer to any item is no, revise before presenting.
 
+### Phase 5: Gate the execution handoff (Execution gatekeeper)
+
+Choose exactly one verdict for the artifact pair:
+- `proceed`: the plan and task list are ready for execution as written
+- `revise`: the artifacts are close, but need another drafting pass first
+- `escalate`: a human checkpoint is actually required
+- `rewrite-because-out-of-scope`: the request should be rewritten around a smaller in-scope slice before handoff
+
+If the verdict is `revise`, update the draft and repeat Phases 2-4 as needed.
+If the verdict is `escalate`, ask the smallest question that unblocks a trustworthy plan.
+If the verdict is `rewrite-because-out-of-scope`, rewrite the plan around the smallest safe in-scope slice and return to the earliest affected phase.
+
 ## Guardrails
 
 - Do not produce vague tasks like `fix code` or `handle edge cases`.
@@ -161,4 +181,4 @@ If the answer to any item is no, revise before presenting.
 After writing the artifacts:
 1. Echo both artifact paths.
 2. Summarize the plan in a few sentences.
-3. Highlight the biggest risk or open question, if any.
+3. State the gatekeeper verdict and highlight the biggest risk or open question, if any.
