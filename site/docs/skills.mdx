@@ -1,273 +1,182 @@
 ---
 title: Skills
-description: Built-in workflow skills that give agents structured, repeatable processes for common development tasks.
+description: Structured workflows that give agents repeatable, multi-phase processes for common development tasks.
 sidebar_position: 4
 ---
 
-Agent Layer ships a library of built-in skills — structured workflows that guide agents through common development tasks. Instead of describing what you want step by step, you invoke a skill and the agent follows a tested, multi-phase process with built-in quality gates.
+Agent skills are structured Markdown workflows that guide AI coding agents through complex, multi-step tasks. Instead of describing what you want step by step, you invoke a skill and the agent follows a tested process with built-in quality gates.
 
 Skills are the difference between "write me a PR" and a repeatable lifecycle that audits changes, runs CI, waits for review comments, addresses every one, and confirms CI passes before finishing. They encode the workflow discipline that makes autonomous agents trustworthy.
 
-If you have ever watched an agent skip tests, forget to update docs, or push broken code, skills are the fix. They do not replace your judgment — they make the agent's process explicit, auditable, and consistent.
+## The skill standard
 
-## In this page
+Skills follow the [Agent Skills specification](https://agentskills.io/specification) — an open standard for portable, structured agent workflows. The standard is client-agnostic: skills work across Claude Code, Codex, and any system that supports skill-based workflows.
 
-- [What skills are](#what-skills-are)
-- [How skills work](#how-skills-work)
-- [Using skills](#using-skills)
-- [The built-in skill library](#the-built-in-skill-library)
-- [Skill categories](#skill-categories)
-- [Anatomy of a skill](#anatomy-of-a-skill)
-- [Writing your own skills](#writing-your-own-skills)
-- [Design philosophy](#design-philosophy)
-
-## What skills are
-
-A skill is a Markdown file (`SKILL.md`) that defines a complete workflow for a specific task. It lives in a named directory under `.agent-layer/skills/`:
+A skill is a Markdown file (`SKILL.md`) with YAML frontmatter that lives in a named directory:
 
 ```
-.agent-layer/skills/
-  plan-work/
+skills/
+  debug-issue/
     SKILL.md
   ship-pr/
     SKILL.md
-  debug-issue/
-    SKILL.md
-  ...
 ```
 
-Each skill has:
+Each skill file has:
 
-- **A name and description** that tell the agent when to activate it
-- **Defaults** so it works without configuration
-- **Phased workflow steps** that guide execution from start to finish
-- **Quality gates** (human checkpoints, guardrails, verification steps)
-- **A defined handoff** so you know exactly what was done
+- **Frontmatter** with a `name` (must match the directory, lowercase alphanumeric and hyphens, 1–64 chars) and a `description` (what it does and when to trigger, max 1,024 chars)
+- **A body** containing defaults, constraints, phased workflow steps, quality gates, and a defined handoff
 
-Skills are projected into each client's native skill format during `al sync`. For example, they appear as `.agent/skills/` for Claude Code and `.codex/skills/` for Codex.
+The `description` is the routing signal. When you say "debug why the test is flaking," the agent matches that against skill descriptions and activates the right one. Descriptions are written for routing precision, not marketing.
 
-## How skills work
+### Progressive disclosure
 
-Skills use a progressive disclosure model:
+Skills use a three-stage model that keeps context costs low:
 
-1. **Catalog time** — The agent sees only the skill name and description (~50–100 tokens each). This is the routing signal that determines which skill activates for a given request.
-2. **Activation time** — When a skill triggers, the full `SKILL.md` body loads into context with the complete workflow, constraints, and quality gates.
-3. **Execution time** — The agent follows the phased workflow, producing artifacts, running checks, and stopping at human checkpoints when needed.
+1. **Catalog time** — The agent sees only skill names and descriptions (~50–100 tokens each). This is the routing signal.
+2. **Activation time** — When a skill triggers, the full `SKILL.md` body loads with the complete workflow, constraints, and quality gates.
+3. **Execution time** — The agent follows the phased workflow, producing outputs, running checks, and stopping at human checkpoints when needed.
 
-This means skills are cheap to have available (the catalog cost is small) but rich when activated. You do not pay the context cost of every skill on every request.
+You do not pay the context cost of every skill on every request.
 
-### Activation
+### Skill structure
 
-Skills activate based on their `description` field. The description tells the agent both what the skill does and when it should trigger. For example:
+The recommended section order is informed by research on how language models process instructions (primacy and recency effects). Critical rules go early; guardrails go at the end. For the full research basis, see [Skill Design Guide](/skill-design).
 
-> *Write a scoped implementation plan and task list for a requested change. Use when the user asks for a plan, roadmap slice, execution strategy, task breakdown, current roadmap-phase slice, or pre-implementation design artifact before coding.*
+1. **Opening contract** — one sentence stating what the skill does
+2. **Defaults** — what happens with no inputs
+3. **Inputs** — what the skill accepts
+4. **Required artifacts** — file paths for output
+5. **Multi-agent pattern** — recommended sub-agent roles (optional)
+6. **Global constraints** — hard rules that always apply
+7. **Human checkpoints** — exact conditions for asking the user
+8. **Workflow phases** — ordered execution steps
+9. **Guardrails** — common failure modes to avoid
+10. **Final handoff** — what to report when done
 
-When you ask "plan the next roadmap phase," the agent matches that request against skill descriptions and activates `plan-work`. You can also invoke skills explicitly by name.
+## What Agent Layer adds
 
-### Multi-agent patterns
+The skill standard defines the format. Agent Layer builds on it with:
 
-Most skills define recommended sub-agent roles. For example, `plan-work` recommends a Scout (gathers context), Planner (drafts the plan), Critic (reviews the draft), and Execution Gatekeeper (decides if the artifacts are ready). When sub-agents are available, the skill uses them for parallel, focused work. When they are not, the agent performs each role inline.
+- **A built-in library of 22 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available after `al init` with no setup.
+- **Client projection** — Skills are authored once under `.agent-layer/skills/` and projected into each client's native format during `al sync` (e.g., `.agent/skills/` for Claude Code, `.codex/skills/` for Codex).
+- **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
+- **Artifact conventions** — Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention (`<skill-name>.<run-id>.<type>.md`), making work inspectable and auditable.
+- **Orchestrator composition** — Top-level skills delegate to supporting skills automatically, enabling complex multi-step workflows from a single invocation.
 
-### Artifacts
+## Recommended workflow
 
-Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention:
+The highest-leverage way to use Agent Layer skills follows two phases:
 
-```
-.agent-layer/tmp/<skill-name>.<run-id>.<type>.md
-```
+### 1. Plan with the agent
 
-For example: `.agent-layer/tmp/debug-issue.20260305-143022-a7f.report.md`
+Spend time up front writing out your roadmap, phase definitions, and requirements documentation collaboratively with the agent. Use the project memory files (`ROADMAP.md`, `CONTEXT.md`, `BACKLOG.md`) as the working surface. This investment pays for itself — clear plans produce dramatically better autonomous execution.
 
-These artifacts make the agent's work inspectable and reviewable. They persist after the skill completes so you can audit what happened.
+### 2. Execute with orchestrator skills
 
-## Using skills
+Once planning artifacts exist, use the top-level orchestrator skills to drive development. These skills handle the full lifecycle internally, delegating to supporting skills as needed:
 
-### Implicit activation
+- **`complete-current-phase`** — Point it at a roadmap phase and it handles planning, implementation, verification, auditing, and cleanup loops until the phase is complete. This is the primary workflow for roadmap-driven development.
+- **`ship-pr`** — Audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes.
+- **`improve-codebase`** — Deep autonomous codebase audit that decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills.
+- **`fix-issues`** — Works through `ISSUES.md` by organizing open issues into coherent batches, planning, implementing, auditing, and keeping the issue ledger current.
 
-Just describe what you want. The agent matches your request to the right skill:
+You rarely need to invoke the supporting skills directly. The orchestrators handle delegation automatically. But the supporting skills are available when you want fine-grained control over a specific step.
 
-- "Plan the authentication refactor" → `plan-work`
-- "Debug why the test is flaking" → `debug-issue`
+### Using skills
+
+Skills activate implicitly or explicitly:
+
+**Implicit** — Describe what you want and the agent matches the right skill:
+- "Drive Phase 3 to completion" → `complete-current-phase`
 - "Ship this as a PR" → `ship-pr`
-- "Review the changes I just made" → `review-scope`
-- "Simplify the controller layer" → `simplify-code`
+- "Debug why the test is flaking" → `debug-issue`
 
-### Explicit invocation
+**Explicit** — Name the skill directly:
+- "Use `complete-current-phase` for Phase 3"
+- "Run `improve-codebase` on the auth module"
 
-Name the skill directly when you want a specific workflow:
+Skills accept flexible inputs: plain-language descriptions, file paths, constraints like "diagnosis only," or references to roadmap phases and prior artifacts. Everything has sensible defaults, so you can invoke with just a request.
 
-- "Use the `fix-issues` skill to work through ISSUES.md"
-- "Run `complete-current-phase` for Phase 3"
-- "Use `boost-coverage` to get the auth module above 80%"
+## Built-in skill library
 
-### Providing inputs
+Agent Layer ships 22 skills. They are organized here by how you typically use them.
 
-Skills accept flexible inputs. You can provide:
+### Orchestrator skills
 
-- Plain-language descriptions of what you want
-- Specific file paths or directories
-- Constraints like "diagnosis only" or "skip the comment wait period"
-- References to roadmap phases, issues, or prior artifacts
-
-Skills define sensible defaults for everything, so you can invoke them with nothing more than a request and let the defaults handle the rest.
-
-## The built-in skill library
-
-Agent Layer ships 22 built-in skills organized around common development workflows. Every skill is available after `al init` — no additional setup required.
-
-### Planning and execution
+These are the top-level workflows you invoke directly. They delegate to supporting skills internally and handle complex multi-step processes end to end.
 
 | Skill | What it does |
 | --- | --- |
-| `plan-work` | Writes a scoped implementation plan and task list for a requested change. Produces two artifacts: a narrative plan and an ordered task list clear enough for a fresh agent to execute. |
+| `complete-current-phase` | Drives a roadmap phase through planning, implementation, verification, auditing, and cleanup loops until the phase is complete. The primary orchestrator for roadmap execution. |
+| `ship-pr` | Full PR lifecycle: audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes. Delegates to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments`. |
+| `improve-codebase` | Deep autonomous codebase audit: decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills. |
+| `fix-issues` | Works through `ISSUES.md`: organizes open issues into coherent batches, plans, implements, audits, and keeps the issue ledger current. |
+
+### Primary skills
+
+These are commonly invoked directly for specific tasks that do not need a full orchestrator.
+
+| Skill | What it does |
+| --- | --- |
+| `plan-work` | Writes a scoped implementation plan and task list for a requested change. Produces a narrative plan and an ordered task list clear enough for a fresh agent to execute. |
 | `implement-plan` | Executes a plan/task-list pair without freelancing. Keeps changes aligned to the artifacts and verifies code, tests, docs, and memory before closing. |
-| `complete-current-phase` | Drives a roadmap phase through planning, implementation, verification, auditing, and cleanup loops until the phase is complete. The top-level orchestrator for roadmap execution. |
+| `debug-issue` | Investigation-first debugging: reproduces the bug, narrows the cause systematically, writes a failing test, fixes the root cause, and verifies. Refuses to guess — requires evidence at every step. |
 | `schedule-backlog` | Proposes reviewable updates by mapping backlog items into roadmap phases, cross-checking impacts, and using human checkpoints before editing memory files. |
 
-### Review and verification
+### Supporting skills
+
+These are used by orchestrators or available for fine-grained control when you need a specific step. You rarely invoke them directly when following the orchestrator workflow.
+
+**Review and verification**
 
 | Skill | What it does |
 | --- | --- |
-| `review-scope` | Reviews files, directories, diffs, or uncommitted changes and produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
-| `review-plan` | Pre-execution review of a plan/task artifact pair. Produces findings on scope gaps, sequencing problems, and weak verification before any code is written. |
+| `review-scope` | Reviews files, directories, diffs, or uncommitted changes. Produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
+| `review-plan` | Pre-execution review of a plan/task artifact pair. Identifies scope gaps, sequencing problems, and weak verification before code is written. |
 | `verify-against-plan` | Post-implementation completeness check comparing what was built against the plan. Reports gaps, regressions, missing tests or docs, and scope drift. |
 | `resolve-findings` | Triages review findings, verifies each independently, implements accepted fixes, and records why findings were rejected, deferred, or resolved. |
 
-### Quality and maintenance
+**Quality and maintenance**
 
 | Skill | What it does |
 | --- | --- |
-| `simplify-code` | Assesses code complexity using metrics as diagnostic signals, removes dead code, simplifies overly complex functions, and splits files that mix unrelated responsibilities. |
-| `boost-coverage` | Raises test coverage iteratively by discovering the repo's coverage commands, selecting low-coverage files, and adding tests until thresholds are met or high-value blockers emerge. |
-| `repair-checks` | Runs the repo's documented checks in order, fixes failures in scope, and repeats until passing or a real blocker prevents autonomous progress. |
-| `improve-codebase` | Deep autonomous codebase audit that decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills. |
+| `simplify-code` | Assesses code complexity, removes dead code, simplifies overly complex functions, and splits files that mix unrelated responsibilities. |
+| `boost-coverage` | Raises test coverage iteratively by discovering the repo's coverage commands, selecting low-coverage files, and adding tests until thresholds are met. |
+| `repair-checks` | Runs the repo's documented checks in order, fixes failures in scope, and repeats until passing or a real blocker emerges. |
 
-### Debugging and issue resolution
-
-| Skill | What it does |
-| --- | --- |
-| `debug-issue` | Investigation-first debugging: reproduces the bug, narrows the cause systematically, writes a failing test, fixes the root cause, and verifies. Refuses to guess — requires evidence at every step. |
-| `fix-issues` | Works through `ISSUES.md` by organizing open issues into coherent batches, planning, implementing, auditing, and keeping the issue ledger current. |
-
-### PR and CI lifecycle
+**PR and CI lifecycle**
 
 | Skill | What it does |
 | --- | --- |
-| `ship-pr` | Full PR lifecycle orchestrator: audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes. |
 | `fix-ci` | CI failure repair for PRs. Diagnoses failures, fixes issues, audits changes, commits, pushes, and re-checks until CI passes. |
 | `address-pr-comments` | Implements fixes for agreed PR feedback, replies to every comment with justification, audits the changes, and commits/pushes. |
+| `audit-and-fix-uncommitted-changes` | Working-tree audit and fix orchestrator. Runs iterative review/fix loops until convergence, with round-by-round severity reporting. Used as a pre-commit quality gate. |
 
-### Auditing
+**Auditing**
 
 | Skill | What it does |
 | --- | --- |
-| `audit-and-fix-uncommitted-changes` | Working-tree audit and fix orchestrator. Runs iterative review/fix loops until convergence, with round-by-round severity reporting. Used as a pre-commit quality gate. |
 | `audit-documentation` | Audits documentation for static accuracy and cross-document consistency against the repository. Optionally applies fixes for accepted findings. |
 | `audit-tests` | Test suite health audit: discovers conventions, classifies tests by tier, identifies redundancy, quality gaps, and coverage gaps — without modifying tests. |
-| `audit-memory` | Audits agent memory files (ISSUES, BACKLOG, ROADMAP, DECISIONS, COMMANDS, CONTEXT) for structure compliance, staleness, misplacement, and consistency. |
+| `audit-memory` | Audits agent memory files for structure compliance, staleness, misplacement, and consistency. |
 
-### Task management
+**Task management**
 
 | Skill | What it does |
 | --- | --- |
 | `finish-task` | Task closeout: checks plan alignment, updates project memory files, runs verification, and summarizes outcomes after implementation is complete. |
 
-## Skill categories
-
-The skills are designed to work together. Here is how they compose for common workflows:
-
-### "I have a feature to build"
-
-1. `plan-work` — design the approach and task list
-2. `review-plan` — critique the plan before execution
-3. `implement-plan` — execute the plan
-4. `verify-against-plan` — confirm completeness
-5. `finish-task` — close out memory and verification
-6. `ship-pr` — commit, push, create PR, handle CI and reviews
-
-### "I have a bug to fix"
-
-1. `debug-issue` — reproduce, investigate, fix
-2. `ship-pr` — get it merged
-
-### "I want to improve code quality"
-
-1. `improve-codebase` or `review-scope` — find issues
-2. `resolve-findings` — triage and fix
-3. `simplify-code` — reduce complexity
-4. `boost-coverage` — fill test gaps
-
-### "I want to drive a roadmap phase"
-
-1. `complete-current-phase` — this orchestrator handles the entire loop internally, delegating to planning, implementation, verification, and audit skills as needed
-
-### "I need to ship a PR"
-
-1. `ship-pr` — handles everything from audit through merge-readiness, delegating to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments` automatically
-
-## Anatomy of a skill
-
-Every skill follows a consistent structure designed for reliable agent execution. Understanding this structure helps you read existing skills and write your own.
-
-### Frontmatter
-
-```yaml
----
-name: debug-issue
-description: >-
-  Investigate a reported bug or unexpected behavior from symptom to root cause:
-  reproduce, narrow down, diagnose, write a failing test, fix, and verify.
----
-```
-
-The `name` must match the directory name. The `description` is the routing signal — it determines when the skill activates. Write it for precision, not marketing.
-
-### Defaults
-
-Every skill defines what happens when no inputs are provided. This prevents silent guessing:
-
-> *Default mode is full investigate-and-fix. If the user asks for diagnosis only, stop after Phase 4 and log the finding to ISSUES.md.*
-
-### Global constraints
-
-Hard rules that apply across all phases. These are placed early in the file because instructions appearing earlier are followed more reliably:
-
-> *Do not attempt a fix before the bug is reproduced and the root cause is identified.*
-
-### Human checkpoints
-
-Specific conditions where the agent must stop and ask. These are concrete and narrow — never vague:
-
-> *Required: ask when investigation reveals that the fix requires a breaking change, broad refactor, or architectural decision.*
-
-### Workflow phases
-
-The core execution steps, usually with named roles:
-
-- **Phase 0: Preflight** — gather context, confirm baseline
-- **Phase 1–N: Execution** — the actual work, broken into focused steps
-- **Final phase: Verify** — run checks, confirm the work is complete
-
-### Guardrails
-
-Negative constraints placed at the end of the file. These catch common failure modes:
-
-> *Do not skip reproduction and jump straight to "I think I see the problem."*
-
-### Final handoff
-
-What the agent reports when the skill completes — artifact paths, summary, status, and open questions.
-
 ## Writing your own skills
 
-You can add custom skills alongside the built-in ones. Create a new directory under `.agent-layer/skills/` with a `SKILL.md` file:
+Create a new directory under `.agent-layer/skills/` with a `SKILL.md` file:
 
 ```bash
 mkdir -p .agent-layer/skills/my-workflow
 touch .agent-layer/skills/my-workflow/SKILL.md
 ```
 
-### Required fields
+Add frontmatter:
 
 ```yaml
 ---
@@ -277,62 +186,20 @@ description: >-
 ---
 ```
 
-- `name`: 1–64 characters, lowercase alphanumeric and hyphens, must match the directory name.
-- `description`: what the skill does and when to use it (max 1,024 characters).
+Follow the [skill structure](#skill-structure) outlined above. Keep the body focused: aim for 150–300 lines, put critical rules early, and make artifacts and stop conditions explicit.
 
-### Recommended structure
+Run `al sync` to project the new skill into all enabled clients.
 
-Follow the same section order as the built-in skills:
-
-1. **Opening contract** — one sentence stating what the skill does
-2. **Defaults** — what happens with no inputs
-3. **Inputs** — what the skill accepts
-4. **Required artifacts** — file paths for output
-5. **Multi-agent pattern** — recommended sub-agent roles
-6. **Global constraints** — hard rules that always apply
-7. **Human checkpoints** — exact conditions for asking the user
-8. **Workflow phases** — ordered execution steps
-9. **Guardrails** — common failure modes to avoid
-10. **Final handoff** — what to report when done
-
-### Practical tips
-
-- **Keep it focused.** One skill, one job. If you need branching logic for different modes, split into separate skills.
-- **Keep it lean.** Aim for 150–300 lines. Every token in the file carries a reasoning cost for the agent. Remove prose that does not change behavior.
-- **Put critical rules early.** Instructions appearing earlier in the prompt are followed more reliably due to the primacy effect.
-- **Be explicit.** Name file paths, artifact formats, and stop conditions. Prefer "stop and report Y" over "handle appropriately."
-- **Design checkpoints narrowly.** "Ask when the fix requires a breaking change" is better than "ask when uncertain."
-
-For the complete research-backed skill authoring guide, including empirical studies on instruction-following, context length effects, and constraint composition, see [Skill Design Guide](/skill-design).
-
-### After creating a skill
-
-Run `al sync` to project the new skill into all enabled clients. It will appear in the generated skill directories (`.agent/skills/`, `.codex/skills/`, etc.) and be available for activation immediately.
+For the complete research-backed authoring guide — including empirical studies on instruction-following, context length effects, and constraint composition — see [Skill Design Guide](/skill-design).
 
 ## Design philosophy
 
-The built-in skills reflect several deliberate design choices:
+The built-in skills reflect several deliberate choices:
 
-### Investigation before action
+**Investigation before action** — Skills like `debug-issue` refuse to guess. They require reproduction, evidence, and a failing test before any fix. This mirrors how experienced developers work.
 
-Skills like `debug-issue` refuse to guess. They require reproduction, evidence, and a failing test before any fix is attempted. This mirrors how experienced developers work: understand the problem first, then solve it.
+**Autonomous by default, checkpoints for real ambiguity** — Skills run autonomously through their normal workflow. Human checkpoints trigger only for genuine ambiguity — scope decisions, breaking changes, or competing approaches. Vague escalation like "ask when uncertain" is deliberately avoided.
 
-### Autonomous by default, checkpoints for real ambiguity
+**Composition over monoliths** — Skills delegate to each other. `ship-pr` delegates to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments`. `complete-current-phase` orchestrates planning, implementation, and verification. This keeps each skill focused while enabling complex workflows.
 
-Skills are designed to run autonomously through their normal workflow. Human checkpoints trigger only for genuine ambiguity — scope decisions, breaking changes, or competing approaches with real tradeoffs. Vague escalation like "ask when uncertain" is deliberately avoided because it adds cognitive load without improving outcomes.
-
-### Artifacts over memory
-
-Skills write structured output files rather than relying on the agent to remember intermediate results. This makes the work inspectable, auditable, and recoverable. If a skill run is interrupted, the artifacts show exactly where it stopped.
-
-### Composition over monoliths
-
-Skills delegate to each other. `ship-pr` delegates to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments`. `complete-current-phase` orchestrates planning, implementation, and verification skills. This keeps each skill focused while enabling complex multi-step workflows.
-
-### Evidence-backed structure
-
-The skill format — critical rules early, guardrails at the end, lean bodies — is informed by research on how language models process instructions. Instructions appearing early are followed more reliably (primacy effect). Extraneous content actively degrades reasoning. Every structural choice exists to maximize the agent's reliability, not just readability.
-
-:::tip
-For the full research basis behind the skill format, see the [Skill Design Guide](/skill-design). It covers the empirical studies, specification requirements, and design principles that inform how skills are structured.
-:::
+**Evidence-backed structure** — The skill format is informed by research on how language models process instructions. Critical rules go early (primacy effect), guardrails go at the end (recency effect), and lean bodies minimize reasoning degradation from context length. See [Skill Design Guide](/skill-design) for the research basis.
