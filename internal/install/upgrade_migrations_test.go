@@ -1824,8 +1824,81 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
+	// When a template exists for the path, the full template should be seeded
+	// as the base, preventing a partial stub file.
+	if !strings.Contains(string(data), "# Project Conventions") {
+		t.Fatalf("expected template header to be seeded, got:\n%s", string(data))
+	}
 	if !strings.Contains(string(data), "# Conventions") {
-		t.Fatalf("expected created file to contain content, got:\n%s", string(data))
+		t.Fatalf("expected appended content to be present, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_CreatesFileWhenMissing_NoTemplate(t *testing.T) {
+	root := t.TempDir()
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_no_tpl",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Create file without a backing template",
+		Path:      ".agent-layer/custom/no_template_here.md",
+		Value:     []byte(`"# Custom content\n"`),
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	targetPath := filepath.Join(root, ".agent-layer", "custom", "no_template_here.md")
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(data) != "# Custom content\n" {
+		t.Fatalf("expected only appended content for non-template path, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.T) {
+	root := t.TempDir()
+
+	// Simulates the real 0.9.1 upgrade scenario: appending UTC convention
+	// when the template already contains the match string.
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_utc",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Move UTC-only internals from rules to conventions",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		From:      "UTC-only internals",
+		Value:     []byte(`"\n## Time & Data\n- **UTC-only internals:** Store, compute, and transport time in UTC.\n"`),
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed (template seeded)")
+	}
+	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	// Should seed the full template without appending (match already in template).
+	if !strings.Contains(string(data), "# Project Conventions") {
+		t.Fatalf("expected full template header, got:\n%s", string(data))
+	}
+	if !strings.Contains(string(data), "## Architecture") {
+		t.Fatalf("expected full template body with Architecture section, got:\n%s", string(data))
+	}
+	// Should NOT contain duplicate UTC sections — template already has it.
+	count := strings.Count(string(data), "UTC-only internals")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 occurrence of UTC-only internals, got %d", count)
 	}
 }
 

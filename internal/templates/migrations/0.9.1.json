@@ -49,7 +49,7 @@
       "id": "f-delete-skill-cleanup-code",
       "kind": "delete_file",
       "path": ".agent-layer/skills/cleanup-code",
-      "rationale": "Remove deprecated cleanup-code skill, replaced by mechanical-cleanup.",
+      "rationale": "Remove deprecated cleanup-code skill, replaced by simplify-code.",
       "source_agnostic": true
     },
     {

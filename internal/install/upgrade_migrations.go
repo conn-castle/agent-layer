@@ -604,11 +604,32 @@ func (inst *installer) executeAppendToFile(op upgradeMigrationOperation) (bool, 
 		if !errors.Is(err, os.ErrNotExist) {
 			return false, fmt.Errorf(messages.InstallFailedReadFmt, absPath, err)
 		}
-		// File doesn't exist — write content as new file.
+		// File doesn't exist. If a template exists for this path, seed the
+		// full template first so the user gets the complete file rather than
+		// a partial stub containing only the appended snippet.
+		base := ""
+		templatePath := strings.TrimPrefix(filepath.ToSlash(op.Path), ".agent-layer/")
+		if tpl, tplErr := templates.Read(templatePath); tplErr == nil {
+			base = string(tpl)
+		}
 		if mkErr := inst.sys.MkdirAll(filepath.Dir(absPath), 0o755); mkErr != nil {
 			return false, fmt.Errorf(messages.InstallFailedCreateDirForFmt, absPath, mkErr)
 		}
-		if wErr := inst.sys.WriteFileAtomic(absPath, []byte(content), 0o644); wErr != nil {
+		// If the template already contains the match string, the append
+		// content is already present — just seed the template as-is.
+		if base != "" && op.From != "" && strings.Contains(base, op.From) {
+			if wErr := inst.sys.WriteFileAtomic(absPath, []byte(base), 0o644); wErr != nil {
+				return false, fmt.Errorf(messages.InstallFailedWriteFmt, absPath, wErr)
+			}
+			return true, nil
+		}
+		// Seed template (if any) plus appended content.
+		merged := base
+		if merged != "" && !strings.HasSuffix(merged, "\n") {
+			merged += "\n"
+		}
+		merged += content
+		if wErr := inst.sys.WriteFileAtomic(absPath, []byte(merged), 0o644); wErr != nil {
 			return false, fmt.Errorf(messages.InstallFailedWriteFmt, absPath, wErr)
 		}
 		return true, nil
