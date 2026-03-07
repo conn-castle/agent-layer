@@ -1,6 +1,35 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.9.1 - 2026-03-07
+
+Overhauls the built-in skill library from 10 to 22 structured, workflow-driven skills and introduces a user-managed conventions file so you can tailor project-specific rules without losing them on upgrade. Instructions are reordered, deduplicated, and compressed for better agent compliance.
+
+### Added
+- New user-managed `04_conventions.md` instruction template for project-specific conventions (architecture, code quality, data safety, time/data, environment). Seeded on `al init`, never overwritten on `al upgrade`; future convention updates delivered via `append_to_file` migrations with duplicate detection.
+- New `append_to_file` migration kind for delivering content to user-managed files without overwriting edits. Supports duplicate-detection via match string, automatic file creation, and atomic writes.
+- New `delete_file` migration operations for removing deprecated skill directories during upgrade.
+- 17 new built-in skills following a normalized workflow-driven structure with explicit phases, global constraints, guardrails, and human checkpoints: `address-pr-comments`, `audit-and-fix-uncommitted-changes`, `audit-memory`, `audit-tests`, `complete-current-phase`, `debug-issue`, `fix-ci`, `implement-plan`, `improve-codebase`, `plan-work`, `repair-checks`, `resolve-findings`, `review-scope`, `schedule-backlog`, `ship-pr`, `simplify-code`, `verify-against-plan`.
+- Site documentation page for built-in skills (`site/docs/skills.mdx`) covering the full 22-skill library organized by category with usage examples and customization guidance.
+- Site documentation page for evidence-based skill design (`site/pages/skill-design.mdx`) with 5 core design principles and 18 academic/industry citations.
+- Internal skill authoring reference (`docs/SKILL-DESIGN.md`) and audit workflow specification (`docs/SKILL-AUDIT.md`).
+
+### Changed
+- Instruction files reordered for primacy effect: `02_rules.md` → `00_rules.md`, `00_base.md` → `01_base.md`, `01_memory.md` → `02_memory.md`. Hard constraints now load first to improve model compliance. `al upgrade` migrates existing repos via `rename_file` operations.
+- Cross-file instruction duplicates removed: 6 items that appeared in multiple instruction files consolidated to a single canonical location, reducing ~57 instructions to ~50.
+- Verbose instruction sections compressed (~50% fewer tokens in Critical Protocol, Workflow & Safety, and Tools sections) without removing guidance.
+- UTC-only internals and No system Python rules moved from `02_rules.md` to `04_conventions.md` as project-specific conventions (delivered to existing users via `append_to_file` migrations).
+- 5 existing built-in skills restructured to normalized workflow pattern: `audit-documentation`, `boost-coverage`, `finish-task`, `fix-issues`, `review-plan`.
+- Decision hygiene guidance updated: superseded decisions should be replaced (not accumulated), and entries that become self-evident from the codebase should be removed.
+- Skill loader error message for directories missing a skill file shortened from "missing SKILL.md or skill.md" to "has no SKILL.md".
+- Site docs sidebar positions updated to accommodate new Skills page; upgrade-checklist shell examples consolidated.
+
+### Removed
+- 5 built-in skills replaced by normalized workflow equivalents: `cleanup-code` (→ `simplify-code`), `continue-roadmap` (→ `complete-current-phase`), `find-issues` (→ `resolve-findings`), `fix-tests` (→ `repair-checks`), `update-roadmap` (→ `schedule-backlog`). Migration manifest deletes these (plus `mechanical-cleanup`) from user directories during upgrade.
+
+### Improved
+- Expanded automated test coverage for user-owned instruction files (seed-on-init, no-overwrite-on-upgrade, excluded-from-diffs), `append_to_file` migration paths (apply, no-op, file creation, rollback), normalized workflow skill structure validation, artifact naming conventions, and skill deletion migration scenarios.
+
 ## v0.9.0 - 2026-03-01
 
 ### Added
