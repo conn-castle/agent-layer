@@ -58,7 +58,7 @@ enabled = true
 	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	command := `---
@@ -145,7 +145,7 @@ instruction_token_threshold = 1
 	}
 	// Write large instructions to exceed the threshold
 	largeContent := strings.Repeat("This is a test instruction that will exceed the low token threshold. ", 50)
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte(largeContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte(largeContent), 0o644); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {

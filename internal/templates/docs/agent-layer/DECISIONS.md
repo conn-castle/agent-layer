@@ -12,7 +12,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Line 1 starts with `- Decision YYYY-MM-DD <id>:` and a short title.
 - Lines 2–4 are indented by **4 spaces** and use `Key: Value`.
 - Keep **exactly one blank line** between entries.
-- If a decision is superseded, add a new entry describing the change (do not delete history unless explicitly asked).
+- If a decision is superseded, replace the old entry with the new one. Fold the old entry's tradeoff context into the new entry's `Reason` field when it is still valuable, then remove the old entry.
+- Periodically consolidate: remove entries that are now self-evident from the codebase (the decision is embodied in code, tests, or docs and a reader would learn it without the log). When removing, verify the tradeoff information is not uniquely preserved in the log.
 
 ### Entry template
 ```text

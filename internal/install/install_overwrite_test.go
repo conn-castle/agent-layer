@@ -723,7 +723,7 @@ func TestAppendTemplateDirDiffs_StatError(t *testing.T) {
 	// where a file should be to cause read error during comparison
 
 	// Create instruction file as directory to trigger error path in matchTemplate
-	instrFile := filepath.Join(instrDir, "00_base.md")
+	instrFile := filepath.Join(instrDir, "00_rules.md")
 	if err := os.Mkdir(instrFile, 0o755); err != nil {
 		t.Fatalf("mkdir instruction: %v", err)
 	}

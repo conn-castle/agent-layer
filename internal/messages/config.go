@@ -57,7 +57,7 @@ const (
 	ConfigSkillNameEmpty                 = "name is empty"
 	ConfigSkillNameInvalidMultiline      = "name must be a single line scalar"
 	ConfigSkillNameMismatchFmt           = "skill in %s has name %q, expected %q"
-	ConfigSkillDirMissingSkillFileFmt    = "invalid skill directory %s: missing SKILL.md or skill.md"
+	ConfigSkillDirEmptyFmt               = "skill directory %s has no SKILL.md"
 	ConfigSkillDuplicateNameFmt          = "duplicate skill name %q from %s and %s"
 	ConfigSkillFlatFormatUnsupportedFmt  = "found flat-format skill %q (%s) in skills directory; flat format is no longer supported -- run 'al upgrade' to migrate to directory format"
 

@@ -64,6 +64,7 @@ type skillSource struct {
 // Supported source format:
 // - .agent-layer/skills/<name>/SKILL.md (canonical; fallback to skill.md for compatibility)
 // Flat-format .agent-layer/skills/<name>.md files are rejected with actionable errors.
+// Directories without a supported skill file also fail loudly.
 func LoadSkills(dir string) ([]Skill, error) {
 	return loadSkills(dir,
 		func(path string) ([]skillDirEntry, error) {
@@ -151,7 +152,7 @@ func loadDirectorySkill(byName map[string]skillSource, root string, dirName stri
 	case hasFallback:
 		skillPath = filepath.Join(skillDirPath, "skill.md")
 	default:
-		return fmt.Errorf(messages.ConfigSkillDirMissingSkillFileFmt, skillDirPath)
+		return fmt.Errorf(messages.ConfigSkillDirEmptyFmt, skillDirPath)
 	}
 
 	data, err := readFile(skillPath)

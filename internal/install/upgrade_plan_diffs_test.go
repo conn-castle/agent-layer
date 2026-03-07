@@ -209,7 +209,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 	plan := UpgradePlan{
 		TemplateAdditions: []UpgradeChange{
 			{
-				Path:      ".agent-layer/instructions/00_base.md",
+				Path:      ".agent-layer/instructions/01_base.md",
 				Ownership: OwnershipUpstreamTemplateDelta,
 			},
 		},
@@ -246,7 +246,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 	}
 
 	required := []string{
-		".agent-layer/instructions/00_base.md",
+		".agent-layer/instructions/01_base.md",
 		".agent-layer/commands.allow",
 		"docs/agent-layer/ISSUES.md",
 		".agent-layer/templates/docs/ROADMAP.md",

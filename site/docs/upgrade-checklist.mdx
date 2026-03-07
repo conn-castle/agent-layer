@@ -1,7 +1,7 @@
 ---
 title: Upgrade checklist
 description: One-page upgrade checklist for interactive teams and CI.
-sidebar_position: 6
+sidebar_position: 7
 ---
 
 Use this page when you want a repeatable, low-risk upgrade runbook.
@@ -55,16 +55,7 @@ Only add these flags when intentionally applying those categories:
 
 ## Shell quick paths (macOS/Linux)
 
-### bash
-
-```bash
-brew upgrade conn-castle/tap/agent-layer || \
-  curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
-al upgrade plan
-al upgrade
-```
-
-### zsh
+### bash / zsh
 
 ```bash
 brew upgrade conn-castle/tap/agent-layer || \
@@ -75,7 +66,7 @@ al upgrade
 
 ### fish
 
-```bash
+```fish
 brew upgrade conn-castle/tap/agent-layer; or \
   curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash
 al upgrade plan

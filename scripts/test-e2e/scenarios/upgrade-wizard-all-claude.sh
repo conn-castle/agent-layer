@@ -107,7 +107,7 @@ ENVEOF
   assert_generated_artifacts "$repo_dir"
 
   # Verify CLAUDE.md has instruction content
-  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_base.md" \
+  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
     "CLAUDE.md has instruction blocks after upgrade+wizard+all"
 
   cleanup_scenario_dir "$repo_dir"

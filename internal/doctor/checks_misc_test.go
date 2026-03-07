@@ -40,7 +40,7 @@ enabled = false
 	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
@@ -104,7 +104,7 @@ enabled = false
 	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_base.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {

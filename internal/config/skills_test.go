@@ -252,15 +252,18 @@ func TestLoadSkills_FlatFileRejectsBeforeDirectoryLoads(t *testing.T) {
 	}
 }
 
-func TestLoadSkills_DirectoryMissingSkillFile(t *testing.T) {
+func TestLoadSkills_DirectoryMissingSkillFileFailsLoudly(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "foo"), 0o755); err != nil {
 		t.Fatalf("mkdir foo: %v", err)
 	}
 
 	_, err := LoadSkills(dir)
-	if err == nil || !strings.Contains(err.Error(), "missing SKILL.md or skill.md") {
-		t.Fatalf("expected missing SKILL.md or skill.md error, got %v", err)
+	if err == nil {
+		t.Fatal("expected error for skill directory without SKILL.md")
+	}
+	if !strings.Contains(err.Error(), "has no SKILL.md") {
+		t.Fatalf("expected missing SKILL.md error, got %v", err)
 	}
 }
 

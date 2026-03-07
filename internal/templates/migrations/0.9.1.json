@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "target_version": "0.9.1",
+  "min_prior_version": "0.9.0",
+  "operations": [
+    {
+      "id": "a-rename-rules-to-00",
+      "kind": "rename_file",
+      "from": ".agent-layer/instructions/02_rules.md",
+      "to": ".agent-layer/instructions/00_rules.md",
+      "rationale": "Reorder: hard constraints load first (primacy effect).",
+      "source_agnostic": true
+    },
+    {
+      "id": "b-rename-base-to-01",
+      "kind": "rename_file",
+      "from": ".agent-layer/instructions/00_base.md",
+      "to": ".agent-layer/instructions/01_base.md",
+      "rationale": "Reorder: protocol and workflow loads second.",
+      "source_agnostic": true
+    },
+    {
+      "id": "c-rename-memory-to-02",
+      "kind": "rename_file",
+      "from": ".agent-layer/instructions/01_memory.md",
+      "to": ".agent-layer/instructions/02_memory.md",
+      "rationale": "Reorder: memory management loads third.",
+      "source_agnostic": true
+    },
+    {
+      "id": "d-append-utc-convention",
+      "kind": "append_to_file",
+      "path": ".agent-layer/instructions/04_conventions.md",
+      "from": "UTC-only internals",
+      "value": "\n## Time & Data\n- **UTC-only internals:** Store, compute, and transport time in UTC; local time display is presentation-only.\n",
+      "rationale": "Move UTC-only internals from rules to conventions.",
+      "source_agnostic": true
+    },
+    {
+      "id": "e-append-python-convention",
+      "kind": "append_to_file",
+      "path": ".agent-layer/instructions/04_conventions.md",
+      "from": "No system Python",
+      "value": "\n## Environment\n- **No system Python:** Never use system Python. Always prefer the project virtual environment Python, and if no virtual environment exists, ask the user if you should create one.\n",
+      "rationale": "Move No system Python from rules to conventions.",
+      "source_agnostic": true
+    },
+    {
+      "id": "f-delete-skill-cleanup-code",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/cleanup-code",
+      "rationale": "Remove deprecated cleanup-code skill, replaced by simplify-code.",
+      "source_agnostic": true
+    },
+    {
+      "id": "g-delete-skill-continue-roadmap",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/continue-roadmap",
+      "rationale": "Remove deprecated continue-roadmap skill, replaced by complete-current-phase.",
+      "source_agnostic": true
+    },
+    {
+      "id": "h-delete-skill-find-issues",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/find-issues",
+      "rationale": "Remove deprecated find-issues skill, replaced by resolve-findings.",
+      "source_agnostic": true
+    },
+    {
+      "id": "i-delete-skill-fix-tests",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/fix-tests",
+      "rationale": "Remove deprecated fix-tests skill, replaced by repair-checks.",
+      "source_agnostic": true
+    },
+    {
+      "id": "j-delete-skill-update-roadmap",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/update-roadmap",
+      "rationale": "Remove deprecated update-roadmap skill, replaced by schedule-backlog.",
+      "source_agnostic": true
+    },
+    {
+      "id": "k-delete-skill-mechanical-cleanup",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/mechanical-cleanup",
+      "rationale": "Remove deprecated mechanical-cleanup skill, replaced by simplify-code.",
+      "source_agnostic": true
+    }
+  ]
+}

@@ -245,16 +245,16 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.6.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
-	if err := os.Remove(findIssuesPath); err != nil {
-		t.Fatalf("remove find-issues: %v", err)
+	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
+	if err := os.Remove(planWorkPath); err != nil {
+		t.Fatalf("remove plan-work: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("skills/find-issues/SKILL.md")
+	planWorkTemplate, err := templates.Read("skills/plan-work/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	legacyPath := filepath.Join(root, ".agent-layer", "skills", "find-issues-legacy.md")
-	if err := os.WriteFile(legacyPath, findIssuesTemplate, 0o644); err != nil {
+	legacyPath := filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")
+	if err := os.WriteFile(legacyPath, planWorkTemplate, 0o644); err != nil {
 		t.Fatalf("write legacy path: %v", err)
 	}
 
@@ -264,11 +264,11 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
   "min_prior_version": "0.6.0",
   "operations": [
     {
-      "id": "rename_find_issues",
+      "id": "rename_plan_work",
       "kind": "rename_file",
       "rationale": "Move legacy skill path",
-      "from": ".agent-layer/skills/find-issues-legacy.md",
-      "to": ".agent-layer/skills/find-issues/SKILL.md"
+      "from": ".agent-layer/skills/plan-work-legacy.md",
+      "to": ".agent-layer/skills/plan-work/SKILL.md"
     }
   ]
 }`)
@@ -280,10 +280,10 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if len(plan.TemplateRenames) != 0 {
 		t.Fatalf("expected hash-rename inference to be filtered by manifest coverage, got %#v", plan.TemplateRenames)
 	}
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues/SKILL.md") != nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/plan-work/SKILL.md") != nil {
 		t.Fatal("expected manifest-covered addition to be filtered")
 	}
-	if findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/find-issues-legacy.md") != nil {
+	if findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/skills/plan-work-legacy.md") != nil {
 		t.Fatal("expected manifest-covered orphan to be filtered")
 	}
 	if len(plan.MigrationReport.Entries) != 1 {
@@ -335,13 +335,13 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	// Remove find-issues/SKILL.md so the template system would add it back.
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
-	if err := os.Remove(findIssuesPath); err != nil {
-		t.Fatalf("remove find-issues: %v", err)
+	// Remove plan-work/SKILL.md so the template system would add it back.
+	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
+	if err := os.Remove(planWorkPath); err != nil {
+		t.Fatalf("remove plan-work: %v", err)
 	}
 	// Do NOT create the legacy source file — the rename will no-op because
-	// the source is absent. The plan must still show find-issues/SKILL.md as an
+	// the source is absent. The plan must still show plan-work/SKILL.md as an
 	// addition so the user knows the template writer will create it.
 	withMigrationManifestOverride(t, "0.7.0", `{
   "schema_version": 1,
@@ -349,12 +349,12 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
   "min_prior_version": "0.6.0",
   "operations": [
     {
-      "id": "rename_find_issues",
+      "id": "rename_plan_work",
       "kind": "rename_file",
       "rationale": "Move legacy skill path",
       "source_agnostic": true,
-      "from": ".agent-layer/skills/find-issues-legacy.md",
-      "to": ".agent-layer/skills/find-issues/SKILL.md"
+      "from": ".agent-layer/skills/plan-work-legacy.md",
+      "to": ".agent-layer/skills/plan-work/SKILL.md"
     }
   ]
 }`)
@@ -365,7 +365,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 	}
 	// The rename source doesn't exist, so the migration will no-op. The
 	// destination path must NOT be filtered from additions.
-	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/find-issues/SKILL.md") == nil {
+	if findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/plan-work/SKILL.md") == nil {
 		t.Fatal("expected no-op migration destination to appear as template addition in plan")
 	}
 }
@@ -376,16 +376,16 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 
-	findIssuesPath := filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")
-	if err := os.Remove(findIssuesPath); err != nil {
-		t.Fatalf("remove find-issues: %v", err)
+	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
+	if err := os.Remove(planWorkPath); err != nil {
+		t.Fatalf("remove plan-work: %v", err)
 	}
-	findIssuesTemplate, err := templates.Read("skills/find-issues/SKILL.md")
+	planWorkTemplate, err := templates.Read("skills/plan-work/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	legacyPath := filepath.Join(root, ".agent-layer", "skills", "find-issues-legacy.md")
-	if err := os.WriteFile(legacyPath, findIssuesTemplate, 0o644); err != nil {
+	legacyPath := filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")
+	if err := os.WriteFile(legacyPath, planWorkTemplate, 0o644); err != nil {
 		t.Fatalf("write legacy path: %v", err)
 	}
 
@@ -395,11 +395,11 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
   "min_prior_version": "0.6.0",
   "operations": [
     {
-      "id": "rename_find_issues",
+      "id": "rename_plan_work",
       "kind": "rename_file",
       "rationale": "Move legacy skill path",
-      "from": ".agent-layer/skills/find-issues-legacy.md",
-      "to": ".agent-layer/skills/find-issues/SKILL.md"
+      "from": ".agent-layer/skills/plan-work-legacy.md",
+      "to": ".agent-layer/skills/plan-work/SKILL.md"
     }
   ]
 }`)
@@ -407,10 +407,10 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.7.0"}); err != nil {
 		t.Fatalf("upgrade run: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "find-issues", "SKILL.md")); err != nil {
-		t.Fatalf("expected find-issues after migration+upgrade: %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")); err != nil {
+		t.Fatalf("expected plan-work after migration+upgrade: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "find-issues-legacy.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")); !os.IsNotExist(err) {
 		t.Fatalf("expected legacy file to be removed, stat err = %v", err)
 	}
 }
@@ -1722,6 +1722,353 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 	}
 	if string(dirData) != "directory version\n" {
 		t.Fatalf("dir file content was mutated: %q", string(dirData))
+	}
+}
+
+func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	if err := os.WriteFile(targetPath, []byte("# Existing content\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_conv",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Add new convention",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"- **New rule:** Do the thing.\n"`),
+		From:      "**New rule:**",
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if !strings.Contains(string(data), "# Existing content") {
+		t.Fatal("expected existing content to be preserved")
+	}
+	if !strings.Contains(string(data), "**New rule:**") {
+		t.Fatal("expected appended content to be present")
+	}
+}
+
+func TestExecuteAppendToFile_NoopWhenMatchPresent(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	original := "# Existing content\n- **New rule:** Do the thing.\n"
+	if err := os.WriteFile(targetPath, []byte(original), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_conv",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Add new convention",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"- **New rule:** Do the thing.\n"`),
+		From:      "**New rule:**",
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if changed {
+		t.Fatal("expected no_op when match is present")
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(data) != original {
+		t.Fatalf("file should not be modified, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
+	root := t.TempDir()
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_new",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Create file with initial content",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"# Conventions\n- **Rule one:** First rule.\n"`),
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	// When a template exists for the path, the full template should be seeded
+	// as the base, preventing a partial stub file.
+	if !strings.Contains(string(data), "# Project Conventions") {
+		t.Fatalf("expected template header to be seeded, got:\n%s", string(data))
+	}
+	if !strings.Contains(string(data), "# Conventions") {
+		t.Fatalf("expected appended content to be present, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_CreatesFileWhenMissing_NoTemplate(t *testing.T) {
+	root := t.TempDir()
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_no_tpl",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Create file without a backing template",
+		Path:      ".agent-layer/custom/no_template_here.md",
+		Value:     []byte(`"# Custom content\n"`),
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	targetPath := filepath.Join(root, ".agent-layer", "custom", "no_template_here.md")
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	if string(data) != "# Custom content\n" {
+		t.Fatalf("expected only appended content for non-template path, got:\n%s", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.T) {
+	root := t.TempDir()
+
+	// Simulates the real 0.9.1 upgrade scenario: appending UTC convention
+	// when the template already contains the match string.
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_utc",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Move UTC-only internals from rules to conventions",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		From:      "UTC-only internals",
+		Value:     []byte(`"\n## Time & Data\n- **UTC-only internals:** Store, compute, and transport time in UTC.\n"`),
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed (template seeded)")
+	}
+	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	// Should seed the full template without appending (match already in template).
+	if !strings.Contains(string(data), "# Project Conventions") {
+		t.Fatalf("expected full template header, got:\n%s", string(data))
+	}
+	if !strings.Contains(string(data), "## Architecture") {
+		t.Fatalf("expected full template body with Architecture section, got:\n%s", string(data))
+	}
+	// Should NOT contain duplicate UTC sections — template already has it.
+	count := strings.Count(string(data), "UTC-only internals")
+	if count != 1 {
+		t.Fatalf("expected exactly 1 occurrence of UTC-only internals, got %d", count)
+	}
+}
+
+func TestExecuteAppendToFile_HandlesNoTrailingNewline(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	// No trailing newline.
+	if err := os.WriteFile(targetPath, []byte("# Existing content"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:        "append_no_newline",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Append after content without trailing newline",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"- **New rule:** Added.\n"`),
+		From:      "**New rule:**",
+	}
+	changed, err := inst.executeAppendToFile(op)
+	if err != nil {
+		t.Fatalf("executeAppendToFile: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+	data, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read target: %v", err)
+	}
+	// Should have a newline between original content and appended content.
+	if !strings.Contains(string(data), "# Existing content\n- **New rule:**") {
+		t.Fatalf("expected newline inserted before appended content, got:\n%q", string(data))
+	}
+}
+
+func TestExecuteAppendToFile_RollbackCoverage(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	targetPath := filepath.Join(targetDir, "04_conventions.md")
+	if err := os.WriteFile(targetPath, []byte("# Existing\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "append_conv",
+      "kind": "append_to_file",
+      "rationale": "Add new convention",
+      "source_agnostic": true,
+      "path": ".agent-layer/instructions/04_conventions.md",
+      "value": "\"- **New rule:** Something.\\n\"",
+      "from": "**New rule:**"
+    }
+  ]
+}`)
+
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	targetAbs := filepath.Clean(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"))
+	if !containsString(plan.rollbackTargets, targetAbs) {
+		t.Fatalf("rollback targets missing append path %q: %#v", targetAbs, plan.rollbackTargets)
+	}
+	if _, ok := plan.coveredPaths[".agent-layer/instructions/04_conventions.md"]; !ok {
+		t.Fatalf("expected covered path for append_to_file, got %#v", plan.coveredPaths)
+	}
+}
+
+func TestValidateUpgradeMigrationOperation_AppendToFile(t *testing.T) {
+	// Valid append_to_file operation should pass validation.
+	validOp := upgradeMigrationOperation{
+		ID:        "append_test",
+		Kind:      upgradeMigrationKindAppendToFile,
+		Rationale: "Test append",
+		Path:      ".agent-layer/instructions/04_conventions.md",
+		Value:     []byte(`"appended content"`),
+	}
+	if err := validateUpgradeMigrationOperation(validOp); err != nil {
+		t.Fatalf("expected valid operation to pass, got: %v", err)
+	}
+
+	// Missing path.
+	missingPath := validOp
+	missingPath.Path = ""
+	if err := validateUpgradeMigrationOperation(missingPath); err == nil {
+		t.Fatal("expected error for missing path")
+	}
+
+	// Missing value.
+	missingValue := validOp
+	missingValue.Value = nil
+	if err := validateUpgradeMigrationOperation(missingValue); err == nil {
+		t.Fatal("expected error for missing value")
+	}
+
+	// Non-string value.
+	nonStringValue := validOp
+	nonStringValue.Value = []byte(`42`)
+	if err := validateUpgradeMigrationOperation(nonStringValue); err == nil {
+		t.Fatal("expected error for non-string value")
+	}
+}
+
+func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, ".agent-layer", "instructions")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, "04_conventions.md"), []byte("# Conventions\n"), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	withMigrationManifestOverride(t, "0.7.0", `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "append_conv",
+      "kind": "append_to_file",
+      "rationale": "Add new convention",
+      "source_agnostic": true,
+      "path": ".agent-layer/instructions/04_conventions.md",
+      "value": "\"- **New rule:** Do the thing.\\n\"",
+      "from": "**New rule:**"
+    }
+  ]
+}`)
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+
+	if len(inst.migrationReport.Entries) != 1 {
+		t.Fatalf("expected one migration report entry, got %d", len(inst.migrationReport.Entries))
+	}
+	if inst.migrationReport.Entries[0].Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("migration status = %q, want %q", inst.migrationReport.Entries[0].Status, UpgradeMigrationStatusApplied)
+	}
+	if !containsAll(warn.String(), "Migration report:", "append_conv") {
+		t.Fatalf("expected migration report output, got %q", warn.String())
+	}
+
+	data, err := os.ReadFile(filepath.Join(targetDir, "04_conventions.md"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if !strings.Contains(string(data), "**New rule:**") {
+		t.Fatalf("expected appended content in file, got:\n%s", string(data))
 	}
 }
 

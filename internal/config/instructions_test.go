@@ -62,7 +62,7 @@ func TestLoadInstructionsNoFiles(t *testing.T) {
 
 func TestWalkInstructionFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "00_base.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "00_rules.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write base: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("skip"), 0o644); err != nil {
@@ -84,7 +84,7 @@ func TestWalkInstructionFiles(t *testing.T) {
 
 func TestWalkInstructionFilesError(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "00_base.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "00_rules.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write base: %v", err)
 	}
 	expected := errors.New("boom")

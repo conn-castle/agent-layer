@@ -511,7 +511,7 @@ func TestWriteTemplateDirWithOverwrite(t *testing.T) {
 	}
 
 	// Write an existing file that differs
-	existingPath := filepath.Join(destRoot, "00_base.md")
+	existingPath := filepath.Join(destRoot, "00_rules.md")
 	if err := os.WriteFile(existingPath, []byte("different content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestWriteTemplateDirNoOverwrite(t *testing.T) {
 	}
 
 	// Write an existing file that differs
-	existingPath := filepath.Join(destRoot, "00_base.md")
+	existingPath := filepath.Join(destRoot, "00_rules.md")
 	if err := os.WriteFile(existingPath, []byte("different content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -570,7 +570,7 @@ func TestListManagedDiffs_DirDiffError(t *testing.T) {
 	}
 
 	// Create an instruction file as a directory to cause stat error during matchTemplate
-	instrFile := filepath.Join(instrDir, "00_base.md")
+	instrFile := filepath.Join(instrDir, "00_rules.md")
 	if err := os.Mkdir(instrFile, 0o755); err != nil {
 		t.Fatalf("mkdir instruction: %v", err)
 	}
@@ -618,7 +618,7 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write an existing file that differs from template
-	existingFile := filepath.Join(instrDir, "00_base.md")
+	existingFile := filepath.Join(instrDir, "00_rules.md")
 	if err := os.WriteFile(existingFile, []byte("different content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -808,7 +808,7 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 	}
 
 	// Create a file with unreadable permissions to cause stat error
-	basePath := filepath.Join(instrDir, "00_base.md")
+	basePath := filepath.Join(instrDir, "00_rules.md")
 	if err := os.WriteFile(basePath, []byte("content"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -1030,7 +1030,7 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 	if err := os.MkdirAll(instructionsDir, 0o755); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	targetPath := filepath.Join(instructionsDir, "00_base.md")
+	targetPath := filepath.Join(instructionsDir, "00_rules.md")
 	if err := os.WriteFile(targetPath, []byte("custom instructions\n"), 0o644); err != nil {
 		t.Fatalf("write instruction: %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 		t.Fatalf("appendTemplateDirDiffs: %v", err)
 	}
 
-	if _, ok := diffs[".agent-layer/instructions/00_base.md"]; !ok {
+	if _, ok := diffs[".agent-layer/instructions/00_rules.md"]; !ok {
 		t.Fatalf("expected non-section-aware mismatch to be recorded, got %v", diffs)
 	}
 }
@@ -1218,6 +1218,84 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 			t.Fatalf("expected stat error, got %v", err)
 		}
 	})
+}
+
+func TestIsUserOwnedInstructionFile(t *testing.T) {
+	if !isUserOwnedInstructionFile("/some/path/04_conventions.md") {
+		t.Fatal("expected 04_conventions.md to be user-owned")
+	}
+	if isUserOwnedInstructionFile("/some/path/01_base.md") {
+		t.Fatal("expected 01_base.md NOT to be user-owned")
+	}
+	if isUserOwnedInstructionFile("/some/path/other.md") {
+		t.Fatal("expected other.md NOT to be user-owned")
+	}
+}
+
+func TestUserOwnedInstructionFile_SeededOnInit(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	convPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	data, err := os.ReadFile(convPath)
+	if err != nil {
+		t.Fatalf("expected 04_conventions.md to exist after init: %v", err)
+	}
+	if !strings.Contains(string(data), "# Project Conventions") {
+		t.Fatalf("expected conventions file to contain header, got:\n%s", string(data))
+	}
+}
+
+func TestUserOwnedInstructionFile_NotOverwrittenOnUpgrade(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("initial Run error: %v", err)
+	}
+
+	// Edit the conventions file.
+	convPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	customContent := "# My Custom Conventions\n- Custom rule\n"
+	if err := os.WriteFile(convPath, []byte(customContent), 0o644); err != nil {
+		t.Fatalf("write custom conventions: %v", err)
+	}
+
+	// Run again (simulating upgrade) with overwrite enabled.
+	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter()}); err != nil {
+		t.Fatalf("upgrade Run error: %v", err)
+	}
+
+	data, err := os.ReadFile(convPath)
+	if err != nil {
+		t.Fatalf("read conventions after upgrade: %v", err)
+	}
+	if string(data) != customContent {
+		t.Fatalf("expected conventions file to remain unchanged after upgrade, got:\n%s", string(data))
+	}
+}
+
+func TestUserOwnedInstructionFile_ExcludedFromManagedDiffs(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	// Edit the conventions file so it differs from template.
+	convPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
+	if err := os.WriteFile(convPath, []byte("custom conventions\n"), 0o644); err != nil {
+		t.Fatalf("write custom: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	diffs, err := inst.templates().listManagedDiffs()
+	if err != nil {
+		t.Fatalf("listManagedDiffs: %v", err)
+	}
+	for _, path := range diffs {
+		if strings.Contains(path, "04_conventions.md") {
+			t.Fatalf("user-owned 04_conventions.md should not appear in managed diffs, got: %v", diffs)
+		}
+	}
 }
 
 func TestWriteTemplateFileWithMatch_MkdirAllErrorAfterNotExist(t *testing.T) {

@@ -49,7 +49,7 @@ enabled = false
 	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
@@ -131,7 +131,7 @@ enabled = false
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
@@ -243,7 +243,7 @@ enabled = false
 	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
@@ -294,7 +294,7 @@ enabled = false
 	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_base.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---

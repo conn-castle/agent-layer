@@ -130,6 +130,7 @@ func LoadInstructionsFS(fsys fs.FS, root string, dir string) ([]InstructionFile,
 
 // LoadSkillsFS reads .agent-layer/skills from fsys.
 // root is used for path resolution when dir is absolute; dir is used for error messages.
+// Directories without a supported skill file fail loudly.
 func LoadSkillsFS(fsys fs.FS, root string, dir string) ([]Skill, error) {
 	return loadSkills(
 		dir,

@@ -16,6 +16,22 @@ import (
 // templateGitignoreBlock is the template name for the gitignore managed block.
 const templateGitignoreBlock = "gitignore.block"
 
+// userOwnedInstructionFiles lists instruction file basenames that are
+// user-managed. These files are seeded on init (created if missing) but never
+// overwritten during upgrade. They are also excluded from managed diffs so
+// user edits don't appear as upgrade plan changes. New conventions can be
+// delivered to existing users via append_to_file upgrade migrations.
+var userOwnedInstructionFiles = map[string]struct{}{
+	"04_conventions.md": {},
+}
+
+// isUserOwnedInstructionFile returns true when path's basename is in the
+// user-owned instruction file set.
+func isUserOwnedInstructionFile(path string) bool {
+	_, ok := userOwnedInstructionFiles[filepath.Base(path)]
+	return ok
+}
+
 // managedTemplateFiles lists template-managed files under .agent-layer.
 // These files are considered part of the upgradeable template surface area:
 // they appear in `al upgrade plan`, are eligible for overwrite prompts, and are
@@ -178,6 +194,10 @@ func (inst templateManager) appendTemplateDirDiffs(diffs map[string]struct{}, di
 	}
 	sys := inst.sys
 	for _, entry := range entries {
+		// User-owned instruction files are never reported as managed diffs.
+		if isUserOwnedInstructionFile(entry.destPath) {
+			continue
+		}
 		relPath := normalizeRelPath(inst.relativePath(entry.destPath))
 		info, err := sys.Stat(entry.destPath)
 		if err != nil {
@@ -282,6 +302,13 @@ func (inst templateManager) writeTemplateDirCached(dir templateDir) error {
 	}
 	sys := inst.sys
 	for _, entry := range entries {
+		// User-owned instruction files: seed only; never overwrite.
+		if isUserOwnedInstructionFile(entry.destPath) {
+			if err := writeTemplateIfMissing(sys, entry.destPath, entry.templatePath, entry.perm); err != nil {
+				return err
+			}
+			continue
+		}
 		relPath := normalizeRelPath(inst.relativePath(entry.destPath))
 		if marker, ok := sectionAwareMarkerForPath(relPath); ok {
 			if err := inst.writeSectionAwareTemplateFile(entry.destPath, entry.templatePath, entry.perm, relPath, marker); err != nil {

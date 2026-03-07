@@ -12,7 +12,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
 - Line 1 starts with `- Decision YYYY-MM-DD <id>:` and a short title.
 - Lines 2–4 are indented by **4 spaces** and use `Key: Value`.
 - Keep **exactly one blank line** between entries.
-- If a decision is superseded, add a new entry describing the change (do not delete history unless explicitly asked).
+- If a decision is superseded, replace the old entry with the new one. Fold the old entry's tradeoff context into the new entry's `Reason` field when it is still valuable, then remove the old entry.
+- Periodically consolidate: remove entries that are now self-evident from the codebase (the decision is embodied in code, tests, or docs and a reader would learn it without the log). When removing, verify the tradeoff information is not uniquely preserved in the log.
 
 ### Entry template
 ```text
@@ -330,3 +331,38 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Add `docs/agent-layer/CONTEXT.md` as a free-form, section-based memory file using the `memory_entries_v1` ownership policy and `<!-- ENTRIES START -->` marker.
     Reason: The existing five memory files have specific scopes (issues, backlog, roadmap, decisions, commands); project-wide context (domain concepts, naming conventions, team norms) had no canonical home.
     Tradeoffs: Adds one more file to the memory surface; accepted because the alternative was agents writing miscellaneous context into inappropriate files or losing it between sessions.
+
+- Decision 2026-03-02 user-owned-conventions: Extract project-specific conventions to user-managed `04_conventions.md`
+    Decision: Move 5 project-specific instruction items (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety) from `00_base.md` into a new `04_conventions.md` that is user-managed: seeded on `al init`, never overwritten on `al upgrade`, and excluded from managed diffs. A new `append_to_file` migration kind enables delivering new conventions to existing users via opt-in migration entries.
+    Reason: Project-specific conventions create noise for projects where they don't apply; separating them lets users curate their own conventions while universal instructions remain managed.
+    Tradeoffs: Conventions are no longer auto-updated during upgrades; new defaults require explicit migration entries to reach existing users.
+
+- Decision 2026-03-02 instruction-reorder-dedup: Reorder instruction files and deduplicate cross-file instructions
+    Decision: Rename instruction files to `00_rules.md`, `01_base.md`, `02_memory.md` (primacy effect: hard constraints load first). Remove 6 cross-file duplicates (keeping one canonical copy each), compress verbose sections (~50% fewer tokens), move UTC-only and No system Python from rules to conventions, add no-over-engineering and verification-closure instructions.
+    Reason: Research shows instruction count and ordering affect model compliance; deduplication reduces ~57 to ~50 instructions and primacy-ordered hard constraints improve adherence.
+    Tradeoffs: File renames require a v0.9.1 migration with 3 `rename_file` + 2 `append_to_file` operations; existing repos must run `al upgrade` to apply renames.
+
+- Decision 2026-03-06 improve-codebase-separate-skill: Create `improve-codebase` as independent skill, not a mode of `audit-and-fix-uncommitted-changes`
+    Decision: Create a new `improve-codebase` skill for whole-repository audit-and-fix sweeps rather than adding a scope-mode parameter to the existing `audit-and-fix-uncommitted-changes` skill. Accept structural duplication of the audit loop between the two skills.
+    Reason: Research shows (1) prompt length alone degrades accuracy starting ~3K tokens (ACL 2024, 2025), (2) conditional branching is among the hardest instruction types (ComplexBench 2024), (3) constraint interference is a primary failure mode in multi-constraint prompts (ComplexBench 2024), (4) Anthropic recommends the routing pattern over mode-switching, (5) Rule of Three says wait until N=3 before extracting shared abstractions (Fowler). The two skills have different domain knowledge (target selection, phases, delegation targets) despite sharing an audit loop shape.
+    Tradeoffs: ~70% structural similarity between the two skills is accepted as accidental duplication. If a third audit-loop skill appears, that triggers extraction per Rule of Three. See `docs/SKILL-DESIGN.md` for full research references.
+
+- Decision 2026-03-06 skill-review-scope-dual-mode-close: review-scope dual-mode design is intentional and within thresholds
+    Decision: Keep `review-scope` as a single skill with explicit-scope and proactive-hotspot modes. Do not split into separate skills.
+    Reason: Deep-dive analysis showed: (1) modes share Phases 2-3, diverging only in Phase 1 target selection; splitting would duplicate ~45% of the skill; (2) constraint count (~46) is under the 50-constraint threshold; (3) target-resolution is a sequential 4-step cascade (not nested branching); (4) ComplexBench shows splitting skills has worse interference than conditional branching within thresholds.
+    Tradeoffs: Phase 1 has 3 target-type paths, but they are mutually exclusive and well-scoped.
+
+- Decision 2026-03-06 skill-broader-orchestrator-close: "broader orchestrator" wording is precise and contextually determinable
+    Decision: Keep the current "when no broader orchestrator already owns closeout" phrasing in implement-plan, fix-issues, and debug-issue. Do not replace with explicit skill enumeration.
+    Reason: Deep-dive analysis showed: (1) the phrase is reliably determinable from conversation context (the agent knows whether it was invoked standalone or by a parent skill); (2) enumerating parent skills would couple these skills to the orchestrator roster, requiring updates whenever an orchestrator is added/removed; (3) all three skills use identical phrasing, confirming it is a stable cross-cutting convention.
+    Tradeoffs: Requires the model to reason about invocation context, but this is standard MCP/delegation behavior.
+
+- Decision 2026-03-06 skill-ship-pr-phase7-inline-close: ship-pr Phase 7 stays inline, not extracted
+    Decision: Keep Phase 7 "Audit comment coverage" inline in ship-pr. Do not extract to a separate sub-skill.
+    Reason: Deep-dive analysis showed: (1) Phase 7 has no independent activation trigger — it only runs as a post-delegation verification within ship-pr; (2) extracting it would confuse routing since users would never invoke "verify-comment-coverage" directly; (3) the bot-comment contradiction (the actual issue) was resolved by aligning ship-pr to address-pr-comments on feedback-comment filtering.
+    Tradeoffs: Phase 7 remains ~25 lines inline, but this is proportionate to its verification responsibility.
+
+- Decision 2026-03-06 skill-design-doc: Add `SKILL-DESIGN.md` as a comprehensive skill authoring reference
+    Decision: Create `docs/SKILL-DESIGN.md` as a fully evidence-backed skill design guide with 12 design principles, a key-findings summary section, an evidence-linked anti-patterns table, and 18 academic/industry references covering context engineering, instruction-following degradation, constraint composition, context rot, and position bias.
+    Reason: Skills are the primary interface for guiding LLM behavior; design quality directly affects instruction-following accuracy. Codifying the research with specific evidence (IFScale 68% ceiling at 500 instructions, Lost in the Middle ~20pp middle-position drop, Context Rot single-distractor degradation) prevents recurring design mistakes and grounds design decisions in empirical findings rather than intuition.
+    Tradeoffs: One more doc to maintain; content may need updating as new LLM research emerges. The guide is 756 lines, which is longer than a typical skill but appropriate for a reference document that is read by humans, not loaded into agent context.
