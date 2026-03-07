@@ -102,39 +102,19 @@ Recommended roles:
 
 ### Phase 2: Draft the plan and task list (Planner)
 
-The plan must include:
-- objective
-- selected issues
-- excluded issues
-- scope and non-goals
-- risks
-- verification
-- rollback or recovery notes
-
-The task list must:
-- be ordered
-- name the likely target files or modules
-- include tests, docs, and memory work when needed
+Draft a plan and task list following the `plan-work` skill's artifact format. The plan must also include: selected issues, excluded issues, and rollback or recovery notes.
 
 ### Phase 3: Gate the current issue batch (Execution gatekeeper + Reporter)
 
 After writing the artifacts:
 1. echo the plan and task paths
-2. summarize:
-   - selected issues
-   - proposed approach
-   - biggest risk
-   - verification plan
+2. summarize the selected issues, proposed approach, biggest risk, and verification plan
 3. choose exactly one verdict:
-   - `proceed`: the current batch is ready to implement as written
-   - `revise`: the plan or task list needs updates first
-   - `escalate`: a human checkpoint is actually required
-   - `rewrite-because-out-of-scope`: the issue batch should be narrowed or rewritten before implementation
 
-If the verdict is `proceed`, continue.
-If the verdict is `revise`, update the plan or task list and repeat from Phase 2.
-If the verdict is `escalate`, ask the smallest question that unblocks a trustworthy fix.
-If the verdict is `rewrite-because-out-of-scope`, rewrite the batch to the largest still-in-scope subset, record deferred issues explicitly, and return to the earliest affected phase.
+- `proceed` (batch ready to implement): continue to Phase 4.
+- `revise` (plan or task list needs updates): repeat from Phase 2.
+- `escalate` (human checkpoint required): ask the smallest question that unblocks a trustworthy fix.
+- `rewrite-because-out-of-scope` (batch too broad): rewrite to the largest still-in-scope subset, record deferred issues, and return to the earliest affected phase.
 
 ### Phase 4: Implement the current batch (Implementer)
 

@@ -17,14 +17,18 @@ func TestLoadSkills_ReadDirError(t *testing.T) {
 
 func TestLoadSkills_ReadFileError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "bad.md")
-	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
+	skillDir := filepath.Join(dir, "bad")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	if err := os.WriteFile(skillPath, []byte{}, 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
 	orig := osReadFileFunc
 	osReadFileFunc = func(name string) ([]byte, error) {
-		if name == path {
+		if name == skillPath {
 			return nil, errors.New("injected read error")
 		}
 		return orig(name)
@@ -35,13 +39,20 @@ func TestLoadSkills_ReadFileError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error from ReadFile")
 	}
+	if !strings.Contains(err.Error(), "injected read error") {
+		t.Fatalf("expected injected read error, got: %v", err)
+	}
 }
 
 func TestLoadSkills_ParseError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "invalid.md")
+	skillDir := filepath.Join(dir, "invalid")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	skillPath := filepath.Join(skillDir, "SKILL.md")
 	// Invalid content (no frontmatter)
-	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte("hello"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

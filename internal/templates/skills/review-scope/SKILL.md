@@ -24,13 +24,13 @@ Use it for:
 
 ## Defaults
 
-- Default mode is explicit-scope review.
-- Default target for explicit-scope review is all uncommitted changes.
-- If the user explicitly asks for a proactive audit and provides no target, switch to hotspot mode instead of asking for files first.
-- If there are no uncommitted changes, no explicit target, and no proactive-audit request, stop and ask for a target instead of silently reviewing unrelated history.
-- Default output is report-only. Do not modify code.
-- Prefer evidence-backed findings over broad commentary.
-- Findings must be prioritized and reviewable.
+Target resolution order:
+1. Use explicit target if provided.
+2. If the user asks for a proactive audit without naming targets, use hotspot mode.
+3. Otherwise, default to all uncommitted changes.
+4. If none of the above yields a target, stop and ask instead of silently reviewing unrelated history.
+
+Output is report-only. Findings must be evidence-backed, prioritized, and reviewable.
 
 ## Required artifact
 
@@ -116,25 +116,12 @@ If a likely issue is already tracked in `ISSUES.md`, do not present it as a nove
 
 ### Phase 1: Gather context (Lead reviewer)
 
-1. Determine the review mode:
-   - explicit-scope review
-   - proactive hotspot audit
-2. Determine the review target.
-3. Read only the minimum surrounding context needed to understand the target.
-4. If the target is explicit plan/task artifacts:
-   - check scope coverage
-   - dependency ordering
-   - risk coverage
-   - verification credibility
-   - missing docs/tests/memory updates
-5. If the target is proactive hotspot mode:
-   - select a small hotspot set
-   - state the selection signals
-   - keep the audit reviewable rather than repo-wide by default
-6. If the target is code or diffs:
-   - check correctness first
-   - then architecture and operability
-   - then tests/docs and maintainability
+1. Determine the review target using the defaults resolution order.
+2. Read only the minimum surrounding context needed to understand the target.
+3. Apply the target-appropriate review focus:
+   - **Plan/task artifacts**: scope coverage, dependency ordering, risk coverage, verification credibility, missing docs/tests/memory updates.
+   - **Proactive hotspot mode**: select a small hotspot set, state the selection signals, keep the audit reviewable rather than repo-wide.
+   - **Code or diffs**: correctness first, then architecture and operability, then tests/docs and maintainability.
 
 ### Phase 2: Evaluate with multiple lenses (Parallel reviewers)
 

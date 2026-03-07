@@ -18,8 +18,8 @@ Canonical, repeatable **development workflow** commands for this repository (set
 ```bash
 <command>
 ```
-Run from: <repo root or path>  
-Prerequisites: <only if critical>  
+Run from: <repo root or path>
+Prerequisites: <only if critical>
 Notes: <optional constraints or tips>
 ````
 

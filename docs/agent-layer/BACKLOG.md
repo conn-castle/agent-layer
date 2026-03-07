@@ -28,6 +28,18 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-03-06 skill-line-width-warning: Warn on long lines in skill files
+    Priority: Low. Area: skills / validator
+    Description: Add a soft warning (not a hard error) when a skill file contains lines exceeding a character threshold (e.g., ~1000 chars). Protects against silent truncation by tools that impose per-line limits (Claude Code's Read tool truncates at 2000 chars) regardless of how skills are loaded at runtime.
+    Acceptance criteria: `al doctor` emits a warning for skill files with lines over the threshold; no hard error; threshold is configurable or clearly documented.
+    Notes: This is a DX/tooling concern, not an LLM performance concern — tokenization ignores line breaks. The current MCP-based loading path is unaffected, but future delivery mechanisms may not use MCP.
+
+- Backlog 2026-03-06 audit-security-skill: Add a security audit skill
+    Priority: Medium. Area: skills
+    Description: A skill that scans for dependency CVEs, code-level vulnerabilities (OWASP patterns), secrets/credentials in code, and insecure configurations, then produces a findings report.
+    Acceptance criteria: Skill produces actionable findings report with severity levels; integrates with resolve-findings for remediation workflow.
+    Notes: Should leverage available tools (dependency audit commands, grep-based pattern matching) rather than requiring external scanners.
+
 - Backlog 2026-03-01 remove-skill-migrations-v010: Remove one-off skill migration code by v0.10.0
     Priority: Medium. Area: upgrade / skills
     Description: If support signals are clean by v0.10.0, remove legacy one-off skill migration code paths so we do not carry indefinite compatibility shims.

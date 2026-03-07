@@ -301,15 +301,18 @@ func TestLoadSkillsFS_FlatFileReturnsError(t *testing.T) {
 	}
 }
 
-func TestLoadSkillsFS_DirectoryMissingSkillFile(t *testing.T) {
+func TestLoadSkillsFS_DirectoryMissingSkillFileFailsLoudly(t *testing.T) {
 	fsys := fstest.MapFS{
 		".agent-layer/skills":       {Mode: fs.ModeDir},
 		".agent-layer/skills/alpha": {Mode: fs.ModeDir},
 	}
 
 	_, err := LoadSkillsFS(fsys, "root", ".agent-layer/skills")
-	if err == nil || !strings.Contains(err.Error(), "missing SKILL.md or skill.md") {
-		t.Fatalf("expected missing SKILL.md or skill.md error, got %v", err)
+	if err == nil {
+		t.Fatal("expected error for skill directory without SKILL.md")
+	}
+	if !strings.Contains(err.Error(), "has no SKILL.md") {
+		t.Fatalf("expected missing SKILL.md error, got %v", err)
 	}
 }
 

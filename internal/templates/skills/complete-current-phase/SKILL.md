@@ -9,21 +9,11 @@ description: >-
 
 # complete-current-phase
 
-This is the orchestrator skill for roadmap execution.
-It should run an iterative loop that:
-- inventories the whole current roadmap phase
-- plans the phase to completion, using internal work packages when needed
-- stress-tests the plan
-- implements one work package at a time when the roadmap and plan are clear enough
-- checks completeness against the plan and the remaining phase tasks
-- audits the resulting code
-- cleans up local mechanical complexity when that improves the touched code
-- fixes accepted findings
-- repeats until every task in the selected phase is complete or a real blocker requires human input
+This is the orchestrator skill for roadmap execution. It iteratively plans, implements, reviews, audits, and fixes one roadmap phase until every task in the selected phase is complete or a real blocker requires human input.
 
-Use the current active roadmap phase by default, meaning the first incomplete phase.
-Do not jump ahead to a later incomplete phase unless the user explicitly names it.
-Use the `plan-work` skill instead when the user wants only the planning step without the full execution loop.
+Use the current active roadmap phase (the first incomplete phase) by default.
+Do not jump ahead to a later phase unless the user explicitly names it.
+Use `plan-work` instead when the user wants only the planning step.
 
 ## Scope default
 
@@ -103,21 +93,8 @@ If Phase 1 shows that the current phase is not reasonably decomposable:
 
 ### Phase 2: Plan the phase to completion (Planner)
 
-Use the `plan-work` skill, but explicitly instruct it to plan completion of the selected phase rather than only the next work package.
-Create:
-- a plan artifact
-- a task-list artifact
-
-The plan must define:
-- all remaining in-phase tasks
-- ordered internal work packages when more than one is needed
-- objective
-- scope and non-goals
-- risks
-- verification
-- exit criteria
-
-The plan must make the phase-level done criteria explicit and identify which work package should execute first.
+Use the `plan-work` skill to plan completion of the selected phase (not just the next work package).
+The plan must also define all remaining in-phase tasks, ordered internal work packages when more than one is needed, and phase-level done criteria that identify which work package should execute first.
 
 ### Phase 3: Review the plan (Plan reviewers)
 
@@ -131,64 +108,34 @@ Loop back to plan review when either is true:
 - an unresolved Critical or High finding remains
 - the plan changed materially
 
-Recommended cap: no more than 3 plan-review loops before escalating to the user with the blocker.
-
 ### Phase 4: Gate the next execution step (Execution gatekeeper + Reporter)
 
 Before moving into implementation or advancing to the next package:
-1. summarize the selected phase
-2. summarize the remaining phase tasks, the current plan, and the next work package
-3. call out unresolved risks and any deferred findings
-4. choose exactly one verdict:
-   - `proceed`: the current package is ready to execute as written
-   - `revise`: the package is close, but the plan or task artifacts need updates first
-   - `escalate`: a human checkpoint is actually required
-   - `rewrite-because-out-of-scope`: the current package should be rewritten to fit the selected phase and current evidence
+1. summarize the selected phase, remaining tasks, current plan, and next work package
+2. call out unresolved risks and any deferred findings
+3. choose exactly one verdict:
 
-If the verdict is `proceed`, continue.
-If the verdict is `revise`, update the plan or task artifacts and return to Phase 3.
-If the verdict is `escalate`, ask the user the smallest question that unblocks the next step.
-If the verdict is `rewrite-because-out-of-scope`, rewrite the current work package boundaries or plan wording to stay inside the selected phase, record any deferrals explicitly, and return to the earliest affected phase.
+- `proceed` (ready to execute as written): continue to Phase 5.
+- `revise` (artifacts need updates first): update the plan or task artifacts and return to Phase 3.
+- `escalate` (human checkpoint required): ask the user the smallest question that unblocks the next step.
+- `rewrite-because-out-of-scope` (package does not fit selected phase): rewrite to stay inside the selected phase, record deferrals, and return to the earliest affected phase.
 
 ### Phase 5: Implement the current work package (Implementers)
 
-Use the `implement-plan` skill with the current plan and task list.
+Use the `implement-plan` skill with the current plan and task list. Stay inside the selected roadmap phase and complete the current work package end-to-end before moving on. If the package reveals additional in-phase tasks or dependency changes, update the plan and task list before continuing.
 
-Execution rules:
-- stay inside the selected roadmap phase
-- complete the current work package end-to-end before moving on
-- update tests, docs, and memory as required by the work
-- record deviations rather than hiding them
-- if the current package reveals additional in-phase tasks or dependency changes, update the plan and task list before continuing
-
-If implementation leaves obvious local complexity, dead scaffolding, or oversized touched files that can be improved without broadening scope:
-- use the `simplify-code` skill
-- then continue to Phase 6
+If implementation leaves obvious local complexity that can be improved without broadening scope, use the `simplify-code` skill, then continue to Phase 6.
 
 ### Phase 6: Review against the plan (Completeness reviewers)
 
 Use the `verify-against-plan` skill.
 
 If the verdict is `incomplete`, return to implementation.
-Repeat until:
-- the verdict is `complete` or `complete-with-follow-up`
-- or a real blocker requires human input
-
-Recommended cap: no more than 3 implement/review loops before escalating.
+Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires human input.
 
 ### Phase 7: Broad audit of the delivered work package (Audit reviewers)
 
-Use the `review-scope` skill on the actual implementation:
-- touched files
-- relevant surrounding modules
-- tests and docs that changed
-
-The audit should look for:
-- correctness issues
-- architecture problems
-- reliability or performance risks
-- missing docs/tests
-- maintainability problems
+Use the `review-scope` skill on the touched files, surrounding modules, and changed tests/docs.
 
 ### Phase 8: Fix audit findings (Fixers + Auditors)
 
@@ -201,52 +148,25 @@ If the fixes introduce or expose local complexity that remains behavior-preservi
 - use the `simplify-code` skill
 - then return to Phase 6
 
-Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns, toward the same loop cap.
-
-Recommended cap: no more than 2 Phase 6-8 review/audit loops for the same work package before escalating.
+Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns. Escalate if the loop is not converging.
 
 ### Phase 9: Reassess phase status and gate the next package (Execution gatekeeper + Reporter)
 
 1. Update roadmap and task status for the work that just landed.
 2. Compare the remaining unchecked phase tasks against the phase-completion plan.
-3. Choose exactly one verdict for the next step:
-   - `proceed`: the current package is done and the next step is clear
-   - `revise`: the plan or task list should be refreshed before continuing
-   - `escalate`: a human checkpoint is actually required
-   - `rewrite-because-out-of-scope`: the remaining package boundaries should be rewritten to stay inside the selected phase
-4. If unchecked phase tasks remain and the verdict is `proceed`:
-   - select the next internal work package
-   - return to Phase 4
-5. If the verdict is `revise`:
-   - refresh the plan and task list when needed
-   - return to Phase 3
-6. If the verdict is `escalate`, ask the user the smallest question that unblocks the next step.
-7. If the verdict is `rewrite-because-out-of-scope`:
-   - rewrite the remaining package boundaries or phase plan to stay inside the selected phase
-   - record any newly deferred tasks explicitly
-   - return to the earliest affected phase
-8. Proceed to closeout only when every task in the selected phase is complete and backed by evidence.
+3. Choose exactly one verdict:
+
+- `proceed` (current package done, next step clear): if unchecked tasks remain, select the next work package and return to Phase 4.
+- `revise` (plan should be refreshed): update the plan and task list and return to Phase 3.
+- `escalate` (human checkpoint required): ask the user the smallest question that unblocks the next step.
+- `rewrite-because-out-of-scope` (remaining packages drift from selected phase): rewrite package boundaries, record deferrals, and return to the earliest affected phase.
+
+4. Proceed to closeout only when every task in the selected phase is complete and backed by evidence.
 
 ### Phase 10: Close the phase (Memory Curator + Reporter)
 
-When the selected roadmap phase is done:
-- update roadmap status if appropriate
-- remove resolved issues from `ISSUES.md`
-- update `DECISIONS.md` only for non-obvious durable decisions
-- update `COMMANDS.md` if new repeatable commands were discovered
-- check whether `README.md` or other markdown docs now need updates
-
-Use the `finish-task` skill as the final cleanup pass.
+Use the `finish-task` skill as the final cleanup pass, including roadmap status, memory file updates, and doc checks.
 If it reveals incomplete work or stale memory/docs, jump back to the earliest affected phase instead of closing the phase.
-
-## Stop conditions
-
-Pause and ask the human when:
-- the roadmap task is ambiguous
-- the correct fix requires materially broader scope than the selected phase
-- repeated review loops do not converge
-- required environment, schema, or product behavior is unknown
-- a destructive or irreversible action would be needed
 
 ## Minimal status protocol
 

@@ -1,0 +1,321 @@
+---
+title: Skill Design Guide
+description: Research-backed principles for writing effective agent skills, grounded in empirical studies on instruction-following, context length, and constraint composition.
+---
+
+This guide covers the principles behind writing effective agent skills — structured Markdown workflows that guide AI coding agents through complex tasks. It is informed by the [Agent Skills specification](https://agentskills.io/specification), official prompting guidance from Anthropic and OpenAI, and empirical research on how language models follow instructions.
+
+Whether you are writing skills for Agent Layer, Codex, Claude Code, or any system that uses skill-based workflows, these principles apply. They are grounded in evidence about how models actually process instructions, not guesses about what might work.
+
+For the practical guide to using and invoking skills, see [/docs/skills](/docs/skills).
+
+## In this page
+
+- [Specification requirements](#specification-requirements)
+- [Design principles](#design-principles)
+- [Recommended skill structure](#recommended-skill-structure)
+- [Authoring checklist](#authoring-checklist)
+- [Anti-patterns](#anti-patterns)
+- [Key research findings](#key-research-findings)
+- [References](#references)
+
+## Specification requirements
+
+### Source format
+
+Skills are authored as Markdown files in a directory structure:
+
+```
+.agent-layer/skills/<name>/SKILL.md
+```
+
+Required frontmatter fields:
+
+- `name` — must match the directory name; 1–64 characters, lowercase alphanumeric and hyphens only, no leading/trailing/consecutive hyphens.
+- `description` — what the skill does and when it should trigger; max 1,024 characters.
+
+Optional frontmatter fields: `license`, `compatibility`, `metadata`, `allowed-tools`.
+
+### Context budget
+
+The Agent Skills specification recommends keeping `SKILL.md` under 500 lines and under roughly 5,000 tokens, with deeper material moved into `scripts/`, `references/`, and `assets/`.
+
+At the catalog level, each skill adds roughly 50–100 tokens (name and description only). Full instructions load only on activation. This progressive disclosure model keeps the idle cost low while providing rich guidance when needed.
+
+### Current implementation notes
+
+Agent Layer's internal MCP prompt server currently serves only the `SKILL.md` body. This means every skill must remain operationally understandable from `SKILL.md` alone. Companion files can support file-system workflows and future clients, but core behavior cannot depend on them today.
+
+## Design principles
+
+### 1. Optimize for activation accuracy
+
+A skill that does not trigger reliably is broken, even if its body is excellent. The `description` field is the routing signal — it determines which skill the agent selects for a given request.
+
+Anthropic's [routing pattern](https://www.anthropic.com/research/building-effective-agents) recommends classifying inputs and directing them to specialized handlers with clearly distinct trigger conditions. OpenAI's [eval-skills guide](https://developers.openai.com/blog/eval-skills) recommends testing both positive triggers (skill should activate) and negative triggers (skill should not activate).
+
+**Guidance:**
+
+- Write descriptions for routing, not marketing. State the job, likely trigger phrases, and nearby non-goals.
+- Add explicit "Use this when" and "Do not use this when" guidance when adjacent skills share semantic territory.
+- Test activation against sibling skill descriptions to ensure the routing signal is unambiguous.
+
+### 2. One skill, one workflow
+
+Anthropic recommends simple, composable patterns with routing to specialized follow-up tasks. OpenAI's Codex skills docs make the same recommendation directly: keep each skill focused on one job. Both sources converge on the same insight: specialized components are easier to route to, reason about, and maintain.
+
+Research confirms that constraint composition degrades performance. [ComplexBench (NeurIPS 2024)](https://arxiv.org/abs/2407.03978) shows that flat AND composition scores 0.881 for GPT-4, but nested compositions collapse — combined multi-layer compositions score as low as 0.083. Multi-mode skills with conditional branching create exactly the composition types that models handle worst.
+
+[IFScale (2025)](https://arxiv.org/abs/2507.11538) finds three distinct degradation patterns as instruction density increases, with even the best frontier models achieving only 68.9% accuracy at 500 instructions.
+
+**Guidance:**
+
+- Split skills when they have materially different triggers, outputs, or decision rules.
+- Avoid mode-switching sections like "if mode X / if mode Y" unless the branches are tiny and inseparable.
+- Prefer separate skills for separate targets (e.g., `review-plan` vs. `review-scope`).
+- Accept structural duplication between similar skills until there are at least three real consumers of the shared structure.
+
+### 3. Keep the context lean and high-signal
+
+Context is a finite resource with diminishing returns. Anthropic's [context engineering guide](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) defines context engineering as curating the optimal set of tokens during inference and recommends finding the smallest set of high-signal tokens that maximize the desired outcome.
+
+["Same Task, More Tokens" (ACL 2024)](https://arxiv.org/abs/2402.14848) demonstrates that reasoning performance degrades at much shorter input lengths than the technical maximum. Accuracy dropped from 0.92 to 0.68 as input grew from ~250 to ~3,000 tokens, with significant degradation beginning at ~500 tokens. Even duplicate padding (exact copies of relevant text) degraded accuracy, proving that length itself hurts reasoning.
+
+["Context Rot" (Chroma Research 2025)](https://research.trychroma.com/context-rot) confirms that even a single distractor reduces performance relative to baseline.
+
+**Guidance:**
+
+- Keep only activation-critical instructions, defaults, invariants, and workflow skeleton in `SKILL.md`.
+- Remove repeated rationale, decorative prose, and edge cases that do not change behavior.
+- Every token should change the model's behavior. If removing a sentence would not change what the model does, the sentence should not be there.
+- Target 150–300 lines for most skills. The 500-line validator warning is the hard backstop.
+
+### 4. Put critical instructions early
+
+Instructions appearing earlier in the prompt are more reliably followed. Multiple independent studies confirm this primacy effect.
+
+[IFScale](https://arxiv.org/abs/2507.11538) finds that all 20 models tested show higher error rates for later instructions. The primacy effect peaks at moderate densities (150–200 instructions). At high densities, error type shifts from modification (attempting but failing) to omission (completely ignoring).
+
+["Lost in the Middle" (TACL 2023)](https://arxiv.org/abs/2307.03172) finds a U-shaped performance curve: models perform best when relevant information appears at the beginning (primacy) or end (recency) of context, with significant degradation in the middle. In 20-document settings, middle-positioned information yielded ~52.9% accuracy — worse than the 56.1% closed-book baseline.
+
+**Guidance:**
+
+- Put mission, defaults, required artifacts, hard constraints, and human checkpoint rules near the top.
+- Introduce safety-critical limits once, early, in the clearest language available.
+- If a rule matters enough to block execution, it should not first appear in Phase 6.
+- Place guardrails and final-handoff instructions at the end to benefit from the recency effect.
+
+### 5. Prefer explicit contracts over vague prose
+
+Skills work best when the model can see the contract, not infer it. Anthropic recommends simple, direct language with clearly separated prompt sections. OpenAI's prompt engineering guidance favors precise instructions, delimiters, and explicit success criteria.
+
+[ComplexBench](https://arxiv.org/abs/2407.03978) finds that constraint violations increase when constraints are implicit or require inference across multiple instructions. Explicit, independently verifiable constraints are followed most reliably.
+
+**Guidance:**
+
+- Name required artifacts, filenames, report headings, and stop conditions explicitly.
+- Distinguish required behavior, defaults, and optional behavior with separate sections.
+- Prefer `If X is missing, stop and report Y` over `Handle missing inputs appropriately`.
+- Use markdown headers and consistent formatting to create unambiguous section boundaries.
+
+### 6. Use progressive disclosure and shallow delegation
+
+The Agent Skills specification is built around progressive disclosure: metadata first, `SKILL.md` on activation, supporting resources only when needed. Anthropic's context engineering guidance recommends the same: assemble understanding layer by layer and load more context only when required.
+
+Sub-agents demonstrate the pattern at the agent level: each sub-agent might explore extensively (tens of thousands of tokens) but returns only a condensed summary (1,000–2,000 tokens).
+
+**Guidance:**
+
+- Keep top-level skills as control planes, not encyclopedias.
+- Delegate repeated mechanical work to scripts and repeated judgment workflows to named sub-skills.
+- Keep delegation shallow — a top-level skill should usually call leaf skills, not build a three-layer wrapper stack.
+- Design skills so the model can start executing from `SKILL.md` alone, then load additional context only when a specific phase requires it.
+
+### 7. Use scripts only when deterministic execution beats prose
+
+OpenAI's Codex skills docs recommend preferring instructions over scripts unless you need deterministic behavior or external tooling. Anthropic's agent design guide recommends that agents maintain flexibility in how tasks are accomplished — hardcoded scripts remove the model's ability to adapt.
+
+**Guidance:**
+
+- Use scripts for parsing, validation, formatting, scaffolding, or other mechanical tasks easier to run than describe.
+- Do not hide core judgment or routing logic inside scripts.
+- If a script is required, specify exactly when to run it, what inputs it needs, and what outputs count as success.
+- Never require interactive input from a script in a skill workflow.
+
+### 8. Design human checkpoints narrowly
+
+Anthropic's agent guidance describes humans as checkpoints for blockers and judgment calls, not as generic fallbacks. Vague checkpoint rules like "ask when uncertain" add constraint load on every action and lead to either always-asking or never-asking behavior.
+
+Research on instruction density ([IFScale](https://arxiv.org/abs/2507.11538)) shows that each additional constraint the model must satisfy simultaneously increases the likelihood of violating some of them.
+
+**Guidance:**
+
+- Name the exact ambiguity trigger that requires human input.
+- Keep the normal path autonomous.
+- Prefer concrete rules like "ask before creating a missing memory file" over "ask when uncertain."
+- Limit the number of distinct checkpoint conditions — each one competes with the workflow instructions for attention.
+
+### 9. Make the workflow measurable from day one
+
+OpenAI's [eval-skills guide](https://developers.openai.com/blog/eval-skills) recommends defining success before writing the skill, capturing traces, and grading both outcomes and process. A skill without measurable success criteria is difficult to improve and easy to regress.
+
+**Guidance:**
+
+- Give every skill a checkable definition of done.
+- Separate outcome goals, process goals, and style goals.
+- Make artifact paths and output formats explicit so evaluation harnesses can inspect them.
+- Design at least one positive-trigger and one negative-trigger prompt for activation evaluation.
+
+### 10. Treat skills as privileged instructions
+
+OpenAI's skills docs explicitly warn that skills can influence planning, tool usage, and command execution, and should be treated as privileged instructions and code. A skill that claims certain permissions or behaviors will be followed as written — the model does not independently verify whether the claims are legitimate.
+
+**Guidance:**
+
+- Never assume network access, elevated permissions, or non-standard tools without stating so.
+- Require explicit approval for sensitive or high-impact actions.
+- Review skills with the same rigor as code reviews — they have equivalent impact on agent behavior.
+
+### 11. Manage context budget across the skill lifecycle
+
+Skills do not operate in isolation. They load into a context window that already contains system prompts, instructions, conversation history, tool results, and potentially other skills. The effective budget for any single skill is a fraction of the total context window.
+
+**Guidance:**
+
+- Design skills to be context-efficient: produce explicit artifacts (files) rather than relying on the model remembering long intermediate outputs.
+- When a skill delegates to sub-agents, expect summaries (1,000–2,000 tokens) rather than full transcripts.
+- Prefer file-based artifacts over in-context accumulation for multi-step workflows.
+- Be aware that a 300-line skill loaded after 180K tokens of prior conversation is competing for the model's remaining attention.
+
+### 12. Design for error recovery and convergence
+
+Agent workflows fail. Skills should be designed so that failures are recoverable, progress is visible, and the workflow converges toward completion rather than looping indefinitely.
+
+**Guidance:**
+
+- Define convergence criteria for iterative workflows. State what "done" looks like and what triggers re-iteration vs. escalation.
+- Require observable outputs at each phase transition.
+- Set explicit loop limits or escalation triggers to prevent infinite loops.
+- Design phases so each one can be re-run independently if the previous attempt failed.
+
+## Recommended skill structure
+
+This section order is designed for reliable agent execution, informed by the primacy and recency effects documented in the research:
+
+| Section | Purpose | Why it belongs there |
+| --- | --- | --- |
+| Frontmatter | Routing metadata | Loaded before the body; determines activation accuracy |
+| Opening contract | One-sentence statement of what the skill does | Gives immediate orientation |
+| Defaults / inputs | States the no-input behavior and accepted inputs | Prevents silent guessing |
+| Required artifacts | Names file paths and report outputs | Makes the workflow inspectable |
+| Multi-agent pattern | Names recommended reviewer/worker roles | Encourages shallow, explicit delegation |
+| Global constraints | Hard rules that always apply | Critical invariants benefit from primacy |
+| Human checkpoints | Exact ask-user triggers | Keeps escalation explicit and rare |
+| Workflow phases | Ordered execution steps | Main operational body |
+| Guardrails | Common failure modes and negative constraints | Benefits from recency at the tail |
+| Final handoff | What to report back | Keeps closeout deterministic |
+
+**Ordering rules:**
+
+- Put routing, defaults, artifacts, and hard constraints before the phased workflow. These benefit most from the primacy effect.
+- Put explanations and examples after the contract, or move them out of `SKILL.md` entirely.
+- Put guardrails and final-handoff instructions last. These benefit from the recency effect at the tail of the U-shaped attention curve.
+- Avoid placing new critical rules in the middle of the workflow phases, where the "lost in the middle" effect is strongest.
+
+## Authoring checklist
+
+Before considering a skill done, verify that:
+
+- The `description` clearly says what the skill does and when it should trigger.
+- The skill has one primary job and one primary output contract.
+- The top of the file contains the defaults, artifact rules, and hard stop conditions.
+- Every required file or report path is explicit.
+- Human checkpoints are concrete and sparse.
+- The workflow has measurable success criteria.
+- Any required script is non-interactive and documented with inputs/outputs.
+- The skill still makes sense if a client only loads `SKILL.md`.
+- The body is as short as possible without making behavior ambiguous.
+- At least one positive-trigger and one negative-trigger prompt exist for evaluation.
+- Guardrails and negative constraints appear at the end, not buried in the middle.
+- The skill's context footprint is proportional to its complexity.
+
+## Anti-patterns
+
+| Anti-pattern | Why it fails | Better pattern |
+| --- | --- | --- |
+| Vague description like "Helps with PDFs" | Weak routing signal; poor implicit activation | Describe both the job and the trigger conditions |
+| Multi-mode skill with several major branches | Increases instruction count and interference | Split into separate skills with narrower triggers |
+| Critical rule buried late in the file | Later instructions are easier to drop | Move invariant rules near the top |
+| Laundry list of edge cases in `SKILL.md` | Bloats context and dilutes core instructions | Keep only canonical cases in the main file |
+| Interactive script | Hangs or fails in autonomous runs | Make scripts fully flag-driven with `--help` |
+| Core behavior hidden in companion files | Breaks on clients that only load `SKILL.md` | Keep the main workflow understandable in `SKILL.md` |
+| Shared base-skill wrapper hierarchy | Creates fragile abstractions and drift | Accept structural duplication until reuse is clearly real |
+| Untestable definition of done | Hard to evaluate or regress | Add explicit artifacts, commands, or rubric outputs |
+| Blanket permission expansion | Conflicts with least-privilege policy | Ask for approval at named high-impact steps |
+| Accumulating intermediate results in context | Depletes attention budget for later instructions | Write intermediates to files; reference by path |
+| Generic "ask when uncertain" checkpoint | Model interprets on every action, adding constraint load | Name exact trigger conditions |
+
+## Key research findings
+
+These findings are the most decision-relevant for skill design:
+
+### Input length degrades reasoning before the technical limit
+
+["Same Task, More Tokens" (ACL 2024)](https://arxiv.org/abs/2402.14848) shows that aggregate reasoning accuracy drops from 0.92 to 0.68 as input grows from ~250 to ~3,000 tokens — far below any model's technical context limit. Even duplicate padding degrades accuracy, proving that length itself is the issue. Chain-of-thought prompting does not mitigate this.
+
+### Context is used non-uniformly
+
+["Lost in the Middle" (TACL 2023)](https://arxiv.org/abs/2307.03172) finds a U-shaped attention curve: models attend most to the beginning and end of context. Middle-positioned information yields ~52.9% accuracy — worse than the 56.1% closed-book baseline. Providing information in the wrong position can be worse than not providing it at all.
+
+### Instruction count has independent effects beyond length
+
+[IFScale (2025)](https://arxiv.org/abs/2507.11538) benchmarks 20 models on 10–500 simultaneous instructions. Even the best frontier models only achieve 68.9% accuracy at 500 instructions. All models show higher error rates for later instructions (universal primacy effect). At high densities, error type shifts from modification to omission.
+
+### Constraint composition multiplies difficulty
+
+[ComplexBench (NeurIPS 2024)](https://arxiv.org/abs/2407.03978) finds catastrophic degradation under nesting. GPT-4 scores 0.881 on flat AND composition but as low as 0.083 on combined multi-layer compositions. Even GPT-4 fails on 20% of complex instructions.
+
+### Distractors degrade performance even at quantity one
+
+["Context Rot" (Chroma Research 2025)](https://research.trychroma.com/context-rot) finds that even a single distractor reduces performance relative to baseline. Extraneous content in a skill is not harmless padding — it actively interferes with instruction following.
+
+### Quantitative thresholds
+
+| Metric | Value | Source |
+| --- | --- | --- |
+| Reasoning accuracy drop onset | ~500 tokens of input growth | Same Task, More Tokens |
+| Aggregate accuracy decline (250 to 3K tokens) | 0.92 to 0.68 (24pp) | Same Task, More Tokens |
+| Middle-position QA accuracy vs closed-book | 52.9% vs 56.1% (worse than no docs) | Lost in the Middle |
+| Beginning/end-position accuracy | ~80%+ | Lost in the Middle |
+| Best frontier model accuracy at 500 instructions | 68.9% | IFScale |
+| Primacy effect peak density | 150–200 instructions | IFScale |
+| Flat AND constraint composition (GPT-4) | 0.881 | ComplexBench |
+| Nested multi-layer Selection (GPT-4) | 0.083–0.694 | ComplexBench |
+| Catalog token cost per skill | ~50–100 tokens | Agent Skills spec |
+| Full skill instruction budget | less than 5,000 tokens | Agent Skills spec |
+
+## References
+
+### Standards and platform documentation
+
+1. Agent Skills. [Specification](https://agentskills.io/specification).
+2. Agent Skills. [Using scripts in skills](https://agentskills.io/skill-creation/using-scripts).
+3. OpenAI. [Agent Skills](https://developers.openai.com/codex/skills).
+4. OpenAI. [Prompt engineering](https://platform.openai.com/docs/guides/prompt-engineering).
+5. OpenAI. [Reasoning best practices](https://platform.openai.com/docs/guides/reasoning-best-practices).
+6. OpenAI. [Prompting](https://developers.openai.com/codex/prompting).
+7. OpenAI. [Testing Agent Skills Systematically with Evals](https://developers.openai.com/blog/eval-skills).
+8. Anthropic. [Building effective agents](https://www.anthropic.com/research/building-effective-agents).
+9. Anthropic. [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents).
+
+### Empirical studies
+
+10. Levy, Jacoby, Goldberg. [Same Task, More Tokens: the Impact of Input Length on the Reasoning Performance of Large Language Models](https://arxiv.org/abs/2402.14848). ACL 2024.
+11. Liu et al. [Lost in the Middle: How Language Models Use Long Contexts](https://arxiv.org/abs/2307.03172). TACL 2023.
+12. Jaroslawicz et al. [How Many Instructions Can LLMs Follow at Once?](https://arxiv.org/abs/2507.11538) (IFScale). 2025.
+13. Wen et al. [Benchmarking Complex Instruction-Following with Multiple Constraints Composition](https://arxiv.org/abs/2407.03978) (ComplexBench). NeurIPS 2024.
+14. Fowler, Martin. [Beck Design Rules](https://martinfowler.com/bliki/BeckDesignRules.html).
+15. Metz, Sandi. [The Wrong Abstraction](https://sandimetz.com/blog/2016/1/20/the-wrong-abstraction).
+16. Chroma Research. [Context Rot: How Increasing Input Tokens Impacts LLM Performance](https://research.trychroma.com/context-rot). 2025.
+17. Zeng et al. [Order Matters: Investigate the Position Bias in Multi-constraint Instruction Following](https://arxiv.org/abs/2502.17204). 2025.
+18. Hsieh et al. [Context Length Alone Hurts LLM Performance Despite Perfect Retrieval](https://arxiv.org/abs/2510.05381). EMNLP 2025 Findings.

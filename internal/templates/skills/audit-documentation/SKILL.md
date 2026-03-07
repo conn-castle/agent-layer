@@ -2,9 +2,9 @@
 name: audit-documentation
 description: >-
   Audit Markdown documentation for static accuracy and cross-document
-  consistency against the repository, then produce a report and use
-  judgment-based human checkpoints before any non-routine doc edits or issue
-  logging.
+  consistency against the repository, then produce a report and optionally
+  apply fixes for accepted findings. Excludes agent memory files by default
+  (use `audit-memory` for those).
 ---
 
 # audit-documentation
@@ -18,7 +18,8 @@ Default behavior is report-first:
 ## Defaults
 
 - Default scope is all tracked `*.md` files unless the user gives paths or a diff-based scope.
-- Default mode is audit-only.
+- Exclude agent memory files (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, CONTEXT.md) from the default scope. Use the `audit-memory` skill for those.
+- Default mode is audit-only. Fix mode is available when requested.
 - Validate claims statically against the repository. Do not treat unexecuted commands as verified runtime behavior.
 - Prioritize findings that would mislead a developer, operator, or future agent.
 
@@ -30,6 +31,7 @@ Accept any combination of:
 - a maximum finding count
 - whether to include short excerpts
 - whether to prepare fix proposals
+- whether to apply fixes for accepted findings (default: report-only)
 
 ## Required artifact
 
@@ -133,11 +135,25 @@ The report must contain:
 - Do not turn wording preferences into findings unless they materially affect correctness or usability.
 - Do not invent policy changes while “fixing” stale docs.
 - Do not widen a doc audit into a code audit.
-- Do not modify files after the report unless the request already includes applying clear mechanical fixes or the user directs which findings to act on.
+- Do not apply fixes when running in report-only mode (the default).
+- Do not modify files after the report unless fix mode was requested or the user directs which findings to act on.
+- If memory file issues are found during the audit, note them and recommend `audit-memory` rather than auditing memory files in this workflow.
+
+## Fix mode
+
+When fix mode is requested (via inputs or user direction after the report):
+
+1. Apply clear mechanical corrections: update stale paths, fix incorrect commands, correct config references, update version numbers.
+2. Ask before applying corrections that change meaning or interpretation.
+3. Record each fix in the report under a `## Fixes Applied` section.
+
+When fix mode is not requested, skip fixes and present recommendations in the report.
 
 ## Final handoff
 
 After writing the report:
 1. Echo the report path.
 2. Summarize the highest-value findings in chat.
-3. Tell the user to choose which findings to fix, log, do both, or ignore.
+3. If fixes were applied, summarize what was changed.
+4. Tell the user to choose which remaining findings to fix, log, do both, or ignore.
+5. If memory file issues were noticed, recommend running `audit-memory`.

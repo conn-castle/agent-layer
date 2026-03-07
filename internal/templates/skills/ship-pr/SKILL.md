@@ -47,7 +47,7 @@ Delegate to:
 
 - Do not create a PR if there is nothing to push.
 - Do not skip CI checks.
-- Every PR comment must have a reply before the skill completes.
+- Every feedback comment (not bot status messages or CI notifications) must have a reply before the skill completes.
 - The skill must end with CI passing.
 - Do not force-push unless explicitly instructed.
 
@@ -98,11 +98,12 @@ Delegate to:
 ### Phase 5: Address PR comments (Comment handler)
 
 1. Read all PR comments (review comments and conversation comments).
-2. If there are comments to address:
-   a. Use the `address-pr-comments` skill, passing the PR number and all comments.
+2. Filter out bot status messages and CI notifications.
+3. If there are feedback comments to address:
+   a. Use the `address-pr-comments` skill, passing the PR number and all feedback comments.
    b. The address-pr-comments skill handles implementation, audit, commit, push, and replies.
-   c. Every comment must receive a reply — do not skip or filter any comments.
-3. If no comments exist, proceed.
+   c. Every feedback comment must receive a reply.
+4. If no feedback comments exist, proceed.
 
 ### Phase 6: Final CI verification (CI monitor)
 
@@ -127,24 +128,14 @@ trust the sub-skill output alone — re-read the PR state and validate.
       substantive, technically grounded justification — not a deferral or
       generic dismissal.
 3. Flag any comment that fails verification:
-   - **Missing reply:** the comment was never responded to.
-   - **Hollow agreement:** the reply claims the change was made but no
-     corresponding code change exists.
-   - **Unjustified deferral:** the reply declines the suggestion by deferring
-     it (e.g., "will address later", "out of scope", "tracked in backlog")
-     without a genuine technical reason why implementing it now is wrong or
-     harmful.
-   - **Generic dismissal:** the reply is vague or batch-style rather than
-     specific to the comment.
+   - **Missing reply:** never responded to.
+   - **Hollow agreement:** reply claims a change was made but no code change exists.
+   - **Unjustified deferral:** declines by deferring without a genuine technical reason.
+   - **Generic dismissal:** vague or batch-style rather than specific.
 4. If any comments are flagged:
    a. Re-address them: implement the fix or write a proper justification.
    b. Audit, commit, and push the new changes.
-   c. Post a new follow-up reply on each re-addressed comment. If a previous
-      reply declined the suggestion but the audit caused it to be implemented,
-      the new reply must acknowledge the reversal and describe the concrete
-      change that was made (e.g., "On reflection, this was a valid point.
-      Implemented X in Y."). Never leave a declined-reply as the last word
-      when the suggestion was subsequently implemented.
+   c. Post a follow-up reply on each re-addressed comment. If a previously declined suggestion was subsequently implemented, acknowledge the reversal and describe the concrete change.
    d. Re-run this phase to confirm all flags are resolved.
 5. Only proceed when every feedback comment passes verification.
 
@@ -159,12 +150,11 @@ trust the sub-skill output alone — re-read the PR state and validate.
 ## Guardrails
 
 - Do not skip the audit-and-fix step before committing.
-- Do not leave any comment without a reply.
+- Do not leave any feedback comment without a reply.
 - Do not end with CI failing.
 - Do not force-push or rewrite history unless explicitly instructed.
 - Do not create duplicate PRs.
-- Reply to every comment, including bot status comments and CI notifications.
-- If a comment's suggestion is implemented after a previous reply declined it, post a new follow-up reply acknowledging the reversal and describing the change. The declined reply must never be the final word on an implemented suggestion.
+- If a previously declined suggestion is subsequently implemented, the follow-up reply must acknowledge the reversal.
 
 ## Final handoff
 

@@ -102,12 +102,35 @@ func TestSkillTemplatesContainNormalizedWorkflowGuidance(t *testing.T) {
 			"## Human checkpoints",
 			"all uncommitted changes in the current working tree",
 			"Do not stop merely because Critical and High findings reach zero",
-			"### Phase 0: Preflight (Repo scout)",
+			"### Phase 0: Preflight and target selection (Repo scout)",
 			"## Final handoff",
 		},
 		"skills/audit-documentation/SKILL.md": {
 			"## Human checkpoints",
 			"requested scope is ambiguous enough that the audit target itself is unclear",
+			"Exclude agent memory files",
+			"audit-memory",
+		},
+		"skills/audit-memory/SKILL.md": {
+			"## Human checkpoints",
+			"DECISIONS.md receives focused scrutiny",
+			"superseded chains",
+			"self-evident from the codebase",
+			"### Phase 2: Content audit per file (Content auditor)",
+			"### Phase 3: Cross-file consistency (Cross-file auditor)",
+		},
+		"skills/audit-tests/SKILL.md": {
+			"## Human checkpoints",
+			"ask before deleting or significantly refactoring tests in fix mode",
+			"### Phase 1: Inventory and classify (Convention scout)",
+			"### Phase 2: Redundancy analysis (Redundancy analyst)",
+			"### Phase 3: Quality analysis (Quality analyst)",
+			"### Phase 4: Gap analysis (Gap analyst)",
+			"**Unit test gaps:**",
+			"**Integration test gaps:**",
+			"**E2E test gaps:**",
+			"No tier may be silently omitted",
+			"requires genuine architectural justification",
 		},
 		"skills/boost-coverage/SKILL.md": {
 			"## Human checkpoints",
@@ -157,7 +180,7 @@ func TestSkillTemplatesContainNormalizedWorkflowGuidance(t *testing.T) {
 		"skills/complete-current-phase/SKILL.md": {
 			"## Global constraints",
 			"## Human checkpoints",
-			"Do not jump ahead to a later incomplete phase unless the user explicitly names it.",
+			"Do not jump ahead to a later phase unless the user explicitly names it.",
 			"selected roadmap phase is fully complete",
 			"Do not stop after a single package if unchecked tasks still remain in the selected phase.",
 		},
@@ -166,9 +189,23 @@ func TestSkillTemplatesContainNormalizedWorkflowGuidance(t *testing.T) {
 			"## Human checkpoints",
 			".agent-layer/tmp/review-plan.<run-id>.report.md",
 		},
+		"skills/debug-issue/SKILL.md": {
+			"## Human checkpoints",
+			"Do not attempt a fix before the bug is reproduced",
+			"Write a test that",
+			"### Phase 1: Reproduce (Reproducer)",
+			"### Phase 3: Diagnose (Investigator)",
+		},
 		"skills/schedule-backlog/SKILL.md": {
 			"## Human checkpoints",
 			"requested apply step would commit to a non-obvious prioritization or sequencing choice",
+		},
+		"skills/improve-codebase/SKILL.md": {
+			"## Human checkpoints",
+			"decomposes the codebase into reviewable chunks",
+			"### Phase 1: Survey and decompose (Survey scout)",
+			"### Phase 4: Cross-cutting review (Architecture reviewer)",
+			"## Final handoff",
 		},
 	}
 	for path, requiredSnippets := range tests {
@@ -204,6 +241,11 @@ func TestSkillTemplatesCaptureArtifactReportConventions(t *testing.T) {
 			".agent-layer/tmp/verify-against-plan.<run-id>.report.md",
 			"Create the file with `touch` before writing.",
 		},
+		"skills/debug-issue/SKILL.md": {
+			".agent-layer/tmp/debug-issue.<run-id>.report.md",
+			"## Required report structure",
+			"Create the file with `touch` before writing.",
+		},
 		"skills/boost-coverage/SKILL.md": {
 			".agent-layer/tmp/boost-coverage.<run-id>.report.md",
 			"## Required report structure",
@@ -219,6 +261,24 @@ func TestSkillTemplatesCaptureArtifactReportConventions(t *testing.T) {
 		"skills/finish-task/SKILL.md": {
 			".agent-layer/tmp/finish-task.<run-id>.report.md",
 			"## Required report structure",
+		},
+		"skills/audit-memory/SKILL.md": {
+			".agent-layer/tmp/audit-memory.<run-id>.report.md",
+			"## Required report structure",
+			"Create the file with `touch` before writing.",
+		},
+		"skills/audit-documentation/SKILL.md": {
+			".agent-layer/tmp/audit-documentation.<run-id>.report.md",
+			"Create the file with `touch` before writing.",
+		},
+		"skills/audit-tests/SKILL.md": {
+			".agent-layer/tmp/audit-tests.<run-id>.report.md",
+			"## Required report structure",
+			"Create the file with `touch` before writing.",
+		},
+		"skills/improve-codebase/SKILL.md": {
+			".agent-layer/tmp/improve-codebase.<run-id>.report.md",
+			"Create the file with `touch` before writing.",
 		},
 	}
 	for path, requiredSnippets := range tests {
@@ -244,10 +304,9 @@ func TestCompleteCurrentPhaseTemplateClarifiesLoopControl(t *testing.T) {
 
 	required := []string{
 		"Use subagents liberally when available.",
-		"Use the `review-scope` skill on the actual implementation:",
-		"- then continue to Phase 6",
-		"Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns, toward the same loop cap.",
-		"Recommended cap: no more than 2 Phase 6-8 review/audit loops for the same work package before escalating.",
+		"Use the `review-scope` skill on the touched files, surrounding modules, and changed tests/docs.",
+		"then continue to Phase 6",
+		"Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns. Escalate if the loop is not converging.",
 	}
 	for _, snippet := range required {
 		if !strings.Contains(content, snippet) {
@@ -292,7 +351,7 @@ func TestAuditAndFixUncommittedChangesTemplateUsesSingleEscalationSection(t *tes
 func TestSkillTemplatesAvoidBackwardLanguageForForwardPhaseTransitions(t *testing.T) {
 	tests := map[string][]string{
 		"skills/complete-current-phase/SKILL.md": {
-			"- then continue to Phase 6",
+			"then continue to Phase 6",
 		},
 		"skills/implement-plan/SKILL.md": {
 			"- then continue to Phase 4",
