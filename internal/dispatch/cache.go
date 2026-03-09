@@ -332,6 +332,9 @@ func downloadHTTPClientWithSystem(sys System) *http.Client {
 		return defaultHTTPClient
 	}
 	client := sys.HTTPClient()
+	if client == nil {
+		client = defaultHTTPClient
+	}
 	timeout := downloadTimeoutWithSystem(sys)
 	if client.Timeout == timeout {
 		return client

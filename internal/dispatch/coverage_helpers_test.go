@@ -109,6 +109,15 @@ func TestCacheHelperBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("downloadHTTPClientWithSystem nil HTTPClient falls back", func(t *testing.T) {
+		sys := &testSystem{
+			HTTPClientFunc: func() *http.Client { return nil },
+		}
+		if got := downloadHTTPClientWithSystem(sys); got != defaultHTTPClient {
+			t.Fatal("expected shared defaultHTTPClient when HTTPClient returns nil")
+		}
+	})
+
 	t.Run("fetchChecksumWithSystem nil sys errors", func(t *testing.T) {
 		if _, err := fetchChecksumWithSystem(nil, "1.0.0", "al-linux-amd64"); err == nil {
 			t.Fatal("expected nil-system error")
