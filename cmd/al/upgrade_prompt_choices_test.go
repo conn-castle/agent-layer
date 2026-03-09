@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"strings"
 	"testing"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestPromptNumberedChoice_DefaultOnEmpty(t *testing.T) {
-	in := strings.NewReader("\n")
+	in := bufio.NewReader(strings.NewReader("\n"))
 	out := &bytes.Buffer{}
 	idx, err := promptNumberedChoice(in, out, []string{"alpha", "beta"}, 1)
 	if err != nil {
@@ -21,7 +22,7 @@ func TestPromptNumberedChoice_DefaultOnEmpty(t *testing.T) {
 }
 
 func TestPromptNumberedChoice_SelectsExplicit(t *testing.T) {
-	in := strings.NewReader("1\n")
+	in := bufio.NewReader(strings.NewReader("1\n"))
 	out := &bytes.Buffer{}
 	idx, err := promptNumberedChoice(in, out, []string{"alpha", "beta"}, 1)
 	if err != nil {
@@ -33,7 +34,7 @@ func TestPromptNumberedChoice_SelectsExplicit(t *testing.T) {
 }
 
 func TestPromptNumberedChoice_RetryOnInvalid(t *testing.T) {
-	in := strings.NewReader("bad\n2\n")
+	in := bufio.NewReader(strings.NewReader("bad\n2\n"))
 	out := &bytes.Buffer{}
 	idx, err := promptNumberedChoice(in, out, []string{"alpha", "beta"}, 0)
 	if err != nil {
@@ -48,7 +49,7 @@ func TestPromptNumberedChoice_RetryOnInvalid(t *testing.T) {
 }
 
 func TestPromptNumberedChoice_EOFReturnsDefault(t *testing.T) {
-	in := strings.NewReader("")
+	in := bufio.NewReader(strings.NewReader(""))
 	out := &bytes.Buffer{}
 	idx, err := promptNumberedChoice(in, out, []string{"alpha", "beta"}, 0)
 	if err != nil {
@@ -60,7 +61,7 @@ func TestPromptNumberedChoice_EOFReturnsDefault(t *testing.T) {
 }
 
 func TestPromptBoolChoice_SelectsTrue(t *testing.T) {
-	in := strings.NewReader("1\n")
+	in := bufio.NewReader(strings.NewReader("1\n"))
 	out := &bytes.Buffer{}
 	result, err := promptBoolChoice(in, out, false)
 	if err != nil {
@@ -72,7 +73,7 @@ func TestPromptBoolChoice_SelectsTrue(t *testing.T) {
 }
 
 func TestPromptBoolChoice_DefaultFalse(t *testing.T) {
-	in := strings.NewReader("\n")
+	in := bufio.NewReader(strings.NewReader("\n"))
 	out := &bytes.Buffer{}
 	result, err := promptBoolChoice(in, out, false)
 	if err != nil {
@@ -95,7 +96,7 @@ func TestPromptEnumChoice_SelectsOption(t *testing.T) {
 			{Value: "beta", Description: "second option"},
 		},
 	}
-	in := strings.NewReader("2\n")
+	in := bufio.NewReader(strings.NewReader("2\n"))
 	out := &bytes.Buffer{}
 	result, err := promptEnumChoice(in, out, "alpha", field)
 	if err != nil {
@@ -108,7 +109,7 @@ func TestPromptEnumChoice_SelectsOption(t *testing.T) {
 
 func TestPromptConfigChoice_Bool(t *testing.T) {
 	field := config.FieldDef{Key: "test.enabled", Type: config.FieldBool}
-	in := strings.NewReader("1\n")
+	in := bufio.NewReader(strings.NewReader("1\n"))
 	out := &bytes.Buffer{}
 	result, err := promptConfigChoice(in, out, "test.enabled", false, field)
 	if err != nil {
@@ -128,7 +129,7 @@ func TestPromptConfigChoice_Enum(t *testing.T) {
 			{Value: "b"},
 		},
 	}
-	in := strings.NewReader("1\n")
+	in := bufio.NewReader(strings.NewReader("1\n"))
 	out := &bytes.Buffer{}
 	result, err := promptConfigChoice(in, out, "test.mode", "b", field)
 	if err != nil {
@@ -140,7 +141,7 @@ func TestPromptConfigChoice_Enum(t *testing.T) {
 }
 
 func TestPromptBoolChoice_NonBoolValue_Errors(t *testing.T) {
-	in := strings.NewReader("\n")
+	in := bufio.NewReader(strings.NewReader("\n"))
 	out := &bytes.Buffer{}
 	_, err := promptBoolChoice(in, out, "true") // string, not bool
 	if err == nil {
@@ -161,7 +162,7 @@ func TestPromptEnumChoice_UnknownValue_StrictEnum_Errors(t *testing.T) {
 		},
 		AllowCustom: false,
 	}
-	in := strings.NewReader("\n")
+	in := bufio.NewReader(strings.NewReader("\n"))
 	out := &bytes.Buffer{}
 	_, err := promptEnumChoice(in, out, "nonexistent", field)
 	if err == nil {
@@ -182,7 +183,7 @@ func TestPromptEnumChoice_UnknownValue_AllowCustom_DefaultsToFirst(t *testing.T)
 		},
 		AllowCustom: true,
 	}
-	in := strings.NewReader("\n") // accept default
+	in := bufio.NewReader(strings.NewReader("\n")) // accept default
 	out := &bytes.Buffer{}
 	result, err := promptEnumChoice(in, out, "custom-value", field)
 	if err != nil {

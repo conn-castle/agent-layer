@@ -8,7 +8,7 @@ import (
 
 func TestBuildApprovals(t *testing.T) {
 	cfg := config.Config{
-		Approvals: config.ApprovalsConfig{Mode: "commands"},
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 	}
 	result := BuildApprovals(cfg, []string{"git status"})
 	if !result.AllowCommands || result.AllowMCP {
@@ -21,7 +21,7 @@ func TestBuildApprovals(t *testing.T) {
 
 func TestBuildApprovalsYOLO(t *testing.T) {
 	cfg := config.Config{
-		Approvals: config.ApprovalsConfig{Mode: "yolo"},
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 	}
 	result := BuildApprovals(cfg, []string{"make test"})
 	if !result.AllowCommands {

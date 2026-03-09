@@ -161,9 +161,7 @@ func LoadCommandsAllowFS(fsys fs.FS, root string, path string) ([]string, error)
 
 	var commands []string
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	lineNo := 0
 	for scanner.Scan() {
-		lineNo++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

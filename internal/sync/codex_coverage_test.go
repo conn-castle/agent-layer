@@ -112,7 +112,7 @@ func TestBuildCodexRules_EmptyCommand(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 		},
 		CommandsAllow: []string{"   ", "git status"}, // One empty/whitespace command
 	}

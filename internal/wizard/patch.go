@@ -1083,12 +1083,8 @@ func extraArrayBlocks(arrays map[string][]*tomlBlock) []*tomlBlock {
 			extra = append(extra, cloneBlock(block))
 		}
 	}
-	sort.Slice(extra, func(i, j int) bool {
-		if extra[i].name != extra[j].name {
-			return extra[i].name < extra[j].name
-		}
-		// Preserve original order within the same array name
-		return false
+	sort.SliceStable(extra, func(i, j int) bool {
+		return extra[i].name < extra[j].name
 	})
 	return extra
 }

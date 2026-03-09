@@ -1,5 +1,14 @@
 package config
 
+// Approval mode constants.
+const (
+	ApprovalModeAll      = "all"
+	ApprovalModeCommands = "commands"
+	ApprovalModeMCP      = "mcp"
+	ApprovalModeNone     = "none"
+	ApprovalModeYOLO     = "yolo"
+)
+
 // Config is the root configuration loaded from .agent-layer/config.toml.
 type Config struct {
 	Approvals ApprovalsConfig `toml:"approvals"`
@@ -84,6 +93,11 @@ type MCPServer struct {
 	Command       string            `toml:"command"`
 	Args          []string          `toml:"args"`
 	Env           map[string]string `toml:"env"`
+}
+
+// IsAgentEnabled returns true if the agent-enabled pointer is non-nil and true.
+func IsAgentEnabled(p *bool) bool {
+	return p != nil && *p
 }
 
 // InstructionFile holds a single instruction fragment.

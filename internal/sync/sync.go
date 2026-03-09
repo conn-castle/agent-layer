@@ -46,11 +46,6 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 	return RunWithProject(sys, root, project)
 }
 
-// agentEnabled returns true when the given enabled pointer is non-nil and true.
-func agentEnabled(enabled *bool) bool {
-	return enabled != nil && *enabled
-}
-
 // RunWithProject regenerates outputs using an already loaded project config.
 // Returns any sync-time warnings and an error if sync failed.
 func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Result, error) {
@@ -62,7 +57,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		},
 	}
 
-	if agentEnabled(agents.Codex.Enabled) {
+	if config.IsAgentEnabled(agents.Codex.Enabled) {
 		steps = append(steps,
 			func() error { return WriteCodexInstructions(sys, root, project.Instructions) },
 			func() error { return WriteCodexSkills(sys, root, project.Skills) },
@@ -72,8 +67,8 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	// VS Code block — granular split:
 	// WriteVSCodeSettings fires for vscode OR claude_vscode.
 	// WriteVSCodeMCPConfig, WriteVSCodePrompts, WriteVSCodeLaunchers fire for vscode only.
-	vscodeEnabled := agentEnabled(agents.VSCode.Enabled)
-	claudeVSCodeEnabled := agentEnabled(agents.ClaudeVSCode.Enabled)
+	vscodeEnabled := config.IsAgentEnabled(agents.VSCode.Enabled)
+	claudeVSCodeEnabled := config.IsAgentEnabled(agents.ClaudeVSCode.Enabled)
 
 	if vscodeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
@@ -88,16 +83,16 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		)
 	}
 
-	if agentEnabled(agents.Antigravity.Enabled) {
+	if config.IsAgentEnabled(agents.Antigravity.Enabled) {
 		steps = append(steps, func() error { return WriteAntigravitySkills(sys, root, project.Skills) })
 	}
 
-	if agentEnabled(agents.Gemini.Enabled) {
+	if config.IsAgentEnabled(agents.Gemini.Enabled) {
 		steps = append(steps, func() error { return WriteGeminiSettings(sys, root, project) })
 	}
 
 	// Claude files (.mcp.json, .claude/settings.json) fire when claude OR claude_vscode enabled.
-	claudeEnabled := agentEnabled(agents.Claude.Enabled)
+	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
 			func() error { return WriteClaudeSettings(sys, root, project) },
@@ -105,7 +100,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		)
 	}
 
-	if agentEnabled(agents.Codex.Enabled) {
+	if config.IsAgentEnabled(agents.Codex.Enabled) {
 		steps = append(steps,
 			func() error { return WriteCodexConfig(sys, root, project) },
 			func() error { return WriteCodexRules(sys, root, project) },
@@ -118,7 +113,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 
 	// Non-fatal post-steps that produce warnings on failure.
 	var postWarnings []warnings.Warning
-	if agentEnabled(agents.Gemini.Enabled) {
+	if config.IsAgentEnabled(agents.Gemini.Enabled) {
 		if w := EnsureGeminiTrustedFolder(sys, root); w != nil {
 			postWarnings = append(postWarnings, *w)
 		}

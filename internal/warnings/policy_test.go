@@ -97,7 +97,7 @@ func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Antigravity: config.EnableOnlyConfig{Enabled: &enabled},
 			},
@@ -126,7 +126,7 @@ func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
 func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 		},
 	}
 

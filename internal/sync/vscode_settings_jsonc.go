@@ -286,7 +286,7 @@ func hasJSONCNonTrivia(content string, start, end int) bool {
 // Returns: zero-based line and column numbers.
 func indexToLineCol(content string, idx int) (int, int) {
 	if idx <= 0 {
-		return 0, idx
+		return 0, 0
 	}
 	prefix := content[:idx]
 	line := strings.Count(prefix, "\n")

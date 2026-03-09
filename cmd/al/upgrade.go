@@ -900,7 +900,7 @@ func readinessAction(id string) string {
 // promptConfigChoice presents a type-aware numbered choice prompt for a config field.
 // Returns the selected value converted to the appropriate Go type (bool for FieldBool,
 // string for FieldEnum).
-func promptConfigChoice(in io.Reader, out io.Writer, key string, manifestValue any, field config.FieldDef) (any, error) {
+func promptConfigChoice(in *bufio.Reader, out io.Writer, key string, manifestValue any, field config.FieldDef) (any, error) {
 	switch field.Type {
 	case config.FieldBool:
 		return promptBoolChoice(in, out, manifestValue)
@@ -924,7 +924,7 @@ func promptConfigChoice(in io.Reader, out io.Writer, key string, manifestValue a
 
 // promptBoolChoice presents a true/false numbered choice and returns the selected bool.
 // Returns an error if manifestValue is not a bool (manifest/schema error).
-func promptBoolChoice(in io.Reader, out io.Writer, manifestValue any) (any, error) {
+func promptBoolChoice(in *bufio.Reader, out io.Writer, manifestValue any) (any, error) {
 	manBool, ok := manifestValue.(bool)
 	if !ok {
 		return nil, fmt.Errorf("migration manifest error: expected bool value, got %T (%v)", manifestValue, manifestValue)
@@ -943,7 +943,7 @@ func promptBoolChoice(in io.Reader, out io.Writer, manifestValue any) (any, erro
 
 // promptEnumChoice presents a numbered list of enum options and returns the selected string.
 // Returns an error if the manifest value is not in the option list for strict (non-AllowCustom) enums.
-func promptEnumChoice(in io.Reader, out io.Writer, manifestValue any, field config.FieldDef) (any, error) {
+func promptEnumChoice(in *bufio.Reader, out io.Writer, manifestValue any, field config.FieldDef) (any, error) {
 	manStr := fmt.Sprintf("%v", manifestValue)
 	options := make([]string, len(field.Options))
 	defaultIdx := -1
@@ -974,7 +974,7 @@ func promptEnumChoice(in io.Reader, out io.Writer, manifestValue any, field conf
 // promptNumberedChoice displays a numbered list and reads the user's selection.
 // options are display labels; defaultIdx is the 0-based pre-selected option (accepted on Enter).
 // Returns the 0-based index of the chosen option.
-func promptNumberedChoice(in io.Reader, out io.Writer, options []string, defaultIdx int) (int, error) {
+func promptNumberedChoice(in *bufio.Reader, out io.Writer, options []string, defaultIdx int) (int, error) {
 	if _, err := fmt.Fprintln(out, "\nChoose a value:"); err != nil {
 		return 0, err
 	}
@@ -983,12 +983,11 @@ func promptNumberedChoice(in io.Reader, out io.Writer, options []string, default
 			return 0, err
 		}
 	}
-	reader := bufio.NewReader(in)
 	for {
 		if _, err := fmt.Fprintf(out, "Enter choice [%d]: ", defaultIdx+1); err != nil {
 			return 0, err
 		}
-		line, err := reader.ReadString('\n')
+		line, err := in.ReadString('\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return 0, err
 		}

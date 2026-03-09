@@ -15,11 +15,11 @@ import (
 )
 
 func TestEnsureCachedBinaryWithSystem_MkdirAllErrorBranch(t *testing.T) {
-	origStat := osStat
-	osStat = func(string) (os.FileInfo, error) {
-		return nil, os.ErrNotExist
+	sys := &testSystem{
+		StatFunc: func(string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
 	}
-	t.Cleanup(func() { osStat = origStat })
 
 	cacheRoot := t.TempDir()
 	version := "1.0.0"
@@ -35,7 +35,7 @@ func TestEnsureCachedBinaryWithSystem_MkdirAllErrorBranch(t *testing.T) {
 		t.Fatalf("write blocking file: %v", err)
 	}
 
-	if _, err := ensureCachedBinary(cacheRoot, version, io.Discard); err == nil || !strings.Contains(err.Error(), "create cache dir") {
+	if _, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard); err == nil || !strings.Contains(err.Error(), "create cache dir") {
 		t.Fatalf("expected mkdir error branch, got %v", err)
 	}
 }
@@ -66,13 +66,13 @@ func TestEnsureCachedBinaryWithSystem_SyncErrorBranch(t *testing.T) {
 	releaseBaseURL = server.URL
 	t.Cleanup(func() { releaseBaseURL = origURL })
 
-	origFileSync := osFileSync
-	osFileSync = func(*os.File) error {
-		return errors.New("forced sync failure")
+	sys := &testSystem{
+		FileSyncFunc: func(*os.File) error {
+			return errors.New("forced sync failure")
+		},
 	}
-	t.Cleanup(func() { osFileSync = origFileSync })
 
-	_, err = ensureCachedBinary(t.TempDir(), version, io.Discard)
+	_, err = ensureCachedBinaryWithSystem(sys, t.TempDir(), version, io.Discard)
 	if err == nil {
 		t.Fatal("expected sync temp file error")
 	}
@@ -107,28 +107,25 @@ func TestDownloadToFileWithSystem_TruncateErrorBranch(t *testing.T) {
 }
 
 func TestFetchChecksumWithSystem_ScannerRetryOnNetErrorBranch(t *testing.T) {
-	origHTTP := httpClient
-	origSleep := dispatchSleep
-	httpClient = &http.Client{
-		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Status:     "200 OK",
-				Body: io.NopCloser(&errorReaderAfterData{
-					data: []byte("asset-without-checksum-fields"),
-					err:  &net.OpError{Op: "read", Net: "tcp", Err: &timeoutErr{}},
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Status:     "200 OK",
+						Body: io.NopCloser(&errorReaderAfterData{
+							data: []byte("asset-without-checksum-fields"),
+							err:  &net.OpError{Op: "read", Net: "tcp", Err: &timeoutErr{}},
+						}),
+					}, nil
 				}),
-			}, nil
-		}),
-		Timeout: 200 * time.Millisecond,
+				Timeout: 200 * time.Millisecond,
+			}
+		},
 	}
-	dispatchSleep = func(time.Duration) {}
-	t.Cleanup(func() {
-		httpClient = origHTTP
-		dispatchSleep = origSleep
-	})
 
-	_, err := fetchChecksumWithSystem(&testSystem{}, "1.0.0", "asset")
+	_, err := fetchChecksumWithSystem(sys, "1.0.0", "asset")
 	if err == nil {
 		t.Fatal("expected scanner read error")
 	}

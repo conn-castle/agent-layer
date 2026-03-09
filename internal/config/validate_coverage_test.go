@@ -8,7 +8,7 @@ import (
 func TestValidate_TopLevelErrors(t *testing.T) {
 	enabled := true
 	valid := Config{
-		Approvals: ApprovalsConfig{Mode: "all"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
@@ -93,7 +93,7 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 func TestValidate_MCPServerErrors(t *testing.T) {
 	enabled := true
 	baseConfig := Config{
-		Approvals: ApprovalsConfig{Mode: "all"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},

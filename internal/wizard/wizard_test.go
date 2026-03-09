@@ -15,7 +15,7 @@ import (
 
 func TestBuildSummaryIncludesDisabledMCPServers(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 	choices.DisabledMCPServers["github"] = true
 	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "github"}}
 
@@ -27,7 +27,7 @@ func TestBuildSummaryIncludesDisabledMCPServers(t *testing.T) {
 
 func TestBuildSummaryIncludesRestoredMCPServers(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 	choices.MissingDefaultMCPServers = []string{"context7"}
 	choices.RestoreMissingMCPServers = true
 	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "context7"}}
@@ -80,7 +80,7 @@ func TestRunWithWriter_LenientFallbackOnBrokenConfig(t *testing.T) {
 	trueVal := true
 	loadConfigLenientFunc = func(path string) (*config.Config, error) {
 		return &config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &trueVal},
 				Claude: config.ClaudeConfig{Enabled: &trueVal},
@@ -157,7 +157,7 @@ func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {
 	trueVal := true
 	loadConfigLenientFunc = func(path string) (*config.Config, error) {
 		return &config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &trueVal},
 				Claude: config.ClaudeConfig{Enabled: &trueVal},

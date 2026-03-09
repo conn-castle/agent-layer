@@ -64,7 +64,12 @@ func Patch(content string, updates map[string]string) string {
 
 		encodedValue := encodeValue(value)
 		if idx, ok := firstIndex[key]; ok {
-			lines[idx] = fmt.Sprintf("%s=%s", key, encodedValue)
+			prefix := ""
+			trimmedLine := strings.TrimSpace(lines[idx])
+			if strings.HasPrefix(trimmedLine, "export ") {
+				prefix = "export "
+			}
+			lines[idx] = fmt.Sprintf("%s%s=%s", prefix, key, encodedValue)
 		} else {
 			if len(lines) > 0 && lines[len(lines)-1] != "" {
 				lines = append(lines, "")
@@ -215,7 +220,7 @@ func unescapeDoubleQuotedValue(escaped string) string {
 // encodeValue escapes and quotes a value when required for .env formatting.
 // val is the raw value; returns the encoded representation.
 func encodeValue(val string) string {
-	if strings.ContainsAny(val, " \t#\n\r") || strings.Contains(val, "\"") {
+	if strings.ContainsAny(val, " \t#\n\r") || strings.Contains(val, "\"") || strings.HasPrefix(val, "'") {
 		val = strings.ReplaceAll(val, "\\", "\\\\")
 		val = strings.ReplaceAll(val, "\"", "\\\"")
 		val = strings.ReplaceAll(val, "\n", "\\n")

@@ -602,7 +602,7 @@ func TestCheckPromptServerConfig_GeminiMismatch(t *testing.T) {
 	tBool := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &tBool},
 			},
@@ -649,7 +649,7 @@ func TestCheckPromptServerConfig_InvalidGeminiJSON(t *testing.T) {
 	tBool := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &tBool},
 			},
@@ -687,7 +687,7 @@ func TestCheckPromptServerConfig_MissingGeminiFile(t *testing.T) {
 	tBool := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &tBool},
 			},
@@ -750,7 +750,7 @@ func TestCheckPromptServerConfig_GeminiConfigMatches(t *testing.T) {
 	tBool := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &tBool},
 			},
@@ -813,7 +813,7 @@ func TestCheckPromptServerConfig_GeminiConfigMatchesWithoutMCPApprovals(t *testi
 	tBool := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &tBool},
 			},
@@ -897,7 +897,7 @@ func TestCheckPromptServerConfig_BothClientsReturnsTwoResults(t *testing.T) {
 	tBool := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{Enabled: &tBool},
 				Gemini: config.AgentConfig{Enabled: &tBool},
@@ -960,7 +960,7 @@ func TestCheckPromptServerConfig_GeminiTrustMismatch(t *testing.T) {
 	tBool := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Gemini: config.AgentConfig{Enabled: &tBool},
 			},

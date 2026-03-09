@@ -21,7 +21,7 @@ func TestBuildGeminiSettingsCommandsOnly(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 		},
 		CommandsAllow: []string{"git status"},
 		Root:          t.TempDir(),
@@ -53,7 +53,7 @@ func TestWriteGeminiSettings(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 		Root: root,
 	}
@@ -109,7 +109,7 @@ func TestWriteGeminiSettingsWriteError(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 		Root: root,
 	}
@@ -132,7 +132,7 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{
@@ -225,7 +225,7 @@ func TestBuildGeminiSettingsYOLO(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 		},
 		CommandsAllow: []string{"git status"},
 		Root:          t.TempDir(),
@@ -257,7 +257,7 @@ func TestBuildGeminiSettingsMissingEnv(t *testing.T) {
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com?token=${TOKEN}"},
@@ -291,7 +291,7 @@ func TestWriteGeminiSettingsMarshalError(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 		Root: root,
 	}

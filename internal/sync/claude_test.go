@@ -14,7 +14,7 @@ func TestBuildClaudeSettings(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
@@ -43,7 +43,7 @@ func TestWriteClaudeSettings(t *testing.T) {
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 	if err := WriteClaudeSettings(RealSystem{}, root, project); err != nil {
@@ -79,7 +79,7 @@ func TestWriteClaudeSettingsWriteError(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 	if err := WriteClaudeSettings(RealSystem{}, root, project); err == nil {
@@ -91,7 +91,7 @@ func TestBuildClaudeSettingsNone(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 
@@ -109,7 +109,7 @@ func TestBuildClaudeSettingsYOLO(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
 					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
@@ -137,7 +137,7 @@ func TestBuildClaudeSettingsAgentSpecific(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{
 					AgentSpecific: map[string]any{
@@ -167,7 +167,7 @@ func TestBuildClaudeSettingsIncludesReasoningEffort(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{
 					ReasoningEffort: "high",
@@ -189,7 +189,7 @@ func TestBuildClaudeSettingsAgentSpecificEffortLevelOverride(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{
 					ReasoningEffort: "high",
@@ -215,7 +215,7 @@ func TestBuildClaudeSettingsAgentSpecificWithApprovals(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{
 					AgentSpecific: map[string]any{
@@ -268,7 +268,7 @@ func TestWriteClaudeSettingsMarshalError(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 

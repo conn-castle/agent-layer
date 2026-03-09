@@ -429,8 +429,8 @@ enabled = true
 	if err != nil {
 		t.Fatalf("expected lenient load to succeed, got: %v", err)
 	}
-	if cfg.Approvals.Mode != "all" {
-		t.Fatalf("expected approvals.mode = all, got %q", cfg.Approvals.Mode)
+	if cfg.Approvals.Mode != ApprovalModeAll {
+		t.Fatalf("expected approvals.mode = %s, got %q", ApprovalModeAll, cfg.Approvals.Mode)
 	}
 }
 

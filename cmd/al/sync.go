@@ -56,7 +56,7 @@ func newSyncCmd() *cobra.Command {
 					return ErrSyncCompletedWithWarnings
 				}
 			}
-			if project.Config.Approvals.Mode == "yolo" {
+			if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 				_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 			}
 			return nil

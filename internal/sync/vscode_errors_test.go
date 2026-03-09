@@ -23,7 +23,7 @@ func TestWriteVSCodeSettingsInvalidJSONCExtraTokensAfterRoot(t *testing.T) {
 
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 
@@ -41,7 +41,7 @@ func TestWriteVSCodeSettingsWriteError(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 	if err := WriteVSCodeSettings(RealSystem{}, root, project); err == nil {

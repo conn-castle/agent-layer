@@ -462,7 +462,7 @@ func TestCountEnabledMCPServers(t *testing.T) {
 		{ID: "d", Enabled: nil},
 	}
 
-	if got := countEnabledMCPServers(servers); got != 2 {
+	if got := len(enabledMCPServerIDs(servers)); got != 2 {
 		t.Fatalf("expected 2 enabled servers, got %d", got)
 	}
 }

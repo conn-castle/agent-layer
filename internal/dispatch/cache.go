@@ -21,22 +21,12 @@ import (
 
 var releaseBaseURL = update.ReleasesBaseURL
 
-var (
-	platformStringsFunc = platformStrings
-	osChmod             = os.Chmod
-	osRename            = os.Rename
-	osStat              = os.Stat
-	osCreateTemp        = os.CreateTemp
-	osFileSync          = (*os.File).Sync
-	httpClient          = &http.Client{Timeout: 30 * time.Second}
-	dispatchSleep       = time.Sleep
-)
-
 const (
-	defaultMaxDownloadBytes = int64(100 * 1024 * 1024) // 100 MiB
-	defaultDownloadTimeout  = 30 * time.Second
-	downloadRetryCount      = 1
-	downloadRetryBackoff    = 250 * time.Millisecond
+	defaultMaxDownloadBytes  = int64(100 * 1024 * 1024) // 100 MiB
+	maxChecksumResponseBytes = int64(1 << 20)           // 1 MiB — checksums.txt is a few KB at most
+	defaultDownloadTimeout   = 30 * time.Second
+	downloadRetryCount       = 1
+	downloadRetryBackoff     = 250 * time.Millisecond
 )
 
 // ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
@@ -49,13 +39,13 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 	if sys == nil {
 		return "", fmt.Errorf(messages.DispatchSystemRequired)
 	}
-	osName, arch, err := platformStringsFunc()
+	osName, arch, err := sys.PlatformStrings()
 	if err != nil {
 		return "", err
 	}
 	asset := assetName(osName, arch)
 	binPath := filepath.Join(cacheRoot, "versions", version, osName+"-"+arch, asset)
-	if _, err := osStat(binPath); err == nil {
+	if _, err := sys.Stat(binPath); err == nil {
 		return binPath, nil
 	} else if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
@@ -70,14 +60,14 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
 	}
 
-	if err := withFileLock(lockPath, func() error {
-		if _, err := osStat(binPath); err == nil {
+	if err := withFileLock(sys, lockPath, func() error {
+		if _, err := sys.Stat(binPath); err == nil {
 			return nil
 		} else if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf(messages.DispatchCheckCachedBinaryFmt, binPath, err)
 		}
 
-		tmp, err := osCreateTemp(filepath.Dir(binPath), asset+".tmp-*")
+		tmp, err := sys.CreateTemp(filepath.Dir(binPath), asset+".tmp-*")
 		if err != nil {
 			return fmt.Errorf(messages.DispatchCreateTempFileFmt, err)
 		}
@@ -95,7 +85,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 			_ = tmp.Close()
 			return err
 		}
-		if err := osFileSync(tmp); err != nil {
+		if err := sys.FileSync(tmp); err != nil {
 			_ = tmp.Close()
 			return fmt.Errorf(messages.DispatchSyncTempFileFmt, err)
 		}
@@ -110,11 +100,11 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 		if err := verifyChecksum(tmpName, expected); err != nil {
 			return err
 		}
-		if err := osChmod(tmpName, 0o755); err != nil {
+		if err := sys.Chmod(tmpName, 0o755); err != nil {
 			return fmt.Errorf(messages.DispatchChmodCachedBinaryFmt, err)
 		}
 
-		if err := osRename(tmpName, binPath); err != nil {
+		if err := sys.Rename(tmpName, binPath); err != nil {
 			return fmt.Errorf(messages.DispatchMoveCachedBinaryFmt, err)
 		}
 		committed = true
@@ -173,7 +163,7 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 		resp, err := client.Get(url)
 		if err != nil {
 			if shouldRetryDownload(attempt, err, 0) {
-				dispatchSleep(downloadRetryBackoff)
+				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			if isTimeoutError(err) {
@@ -191,7 +181,7 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 			statusText := resp.Status
 			_ = resp.Body.Close()
 			if shouldRetryDownload(attempt, nil, status) {
-				dispatchSleep(downloadRetryBackoff)
+				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			return fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, statusText)
@@ -210,7 +200,7 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 		_ = resp.Body.Close()
 		if copyErr != nil {
 			if shouldRetryDownload(attempt, copyErr, 0) {
-				dispatchSleep(downloadRetryBackoff)
+				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, copyErr)
@@ -239,7 +229,7 @@ func fetchChecksumWithSystem(sys System, version string, asset string) (string, 
 		resp, err := client.Get(url)
 		if err != nil {
 			if shouldRetryDownload(attempt, err, 0) {
-				dispatchSleep(downloadRetryBackoff)
+				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			if isTimeoutError(err) {
@@ -256,13 +246,13 @@ func fetchChecksumWithSystem(sys System, version string, asset string) (string, 
 			statusText := resp.Status
 			_ = resp.Body.Close()
 			if shouldRetryDownload(attempt, nil, status) {
-				dispatchSleep(downloadRetryBackoff)
+				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			return "", fmt.Errorf(messages.DispatchDownloadUnexpectedStatusFmt, url, statusText)
 		}
 
-		scanner := bufio.NewScanner(resp.Body)
+		scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxChecksumResponseBytes))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line == "" {
@@ -282,7 +272,7 @@ func fetchChecksumWithSystem(sys System, version string, asset string) (string, 
 		if err := scanner.Err(); err != nil {
 			_ = resp.Body.Close()
 			if shouldRetryDownload(attempt, err, 0) {
-				dispatchSleep(downloadRetryBackoff)
+				sys.Sleep(downloadRetryBackoff)
 				continue
 			}
 			return "", fmt.Errorf(messages.DispatchReadFailedFmt, url, err)
@@ -339,13 +329,14 @@ func downloadTimeoutWithSystem(sys System) time.Duration {
 
 func downloadHTTPClientWithSystem(sys System) *http.Client {
 	if sys == nil {
-		return httpClient
+		return defaultHTTPClient
 	}
+	client := sys.HTTPClient()
 	timeout := downloadTimeoutWithSystem(sys)
-	if httpClient.Timeout == timeout {
-		return httpClient
+	if client.Timeout == timeout {
+		return client
 	}
-	clientCopy := *httpClient
+	clientCopy := *client
 	clientCopy.Timeout = timeout
 	return &clientCopy
 }
