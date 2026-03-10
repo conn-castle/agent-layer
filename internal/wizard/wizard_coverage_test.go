@@ -86,8 +86,8 @@ func TestInitializeChoices_AdditionalBranches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initializeChoices: %v", err)
 	}
-	if choices.ApprovalMode != ApprovalAll {
-		t.Fatalf("expected default approval mode %q, got %q", ApprovalAll, choices.ApprovalMode)
+	if choices.ApprovalMode != config.ApprovalModeAll {
+		t.Fatalf("expected default approval mode %q, got %q", config.ApprovalModeAll, choices.ApprovalMode)
 	}
 	if !choices.ClaudeLocalConfigDir {
 		t.Fatal("expected claude local config dir to be loaded from config")
@@ -98,7 +98,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 	t.Run("promptWizardFlow first-step confirm error", func(t *testing.T) {
 		cfg := &config.ProjectConfig{Config: config.Config{}}
 		choices := NewChoices()
-		choices.ApprovalMode = ApprovalAll
+		choices.ApprovalMode = config.ApprovalModeAll
 		ui := &MockUI{
 			SelectFunc: func(string, []string, *string) error {
 				return errWizardBack

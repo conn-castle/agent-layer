@@ -80,7 +80,7 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 		}
 	}
 
-	if onlyAntigravityEnabled(project.Config.Agents) && project.Config.Approvals.Mode != "none" {
+	if onlyAntigravityEnabled(project.Config.Agents) && project.Config.Approvals.Mode != config.ApprovalModeNone {
 		results = append(results, Warning{
 			Code:     CodePolicyCapabilityMismatch,
 			Subject:  "approvals.mode",

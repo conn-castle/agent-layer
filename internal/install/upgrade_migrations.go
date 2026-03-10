@@ -776,18 +776,7 @@ func deleteNestedConfigValue(cfg map[string]any, parts []string) (bool, error) {
 
 func asStringAnyMap(value any) (map[string]any, bool) {
 	asAny, ok := value.(map[string]any)
-	if ok {
-		return asAny, true
-	}
-	asInterface, ok := value.(map[string]interface{})
-	if !ok {
-		return nil, false
-	}
-	converted := make(map[string]any, len(asInterface))
-	for key, val := range asInterface {
-		converted[key] = val
-	}
-	return converted, true
+	return asAny, ok
 }
 
 func splitMigrationKeyPath(raw string) ([]string, error) {

@@ -64,11 +64,11 @@ func TestFieldsCoversValidApprovals(t *testing.T) {
 	// Ensure the catalog's approvals.mode options exactly match the old
 	// validApprovals map that was used in validate.go.
 	expected := map[string]struct{}{
-		"all":      {},
-		"mcp":      {},
-		"commands": {},
-		"none":     {},
-		"yolo":     {},
+		ApprovalModeAll:      {},
+		ApprovalModeMCP:      {},
+		ApprovalModeCommands: {},
+		ApprovalModeNone:     {},
+		ApprovalModeYOLO:     {},
 	}
 	f, ok := LookupField("approvals.mode")
 	if !ok {
@@ -95,8 +95,8 @@ func TestFieldOptionValues(t *testing.T) {
 	if len(values) != 5 {
 		t.Fatalf("expected 5 approval mode values, got %d", len(values))
 	}
-	if values[0] != "all" {
-		t.Errorf("expected first value to be 'all', got %q", values[0])
+	if values[0] != ApprovalModeAll {
+		t.Errorf("expected first value to be %q, got %q", ApprovalModeAll, values[0])
 	}
 }
 

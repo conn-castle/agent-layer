@@ -141,7 +141,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 
 	choices.ApprovalMode = cfg.Config.Approvals.Mode
 	if choices.ApprovalMode == "" {
-		choices.ApprovalMode = ApprovalAll
+		choices.ApprovalMode = config.ApprovalModeAll
 	}
 
 	agentConfigs := []agentEnabledConfig{

@@ -69,7 +69,7 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -98,10 +98,10 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 	if !strings.Contains(output, "bearer_token_env_var = \"TOKEN\"") {
 		t.Fatalf("missing bearer_token_env_var in output:\n%s", output)
 	}
-	if !strings.Contains(output, "env_http_headers = { X-Api-Key = \"API_KEY\" }") {
+	if !strings.Contains(output, `env_http_headers = { "X-Api-Key" = "API_KEY" }`) {
 		t.Fatalf("missing env_http_headers in output:\n%s", output)
 	}
-	if !strings.Contains(output, "http_headers = { X-Toolsets = \"actions,issues\" }") {
+	if !strings.Contains(output, `http_headers = { "X-Toolsets" = "actions,issues" }`) {
 		t.Fatalf("missing http_headers in output:\n%s", output)
 	}
 	// URL should have resolved value (not placeholder) since Codex doesn't support ${VAR} in URLs.
@@ -114,7 +114,7 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -146,7 +146,7 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 		t.Fatalf("missing args in output:\n%s", output)
 	}
 	// Env should have resolved value (not placeholder) since Codex doesn't support ${VAR} in env vars.
-	if !strings.Contains(output, "env = { TOKEN = \"abc\" }") {
+	if !strings.Contains(output, `env = { "TOKEN" = "abc" }`) {
 		t.Fatalf("missing env in output:\n%s", output)
 	}
 }
@@ -155,7 +155,7 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
 					Enabled:         &enabled,
@@ -195,7 +195,7 @@ func TestBuildCodexConfigYOLO(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 		},
 		Env: map[string]string{},
@@ -221,7 +221,7 @@ func TestBuildCodexConfigAgentSpecific(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
 					Enabled: &enabled,
@@ -268,7 +268,7 @@ func TestBuildCodexConfigAgentSpecificOverrides(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
 					Enabled: &enabled,
@@ -315,7 +315,7 @@ func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
 					Enabled: &enabled,
@@ -381,7 +381,7 @@ func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -409,7 +409,7 @@ func TestBuildCodexConfigMissingEnv(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -435,7 +435,7 @@ func TestBuildCodexConfigMissingEnv(t *testing.T) {
 func TestBuildCodexRules(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 		},
 		CommandsAllow: []string{"git status"},
 	}
@@ -457,7 +457,7 @@ func TestWriteCodexConfig(t *testing.T) {
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 		Env: map[string]string{},
 	}
@@ -501,7 +501,7 @@ func TestWriteCodexConfigWriteError(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 	if err := WriteCodexConfig(RealSystem{}, root, project); err == nil {
@@ -534,7 +534,7 @@ func TestWriteCodexRulesWriteError(t *testing.T) {
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 	if err := WriteCodexRules(RealSystem{}, root, project); err == nil {
@@ -546,7 +546,7 @@ func TestBuildCodexConfigMultipleServers(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -587,7 +587,7 @@ func TestBuildCodexConfigUnsupportedTransport(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -617,7 +617,7 @@ func TestBuildCodexConfigStdioMissingCommandEnv(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -647,7 +647,7 @@ func TestBuildCodexConfigStdioMissingArgEnv(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -678,7 +678,7 @@ func TestBuildCodexConfigStdioMissingEnvVarEnv(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{

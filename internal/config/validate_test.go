@@ -9,7 +9,7 @@ func TestValidateConfigErrors(t *testing.T) {
 	trueVal := true
 	falseVal := false
 	valid := Config{
-		Approvals: ApprovalsConfig{Mode: "all"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal},
@@ -155,7 +155,7 @@ func withClaudeReasoning(cfg Config, model string, effort string) Config {
 func TestValidateApprovalsYOLO(t *testing.T) {
 	trueVal := true
 	cfg := Config{
-		Approvals: ApprovalsConfig{Mode: "yolo"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeYOLO},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal},
@@ -173,7 +173,7 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 	trueVal := true
 	cfg := Config{
-		Approvals: ApprovalsConfig{Mode: "all"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "high"},
@@ -191,7 +191,7 @@ func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 func TestValidateWarningsThresholds(t *testing.T) {
 	enabled := true
 	base := Config{
-		Approvals: ApprovalsConfig{Mode: "all"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
@@ -275,7 +275,7 @@ func TestValidateWarningsThresholds(t *testing.T) {
 func TestValidateWarningsNoiseModeQuiet(t *testing.T) {
 	enabled := true
 	cfg := Config{
-		Approvals: ApprovalsConfig{Mode: "all"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
@@ -294,7 +294,7 @@ func TestValidateWarningsNoiseModeQuiet(t *testing.T) {
 func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 	enabled := true
 	base := Config{
-		Approvals: ApprovalsConfig{Mode: "all"},
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Gemini:       AgentConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},

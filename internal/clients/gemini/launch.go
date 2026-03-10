@@ -17,7 +17,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	if cfg.Config.Approvals.Mode == "yolo" {
+	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--approval-mode=yolo")
 	}
 	args = append(args, passArgs...)

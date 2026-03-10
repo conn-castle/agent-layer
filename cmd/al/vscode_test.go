@@ -21,7 +21,7 @@ func TestRunVSCodeNoSync(t *testing.T) {
 
 	t.Setenv("PATH", binDir)
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
-		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
 	}, vscode.Launch, false, nil)
 	if err != nil {
@@ -61,7 +61,7 @@ enabled = true
 	}
 
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
-		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
 	}, vscode.Launch, false, nil)
 	if err == nil {
@@ -105,7 +105,7 @@ enabled = true
 	t.Setenv("PATH", binDir)
 
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
-		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
 	}, vscode.Launch, false, nil)
 	if err != nil {
@@ -130,7 +130,7 @@ func TestRunVSCodeNoSyncManagedBlockConflict(t *testing.T) {
 	t.Setenv("PATH", binDir)
 
 	err := clients.RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
-		v := agentEnabled(cfg.Agents.VSCode.Enabled) || agentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
+		v := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled) || config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 		return &v
 	}, vscode.Launch, false, nil)
 	if err == nil {

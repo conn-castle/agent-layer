@@ -50,7 +50,7 @@ command = "tool"
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.Approvals.Mode != "all" {
+	if cfg.Approvals.Mode != ApprovalModeAll {
 		t.Fatalf("unexpected approvals mode: %s", cfg.Approvals.Mode)
 	}
 	if cfg.Agents.Gemini.Enabled == nil || !*cfg.Agents.Gemini.Enabled {

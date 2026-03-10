@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -371,21 +372,21 @@ func TestPromptConfigChoice_DefaultBranchErrors(t *testing.T) {
 	unknown := config.FieldDef{Key: "foo.bar", Type: "string"}
 
 	t.Run("value write error", func(t *testing.T) {
-		_, err := promptConfigChoice(strings.NewReader(""), &errorWriter{failAfter: 0}, "foo.bar", "x", unknown)
+		_, err := promptConfigChoice(bufio.NewReader(strings.NewReader("")), &errorWriter{failAfter: 0}, "foo.bar", "x", unknown)
 		if err == nil || !strings.Contains(err.Error(), "write failed") {
 			t.Fatalf("expected write failure, got %v", err)
 		}
 	})
 
 	t.Run("prompt read error", func(t *testing.T) {
-		_, err := promptConfigChoice(errorReader{}, &bytes.Buffer{}, "foo.bar", "x", unknown)
+		_, err := promptConfigChoice(bufio.NewReader(errorReader{}), &bytes.Buffer{}, "foo.bar", "x", unknown)
 		if err == nil || !strings.Contains(err.Error(), "read failed") {
 			t.Fatalf("expected read failure, got %v", err)
 		}
 	})
 
 	t.Run("decline default value", func(t *testing.T) {
-		_, err := promptConfigChoice(strings.NewReader("n\n"), &bytes.Buffer{}, "foo.bar", "x", unknown)
+		_, err := promptConfigChoice(bufio.NewReader(strings.NewReader("n\n")), &bytes.Buffer{}, "foo.bar", "x", unknown)
 		if err == nil || !strings.Contains(err.Error(), "user declined default value") {
 			t.Fatalf("expected decline error, got %v", err)
 		}
@@ -394,14 +395,14 @@ func TestPromptConfigChoice_DefaultBranchErrors(t *testing.T) {
 
 func TestPromptNumberedChoice_ErrorPaths(t *testing.T) {
 	t.Run("invalid choice at EOF", func(t *testing.T) {
-		_, err := promptNumberedChoice(strings.NewReader("abc"), &bytes.Buffer{}, []string{"one"}, 0)
+		_, err := promptNumberedChoice(bufio.NewReader(strings.NewReader("abc")), &bytes.Buffer{}, []string{"one"}, 0)
 		if err == nil || !strings.Contains(err.Error(), "invalid choice") {
 			t.Fatalf("expected invalid choice error, got %v", err)
 		}
 	})
 
 	t.Run("retry write error", func(t *testing.T) {
-		_, err := promptNumberedChoice(strings.NewReader("abc\n1\n"), &errorWriter{failAfter: 3}, []string{"one"}, 0)
+		_, err := promptNumberedChoice(bufio.NewReader(strings.NewReader("abc\n1\n")), &errorWriter{failAfter: 3}, []string{"one"}, 0)
 		if err == nil || !strings.Contains(err.Error(), "write failed") {
 			t.Fatalf("expected write failure, got %v", err)
 		}
@@ -452,7 +453,7 @@ func TestPromptUnifiedUpgradeReview_ManagedThenMemory(t *testing.T) {
 
 func TestPromptConfigChoice_DefaultAccept(t *testing.T) {
 	unknown := config.FieldDef{Key: "foo.bar", Type: "string"}
-	val, err := promptConfigChoice(strings.NewReader("y\n"), io.Discard, "foo.bar", "x", unknown)
+	val, err := promptConfigChoice(bufio.NewReader(strings.NewReader("y\n")), io.Discard, "foo.bar", "x", unknown)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
@@ -830,7 +831,7 @@ func TestWriteReadinessSection_HeaderWriteError(t *testing.T) {
 
 func TestPromptChoiceAdditionalErrorBranches(t *testing.T) {
 	t.Run("promptBoolChoice uses true default", func(t *testing.T) {
-		val, err := promptBoolChoice(strings.NewReader("\n"), &bytes.Buffer{}, true)
+		val, err := promptBoolChoice(bufio.NewReader(strings.NewReader("\n")), &bytes.Buffer{}, true)
 		if err != nil {
 			t.Fatalf("expected nil error, got %v", err)
 		}
@@ -841,7 +842,7 @@ func TestPromptChoiceAdditionalErrorBranches(t *testing.T) {
 	})
 
 	t.Run("promptBoolChoice prompt error", func(t *testing.T) {
-		_, err := promptBoolChoice(errorReader{}, &bytes.Buffer{}, false)
+		_, err := promptBoolChoice(bufio.NewReader(errorReader{}), &bytes.Buffer{}, false)
 		if err == nil || !strings.Contains(err.Error(), "read failed") {
 			t.Fatalf("expected read failure, got %v", err)
 		}
@@ -856,14 +857,14 @@ func TestPromptChoiceAdditionalErrorBranches(t *testing.T) {
 				{Value: "b"},
 			},
 		}
-		_, err := promptEnumChoice(errorReader{}, &bytes.Buffer{}, "a", field)
+		_, err := promptEnumChoice(bufio.NewReader(errorReader{}), &bytes.Buffer{}, "a", field)
 		if err == nil || !strings.Contains(err.Error(), "read failed") {
 			t.Fatalf("expected read failure, got %v", err)
 		}
 	})
 
 	t.Run("promptNumberedChoice read error", func(t *testing.T) {
-		_, err := promptNumberedChoice(errorReader{}, &bytes.Buffer{}, []string{"a"}, 0)
+		_, err := promptNumberedChoice(bufio.NewReader(errorReader{}), &bytes.Buffer{}, []string{"a"}, 0)
 		if err == nil || !strings.Contains(err.Error(), "read failed") {
 			t.Fatalf("expected read failure, got %v", err)
 		}
@@ -1138,21 +1139,21 @@ func TestWriteReadinessSection_SummaryWriteError(t *testing.T) {
 
 func TestPromptNumberedChoice_WriteBranches(t *testing.T) {
 	t.Run("header write error", func(t *testing.T) {
-		_, err := promptNumberedChoice(strings.NewReader(""), &errorWriter{failAfter: 0}, []string{"one"}, 0)
+		_, err := promptNumberedChoice(bufio.NewReader(strings.NewReader("")), &errorWriter{failAfter: 0}, []string{"one"}, 0)
 		if err == nil || !strings.Contains(err.Error(), "write failed") {
 			t.Fatalf("expected write failure, got %v", err)
 		}
 	})
 
 	t.Run("option write error", func(t *testing.T) {
-		_, err := promptNumberedChoice(strings.NewReader(""), &errorWriter{failAfter: 1}, []string{"one"}, 0)
+		_, err := promptNumberedChoice(bufio.NewReader(strings.NewReader("")), &errorWriter{failAfter: 1}, []string{"one"}, 0)
 		if err == nil || !strings.Contains(err.Error(), "write failed") {
 			t.Fatalf("expected write failure, got %v", err)
 		}
 	})
 
 	t.Run("enter choice write error", func(t *testing.T) {
-		_, err := promptNumberedChoice(strings.NewReader(""), &errorWriter{failAfter: 2}, []string{"one"}, 0)
+		_, err := promptNumberedChoice(bufio.NewReader(strings.NewReader("")), &errorWriter{failAfter: 2}, []string{"one"}, 0)
 		if err == nil || !strings.Contains(err.Error(), "write failed") {
 			t.Fatalf("expected write failure, got %v", err)
 		}

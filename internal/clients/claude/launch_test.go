@@ -63,7 +63,7 @@ func TestLaunchClaudeYOLO(t *testing.T) {
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{Model: "test-model"},
 			},

@@ -16,7 +16,7 @@ func TestWithFileLock(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "test.lock")
 
-	err := withFileLock(path, func() error {
+	err := withFileLock(RealSystem{}, path, func() error {
 		return nil
 	})
 	if err != nil {
@@ -36,7 +36,7 @@ func TestWithFileLock_OpenError(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	err := withFileLock(path, func() error {
+	err := withFileLock(RealSystem{}, path, func() error {
 		return nil
 	})
 	if err == nil {
@@ -49,7 +49,7 @@ func TestWithFileLock_FnError(t *testing.T) {
 	path := filepath.Join(tmp, "test.lock")
 
 	expectedErr := fmt.Errorf("callback error")
-	err := withFileLock(path, func() error {
+	err := withFileLock(RealSystem{}, path, func() error {
 		return expectedErr
 	})
 	if err != expectedErr {
@@ -74,15 +74,13 @@ func TestAcquireFileLock_LockError(t *testing.T) {
 	path := filepath.Join(tmp, "test.lock")
 
 	expectedErr := fmt.Errorf("lock error")
-	origLockFile := lockFileFn
-	lockFileFn = func(*os.File) error {
-		return expectedErr
+	sys := &testSystem{
+		FlockFunc: func(fd int, how int) error {
+			return expectedErr
+		},
 	}
-	t.Cleanup(func() {
-		lockFileFn = origLockFile
-	})
 
-	lock, err := acquireFileLock(path)
+	lock, err := acquireFileLock(sys, path)
 	if lock != nil {
 		t.Fatalf("expected nil lock on error, got %+v", lock)
 	}
@@ -100,41 +98,38 @@ func TestFileLock_Release_UnlockError(t *testing.T) {
 	}
 
 	expectedErr := fmt.Errorf("unlock error")
-	origUnlockFile := unlockFileFn
-	unlockFileFn = func(*os.File) error {
-		return expectedErr
+	sys := &testSystem{
+		FlockFunc: func(fd int, how int) error {
+			return expectedErr
+		},
 	}
-	t.Cleanup(func() {
-		unlockFileFn = origUnlockFile
-	})
 
-	lock := &fileLock{file: file}
+	lock := &fileLock{file: file, sys: sys}
 	if err := lock.release(); !errors.Is(err, expectedErr) {
 		t.Fatalf("expected error %v, got %v", expectedErr, err)
 	}
 }
 
 func TestLockFile_Timeout(t *testing.T) {
-	origFlock := flockFn
-	origSleep := lockSleep
 	origTimeout := lockWaitTimeout
 	origPoll := lockPollEvery
-	flockFn = func(fd int, how int) error {
-		return unix.EWOULDBLOCK
-	}
-	lockSleep = func(time.Duration) {}
 	lockWaitTimeout = time.Nanosecond
 	lockPollEvery = time.Nanosecond
 	t.Cleanup(func() {
-		flockFn = origFlock
-		lockSleep = origSleep
 		lockWaitTimeout = origTimeout
 		lockPollEvery = origPoll
 	})
 
+	sys := &testSystem{
+		FlockFunc: func(fd int, how int) error {
+			return unix.EWOULDBLOCK
+		},
+		SleepFunc: func(time.Duration) {},
+	}
+
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "test.lock")
-	lock, err := acquireFileLock(path)
+	lock, err := acquireFileLock(sys, path)
 	if lock != nil {
 		t.Fatalf("expected no lock on timeout, got %+v", lock)
 	}

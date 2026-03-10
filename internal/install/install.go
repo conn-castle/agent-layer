@@ -208,7 +208,7 @@ func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot)
 				return fmt.Errorf("upgrade step %s failed: %w; rollback succeeded; failed to write snapshot state: %v", step.name, err, writeErr)
 			}
 			_, _ = fmt.Fprintf(inst.warnOutput(), messages.InstallUpgradeSnapshotRolledBackFmt, step.name, snapshot.SnapshotID)
-			return fmt.Errorf("upgrade step %s failed: %w", step.name, err)
+			return fmt.Errorf("upgrade step %s failed (rolled back to pre-upgrade state): %w", step.name, err)
 		}
 		for _, path := range currentStepTargets {
 			completedTargets[filepath.Clean(path)] = struct{}{}

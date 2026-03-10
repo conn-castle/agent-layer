@@ -76,9 +76,9 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	settings := &vscodeSettings{}
 
-	vscodeEnabled := agentEnabled(project.Config.Agents.VSCode.Enabled)
-	claudeVSCodeEnabled := agentEnabled(project.Config.Agents.ClaudeVSCode.Enabled)
-	isYOLO := project.Config.Approvals.Mode == "yolo"
+	vscodeEnabled := config.IsAgentEnabled(project.Config.Agents.VSCode.Enabled)
+	claudeVSCodeEnabled := config.IsAgentEnabled(project.Config.Agents.ClaudeVSCode.Enabled)
+	isYOLO := project.Config.Approvals.Mode == config.ApprovalModeYOLO
 
 	// Copilot settings: only when agents.vscode is enabled.
 	if vscodeEnabled {

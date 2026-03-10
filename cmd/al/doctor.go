@@ -194,10 +194,6 @@ func printRecommendation(out io.Writer, recommendation string) {
 	}
 }
 
-func countEnabledMCPServers(servers []config.MCPServer) int {
-	return len(enabledMCPServerIDs(servers))
-}
-
 // enabledMCPServerIDs returns the configured IDs for enabled MCP servers.
 func enabledMCPServerIDs(servers []config.MCPServer) []string {
 	ids := make([]string, 0, len(servers))

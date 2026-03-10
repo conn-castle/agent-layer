@@ -11,11 +11,11 @@ import (
 
 func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 
-	allLabel, ok := approvalModeLabelForValue(ApprovalAll)
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)
-	noneLabel, ok := approvalModeLabelForValue(ApprovalNone)
+	noneLabel, ok := approvalModeLabelForValue(config.ApprovalModeNone)
 	require.True(t, ok)
 
 	var approvalCalls, agentCalls int
@@ -58,7 +58,7 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, approvalCalls, "expected to revisit approval step after back from agents")
 	require.Equal(t, 2, agentCalls)
-	require.Equal(t, ApprovalNone, choices.ApprovalMode)
+	require.Equal(t, config.ApprovalModeNone, choices.ApprovalMode)
 	require.True(t, choices.ApprovalModeTouched)
 	require.True(t, choices.EnabledAgentsTouched)
 	require.Empty(t, choices.EnabledAgents)
@@ -66,7 +66,7 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 
 func TestPromptWizardFlow_FirstStepEscapeCancelsWhenConfirmed(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 
 	var exitConfirmCalls int
 	ui := &MockUI{
@@ -93,9 +93,9 @@ func TestPromptWizardFlow_FirstStepEscapeCancelsWhenConfirmed(t *testing.T) {
 
 func TestPromptWizardFlow_FirstStepEscapeContinuesWhenDeclined(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 
-	allLabel, ok := approvalModeLabelForValue(ApprovalAll)
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)
 
 	var approvalCalls, exitConfirmCalls int
@@ -138,9 +138,9 @@ func TestPromptWizardFlow_FirstStepEscapeContinuesWhenDeclined(t *testing.T) {
 
 func TestPromptWizardFlow_ClaudeReasoningSkippedForNonOpusModel(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 
-	allLabel, ok := approvalModeLabelForValue(ApprovalAll)
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)
 
 	var claudeReasoningCalls int
@@ -185,10 +185,10 @@ func TestPromptWizardFlow_ClaudeReasoningSkippedForNonOpusModel(t *testing.T) {
 
 func TestPromptWizardFlow_ClaudeReasoningClearedWhenSwitchingFromOpus(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 	choices.ClaudeReasoning = "high" // existing value from previous wizard run
 
-	allLabel, ok := approvalModeLabelForValue(ApprovalAll)
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)
 
 	ui := &MockUI{
@@ -230,9 +230,9 @@ func TestPromptWizardFlow_ClaudeReasoningClearedWhenSwitchingFromOpus(t *testing
 
 func TestPromptWizardFlow_ClaudeReasoningPromptedForOpusModel(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 
-	allLabel, ok := approvalModeLabelForValue(ApprovalAll)
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)
 
 	var claudeReasoningCalls int
@@ -277,9 +277,9 @@ func TestPromptWizardFlow_ClaudeReasoningPromptedForOpusModel(t *testing.T) {
 
 func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 
-	allLabel, ok := approvalModeLabelForValue(ApprovalAll)
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 	require.True(t, ok)
 
 	var agentCalls, codexReasoningCalls int
@@ -332,7 +332,7 @@ func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T)
 
 func TestPromptWizardFlow_CtrlCExitsImmediatelyWithoutConfirmation(t *testing.T) {
 	choices := NewChoices()
-	choices.ApprovalMode = ApprovalAll
+	choices.ApprovalMode = config.ApprovalModeAll
 
 	var exitConfirmCalls int
 	ui := &MockUI{

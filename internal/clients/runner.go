@@ -44,7 +44,7 @@ func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, laun
 		stderr = io.Discard
 	}
 
-	if project.Config.Approvals.Mode == "yolo" && stderr != nil {
+	if project.Config.Approvals.Mode == config.ApprovalModeYOLO && stderr != nil {
 		_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 	}
 
@@ -76,7 +76,7 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 		}
 	}
 
-	if project.Config.Approvals.Mode == "yolo" && stderr != nil {
+	if project.Config.Approvals.Mode == config.ApprovalModeYOLO && stderr != nil {
 		_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 	}
 

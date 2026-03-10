@@ -1,11 +1,9 @@
 package projection
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/conn-castle/agent-layer/internal/config"
-	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 // EnvVarResolver returns a replacement string for a resolved env var.
@@ -59,9 +57,6 @@ func ResolveMCPServers(servers []config.MCPServer, env map[string]string, client
 		entry, err := resolveSingleServer(server, env, resolver)
 		if err != nil {
 			return nil, &MCPServerResolveError{ServerID: server.ID, Err: err}
-		}
-		if server.Transport != config.TransportHTTP && server.Transport != config.TransportStdio {
-			return nil, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 		}
 
 		resolved = append(resolved, entry)

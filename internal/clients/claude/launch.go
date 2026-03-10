@@ -19,7 +19,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	if cfg.Config.Approvals.Mode == "yolo" {
+	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--dangerously-skip-permissions")
 	}
 	args = append(args, passArgs...)

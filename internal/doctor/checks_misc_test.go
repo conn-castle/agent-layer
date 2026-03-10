@@ -135,8 +135,8 @@ enabled = false
 	if cfg == nil {
 		t.Fatal("expected non-nil config from lenient fallback")
 	}
-	if cfg.Config.Approvals.Mode != "all" {
-		t.Fatalf("expected approvals.mode = all, got %q", cfg.Config.Approvals.Mode)
+	if cfg.Config.Approvals.Mode != config.ApprovalModeAll {
+		t.Fatalf("expected approvals.mode = %s, got %q", config.ApprovalModeAll, cfg.Config.Approvals.Mode)
 	}
 }
 

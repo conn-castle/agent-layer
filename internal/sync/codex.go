@@ -62,7 +62,7 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "model_reasoning_effort") {
 		fmt.Fprintf(&builder, "model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort)
 	}
-	if project.Config.Approvals.Mode == "yolo" {
+	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "approval_policy") {
 			builder.WriteString("approval_policy = \"never\"\n")
 		}
@@ -272,7 +272,7 @@ func tomlInlineTable(values map[string]string) string {
 	sort.Strings(keys)
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
-		parts = append(parts, fmt.Sprintf("%s = %q", key, values[key]))
+		parts = append(parts, fmt.Sprintf("%q = %q", key, values[key]))
 	}
 	return "{ " + strings.Join(parts, ", ") + " }"
 }

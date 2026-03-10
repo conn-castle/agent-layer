@@ -47,15 +47,6 @@ func extractAgentID(key string) string {
 	return key[7 : len(key)-8]
 }
 
-// ApprovalMode constants
-const (
-	ApprovalAll      = "all"
-	ApprovalMCP      = "mcp"
-	ApprovalCommands = "commands"
-	ApprovalNone     = "none"
-	ApprovalYOLO     = "yolo"
-)
-
 // ApprovalModeFieldOptions returns approval mode options from the config field catalog.
 // Panics if the approvals.mode field is not in the catalog (programming error).
 func ApprovalModeFieldOptions() []config.FieldOption {

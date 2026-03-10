@@ -35,9 +35,9 @@ func WriteGeminiSettings(sys System, root string, project *config.ProjectConfig)
 		return err
 	}
 
-	geminiDir := filepath.Join(root, ".gemini")
-	if err := sys.MkdirAll(geminiDir, 0o755); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, geminiDir, err)
+	geminiPath := filepath.Join(root, geminiDir)
+	if err := sys.MkdirAll(geminiPath, 0o755); err != nil {
+		return fmt.Errorf(messages.SyncCreateDirFailedFmt, geminiPath, err)
 	}
 
 	data, err := sys.MarshalIndent(settings, "", "  ")
@@ -46,7 +46,7 @@ func WriteGeminiSettings(sys System, root string, project *config.ProjectConfig)
 	}
 	data = append(data, '\n')
 
-	path := filepath.Join(geminiDir, "settings.json")
+	path := filepath.Join(geminiPath, "settings.json")
 	if err := sys.WriteFileAtomic(path, data, 0o644); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}

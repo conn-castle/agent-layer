@@ -36,8 +36,8 @@ func CheckPromptServer(root string, cfg *config.ProjectConfig) []Result {
 		}}
 	}
 
-	claudeEnabled := agentEnabled(cfg.Config.Agents.Claude.Enabled) || agentEnabled(cfg.Config.Agents.ClaudeVSCode.Enabled)
-	geminiEnabled := agentEnabled(cfg.Config.Agents.Gemini.Enabled)
+	claudeEnabled := config.IsAgentEnabled(cfg.Config.Agents.Claude.Enabled) || config.IsAgentEnabled(cfg.Config.Agents.ClaudeVSCode.Enabled)
+	geminiEnabled := config.IsAgentEnabled(cfg.Config.Agents.Gemini.Enabled)
 	if !claudeEnabled && !geminiEnabled {
 		return []Result{{
 			Status:    StatusOK,
@@ -105,8 +105,8 @@ func CheckPromptServerConfig(root string, cfg *config.ProjectConfig) []Result {
 		}}
 	}
 
-	claudeEnabled := agentEnabled(cfg.Config.Agents.Claude.Enabled) || agentEnabled(cfg.Config.Agents.ClaudeVSCode.Enabled)
-	geminiEnabled := agentEnabled(cfg.Config.Agents.Gemini.Enabled)
+	claudeEnabled := config.IsAgentEnabled(cfg.Config.Agents.Claude.Enabled) || config.IsAgentEnabled(cfg.Config.Agents.ClaudeVSCode.Enabled)
+	geminiEnabled := config.IsAgentEnabled(cfg.Config.Agents.Gemini.Enabled)
 	if !claudeEnabled && !geminiEnabled {
 		return []Result{{
 			Status:    StatusOK,
@@ -498,13 +498,6 @@ func copyOrderedEnv(env sync.OrderedMap[string]) map[string]string {
 		out[key] = value
 	}
 	return out
-}
-
-// agentEnabled returns true when a bool pointer is non-nil and set to true.
-// Args: enabled is the optional flag pointer.
-// Returns: true when enabled is set and true.
-func agentEnabled(enabled *bool) bool {
-	return enabled != nil && *enabled
 }
 
 // formatPromptServerCommand joins command + args into a human-readable string.

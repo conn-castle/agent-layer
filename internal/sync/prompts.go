@@ -178,7 +178,7 @@ func buildSkillFrontMatter(cmd config.Skill) (string, error) {
 	appendFrontMatterDescription(root, strings.TrimSpace(cmd.Description))
 	appendFrontMatterOptionalScalar(root, "license", strings.TrimSpace(cmd.License))
 	appendFrontMatterOptionalScalar(root, "compatibility", strings.TrimSpace(cmd.Compatibility))
-	appendFrontMatterMetadata(root, normalizeMetadata(cmd.Metadata))
+	appendFrontMatterMetadata(root, copyMetadata(cmd.Metadata))
 	appendFrontMatterOptionalScalar(root, "allowed-tools", strings.TrimSpace(cmd.AllowedTools))
 
 	var yamlBody strings.Builder
@@ -246,7 +246,7 @@ func appendFrontMatterMetadata(root *yaml.Node, metadata map[string]string) {
 	)
 }
 
-func normalizeMetadata(metadata map[string]string) map[string]string {
+func copyMetadata(metadata map[string]string) map[string]string {
 	if len(metadata) == 0 {
 		return nil
 	}

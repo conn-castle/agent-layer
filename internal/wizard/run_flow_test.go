@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
@@ -42,7 +43,7 @@ enabled = false
 		},
 		SelectFunc: func(title string, options []string, current *string) error {
 			if title == "Approval Mode" {
-				label, ok := approvalModeLabelForValue(ApprovalAll)
+				label, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 				require.True(t, ok)
 				*current = label
 			}
@@ -246,7 +247,7 @@ enabled = false
 		NoteFunc: func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error {
 			if title == "Approval Mode" {
-				label, ok := approvalModeLabelForValue(ApprovalAll)
+				label, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 				require.True(t, ok)
 				*current = label
 			}
@@ -309,7 +310,7 @@ enabled = false
 		NoteFunc: func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error {
 			if title == "Approval Mode" {
-				label, ok := approvalModeLabelForValue(ApprovalAll)
+				label, ok := approvalModeLabelForValue(config.ApprovalModeAll)
 				require.True(t, ok)
 				*current = label
 			}

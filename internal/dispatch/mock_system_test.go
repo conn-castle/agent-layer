@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
+	"time"
 )
 
 // errNotMocked is returned when a testSystem method is called without a mock function set.
@@ -18,6 +21,11 @@ var errNotMocked = errors.New("testSystem: method not mocked")
 //   - ReadFile, Getenv, Environ, FindAgentLayerRoot: Fall back to RealSystem.
 //     This enables tests to use t.TempDir() for filesystem fixtures and t.Setenv()
 //     for environment variables without requiring explicit mocks for every call.
+//   - Stat, Chmod, Rename, CreateTemp, FileSync, PlatformStrings: Fall back to
+//     RealSystem. These commonly use real test fixtures (t.TempDir).
+//   - Sleep: Defaults to no-op in tests to avoid slowing down test runs.
+//   - HTTPClient: Falls back to RealSystem (returns the shared default client).
+//   - Flock: Falls back to RealSystem (uses real unix.Flock).
 //
 // When adding new methods, prefer fail-fast unless the method is commonly used
 // with real test fixtures (t.TempDir, t.Setenv).
@@ -34,6 +42,15 @@ type testSystem struct {
 	ExecBinaryFunc         func(path string, args []string, env []string, exit func(int)) error
 	FindAgentLayerRootFunc func(start string) (string, bool, error)
 	StderrFunc             func() io.Writer
+	StatFunc               func(name string) (os.FileInfo, error)
+	ChmodFunc              func(name string, mode os.FileMode) error
+	RenameFunc             func(oldpath, newpath string) error
+	CreateTempFunc         func(dir, pattern string) (*os.File, error)
+	FileSyncFunc           func(f *os.File) error
+	PlatformStringsFunc    func() (string, string, error)
+	SleepFunc              func(d time.Duration)
+	HTTPClientFunc         func() *http.Client
+	FlockFunc              func(fd int, how int) error
 }
 
 func (s *testSystem) UserCacheDir() (string, error) {
@@ -83,4 +100,68 @@ func (s *testSystem) Stderr() io.Writer {
 		return s.StderrFunc()
 	}
 	return io.Discard
+}
+
+func (s *testSystem) Stat(name string) (os.FileInfo, error) {
+	if s.StatFunc != nil {
+		return s.StatFunc(name)
+	}
+	return s.RealSystem.Stat(name)
+}
+
+func (s *testSystem) Chmod(name string, mode os.FileMode) error {
+	if s.ChmodFunc != nil {
+		return s.ChmodFunc(name, mode)
+	}
+	return s.RealSystem.Chmod(name, mode)
+}
+
+func (s *testSystem) Rename(oldpath, newpath string) error {
+	if s.RenameFunc != nil {
+		return s.RenameFunc(oldpath, newpath)
+	}
+	return s.RealSystem.Rename(oldpath, newpath)
+}
+
+func (s *testSystem) CreateTemp(dir, pattern string) (*os.File, error) {
+	if s.CreateTempFunc != nil {
+		return s.CreateTempFunc(dir, pattern)
+	}
+	return s.RealSystem.CreateTemp(dir, pattern)
+}
+
+func (s *testSystem) FileSync(f *os.File) error {
+	if s.FileSyncFunc != nil {
+		return s.FileSyncFunc(f)
+	}
+	return s.RealSystem.FileSync(f)
+}
+
+func (s *testSystem) PlatformStrings() (string, string, error) {
+	if s.PlatformStringsFunc != nil {
+		return s.PlatformStringsFunc()
+	}
+	return s.RealSystem.PlatformStrings()
+}
+
+func (s *testSystem) Sleep(d time.Duration) {
+	if s.SleepFunc != nil {
+		s.SleepFunc(d)
+		return
+	}
+	// Default to no-op in tests to avoid slowing down test runs.
+}
+
+func (s *testSystem) HTTPClient() *http.Client {
+	if s.HTTPClientFunc != nil {
+		return s.HTTPClientFunc()
+	}
+	return s.RealSystem.HTTPClient()
+}
+
+func (s *testSystem) Flock(fd int, how int) error {
+	if s.FlockFunc != nil {
+		return s.FlockFunc(fd, how)
+	}
+	return s.RealSystem.Flock(fd, how)
 }

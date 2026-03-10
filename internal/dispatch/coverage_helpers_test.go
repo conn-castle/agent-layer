@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 type nonTimeoutNetErr struct{}
@@ -105,8 +104,17 @@ func TestCacheHelperBranches(t *testing.T) {
 	})
 
 	t.Run("downloadHTTPClientWithSystem nil sys uses shared client", func(t *testing.T) {
-		if got := downloadHTTPClientWithSystem(nil); got != httpClient {
-			t.Fatal("expected shared httpClient for nil system")
+		if got := downloadHTTPClientWithSystem(nil); got != defaultHTTPClient {
+			t.Fatal("expected shared defaultHTTPClient for nil system")
+		}
+	})
+
+	t.Run("downloadHTTPClientWithSystem nil HTTPClient falls back", func(t *testing.T) {
+		sys := &testSystem{
+			HTTPClientFunc: func() *http.Client { return nil },
+		}
+		if got := downloadHTTPClientWithSystem(sys); got != defaultHTTPClient {
+			t.Fatal("expected shared defaultHTTPClient when HTTPClient returns nil")
 		}
 	})
 
@@ -118,29 +126,24 @@ func TestCacheHelperBranches(t *testing.T) {
 }
 
 func TestFetchChecksumWithSystem_ScannerRetryPath(t *testing.T) {
-	origHTTP := httpClient
-	origSleep := dispatchSleep
-	t.Cleanup(func() {
-		httpClient = origHTTP
-		dispatchSleep = origSleep
-	})
-	dispatchSleep = func(time.Duration) {}
-
 	readErr := io.ErrUnexpectedEOF
-	httpClient = &http.Client{
-		Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Status:     "200 OK",
-				Body: io.NopCloser(&errorReaderAfterData{
-					data: []byte("invalid-line-without-fields"),
-					err:  readErr,
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Status:     "200 OK",
+						Body: io.NopCloser(&errorReaderAfterData{
+							data: []byte("invalid-line-without-fields"),
+							err:  readErr,
+						}),
+					}, nil
 				}),
-			}, nil
-		}),
+			}
+		},
 	}
 
-	sys := &testSystem{}
 	_, err := fetchChecksumWithSystem(sys, "1.0.0", "asset")
 	if err == nil || !strings.Contains(err.Error(), "read") {
 		t.Fatalf("expected read failure after retry path, got %v", err)

@@ -14,7 +14,7 @@ func TestBuildVSCodeSettings(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
@@ -33,7 +33,7 @@ func TestBuildVSCodeSettingsEscapesSlash(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"scripts/dev.sh"},
@@ -55,7 +55,7 @@ func TestWriteVSCodeSettings(t *testing.T) {
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
@@ -73,7 +73,7 @@ func TestBuildVSCodeSettingsYOLO(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
@@ -95,7 +95,7 @@ func TestBuildVSCodeSettingsClaudeVSCodeYOLO(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "yolo"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
 			Agents: config.AgentsConfig{
 				VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
 				ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
@@ -116,7 +116,7 @@ func TestBuildVSCodeSettingsClaudeVSCodeNonYOLO(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "all"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
 				ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
@@ -147,7 +147,7 @@ func TestWriteVSCodeSettingsPreservesExistingContent(t *testing.T) {
 
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
@@ -197,7 +197,7 @@ func TestWriteVSCodeSettingsReplacesManagedBlock(t *testing.T) {
 
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
@@ -241,7 +241,7 @@ func TestWriteVSCodeSettingsNoTrailingCommaWhenManagedBlockIsLast(t *testing.T) 
 
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
@@ -279,7 +279,7 @@ func TestWriteVSCodeSettingsInsertsManagedBlockWithExistingFields(t *testing.T) 
 
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "commands"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
 			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
 		},
 		CommandsAllow: []string{"git status"},
@@ -336,7 +336,7 @@ func TestWriteVSCodeSettingsInvalidJSONC(t *testing.T) {
 
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 
@@ -359,7 +359,7 @@ func TestWriteVSCodeSettingsInvalidJSONCExtraTokensBeforeRoot(t *testing.T) {
 
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: "none"},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
 

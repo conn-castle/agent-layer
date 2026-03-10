@@ -175,13 +175,13 @@ func TestEnsureCachedBinary_NoNetwork(t *testing.T) {
 }
 
 func TestEnsureCachedBinary_PlatformError(t *testing.T) {
-	orig := platformStringsFunc
-	defer func() { platformStringsFunc = orig }()
-	platformStringsFunc = func() (string, string, error) {
-		return "", "", fmt.Errorf("platform error")
+	sys := &testSystem{
+		PlatformStringsFunc: func() (string, string, error) {
+			return "", "", fmt.Errorf("platform error")
+		},
 	}
 
-	_, err := ensureCachedBinary(t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from platformStrings")
 	}
@@ -190,12 +190,6 @@ func TestEnsureCachedBinary_PlatformError(t *testing.T) {
 func TestEnsureCachedBinary_ChmodError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod not called on windows")
-	}
-
-	origChmod := osChmod
-	defer func() { osChmod = origChmod }()
-	osChmod = func(name string, mode os.FileMode) error {
-		return fmt.Errorf("chmod failed")
 	}
 
 	// Setup mock server
@@ -219,20 +213,26 @@ func TestEnsureCachedBinary_ChmodError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := ensureCachedBinary(t.TempDir(), version, io.Discard)
+	sys := &testSystem{
+		ChmodFunc: func(name string, mode os.FileMode) error {
+			return fmt.Errorf("chmod failed")
+		},
+	}
+
+	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error from chmod")
 	}
 }
 
 func TestEnsureCachedBinary_StatError(t *testing.T) {
-	origStat := osStat
-	defer func() { osStat = origStat }()
-	osStat = func(name string) (os.FileInfo, error) {
-		return nil, fmt.Errorf("stat failed")
+	sys := &testSystem{
+		StatFunc: func(name string) (os.FileInfo, error) {
+			return nil, fmt.Errorf("stat failed")
+		},
 	}
 
-	_, err := ensureCachedBinary(t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from stat")
 	}
@@ -244,23 +244,22 @@ func TestEnsureCachedBinary_RaceCondition(t *testing.T) {
 	// 2. Lock acquired
 	// 3. Stat -> Exists (returns success)
 
-	origStat := osStat
-	defer func() { osStat = origStat }()
-
 	calls := 0
-	osStat = func(name string) (os.FileInfo, error) {
-		calls++
-		if calls == 1 {
-			return nil, os.ErrNotExist
-		}
-		// Second call (inside lock) returns success
-		return nil, nil
+	sys := &testSystem{
+		StatFunc: func(name string) (os.FileInfo, error) {
+			calls++
+			if calls == 1 {
+				return nil, os.ErrNotExist
+			}
+			// Second call (inside lock) returns success
+			return nil, nil
+		},
 	}
 
 	cacheRoot := t.TempDir()
 	version := "1.0.0"
 
-	path, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	path, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard)
 	if err != nil {
 		t.Fatalf("ensureCachedBinary race condition failed: %v", err)
 	}
@@ -279,31 +278,24 @@ func TestEnsureCachedBinary_InternalStatError(t *testing.T) {
 	// 2. Lock
 	// 3. Stat -> Error (not NotExist)
 
-	origStat := osStat
-	defer func() { osStat = origStat }()
-
 	calls := 0
-	osStat = func(name string) (os.FileInfo, error) {
-		calls++
-		if calls == 1 {
-			return nil, os.ErrNotExist
-		}
-		return nil, fmt.Errorf("internal stat failed")
+	sys := &testSystem{
+		StatFunc: func(name string) (os.FileInfo, error) {
+			calls++
+			if calls == 1 {
+				return nil, os.ErrNotExist
+			}
+			return nil, fmt.Errorf("internal stat failed")
+		},
 	}
 
-	_, err := ensureCachedBinary(t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from internal stat")
 	}
 }
 
 func TestEnsureCachedBinary_RenameError(t *testing.T) {
-	origRename := osRename
-	defer func() { osRename = origRename }()
-	osRename = func(oldpath, newpath string) error {
-		return fmt.Errorf("rename failed")
-	}
-
 	// Setup mock server
 	version := "1.0.0"
 	content := "binary-content"
@@ -325,7 +317,13 @@ func TestEnsureCachedBinary_RenameError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := ensureCachedBinary(t.TempDir(), version, io.Discard)
+	sys := &testSystem{
+		RenameFunc: func(oldpath, newpath string) error {
+			return fmt.Errorf("rename failed")
+		},
+	}
+
+	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), version, io.Discard)
 	if err == nil {
 		t.Fatal("expected error from rename")
 	}
@@ -635,11 +633,13 @@ func TestFetchChecksum_NotFound(t *testing.T) {
 }
 
 func TestDownloadToFile_ClientGetError(t *testing.T) {
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: failingRoundTripper{err: fmt.Errorf("client get failed")},
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: failingRoundTripper{err: fmt.Errorf("client get failed")},
+			}
+		},
 	}
-	t.Cleanup(func() { httpClient = origClient })
 
 	tmp := filepath.Join(t.TempDir(), "file")
 	f, err := os.Create(tmp)
@@ -648,24 +648,26 @@ func TestDownloadToFile_ClientGetError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile("https://example.invalid/file", f)
+	err = downloadToFileWithSystem(sys, "https://example.invalid/file", f)
 	if err == nil {
 		t.Fatal("expected error from client.Get")
 	}
 }
 
 func TestFetchChecksum_ClientGetError(t *testing.T) {
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: failingRoundTripper{err: fmt.Errorf("client get failed")},
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: failingRoundTripper{err: fmt.Errorf("client get failed")},
+			}
+		},
 	}
-	t.Cleanup(func() { httpClient = origClient })
 
 	oldURL := releaseBaseURL
 	releaseBaseURL = "http://invalid.test.invalid:99999"
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum("1.0.0", "some-asset")
+	_, err := fetchChecksumWithSystem(sys, "1.0.0", "some-asset")
 	if err == nil {
 		t.Fatal("expected error from client.Get")
 	}
@@ -722,20 +724,16 @@ func TestFetchChecksum_StarPrefix(t *testing.T) {
 }
 
 func TestEnsureCachedBinary_CreateTempError(t *testing.T) {
-	origCreateTemp := osCreateTemp
-	defer func() { osCreateTemp = origCreateTemp }()
-	osCreateTemp = func(dir, pattern string) (*os.File, error) {
-		return nil, fmt.Errorf("create temp failed")
+	sys := &testSystem{
+		CreateTempFunc: func(dir, pattern string) (*os.File, error) {
+			return nil, fmt.Errorf("create temp failed")
+		},
+		StatFunc: func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
 	}
 
-	// Ensure stat returns NotExist so we proceed to download
-	origStat := osStat
-	defer func() { osStat = origStat }()
-	osStat = func(name string) (os.FileInfo, error) {
-		return nil, os.ErrNotExist
-	}
-
-	_, err := ensureCachedBinary(t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from CreateTemp")
 	}
@@ -786,19 +784,19 @@ func TestEnsureCachedBinary_SyncSuccess(t *testing.T) {
 	defer func() { releaseBaseURL = oldURL }()
 
 	// Mock CreateTemp to ensure the override path is exercised.
-	origCreateTemp := osCreateTemp
-	defer func() { osCreateTemp = origCreateTemp }()
-	osCreateTemp = func(dir, pattern string) (*os.File, error) {
-		f, err := os.CreateTemp(dir, pattern)
-		if err != nil {
-			return nil, err
-		}
-		return f, nil
+	sys := &testSystem{
+		CreateTempFunc: func(dir, pattern string) (*os.File, error) {
+			f, err := os.CreateTemp(dir, pattern)
+			if err != nil {
+				return nil, err
+			}
+			return f, nil
+		},
 	}
 
 	// This test verifies the happy path completes (Sync doesn't fail in normal case).
 	cacheRoot := t.TempDir()
-	_, err := ensureCachedBinary(cacheRoot, version, io.Discard)
+	_, err := ensureCachedBinaryWithSystem(sys, cacheRoot, version, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -806,10 +804,10 @@ func TestEnsureCachedBinary_SyncSuccess(t *testing.T) {
 
 func TestEnsureCachedBinary_DownloadError(t *testing.T) {
 	// Ensure stat returns NotExist so we proceed to download
-	origStat := osStat
-	defer func() { osStat = origStat }()
-	osStat = func(name string) (os.FileInfo, error) {
-		return nil, os.ErrNotExist
+	sys := &testSystem{
+		StatFunc: func(name string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		},
 	}
 
 	// Use a server that closes connection immediately to cause download error
@@ -832,7 +830,7 @@ func TestEnsureCachedBinary_DownloadError(t *testing.T) {
 	releaseBaseURL = server.URL
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := ensureCachedBinary(t.TempDir(), "1.0.0", io.Discard)
+	_, err := ensureCachedBinaryWithSystem(sys, t.TempDir(), "1.0.0", io.Discard)
 	if err == nil {
 		t.Fatal("expected error from download")
 	}
@@ -932,12 +930,14 @@ func (e *timeoutErr) Timeout() bool   { return true }
 func (e *timeoutErr) Temporary() bool { return true }
 
 func TestDownloadToFile_Timeout_ActionableMessage(t *testing.T) {
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: timeoutRoundTripper{},
-		Timeout:   1 * time.Second,
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: timeoutRoundTripper{},
+				Timeout:   1 * time.Second,
+			}
+		},
 	}
-	t.Cleanup(func() { httpClient = origClient })
 
 	tmp := filepath.Join(t.TempDir(), "file")
 	f, err := os.Create(tmp)
@@ -946,7 +946,7 @@ func TestDownloadToFile_Timeout_ActionableMessage(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	err = downloadToFile("https://example.invalid/file", f)
+	err = downloadToFileWithSystem(sys, "https://example.invalid/file", f)
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -1047,18 +1047,20 @@ func TestEnsureCachedBinary_NoProgressOnCacheHit(t *testing.T) {
 }
 
 func TestFetchChecksum_Timeout_ActionableMessage(t *testing.T) {
-	origClient := httpClient
-	httpClient = &http.Client{
-		Transport: timeoutRoundTripper{},
-		Timeout:   1 * time.Second,
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: timeoutRoundTripper{},
+				Timeout:   1 * time.Second,
+			}
+		},
 	}
-	t.Cleanup(func() { httpClient = origClient })
 
 	oldURL := releaseBaseURL
 	releaseBaseURL = "https://example.invalid"
 	defer func() { releaseBaseURL = oldURL }()
 
-	_, err := fetchChecksum("1.0.0", "some-asset")
+	_, err := fetchChecksumWithSystem(sys, "1.0.0", "some-asset")
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
@@ -1095,28 +1097,24 @@ func TestDownloadToFile_TooLarge(t *testing.T) {
 }
 
 func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
-	origClient := httpClient
-	origSleep := dispatchSleep
-	t.Cleanup(func() {
-		httpClient = origClient
-		dispatchSleep = origSleep
-	})
-	dispatchSleep = func(time.Duration) {}
-
 	attempt := 0
-	httpClient = &http.Client{
-		Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
-			attempt++
-			if attempt == 1 {
-				return nil, &net.OpError{Op: "dial", Net: "tcp", Err: &timeoutErr{}}
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+					attempt++
+					if attempt == 1 {
+						return nil, &net.OpError{Op: "dial", Net: "tcp", Err: &timeoutErr{}}
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Status:     "200 OK",
+						Body:       io.NopCloser(strings.NewReader("ok")),
+						Header:     make(http.Header),
+					}, nil
+				}),
 			}
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Status:     "200 OK",
-				Body:       io.NopCloser(strings.NewReader("ok")),
-				Header:     make(http.Header),
-			}, nil
-		}),
+		},
 	}
 
 	tmp := filepath.Join(t.TempDir(), "file")
@@ -1126,7 +1124,7 @@ func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := downloadToFile("https://example.invalid/file", f); err != nil {
+	if err := downloadToFileWithSystem(sys, "https://example.invalid/file", f); err != nil {
 		t.Fatalf("expected retry to succeed, got %v", err)
 	}
 	if attempt != 2 {
@@ -1135,33 +1133,29 @@ func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
 }
 
 func TestDownloadToFile_RetryOnCopyErrorResetsDestination(t *testing.T) {
-	origClient := httpClient
-	origSleep := dispatchSleep
-	t.Cleanup(func() {
-		httpClient = origClient
-		dispatchSleep = origSleep
-	})
-	dispatchSleep = func(time.Duration) {}
-
 	attempt := 0
-	httpClient = &http.Client{
-		Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
-			attempt++
-			if attempt == 1 {
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Status:     "200 OK",
-					Body:       &partialTimeoutBody{},
-					Header:     make(http.Header),
-				}, nil
+	sys := &testSystem{
+		HTTPClientFunc: func() *http.Client {
+			return &http.Client{
+				Transport: roundTripperFunc(func(_ *http.Request) (*http.Response, error) {
+					attempt++
+					if attempt == 1 {
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Status:     "200 OK",
+							Body:       &partialTimeoutBody{},
+							Header:     make(http.Header),
+						}, nil
+					}
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Status:     "200 OK",
+						Body:       io.NopCloser(strings.NewReader("ok")),
+						Header:     make(http.Header),
+					}, nil
+				}),
 			}
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Status:     "200 OK",
-				Body:       io.NopCloser(strings.NewReader("ok")),
-				Header:     make(http.Header),
-			}, nil
-		}),
+		},
 	}
 
 	tmp := filepath.Join(t.TempDir(), "file")
@@ -1171,7 +1165,7 @@ func TestDownloadToFile_RetryOnCopyErrorResetsDestination(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := downloadToFile("https://example.invalid/file", f); err != nil {
+	if err := downloadToFileWithSystem(sys, "https://example.invalid/file", f); err != nil {
 		t.Fatalf("expected retry to succeed, got %v", err)
 	}
 	if attempt != 2 {
@@ -1248,10 +1242,6 @@ func TestDownloadTimeoutWithSystem(t *testing.T) {
 }
 
 func TestDownloadHTTPClientWithSystem_UsesConfiguredTimeout(t *testing.T) {
-	origClient := httpClient
-	httpClient = &http.Client{Timeout: defaultDownloadTimeout}
-	t.Cleanup(func() { httpClient = origClient })
-
 	sys := &testSystem{
 		GetenvFunc: func(key string) string {
 			if key == "AL_DOWNLOAD_TIMEOUT" {
@@ -1264,7 +1254,8 @@ func TestDownloadHTTPClientWithSystem_UsesConfiguredTimeout(t *testing.T) {
 	if client.Timeout != 90*time.Second {
 		t.Fatalf("client timeout = %v, want 90s", client.Timeout)
 	}
-	if client == httpClient {
+	baseClient := sys.HTTPClient()
+	if client == baseClient {
 		t.Fatal("expected downloadHTTPClientWithSystem to return a client copy when timeout differs")
 	}
 }

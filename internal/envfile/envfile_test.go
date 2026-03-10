@@ -161,7 +161,7 @@ func TestPatch(t *testing.T) {
 			input:   `export KEY=old`,
 			updates: map[string]string{"KEY": "new"},
 			contains: []string{
-				`KEY=new`,
+				`export KEY=new`,
 			},
 			absent: []string{
 				`export KEY=old`,
@@ -277,6 +277,11 @@ func TestEncodeValue(t *testing.T) {
 			input: "line1\rline2",
 			want:  `"line1\rline2"`,
 		},
+		{
+			name:  "leading single quote gets quoted",
+			input: `'secret`,
+			want:  `"'secret"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -300,6 +305,7 @@ func TestEncodeParseRoundTrip(t *testing.T) {
 		{name: "quotes", value: `with "quote"`},
 		{name: "backslashes", value: `C:\path\to\dir`},
 		{name: "backslash quote", value: `C:\path\"file"`},
+		{name: "leading single quote", value: `'secret`},
 		{name: "literal slash n", value: `\n`},
 		{name: "actual newline", value: "line1\nline2"},
 	}
@@ -327,6 +333,7 @@ func TestPatchParseRoundTrip(t *testing.T) {
 		{name: "quotes", value: `with "quote"`},
 		{name: "backslashes", value: `C:\path\to\dir`},
 		{name: "backslash quote", value: `C:\path\"file"`},
+		{name: "leading single quote", value: `'secret`},
 		{name: "literal slash n", value: `\n`},
 		{name: "actual newline", value: "line1\nline2"},
 	}
