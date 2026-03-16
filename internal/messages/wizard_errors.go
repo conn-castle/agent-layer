@@ -3,6 +3,7 @@ package messages
 // Wizard error messages and validation text.
 const (
 	WizardInstallFailedFmt                = "install failed: %w"
+	WizardPartialInstallUpgradeRequired   = "agent layer is partially initialized in this repository (missing .agent-layer/config.toml); run 'al upgrade' to repair templates before using 'al wizard'"
 	WizardLoadConfigFailedFmt             = "failed to load config: %w"
 	WizardLoadDefaultMCPServersFailedFmt  = "failed to load default MCP servers: %w"
 	WizardLoadWarningDefaultsFailedFmt    = "failed to load warning defaults: %w"

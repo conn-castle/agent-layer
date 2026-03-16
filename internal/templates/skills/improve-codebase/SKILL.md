@@ -102,6 +102,7 @@ Prefer the dedicated skills that already exist:
 - Required: ask when an accepted finding requires a breaking change, broad architectural refactor, or user-visible behavior change.
 - Required: ask when a finding cannot be verified with available code, tests, or docs.
 - Required: ask before any destructive or irreversible action.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal survey, audit, fix, and re-audit cycles when findings and fixes are clear.
 
 ## Orchestration loop
@@ -149,7 +150,7 @@ The `review-scope` lenses cover correctness, architecture, and quality. For this
 
 Copy the high-signal findings summary into the master report under `## Chunk N: <name> Findings`.
 
-### Phase 3: Fix chunk N findings (Fixers)
+### Phase 3: Fix chunk N findings and re-audit (Fixers + Auditors)
 
 Use the `resolve-findings` skill on the chunk N review report.
 
@@ -161,7 +162,11 @@ Copy the fix summary into the master report under `## Chunk N: <name> Fixes`.
 
 If a fix exposes obvious local complexity:
 - use the `simplify-code` skill on the affected area
-- then re-audit the chunk if the changes were material
+
+After fixes are applied, run one explicit re-audit pass on the chunk using `review-scope`:
+- if the re-audit finds new Critical or High findings, fix them and re-audit again
+- stop the per-chunk loop when no new Critical or High findings remain
+- if the loop does not converge after 3 iterations, escalate to the user
 
 ### Phase 4: Cross-cutting review (Architecture reviewer)
 

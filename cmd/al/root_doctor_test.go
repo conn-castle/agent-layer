@@ -331,6 +331,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = true
+[agents.copilot_cli]
+enabled = true
 
 [warnings]
 noise_mode = "quiet"

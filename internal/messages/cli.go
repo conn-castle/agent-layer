@@ -135,11 +135,15 @@ const (
 	AntigravityUse   = "antigravity"
 	AntigravityShort = "Sync and launch Antigravity"
 
+	CopilotUse   = "copilot"
+	CopilotShort = "Sync and launch GitHub Copilot CLI"
+
 	// ClientsGeminiExitErrorFmt formats gemini exit errors.
 	ClientsGeminiExitErrorFmt            = "gemini exited with error: %w"
 	ClientsClaudeExitErrorFmt            = "claude exited with error: %w"
 	ClientsCodexExitErrorFmt             = "codex exited with error: %w"
 	ClientsAntigravityExitErrorFmt       = "antigravity exited with error: %w"
+	ClientsCopilotExitErrorFmt           = "copilot exited with error: %w"
 	ClientsVSCodeExitErrorFmt            = "vscode exited with error: %w"
 	ClientsVSCodeCodeNotFoundFmt         = "vscode preflight failed: 'code' command not found on PATH: %w"
 	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"

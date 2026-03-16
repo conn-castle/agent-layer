@@ -1,0 +1,39 @@
+package copilotcli
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+
+	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/run"
+)
+
+// Launch starts the GitHub Copilot CLI with the configured options.
+func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
+	args := []string{}
+	model := cfg.Config.Agents.CopilotCLI.Model
+	if model != "" {
+		args = append(args, "--model", model)
+	}
+	switch cfg.Config.Approvals.Mode {
+	case config.ApprovalModeYOLO:
+		args = append(args, "--yolo")
+	case config.ApprovalModeAll:
+		args = append(args, "--allow-all-tools")
+	}
+	args = append(args, passArgs...)
+
+	cmd := exec.Command("copilot", args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = env
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf(messages.ClientsCopilotExitErrorFmt, err)
+	}
+
+	return nil
+}

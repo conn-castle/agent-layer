@@ -32,7 +32,7 @@ Quick start is the shortest path to a working agent. You can always refine confi
 ### Prerequisites
 
 - Install the Agent Layer CLI (`al`)
-- Install the target client (Gemini, Claude, Codex, VS Code, Antigravity)
+- Install the target client (Gemini, Claude, Codex, Copilot CLI, VS Code, Antigravity)
 
 Agent Layer does not install client CLIs for you. If you already have `al` installed, skip to step 2.
 
@@ -73,7 +73,7 @@ For detailed behavior, see [Init](./reference#init), [Upgrade](./reference#upgra
 al gemini
 ```
 
-Any client command (gemini/claude/codex/vscode/antigravity) will:
+Any client command (gemini/claude/codex/copilot/vscode/antigravity) will:
 
 1. read `.agent-layer/`
 2. sync client configs
@@ -198,6 +198,8 @@ GEMINI.md
 .claude/settings.json
 .mcp.json
 .codex/
+.copilot/mcp-config.json
+.github/skills/
 .vscode/mcp.json
 .vscode/prompts/
 .vscode/settings.json
@@ -251,7 +253,7 @@ Do not commit:
 - `.agent-layer/.env` (secrets)
 - `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
-- generated client outputs like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
+- generated client outputs like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.copilot/`, `.github/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
 
 ## CLI command map
 
@@ -276,6 +278,7 @@ If you only remember one pattern: `al <client>` is the “do the right thing” 
 | `al claude` | Sync and launch Claude Code. | [Launch a client](./reference#launch-a-client) |
 | `al codex` | Sync and launch Codex. | [Launch a client](./reference#launch-a-client) |
 | `al vscode` | Sync and launch VS Code. | [Launch a client](./reference#launch-a-client) |
+| `al copilot` | Sync and launch Copilot CLI. | [Launch a client](./reference#launch-a-client) |
 | `al antigravity` | Sync and launch Antigravity. | [Launch a client](./reference#launch-a-client) |
 | `al --version` | Print the installed version. | [Help and version](./reference#help-and-version) |
 | `al help` | Show help for a command. | [Help and version](./reference#help-and-version) |

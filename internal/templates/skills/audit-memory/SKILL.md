@@ -64,6 +64,7 @@ Recommended roles:
 - Required: ask when staleness evidence is ambiguous (e.g., an issue might be partially fixed).
 - Required: ask when a DECISIONS.md entry removal or consolidation would lose unique tradeoff information.
 - Required: ask when a memory file entry references external state that cannot be verified from the repository.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous for clear mechanical fixes: format corrections, obvious duplicates, entries that are definitively stale by code evidence, and straightforward misplacements.
 
 ## Audit workflow

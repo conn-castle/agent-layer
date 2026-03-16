@@ -17,6 +17,7 @@ func TestValidateConfigErrors(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			Antigravity:  EnableOnlyConfig{Enabled: &falseVal},
+			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 		MCP: MCPConfig{},
 	}
@@ -115,6 +116,16 @@ func TestValidateConfigErrors(t *testing.T) {
 			}),
 			wantErr: "invalid client",
 		},
+		{
+			name:    "missing copilot_cli enabled",
+			cfg:     withCopilotCLIEnabled(valid, nil),
+			wantErr: "agents.copilot_cli.enabled",
+		},
+		{
+			name:    "copilot_cli reasoning effort unsupported",
+			cfg:     withCopilotCLIReasoning(valid, "high"),
+			wantErr: "agents.copilot_cli.reasoning_effort is not supported",
+		},
 	}
 
 	for _, tc := range cases {
@@ -152,6 +163,16 @@ func withClaudeReasoning(cfg Config, model string, effort string) Config {
 	return cfg
 }
 
+func withCopilotCLIEnabled(cfg Config, enabled *bool) Config {
+	cfg.Agents.CopilotCLI.Enabled = enabled
+	return cfg
+}
+
+func withCopilotCLIReasoning(cfg Config, effort string) Config {
+	cfg.Agents.CopilotCLI.ReasoningEffort = effort
+	return cfg
+}
+
 func TestValidateApprovalsYOLO(t *testing.T) {
 	trueVal := true
 	cfg := Config{
@@ -163,6 +184,7 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
@@ -181,6 +203,7 @@ func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 	}
 	if err := cfg.Validate("config.toml"); err != nil {
@@ -199,6 +222,7 @@ func TestValidateWarningsThresholds(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}
 
@@ -283,6 +307,7 @@ func TestValidateWarningsNoiseModeQuiet(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 		Warnings: WarningsConfig{NoiseMode: "quiet"},
 	}
@@ -302,6 +327,7 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}
 

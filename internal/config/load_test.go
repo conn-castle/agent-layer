@@ -42,6 +42,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -127,6 +129,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -183,6 +187,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -236,6 +242,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -286,6 +294,8 @@ enabled = true
 enabled = true
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
@@ -384,6 +394,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	cfg, err := ParseConfigLenient([]byte(toml), "test")
 	if err != nil {
@@ -456,6 +468,8 @@ enabled = false
 enabled = false
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	cfg, err := ParseConfigLenient([]byte(tomlData), "test")
@@ -538,6 +552,8 @@ enabled = true
 enabled = true
 [agents.antigravity]
 enabled = true
+[agents.copilot_cli]
+enabled = true
 `
 	_, err := ParseConfig([]byte(data), "test")
 	if err == nil {
@@ -575,6 +591,8 @@ features.prevent_idle_sleep = true
 [agents.vscode]
 enabled = true
 [agents.antigravity]
+enabled = true
+[agents.copilot_cli]
 enabled = true
 `
 	_, err := ParseConfig([]byte(data), "test")

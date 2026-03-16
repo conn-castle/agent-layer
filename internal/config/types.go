@@ -30,6 +30,7 @@ type AgentsConfig struct {
 	Codex        CodexConfig      `toml:"codex"`
 	VSCode       EnableOnlyConfig `toml:"vscode"`
 	Antigravity  EnableOnlyConfig `toml:"antigravity"`
+	CopilotCLI   AgentConfig      `toml:"copilot_cli"`
 }
 
 // AgentConfig is for agents that support enablement and model selection.

@@ -10,6 +10,7 @@ const (
 	AgentCodex        = "codex"
 	AgentVSCode       = "vscode"
 	AgentAntigravity  = "antigravity"
+	AgentCopilotCLI   = "copilot_cli"
 )
 
 // supportedAgentKeys returns the config field keys for agent enablement in UI order.
@@ -21,6 +22,7 @@ func supportedAgentKeys() []string {
 		"agents.codex.enabled",
 		"agents.vscode.enabled",
 		"agents.antigravity.enabled",
+		"agents.copilot_cli.enabled",
 	}
 }
 
@@ -80,4 +82,9 @@ func CodexModels() []string {
 // CodexReasoningEfforts returns supported reasoning effort values from the config field catalog.
 func CodexReasoningEfforts() []string {
 	return config.FieldOptionValues("agents.codex.reasoning_effort")
+}
+
+// CopilotCLIModels returns supported Copilot CLI model values from the config field catalog.
+func CopilotCLIModels() []string {
+	return config.FieldOptionValues("agents.copilot_cli.model")
 }

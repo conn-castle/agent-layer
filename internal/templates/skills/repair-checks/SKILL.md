@@ -62,6 +62,7 @@ Recommended roles:
 - Required: ask before installing missing tooling.
 - Required: ask when a failure is clearly unrelated/systemic and fixing it would materially broaden scope beyond the current task.
 - Optional: ask when multiple documented lanes are valid and the choice materially affects runtime or confidence.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous through the normal fail-fix-rerun loop.
 
 ## Verification workflow

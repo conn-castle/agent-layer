@@ -83,6 +83,12 @@ enabled = true
 [agents.antigravity]
 enabled = true
 
+[agents.copilot_cli]
+enabled = true
+# model is optional; when omitted, the client uses its default.
+# model = "..."
+# reasoning_effort is not currently supported for Copilot CLI in Agent Layer.
+
 [mcp]
 # MCP servers are external tool servers projected into client configs.
 
@@ -125,7 +131,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 
 ### Agents
 
-Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`) for Opus models; Codex supports `reasoning_effort` with its own set of options. Omit `reasoning_effort` (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Note: auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
+Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`) for Opus models; Codex supports `reasoning_effort` with its own set of options. Copilot CLI supports `model` but not `reasoning_effort`. Omit `reasoning_effort` (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Note: auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
 
 Supported agents:
 
@@ -135,6 +141,7 @@ Supported agents:
 - `codex`
 - `vscode`
 - `antigravity`
+- `copilot_cli`
 
 ### MCP servers
 
@@ -146,7 +153,7 @@ Each `[[mcp.servers]]` entry must include:
 
 Optional fields:
 
-- `clients` to restrict which clients receive a server (valid values: `gemini`, `claude`, `vscode`, `codex`, `antigravity`; note that `claude_vscode` uses the `claude` client)
+- `clients` to restrict which clients receive a server (valid values: `gemini`, `claude`, `vscode`, `codex`, `antigravity`, `copilot`; note that `claude_vscode` uses the `claude` client)
 - `http_transport` (`sse` or `streamable`) for HTTP servers
 - `headers` for HTTP auth and metadata
 - `command`, `args`, `env` for stdio servers
@@ -169,6 +176,7 @@ Here is how placeholder projection works for MCP servers:
 | Gemini (`.gemini/settings.json`) | `${AL_TOKEN}` |
 | VS Code (`.vscode/mcp.json`) | `${env:AL_TOKEN}` |
 | Codex (`.codex/config.toml`) | headers become env-var references; URLs/commands/args/env values are resolved because Codex does not support placeholders |
+| Copilot CLI (`.copilot/mcp-config.json`) | `${AL_TOKEN}` (env vars resolved at runtime by the client) |
 
 Practical guidance:
 
@@ -312,7 +320,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
-| `al <client>` | Sync and launch a client (gemini/claude/codex/vscode/antigravity). |
+| `al <client>` | Sync and launch a client (gemini/claude/codex/copilot/vscode/antigravity). |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
 | `al --version` | Print the installed Agent Layer version. |
@@ -530,6 +538,7 @@ Common outputs include:
 - `.agent/skills/`
 - `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`
 - `.codex/` (generated config, rules, and skills)
+- `.copilot/mcp-config.json`, `.github/skills/` (Copilot CLI MCP config and skills)
 - `.vscode/mcp.json`, `.vscode/prompts/`, and a managed block in `.vscode/settings.json`
 - `.github/copilot-instructions.md`
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
@@ -548,6 +557,7 @@ These files are derived outputs and safe to delete. Running `al sync` will recre
 - `al gemini`
 - `al claude`
 - `al codex`
+- `al copilot`
 - `al vscode`
 - `al antigravity`
 

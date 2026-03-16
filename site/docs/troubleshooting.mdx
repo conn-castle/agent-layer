@@ -39,7 +39,7 @@ If you have not installed `al` yet, start with [/install](/install).
 
 ### Missing client CLI
 
-Agent Layer does not install Gemini, Claude, Codex, VS Code, or Antigravity. Install the target client and ensure it is on your `PATH`.
+Agent Layer does not install Gemini, Claude, Codex, Copilot CLI, VS Code, or Antigravity. Install the target client and ensure it is on your `PATH`.
 
 ### VS Code preflight: `code` command not found
 
@@ -71,7 +71,7 @@ Run [`al init`](./reference#init) in the repo to create `.agent-layer/` and `doc
 
 ### Generated files showing up in git
 
-Generated client outputs are meant to be disposable. If you see generated files like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` showing up in `git status`, it usually means one of:
+Generated client outputs are meant to be disposable. If you see generated files like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`, `.copilot/`, `.github/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` showing up in `git status`, it usually means one of:
 
 - the repo has not been initialized with Agent Layer's managed `.gitignore` block,
 - the ignore rules were customized,
@@ -217,7 +217,7 @@ Fix:
 
 ### Client CLI not found
 
-Install the target client CLI (Gemini, Claude, Codex, VS Code, Antigravity) and ensure it is available on your `PATH`.
+Install the target client CLI (Gemini, Claude, Codex, Copilot CLI, VS Code, Antigravity) and ensure it is available on your `PATH`.
 
 ## Pinning and offline mode
 

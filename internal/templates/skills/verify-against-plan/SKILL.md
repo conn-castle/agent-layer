@@ -64,6 +64,7 @@ Recommended roles:
 - Required: ask when no valid plan/task pair exists or the intended pair is not the latest valid pair.
 - Required: ask when the implementation target is unclear enough that completeness cannot be judged credibly.
 - Optional: ask before broadening the completeness review beyond the planned slice.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous while comparing the agreed contract to the current implementation.
 
 ## Review workflow

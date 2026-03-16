@@ -16,6 +16,7 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}
 
@@ -101,6 +102,7 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
 			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}
 

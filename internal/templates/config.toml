@@ -58,6 +58,12 @@ enabled = true
 [agents.antigravity]
 enabled = true
 
+[agents.copilot_cli]
+enabled = true
+# model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
+# model = "..."
+# reasoning_effort is not currently supported for Copilot CLI in Agent Layer.
+
 [mcp]
 # Secrets belong in .agent-layer/.env (never in config.toml).
 # These are optional external MCP servers projected into client configs.
@@ -106,7 +112,7 @@ args = ["-y", "@playwright/mcp@0.0.68"]
 # Ripgrep fast repo search (requires Node/npx).
 id = "ripgrep"
 enabled = false
-clients = ["gemini", "claude", "codex"]
+clients = ["gemini", "claude", "codex", "copilot"]
 transport = "stdio"
 command = "npx"
 args = ["-y", "mcp-ripgrep@0.4.0"]
@@ -117,7 +123,7 @@ args = ["-y", "mcp-ripgrep@0.4.0"]
 # Filesystem access scoped to this repo (requires Node/npx).
 id = "filesystem"
 enabled = false
-clients = ["gemini", "claude", "codex"]
+clients = ["gemini", "claude", "codex", "copilot"]
 transport = "stdio"
 command = "npx"
 # Restrict access to the current repo; paths may be absolute or relative.

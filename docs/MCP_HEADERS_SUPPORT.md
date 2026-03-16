@@ -14,6 +14,7 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 | Claude Code | `.mcp.json` | `~/.claude.json` | `headers` object on the server entry (`type: "http"`) |
 | VS Code (Copilot Chat) | `.vscode/mcp.json` | user settings `mcp.json` | `headers` object (supports `${input:...}` indirection) |
 | Codex CLI (+ IDE extension) | `.codex/config.toml` (trusted projects) | `~/.codex/config.toml` | `bearer_token_env_var`, `env_http_headers`, `http_headers` |
+| Copilot CLI | `.copilot/mcp-config.json` | `~/.copilot/mcp-config.json` | `headers` object on the server entry |
 
 ## Client details
 
@@ -98,7 +99,34 @@ Notes:
 
 * Agent Layer currently writes headers using `${env:VAR}` placeholders in `.vscode/mcp.json` (it does not auto-generate an `inputs` block).
 
-### 4) Codex CLI (and Codex IDE extension)
+### 4) Copilot CLI
+
+**File (repo-local):** `.copilot/mcp-config.json`
+
+**HTTP server with headers:**
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "type": "http",
+      "url": "https://api.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${AL_MY_API_TOKEN}"
+      },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+Notes:
+
+* Copilot CLI supports environment variable placeholders inside `mcp-config.json` (e.g., `${AL_MY_API_TOKEN}`), matching the same `${VAR}` syntax used by Gemini and Claude.
+* Agent Layer preserves raw `${VAR}` references in the generated file — secrets are never resolved into the config.
+* The `tools` field is always set to `["*"]` (all tools enabled) because Copilot CLI does not support per-tool filtering.
+
+### 5) Codex CLI (and Codex IDE extension)
 
 **File (repo-local):** `.codex/config.toml` (trusted projects)
 **File (user):** `~/.codex/config.toml`
@@ -179,6 +207,7 @@ Given a normalized header spec:
 
 * **Gemini CLI**: emit `headers` map with the raw string (preserve `${VAR}`).
 * **Claude Code**: emit `headers` map with the raw string (preserve `${VAR}` / `${VAR:-default}`).
+* **Copilot CLI**: emit `headers` map with the raw string (preserve `${VAR}`).
 * **VS Code**:
 
   * for literal headers: emit the literal value.

@@ -14,7 +14,7 @@ run_scenario_fresh_install_claude() {
 
   # Verify instruction files were created with real content
   assert_file_contains "$repo_dir/.agent-layer/instructions/01_base.md" \
-    "Guiding Principles" "instructions/01_base.md has Guiding Principles"
+    "Critical Protocol" "instructions/01_base.md has Critical Protocol"
   assert_file_contains "$repo_dir/.agent-layer/instructions/00_rules.md" \
     "Rules" "instructions/00_rules.md has Rules header"
 
@@ -53,7 +53,7 @@ run_scenario_fresh_install_claude() {
   # CLAUDE.md should contain actual instruction content, not just the marker
   assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
     "CLAUDE.md includes 00_rules.md instruction block"
-  assert_file_contains "$repo_dir/CLAUDE.md" "Guiding Principles" \
+  assert_file_contains "$repo_dir/CLAUDE.md" "Critical Protocol" \
     "CLAUDE.md has real instruction content"
 
   # .mcp.json and settings.json should be valid JSON

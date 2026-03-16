@@ -87,6 +87,15 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		steps = append(steps, func() error { return WriteAntigravitySkills(sys, root, project.Skills) })
 	}
 
+	if config.IsAgentEnabled(agents.CopilotCLI.Enabled) {
+		steps = append(steps,
+			func() error { return WriteCopilotMCPConfig(sys, root, project) },
+			func() error { return WriteCopilotSkills(sys, root, project.Skills) },
+		)
+	} else {
+		steps = append(steps, func() error { return CleanCopilotOutputs(sys, root) })
+	}
+
 	if config.IsAgentEnabled(agents.Gemini.Enabled) {
 		steps = append(steps, func() error { return WriteGeminiSettings(sys, root, project) })
 	}

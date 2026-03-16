@@ -33,6 +33,8 @@ enabled = false
 enabled = false
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -105,6 +107,8 @@ enabled = false
 enabled = false
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -151,6 +155,8 @@ enabled = false
 enabled = false
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
@@ -193,6 +199,8 @@ enabled = false
 [agents.vscode]
 enabled = false
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
@@ -238,6 +246,8 @@ enabled = false
 [agents.vscode]
 enabled = false
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
@@ -301,6 +311,8 @@ enabled = false
 [agents.vscode]
 enabled = false
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))

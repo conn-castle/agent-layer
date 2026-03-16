@@ -98,6 +98,16 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		agentLayerPath := filepath.Join(root, ".agent-layer")
+		if info, agentLayerErr := os.Stat(agentLayerPath); agentLayerErr == nil {
+			if !info.IsDir() {
+				return false, fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
+			}
+			return false, fmt.Errorf(messages.WizardPartialInstallUpgradeRequired)
+		} else if !os.IsNotExist(agentLayerErr) {
+			return false, agentLayerErr
+		}
+
 		confirm := true
 		if err := ui.Confirm(messages.WizardInstallPrompt, &confirm); err != nil {
 			return false, err
@@ -151,6 +161,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		{id: AgentCodex, enabled: cfg.Config.Agents.Codex.Enabled},
 		{id: AgentVSCode, enabled: cfg.Config.Agents.VSCode.Enabled},
 		{id: AgentAntigravity, enabled: cfg.Config.Agents.Antigravity.Enabled},
+		{id: AgentCopilotCLI, enabled: cfg.Config.Agents.CopilotCLI.Enabled},
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
@@ -162,6 +173,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
+	choices.CopilotCLIModel = cfg.Config.Agents.CopilotCLI.Model
 
 	for _, srv := range cfg.Config.MCP.Servers {
 		if srv.Enabled != nil && *srv.Enabled {
@@ -356,6 +368,12 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.CodexReasoningTouched = true
+	}
+	if choices.EnabledAgents[AgentCopilotCLI] {
+		if err := selectOptionalValue(ui, messages.WizardCopilotCLIModelTitle, CopilotCLIModels(), &choices.CopilotCLIModel); err != nil {
+			return err
+		}
+		choices.CopilotCLIModelTouched = true
 	}
 
 	return nil

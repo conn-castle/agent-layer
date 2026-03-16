@@ -68,6 +68,7 @@ Recommended roles:
 - Required: ask before editing only when the user explicitly limited the run to triage or report review.
 - Required: ask when no valid review report can be found and explicit report selection is needed.
 - Required: ask when an accepted fix would require materially broader scope or a real behavior change beyond the reviewed target.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during verdicting and in-scope fixes when the request includes fixes.
 
 ## Triage workflow

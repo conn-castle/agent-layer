@@ -100,6 +100,7 @@ func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
 				Antigravity: config.EnableOnlyConfig{Enabled: &enabled},
+				CopilotCLI:  config.AgentConfig{Enabled: &enabled},
 			},
 			MCP: config.MCPConfig{
 				Servers: []config.MCPServer{
@@ -116,11 +117,12 @@ func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
 	}
 
 	results := CheckPolicy(project)
-	require.Len(t, results, 2)
+	// CopilotCLI is also enabled and supports approval modes, so the
+	// "only antigravity" approval mode warning must NOT fire. Only the
+	// MCP capability mismatch for the antigravity-targeted server fires.
+	require.Len(t, results, 1)
 	require.Equal(t, CodePolicyCapabilityMismatch, results[0].Code)
 	require.Equal(t, "srv", results[0].Subject)
-	require.Equal(t, CodePolicyCapabilityMismatch, results[1].Code)
-	require.Equal(t, "approvals.mode", results[1].Subject)
 }
 
 func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
@@ -394,9 +396,11 @@ func TestDedupePolicyWarningsAndAntigravityEnabled(t *testing.T) {
 
 	require.True(t, onlyAntigravityEnabled(config.AgentsConfig{
 		Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:  config.AgentConfig{Enabled: testutil.BoolPtr(false)},
 	}))
 	require.False(t, onlyAntigravityEnabled(config.AgentsConfig{
 		Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:  config.AgentConfig{Enabled: testutil.BoolPtr(true)},
 		Codex:       config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 	}))
 }

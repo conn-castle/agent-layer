@@ -8,6 +8,9 @@ tmp/
 coverage.out
 .DS_Store
 
+# Compiled binary
+/al
+
 # GoLang tools and cache
 .tools/
 .cache/

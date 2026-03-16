@@ -28,6 +28,18 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-03-16 reassess-memory-pruning: Reassess DoD memory-pruning rule after usage
+    Priority: Low. Area: instructions / memory
+    Description: The DoD now includes pruning stale DECISIONS.md and CONTEXT.md entries as part of each task completion. After using this for a while, reassess whether it is effective at keeping memory files lean without adding too much friction. Consider whether a lighter or heavier approach is needed.
+    Acceptance criteria: Decision recorded on whether to keep, strengthen, weaken, or replace the DoD memory-pruning bullet based on observed agent behavior.
+    Notes: Added alongside the DoD change in 01_base.md. If agents are ignoring it or it feels heavyweight, consider moving to a periodic audit-memory trigger instead.
+
+- Backlog 2026-03-16 conventions-entry-markers: Add insertion markers to 04_conventions.md
+    Priority: Low. Area: templates / conventions
+    Description: Add `<!-- ENTRIES START -->` markers to `04_conventions.md` so that users and agents can add project-specific conventions below the marker, matching the pattern used by memory files. Keep the header and preamble above the marker as managed content.
+    Acceptance criteria: `04_conventions.md` template has entry markers; `al init` and `al upgrade` preserve user entries below the marker; existing conventions in deployed repos are not lost on upgrade.
+    Notes: Requires ownership policy update in `ownership_policy.go` and manifest generator in `gentemplatemanifest/main.go` to treat this file as section-aware.
+
 - Backlog 2026-03-06 skill-line-width-warning: Warn on long lines in skill files
     Priority: Low. Area: skills / validator
     Description: Add a soft warning (not a hard error) when a skill file contains lines exceeding a character threshold (e.g., ~1000 chars). Protects against silent truncation by tools that impose per-line limits (Claude Code's Read tool truncates at 2000 chars) regardless of how skills are loaded at runtime.

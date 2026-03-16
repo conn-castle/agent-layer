@@ -33,6 +33,8 @@ enabled = false
 enabled = true
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
 		t.Fatal(err)
@@ -116,6 +118,8 @@ enabled = true
 model = "vscode-model-not-supported"
 reasoning_effort = "nope"
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
@@ -205,6 +209,8 @@ enabled = false
 enabled = true
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(legacyKeyConfig), 0o644); err != nil {
 		t.Fatal(err)
@@ -261,6 +267,8 @@ enabled = false
 [agents.vscode]
 enabled = true
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
@@ -334,6 +342,8 @@ enabled = false
 enabled = true
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
 		t.Fatal(err)
@@ -379,6 +389,8 @@ enabled = false
 [agents.vscode]
 enabled = true
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
@@ -431,6 +443,8 @@ enabled = false
 [agents.vscode]
 enabled = true
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
@@ -499,6 +513,8 @@ enabled = false
 [agents.vscode]
 enabled = true
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {

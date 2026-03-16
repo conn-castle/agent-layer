@@ -21,4 +21,4 @@ After this list, refer to memory files by filename only (ISSUES.md, BACKLOG.md, 
 - **Write down deferred work:** If you discover something worth doing and you are not doing it now:
   - add it to ISSUES.md if it is a bug, maintainability refactor, technical debt, reliability/security concern, test coverage gap, performance concern, or other engineering risk;
   - add it to BACKLOG.md only if it is a new user-visible capability.
-- **Keep files living:** When an issue is fixed, remove it from ISSUES.md. When a backlog item is implemented or scheduled into the roadmap, move it into ROADMAP.md and remove it from BACKLOG.md. Keep DECISIONS.md and COMMANDS.md current by updating and removing stale items.
+- **Keep files living:** When an issue is fixed, remove it from ISSUES.md. When a backlog item is implemented or scheduled into the roadmap, move it into ROADMAP.md and remove it from BACKLOG.md. Keep DECISIONS.md, CONTEXT.md, and COMMANDS.md current — when completing a task, remove or update entries that the change made stale.

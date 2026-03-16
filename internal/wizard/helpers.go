@@ -224,6 +224,8 @@ func agentModelSummary(agent string, c *Choices) string {
 		return claudeModelSummary(c)
 	case AgentCodex:
 		return codexModelSummary(c)
+	case AgentCopilotCLI:
+		return c.CopilotCLIModel
 	default:
 		return ""
 	}

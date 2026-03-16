@@ -55,6 +55,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = true
+[agents.copilot_cli]
+enabled = true
 
 [warnings]
 instruction_token_threshold = 10000

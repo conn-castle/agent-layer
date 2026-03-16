@@ -22,7 +22,8 @@ It should:
 
 - Default PR is the current branch's open PR.
 - Default scope is all unresolved feedback comments on the PR.
-- Comments that are bot status messages, CI notifications, or statements of fact (not feedback) are excluded from processing.
+- Pure bot status messages, CI notifications, and statements of fact (not feedback) are excluded from processing.
+- Automated review comments from tools such as Copilot or CodeRabbit are treated as feedback and require replies, not excluded as bot messages.
 
 ## Inputs
 
@@ -51,6 +52,7 @@ Delegate to:
 
 - Required: ask when a comment requests a change that would require a materially broader scope or architectural decision.
 - Required: ask when a comment's intent is ambiguous and could be interpreted multiple ways.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous when the feedback is clear and the fix or justification is straightforward.
 
 ## Comment resolution workflow
@@ -97,7 +99,7 @@ Evaluation rules:
 
 1. For each agreed comment:
    - Reply describing the specific fix that was implemented.
-   - Reference the relevant code change if helpful.
+   - Include the commit hash where the fix landed (e.g., "Fixed in abc1234").
 2. For each disagreed comment:
    - Reply with a clear justification explaining why the suggestion was not implemented.
    - Be respectful and specific. Explain the reasoning, not just the conclusion.

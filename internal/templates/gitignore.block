@@ -15,9 +15,11 @@
 /.agent/
 /.mcp.json
 /.codex/
+/.copilot/
 /.gemini/
 /.claude/
 /.claude-config/
+/.github/skills/
 /.vscode/mcp.json
 /.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.

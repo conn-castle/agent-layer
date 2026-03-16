@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "target_version": "0.9.2",
+  "min_prior_version": "0.9.1",
+  "operations": [
+    {
+      "id": "add-copilot-cli-enabled",
+      "kind": "config_set_default",
+      "key": "agents.copilot_cli.enabled",
+      "value": false,
+      "rationale": "New agent added in v0.9.2. Enable if you use GitHub Copilot CLI.",
+      "source_agnostic": true
+    }
+  ]
+}
