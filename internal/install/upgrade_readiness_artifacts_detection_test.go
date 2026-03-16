@@ -23,7 +23,7 @@ func TestDetectDisabledAgentArtifacts_IgnoresUserFileWithoutEvidence(t *testing.
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(false)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(true)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}}}
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(false)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(true)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}, CopilotCLI: config.AgentConfig{Enabled: testutil.BoolPtr(true)}}}
 	check, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err != nil {
 		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
@@ -48,6 +48,7 @@ func TestDetectDisabledAgentArtifacts_IgnoresDirectories(t *testing.T) {
 		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(false)},
 		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
 		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
 	}}
 	check, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err != nil {
@@ -66,7 +67,7 @@ func TestDetectDisabledAgentArtifacts_ClaudeStatError(t *testing.T) {
 	inst := &installer{root: root, sys: sys}
 
 	// Both Claude and ClaudeVSCode must be disabled for the claude rule to fire.
-	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(false)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}}}
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(false)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}, CopilotCLI: config.AgentConfig{Enabled: testutil.BoolPtr(true)}}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "stat boom") {
 		t.Fatalf("expected claude stat error, got %v", err)
@@ -81,7 +82,7 @@ func TestDetectDisabledAgentArtifacts_ClaudeSettingsStatError(t *testing.T) {
 	inst := &installer{root: root, sys: sys}
 
 	// Both Claude and ClaudeVSCode must be disabled for the claude rule to fire.
-	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(false)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}}}
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(false)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}, CopilotCLI: config.AgentConfig{Enabled: testutil.BoolPtr(true)}}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "stat boom") {
 		t.Fatalf("expected claude settings stat error, got %v", err)
@@ -105,6 +106,7 @@ func TestDetectDisabledAgentArtifacts_FlagsClaudeSettings(t *testing.T) {
 		ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
 		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
 		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
 		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 	}}
 	check, err := detectDisabledAgentArtifacts(inst, &cfg)
@@ -134,6 +136,7 @@ func TestDetectDisabledAgentArtifacts_CodexStatError(t *testing.T) {
 		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(false)},
 		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
 		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
 	}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "stat boom") {
@@ -163,7 +166,7 @@ func TestDetectDisabledAgentArtifacts_VSCodeTemplateReadError(t *testing.T) {
 	})
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(true)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}}}
+	cfg := config.Config{Agents: config.AgentsConfig{Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)}, Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(true)}, ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)}, Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}, Codex: config.CodexConfig{Enabled: testutil.BoolPtr(true)}, CopilotCLI: config.AgentConfig{Enabled: testutil.BoolPtr(true)}}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "template boom") {
 		t.Fatalf("expected template read error, got %v", err)
@@ -191,6 +194,7 @@ func TestDetectDisabledAgentArtifacts_VSCodeSettingsReadError(t *testing.T) {
 		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
 		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
 	}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "read boom") {
@@ -214,6 +218,7 @@ func TestDetectDisabledAgentArtifacts_VSCodePromptWalkError(t *testing.T) {
 		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(true)},
 		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
 		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
 	}}
 	_, err := detectDisabledAgentArtifacts(inst, &cfg)
 	if err == nil || !strings.Contains(err.Error(), "walk boom") {
@@ -273,6 +278,7 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 			Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(false)},
 			VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
 			Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+			CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(false)},
 		},
 	}
 	inst := &installer{root: root, sys: RealSystem{}}

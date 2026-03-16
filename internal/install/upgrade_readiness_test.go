@@ -343,6 +343,8 @@ enabled = false
 enabled = true
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(configPath, []byte(partialConfig), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

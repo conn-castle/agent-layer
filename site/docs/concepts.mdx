@@ -73,7 +73,7 @@ Agent Layer avoids that by forcing everything through a single canonical input. 
 
 ### Anti-patterns to avoid
 
-- Editing generated files under `.gemini/`, `.claude/`, `.codex/`, `.agent/skills/`, or `.mcp.json`
+- Editing generated files under `.gemini/`, `.claude/`, `.codex/`, `.copilot/`, `.agent/skills/`, `.github/skills/`, or `.mcp.json`
 - Editing Agent Layer-managed files under `.vscode/` (`mcp.json`, `prompts/`, and the managed block in `settings.json`)
 - Copying instructions manually between clients
 - Maintaining separate MCP configs for each agent
@@ -156,7 +156,7 @@ mode = "all" # one of: all, mcp, commands, none, yolo
 | `mcp` | prompt/deny | auto-approve | |
 | `commands` | auto-approve | prompt/deny | |
 | `none` | prompt/deny | prompt/deny | |
-| `yolo` | auto-approve | auto-approve | skips all permission prompts (Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, VS Code `chat.tools.global.autoApprove`) |
+| `yolo` | auto-approve | auto-approve | skips all permission prompts (Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI `--yolo`, VS Code `chat.tools.global.autoApprove`) |
 
 The default template sets `mode = "all"`. Change it to match your team's security posture.
 
@@ -287,7 +287,7 @@ See [Environment variables](./reference#environment-variables) for how `.env` is
 
 ### Client targeting
 
-Use `clients = ["gemini", "claude", "codex", "vscode", "antigravity"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
+Use `clients = ["gemini", "claude", "codex", "vscode", "antigravity", "copilot"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
 
 ### Built-in path placeholder
 

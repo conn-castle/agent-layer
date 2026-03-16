@@ -66,6 +66,7 @@ var validClients = map[string]struct{}{
 	"vscode":      {},
 	"codex":       {},
 	"antigravity": {},
+	"copilot":     {},
 }
 
 var validHTTPTransports = map[string]struct{}{
@@ -104,6 +105,9 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.Antigravity.Enabled == nil {
 		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
+	if c.Agents.CopilotCLI.Enabled == nil {
+		return fmt.Errorf(messages.ConfigCopilotCLIEnabledRequiredFmt, path)
+	}
 	if strings.TrimSpace(c.Agents.Gemini.ReasoningEffort) != "" {
 		return fmt.Errorf(messages.ConfigGeminiReasoningEffortUnsupportedFmt, path)
 	}
@@ -116,6 +120,10 @@ func (c *Config) Validate(path string) error {
 		if !ClaudeModelSupportsReasoningEffort(c.Agents.Claude.Model) {
 			return fmt.Errorf(messages.ConfigClaudeReasoningEffortModelUnsupportedFmt, path, c.Agents.Claude.Model)
 		}
+	}
+
+	if strings.TrimSpace(c.Agents.CopilotCLI.ReasoningEffort) != "" {
+		return fmt.Errorf(messages.ConfigCopilotCLIReasoningEffortUnsupportedFmt, path)
 	}
 
 	// Model validation: agent model values (agents.gemini.model, agents.claude.model,

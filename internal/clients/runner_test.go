@@ -163,6 +163,8 @@ enabled = false
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 
 [warnings]
 version_update_on_sync = true
@@ -225,6 +227,8 @@ enabled = false
 enabled = false
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 
 [warnings]
@@ -292,6 +296,8 @@ enabled = false
 enabled = false
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 
 [warnings]
@@ -371,6 +377,8 @@ enabled = false
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 
 [warnings]
 instruction_token_threshold = 50000
@@ -440,6 +448,8 @@ enabled = false
 enabled = false
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 
 [warnings]

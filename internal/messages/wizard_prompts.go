@@ -16,6 +16,7 @@ const (
 	WizardClaudeLocalConfigDirPrompt          = "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)"
 	WizardCodexModelTitle                     = "Codex Model"
 	WizardCodexReasoningEffortTitle           = "Codex Reasoning Effort"
+	WizardCopilotCLIModelTitle                = "Copilot CLI Model"
 	WizardMissingDefaultMCPServersPromptFmt   = "Default MCP server entries are missing from config.toml: %s. Restore them before continuing?"
 	WizardEnableDefaultMCPServersTitle        = "Enable Default MCP Servers"
 	WizardSecretAlreadySetPromptFmt           = "Secret %s is already set. Overwrite?"

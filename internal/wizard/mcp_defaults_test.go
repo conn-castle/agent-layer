@@ -95,6 +95,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = true
+[agents.copilot_cli]
+enabled = true
 
 [mcp]
 `), nil

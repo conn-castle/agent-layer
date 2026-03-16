@@ -29,6 +29,9 @@ type Choices struct {
 	CodexReasoning        string
 	CodexReasoningTouched bool
 
+	CopilotCLIModel        string
+	CopilotCLIModelTouched bool
+
 	// MCP
 	EnabledMCPServers        map[string]bool
 	EnabledMCPServersTouched bool

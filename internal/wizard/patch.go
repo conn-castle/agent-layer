@@ -51,6 +51,7 @@ var preferredWizardSectionOrder = []string{
 	"agents.codex",
 	"agents.vscode",
 	"agents.antigravity",
+	"agents.copilot_cli",
 	"mcp",
 	"warnings",
 }
@@ -236,6 +237,13 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 	case "agents.antigravity":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentAntigravity]), "")
+		}
+	case "agents.copilot_cli":
+		if choices.EnabledAgentsTouched {
+			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentCopilotCLI]), "")
+		}
+		if choices.CopilotCLIModelTouched {
+			setOptionalKeyValue(block, templateBlock, "model", choices.CopilotCLIModel, "enabled")
 		}
 	case "warnings":
 		if choices.WarningsEnabledTouched && choices.WarningsEnabled {

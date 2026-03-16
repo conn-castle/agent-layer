@@ -161,6 +161,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		{id: AgentCodex, enabled: cfg.Config.Agents.Codex.Enabled},
 		{id: AgentVSCode, enabled: cfg.Config.Agents.VSCode.Enabled},
 		{id: AgentAntigravity, enabled: cfg.Config.Agents.Antigravity.Enabled},
+		{id: AgentCopilotCLI, enabled: cfg.Config.Agents.CopilotCLI.Enabled},
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
@@ -172,6 +173,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
+	choices.CopilotCLIModel = cfg.Config.Agents.CopilotCLI.Model
 
 	for _, srv := range cfg.Config.MCP.Servers {
 		if srv.Enabled != nil && *srv.Enabled {
@@ -366,6 +368,12 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.CodexReasoningTouched = true
+	}
+	if choices.EnabledAgents[AgentCopilotCLI] {
+		if err := selectOptionalValue(ui, messages.WizardCopilotCLIModelTitle, CopilotCLIModels(), &choices.CopilotCLIModel); err != nil {
+			return err
+		}
+		choices.CopilotCLIModelTouched = true
 	}
 
 	return nil

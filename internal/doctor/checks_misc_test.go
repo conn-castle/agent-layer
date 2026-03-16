@@ -175,6 +175,7 @@ func TestCheckAgents(t *testing.T) {
 				Codex:        config.CodexConfig{Enabled: nil},
 				VSCode:       config.EnableOnlyConfig{Enabled: &tBool},
 				Antigravity:  config.EnableOnlyConfig{Enabled: &fBool},
+				CopilotCLI:   config.AgentConfig{Enabled: &fBool},
 			},
 		},
 	}

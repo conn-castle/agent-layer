@@ -115,6 +115,20 @@ var fields = []FieldDef{
 	},
 	{Key: "agents.vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
+	{Key: "agents.copilot_cli.enabled", Type: FieldBool, Required: true},
+	{
+		Key:         "agents.copilot_cli.model",
+		Type:        FieldEnum,
+		AllowCustom: true,
+		Options: []FieldOption{
+			{Value: "claude-sonnet-4.5"},
+			{Value: "claude-opus-4.6"},
+			{Value: "claude-sonnet-4.6"},
+			{Value: "claude-haiku-4.5"},
+			{Value: "gpt-5.3-codex"},
+			{Value: "gemini-3-pro"},
+		},
+	},
 }
 
 // fieldIndex provides O(1) lookup by key.

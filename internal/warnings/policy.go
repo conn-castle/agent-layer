@@ -253,5 +253,6 @@ func onlyAntigravityEnabled(agents config.AgentsConfig) bool {
 		!isEnabled(agents.Claude.Enabled) &&
 		!isEnabled(agents.ClaudeVSCode.Enabled) &&
 		!isEnabled(agents.Codex.Enabled) &&
-		!isEnabled(agents.VSCode.Enabled)
+		!isEnabled(agents.VSCode.Enabled) &&
+		!isEnabled(agents.CopilotCLI.Enabled)
 }

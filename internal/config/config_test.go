@@ -34,6 +34,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 
 [mcp]
 [[mcp.servers]]
@@ -82,6 +84,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -122,6 +126,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -160,6 +166,8 @@ enabled = true
 enabled = true
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -200,6 +208,8 @@ enabled = true
 enabled = true
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -280,6 +290,8 @@ enabled = true
 
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 
 [mcp]
 [[mcp.servers]]
@@ -327,6 +339,8 @@ enabled = true
 enabled = true
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 
 [mcp]
@@ -383,6 +397,8 @@ enabled = true
 enabled = true
 
 [agents.antigravity]
+enabled = false
+[agents.copilot_cli]
 enabled = false
 
 [mcp]

@@ -42,10 +42,12 @@ MCP = Model Context Protocol (tool/data servers).
 | VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
 | Codex CLI | ✅ | ✅ | ✅ | ✅ |
 | Codex VS Code extension | ✅ | ✅ | ✅ | ✅ |
+| Copilot CLI | ✅ | ✅ | ✅ | ✅ |
 | Antigravity | ✅ | ✅ | ❌ | ❌ |
 
 Notes:
 - VS Code/Codex "skills" are generated in their native formats (prompt files / skills).
+- Copilot CLI skills are generated as `.github/skills/<name>/SKILL.md`.
 - Antigravity skills are generated as skills in `.agent/skills/<command>/SKILL.md`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
 - Antigravity does not support MCP servers because it only reads from the home directory and does not load repo-local `.gemini/` or `.agent/` MCP configs.
@@ -102,7 +104,7 @@ Notes:
 - `al init` is intended to be run once per repo. If the repo is already initialized, use `al upgrade plan` and `al upgrade` to refresh template-managed files.
 - `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories.
 - `al upgrade` automatically creates a managed-file snapshot and rolls changes back if an upgrade step fails. Snapshots are written under `.agent-layer/state/upgrade-snapshots/`.
-- Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, VS Code, etc.).
+- Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, Copilot CLI, VS Code, etc.).
 
 ---
 
@@ -218,7 +220,7 @@ Compatibility guarantee:
 Run `al wizard` any time to interactively configure the most important settings:
 
 - **Approvals Mode** (all, mcp, commands, none, yolo)
-- **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity)
+- **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity, Copilot CLI)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
@@ -280,7 +282,8 @@ Common memory files include:
 Generated outputs are written into the repo in client-specific formats (examples):
 
 - Instruction shims: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
-- MCP + client configs: `.mcp.json`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`
+- MCP + client configs: `.mcp.json`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`
+- Copilot CLI skills: `.github/skills/`
 - Antigravity skills: `.agent/skills/`
 - VS Code integration: `.vscode/mcp.json`, `.vscode/prompts/`, and an Agent Layer-managed block in `.vscode/settings.json`
 
@@ -339,6 +342,12 @@ enabled = true
 
 [agents.antigravity]
 enabled = true
+
+[agents.copilot_cli]
+enabled = true
+# model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
+# model = "..."
+# reasoning_effort is not currently supported for Copilot CLI in Agent Layer.
 
 [mcp]
 # Secrets belong in .agent-layer/.env (never in config.toml).
@@ -430,7 +439,7 @@ These modes control whether the agent is allowed to run shell commands and/or MC
 - `mcp`: auto-approve **only** MCP tool calls; shell commands still require approval (or are restricted)
 - `commands`: auto-approve **only** shell commands; MCP tool calls still require approval
 - `none`: approve **nothing** automatically
-- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
+- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `--yolo` to Copilot CLI, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
 
 Client notes:
 - Some clients do not support all approval types; Agent Layer generates the closest supported behavior per client.
@@ -551,6 +560,7 @@ Common usage:
 al gemini
 al claude
 al codex
+al copilot
 al vscode
 al antigravity
 ```
@@ -596,7 +606,7 @@ Typical behavior:
 - `al completion <shell> --install` writes the completion file to the standard user location
 
 This enables:
-- `al <TAB>` to complete supported subcommands (gemini/claude/codex/vscode/antigravity/sync/…)
+- `al <TAB>` to complete supported subcommands (gemini/claude/codex/copilot/vscode/antigravity/sync/…)
 
 Notes:
 - Zsh may require adding the install directory to `$fpath` before `compinit` (the command prints a snippet when needed).
@@ -608,7 +618,7 @@ Notes:
 
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
-- generated client config files/directories (for example `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.agent/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, and `.github/copilot-instructions.md`)
+- generated client config files/directories (for example `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.copilot/`, `.agent/skills/`, `.github/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, and `.github/copilot-instructions.md`)
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 

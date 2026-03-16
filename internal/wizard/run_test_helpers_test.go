@@ -33,5 +33,7 @@ enabled = false
 enabled = false
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 }

@@ -206,6 +206,8 @@ enabled = false
 enabled = true
 [agents.antigravity]
 enabled = false
+[agents.copilot_cli]
+enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644); err != nil {
 		t.Fatal(err)

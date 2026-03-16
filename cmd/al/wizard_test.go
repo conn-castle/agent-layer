@@ -96,6 +96,8 @@ enabled = true
 enabled = true
 [agents.antigravity]
 enabled = true
+[agents.copilot_cli]
+enabled = true
 `), 0o644); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}
