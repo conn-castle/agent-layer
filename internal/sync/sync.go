@@ -92,6 +92,8 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 			func() error { return WriteCopilotMCPConfig(sys, root, project) },
 			func() error { return WriteCopilotSkills(sys, root, project.Skills) },
 		)
+	} else {
+		steps = append(steps, func() error { return CleanCopilotOutputs(sys, root) })
 	}
 
 	if config.IsAgentEnabled(agents.Gemini.Enabled) {

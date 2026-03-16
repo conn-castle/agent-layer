@@ -305,6 +305,71 @@ func TestWriteCopilotSkillsWriteError(t *testing.T) {
 	}
 }
 
+func TestCleanCopilotOutputsRemovesMCPConfigAndSkills(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := RealSystem{}
+
+	// Set up artifacts as if Copilot were previously enabled.
+	copilotDir := filepath.Join(root, ".copilot")
+	if err := os.MkdirAll(copilotDir, 0o755); err != nil {
+		t.Fatalf("mkdir .copilot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(copilotDir, "mcp-config.json"), []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("write mcp-config: %v", err)
+	}
+	skillDir := filepath.Join(root, ".github", "skills", "test-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	if err := CleanCopilotOutputs(sys, root); err != nil {
+		t.Fatalf("CleanCopilotOutputs error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(copilotDir, "mcp-config.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected mcp-config.json to be removed")
+	}
+	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+		t.Fatalf("expected skill dir to be removed")
+	}
+}
+
+func TestCleanCopilotOutputsNoArtifacts(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	// No .copilot/ or .github/skills/ exist — should not error.
+	if err := CleanCopilotOutputs(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanCopilotOutputs error on clean dir: %v", err)
+	}
+}
+
+func TestCleanCopilotOutputsPreservesManualSkills(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := RealSystem{}
+
+	// Create a manually-authored skill (no generated marker).
+	manualDir := filepath.Join(root, ".github", "skills", "manual-skill")
+	if err := os.MkdirAll(manualDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("# My manual skill\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	if err := CleanCopilotOutputs(sys, root); err != nil {
+		t.Fatalf("CleanCopilotOutputs error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(manualDir, "SKILL.md")); err != nil {
+		t.Fatalf("expected manual skill to be preserved, got: %v", err)
+	}
+}
+
 func TestWriteCopilotSkillsMkdirSkillDirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
