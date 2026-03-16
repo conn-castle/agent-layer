@@ -50,7 +50,7 @@ run_scenario_upgrade_claude() {
 
   # Verify instruction files exist and have current template content
   assert_file_contains "$repo_dir/.agent-layer/instructions/01_base.md" \
-    "Guiding Principles" "upgraded instructions/01_base.md has Guiding Principles"
+    "Critical Protocol" "upgraded instructions/01_base.md has Critical Protocol"
 
   cleanup_scenario_dir "$repo_dir"
 }

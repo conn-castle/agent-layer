@@ -17,7 +17,7 @@ run_scenario_idempotency() {
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
 
   # Verify files have real content before snapshot (guards against empty-file bugs)
-  assert_file_contains "$repo_dir/CLAUDE.md" "Guiding Principles" \
+  assert_file_contains "$repo_dir/CLAUDE.md" "Critical Protocol" \
     "CLAUDE.md has content before idempotency snapshot"
   assert_file_contains "$repo_dir/.mcp.json" '"mcpServers"' \
     ".mcp.json has content before idempotency snapshot"
