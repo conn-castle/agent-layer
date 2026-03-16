@@ -65,6 +65,7 @@ Recommended roles:
 - Required: ask when no valid plan/task pair exists.
 - Required: ask when the user intends a non-latest artifact pair and explicit paths are needed.
 - Optional: ask only when the plan wording is so ambiguous that the review target itself is unclear.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous for normal critique and report writing.
 
 ## Review workflow

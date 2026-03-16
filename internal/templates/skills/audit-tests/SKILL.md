@@ -4,30 +4,28 @@ description: >-
   Audit the test suite for redundancy, quality gaps, and organizational health
   across unit, integration, and e2e tiers. Discovers test conventions from the
   project, classifies tests by tier, identifies duplicative or low-value tests,
-  finds coverage gaps that metrics miss, and reports findings with actionable
-  recommendations. Use `boost-coverage` to fill gaps; use this skill to assess
-  whether the existing tests are worth keeping and well-organized.
+  finds coverage gaps that metrics miss, fixes what can be fixed safely, and
+  reports findings. Use `boost-coverage` to fill gaps; use this skill to assess
+  and clean up the existing test suite.
 ---
 
 # audit-tests
 
-Audit the health of the existing test suite, not just coverage numbers.
-Default behavior is:
+Audit the health of the existing test suite and fix what can be fixed safely:
 - discover the project's test conventions and runner configuration
 - classify existing tests by tier (unit, integration, e2e)
 - identify redundant, duplicative, or low-value tests
 - identify meaningful coverage gaps that line-coverage metrics miss
 - identify misclassified tests (e.g., integration tests labeled as unit tests)
-- report findings without modifying tests
+- remove dead tests and strengthen weak assertions where mechanical
+- report all findings and fixes
 
 Use `boost-coverage` when the goal is to write new tests to raise coverage.
-Use this skill when the goal is to assess whether the existing test suite is
-healthy, well-organized, and non-redundant.
+Use this skill when the goal is to assess and clean up the existing test suite.
 
 ## Defaults
 
 - Default scope is all test files in the repository.
-- Default mode is report-only. Fix mode is available when requested.
 - Classify tests into tiers based on project conventions, not assumptions.
 - If the project has no clear tier separation, note that as a finding rather
   than inventing a classification scheme.
@@ -40,7 +38,6 @@ Accept any combination of:
 - explicit paths, directories, or modules
 - tier filters (unit, integration, e2e, or all)
 - a maximum finding count
-- whether to operate in fix mode (remove/refactor tests)
 - whether to run coverage commands during gap analysis (default: yes if available)
 
 ## Required artifact
@@ -63,11 +60,11 @@ Recommended roles:
    misclassified tests.
 4. `Gap analyst`: identifies meaningful coverage gaps by comparing test
    targets against production code structure.
-5. `Reporter`: writes the final report.
+5. `Fixer`: removes dead tests and applies mechanical fixes.
+6. `Reporter`: writes the final report.
 
 ## Global constraints
 
-- Do not modify test files or production code in report-only mode.
 - Do not assume test tier conventions; discover them from the project's
   configuration, directory structure, and naming patterns.
 - Do not treat line-coverage metrics as the sole measure of test health.
@@ -81,10 +78,14 @@ Recommended roles:
 
 - Required: ask when the project's test conventions are ambiguous enough
   that tier classification would be unreliable.
-- Required: ask before deleting or significantly refactoring tests in fix mode.
+- Required: ask before removing tests that have partial value and are not
+  clearly dead, rubber-stamp, or duplicate (borderline cases).
 - Required: ask when a finding would require changes to production code
   for testability.
-- Stay autonomous during the audit itself.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
+- Stay autonomous for: dead tests (skipped, commented out, unreachable),
+  rubber-stamp tests (no meaningful assertions), clear duplicates
+  (same code path and assertions), and mechanical assertion fixes.
 
 ## Audit workflow
 
@@ -126,10 +127,16 @@ For each redundancy finding, state:
 ### Phase 3: Quality analysis (Quality analyst)
 
 Identify tests with quality concerns:
-- **Weak assertions**: tests that assert only on happy paths, check only
-  truthiness, or assert on implementation details rather than behavior
-- **Missing edge cases**: tests that cover the happy path but skip error
-  paths, boundary conditions, or guard clauses for tested functions
+- **Rubber-stamp tests**: tests with no meaningful assertions — they run
+  code but only check that it does not panic/error, assert truthiness
+  without verifying behavior, or assert on implementation details rather
+  than outcomes. These provide false confidence and should be deleted.
+- **Duplicate tests**: tests that are substantially identical to another
+  test — same code path, same inputs, equivalent assertions — often
+  created by agents adding a new test per task instead of extending
+  existing tests. Keep the more complete version; delete the rest.
+- **Weak assertions**: tests that assert only on happy paths or skip
+  error paths, boundary conditions, or guard clauses for tested functions
 - **Fragile tests**: tests tightly coupled to implementation details that
   would break on safe refactors
 - **Misleading names**: test names that do not match what the test actually
@@ -161,7 +168,19 @@ For each tier, the conclusion must be one of:
 
 Focus on gaps that represent real risk, not low line-coverage numbers. If coverage commands are available and the user has not opted out, run them to inform the analysis.
 
-### Phase 5: Synthesize findings (Reporter)
+### Phase 5: Fix safe findings (Fixer)
+
+1. Delete clearly dead tests (skipped, commented out, unreachable).
+2. Delete rubber-stamp tests that have no meaningful assertions.
+3. Consolidate clear duplicates: keep the more complete version, delete
+   the rest. When tests overlap substantially but each has unique value,
+   merge into a single consolidated test.
+4. Strengthen weak assertions where the fix is mechanical and unambiguous.
+5. For borderline cases where the test has partial value and deletion is
+   not clearly correct, ask the user.
+6. Run the test suite after fixes to confirm nothing broke.
+
+### Phase 6: Synthesize findings (Reporter)
 
 Each finding across all phases must include:
 - `Title`
@@ -170,7 +189,7 @@ Each finding across all phases must include:
 - `Tier`: unit | integration | e2e | cross-tier (for redundancy/quality findings that span tiers)
 - `Location`: test file(s) and function(s)
 - `Evidence`: concrete observation
-- `Recommendation`
+- `What was done`: fixed | needs human decision | recommendation for `boost-coverage`
 
 ## Required report structure
 
@@ -180,23 +199,24 @@ Write `.agent-layer/tmp/audit-tests.<run-id>.report.md` with:
    - scope audited
    - test conventions discovered
    - short outcome summary
-2. `## Test Inventory`
+2. `## Fixes Applied`
+   - what was removed, changed, or strengthened
+3. `## Test Inventory`
    - total test count by tier
    - tier classification rationale
    - misclassified tests
-3. `## Redundancy Findings`
+4. `## Redundancy Findings`
    - ordered by impact (most duplicative first)
-4. `## Quality Findings`
+5. `## Quality Findings`
    - ordered by severity
-5. `## Gap Findings`
+6. `## Gap Findings`
    - one subsection per tier (`### Unit Test Gaps`, `### Integration Test Gaps`, `### E2E Test Gaps`, plus each additional tier discovered)
    - ordered by risk; every tier must appear with an explicit conclusion
-6. `## Strengths`
+7. `## Strengths`
    - well-tested areas, good patterns worth preserving
-7. `## Recommended Actions`
-   - prioritized list: what to remove, what to fix, what to add
-   - distinguish between actions for this skill (fix mode) and actions
-     for `boost-coverage` (writing new tests)
+8. `## Recommended Actions`
+   - prioritized list: what still needs human decision, what to add
+   - distinguish between actions for this skill and actions for `boost-coverage`
 
 ## Guardrails
 
@@ -207,24 +227,11 @@ Write `.agent-layer/tmp/audit-tests.<run-id>.report.md` with:
 - Do not conflate low coverage with poor test quality; they are separate
   concerns.
 - Do not flag framework-generated or conventional boilerplate as redundant.
-- Do not apply fixes in report-only mode (the default).
 - Do not widen a test audit into a production code audit.
-
-## Fix mode
-
-When fix mode is requested:
-
-1. Remove clearly dead tests (skipped, commented out, unreachable).
-2. Consolidate duplicative tests, keeping the more complete version.
-3. Strengthen weak assertions where the fix is mechanical and unambiguous.
-4. Ask before removing or consolidating tests that are borderline.
-5. Record each fix in the report under a `## Fixes Applied` section.
-6. Run the test suite after fixes to confirm nothing broke.
 
 ## Final handoff
 
 After writing the report:
 1. Echo the report path.
-2. Summarize the highest-value findings in chat and state the test inventory by tier.
-3. If fixes were applied, summarize changes and test suite result.
-4. If significant gaps were found, recommend `boost-coverage` on the identified areas.
+2. Summarize fixes applied and the test inventory by tier.
+3. If significant gaps were found, recommend `boost-coverage` on the identified areas.

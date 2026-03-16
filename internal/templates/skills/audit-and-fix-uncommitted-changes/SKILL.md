@@ -87,6 +87,7 @@ The master report is the human-facing round ledger. It must remain readable with
 - Required: ask when a deferred finding blocks convergence.
 - Required: ask when the same unresolved finding recurs after two fix attempts or the loop is no longer converging.
 - Required: ask before any destructive or irreversible action would be required.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal audit/fix/re-audit cycles when the target and accepted fixes are clear.
 
 ## Orchestration loop

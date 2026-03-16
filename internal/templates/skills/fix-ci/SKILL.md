@@ -50,6 +50,7 @@ Delegate to:
 - Required: ask when the CI failure appears to be an infrastructure or environment issue rather than a code issue.
 - Required: ask when the same CI failure persists after 3 fix attempts.
 - Required: ask when fixing the CI failure would require a materially broader scope change.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal diagnose, fix, audit, commit, push, re-check cycles.
 
 ## Fix workflow
@@ -68,9 +69,10 @@ Delegate to:
 
 ### Phase 2: Fix the issue (Fixer)
 
-1. Implement the minimum fix needed to resolve the CI failure.
-2. If the fix requires understanding project conventions, read `COMMANDS.md` first.
-3. Run local verification when possible (the same commands CI runs) before committing.
+1. If the fix requires understanding project conventions, read `COMMANDS.md` first.
+2. When the CI failure is locally testable, find or create a local reproducer (failing test or command) before fixing. This confirms the diagnosis and prevents false-green commits.
+3. Implement the minimum fix needed to resolve the CI failure.
+4. Run local verification (the same commands CI runs) to confirm the fix before committing.
 
 ### Phase 3: Audit and commit (Auditor + Committer)
 

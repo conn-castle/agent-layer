@@ -67,6 +67,7 @@ If subagents are unavailable, do these passes inline and label them clearly.
 
 - Required: ask when ambiguity would materially change scope, behavior, or architecture.
 - Required: ask when repo context reveals multiple valid approaches with real user-facing or sequencing tradeoffs.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous while gathering context, drafting, critiquing, and gating the artifact pair.
 
 ## Planning workflow

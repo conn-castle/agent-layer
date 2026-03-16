@@ -70,6 +70,7 @@ Recommended roles:
 
 - Required: ask when fixing a selected issue would require a breaking change, broad architectural refactor, or materially larger scope.
 - Required: ask when issue wording and repo evidence still leave the intended fix ambiguous after planning and gating.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous while planning, gating, implementing, auditing, and verifying a clear issue batch.
 
 ## Issue workflow
@@ -119,8 +120,9 @@ After writing the artifacts:
 ### Phase 4: Implement the current batch (Implementer)
 
 1. Fix the selected issues in plan order.
-2. Keep diffs narrow and explainable.
-3. If a selected issue proves materially broader than planned, hand it back to the execution gatekeeper instead of freelancing.
+2. For defect-oriented issues, write or identify a failing test that reproduces the defect before fixing it, when feasible. For pure debt or refactor issues, verify against existing checks instead.
+3. Keep diffs narrow and explainable.
+4. If a selected issue proves materially broader than planned, hand it back to the execution gatekeeper instead of freelancing.
 
 If the touched scope accumulates obvious local complexity or dead scaffolding that can be fixed without broadening scope:
 - use the `simplify-code` skill

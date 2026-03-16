@@ -47,7 +47,7 @@ Delegate to:
 
 - Do not create a PR if there is nothing to push.
 - Do not skip CI checks.
-- Every feedback comment (not bot status messages or CI notifications) must have a reply before the skill completes.
+- Every feedback comment (not pure bot status messages or CI notifications) must have a reply before the skill completes. Automated review comments from tools such as Copilot or CodeRabbit count as feedback.
 - The skill must end with CI passing.
 - Do not force-push unless explicitly instructed.
 
@@ -56,6 +56,7 @@ Delegate to:
 - Required: ask when the working tree has no changes and no commits ahead of the remote.
 - Required: ask when PR creation fails due to an existing PR or branch conflict.
 - Required: ask when CI failures persist after 3 fix-ci iterations.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal commit, push, PR creation, CI monitoring, and comment handling.
 
 ## Orchestration loop
@@ -91,14 +92,16 @@ Delegate to:
 
 ### Phase 4: Wait for review comments (Timer)
 
+The review-comment wait timer starts at PR creation (`start_time` from Phase 2). Time spent waiting for CI in Phase 3 counts toward this timer.
+
 1. Calculate elapsed time since `start_time`.
 2. If less than 15 minutes (or the configured wait time) have elapsed, wait for the remaining time.
-3. If the wait time has already elapsed, proceed immediately.
+3. If the wait time has already elapsed (e.g., CI took longer than the wait period), proceed immediately.
 
 ### Phase 5: Address PR comments (Comment handler)
 
 1. Read all PR comments (review comments and conversation comments).
-2. Filter out bot status messages and CI notifications.
+2. Filter out pure bot status messages and CI notifications. Automated review comments from tools such as Copilot or CodeRabbit are feedback, not status messages.
 3. If there are feedback comments to address:
    a. Use the `address-pr-comments` skill, passing the PR number and all feedback comments.
    b. The address-pr-comments skill handles implementation, audit, commit, push, and replies.

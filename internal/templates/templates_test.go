@@ -121,7 +121,7 @@ func TestSkillTemplatesContainNormalizedWorkflowGuidance(t *testing.T) {
 		},
 		"skills/audit-tests/SKILL.md": {
 			"## Human checkpoints",
-			"ask before deleting or significantly refactoring tests in fix mode",
+			"ask before removing tests that have partial value",
 			"### Phase 1: Inventory and classify (Convention scout)",
 			"### Phase 2: Redundancy analysis (Redundancy analyst)",
 			"### Phase 3: Quality analysis (Quality analyst)",

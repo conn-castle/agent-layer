@@ -98,6 +98,16 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		agentLayerPath := filepath.Join(root, ".agent-layer")
+		if info, agentLayerErr := os.Stat(agentLayerPath); agentLayerErr == nil {
+			if !info.IsDir() {
+				return false, fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
+			}
+			return false, fmt.Errorf(messages.WizardPartialInstallUpgradeRequired)
+		} else if !os.IsNotExist(agentLayerErr) {
+			return false, agentLayerErr
+		}
+
 		confirm := true
 		if err := ui.Confirm(messages.WizardInstallPrompt, &confirm); err != nil {
 			return false, err

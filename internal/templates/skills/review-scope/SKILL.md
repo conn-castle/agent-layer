@@ -110,6 +110,7 @@ If a likely issue is already tracked in `ISSUES.md`, do not present it as a nove
 - Required: ask when no credible review target can be established from the explicit scope, proactive-audit request, or documented defaults.
 - Required: ask before turning findings into code edits, doc edits, or issue logging.
 - Optional: ask when the requested target is nominally a plan/task pair but the desired outcome is ambiguous between `review-plan` and a broader audit.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during the review itself.
 
 ## Review workflow
@@ -163,6 +164,13 @@ The report must contain:
    - short list of notable things done well
 5. `## Suggested Next Steps`
    - a small number of coherent follow-up actions
+6. `## Self-Check`
+   - Re-read each finding against the actual code and report evidence, then answer these four questions in writing:
+     - Is this a root-cause recommendation, not a band-aid?
+     - Is the evidence concrete and tied to actual code, not inferred behavior?
+     - Is the severity calibrated to real impact, not theoretical risk?
+     - Am I recommending work outside the reviewed scope as though it were a finding?
+   - Demote or drop findings that fail any check before finalizing the report.
 
 ## Guardrails
 

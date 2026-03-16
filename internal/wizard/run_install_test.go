@@ -86,12 +86,9 @@ func TestRun_ConfirmError_Install(t *testing.T) {
 
 func TestRun_InstallFailure(t *testing.T) {
 	root := t.TempDir()
-	agentLayerDir := filepath.Join(root, ".agent-layer")
-	// Create .agent-layer as an empty dir (no config.toml yet)
-	require.NoError(t, os.MkdirAll(agentLayerDir, 0755))
-	// Create a file where install expects to create the instructions directory
-	// This will cause install to fail when it tries to mkdir
-	require.NoError(t, os.WriteFile(filepath.Join(agentLayerDir, "instructions"), []byte("blocker"), 0644))
+	// Create a file where install expects to create the docs/agent-layer
+	// directory so the repo still looks like a fresh install target.
+	require.NoError(t, os.WriteFile(filepath.Join(root, "docs"), []byte("blocker"), 0o644))
 
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
@@ -103,6 +100,26 @@ func TestRun_InstallFailure(t *testing.T) {
 	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "install failed")
+}
+
+func TestRun_PartialInstallMissingConfigRequiresUpgrade(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755))
+
+	ui := &MockUI{
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardInstallPrompt {
+				return errors.New("unexpected install prompt")
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	assert.Error(t, err)
+	assert.NotContains(t, err.Error(), "unexpected install prompt")
+	assert.Contains(t, err.Error(), "partially initialized")
+	assert.Contains(t, err.Error(), "al upgrade")
 }
 
 func TestRun_ConfigLoadFailure(t *testing.T) {

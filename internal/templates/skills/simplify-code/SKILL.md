@@ -102,6 +102,7 @@ Recommended roles:
 - Required: ask when no credible verification path exists for a non-trivial change.
 - Required: ask when a simplification would change the public API surface or
   require callers to adapt.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous for clear simplifications and straightforward verification.
 
 ## Simplification workflow

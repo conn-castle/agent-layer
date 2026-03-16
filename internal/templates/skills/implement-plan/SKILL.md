@@ -71,6 +71,7 @@ For multi-file work, parallelize read-only exploration first, then implement in 
 - Required: ask when the plan/task pair is missing, mismatched, or non-latest and the intended pair is unclear.
 - Required: ask when implementation would materially deviate from the plan or change behavior the plan did not settle.
 - Required: ask before destructive or irreversible actions that are not explicitly covered by the plan.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous while executing a clear gated plan.
 
 ## Implementation workflow

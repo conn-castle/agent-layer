@@ -72,6 +72,7 @@ At minimum, use:
 - Required: ask only when the current phase cannot be decomposed into safe ordered work packages without high-risk sequencing or guesswork.
 - Required: ask when review or audit loops stop converging and escalation is the higher-value move.
 - Required: ask only when the roadmap and phase-completion plan are not clear enough to proceed without guessing.
+- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous within normal plan-review, implementation, and audit loops when the selected phase and current work package are clear.
 
 ## Orchestration loop
@@ -115,7 +116,7 @@ Before moving into implementation or advancing to the next package:
 2. call out unresolved risks and any deferred findings
 3. choose exactly one verdict:
 
-- `proceed` (ready to execute as written): continue to Phase 5.
+- `proceed` (ready to execute as written): continue immediately to Phase 5. Do not pause to ask the user for confirmation — this verdict already means readiness is confirmed.
 - `revise` (artifacts need updates first): update the plan or task artifacts and return to Phase 3.
 - `escalate` (human checkpoint required): ask the user the smallest question that unblocks the next step.
 - `rewrite-because-out-of-scope` (package does not fit selected phase): rewrite to stay inside the selected phase, record deferrals, and return to the earliest affected phase.
@@ -156,7 +157,7 @@ Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered 
 2. Compare the remaining unchecked phase tasks against the phase-completion plan.
 3. Choose exactly one verdict:
 
-- `proceed` (current package done, next step clear): if unchecked tasks remain, select the next work package and return to Phase 4.
+- `proceed` (current package done, next step clear): if unchecked tasks remain, select the next work package and return to Phase 4 immediately. Do not pause to ask the user — proceed means continue.
 - `revise` (plan should be refreshed): update the plan and task list and return to Phase 3.
 - `escalate` (human checkpoint required): ask the user the smallest question that unblocks the next step.
 - `rewrite-because-out-of-scope` (remaining packages drift from selected phase): rewrite package boundaries, record deferrals, and return to the earliest affected phase.
