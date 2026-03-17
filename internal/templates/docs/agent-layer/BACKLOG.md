@@ -17,7 +17,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 ### Entry template
 ```text
-- Backlog YYYY-MM-DD abcdef: Short title
+- Backlog YYYY-MM-DD short-slug: Short title
     Priority: Critical | High | Medium | Low. Area: <area>
     Description: <what the user should be able to do>
     Acceptance criteria: <clear condition to consider it done>

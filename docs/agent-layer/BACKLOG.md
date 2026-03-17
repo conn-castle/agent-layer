@@ -28,11 +28,11 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
-- Backlog 2026-03-16 reassess-memory-pruning: Reassess DoD memory-pruning rule after usage
+- Backlog 2026-03-17 reassess-memory-pruning: Observe strengthened memory-pruning approach
     Priority: Low. Area: instructions / memory
-    Description: The DoD now includes pruning stale DECISIONS.md and CONTEXT.md entries as part of each task completion. After using this for a while, reassess whether it is effective at keeping memory files lean without adding too much friction. Consider whether a lighter or heavier approach is needed.
-    Acceptance criteria: Decision recorded on whether to keep, strengthen, weaken, or replace the DoD memory-pruning bullet based on observed agent behavior.
-    Notes: Added alongside the DoD change in 01_base.md. If agents are ignoring it or it feels heavyweight, consider moving to a periodic audit-memory trigger instead.
+    Description: Memory pruning was strengthened: DoD now explicitly names DECISIONS.md and CONTEXT.md pruning, a "What NOT to store" section was added to 02_memory.md, and a character-budget awareness rule (~8,000 chars/~2,000 tokens per file) was added. Observe whether agents follow these guidelines and whether memory files stay lean without excessive friction.
+    Acceptance criteria: Decision recorded on whether the strengthened approach is effective, needs further tuning, or should be replaced with a periodic audit trigger.
+    Notes: Strengthened 2026-03-17 based on audit of research from Anthropic, OpenAI, JetBrains Research, and Letta on memory system best practices.
 
 - Backlog 2026-03-16 conventions-entry-markers: Add insertion markers to 04_conventions.md
     Priority: Low. Area: templates / conventions

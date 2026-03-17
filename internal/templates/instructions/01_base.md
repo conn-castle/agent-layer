@@ -17,6 +17,6 @@
    - tests are written or updated to cover the change,
    - code is documented with docstrings where appropriate,
    - the README is checked and updated if affected,
-   - the project memory files are updated as appropriate,
+   - the project memory files are updated as appropriate (add new entries, update changed entries, and prune entries in DECISIONS.md and CONTEXT.md that the current change makes self-evident from code),
    - Markdown documentation accuracy is verified (search for terms related to the change and update any affected docs),
    - and the project's test/lint suite passes (see COMMANDS.md).
