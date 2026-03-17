@@ -74,7 +74,8 @@ func newUpgradeCmd() *cobra.Command {
 			if err := installRun(root, opts); err != nil {
 				return err
 			}
-			return nil
+			_, writeErr := fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeSuccessful)
+			return writeErr
 		},
 	}
 	cmd.AddCommand(

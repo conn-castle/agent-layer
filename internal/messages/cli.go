@@ -69,6 +69,7 @@ const (
 	UpgradeSkipManagedUpdatesInfo   = "Info: skipping managed template updates (pass --apply-managed-updates to include them)."
 	UpgradeSkipMemoryUpdatesInfo    = "Info: skipping memory file updates (pass --apply-memory-updates to include them)."
 	UpgradeSkipDeletionsInfo        = "Info: skipping unknown file deletions (pass --apply-deletions to include them)."
+	UpgradeSuccessful               = "Upgrade successful."
 
 	InitWarnUpdateCheckFailedFmt = "Warning: failed to check for updates: %v\n"
 	InitWarnDevBuildFmt          = "Warning: running dev build; latest release is %s\n"
