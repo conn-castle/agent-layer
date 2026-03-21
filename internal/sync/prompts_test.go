@@ -529,27 +529,6 @@ func TestGeneratedSkillSourcePath(t *testing.T) {
 	}
 }
 
-func TestCopyDirRecursive_ReadFileError(t *testing.T) {
-	t.Parallel()
-	srcDir := t.TempDir()
-	destDir := t.TempDir()
-
-	// Create a subdirectory where a regular file is expected — ReadFile will fail.
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
-		t.Fatalf("mkdir scripts: %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts", "run.sh"), 0o755); err != nil {
-		t.Fatalf("mkdir run.sh as dir: %v", err)
-	}
-
-	err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil)
-	// run.sh is a directory so entry.IsDir() is true; it won't hit ReadFile.
-	// Instead, create a file that can't be read.
-	if err != nil {
-		t.Fatalf("unexpected error for nested dir: %v", err)
-	}
-}
-
 func TestCopyDirRecursive_ReadFilePermissionError(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
