@@ -56,6 +56,121 @@ func TestLaunchClaudeError(t *testing.T) {
 	}
 }
 
+func TestLaunchClaudeEffort(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	stubPath := filepath.Join(binDir, "claude")
+	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					Model:           "opus",
+					ReasoningEffort: "max",
+				},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	env := os.Environ()
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	args := string(got)
+	if !strings.Contains(args, "--effort max") {
+		t.Fatalf("expected --effort max in args, got: %s", args)
+	}
+	if !strings.Contains(args, "--model opus") {
+		t.Fatalf("expected --model opus in args, got: %s", args)
+	}
+}
+
+func TestLaunchClaudeEffortNonMax(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	stubPath := filepath.Join(binDir, "claude")
+	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					Model:           "opus",
+					ReasoningEffort: "high",
+				},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	env := os.Environ()
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	if !strings.Contains(string(got), "--effort high") {
+		t.Fatalf("expected --effort high in args, got: %s", string(got))
+	}
+}
+
+func TestLaunchClaudeNoEffortWhenEmpty(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	stubPath := filepath.Join(binDir, "claude")
+	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{Model: "opus"},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	env := os.Environ()
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	if strings.Contains(string(got), "--effort") {
+		t.Fatalf("expected no --effort flag when effort is empty, got: %s", string(got))
+	}
+}
+
 func TestLaunchClaudeYOLO(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()

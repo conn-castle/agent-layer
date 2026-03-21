@@ -19,7 +19,7 @@ enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
 # reasoning_effort is optional for Opus models only.
-# reasoning_effort = "medium" # low | medium | high
+# reasoning_effort = "medium" # low | medium | high | max
 # local_config_dir isolates Claude Code settings and caches per repo.
 # When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
 # For al vscode, CLAUDE_CONFIG_DIR is set when both this and agents.claude_vscode

@@ -185,6 +185,55 @@ func TestBuildClaudeSettingsIncludesReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeSettingsMaxEffortExcludedFromSettings(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					ReasoningEffort: "max",
+				},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if _, ok := settings["effortLevel"]; ok {
+		t.Fatal("expected effortLevel to be excluded for max (session-only via --effort CLI flag)")
+	}
+}
+
+func TestBuildClaudeSettingsMaxEffortWithAgentSpecificOverride(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					ReasoningEffort: "max",
+					AgentSpecific: map[string]any{
+						"effortLevel": "low",
+					},
+				},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	// When effort is "max", the managed effortLevel write is skipped (max is session-only).
+	// The agentSpecific override should still take effect via the generic merge loop.
+	if got, ok := settings["effortLevel"].(string); !ok || got != "low" {
+		t.Fatalf("expected agentSpecific effortLevel override=low with max effort, got %#v", settings["effortLevel"])
+	}
+}
+
 func TestBuildClaudeSettingsAgentSpecificEffortLevelOverride(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{

@@ -19,6 +19,10 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if model != "" {
 		args = append(args, "--model", model)
 	}
+	effort := cfg.Config.Agents.Claude.ReasoningEffort
+	if effort != "" {
+		args = append(args, "--effort", effort)
+	}
 	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--dangerously-skip-permissions")
 	}

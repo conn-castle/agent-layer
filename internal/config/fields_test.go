@@ -129,7 +129,7 @@ func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 
 func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.claude.reasoning_effort")
-	want := []string{"low", "medium", "high"}
+	want := []string{"low", "medium", "high", "max"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}

@@ -83,6 +83,7 @@ var fields = []FieldDef{
 			{Value: "low"},
 			{Value: "medium"},
 			{Value: "high"},
+			{Value: "max"},
 		},
 	},
 	{Key: "agents.claude_vscode.enabled", Type: FieldBool, Required: true},
