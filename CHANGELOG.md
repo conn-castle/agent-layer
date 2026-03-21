@@ -29,6 +29,7 @@ Adds GitHub Copilot CLI as a supported agent client, introduces context files fo
 - `--effort` flag no longer shadows user's `agent_specific.effortLevel` override in Claude Code.
 - `ship-pr` no longer stalls on a non-default branch with no uncommitted changes and no longer tries to commit on the default branch without creating a feature branch first.
 - Nil panic prevented when `System.HTTPClient()` returns nil in download paths.
+- **Security:** Updated `github.com/modelcontextprotocol/go-sdk` from v1.4.0 to v1.4.1 to fix improper handling of null Unicode character when parsing JSON (high severity).
 
 ### Improved
 - Expanded automated test coverage across Copilot CLI sync, dispatch System interface, model catalogs, gitignore templates, effort flag paths, and instruction template assertions.
