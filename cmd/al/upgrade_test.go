@@ -161,6 +161,10 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 		if err := cmd.Execute(); err != nil {
 			t.Fatalf("execute upgrade: %v", err)
 		}
+		outText := stdout.String()
+		if !strings.Contains(outText, messages.UpgradeSuccessful) {
+			t.Fatalf("expected success message in stdout, got %q", outText)
+		}
 		errText := stderr.String()
 		if !strings.Contains(errText, messages.UpgradeSkipMemoryUpdatesInfo) {
 			t.Fatalf("expected skip-memory note, got %q", errText)
@@ -198,6 +202,69 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 	if deleteAll, err := promptFuncs.DeleteUnknownAll(nil); err != nil || deleteAll {
 		t.Fatalf("DeleteUnknownAll = (%v, %v), want (false, nil)", deleteAll, err)
 	}
+}
+
+func TestUpgradeCmd_SuccessMessageOnCompletion(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return true }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return nil }
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		cmd.SetArgs([]string{})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+		if !strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
+			t.Fatalf("expected %q in stdout, got %q", messages.UpgradeSuccessful, stdout.String())
+		}
+	})
+}
+
+func TestUpgradeCmd_NoSuccessMessageOnError(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return errors.New("boom") }
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
+			t.Fatal("success message should not appear when upgrade fails")
+		}
+	})
 }
 
 func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {

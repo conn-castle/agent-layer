@@ -116,7 +116,7 @@ func TestFieldOptionValues_BoolField(t *testing.T) {
 
 func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.claude.model")
-	want := []string{"default", "sonnet", "opus", "haiku", "sonnet[1m]", "opusplan"}
+	want := []string{"default", "sonnet", "opus", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
@@ -129,7 +129,46 @@ func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 
 func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.claude.reasoning_effort")
-	want := []string{"low", "medium", "high"}
+	want := []string{"low", "medium", "high", "max"}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+	}
+	for i, expected := range want {
+		if values[i] != expected {
+			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+		}
+	}
+}
+
+func TestFieldOptionValues_GeminiModelCatalog(t *testing.T) {
+	values := FieldOptionValues("agents.gemini.model")
+	want := []string{"auto", "auto-gemini-3.1", "gemini-3.1-pro-preview", "gemini-3.1-flash", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash"}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+	}
+	for i, expected := range want {
+		if values[i] != expected {
+			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+		}
+	}
+}
+
+func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
+	values := FieldOptionValues("agents.codex.model")
+	want := []string{"gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-mini"}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+	}
+	for i, expected := range want {
+		if values[i] != expected {
+			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+		}
+	}
+}
+
+func TestFieldOptionValues_CopilotCliModelCatalog(t *testing.T) {
+	values := FieldOptionValues("agents.copilot_cli.model")
+	want := []string{"claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}

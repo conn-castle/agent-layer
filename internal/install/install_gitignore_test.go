@@ -574,6 +574,34 @@ func TestRepairGitignoreBlock_TemplateReadError(t *testing.T) {
 	}
 }
 
+func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
+	data, err := templates.Read("agent-layer.gitignore")
+	if err != nil {
+		t.Fatalf("read agent-layer.gitignore template: %v", err)
+	}
+	lines := make(map[string]struct{})
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		lines[strings.TrimSpace(line)] = struct{}{}
+	}
+	required := []string{
+		".env",
+		"config.toml.bak",
+		".env.bak",
+		"templates/",
+		"state/",
+		"tmp/",
+		"open-vscode.app/",
+		"open-vscode.command",
+		"open-vscode.desktop",
+		"open-vscode.sh",
+	}
+	for _, entry := range required {
+		if _, ok := lines[entry]; !ok {
+			t.Errorf("agent-layer.gitignore template missing required entry %q", entry)
+		}
+	}
+}
+
 func TestRepairGitignoreBlock_WriteBlockError(t *testing.T) {
 	root := t.TempDir()
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")

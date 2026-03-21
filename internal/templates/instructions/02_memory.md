@@ -10,7 +10,16 @@
 
 After this list, refer to memory files by filename only (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, CONTEXT.md).
 
-**Formatting instructions are in each memory file.** Before writing to a memory file, open it and follow its “Purpose”/“Format” section and insertion markers.
+**Formatting instructions are in each memory file.** Before writing to a memory file, open it and follow its “Purpose”/”Format” section and insertion markers.
+
+## What NOT to store
+Do not persist information that is derivable, ephemeral, or generic:
+- Code patterns, architecture, file structure, or conventions discoverable by reading the codebase.
+- Git history, recent changes, or authorship — use `git log` / `git blame`.
+- Debugging solutions or fix recipes — the fix is in the code; the commit message has the why.
+- Ephemeral task state that will not matter in a future session.
+- Generic best practices or obvious conventions (e.g., “write clean code”, “use meaningful variable names”) — these waste tokens and dilute high-signal entries.
+- Anything already enforced by deterministic tooling (linters, formatters, type checkers).
 
 ## Global memory workflow rules
 - **Read before planning:** Before making architectural or cross-cutting decisions, read ROADMAP.md, then scan DECISIONS.md, then check relevant entries in BACKLOG.md and ISSUES.md.
@@ -22,3 +31,4 @@ After this list, refer to memory files by filename only (ISSUES.md, BACKLOG.md, 
   - add it to ISSUES.md if it is a bug, maintainability refactor, technical debt, reliability/security concern, test coverage gap, performance concern, or other engineering risk;
   - add it to BACKLOG.md only if it is a new user-visible capability.
 - **Keep files living:** When an issue is fixed, remove it from ISSUES.md. When a backlog item is implemented or scheduled into the roadmap, move it into ROADMAP.md and remove it from BACKLOG.md. Keep DECISIONS.md, CONTEXT.md, and COMMANDS.md current — when completing a task, remove or update entries that the change made stale.
+- **Memory budget:** Memory files consume context tokens when read (~4 characters ≈ 1 token). When any single memory file's content below the insertion marker exceeds roughly 8,000 characters (~2,000 tokens), proactively consolidate: merge related entries, tighten verbose descriptions, and remove entries now derivable from code or docs. When the aggregate content across all memory files is large, prioritize pruning the biggest files first. Prefer concise entries with clear keywords — the agent can always read the code for full details.

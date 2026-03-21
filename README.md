@@ -315,7 +315,8 @@ enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
 # reasoning_effort is optional for Opus models only.
-# reasoning_effort = "medium" # low | medium | high
+# reasoning_effort = "medium" # low | medium | high | max
+# Note: "max" is session-only (passed via --effort CLI flag) and is not written to .claude/settings.json.
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # These are shallow-merged at the top level into .claude/settings.json.
 # Nested objects are replaced (not deep-merged).

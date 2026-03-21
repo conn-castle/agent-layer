@@ -17,7 +17,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
 
 ### Entry template
 ```text
-- Decision YYYY-MM-DD abcdef: Short title
+- Decision YYYY-MM-DD short-slug: Short title
     Decision: <what was chosen>
     Reason: <why it was chosen>
     Tradeoffs: <what is gained and what is lost>

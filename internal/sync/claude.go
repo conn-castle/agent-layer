@@ -61,8 +61,12 @@ func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) 
 			"allow": allow,
 		}
 	}
-	if project.Config.Agents.Claude.ReasoningEffort != "" && !config.HasAgentSpecificKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
-		settings["effortLevel"] = project.Config.Agents.Claude.ReasoningEffort
+	// Write effortLevel to settings.json for persistable values only.
+	// "max" is session-only in Claude Code (passed via --effort CLI flag) and
+	// not valid in settings.json, so it is excluded here.
+	effort := project.Config.Agents.Claude.ReasoningEffort
+	if effort != "" && effort != "max" && !config.HasAgentSpecificKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
+		settings["effortLevel"] = effort
 	}
 
 	if len(project.Config.Agents.Claude.AgentSpecific) > 0 {

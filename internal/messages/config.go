@@ -30,7 +30,7 @@ const (
 	ConfigAntigravityEnabledRequiredFmt            = "%s: agents.antigravity.enabled is required"
 	ConfigCopilotCLIEnabledRequiredFmt             = "%s: agents.copilot_cli.enabled is required"
 	ConfigCopilotCLIReasoningEffortUnsupportedFmt  = "%s: agents.copilot_cli.reasoning_effort is not supported in this release"
-	ConfigClaudeReasoningEffortInvalidFmt          = "%s: agents.claude.reasoning_effort must be one of low, medium, high"
+	ConfigClaudeReasoningEffortInvalidFmt          = "%s: agents.claude.reasoning_effort must be one of low, medium, high, max"
 	ConfigClaudeReasoningEffortModelUnsupportedFmt = "%s: agents.claude.reasoning_effort requires an Opus model; set agents.claude.model to an opus variant (current: %q)"
 	ConfigMcpServerIDRequiredFmt                   = "%s: mcp.servers[%d].id is required"
 	ConfigMcpServerIDReservedFmt                   = "%s: mcp.servers[%d].id is reserved for the internal prompt server"

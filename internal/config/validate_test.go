@@ -211,6 +211,44 @@ func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 	}
 }
 
+func TestValidateClaudeReasoningEffortMaxWithNonOpusModelRejected(t *testing.T) {
+	trueVal := true
+	cfg := Config{
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
+		Agents: AgentsConfig{
+			Gemini:       AgentConfig{Enabled: &trueVal},
+			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "sonnet", ReasoningEffort: "max"},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
+			Codex:        CodexConfig{Enabled: &trueVal},
+			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+		},
+	}
+	if err := cfg.Validate("config.toml"); err == nil || !strings.Contains(err.Error(), "requires an Opus model") {
+		t.Fatalf("expected opus model error for max effort with sonnet, got %v", err)
+	}
+}
+
+func TestValidateClaudeReasoningEffortMaxWithOpusModel(t *testing.T) {
+	trueVal := true
+	cfg := Config{
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
+		Agents: AgentsConfig{
+			Gemini:       AgentConfig{Enabled: &trueVal},
+			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "max"},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
+			Codex:        CodexConfig{Enabled: &trueVal},
+			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+		},
+	}
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("expected claude opus max reasoning effort to be valid, got %v", err)
+	}
+}
+
 func TestValidateWarningsThresholds(t *testing.T) {
 	enabled := true
 	base := Config{

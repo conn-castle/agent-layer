@@ -16,7 +16,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 ### Entry template
 ```text
-- Issue YYYY-MM-DD abcdef: Short title
+- Issue YYYY-MM-DD short-slug: Short title
     Priority: Critical | High | Medium | Low. Area: <area>
     Description: <observed problem or risk>
     Next step: <smallest concrete next action>
