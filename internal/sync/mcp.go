@@ -10,7 +10,7 @@ import (
 )
 
 type mcpConfig struct {
-	Servers OrderedMap[mcpServer] `json:"mcpServers,omitempty"`
+	Servers OrderedMap[mcpServer] `json:"mcpServers"`
 }
 
 type mcpServer struct {
