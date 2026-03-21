@@ -1,23 +1,24 @@
 ---
 name: review-plan
 description: >-
-  Review a plan/task artifact pair before execution and produce a findings
-  report covering scope gaps, sequencing problems, weak verification, and
-  missing docs/tests/memory updates. Use this instead of `review-scope` when the
-  target is specifically a workflow plan.
+  Review a plan/task/context artifact set before execution and produce a
+  findings report covering scope gaps, sequencing problems, weak verification,
+  and missing docs/tests/memory updates. Use this instead of `review-scope`
+  when the target is specifically a workflow plan.
 ---
 
 # review-plan
 
 This is the dedicated pre-execution plan review skill.
-Use it when the target is a workflow plan and optional matching task list, not
-source code or a diff.
+Use it when the target is a workflow plan, matching task list, and context file,
+not source code or a diff.
 
 ## Defaults
 
-- Default target is the latest valid plan/task artifact pair under `.agent-layer/tmp/`.
-- Produce a report only. Do not edit the plan or task artifacts in this workflow.
+- Default target is the latest valid plan/task/context artifact set under `.agent-layer/tmp/`.
+- Produce a report only. Do not edit the plan, task, or context artifacts in this workflow.
 - If there is no valid plan/task pair, ask for explicit paths or regenerate the artifacts first.
+- If the context file is missing, note its absence as a finding.
 
 ## Required artifact
 
@@ -32,13 +33,14 @@ Create the file with `touch` before writing.
 Use the standard artifact naming rule under `.agent-layer/tmp/`:
 - `<workflow>.<run-id>.plan.md`
 - `<workflow>.<run-id>.task.md`
+- `<workflow>.<run-id>.context.md`
 
 Discovery rules:
-1. List `.agent-layer/tmp/*.plan.md` and `.agent-layer/tmp/*.task.md`.
+1. List `.agent-layer/tmp/*.plan.md`, `.agent-layer/tmp/*.task.md`, and `.agent-layer/tmp/*.context.md`.
 2. Keep only files that match the standard naming rule and valid `run-id` shape.
-3. Build candidate pairs only when both files exist for the exact same `<workflow>` and `<run-id>`.
-4. Select the pair with the latest `run-id` in lexicographic order.
-5. If the intended pair is not the latest valid pair, require explicit paths.
+3. Build candidate sets when both `.plan.md` and `.task.md` exist for the exact same `<workflow>` and `<run-id>`. A matching `.context.md` is expected but not required.
+4. Select the set with the latest `run-id` in lexicographic order.
+5. If the intended set is not the latest valid set, require explicit paths.
 
 Fallback:
 - If no valid plan/task pair exists, ask the user for explicit paths or regenerate the plan first.
@@ -63,7 +65,7 @@ Recommended roles:
 ## Human checkpoints
 
 - Required: ask when no valid plan/task pair exists.
-- Required: ask when the user intends a non-latest artifact pair and explicit paths are needed.
+- Required: ask when the user intends a non-latest artifact set and explicit paths are needed.
 - Optional: ask only when the plan wording is so ambiguous that the review target itself is unclear.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous for normal critique and report writing.
@@ -72,7 +74,7 @@ Recommended roles:
 
 ### Phase 1: Extract the contract (Plan reader)
 
-From the plan and task artifacts, extract:
+From the plan, task, and context artifacts, extract:
 - objective
 - in-scope items
 - explicit non-goals
@@ -80,6 +82,7 @@ From the plan and task artifacts, extract:
 - promised tests or verification
 - promised docs or memory updates
 - exit criteria
+- key files and entry point (from context file)
 
 ### Phase 2: Critique the plan structure (Risk reviewer)
 
@@ -89,6 +92,7 @@ Check for:
 - dependencies ordered after dependents
 - risky assumptions presented as settled
 - roadmap, issue, or decision constraints that were missed
+- context file gaps: missing key files, stale paths, files listed that do not exist, missing entry point
 
 ### Phase 3: Critique the verification and completion bar (Verification reviewer)
 
@@ -116,6 +120,7 @@ The report must contain:
 1. `# Plan Review Summary`
    - plan path
    - task path
+   - context path (or note if absent)
    - short outcome summary
 2. `## Findings`
    - findings first, ordered by severity
@@ -133,7 +138,7 @@ The report must contain:
 - Do not report vague “needs more detail” complaints without naming what is missing.
 - Do not invent implementation problems that are not implied by the plan.
 - Do not collapse multiple plan problems into one oversized finding.
-- If the task list is missing but the plan exists, call that out explicitly instead of pretending the plan is complete.
+- If the task list or context file is missing but the plan exists, call that out explicitly instead of pretending the artifact set is complete.
 
 ## Final handoff
 

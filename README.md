@@ -547,9 +547,9 @@ Artifacts always live under `.agent-layer/tmp/` and use a unique, concurrency-sa
 - `.agent-layer/tmp/<workflow>.<run-id>.<type>.md`
 - `run-id = YYYYMMDD-HHMMSS-<short-rand>` (uses bash `$RANDOM`; bash is required)
 - Multi-file workflows reuse the same `run-id` for all files.
-- Common `type` values: `report`, `plan`, `task`.
+- Common `type` values: `report`, `plan`, `task`, `context`.
 
-Workflows echo the artifact path in the chat output. There are no path overrides or environment variables for this. Artifacts are agent-only and can be ignored; agents may clean up their own plan/task files when a workflow completes. If a run is interrupted, leftover files are harmless and optional to delete.
+Workflows echo the artifact path in the chat output. There are no path overrides or environment variables for this. Artifacts are agent-only and can be ignored; agents may clean up their own plan/task/context files when a workflow completes. If a run is interrupted, leftover files are harmless and optional to delete.
 
 ---
 

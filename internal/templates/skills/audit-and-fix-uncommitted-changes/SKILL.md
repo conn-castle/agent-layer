@@ -64,6 +64,7 @@ Reuse and reference the per-round artifacts created by the delegated skills:
 - `.agent-layer/tmp/resolve-findings.<run-id>.report.md`
 - `.agent-layer/tmp/resolve-findings.<run-id>.plan.md`
 - `.agent-layer/tmp/resolve-findings.<run-id>.task.md`
+- `.agent-layer/tmp/resolve-findings.<run-id>.context.md`
 
 The master report is the human-facing round ledger. It must remain readable without opening the child artifacts.
 

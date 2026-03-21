@@ -61,7 +61,7 @@ The skill standard defines the format. Agent Layer builds on it with:
 - **A built-in library of 22 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available after `al init` with no setup.
 - **Client projection** — Skills are authored once under `.agent-layer/skills/` and projected into each client's native format during `al sync` (e.g., `.agent/skills/` for Claude Code, `.codex/skills/` for Codex).
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
-- **Artifact conventions** — Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention (`<skill-name>.<run-id>.<type>.md`), making work inspectable and auditable.
+- **Artifact conventions** — Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention (`<skill-name>.<run-id>.<type>.md`). Planning workflows produce a trio of artifacts — a plan, a task list, and a context file — so that any agent can pick up the work cold without re-discovering what the planner already found.
 - **Orchestrator composition** — Top-level skills delegate to supporting skills automatically, enabling complex multi-step workflows from a single invocation.
 
 ## Recommended workflow
@@ -119,8 +119,8 @@ These are commonly invoked directly for specific tasks that do not need a full o
 
 | Skill | What it does |
 | --- | --- |
-| `plan-work` | Writes a scoped implementation plan and task list for a requested change. Produces a narrative plan and an ordered task list clear enough for a fresh agent to execute. |
-| `implement-plan` | Executes a plan/task-list pair without freelancing. Keeps changes aligned to the artifacts and verifies code, tests, docs, and memory before closing. |
+| `plan-work` | Produces a plan, task list, and context file for a requested change — scoped tightly enough for a fresh agent to execute without guessing. The context file captures key file paths, current state, and constraints so the implementing agent can orient immediately. |
+| `implement-plan` | Picks up a plan/task/context set and executes it. Reads the context file first to orient, then works through the task list while keeping changes aligned to the plan. Verifies code, tests, docs, and memory before closing. |
 | `debug-issue` | Investigation-first debugging: reproduces the bug, narrows the cause systematically, writes a failing test, fixes the root cause, and verifies. Refuses to guess — requires evidence at every step. |
 | `schedule-backlog` | Proposes reviewable updates by mapping backlog items into roadmap phases, cross-checking impacts, and using human checkpoints before editing memory files. |
 
@@ -133,8 +133,8 @@ These are used by orchestrators or available for fine-grained control when you n
 | Skill | What it does |
 | --- | --- |
 | `review-scope` | Reviews files, directories, diffs, or uncommitted changes. Produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
-| `review-plan` | Pre-execution review of a plan/task artifact pair. Identifies scope gaps, sequencing problems, and weak verification before code is written. |
-| `verify-against-plan` | Post-implementation completeness check comparing what was built against the plan. Reports gaps, regressions, missing tests or docs, and scope drift. |
+| `review-plan` | Pre-execution review of a plan and its artifacts. Identifies scope gaps, sequencing problems, missing context, and weak verification before code is written. |
+| `verify-against-plan` | Post-implementation completeness check. Compares what was actually built against what the plan promised, reporting gaps, regressions, missing tests or docs, and scope drift. |
 | `resolve-findings` | Triages review findings, verifies each independently, implements accepted fixes, and records why findings were rejected, deferred, or resolved. |
 
 **Quality and maintenance**

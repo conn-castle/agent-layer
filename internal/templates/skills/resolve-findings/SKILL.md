@@ -42,6 +42,7 @@ Always create:
 Create these only when at least one finding is accepted and fixes are in scope for the request:
 - `.agent-layer/tmp/resolve-findings.<run-id>.plan.md`
 - `.agent-layer/tmp/resolve-findings.<run-id>.task.md`
+- `.agent-layer/tmp/resolve-findings.<run-id>.context.md`
 
 The final report is the resolution log.
 Create each file with `touch` before writing.
@@ -100,7 +101,7 @@ For accepted findings only, create a focused plan with:
 Create a compact task list that matches the accepted findings.
 
 If zero findings are accepted:
-- do not create plan or task artifacts
+- do not create plan, task, or context artifacts
 - record `No accepted findings` in the resolution report
 - stop without editing code
 
@@ -157,6 +158,6 @@ For every non-fixed finding, explain why in concrete terms.
 ## Final handoff
 
 After the run:
-1. Echo the report path, plus the plan/task paths only if they were created.
+1. Echo the report path, plus the plan/task/context paths only if they were created.
 2. Summarize what was fixed.
 3. Call out any unresolved High/Critical findings.

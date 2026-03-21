@@ -1,41 +1,44 @@
 ---
 name: implement-plan
 description: >-
-  Implement an execution-ready plan and task-list pair, keep changes aligned to
-  the artifacts, and verify code, tests, docs, and memory updates before
-  closing the task.
+  Implement an execution-ready plan, task list, and context file set. Keep
+  changes aligned to the artifacts, and verify code, tests, docs, and memory
+  updates before closing the task.
 ---
 
 # implement-plan
 
 Implement a plan without freelancing.
-This skill expects two separate artifacts:
+This skill expects three artifacts:
 - a plan file
 - a task file
+- a context file (orientation for a cold start)
 
-If they are not supplied explicitly, discover the latest matching pair under `.agent-layer/tmp/`.
+If they are not supplied explicitly, discover the latest matching set under `.agent-layer/tmp/`.
 
 ## Defaults
 
-- Do not start coding until you have both artifacts or clear user approval to infer the missing one.
+- Do not start coding until you have a plan and task file, or clear user approval to infer a missing artifact.
 - Default scope is exactly what the plan and task list describe.
 - If the plan is ambiguous in a way that changes code behavior or scope, treat that as a blocker instead of guessing.
+- If the context file is missing, proceed with just the plan and task but note its absence in the report.
 
 ## Artifact discovery
 
 Use the standard artifact naming rule under `.agent-layer/tmp/`:
 - `<workflow>.<run-id>.plan.md`
 - `<workflow>.<run-id>.task.md`
+- `<workflow>.<run-id>.context.md`
 
 Discovery rules:
-1. List `.agent-layer/tmp/*.plan.md` and `.agent-layer/tmp/*.task.md`.
+1. List `.agent-layer/tmp/*.plan.md`, `.agent-layer/tmp/*.task.md`, and `.agent-layer/tmp/*.context.md`.
 2. Keep only files matching the standard naming rule with a valid `run-id`.
-3. Build candidate pairs only when both files exist for the exact same `<workflow>` and `<run-id>`.
-4. Select the pair with the latest `run-id` in lexicographic order.
-5. If the user meant an older or different pair, require explicit paths instead of guessing.
+3. Build candidate sets when both `.plan.md` and `.task.md` exist for the exact same `<workflow>` and `<run-id>`. A matching `.context.md` is expected but not required.
+4. Select the set with the latest `run-id` in lexicographic order.
+5. If the user meant an older or different set, require explicit paths instead of guessing.
 
 Fallback:
-- If no valid pair exists, ask the user for explicit plan and task paths or regenerate them first.
+- If no valid plan/task pair exists, ask the user for explicit paths or regenerate them first.
 
 ## Required artifact
 
@@ -59,8 +62,8 @@ For multi-file work, parallelize read-only exploration first, then implement in 
 
 ## Global constraints
 
-- Treat the plan/task pair as the execution contract.
-- Do not start coding without a valid artifact pair or explicit user approval to infer the missing artifact.
+- Treat the plan/task pair as the execution contract and the context file as the orientation guide.
+- Do not start coding without a valid plan/task pair or explicit user approval to infer a missing artifact.
 - Keep changes tightly scoped to the plan after the gatekeeper returns `proceed`.
 - Tests, docs, and memory updates are part of implementation when the plan requires them.
 - If new evidence invalidates part of the plan, jump back to the earliest affected task or planning assumption instead of pushing forward.
@@ -68,7 +71,7 @@ For multi-file work, parallelize read-only exploration first, then implement in 
 
 ## Human checkpoints
 
-- Required: ask when the plan/task pair is missing, mismatched, or non-latest and the intended pair is unclear.
+- Required: ask when the plan/task pair is missing, mismatched, or non-latest and the intended set is unclear.
 - Required: ask when implementation would materially deviate from the plan or change behavior the plan did not settle.
 - Required: ask before destructive or irreversible actions that are not explicitly covered by the plan.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
@@ -78,17 +81,23 @@ For multi-file work, parallelize read-only exploration first, then implement in 
 
 ### Phase 1: Preflight (Context scout)
 
-1. Load the plan and task artifacts.
-2. Confirm they actually match:
+1. Load the context file first (if it exists). Read it fully to orient on:
+   - the key files and their roles
+   - the current state of the code before changes
+   - constraints and dependencies
+   - the recommended entry point
+2. Load the plan and task artifacts.
+3. Confirm all artifacts match:
    - same objective
    - same scope
    - compatible task ordering
-3. Read project standards and verification commands as needed:
+   - context file key files align with the plan's scope
+4. Read project standards and verification commands as needed:
    - `README.md`
    - `ROADMAP.md` and `DECISIONS.md` when the work is architectural
    - `COMMANDS.md` before choosing validation commands
-4. Read the minimum code and docs needed to execute the first task batch.
-5. The execution gatekeeper then chooses exactly one verdict:
+5. Read the entry point file(s) identified in the context file, then any additional code and docs needed to execute the first task batch.
+6. The execution gatekeeper then chooses exactly one verdict:
    - `proceed`: the current batch is ready to implement as written
    - `revise`: the plan or task list needs updates first
    - `escalate`: a human checkpoint is actually required
@@ -148,6 +157,7 @@ Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` with:
 2. `## Inputs`
    - plan path
    - task path
+   - context path (or note if absent)
 3. `## Work Completed`
 4. `## Deviations`
 5. `## Verification Run`

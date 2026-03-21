@@ -45,7 +45,7 @@ Delegate to:
 
 ## Global constraints
 
-- Do not create a PR if there is nothing to push.
+- Do not create a PR if the current branch is the default branch and there is nothing to ship.
 - Do not skip CI checks.
 - Every feedback comment (not pure bot status messages or CI notifications) must have a reply before the skill completes. Automated review comments from tools such as Copilot or CodeRabbit count as feedback.
 - The skill must end with CI passing.
@@ -53,7 +53,8 @@ Delegate to:
 
 ## Human checkpoints
 
-- Required: ask when the working tree has no changes and no commits ahead of the remote.
+- Required: ask when the current branch is the default branch and there are no changes to ship (no uncommitted changes, no commits ahead of the remote, and no non-default branch to PR).
+- If the working tree has no uncommitted changes but the current branch is not the default branch, proceed — the user is asking for a PR of the branch's commits.
 - Required: ask when PR creation fails due to an existing PR or branch conflict.
 - Required: ask when CI failures persist after 3 fix-ci iterations.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
@@ -63,13 +64,19 @@ Delegate to:
 
 ### Phase 1: Prepare and push (Committer)
 
-1. Run `git status --porcelain` to check for uncommitted changes.
-2. If uncommitted changes exist:
+1. Determine the current branch and the repository's default branch.
+2. Run `git status --porcelain` to check for uncommitted changes.
+3. If uncommitted changes exist and the current branch is the default branch:
+   a. Create a new branch with a descriptive name derived from the changes (e.g., `feat/add-widget-support` or `fix/null-pointer-in-parser`).
+   b. Switch to the new branch before continuing.
+4. If uncommitted changes exist:
    a. Use the `audit-and-fix-uncommitted-changes` skill to stabilize the working tree.
    b. Stage all changes: `git add -A`
    c. Craft a commit message that describes the work done.
    d. Commit the changes.
-3. Push the branch to the remote.
+5. If no uncommitted changes exist and the current branch is not the default branch, proceed — the branch's existing commits are the content to ship.
+6. If no uncommitted changes exist and the current branch is the default branch, trigger a human checkpoint — there is nothing to ship.
+7. Push the branch to the remote.
 
 ### Phase 2: Create the PR (PR creator)
 

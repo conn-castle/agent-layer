@@ -32,6 +32,7 @@ Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 Create:
 - `.agent-layer/tmp/fix-issues.<run-id>.plan.md`
 - `.agent-layer/tmp/fix-issues.<run-id>.task.md`
+- `.agent-layer/tmp/fix-issues.<run-id>.context.md`
 - `.agent-layer/tmp/fix-issues.<run-id>.report.md`
 
 Create files with `touch` before writing.
@@ -103,12 +104,12 @@ Recommended roles:
 
 ### Phase 2: Draft the plan and task list (Planner)
 
-Draft a plan and task list following the `plan-work` skill's artifact format. The plan must also include: selected issues, excluded issues, and rollback or recovery notes.
+Draft a plan, task list, and context file following the `plan-work` skill's artifact format. The plan must also include: selected issues, excluded issues, and rollback or recovery notes.
 
 ### Phase 3: Gate the current issue batch (Execution gatekeeper + Reporter)
 
 After writing the artifacts:
-1. echo the plan and task paths
+1. echo the plan, task, and context paths
 2. summarize the selected issues, proposed approach, biggest risk, and verification plan
 3. choose exactly one verdict:
 

@@ -5,7 +5,7 @@ description: >-
   proactive hotspot set and produce a findings report covering correctness,
   gaps, risks, architecture, tests, docs, performance, reliability, and
   maintainability. Use the `review-plan` skill instead when the target is
-  specifically a plan/task artifact pair.
+  specifically a plan/task/context artifact set.
 ---
 
 # review-scope
@@ -109,7 +109,7 @@ If a likely issue is already tracked in `ISSUES.md`, do not present it as a nove
 
 - Required: ask when no credible review target can be established from the explicit scope, proactive-audit request, or documented defaults.
 - Required: ask before turning findings into code edits, doc edits, or issue logging.
-- Optional: ask when the requested target is nominally a plan/task pair but the desired outcome is ambiguous between `review-plan` and a broader audit.
+- Optional: ask when the requested target is nominally a plan/task/context set but the desired outcome is ambiguous between `review-plan` and a broader audit.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during the review itself.
 

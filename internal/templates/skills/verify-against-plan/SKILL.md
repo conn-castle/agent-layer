@@ -1,9 +1,9 @@
 ---
 name: verify-against-plan
 description: >-
-  Compare the current implementation and working tree against a plan/task-list
-  pair, then report completeness gaps, regressions, missing tests or docs, and
-  scope drift.
+  Compare the current implementation and working tree against a
+  plan/task/context artifact set, then report completeness gaps, regressions,
+  missing tests or docs, and scope drift.
 ---
 
 # verify-against-plan
@@ -15,7 +15,7 @@ Did the implementation deliver what the plan promised, without missing critical 
 
 ## Defaults
 
-- Require a plan file and a task file. If they are not supplied, discover the latest matching pair.
+- Require a plan file and a task file. If they are not supplied, discover the latest matching set. Also load the context file if present.
 - Default implementation target is the current working tree plus the files touched by the task.
 - Do not modify code. Produce a report only.
 
@@ -24,13 +24,14 @@ Did the implementation deliver what the plan promised, without missing critical 
 Use the standard artifact naming rule under `.agent-layer/tmp/`:
 - `<workflow>.<run-id>.plan.md`
 - `<workflow>.<run-id>.task.md`
+- `<workflow>.<run-id>.context.md`
 
 Discovery rules:
-1. List `.agent-layer/tmp/*.plan.md` and `.agent-layer/tmp/*.task.md`.
+1. List `.agent-layer/tmp/*.plan.md`, `.agent-layer/tmp/*.task.md`, and `.agent-layer/tmp/*.context.md`.
 2. Keep only files matching the standard naming rule with a valid `run-id`.
-3. Build candidate pairs only when both files exist for the exact same `<workflow>` and `<run-id>`.
-4. Select the pair with the latest `run-id` in lexicographic order.
-5. If the intended pair is not the latest valid pair, require explicit paths.
+3. Build candidate sets when both `.plan.md` and `.task.md` exist for the exact same `<workflow>` and `<run-id>`. A matching `.context.md` is expected but not required.
+4. Select the set with the latest `run-id` in lexicographic order.
+5. If the intended set is not the latest valid set, require explicit paths.
 
 Fallback:
 - If no valid plan/task pair exists, ask the user for explicit paths or regenerate the artifacts first.
@@ -61,7 +62,7 @@ Recommended roles:
 
 ## Human checkpoints
 
-- Required: ask when no valid plan/task pair exists or the intended pair is not the latest valid pair.
+- Required: ask when no valid plan/task pair exists or the intended set is not the latest valid set.
 - Required: ask when the implementation target is unclear enough that completeness cannot be judged credibly.
 - Optional: ask before broadening the completeness review beyond the planned slice.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
@@ -71,13 +72,14 @@ Recommended roles:
 
 ### Phase 1: Extract the contract (Plan reader)
 
-From the plan and task artifacts, extract:
+From the plan, task, and context artifacts, extract:
 - objective
 - in-scope items
 - out-of-scope items
 - promised tests or verification
 - promised docs or memory updates
 - explicit exit criteria
+- key files and entry point (from context file, if present)
 
 ### Phase 2: Compare contract to implementation (Implementation reviewer)
 
