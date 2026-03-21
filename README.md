@@ -614,7 +614,7 @@ Notes:
 
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
-- generated client config files/directories (for example `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.copilot/`, `.agent/skills/`, `.github/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, and `.github/copilot-instructions.md`)
+- generated client config files/directories (for example `.gemini/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.agent/`, `.github/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, and `.github/copilot-instructions.md`)
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 

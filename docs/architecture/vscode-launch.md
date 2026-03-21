@@ -25,7 +25,7 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
 
 1. User runs `al vscode` (or a repo-local launcher that calls `al vscode --no-sync`).
 2. `cmd/al/vscode.go` parses `--no-sync` and pass-through args.
-3. Launch mode:
+3. Launch mode (dispatched via `cmd/al/no_sync_args.go`):
    - default mode: `clients.Run(...)` performs config load, sync, warnings, then launch
    - no-sync mode: `clients.RunNoSync(...)` performs config load and launch only
 4. `internal/clients/vscode/launch.go` runs preflight checks:
@@ -33,7 +33,7 @@ Launcher scripts call `al vscode --no-sync` after checking that `al` and `code` 
    - `.vscode/settings.json` managed markers are not malformed/duplicated
 5. Launch sets environment variables based on enabled agents:
    - `CODEX_HOME=<repo>/.codex` when `agents.vscode` is enabled (cleared when disabled to prevent stale inheritance)
-   - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude_vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (cleared otherwise to prevent stale inheritance)
+   - `CLAUDE_CONFIG_DIR=<repo>/.claude-config` when **both** `agents.claude_vscode` is enabled **and** `agents.claude.local_config_dir` is `true` (when disabled, clears only stale repo-local values and preserves user-defined values that point outside the repository)
 6. Executes `code ...` with pass-through args, appending `.` only when no positional path/file arg is provided.
 
 ## Managed settings architecture

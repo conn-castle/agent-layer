@@ -133,7 +133,7 @@ trust the sub-skill output alone — re-read the PR state and validate.
 2. For every feedback comment, verify:
    a. A reply exists from this agent (not just from a human or bot).
    b. The reply opens with one of the three bold verdicts defined in
-      "Comment reply format" above.
+      "Comment reply format" below.
    c. If the verdict is **Fixed**, the named commit exists and contains a
       relevant change.
    d. If the verdict is **No change**, the justification is substantive and

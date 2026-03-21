@@ -178,40 +178,37 @@ headers = { Authorization = "Bearer ${AL_MY_API_TOKEN}", "X-Api-Key" = "${AL_MY_
 
 Do **not** resolve `${VAR}` into concrete secret values when writing generated client configs.
 
-Instead, parse header values into a typed representation:
+The projection layer uses `ClientPlaceholderResolver` (`internal/projection/resolvers.go`) to preserve placeholders in each client’s native syntax. The resolver takes a format string (e.g., `${%s}` or `${env:%s}`) and returns a function that:
 
-* **Literal**: no `${...}` present → safe to write as-is
-* **EnvRef(VAR)**: value is exactly `${VAR}` → can be mapped to env-based mechanisms (Codex `env_http_headers`, etc.)
-* **BearerEnvRef(VAR)**: `Authorization` value matches `Bearer ${VAR}` → can be mapped to Codex `bearer_token_env_var`
+* **Resolves built-in env vars** (like `AL_REPO_ROOT`) to their actual values.
+* **Preserves user env vars** as client-specific placeholders (e.g., `${MY_VAR}` for most clients, `${env:MY_VAR}` for VS Code).
 
-You may still resolve env vars at runtime for:
+Codex is the exception: because Codex requires distinct config keys for different header types, `splitCodexHeaders()` (`internal/sync/codex.go`) classifies headers into a `codexHeaderSpec` struct with three categories: `BearerTokenEnvVar` (for `Authorization: Bearer ${VAR}`), `EnvHeaders` (full placeholder values), and `HTTPHeaders` (literal values).
+
+Env vars may still be resolved at runtime for:
 
 * validation (detect missing env vars early),
 * launching clients (ensuring `.agent-layer/.env` is loaded into the process environment).
 
-### 3) Projection pipeline (recommended split)
+### 3) Projection pipeline
 
 * `internal/projection` (resolver/normalizer):
 
-  * Read `.agent-layer/config.toml`.
-  * Produce a normalized MCP server struct (keep **raw** header strings and a parsed/typed header representation).
-  * Optionally compute **resolved** values for validation only (never for writing).
+  * `ClientPlaceholderResolver()` returns a per-client `EnvVarResolver` function.
+  * `ResolveMCPServers()` applies the resolver to produce `ResolvedMCPServer` structs with headers, URLs, args, and env vars in the target client’s placeholder syntax.
 
 * `internal/sync` (client writers):
 
-  * Convert the normalized server struct into each client’s config format, following the rules below.
+  * Each writer calls `ResolveMCPServers()` with its client syntax, then converts the result into the client’s config format.
 
 ### 4) Client projection rules
 
-Given a normalized header spec:
+Each writer receives `ResolvedMCPServer` structs with placeholders already in the target syntax:
 
 * **Gemini CLI**: emit `headers` map with the raw string (preserve `${VAR}`).
 * **Claude Code**: emit `headers` map with the raw string (preserve `${VAR}` / `${VAR:-default}`).
 * **Copilot CLI**: emit `headers` map with the raw string (preserve `${VAR}`).
-* **VS Code**:
-
-  * for literal headers: emit the literal value.
-  * for secrets: generate an `inputs` entry and rewrite the header to `${input:<id>}` (plus any needed prefix like `Bearer `).
+* **VS Code**: emit `headers` map using `${env:VAR}` placeholders (does not auto-generate an `inputs` block; see section 3 Notes).
 * **Codex**:
 
   * `Authorization: Bearer ${VAR}` → `bearer_token_env_var = "VAR"`
