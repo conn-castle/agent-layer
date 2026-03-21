@@ -1,6 +1,38 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.9.2 - 2026-03-21
+
+Adds GitHub Copilot CLI as a supported agent client, introduces context files for plan/task artifacts, supports `max` reasoning effort for Claude Opus, and consolidates internal abstractions for cleaner dependency injection. Instructions and skills are improved for better autonomy and tradeoff handling.
+
+### Added
+- GitHub Copilot CLI integration: new `al copilot` command, sync support, config fields (`[agents.copilot_cli]`), wizard catalog entries, doctor checks, and v0.9.2 migration manifest. Stale Copilot artifacts (`.copilot/mcp-config.json`, managed skill dirs under `.github/skills/`) are cleaned when the agent is disabled.
+- Context file (`.context.md`) for plan/task artifact system. Captures key file paths, current state, constraints, and an entry point so implementing agents can orient immediately without re-discovering what the planner found. Produced by `plan-work` (Phase 3b), consumed by `implement-plan`, `review-plan`, `verify-against-plan`, and other plan-aware skills.
+- `max` as a valid `reasoning_effort` value for Claude Opus models. Since Claude Code only supports `max` as a session-scoped CLI flag, all effort values are now passed via `--effort` and `max` is excluded from `settings.json` sync.
+- Memory hygiene improvements in instruction and doc templates: "What NOT to store" section in `02_memory.md`, character-budget awareness rule (~8k chars / ~2k tokens per file), completed-phase archival guidance in `ROADMAP.md` template, and entry-ID placeholder update from "abcdef" to "short-slug".
+- Explicit "Upgrade successful." message when `al upgrade` completes, resolving ambiguous output on no-op completions.
+- Nil guard for `sys.HTTPClient()` in `downloadHTTPClientWithSystem`, falling back to `defaultHTTPClient` when the System implementation returns nil.
+- `INSTRUCTION-DESIGN.md` internal reference document for instruction authoring principles.
+
+### Changed
+- `--effort` CLI flag now respects `agent_specific.effortLevel` override: when the override is set, the managed `--effort` arg is skipped so the user's setting takes precedence.
+- Model catalogs updated: added `gemini-3.1-flash-lite`, `opus[1m]`, `gpt-5.4`; removed deprecated `gemini-2.0-*`, `gpt-5/5.1-*`, `claude-sonnet-4.5`.
+- Instruction quality improvements: removed rules that duplicate baseline model behavior, strengthened tradeoff protocol to require at least two options with pros/cons, added memory pruning rule for DECISIONS.md and CONTEXT.md.
+- `audit-documentation` and `audit-tests` skills rewritten to fix autonomously with human checkpoints for genuine tradeoffs instead of dual report-only/fix-mode pattern. `audit-tests` now autonomously deletes rubber-stamp tests, consolidates duplicates, and combats agent-caused test bloat. All 21 skills receive a tradeoff checkpoint for standalone distribution.
+- `ship-pr` skill fixes two edge cases: on a non-default branch with no uncommitted changes, proceeds to create the PR; on the default branch with uncommitted changes, creates a new branch before committing.
+- Dispatch System interface expanded: replaced package-level mutable function stubs (`osStat`, `osChmod`, `osRename`, `lockFileFn`, `flockFn`, `dispatchSleep`, `httpClient`, etc.) with methods on the System interface for proper dependency injection.
+- Duplicate abstractions consolidated: approval mode constants unified into `config.ApprovalMode*`, agent-enabled helpers unified into `config.IsAgentEnabled`.
+- Skills docs page restructured: orchestrator/primary/supporting tiers with recommended workflow section, separated universal skill standard from Agent Layer-specific features.
+- Gitignore template updated to include `open-vscode.sh` and compiled `al` binary.
+
+### Fixed
+- `--effort` flag no longer shadows user's `agent_specific.effortLevel` override in Claude Code.
+- `ship-pr` no longer stalls on a non-default branch with no uncommitted changes and no longer tries to commit on the default branch without creating a feature branch first.
+- Nil panic prevented when `System.HTTPClient()` returns nil in download paths.
+
+### Improved
+- Expanded automated test coverage across Copilot CLI sync, dispatch System interface, model catalogs, gitignore templates, effort flag paths, and instruction template assertions.
+
 ## v0.9.1 - 2026-03-07
 
 Overhauls the built-in skill library from 10 to 22 structured, workflow-driven skills and introduces a user-managed conventions file so you can tailor project-specific rules without losing them on upgrade. Instructions are reordered, deduplicated, and compressed for better agent compliance.
