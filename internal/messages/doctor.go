@@ -8,14 +8,12 @@ const (
 
 	DoctorHealthCheckFmt = "🏥 Checking Agent Layer health in %s...\n"
 
-	DoctorCheckNameStructure    = "Structure"
-	DoctorCheckNameConfig       = "Config"
-	DoctorCheckNameSecrets      = "Secrets"
-	DoctorCheckNameAgents       = "Agents"
-	DoctorCheckNameSkills       = "Skills"
-	DoctorCheckNamePromptServer = "MCPPrompts"
-	DoctorCheckNamePromptConfig = "MCPPromptConfig"
-	DoctorCheckNameUpdate       = "Update"
+	DoctorCheckNameStructure = "Structure"
+	DoctorCheckNameConfig    = "Config"
+	DoctorCheckNameSecrets   = "Secrets"
+	DoctorCheckNameAgents    = "Agents"
+	DoctorCheckNameSkills    = "Skills"
+	DoctorCheckNameUpdate    = "Update"
 
 	DoctorMissingRequiredDirFmt       = "Missing required directory: %s"
 	DoctorMissingRequiredDirRecommend = "Run `al init` to initialize this repository."
@@ -44,32 +42,12 @@ const (
 	DoctorSkillValidationFailedFmt = "Failed to validate skill %s: %v"
 	DoctorSkillsLoadFailedFmt      = "Failed to load skills from %s: %v"
 
-	DoctorPromptServerConfigMissing    = "Internal MCP prompt server unavailable because configuration failed to load."
-	DoctorPromptServerConfigRecommend  = "Fix configuration errors above; the prompt server requires a valid config."
-	DoctorPromptServerResolveFailedFmt = "Failed to resolve internal MCP prompt server command: %v"
-	DoctorPromptServerResolveRecommend = "Ensure `al` is on PATH or Go is installed, and the repo root is the Agent Layer module."
-	DoctorPromptServerEnvFailedFmt     = "Failed to resolve internal MCP prompt server environment: %v"
-	DoctorPromptServerEnvRecommend     = "Ensure the repo root is available and readable."
-	DoctorPromptServerMissingRepoRoot  = "Internal MCP prompt server environment is missing AL_REPO_ROOT."
-	DoctorPromptServerResolvedFmt      = "Internal MCP prompt server resolved: %s"
-	DoctorPromptServerNotRequired      = "No MCP prompt server clients enabled."
-
 	DoctorCheckNameFlatSkills = "FlatSkills"
 
 	DoctorSkillFlatFormatDetectedFmt   = "Found flat-format skill file %q in .agent-layer/skills/; flat format is no longer supported."
 	DoctorSkillFlatFormatRecommend     = "Run 'al upgrade' to migrate flat-format skills to directory format (<name>/SKILL.md)."
 	DoctorSkillFlatFormatScanFailedFmt = "Failed to scan %s for flat-format skills: %v"
 	DoctorSkillFlatFormatScanRecommend = "Ensure .agent-layer/skills/ exists and is readable, then run 'al doctor' again."
-
-	DoctorPromptServerConfigNotRequired      = "No MCP prompt server client configs enabled."
-	DoctorPromptServerConfigResolveFailedFmt = "Failed to resolve internal MCP prompt server for config comparison: %v"
-	DoctorPromptServerConfigMissingFmt       = "Missing %s; internal MCP prompt server will not be configured."
-	DoctorPromptServerConfigReadFailedFmt    = "Failed to read %s: %v"
-	DoctorPromptServerConfigInvalidFmt       = "Invalid %s: %v"
-	DoctorPromptServerConfigMissingServerFmt = "%s is missing the internal prompt server entry."
-	DoctorPromptServerConfigMismatchFmt      = "%s internal prompt server entry does not match expected settings: %s"
-	DoctorPromptServerConfigMatchFmt         = "%s internal prompt server entry matches expected settings."
-	DoctorPromptServerConfigFilesRecommend   = "Run `al sync` (or `al claude`/`al gemini`) to regenerate client configs, or disable the agent if unused."
 
 	DoctorUpdateSkippedFmt          = "Update check skipped because %s is set"
 	DoctorUpdateSkippedRecommendFmt = "Unset %s to check for updates."

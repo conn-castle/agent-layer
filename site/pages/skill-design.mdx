@@ -44,7 +44,7 @@ At the catalog level, each skill adds roughly 50–100 tokens (name and descript
 
 ### Current implementation notes
 
-Agent Layer's internal MCP prompt server currently serves only the `SKILL.md` body. This means every skill must remain operationally understandable from `SKILL.md` alone. Companion files can support file-system workflows and future clients, but core behavior cannot depend on them today.
+Agent Layer syncs skills natively to each client's skill directory with full subdirectory support (`scripts/`, `references/`, `assets/`). Companion files are available to agents alongside `SKILL.md` during execution. Skills should still be understandable from `SKILL.md` alone for maximum portability across clients.
 
 ## Design principles
 

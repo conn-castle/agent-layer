@@ -155,8 +155,4 @@ const (
 	// StubShortFmt formats stub command descriptions.
 	StubShortFmt          = "%s (not implemented yet)"
 	StubNotImplementedFmt = "%s is not implemented in this phase"
-
-	// McpPromptsUse is the mcp-prompts command name.
-	McpPromptsUse   = "mcp-prompts"
-	McpPromptsShort = "Run the internal MCP prompt server over stdio"
 )

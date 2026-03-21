@@ -46,7 +46,7 @@ ENVEOF
 
   assert_generated_artifacts "$repo_dir"
 
-  # Verify ALL 7 MCP servers are in .mcp.json (plus built-in agent-layer)
+  # Verify ALL 7 MCP servers are in .mcp.json
   assert_file_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has context7 server"
   assert_file_contains "$repo_dir/.mcp.json" '"github"' \
@@ -61,12 +61,8 @@ ENVEOF
     ".mcp.json has ripgrep server"
   assert_file_contains "$repo_dir/.mcp.json" '"filesystem"' \
     ".mcp.json has filesystem server"
-  assert_file_contains "$repo_dir/.mcp.json" '"agent-layer"' \
-    ".mcp.json has built-in agent-layer server"
 
-  # Verify settings.json has MCP permissions for ALL servers (8 total)
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__agent-layer__" \
-    "settings.json has agent-layer MCP permission"
+  # Verify settings.json has MCP permissions for ALL servers (7 total)
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
     "settings.json has context7 MCP permission"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__fetch__" \
@@ -83,8 +79,6 @@ ENVEOF
     "settings.json has tavily MCP permission"
 
   # Verify .mcp.json has actual server config content (not just names)
-  assert_file_contains "$repo_dir/.mcp.json" '"mcp-prompts"' \
-    ".mcp.json agent-layer has mcp-prompts command"
   assert_file_contains "$repo_dir/.mcp.json" 'context7-mcp' \
     ".mcp.json context7 has correct package"
 

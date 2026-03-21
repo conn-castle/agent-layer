@@ -6,16 +6,6 @@
     ]
   },
   "mcpServers": {
-    "agent-layer": {
-      "command": "al",
-      "args": [
-        "mcp-prompts"
-      ],
-      "env": {
-        "AL_REPO_ROOT": "__REPO_ROOT__"
-      },
-      "trust": true
-    },
     "example": {
       "url": "https://mcp.example.com?token=${AL_EXAMPLE_TOKEN}",
       "headers": {

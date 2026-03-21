@@ -97,15 +97,19 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	}
 
 	if config.IsAgentEnabled(agents.Gemini.Enabled) {
-		steps = append(steps, func() error { return WriteGeminiSettings(sys, root, project) })
+		steps = append(steps,
+			func() error { return WriteGeminiSettings(sys, root, project) },
+			func() error { return WriteGeminiSkills(sys, root, project.Skills) },
+		)
 	}
 
-	// Claude files (.mcp.json, .claude/settings.json) fire when claude OR claude_vscode enabled.
+	// Claude files (.mcp.json, .claude/settings.json, .claude/skills/) fire when claude OR claude_vscode enabled.
 	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
 			func() error { return WriteClaudeSettings(sys, root, project) },
 			func() error { return WriteMCPConfig(sys, root, project) },
+			func() error { return WriteClaudeSkills(sys, root, project.Skills) },
 		)
 	}
 

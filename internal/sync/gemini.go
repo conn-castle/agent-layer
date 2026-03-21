@@ -30,7 +30,7 @@ type geminiMCPServer struct {
 
 // WriteGeminiSettings generates .gemini/settings.json.
 func WriteGeminiSettings(sys System, root string, project *config.ProjectConfig) error {
-	settings, err := buildGeminiSettings(sys, project)
+	settings, err := buildGeminiSettings(project)
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func WriteGeminiSettings(sys System, root string, project *config.ProjectConfig)
 	return nil
 }
 
-func buildGeminiSettings(sys System, project *config.ProjectConfig) (*geminiSettings, error) {
+func buildGeminiSettings(project *config.ProjectConfig) (*geminiSettings, error) {
 	settings := &geminiSettings{
 		MCPServers: make(OrderedMap[geminiMCPServer]),
 	}
@@ -73,22 +73,6 @@ func buildGeminiSettings(sys System, project *config.ProjectConfig) (*geminiSett
 
 	allowMCP := approvals.AllowMCP
 	trust := allowMCP
-
-	// Internal prompt server
-	promptCommand, promptArgs, err := resolvePromptServerCommand(sys, project.Root)
-	if err != nil {
-		return nil, err
-	}
-	promptEnv, err := resolvePromptServerEnv(project.Root)
-	if err != nil {
-		return nil, err
-	}
-	settings.MCPServers["agent-layer"] = geminiMCPServer{
-		Command: promptCommand,
-		Args:    promptArgs,
-		Env:     promptEnv,
-		Trust:   &trust,
-	}
 
 	// Preserve env var placeholders - Gemini CLI resolves ${VAR} at runtime.
 	resolved, err := projection.ResolveMCPServers(

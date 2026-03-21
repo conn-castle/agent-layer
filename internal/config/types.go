@@ -117,6 +117,7 @@ type Skill struct {
 	AllowedTools  string
 	Body          string
 	SourcePath    string
+	SourceDir     string // Absolute path to the skill directory (parent of SKILL.md)
 }
 
 // ProjectConfig is the fully loaded configuration state for sync and launch.

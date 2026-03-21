@@ -10,7 +10,7 @@ run_scenario_doctor_smoke() {
 
   assert_exit_zero_in "$repo_dir" "al init --no-wizard" al init --no-wizard
 
-  # Make prompt-server expectations explicit instead of relying on defaults.
+  # Enable both agents so doctor validates their checks.
   local config_path="$repo_dir/.agent-layer/config.toml"
   local config_tmp="$repo_dir/.agent-layer/config.toml.tmp"
   assert_file_contains "$config_path" "[agents.gemini]" \
@@ -68,18 +68,6 @@ ENVEOF
   # Verify doctor checked agents
   assert_output_contains "$doctor_output" "Agents" \
     "doctor output checks agents"
-
-  # Verify doctor checked internal prompt server + client configs
-  assert_output_contains "$doctor_output" "MCPPrompts" \
-    "doctor output checks internal MCP prompt server"
-  assert_output_contains "$doctor_output" "MCPPromptConfig" \
-    "doctor output checks MCP prompt server client config"
-  assert_file_exists "$repo_dir/.mcp.json" "sync generated .mcp.json"
-  assert_output_contains "$doctor_output" ".mcp.json" \
-    "doctor validates .mcp.json prompt server entry"
-  assert_file_exists "$repo_dir/.gemini/settings.json" "sync generated .gemini/settings.json"
-  assert_output_contains "$doctor_output" ".gemini/settings.json" \
-    "doctor validates Gemini prompt server entry"
 
   # Verify doctor ran warning checks
   assert_output_contains "$doctor_output" "Running warning checks" \

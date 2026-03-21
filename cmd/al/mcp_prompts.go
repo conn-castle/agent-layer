@@ -1,32 +1,19 @@
 package main
 
 import (
-	"github.com/spf13/cobra"
+	"fmt"
 
-	"github.com/conn-castle/agent-layer/internal/config"
-	"github.com/conn-castle/agent-layer/internal/mcp"
-	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/spf13/cobra"
 )
 
-var runPromptServer = mcp.RunPromptServer
-
 func newMcpPromptsCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:    messages.McpPromptsUse,
-		Short:  messages.McpPromptsShort,
+	return &cobra.Command{
+		Use:    "mcp-prompts",
+		Short:  "Start the MCP prompt server (deprecated)",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveRepoRootForPromptServer()
-			if err != nil {
-				return err
-			}
-			project, err := config.LoadProjectConfig(root)
-			if err != nil {
-				return err
-			}
-			return runPromptServer(cmd.Context(), Version, project.Skills)
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "al mcp-prompts is deprecated: skills are now synced natively. Run 'al sync' to update.")
+			return nil
 		},
 	}
-
-	return cmd
 }

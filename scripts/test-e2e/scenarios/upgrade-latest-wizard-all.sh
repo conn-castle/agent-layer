@@ -42,7 +42,7 @@ ENVEOF
   assert_output_contains "$wizard_output" "Wizard completed" \
     "wizard output says completed after latest release upgrade"
 
-  # Verify ALL MCP servers landed in .mcp.json (7 external + agent-layer)
+  # Verify ALL MCP servers landed in .mcp.json (7 external)
   assert_file_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has context7 after latest upgrade+wizard"
   assert_file_contains "$repo_dir/.mcp.json" '"github"' \
@@ -57,12 +57,8 @@ ENVEOF
     ".mcp.json has ripgrep after latest upgrade+wizard"
   assert_file_contains "$repo_dir/.mcp.json" '"filesystem"' \
     ".mcp.json has filesystem after latest upgrade+wizard"
-  assert_file_contains "$repo_dir/.mcp.json" '"agent-layer"' \
-    ".mcp.json has agent-layer after latest upgrade+wizard"
 
-  # Verify settings.json has MCP permissions for ALL servers (8 total)
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__agent-layer__" \
-    "settings.json has agent-layer permission after latest upgrade+wizard"
+  # Verify settings.json has MCP permissions for ALL servers (7 total)
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
     "settings.json has context7 permission after latest upgrade+wizard"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__fetch__" \

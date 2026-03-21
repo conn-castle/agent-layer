@@ -101,7 +101,7 @@ if [[ ! -f "$E2E_BIN" ]]; then
 fi
 export E2E_BIN
 
-# Install to a prefix so `al` is on PATH (required by resolvePromptServerCommand)
+# Install to a prefix so `al` is on PATH for e2e test commands
 E2E_INSTALL_PREFIX="$E2E_TMP_ROOT/install-prefix"
 mkdir -p "$E2E_INSTALL_PREFIX/bin"
 cp "$E2E_BIN" "$E2E_INSTALL_PREFIX/bin/al"

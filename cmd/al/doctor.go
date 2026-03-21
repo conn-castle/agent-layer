@@ -90,11 +90,6 @@ func newDoctorCmd() *cobra.Command {
 
 				// 6. Check Skills
 				allResults = append(allResults, doctor.CheckSkills(cfg)...)
-
-				// 7. Check Internal MCP Prompt Server
-				allResults = append(allResults, doctor.CheckPromptServer(root, cfg)...)
-				// 8. Check Prompt Server Client Configs
-				allResults = append(allResults, doctor.CheckPromptServerConfig(root, cfg)...)
 			}
 
 			hasFail := false

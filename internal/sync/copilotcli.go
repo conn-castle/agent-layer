@@ -27,8 +27,7 @@ type copilotMCPServer struct {
 }
 
 // WriteCopilotMCPConfig generates .copilot/mcp-config.json for GitHub Copilot CLI.
-// Unlike Claude's .mcp.json, this does NOT include the internal agent-layer prompt
-// server because Copilot CLI already reads AGENTS.md and .github/copilot-instructions.md.
+// Contains external MCP servers only.
 func WriteCopilotMCPConfig(sys System, root string, project *config.ProjectConfig) error {
 	cfg, err := buildCopilotMCPConfig(project)
 	if err != nil {

@@ -114,7 +114,7 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 		{
 			name:        "reserved id",
 			server:      MCPServer{ID: "agent-layer", Enabled: &enabled, Transport: "http", URL: "x"},
-			errContains: "reserved for the internal prompt server",
+			errContains: "is reserved",
 		},
 		{
 			name:        "http invalid http_transport",

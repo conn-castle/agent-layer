@@ -48,7 +48,6 @@ func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) 
 
 	if approvals.AllowMCP {
 		ids := projection.EnabledServerIDs(project.Config.MCP.Servers, "claude")
-		ids = append(ids, "agent-layer")
 		sort.Strings(ids)
 		for _, id := range ids {
 			allow = append(allow, fmt.Sprintf("mcp__%s__*", id))

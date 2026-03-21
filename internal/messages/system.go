@@ -146,7 +146,4 @@ const (
 	UpdateFormulaWriteFailedFmt = "Error: failed to write %s: %v\n"
 	UpdateFormulaURLCountFmt    = "Error: expected 1 url line, found %d\n"
 	UpdateFormulaSHACountFmt    = "Error: expected 1 sha256 line, found %d\n"
-
-	// McpRunPromptServerFailedFmt formats MCP prompt server failures.
-	McpRunPromptServerFailedFmt = "failed to run MCP prompt server: %w"
 )
