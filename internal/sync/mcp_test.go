@@ -12,14 +12,6 @@ import (
 func TestBuildMCPConfig(t *testing.T) {
 	t.Parallel()
 	enabled := true
-	sys := &MockSystem{
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
-	}
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -41,23 +33,12 @@ func TestBuildMCPConfig(t *testing.T) {
 		Root: root,
 	}
 
-	cfg, err := buildMCPConfig(sys, project)
+	cfg, err := buildMCPConfig(project)
 	if err != nil {
 		t.Fatalf("buildMCPConfig error: %v", err)
 	}
-	if cfg.Servers["agent-layer"].Command == "" {
-		t.Fatalf("expected internal prompt server")
-	}
-	if cfg.Servers["agent-layer"].Type != "stdio" {
-		t.Fatalf("unexpected internal prompt server type: %s", cfg.Servers["agent-layer"].Type)
-	}
-	if cfg.Servers["agent-layer"].Env[config.BuiltinRepoRootEnvVar] != root {
-		t.Fatalf(
-			"expected internal prompt env %s=%q, got %q",
-			config.BuiltinRepoRootEnvVar,
-			root,
-			cfg.Servers["agent-layer"].Env[config.BuiltinRepoRootEnvVar],
-		)
+	if cfg.GeneratedBy != "agent-layer" {
+		t.Fatalf("expected _generatedBy agent-layer, got %q", cfg.GeneratedBy)
 	}
 	if cfg.Servers["example"].Type != "http" {
 		t.Fatalf("unexpected server type: %s", cfg.Servers["example"].Type)
@@ -75,12 +56,6 @@ func TestWriteMCPConfig(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 	}
 	enabled := true
 	project := &config.ProjectConfig{
@@ -113,12 +88,6 @@ func TestWriteMCPConfigError(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 	}
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
@@ -135,12 +104,6 @@ func TestWriteMCPConfigWriteError(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 	}
 	if err := os.Mkdir(filepath.Join(root, ".mcp.json"), 0o755); err != nil {
 		t.Fatalf("mkdir .mcp.json: %v", err)
@@ -159,14 +122,6 @@ func TestWriteMCPConfigWriteError(t *testing.T) {
 func TestBuildMCPConfigMissingEnv(t *testing.T) {
 	t.Parallel()
 	enabled := true
-	sys := &MockSystem{
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
-	}
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -185,7 +140,7 @@ func TestBuildMCPConfigMissingEnv(t *testing.T) {
 		Root: root,
 	}
 
-	_, err := buildMCPConfig(sys, project)
+	_, err := buildMCPConfig(project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -194,14 +149,6 @@ func TestBuildMCPConfigMissingEnv(t *testing.T) {
 func TestBuildMCPConfigStdioServer(t *testing.T) {
 	t.Parallel()
 	enabled := true
-	sys := &MockSystem{
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
-	}
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -224,7 +171,7 @@ func TestBuildMCPConfigStdioServer(t *testing.T) {
 		Root: root,
 	}
 
-	cfg, err := buildMCPConfig(sys, project)
+	cfg, err := buildMCPConfig(project)
 	if err != nil {
 		t.Fatalf("buildMCPConfig error: %v", err)
 	}
@@ -251,12 +198,6 @@ func TestWriteMCPConfigMarshalError(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 		MarshalIndentFunc: func(v any, prefix, indent string) ([]byte, error) {
 			return nil, errors.New("marshal failed")
 		},

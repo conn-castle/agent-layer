@@ -67,12 +67,8 @@ ENVEOF
     ".mcp.json has ripgrep after upgrade+wizard"
   assert_file_contains "$repo_dir/.mcp.json" '"filesystem"' \
     ".mcp.json has filesystem after upgrade+wizard"
-  assert_file_contains "$repo_dir/.mcp.json" '"agent-layer"' \
-    ".mcp.json has built-in agent-layer after upgrade+wizard"
 
-  # Verify settings.json has MCP permissions for ALL servers (8 total)
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__agent-layer__" \
-    "settings.json has agent-layer permission after upgrade+wizard"
+  # Verify settings.json has MCP permissions for ALL servers (7 total)
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
     "settings.json has context7 permission after upgrade+wizard"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__fetch__" \

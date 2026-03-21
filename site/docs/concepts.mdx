@@ -298,9 +298,9 @@ Use `clients = ["gemini", "claude", "codex", "vscode", "antigravity", "copilot"]
 `al doctor` connects to each enabled MCP server, lists available tools, and warns about common issues. It waits up to 30 seconds per server before timing out.
 For the full checklist, see [Doctor](./reference#doctor).
 
-### Internal MCP prompt server
+### Skill sync
 
-Agent Layer includes an internal MCP prompt server for skills. It is always generated and wired into client configs and does not appear in `config.toml`.
+Skills are synced natively to each client's skill directory with full subdirectory support (`scripts/`, `references/`, `assets/`). No MCP server is involved; `al sync` copies skill sources directly into each enabled client's native format.
 
 ### Common pitfalls
 

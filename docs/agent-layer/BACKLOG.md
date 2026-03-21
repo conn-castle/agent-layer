@@ -17,7 +17,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 ### Entry template
 ```text
-- Backlog YYYY-MM-DD abcdef: Short title
+- Backlog YYYY-MM-DD short-slug: Short title
     Priority: Critical | High | Medium | Low. Area: <area>
     Description: <what the user should be able to do>
     Acceptance criteria: <clear condition to consider it done>
@@ -27,6 +27,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 ## Features and tasks (not scheduled)
 
 <!-- ENTRIES START -->
+
+- Backlog 2026-03-21 reassess-skill-resources: Audit template skills for scripts/references/assets opportunities
+    Priority: Medium. Area: skills
+    Description: Now that skill sync copies subdirectories (scripts/, references/, assets/) to all clients, audit existing template skills to identify where adding scripts, reference docs, or asset files would improve skill effectiveness (e.g., validation scripts, detailed reference guides, config templates).
+    Acceptance criteria: Each template skill has been reviewed; skills that benefit from subdirectories have them added; a decision is recorded on which skills are body-only vs resource-enhanced.
+    Notes: Enabled by the native skill sync change (2026-03-21) that replaced MCP prompt delivery.
 
 - Backlog 2026-03-17 reassess-memory-pruning: Observe strengthened memory-pruning approach
     Priority: Low. Area: instructions / memory

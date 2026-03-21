@@ -61,56 +61,6 @@ func TestDoctorCommand(t *testing.T) {
 	}
 }
 
-func TestDoctorCommand_MissingPromptServerClientConfigsFails(t *testing.T) {
-	root := t.TempDir()
-	writeDoctorTestRepo(t, root)
-	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
-
-	origInstructions := checkInstructions
-	origMCP := checkMCPServers
-	t.Cleanup(func() {
-		checkInstructions = origInstructions
-		checkMCPServers = origMCP
-	})
-	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, nil
-	}
-
-	if err := os.Remove(filepath.Join(root, ".mcp.json")); err != nil {
-		t.Fatalf("remove .mcp.json: %v", err)
-	}
-	if err := os.Remove(filepath.Join(root, ".gemini", "settings.json")); err != nil {
-		t.Fatalf("remove .gemini/settings.json: %v", err)
-	}
-
-	var out bytes.Buffer
-	testutil.WithWorkingDir(t, root, func() {
-		cmd := newDoctorCmd()
-		cmd.SetOut(&out)
-		err := cmd.RunE(cmd, nil)
-		if err == nil {
-			t.Fatal("expected doctor failure when prompt server client configs are missing")
-		}
-	})
-	output := out.String()
-	if !strings.Contains(output, messages.DoctorCheckNamePromptServer) {
-		t.Fatalf("expected prompt server check in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, messages.DoctorCheckNamePromptConfig) {
-		t.Fatalf("expected prompt config check in output, got:\n%s", output)
-	}
-	if !strings.Contains(output, ".mcp.json") {
-		t.Fatalf("expected missing .mcp.json detail, got:\n%s", output)
-	}
-	if !strings.Contains(output, ".gemini/settings.json") {
-		t.Fatalf("expected missing .gemini/settings.json detail, got:\n%s", output)
-	}
-	if *calls == 0 {
-		t.Fatal("expected update check to run")
-	}
-}
-
 func TestDoctorCommand_UpdateSkippedNoNetwork(t *testing.T) {
 	root := t.TempDir()
 	writeDoctorTestRepo(t, root)

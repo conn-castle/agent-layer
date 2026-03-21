@@ -226,6 +226,50 @@ func TestDetectDisabledAgentArtifacts_VSCodePromptWalkError(t *testing.T) {
 	}
 }
 
+func TestDetectDisabledAgentArtifacts_FlagsClaudeAndGeminiSkillDirs(t *testing.T) {
+	root := t.TempDir()
+
+	skillFiles := map[string]string{
+		filepath.Join(root, ".claude", "skills", "deploy", "SKILL.md"): "<!--\n  GENERATED FILE\n-->\n",
+		filepath.Join(root, ".gemini", "skills", "deploy", "SKILL.md"): "<!--\n  GENERATED FILE\n-->\n",
+	}
+	for absPath, content := range skillFiles {
+		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", absPath, err)
+		}
+		if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", absPath, err)
+		}
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		Gemini:       config.AgentConfig{Enabled: testutil.BoolPtr(false)},
+		Claude:       config.ClaudeConfig{Enabled: testutil.BoolPtr(false)},
+		ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(true)},
+		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(true)},
+	}}
+	check, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err != nil {
+		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
+	}
+	if check == nil {
+		t.Fatal("expected disabled-agent artifacts check for skill dirs")
+	}
+	joined := strings.Join(check.Details, "\n")
+	for _, expected := range []string{
+		".claude/skills/deploy/SKILL.md",
+		".gemini/skills/deploy/SKILL.md",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected %q in details, got %q", expected, joined)
+		}
+	}
+}
+
 func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 	root := t.TempDir()
 

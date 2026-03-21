@@ -82,6 +82,10 @@ Body.`
 	if len(skills[0].Metadata) != 2 || skills[0].Metadata["owner"] != "team" || skills[0].Metadata["version"] != "1.0" {
 		t.Fatalf("unexpected metadata: %#v", skills[0].Metadata)
 	}
+	expectedDir := filepath.Join(dir, "alpha")
+	if skills[0].SourceDir != expectedDir {
+		t.Fatalf("unexpected SourceDir: got %q, want %q", skills[0].SourceDir, expectedDir)
+	}
 }
 
 func TestLoadSkills_DirectoryFormat_LowercaseSkillFileFallback(t *testing.T) {

@@ -292,15 +292,14 @@ func TestWriteCopilotSkillsError(t *testing.T) {
 func TestWriteCopilotSkillsWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	skillDir := filepath.Join(root, ".github", "skills", "alpha")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
-		t.Fatalf("mkdir SKILL.md: %v", err)
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			return errors.New("write failed")
+		},
 	}
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteCopilotSkills(RealSystem{}, root, cmds); err == nil {
+	if err := WriteCopilotSkills(sys, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -377,15 +376,14 @@ func TestWriteCopilotSkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
+	// Make skills dir read-only so RemoveAll(skillDir) fails.
+	if err := os.Chmod(skillsDir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
 	}
+	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteCopilotSkills(RealSystem{}, root, cmds)
 	if err == nil {
-		t.Fatalf("expected error for skill dir creation failure")
-	}
-	if !strings.Contains(err.Error(), "failed to create") {
-		t.Fatalf("expected mkdir error, got %v", err)
+		t.Fatalf("expected error for skill dir removal/creation failure")
 	}
 }

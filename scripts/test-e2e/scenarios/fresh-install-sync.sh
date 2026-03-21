@@ -28,12 +28,14 @@ run_scenario_fresh_install_sync() {
   assert_file_contains "$repo_dir/.codex/AGENTS.md" "GENERATED FILE" \
     "codex AGENTS.md has managed marker"
 
-  # .mcp.json should be valid JSON with agent-layer server
+  # .mcp.json should be valid JSON
   assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON"
-  assert_file_contains "$repo_dir/.mcp.json" '"mcpServers"' \
-    ".mcp.json has mcpServers key"
-  assert_file_contains "$repo_dir/.mcp.json" '"mcp-prompts"' \
-    ".mcp.json has mcp-prompts arg"
+  assert_file_contains "$repo_dir/.mcp.json" '"_generatedBy"' \
+    ".mcp.json has provenance marker"
+
+  # Claude skills should be synced natively
+  assert_dir_exists "$repo_dir/.claude/skills" \
+    ".claude/skills directory exists after sync"
 
   # settings.json should also be valid JSON
   assert_json_valid "$repo_dir/.claude/settings.json" "settings.json is valid JSON"

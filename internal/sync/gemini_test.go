@@ -11,14 +11,6 @@ import (
 
 func TestBuildGeminiSettingsCommandsOnly(t *testing.T) {
 	t.Parallel()
-	sys := &MockSystem{
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
-	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
@@ -27,15 +19,15 @@ func TestBuildGeminiSettingsCommandsOnly(t *testing.T) {
 		Root:          t.TempDir(),
 	}
 
-	settings, err := buildGeminiSettings(sys, project)
+	settings, err := buildGeminiSettings(project)
 	if err != nil {
 		t.Fatalf("buildGeminiSettings error: %v", err)
 	}
+	if settings.GeneratedBy != "agent-layer" {
+		t.Fatalf("expected _generatedBy agent-layer, got %q", settings.GeneratedBy)
+	}
 	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
 		t.Fatalf("expected allowed tools")
-	}
-	if settings.MCPServers["agent-layer"].Trust == nil || *settings.MCPServers["agent-layer"].Trust {
-		t.Fatalf("expected trust to be false when approvals.mode=commands")
 	}
 }
 
@@ -44,12 +36,6 @@ func TestWriteGeminiSettings(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -71,12 +57,6 @@ func TestWriteGeminiSettingsError(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 	}
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
@@ -93,12 +73,6 @@ func TestWriteGeminiSettingsWriteError(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 	}
 	geminiDir := filepath.Join(root, ".gemini")
 	if err := os.MkdirAll(geminiDir, 0o755); err != nil {
@@ -121,14 +95,6 @@ func TestWriteGeminiSettingsWriteError(t *testing.T) {
 func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	t.Parallel()
 	enabled := true
-	sys := &MockSystem{
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
-	}
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -165,7 +131,7 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 		Root:          root,
 	}
 
-	settings, err := buildGeminiSettings(sys, project)
+	settings, err := buildGeminiSettings(project)
 	if err != nil {
 		t.Fatalf("buildGeminiSettings error: %v", err)
 	}
@@ -200,29 +166,10 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	if stdioServer.Env["API_KEY"] != "${KEY}" {
 		t.Fatalf("unexpected env value: %s", stdioServer.Env["API_KEY"])
 	}
-	if settings.MCPServers["agent-layer"].Trust == nil || !*settings.MCPServers["agent-layer"].Trust {
-		t.Fatalf("expected trust to be true when approvals.mode=all")
-	}
-	if settings.MCPServers["agent-layer"].Env[config.BuiltinRepoRootEnvVar] != root {
-		t.Fatalf(
-			"expected internal prompt env %s=%q, got %q",
-			config.BuiltinRepoRootEnvVar,
-			root,
-			settings.MCPServers["agent-layer"].Env[config.BuiltinRepoRootEnvVar],
-		)
-	}
 }
 
 func TestBuildGeminiSettingsYOLO(t *testing.T) {
 	t.Parallel()
-	sys := &MockSystem{
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
-	}
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
@@ -231,29 +178,18 @@ func TestBuildGeminiSettingsYOLO(t *testing.T) {
 		Root:          t.TempDir(),
 	}
 
-	settings, err := buildGeminiSettings(sys, project)
+	settings, err := buildGeminiSettings(project)
 	if err != nil {
 		t.Fatalf("buildGeminiSettings error: %v", err)
 	}
 	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
 		t.Fatalf("expected allowed tools for yolo mode")
 	}
-	if settings.MCPServers["agent-layer"].Trust == nil || !*settings.MCPServers["agent-layer"].Trust {
-		t.Fatalf("expected trust to be true when approvals.mode=yolo")
-	}
 }
 
 func TestBuildGeminiSettingsMissingEnv(t *testing.T) {
 	t.Parallel()
 	enabled := true
-	sys := &MockSystem{
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
-	}
 	root := t.TempDir()
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -268,7 +204,7 @@ func TestBuildGeminiSettingsMissingEnv(t *testing.T) {
 		Root: root,
 	}
 
-	_, err := buildGeminiSettings(sys, project)
+	_, err := buildGeminiSettings(project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -279,12 +215,6 @@ func TestWriteGeminiSettingsMarshalError(t *testing.T) {
 	root := t.TempDir()
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		LookPathFunc: func(file string) (string, error) {
-			if file == "al" {
-				return "/usr/local/bin/al", nil
-			}
-			return "", os.ErrNotExist
-		},
 		MarshalIndentFunc: func(v any, prefix, indent string) ([]byte, error) {
 			return nil, errors.New("marshal failed")
 		},

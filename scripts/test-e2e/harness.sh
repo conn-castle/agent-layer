@@ -686,10 +686,10 @@ assert_generated_artifacts() {
   assert_file_contains "$dir/.codex/AGENTS.md" "GENERATED FILE" \
     "codex AGENTS.md has managed marker"
   # Verify JSON files have expected structure
-  assert_file_contains "$dir/.mcp.json" "agent-layer" ".mcp.json has agent-layer server"
-  assert_file_contains "$dir/.mcp.json" "mcp-prompts" ".mcp.json has mcp-prompts command"
   assert_file_contains "$dir/.claude/settings.json" "permissions" \
     "settings.json has permissions key"
+  # Claude skills should be synced natively
+  assert_dir_exists "$dir/.claude/skills" ".claude/skills directory exists"
 }
 
 # assert_claude_mock_called <log> — verify mock was invoked exactly once.

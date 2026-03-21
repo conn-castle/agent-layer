@@ -122,7 +122,7 @@ If a server fails to start with “No such file or directory,” verify the `com
 
 `al doctor` connects to each enabled MCP server and lists tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
 When config validation fails due to unrecognized keys, `al doctor` reports the detected key paths, schema hints (allowed keys where applicable), and repair options (`al upgrade`, `al wizard`, or manual edits).
-When Claude (including Claude VS Code) or Gemini is enabled, it preflights internal prompt-server command resolution (typically `al mcp-prompts`, or `go run ./cmd/al mcp-prompts` in a source checkout) and verifies generated client configs (for example `.mcp.json`, `.gemini/settings.json`) are in sync; run `al sync` if they are missing or stale.
+When agents are enabled, it verifies generated client configs (for example `.mcp.json`, `.gemini/settings.json`) are in sync; run `al sync` if they are missing or stale.
 
 ---
 
@@ -163,7 +163,7 @@ Upgrade contract details (event model, compatibility guarantees, migration rules
 
 When a release version is available, `al init` writes `.agent-layer/al.version` (for example, `0.6.0`). You can also edit it manually, or set the initial pin with `al init --version X.Y.Z` (or `--version latest`).
 
-When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init`, `al upgrade`, and `al mcp-prompts` are exceptions: they run on the invoking CLI version so pin updates, upgrade planning, and internal MCP prompt serving are not blocked by an older repo pin.
+When you run `al` inside a repo, it locates `.agent-layer/`, reads the pinned version when present, and dispatches to that version automatically. `al init` and `al upgrade` are exceptions: they run on the invoking CLI version so pin updates and upgrade planning are not blocked by an older repo pin.
 
 By default, `al init` enables pinning in release builds by writing `.agent-layer/al.version`. Think of this file like a lockfile: it prevents the repo from silently changing behavior when you update your globally installed `al`.
 
@@ -496,14 +496,9 @@ Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/
 
 ---
 
-## MCP prompt server (internal)
+## Skill sync
 
-Some clients discover skills via MCP prompts. Agent Layer provides an **internal MCP prompt server** automatically.
-
-- You do not configure this in `config.toml`.
-- It is generated and wired into client configs by `al sync`.
-- External MCP servers (tool/data servers) are configured under `[mcp]` in `config.toml`.
-- There is no config toggle to disable it; the server is always included for clients that support MCP prompts.
+Skills are synced natively to each client's skill directory (for example `.claude/skills/`, `.gemini/skills/`, `.codex/skills/`) with full subdirectory support (`scripts/`, `references/`, `assets/`). No MCP server is involved; `al sync` copies skill sources directly into each enabled client's native format.
 
 ---
 

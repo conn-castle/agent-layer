@@ -179,6 +179,7 @@ func loadDirectorySkill(byName map[string]skillSource, root string, dirName stri
 		AllowedTools:  parsed.allowedTools,
 		Body:          parsed.body,
 		SourcePath:    skillPath,
+		SourceDir:     skillDirPath,
 	}
 	return registerSkill(byName, skill)
 }

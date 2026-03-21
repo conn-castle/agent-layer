@@ -33,7 +33,7 @@ const (
 	ConfigClaudeReasoningEffortInvalidFmt          = "%s: agents.claude.reasoning_effort must be one of low, medium, high, max"
 	ConfigClaudeReasoningEffortModelUnsupportedFmt = "%s: agents.claude.reasoning_effort requires an Opus model; set agents.claude.model to an opus variant (current: %q)"
 	ConfigMcpServerIDRequiredFmt                   = "%s: mcp.servers[%d].id is required"
-	ConfigMcpServerIDReservedFmt                   = "%s: mcp.servers[%d].id is reserved for the internal prompt server"
+	ConfigMcpServerIDReservedFmt                   = "%s: mcp.servers[%d].id is reserved"
 	ConfigMcpServerIDDuplicateFmt                  = "%s: mcp.servers[%d].id %q duplicates mcp.servers[%d].id"
 	ConfigMcpServerEnabledRequiredFmt              = "%s: mcp.servers[%d].enabled is required"
 	ConfigMcpServerURLRequiredFmt                  = "%s: mcp.servers[%d].url is required for http transport"

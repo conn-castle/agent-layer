@@ -55,15 +55,13 @@ explicitly labeled as a local heuristic.
 - `compatibility` should only be used for real environment requirements such as
   tools, network access, or intended runtime.
 
-### Current agent-layer implementation gap
+### Current agent-layer implementation
 
-- The Agent Skills spec supports `scripts/`, `references/`, and `assets`, but
-  agent-layer's internal MCP prompt server currently serves only the `SKILL.md`
-  body.
-- Implication: every skill in this repo must remain operationally understandable
-  from `SKILL.md` alone.
-- Companion files can still help direct file-system workflows and future
-  clients, but core behavior cannot depend on them today.
+- Agent Layer syncs skills natively to each client's skill directory with full
+  subdirectory support (`scripts/`, `references/`, `assets/`).
+- Companion files are available to agents alongside `SKILL.md` during execution.
+- Skills should still be understandable from `SKILL.md` alone for maximum
+  portability across clients.
 
 ---
 

@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -241,15 +242,14 @@ func TestWriteCodexSkillsError(t *testing.T) {
 func TestWriteCodexSkillsWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	skillDir := filepath.Join(root, ".codex", "skills", "alpha")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
-		t.Fatalf("mkdir SKILL.md: %v", err)
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			return errors.New("write failed")
+		},
 	}
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteCodexSkills(RealSystem{}, root, cmds); err == nil {
+	if err := WriteCodexSkills(sys, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -270,15 +270,14 @@ func TestWriteAntigravitySkillsError(t *testing.T) {
 func TestWriteAntigravitySkillsWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	skillDir := filepath.Join(root, ".agent", "skills", "alpha")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(skillDir, "SKILL.md"), 0o755); err != nil {
-		t.Fatalf("mkdir SKILL.md: %v", err)
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			return errors.New("write failed")
+		},
 	}
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteAntigravitySkills(RealSystem{}, root, cmds); err == nil {
+	if err := WriteAntigravitySkills(sys, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -290,16 +289,15 @@ func TestWriteAntigravitySkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
+	// Make skills dir read-only so RemoveAll(skillDir) fails.
+	if err := os.Chmod(skillsDir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
 	}
+	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteAntigravitySkills(RealSystem{}, root, cmds)
 	if err == nil {
-		t.Fatalf("expected error for skill dir creation failure")
-	}
-	if !strings.Contains(err.Error(), "failed to create") {
-		t.Fatalf("expected mkdir error, got %v", err)
+		t.Fatalf("expected error for skill dir removal/creation failure")
 	}
 }
 
@@ -310,17 +308,140 @@ func TestWriteCodexSkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	// Create a file where the skill directory would be created
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
+	// Make skills dir read-only so RemoveAll(skillDir) fails.
+	if err := os.Chmod(skillsDir, 0o500); err != nil {
+		t.Fatalf("chmod: %v", err)
 	}
+	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteCodexSkills(RealSystem{}, root, cmds)
 	if err == nil {
-		t.Fatalf("expected error for skill dir creation failure")
+		t.Fatalf("expected error for skill dir removal/creation failure")
 	}
-	if !strings.Contains(err.Error(), "failed to create") {
-		t.Fatalf("expected mkdir error, got %v", err)
+}
+
+func TestBuildClaudeSkill(t *testing.T) {
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
+	content, err := buildClaudeSkill(cmd)
+	if err != nil {
+		t.Fatalf("buildClaudeSkill error: %v", err)
+	}
+	if !strings.Contains(content, "name: alpha") {
+		t.Fatalf("expected name in skill")
+	}
+	if !strings.Contains(content, "Body") {
+		t.Fatalf("expected body in skill")
+	}
+}
+
+func TestBuildGeminiSkill(t *testing.T) {
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
+	content, err := buildGeminiSkill(cmd)
+	if err != nil {
+		t.Fatalf("buildGeminiSkill error: %v", err)
+	}
+	if !strings.Contains(content, "name: alpha") {
+		t.Fatalf("expected name in skill")
+	}
+	if !strings.Contains(content, "Body") {
+		t.Fatalf("expected body in skill")
+	}
+}
+
+func TestWriteClaudeSkills(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
+	}
+	path := filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read skill: %v", err)
+	}
+	if !strings.Contains(string(data), "name: alpha") {
+		t.Fatalf("expected name in written skill")
+	}
+}
+
+func TestWriteGeminiSkills(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cmds := []config.Skill{{Name: "beta", Description: "desc", Body: "Body"}}
+	if err := WriteGeminiSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteGeminiSkills error: %v", err)
+	}
+	path := filepath.Join(root, ".gemini", "skills", "beta", "SKILL.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read skill: %v", err)
+	}
+	if !strings.Contains(string(data), "name: beta") {
+		t.Fatalf("expected name in written skill")
+	}
+}
+
+func TestCopySkillSubFiles(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	// Create source structure: scripts/run.sh, references/REF.md, .hidden, SKILL.md
+	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "run.sh"), []byte("#!/bin/sh\necho hi"), 0o644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o755); err != nil {
+		t.Fatalf("mkdir references: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "references", "REF.md"), []byte("# Ref"), 0o644); err != nil {
+		t.Fatalf("write ref: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: test\n---\nBody"), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, ".hidden"), []byte("secret"), 0o644); err != nil {
+		t.Fatalf("write hidden: %v", err)
+	}
+
+	skill := config.Skill{Name: "test", SourceDir: srcDir}
+	if err := copySkillSubFiles(RealSystem{}, skill, destDir); err != nil {
+		t.Fatalf("copySkillSubFiles error: %v", err)
+	}
+
+	// scripts/run.sh should be copied
+	data, err := os.ReadFile(filepath.Join(destDir, "scripts", "run.sh"))
+	if err != nil {
+		t.Fatalf("read copied script: %v", err)
+	}
+	if !strings.Contains(string(data), "echo hi") {
+		t.Fatalf("expected script content")
+	}
+
+	// references/REF.md should be copied
+	if _, err := os.Stat(filepath.Join(destDir, "references", "REF.md")); err != nil {
+		t.Fatalf("expected REF.md to be copied: %v", err)
+	}
+
+	// SKILL.md should NOT be copied (handled by builder)
+	if _, err := os.Stat(filepath.Join(destDir, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected SKILL.md to be skipped")
+	}
+
+	// .hidden should NOT be copied
+	if _, err := os.Stat(filepath.Join(destDir, ".hidden")); !os.IsNotExist(err) {
+		t.Fatalf("expected hidden file to be skipped")
+	}
+}
+
+func TestCopySkillSubFiles_EmptySourceDir(t *testing.T) {
+	t.Parallel()
+	skill := config.Skill{Name: "test", SourceDir: ""}
+	if err := copySkillSubFiles(RealSystem{}, skill, t.TempDir()); err != nil {
+		t.Fatalf("expected nil error for empty SourceDir, got %v", err)
 	}
 }
 
@@ -405,5 +526,363 @@ func TestGeneratedSkillSourcePath(t *testing.T) {
 	cmd.SourcePath = filepath.Join("/tmp/repo", ".agent-layer", "skills", "alpha", "SKILL.md")
 	if got := generatedSkillSourcePath(cmd); got != ".agent-layer/skills/alpha/SKILL.md" {
 		t.Fatalf("unexpected normalized source path: %q", got)
+	}
+}
+
+func TestCopyDirRecursive_ReadFilePermissionError(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	// Create an unreadable file.
+	unreadable := filepath.Join(srcDir, "secret.sh")
+	if err := os.WriteFile(unreadable, []byte("data"), 0o000); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o644) })
+
+	err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil)
+	if err == nil {
+		t.Fatalf("expected error for unreadable file")
+	}
+	if !strings.Contains(err.Error(), "failed to read") {
+		t.Fatalf("expected read error, got: %v", err)
+	}
+}
+
+func TestCopyDirRecursive_NonexistentSourceDir(t *testing.T) {
+	t.Parallel()
+	destDir := t.TempDir()
+	err := copyDirRecursive(RealSystem{}, filepath.Join(t.TempDir(), "nonexistent"), destDir, nil)
+	if err != nil {
+		t.Fatalf("expected nil for nonexistent source dir, got: %v", err)
+	}
+}
+
+func TestCopyDirRecursive_PreservesExecutePermission(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	scriptPath := filepath.Join(srcDir, "scripts", "run.sh")
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hi"), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	if err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil); err != nil {
+		t.Fatalf("copyDirRecursive error: %v", err)
+	}
+
+	destScript := filepath.Join(destDir, "scripts", "run.sh")
+	info, err := os.Stat(destScript)
+	if err != nil {
+		t.Fatalf("stat copied script: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("expected execute permission on copied script, got %v", info.Mode())
+	}
+}
+
+func TestWriteClaudeSkillsError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	err := WriteClaudeSkills(RealSystem{}, file, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteClaudeSkillsWriteError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			return errors.New("write failed")
+		},
+	}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
+	if err := WriteClaudeSkills(sys, root, cmds); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteGeminiSkillsError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	err := WriteGeminiSkills(RealSystem{}, file, nil)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteGeminiSkillsWriteError(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			return errors.New("write failed")
+		},
+	}
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
+	if err := WriteGeminiSkills(sys, root, cmds); err == nil {
+		t.Fatalf("expected error")
+	}
+}
+
+func TestWriteClaudeSkillsWithSubdirectory(t *testing.T) {
+	t.Parallel()
+
+	// Set up a source skill directory with scripts/ subdirectory.
+	srcDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "deploy.sh"), []byte("#!/bin/sh\necho deploy"), 0o755); err != nil {
+		t.Fatalf("write deploy.sh: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: deploy\n---\nDeploy body"), 0o644); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	root := t.TempDir()
+	cmds := []config.Skill{{
+		Name:        "deploy",
+		Description: "Deploy skill",
+		Body:        "Deploy body",
+		SourceDir:   srcDir,
+	}}
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteClaudeSkills error: %v", err)
+	}
+
+	// Verify SKILL.md was written (by the builder, not copied from source).
+	skillPath := filepath.Join(root, ".claude", "skills", "deploy", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("read SKILL.md: %v", err)
+	}
+	if !strings.Contains(string(data), "name: deploy") {
+		t.Fatalf("expected name in SKILL.md")
+	}
+
+	// Verify scripts/deploy.sh was copied with execute permission preserved.
+	scriptPath := filepath.Join(root, ".claude", "skills", "deploy", "scripts", "deploy.sh")
+	scriptData, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("read deploy.sh: %v", err)
+	}
+	if !strings.Contains(string(scriptData), "echo deploy") {
+		t.Fatalf("expected script content")
+	}
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatalf("stat deploy.sh: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("expected execute permission on deploy.sh, got %v", info.Mode())
+	}
+}
+
+func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// First sync: skill with scripts/old.sh
+	srcDir1 := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(srcDir1, "scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir1, "scripts", "old.sh"), []byte("#!/bin/sh\necho old"), 0o755); err != nil {
+		t.Fatalf("write old.sh: %v", err)
+	}
+
+	cmds1 := []config.Skill{{
+		Name:        "alpha",
+		Description: "desc",
+		Body:        "Body",
+		SourceDir:   srcDir1,
+	}}
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds1); err != nil {
+		t.Fatalf("first WriteClaudeSkills error: %v", err)
+	}
+
+	// Verify old.sh exists after first sync.
+	oldScript := filepath.Join(root, ".claude", "skills", "alpha", "scripts", "old.sh")
+	if _, err := os.Stat(oldScript); err != nil {
+		t.Fatalf("expected old.sh after first sync: %v", err)
+	}
+
+	// Second sync: skill now has scripts/new.sh (old.sh removed from source).
+	srcDir2 := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(srcDir2, "scripts"), 0o755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir2, "scripts", "new.sh"), []byte("#!/bin/sh\necho new"), 0o755); err != nil {
+		t.Fatalf("write new.sh: %v", err)
+	}
+
+	cmds2 := []config.Skill{{
+		Name:        "alpha",
+		Description: "desc",
+		Body:        "Body",
+		SourceDir:   srcDir2,
+	}}
+	if err := WriteClaudeSkills(RealSystem{}, root, cmds2); err != nil {
+		t.Fatalf("second WriteClaudeSkills error: %v", err)
+	}
+
+	// Verify old.sh is removed (stale sub-file cleanup).
+	if _, err := os.Stat(oldScript); !os.IsNotExist(err) {
+		t.Fatalf("expected old.sh to be removed after second sync")
+	}
+
+	// Verify new.sh exists.
+	newScript := filepath.Join(root, ".claude", "skills", "alpha", "scripts", "new.sh")
+	if _, err := os.Stat(newScript); err != nil {
+		t.Fatalf("expected new.sh after second sync: %v", err)
+	}
+}
+
+func TestCopyDirRecursive_StatError(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		StatFunc: func(name string) (os.FileInfo, error) {
+			if strings.HasSuffix(name, "data.txt") {
+				return nil, errors.New("stat failed")
+			}
+			return RealSystem{}.Stat(name)
+		},
+	}
+
+	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	if err == nil {
+		t.Fatalf("expected error from Stat failure")
+	}
+	if !strings.Contains(err.Error(), "stat failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCopyDirRecursive_WriteFileAtomicSubFileError(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			if strings.HasSuffix(filename, "data.txt") {
+				return errors.New("write sub-file failed")
+			}
+			return RealSystem{}.WriteFileAtomic(filename, data, perm)
+		},
+	}
+
+	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	if err == nil {
+		t.Fatalf("expected error from WriteFileAtomic failure")
+	}
+	if !strings.Contains(err.Error(), "write sub-file failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCopyDirRecursive_SkipsSymlinks(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	// Create a regular file and a symlink.
+	if err := os.WriteFile(filepath.Join(srcDir, "real.txt"), []byte("real"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(srcDir, "real.txt"), filepath.Join(srcDir, "link.txt")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	if err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil); err != nil {
+		t.Fatalf("copyDirRecursive error: %v", err)
+	}
+
+	// real.txt should be copied.
+	if _, err := os.Stat(filepath.Join(destDir, "real.txt")); err != nil {
+		t.Fatalf("expected real.txt to be copied: %v", err)
+	}
+	// link.txt should be skipped.
+	if _, err := os.Stat(filepath.Join(destDir, "link.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected link.txt (symlink) to be skipped")
+	}
+}
+
+func TestWriteSkillFiles_PathTraversalRejected(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cmds := []config.Skill{{Name: "../escape", Description: "desc", Body: "Body"}}
+	err := WriteClaudeSkills(RealSystem{}, root, cmds)
+	if err == nil {
+		t.Fatalf("expected error for path traversal in skill name")
+	}
+	if !strings.Contains(err.Error(), "invalid skill name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCopySkillSubFiles_SkipOnlyTopLevelSkillMd(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+
+	// Create a top-level SKILL.md (should be skipped) and a nested SKILL.md (should be copied).
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("top-level"), 0o644); err != nil {
+		t.Fatalf("write top SKILL.md: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o755); err != nil {
+		t.Fatalf("mkdir references: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "references", "SKILL.md"), []byte("nested"), 0o644); err != nil {
+		t.Fatalf("write nested SKILL.md: %v", err)
+	}
+
+	skill := config.Skill{Name: "test", SourceDir: srcDir}
+	if err := copySkillSubFiles(RealSystem{}, skill, destDir); err != nil {
+		t.Fatalf("copySkillSubFiles error: %v", err)
+	}
+
+	// Top-level SKILL.md should NOT be copied.
+	if _, err := os.Stat(filepath.Join(destDir, "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected top-level SKILL.md to be skipped")
+	}
+	// Nested references/SKILL.md SHOULD be copied.
+	data, err := os.ReadFile(filepath.Join(destDir, "references", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("expected nested SKILL.md to be copied: %v", err)
+	}
+	if string(data) != "nested" {
+		t.Fatalf("unexpected nested SKILL.md content: %q", string(data))
 	}
 }

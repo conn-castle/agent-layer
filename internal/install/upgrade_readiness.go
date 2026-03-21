@@ -563,6 +563,9 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				path:     filepath.Join(inst.root, ".gemini", "settings.json"),
 				evidence: hasAgentLayerMCPSignature,
 			}},
+			dirs: []disabledArtifactDirSpec{
+				{root: filepath.Join(inst.root, ".gemini", "skills"), suffix: "SKILL.md"},
+			},
 		},
 		// .mcp.json and .claude/settings.json are generated when either agents.claude
 		// or agents.claude_vscode is enabled.
@@ -572,6 +575,9 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			files: []disabledArtifactFileSpec{
 				{path: filepath.Join(inst.root, ".mcp.json"), evidence: hasAgentLayerMCPSignature},
 				{path: filepath.Join(inst.root, ".claude", "settings.json"), evidence: isJSONObject},
+			},
+			dirs: []disabledArtifactDirSpec{
+				{root: filepath.Join(inst.root, ".claude", "skills"), suffix: "SKILL.md"},
 			},
 		},
 		{
@@ -687,11 +693,21 @@ func hasVSCodeManagedBlock(data []byte) (bool, error) {
 	return strings.Contains(content, vscodeManagedStart) && strings.Contains(content, vscodeManagedEnd), nil
 }
 
+// hasAgentLayerMCPSignature reports whether data looks like an agent-layer-generated
+// MCP config file (.mcp.json or .gemini/settings.json). Current output includes a
+// "_generatedBy":"agent-layer" field; legacy output included an "agent-layer" server
+// entry with "mcp-prompts" args. Both patterns are checked for backward compatibility.
 func hasAgentLayerMCPSignature(data []byte) (bool, error) {
 	content := string(data)
-	return strings.Contains(content, "\"mcpServers\"") &&
-		strings.Contains(content, "\"agent-layer\"") &&
-		strings.Contains(content, "\"mcp-prompts\""), nil
+	// Current format: explicit provenance marker.
+	if strings.Contains(content, "\"_generatedBy\"") && strings.Contains(content, "\"agent-layer\"") {
+		return true, nil
+	}
+	// Legacy format: internal prompt server entry.
+	if strings.Contains(content, "\"agent-layer\"") && strings.Contains(content, "\"mcp-prompts\"") {
+		return true, nil
+	}
+	return false, nil
 }
 
 // isJSONObject reports whether data looks like a JSON object.

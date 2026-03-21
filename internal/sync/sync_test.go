@@ -22,8 +22,6 @@ func TestRunGolden(t *testing.T) {
 	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	writePromptServerBinary(t, root)
-
 	result, err := Run(root)
 	if err != nil {
 		t.Fatalf("sync run: %v", err)
@@ -46,6 +44,10 @@ func TestRunGolden(t *testing.T) {
 		".codex/skills/beta/SKILL.md",
 		".agent/skills/alpha/SKILL.md",
 		".agent/skills/beta/SKILL.md",
+		".claude/skills/alpha/SKILL.md",
+		".claude/skills/beta/SKILL.md",
+		".gemini/skills/alpha/SKILL.md",
+		".gemini/skills/beta/SKILL.md",
 		".vscode/prompts/alpha.prompt.md",
 		".vscode/prompts/beta.prompt.md",
 		".vscode/settings.json",

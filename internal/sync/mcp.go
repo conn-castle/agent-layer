@@ -10,7 +10,8 @@ import (
 )
 
 type mcpConfig struct {
-	Servers OrderedMap[mcpServer] `json:"mcpServers,omitempty"`
+	GeneratedBy string                `json:"_generatedBy"`
+	Servers     OrderedMap[mcpServer] `json:"mcpServers"`
 }
 
 type mcpServer struct {
@@ -24,7 +25,7 @@ type mcpServer struct {
 
 // WriteMCPConfig generates .mcp.json for Claude Code.
 func WriteMCPConfig(sys System, root string, project *config.ProjectConfig) error {
-	cfg, err := buildMCPConfig(sys, project)
+	cfg, err := buildMCPConfig(project)
 	if err != nil {
 		return err
 	}
@@ -43,25 +44,10 @@ func WriteMCPConfig(sys System, root string, project *config.ProjectConfig) erro
 	return nil
 }
 
-func buildMCPConfig(sys System, project *config.ProjectConfig) (*mcpConfig, error) {
+func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	cfg := &mcpConfig{
-		Servers: make(OrderedMap[mcpServer]),
-	}
-
-	// Internal prompt server for Claude.
-	promptCommand, promptArgs, err := resolvePromptServerCommand(sys, project.Root)
-	if err != nil {
-		return nil, err
-	}
-	promptEnv, err := resolvePromptServerEnv(project.Root)
-	if err != nil {
-		return nil, err
-	}
-	cfg.Servers["agent-layer"] = mcpServer{
-		Type:    config.TransportStdio,
-		Command: promptCommand,
-		Args:    promptArgs,
-		Env:     promptEnv,
+		GeneratedBy: "agent-layer",
+		Servers:     make(OrderedMap[mcpServer]),
 	}
 
 	resolved, err := projection.ResolveMCPServers(

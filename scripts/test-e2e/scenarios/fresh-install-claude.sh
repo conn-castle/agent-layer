@@ -60,17 +60,13 @@ run_scenario_fresh_install_claude() {
   assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON"
   assert_json_valid "$repo_dir/.claude/settings.json" "settings.json is valid JSON"
 
-  # .mcp.json should have only the built-in agent-layer server (no MCP enabled)
-  assert_file_contains "$repo_dir/.mcp.json" '"agent-layer"' \
-    ".mcp.json has agent-layer prompt server"
+  # .mcp.json should have no MCP servers enabled by default
   assert_file_not_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has no context7 (not enabled)"
 
   # .claude/settings.json should have permissions but no external MCP
   assert_file_contains "$repo_dir/.claude/settings.json" '"permissions"' \
     "settings.json has permissions block"
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__agent-layer__" \
-    "settings.json has agent-layer MCP permission"
   assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
     "settings.json has no context7 permission (not enabled)"
 
