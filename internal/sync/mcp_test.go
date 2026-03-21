@@ -37,6 +37,9 @@ func TestBuildMCPConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildMCPConfig error: %v", err)
 	}
+	if cfg.GeneratedBy != "agent-layer" {
+		t.Fatalf("expected _generatedBy agent-layer, got %q", cfg.GeneratedBy)
+	}
 	if cfg.Servers["example"].Type != "http" {
 		t.Fatalf("unexpected server type: %s", cfg.Servers["example"].Type)
 	}

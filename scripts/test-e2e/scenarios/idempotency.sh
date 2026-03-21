@@ -19,7 +19,7 @@ run_scenario_idempotency() {
   # Verify files have real content before snapshot (guards against empty-file bugs)
   assert_file_contains "$repo_dir/CLAUDE.md" "Critical Protocol" \
     "CLAUDE.md has content before idempotency snapshot"
-  assert_file_contains "$repo_dir/.mcp.json" '"mcpServers"' \
+  assert_file_contains "$repo_dir/.mcp.json" '"_generatedBy"' \
     ".mcp.json has content before idempotency snapshot"
 
   # Snapshot ALL state after first run: sync outputs + core .agent-layer/ files

@@ -1,4 +1,5 @@
 {
+  "_generatedBy": "agent-layer",
   "tools": {
     "allowed": [
       "run_shell_command(git status)",

@@ -10,7 +10,8 @@ import (
 )
 
 type mcpConfig struct {
-	Servers OrderedMap[mcpServer] `json:"mcpServers"`
+	GeneratedBy string                `json:"_generatedBy"`
+	Servers     OrderedMap[mcpServer] `json:"mcpServers"`
 }
 
 type mcpServer struct {
@@ -45,7 +46,8 @@ func WriteMCPConfig(sys System, root string, project *config.ProjectConfig) erro
 
 func buildMCPConfig(project *config.ProjectConfig) (*mcpConfig, error) {
 	cfg := &mcpConfig{
-		Servers: make(OrderedMap[mcpServer]),
+		GeneratedBy: "agent-layer",
+		Servers:     make(OrderedMap[mcpServer]),
 	}
 
 	resolved, err := projection.ResolveMCPServers(

@@ -10,8 +10,9 @@ import (
 )
 
 type geminiSettings struct {
-	Tools      *geminiTools                `json:"tools,omitempty"`
-	MCPServers OrderedMap[geminiMCPServer] `json:"mcpServers,omitempty"`
+	GeneratedBy string                      `json:"_generatedBy"`
+	Tools       *geminiTools                `json:"tools,omitempty"`
+	MCPServers  OrderedMap[geminiMCPServer] `json:"mcpServers,omitempty"`
 }
 
 type geminiTools struct {
@@ -56,7 +57,8 @@ func WriteGeminiSettings(sys System, root string, project *config.ProjectConfig)
 
 func buildGeminiSettings(project *config.ProjectConfig) (*geminiSettings, error) {
 	settings := &geminiSettings{
-		MCPServers: make(OrderedMap[geminiMCPServer]),
+		GeneratedBy: "agent-layer",
+		MCPServers:  make(OrderedMap[geminiMCPServer]),
 	}
 
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)

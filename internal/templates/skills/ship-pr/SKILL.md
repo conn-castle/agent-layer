@@ -132,16 +132,26 @@ trust the sub-skill output alone — re-read the PR state and validate.
    bodies) using the same commands from Phase 5 / the address-pr-comments skill.
 2. For every feedback comment, verify:
    a. A reply exists from this agent (not just from a human or bot).
-   b. If the comment's suggestion was implemented, the reply describes the
-      concrete change that was made.
-   c. If the comment's suggestion was declined, the reply contains a
-      substantive, technically grounded justification — not a deferral or
-      generic dismissal.
+   b. The reply opens with one of the three bold verdicts defined in
+      "Comment reply format" above.
+   c. If the verdict is **Fixed**, the named commit exists and contains a
+      relevant change.
+   d. If the verdict is **No change**, the justification is substantive and
+      technically grounded — not vague or generic.
+   e. If the verdict is **Deferred**, the named location actually contains
+      the tracked item, and the deferral is legitimate (not a bug introduced
+      by this PR).
 3. Flag any comment that fails verification:
    - **Missing reply:** never responded to.
-   - **Hollow agreement:** reply claims a change was made but no code change exists.
-   - **Unjustified deferral:** declines by deferring without a genuine technical reason.
-   - **Generic dismissal:** vague or batch-style rather than specific.
+   - **Missing verdict:** reply exists but does not open with a bold verdict.
+   - **Hollow fix:** verdict says "Fixed" but no code change exists in the
+     named commit.
+   - **Unjustified decline:** verdict says "No change" but the justification
+     is vague, generic, or missing.
+   - **Lazy deferral:** verdict says "Deferred" but the item is not actually
+     tracked, or the comment points to a bug introduced by this PR.
+   - **Generic dismissal:** batch-style reply covering multiple comments
+     rather than addressing each specifically.
 4. If any comments are flagged:
    a. Re-address them: implement the fix or write a proper justification.
    b. Audit, commit, and push the new changes.
@@ -156,6 +166,31 @@ trust the sub-skill output alone — re-read the PR state and validate.
    - every comment has a reply that passes the Phase 7 audit
    - all changes are committed and pushed
 2. Summarize the PR lifecycle outcome.
+
+## Comment reply format
+
+Every reply to a review comment must open with a **bold verdict** on one line,
+followed by a concise justification. There are exactly three verdicts:
+
+1. **Fixed in `<short-hash>`.** — The suggestion was implemented. Describe the
+   concrete change.
+2. **No change — `<reason>`.** — The suggestion was evaluated and declined.
+   `<reason>` is a short label: `by design`, `pre-existing behavior`,
+   `not a regression`, `testability`, etc. Follow with the technical
+   justification.
+3. **Deferred — tracked in `<location>`.** — The suggestion has merit but is
+   out of scope. `<location>` names where it was recorded (e.g.,
+   `ISSUES.md`, `BACKLOG.md`, a GitHub issue link). The suggestion must
+   actually be recorded there before using this verdict.
+
+Do not use "deferred" as a way to avoid doing work that belongs in this PR.
+A comment is only legitimately deferred when:
+- It requests a new feature or enhancement beyond the PR's scope.
+- It identifies a pre-existing issue not introduced by this PR.
+- Fixing it would require a non-trivial refactor unrelated to the PR's purpose.
+
+If the suggestion points to a bug or correctness issue introduced by this PR,
+it must be fixed, not deferred.
 
 ## Guardrails
 

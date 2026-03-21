@@ -1,4 +1,5 @@
 {
+  "_generatedBy": "agent-layer",
   "mcpServers": {
     "example": {
       "type": "http",

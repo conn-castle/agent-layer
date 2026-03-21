@@ -30,8 +30,8 @@ run_scenario_fresh_install_sync() {
 
   # .mcp.json should be valid JSON
   assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON"
-  assert_file_contains "$repo_dir/.mcp.json" '"mcpServers"' \
-    ".mcp.json has mcpServers key"
+  assert_file_contains "$repo_dir/.mcp.json" '"_generatedBy"' \
+    ".mcp.json has provenance marker"
 
   # Claude skills should be synced natively
   assert_dir_exists "$repo_dir/.claude/skills" \

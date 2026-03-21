@@ -149,7 +149,7 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o755); err != nil {
 		t.Fatalf("mkdir gemini dir: %v", err)
 	}
-	generatedGemini := "{\n  \"mcpServers\": {\n    \"example\": {\n      \"url\": \"https://mcp.example.com\"\n    }\n  }\n}\n"
+	generatedGemini := "{\n  \"_generatedBy\": \"agent-layer\",\n  \"mcpServers\": {\n    \"example\": {\n      \"url\": \"https://mcp.example.com\"\n    }\n  }\n}\n"
 	if err := os.WriteFile(geminiPath, []byte(generatedGemini), 0o644); err != nil {
 		t.Fatalf("write gemini settings: %v", err)
 	}

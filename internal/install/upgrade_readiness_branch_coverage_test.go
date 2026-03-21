@@ -181,7 +181,7 @@ func TestDetectVSCodeNoSyncStaleness_ClaudeBranches(t *testing.T) {
 		if err := os.WriteFile(vscodeSettingsPath, []byte(vscodeManagedStart+"\n{}\n"+vscodeManagedEnd), 0o644); err != nil {
 			t.Fatalf("write vscode settings: %v", err)
 		}
-		if err := os.WriteFile(mcpPath, []byte(`{"mcpServers":{"example":{}}}`), 0o644); err != nil {
+		if err := os.WriteFile(mcpPath, []byte(`{"_generatedBy":"agent-layer","mcpServers":{"example":{}}}`), 0o644); err != nil {
 			t.Fatalf("write .mcp.json: %v", err)
 		}
 		if err := os.WriteFile(claudeSettingsPath, []byte(`{}`), 0o644); err != nil {

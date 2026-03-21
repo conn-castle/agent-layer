@@ -23,6 +23,9 @@ func TestBuildGeminiSettingsCommandsOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildGeminiSettings error: %v", err)
 	}
+	if settings.GeneratedBy != "agent-layer" {
+		t.Fatalf("expected _generatedBy agent-layer, got %q", settings.GeneratedBy)
+	}
 	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
 		t.Fatalf("expected allowed tools")
 	}
