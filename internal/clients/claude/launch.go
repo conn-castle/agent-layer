@@ -19,8 +19,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	if model != "" {
 		args = append(args, "--model", model)
 	}
+	// Pass --effort only when there is no agent_specific effortLevel override.
+	// agent_specific.effortLevel is written to settings.json and CLI args take
+	// precedence over settings, so emitting --effort would shadow the override.
 	effort := cfg.Config.Agents.Claude.ReasoningEffort
-	if effort != "" {
+	if effort != "" && !config.HasAgentSpecificKey(cfg.Config.Agents.Claude.AgentSpecific, "effortLevel") {
 		args = append(args, "--effort", effort)
 	}
 	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {

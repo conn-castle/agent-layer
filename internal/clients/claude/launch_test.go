@@ -171,6 +171,47 @@ func TestLaunchClaudeNoEffortWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestLaunchClaudeEffortSkippedWithAgentSpecificOverride(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	stubPath := filepath.Join(binDir, "claude")
+	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+		t.Fatalf("write stub: %v", err)
+	}
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					Model:           "opus",
+					ReasoningEffort: "high",
+					AgentSpecific: map[string]any{
+						"effortLevel": "low",
+					},
+				},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	env := os.Environ()
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args file: %v", err)
+	}
+	if strings.Contains(string(got), "--effort") {
+		t.Fatalf("expected --effort to be skipped when agent_specific.effortLevel is set, got: %s", string(got))
+	}
+}
+
 func TestLaunchClaudeYOLO(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()

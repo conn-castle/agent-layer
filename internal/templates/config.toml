@@ -20,6 +20,7 @@ enabled = true
 # model = "..."
 # reasoning_effort is optional for Opus models only.
 # reasoning_effort = "medium" # low | medium | high | max
+# Note: "max" is session-only (passed via --effort CLI flag) and is not written to .claude/settings.json.
 # local_config_dir isolates Claude Code settings and caches per repo.
 # When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
 # For al vscode, CLAUDE_CONFIG_DIR is set when both this and agents.claude_vscode
