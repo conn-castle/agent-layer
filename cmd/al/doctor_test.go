@@ -138,9 +138,6 @@ func TestMCPDiscoveryReporter_Spinner(t *testing.T) {
 	reporter := newMCPDiscoveryReporter([]string{"server1"}, true, io.Discard)
 	reporter.start()
 
-	// Allow spinner to tick a few times
-	time.Sleep(300 * time.Millisecond)
-
 	reporter.report(warnings.MCPDiscoveryEvent{ServerID: "server1", Status: warnings.MCPDiscoveryStatusDone})
 
 	// Wait for event to be processed

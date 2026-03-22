@@ -386,8 +386,8 @@ func decodeConfigLoose(data []byte) (config.Config, string) {
 }
 
 func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath string, configMTime time.Time) (*UpgradeReadinessCheck, error) {
-	vscodeEnabled := cfg.Agents.VSCode.Enabled != nil && *cfg.Agents.VSCode.Enabled
-	claudeVSCodeEnabled := cfg.Agents.ClaudeVSCode.Enabled != nil && *cfg.Agents.ClaudeVSCode.Enabled
+	vscodeEnabled := config.IsAgentEnabled(cfg.Agents.VSCode.Enabled)
+	claudeVSCodeEnabled := config.IsAgentEnabled(cfg.Agents.ClaudeVSCode.Enabled)
 	if !vscodeEnabled && !claudeVSCodeEnabled {
 		return nil, nil
 	}
@@ -453,7 +453,7 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 
 	// .mcp.json and .claude/settings.json are generated when claude OR claude_vscode is enabled.
 	// The Claude extension in VS Code depends on these, so they must be fresh for --no-sync.
-	claudeEnabled := cfg.Agents.Claude.Enabled != nil && *cfg.Agents.Claude.Enabled
+	claudeEnabled := config.IsAgentEnabled(cfg.Agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {
 		claudeMCPPath := filepath.Join(inst.root, ".mcp.json")
 		claudeMCPInfo, err := inst.sys.Stat(claudeMCPPath)

@@ -30,7 +30,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		return err
 	}
 
-	if cfg.Config.Agents.VSCode.Enabled != nil && *cfg.Config.Agents.VSCode.Enabled {
+	if config.IsAgentEnabled(cfg.Config.Agents.VSCode.Enabled) {
 		codexHome := filepath.Join(cfg.Root, ".codex")
 		env = clients.SetEnv(env, "CODEX_HOME", codexHome)
 	} else {
@@ -40,7 +40,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 
 	localConfigDir := cfg.Config.Agents.Claude.LocalConfigDir != nil && *cfg.Config.Agents.Claude.LocalConfigDir
-	if cfg.Config.Agents.ClaudeVSCode.Enabled != nil && *cfg.Config.Agents.ClaudeVSCode.Enabled && localConfigDir {
+	if config.IsAgentEnabled(cfg.Config.Agents.ClaudeVSCode.Enabled) && localConfigDir {
 		claudeConfigDir := filepath.Join(cfg.Root, ".claude-config")
 		env = clients.SetEnv(env, "CLAUDE_CONFIG_DIR", claudeConfigDir)
 	} else {

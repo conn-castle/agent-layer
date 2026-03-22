@@ -168,7 +168,7 @@ func CheckSecrets(cfg *config.ProjectConfig) []Result {
 	var results []Result
 	var enabled []config.MCPServer
 	for _, s := range cfg.Config.MCP.Servers {
-		if s.Enabled != nil && *s.Enabled {
+		if config.IsAgentEnabled(s.Enabled) {
 			enabled = append(enabled, s)
 		}
 	}
@@ -229,7 +229,7 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 	}
 
 	for _, a := range agents {
-		if a.Enabled != nil && *a.Enabled {
+		if config.IsAgentEnabled(a.Enabled) {
 			results = append(results, Result{
 				Status:    StatusOK,
 				CheckName: messages.DoctorCheckNameAgents,

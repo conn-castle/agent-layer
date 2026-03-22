@@ -193,7 +193,7 @@ func printRecommendation(out io.Writer, recommendation string) {
 func enabledMCPServerIDs(servers []config.MCPServer) []string {
 	ids := make([]string, 0, len(servers))
 	for _, server := range servers {
-		if server.Enabled != nil && *server.Enabled {
+		if config.IsAgentEnabled(server.Enabled) {
 			ids = append(ids, server.ID)
 		}
 	}

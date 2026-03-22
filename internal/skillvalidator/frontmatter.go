@@ -37,6 +37,7 @@ func parseFrontMatter(content string) (frontMatter, error) {
 	}
 
 	mapping := root.Content[0]
+	seen := make(map[string]bool)
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		keyNode := mapping.Content[i]
 		valueNode := mapping.Content[i+1]
@@ -44,6 +45,10 @@ func parseFrontMatter(content string) (frontMatter, error) {
 		if key == "" {
 			continue
 		}
+		if seen[key] {
+			return out, fmt.Errorf("frontmatter contains duplicate key %q", key)
+		}
+		seen[key] = true
 		out.keys = append(out.keys, key)
 		switch key {
 		case "name":

@@ -3,10 +3,9 @@ package terminal
 import "testing"
 
 func TestIsInteractive(t *testing.T) {
-	// IsInteractive returns false in test environments (no TTY).
-	// This test verifies the function runs without panic.
-	result := IsInteractive()
-	// In CI/test environments, this is typically false.
-	// We don't assert the value since it depends on the environment.
-	_ = result
+	// go test always runs with piped stdin/stdout, so IsInteractive
+	// must return false in any test environment.
+	if IsInteractive() {
+		t.Error("expected false: stdin/stdout are not terminals under go test")
+	}
 }

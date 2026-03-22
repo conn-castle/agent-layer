@@ -62,6 +62,13 @@ func TestLoadSkills_ParseError(t *testing.T) {
 	}
 }
 
+func TestParseSkillFrontMatter_DuplicateKeysReturnError(t *testing.T) {
+	_, err := parseSkill("---\nname: first\nname: second\ndescription: test\n---\nBody.\n")
+	if err == nil || !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("expected duplicate key error, got %v", err)
+	}
+}
+
 func TestParseSkill_InvalidFrontMatterSyntax(t *testing.T) {
 	_, err := parseSkill("---\ndescription: test\nmetadata: [\n---\n")
 	if err == nil || !strings.Contains(err.Error(), "invalid front matter") {

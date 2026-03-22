@@ -176,7 +176,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.CopilotCLIModel = cfg.Config.Agents.CopilotCLI.Model
 
 	for _, srv := range cfg.Config.MCP.Servers {
-		if srv.Enabled != nil && *srv.Enabled {
+		if config.IsAgentEnabled(srv.Enabled) {
 			choices.EnabledMCPServers[srv.ID] = true
 		}
 	}

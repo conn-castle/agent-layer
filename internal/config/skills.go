@@ -274,10 +274,16 @@ func parseSkillFrontMatter(lines []string) (skillFrontMatter, error) {
 	}
 
 	mapping := root.Content[0]
+	seen := make(map[string]bool)
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		keyNode := mapping.Content[i]
 		valueNode := mapping.Content[i+1]
 		key := strings.TrimSpace(keyNode.Value)
+
+		if key != "" && seen[key] {
+			return skillFrontMatter{}, fmt.Errorf("skill front matter contains duplicate key %q", key)
+		}
+		seen[key] = true
 
 		switch key {
 		case "name":
