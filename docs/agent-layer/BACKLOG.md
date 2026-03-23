@@ -64,6 +64,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: A v0.10.0 task removes obsolete skill migration code while preserving upgrade behavior for supported source versions.
     Notes: Gate removal on evidence that dropping the migration path does not create user-impacting upgrade regressions.
 
+- Backlog 2026-02-25 playwright-headless-parity: Evaluate headless Playwright mode without functional regressions
+    Priority: Medium. Area: test automation / Playwright runner UX
+    Description: Evaluate whether Playwright can run in headless mode by default without functional regressions. Headed mode is noisy and disruptive during normal development.
+    Acceptance criteria: Headless and headed modes compared for behavior parity; headless made default if parity is confirmed; explicit opt-in path preserved for headed debugging.
+    Notes: Keep an explicit opt-in path for headed runs for local debugging even if headless becomes the default.
+
 - Backlog 2026-02-16 skill-install: Install community skills from external sources
     Priority: Low. Area: skills / ecosystem
     Description: Allow users to install agentskills.io-compliant skills from GitHub repos or a registry (e.g., `al skill add <repo>` or `al skill add <name>`).

@@ -27,11 +27,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
 
 <!-- ENTRIES START -->
 
-- Decision 2026-03-21 native-skill-sync: Replace MCP prompt delivery with native skill directory sync
-    Decision: Removed the internal `al mcp-prompts` MCP server. All clients now receive skills via native directory sync (`.claude/skills/`, `.gemini/skills/`, etc.) with full subdirectory support (`scripts/`, `references/`, `assets/`). Supersedes Decision 2026-01-17 e5f6a7b and Decision 2026-02-23 mcp-prompts-dispatch-bypass.
-    Reason: MCP prompts return flat text only — no path context, no subdirectory access. Every agent CLI natively supports the agentskills.io SKILL.md directory format. Native sync eliminates the resource gap and removes an entire server process.
-    Tradeoffs: Lost the unified MCP prompt API for skill delivery, but this was only used by Claude and Gemini, and both support native skills. Gained full Agent Skills spec compatibility and simpler architecture.
-
 - Decision 2026-01-17 a7b8c9d: VS Code launchers for CODEX_HOME
     Decision: Provide repo-specific VS Code launchers that set `CODEX_HOME` at process start.
     Reason: The Codex extension reads `CODEX_HOME` only at startup; launchers ensure correct repo context.
@@ -87,25 +82,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Keep the template file clean and user-editable while ensuring the root `.gitignore` stays managed and consistent.
     Tradeoffs: Legacy blocks with markers/hash now require `al upgrade` to restore the template file before `al sync` will succeed.
 
-- Decision 2026-02-07 p0a-init-dispatch: Bypass repo-pin dispatch for `al init`
-    Decision: `al init` now bypasses repo-pin binary dispatch and always executes on the invoking CLI binary.
-    Reason: Upgrade operations must not be executed by an older repo-pinned version that is being replaced.
-    Tradeoffs: `al init` behavior can differ from other subcommands in pinned repos when global and pinned versions diverge.
-
-- Decision 2026-02-07 p0a-pin-validation: Resolve and validate explicit init pin targets
-    Decision: `al init --version latest` resolves via the latest release API to a normalized semver pin, and explicit `--version` targets are validated against upstream release tags before writing `.agent-layer/al.version`.
-    Reason: Upgrade guidance must be executable as written, and typo/nonexistent versions should fail before mutating repo pin state.
-    Tradeoffs: Explicit pinning now depends on network access to validate release existence and can fail in fully offline workflows.
-
 - Decision 2026-02-07 p0a-pin-recovery: Empty/corrupt pin files produce warnings, not errors
     Decision: `readPinnedVersion()` treats empty and non-semver pin files as "no pin" (returns a warning string instead of an error). `writeVersionFile()` auto-repairs empty/corrupt pins without requiring prompts.
     Reason: A broken pin file should never make the CLI completely unusable. `al init`/`al upgrade` must always be able to self-heal the pin state.
     Tradeoffs: Corrupt pins silently fall through to the current binary version; users see a warning but may not notice it in noisy terminal output.
-
-- Decision 2026-02-08 p0b-upgrade-contract: Sequential guarantee + three-tier upgrade taxonomy
-    Decision: Publish upgrade policy with three event categories (`safe auto`, `needs review`, `breaking/manual`) and a sequential compatibility guarantee (`N-1` to `N` release-line upgrades only, for example `0.6.x` -> `0.7.x`).
-    Reason: Provides a clear, enforceable public contract without overpromising broad multi-line migration support before lifecycle tooling lands.
-    Tradeoffs: Skipped-line upgrades remain best effort and may require additional manual migration guidance per release.
 
 - Decision 2026-02-09 p1b-ownership-baseline: Ownership classification now uses embedded manifests plus canonical baseline state
     Decision: `al upgrade plan` ownership classification now uses committed per-release manifests (`internal/templates/manifests/*.json`) and canonical repo baseline state (`.agent-layer/state/managed-baseline.json`) with section-aware policies (`memory_entries_v1`, `memory_roadmap_v1`, `allowlist_lines_v1`), and emits `unknown_no_baseline` when evidence is insufficient.
@@ -116,16 +96,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al init` is one-time scaffolding (errors if `.agent-layer/` already exists). Upgrades/repairs are done via `al upgrade plan` + `al upgrade`. `.agent-layer/.env` and `.agent-layer/config.toml` are user-owned and seeded only when missing (never overwritten by init/upgrade). `.agent-layer/.gitignore` is agent-owned internal and is always overwritten and excluded from upgrade plans/diffs.
     Reason: Avoid accidental clobbering of user-specific configuration, reduce cognitive load in upgrade plans, and simplify init semantics by removing upgrade behavior.
     Tradeoffs: Changes to `.agent-layer/.gitignore` cannot be preserved; repos without baseline evidence will require an `al upgrade` run to establish it (supersedes earlier init-overwrite guidance).
-
-- Decision 2026-02-10 pin-required: Pinning required for supported repos
-    Decision: Treat `.agent-layer/al.version` as required and do not support or document an end-user “unpin” workflow.
-    Reason: Unpinned repos can silently drift when developers upgrade the global `al` install, causing hard-to-debug mismatches.
-    Tradeoffs: Advanced users can still delete the pin file manually, but that is unsupported and reduces reproducibility.
-
-- Decision 2026-02-11 p1e-readiness-heuristics: Readiness checks are text-first with VS Code mtime heuristic
-    Decision: Implement upgrade readiness checks in text dry-run output; detect stale `--no-sync` state using VS Code generated-output presence plus config-vs-output mtime comparison (instead of full sync-content diffing).
-    Reason: Keeps checks decoupled from sync internals while surfacing practical risk before upgrade apply.
-    Tradeoffs: mtime-based detection can produce false positives after non-functional config file touches; accepted for lower complexity and maintenance.
 
 - Decision 2026-02-12 chlog-immutable: CHANGELOG entries are historical and immutable
     Decision: Never modify published CHANGELOG entries. They record what happened at the time of release and are treated as fixed historical records, even if terminology or paths have since changed.
@@ -147,50 +117,15 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Prevent accidental destructive upgrades and make non-interactive intent explicit per mutation category.
     Tradeoffs: Existing `al upgrade --force` automation breaks and must be migrated to explicit apply flags.
 
-- Decision 2026-02-14 p2c-manual-rollback-status: Manual rollback eligibility and status handling
-    Decision: `al upgrade rollback <snapshot-id>` accepts only snapshots in `applied` status; successful manual rollback preserves `applied`, while manual rollback failures set `rollback_failed` with `failure_step=manual_rollback`.
-    Reason: Keep rollback semantics deterministic with the current snapshot schema while preserving a clear failure trail for failed manual restores.
-    Tradeoffs: Snapshot metadata cannot currently distinguish "applied and later manually restored" from "applied and never manually restored" without a future schema extension.
-
 - Decision 2026-02-15 p3a-migration-source-fallback: Upgrade migrations run source-agnostic operations when source version cannot be resolved
     Decision: Release migration manifests are required per supported target version (`internal/templates/migrations/<target>.json`) with `min_prior_version`. During `al upgrade`, source-agnostic operations still execute when source version resolution fails; source-gated operations are skipped with deterministic report entries.
     Reason: Users expect upgrades to continue to the latest version even when legacy repos lack reliable source-version evidence.
     Tradeoffs: Some source-dependent migrations may be deferred in ambiguous repos and require explicit follow-up if skip reports indicate missed transitions.
 
-- Decision 2026-02-15 p3b-hard-removals: Breaking surfaces are removed immediately without compatibility shims
-    Decision: Upgrade-related command/flag removals use clean breaks with explicit migration guidance; no deprecation windows or compatibility shims are kept. `al upgrade plan --json` is removed, and text output is the only supported plan interface.
-    Reason: Reduces long-term maintenance burden and avoids carrying legacy compatibility branches.
-    Tradeoffs: Existing automation that depended on removed surfaces must migrate in the same release window.
-
-- Decision 2026-02-15 p3c-env-namespace: `.agent-layer/.env` is AL_-only with no key-migration path
-    Decision: Only `AL_`-prefixed keys are loaded from `.agent-layer/.env`. Non-`AL_` keys are intentionally ignored, and upgrades do not provide env-key namespace migration.
-    Reason: Keeps secret loading deterministic and avoids perpetually supporting mixed env-key conventions.
-    Tradeoffs: Repositories that previously used non-`AL_` keys must rename them manually when adopting Agent Layer conventions.
-
-- Decision 2026-02-15 p3d-embedded-template-source: Embedded templates are the only supported template source in this release line
-    Decision: Agent Layer upgrade/init workflows support embedded templates only; non-default template repositories and template-source pinning metadata are out of scope.
-    Reason: Keep upgrade behavior clear, deterministic, and maintainable by avoiding parallel template-source paths.
-    Tradeoffs: Teams cannot use first-class custom template repositories in this release line and must revisit this in a future scoped backlog item if needed.
-
-- Decision 2026-02-15 p6a-mcp-default-version-lane: Default MCP template dependencies are pinned with explicit floating opt-in
-    Decision: Seeded MCP server commands now pin concrete dependency versions by default (`npx` and `uvx` surfaces), with inline commented examples showing the explicit floating/latest opt-in lane.
-    Reason: Keep default sync/upgrade behavior deterministic while preserving an intentional path for teams that want fastest-updating external MCP tools.
-    Tradeoffs: Pinned defaults can lag upstream MCP releases until Agent Layer updates the template versions.
-
-- Decision 2026-02-15 p7b-wizard-profile-preview-default: Profile mode is preview-first with explicit apply
-    Decision: `al wizard --profile` defaults to preview-only rewrite diffs and requires `--yes` for writes; secret prompts support explicit `skip` and `cancel`; backups are cleaned only via explicit `--cleanup-backups`.
-    Reason: Keep non-interactive wizard usage safe in CI/automation and avoid accidental config rewrites.
-    Tradeoffs: Adds extra flags for scripted flows and requires explicit cleanup for backup files.
-
 - Decision 2026-02-15 rel-working-tree-manifest: Manifest generation reads from working tree, not git tags
     Decision: `gentemplatemanifest` reads template files from the working tree via `os.ReadFile`/`filepath.WalkDir` instead of `git show <tag>:<path>`. The `--tag` flag is replaced with `--version`.
     Reason: Eliminates the tag chicken-and-egg problem where the manifest must be committed before tagging but the tool required a tag to generate the manifest.
     Tradeoffs: The manifest is no longer guaranteed to match tag content; the release preflight gate mitigates this risk.
-
-- Decision 2026-02-16 p12-no-launch-plan: Do not implement `al launch-plan`
-    Decision: `al launch-plan <client>` will not be implemented as a separate command. If dry-run sync demand emerges, add `--dry-run` to `al sync` instead.
-    Reason: `al sync` already writes deterministic, gitignored outputs that are safe to regenerate and inspect. `al upgrade plan` handles preview for upgrade mutations. `--no-sync` exists only on `al vscode`; other clients always sync before launch. No `launch-plan` code was ever built, and a separate command would duplicate sync semantics.
-    Tradeoffs: No dedicated pre-sync preview exists today; users who want to inspect outputs must run `al sync` and review the generated files.
 
 - Decision 2026-02-17 p12-yolo-mode: Approvals policy expanded to 5-mode system (supersedes f6a7b8c)
     Decision: Add `yolo` as a fifth `approvals.mode` value. YOLO mode auto-approves commands and MCP (like `all`) and also sends full-auto flags to each client: Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove=true`.
@@ -212,21 +147,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Without chaining, users jumping multiple versions (e.g., 0.8.0 → 0.8.2) miss intermediate migrations. The v0.8.1 config migration shipped after the binary, so it was moved to 0.8.2's manifest to catch all users.
     Tradeoffs: Manifest ordering depends on semver sort of filenames; manifests must have unique operation IDs across the chain or later duplicates are silently skipped.
 
-- Decision 2026-02-18 config-field-catalog: Shared config field catalog in `internal/config/fields.go`
-    Decision: Centralize config field metadata (type, valid options, required flag, allow-custom) in a single registry. Wizard and upgrade prompts derive option lists from the catalog instead of maintaining separate hardcoded slices. `validate.go` derives approval mode validation from the catalog. Upgrade `config_set_default` prompts receive field metadata to show type-aware numbered choices (bool true/false, enum options) instead of yes/no.
-    Reason: Config field options were duplicated across `internal/wizard/catalog.go` (option lists), `validate.go` (valid value maps), and had no way to flow to the upgrade prompter. A shared catalog provides a single source of truth and enables richer upgrade prompts.
-    Tradeoffs: Adding a new config field now requires updating `internal/config/fields.go` in addition to `types.go`/`validate.go`; accepted because the catalog is the natural place to document field constraints.
-
-- Decision 2026-02-19 validate-mcp-sanitize: Validation silently strips transport-incompatible MCP fields (supersedes wizard-only approach)
-    Decision: `Validate()` in `internal/config/validate.go` now silently clears transport-incompatible fields (headers/url/http_transport on stdio; command/args/env on http) before checking required fields. This runs at config load time, so every code path that loads config benefits — not just the wizard.
-    Reason: The v0.8.3 wizard-mcp-sanitize fix only ran during `al wizard`, meaning existing configs with stale fields still blocked all commands (`al claude`, `al sync`, etc.) until the user manually ran the wizard. Users expected the fix to be automatic.
-    Tradeoffs: Validation now mutates the config (pointer receiver), which is slightly unusual for a method named Validate; accepted because the alternative (separate Sanitize call) risks code paths that forget to call it. The wizard sanitization remains as a belt-and-suspenders layer that also cleans the file on disk.
-
-- Decision 2026-02-19 wizard-dotted-key-sanitize: Wizard removeKeyFromBlock handles TOML dotted keys
-    Decision: `removeKeyFromBlock` in `internal/wizard/patch.go` now detects and removes TOML dotted sub-key lines (e.g., `headers.Authorization = "val"`) in addition to inline table format (`headers = { ... }`). A new `parseDottedPrefixLine` helper matches lines where the key is a dotted prefix.
-    Reason: The v0.8.3 wizard sanitization only worked for inline table format. TOML dotted keys (`headers.Foo = "val"`) were invisible to `parseKeyLineWithState` because it requires `key =` (equals after key), not `key.` (dot after key). Users with dotted-key headers on stdio servers would run the wizard and still get validation errors.
-    Tradeoffs: Quoted root keys (`"headers".Foo = "val"`) remain unsupported; accepted because this format is extremely rare and the validation-level sanitization provides a safety net regardless of TOML syntax.
-
 - Decision 2026-02-20 e2e-mandatory-upgrade-ci: Upgrade scenarios mandatory in CI via auto-detected manifest version (supersedes e2e-two-lane-hermetic skip behavior)
     Decision: E2E testing uses a scenario-based bash harness with contract-level assertions, authentic upgrade source state from downloaded prior release binaries, mandatory upgrade coverage in CI (`test-e2e-ci` with online + required-upgrade flags), and HOME isolation to avoid host config pollution.
     Reason: The previous monolithic flow allowed silent upgrade-scenario skips and weak "no-crash" checks, reducing confidence in real user workflows (`init -> upgrade -> sync -> launch`).
@@ -237,25 +157,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Gemini CLI's Trusted Folders feature silently replaces untrusted project settings with `{}`, discarding all MCP servers. Users already expressed trust by enabling Gemini in `config.toml`; propagating that trust to the Gemini runtime is the expected behavior.
     Tradeoffs: Writes to a file outside the repo boundary (`~/.gemini/`). Acceptable because this is a user-level runtime config (analogous to existing `~/.codex/` writes) and failure is non-fatal.
 
-- Decision 2026-02-20 config-catalog-scope: Field catalog is wizard-managed fields, not full schema
-    Decision: The field catalog (fields.go) covers fields that the wizard prompts for and upgrade migrations reference. It is not a complete TOML schema inventory. Fields like warnings.noise_mode and warnings.version_update_on_sync are valid config keys but not in the catalog because they are not wizard-managed.
-    Reason: Catalog entries carry wizard UI metadata (options, descriptions, AllowCustom). Adding entries for non-interactive fields would add maintenance burden with no UX benefit.
-    Tradeoffs: Catalog metadata and strict schema validation must remain aligned when adding new wizard-managed fields.
-
 - Decision 2026-02-20 unknown-key-repairable: Strict unknown-key validation with lenient repair path
     Decision: Runtime config parsing rejects unknown TOML keys via strict decode (including enable-only agent sections), while unknown-key failures are wrapped as `ErrConfigValidation` so `al wizard` and `al doctor` can still load leniently and guide repair.
     Reason: Silent unknown-key acceptance hid invalid config (for example, unsupported agent fields), but hard-failing repair tools made recovery impossible.
     Tradeoffs: Runtime commands fail fast on unknown keys until users repair config through wizard/doctor or manual edits.
-
-- Decision 2026-02-21 upg-config-toml-destructive: Config migrations use destructive TOML formatting
-    Decision: `upgrade_migrations.go` continues to use `tomlv2.Marshal` for config updates, which strips user comments and reorders keys.
-    Reason: Full TOML preservation is complex and the wizard/profile flows already provide previews and backups, mitigating the risk of unexpected data loss.
-    Tradeoffs: Users lose manual formatting/comments in `config.toml` when a migration executes; accepted for implementation simplicity and deterministic output.
-
-- Decision 2026-02-22 agent-specific-key-rename: Rename agent passthrough key from `custom` to `agent_specific`
-    Decision: Replace `agents.<client>.custom` with `agents.<client>.agent_specific` across schema, sync/warning logic, templates, docs, tests, and e2e scenarios; no backward-compatibility alias is kept.
-    Reason: Standardize the naming to explicit intent ("agent-specific passthrough") and remove ambiguous "custom" terminology.
-    Tradeoffs: Existing configs using `custom` now fail strict parsing and must be updated to `agent_specific`.
 
 - Decision 2026-02-22 claude-config-dir: Opt-in repo-local `CLAUDE_CONFIG_DIR` via `local_config_dir` config field
     Decision: Gate `CLAUDE_CONFIG_DIR=<repo>/.claude-config` behind `[agents.claude] local_config_dir = true` (opt-in, default false). When enabled, `al claude` uses warn-and-preserve on mismatch and `al vscode` uses config-flag-based set/unset (matching `CODEX_HOME` pattern). Use `.claude-config/` (not `.claude/`) to avoid collision with the project-level `.claude/settings.json` generated by `al sync`. Keep `.claude-config/` in the gitignore block unconditionally.
@@ -282,25 +187,15 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: A naive all-fields check would fail forever because historical required fields existed before migration manifests had operations.
     Tradeoffs: The baseline allowlist must be maintained deliberately when introducing new required fields; stale allowlist entries can hide drift if not reviewed.
 
-- Decision 2026-02-25 config-key-style-snake-case: Canonical config keys use snake_case
-    Decision: Use snake_case for `.agent-layer/config.toml` keys and table names; rename `[agents.claude-vscode]` to `[agents.claude_vscode]` and ship a source-agnostic v0.8.8 migration (`config_rename_key` + `config_set_default`) for compatibility.
-    Reason: Mixed kebab-case and snake_case in one schema increased learning friction and caused avoidable drift across templates, docs, and tests.
-    Tradeoffs: Repos that skip `al upgrade`/`al wizard` will fail strict parsing until the key is renamed, while historical release artifacts still reference the legacy key for provenance.
-
 - Decision 2026-02-25 docs-retention-policy: Website publish enforces docs version retention and artifact pruning
     Decision: `cmd/publish-site` now enforces a bounded stable-release retention policy after `docs:version`: keep up to 4 newest patch releases from the newest minor line plus the newest patch release for each of the newest 4 minor lines, drop prerelease entries, and prune dropped versions from `versions.json`, `versioned_docs/`, and `versioned_sidebars/`. Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally rejected.
     Reason: Unbounded version snapshots in `agent-layer-web` grow maintenance and deploy footprint over time; retention must be enforced in the publisher because deploy only publishes `main`.
     Tradeoffs: Older historical docs snapshots beyond the retention window are intentionally removed on each release publish; maintainers must run publisher manually if immediate cleanup is needed before the next release. Prerelease docs publication is unavailable until prerelease support is explicitly reintroduced end-to-end.
 
-- Decision 2026-02-26 phase15-frontmatter-parser-yaml-v3: Skill frontmatter parsing uses `go.yaml.in/yaml/v3` with strict per-field validation
-    Decision: For Phase 15 `skill-frontmatter`, parse and serialize skill frontmatter with `go.yaml.in/yaml/v3`, enforce required/typed fields in code (`description` required, `metadata` string-map, `compatibility`/`allowed-tools` string), and keep unknown keys parse-tolerant until validator work lands.
-    Reason: YAML parsing replaces brittle line-scanning while preserving fail-loud behavior and enabling metadata serialization needed for generated Codex/Antigravity SKILL.md outputs.
-    Tradeoffs: `go.yaml.in/yaml/v3` keeps us on the stable v3 API surface; migration to `go.yaml.in/yaml/v4` is deferred to a separate follow-up issue to avoid expanding Phase 15 scope.
-
-- Decision 2026-02-26 phase15-frontmatter-parser-yaml-org-path: Skill frontmatter uses maintained YAML module path directly (supersedes phase15-frontmatter-parser-yaml-v3)
-    Decision: Replace first-party YAML usage with `go.yaml.in/yaml/v3` and disallow direct imports of `gopkg.in/yaml.v3` in this repository.
-    Reason: Avoid direct reliance on the archived `gopkg.in` YAML module path while preserving stable behavior and avoiding pre-release `v4` adoption.
-    Tradeoffs: `gopkg.in/yaml.v3` may still appear transitively until upstream dependencies migrate; full graph removal requires broader dependency upgrades outside this scoped change.
+- Decision 2026-02-26 phase15-frontmatter-parser-yaml-org-path: Skill frontmatter uses `go.yaml.in/yaml/v3` with strict per-field validation (supersedes phase15-frontmatter-parser-yaml-v3)
+    Decision: Parse and serialize skill frontmatter with `go.yaml.in/yaml/v3` (not `gopkg.in/yaml.v3`), enforce required/typed fields in code (`description` required, `metadata` string-map, `compatibility`/`allowed-tools` string), and keep unknown keys parse-tolerant until validator work lands.
+    Reason: YAML parsing replaces brittle line-scanning while enabling metadata serialization. The `go.yaml.in` path avoids reliance on the archived `gopkg.in` module path while preserving stable v3 behavior and avoiding pre-release `v4` adoption.
+    Tradeoffs: `gopkg.in/yaml.v3` may still appear transitively until upstream dependencies migrate. Migration to `go.yaml.in/yaml/v4` is deferred.
 
 - Decision 2026-02-26 phase15-skill-parse-validate-separation: Keep skill parsing tolerant and enforce spec in validator/doctor
     Decision: `internal/config` skill parsing remains backward-compatible (path-derived canonical names, unknown frontmatter tolerated, no hard requirement for frontmatter `name` at parse time), while Phase 15 spec checks are enforced in `internal/skillvalidator` and surfaced as `al doctor` skill warnings.
@@ -312,20 +207,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Unauthenticated GitHub API calls are rate-limited to 60 req/hr per IP. GitHub Actions runners share IPs, causing intermittent CI failures when the rate limit is hit during the "Resolve upgrade binaries" phase.
     Tradeoffs: Authenticated requests raise the limit to 5000 req/hr but require a token; unauthenticated fallback is preserved for local offline runs.
 
-- Decision 2026-03-01 skills-flat-format-removal: Flat-format skills removed; single migrate_skills_format operation replaces per-skill renames
-    Decision: Remove flat-format (`<name>.md`) skill loading entirely. Replace 9 individual `rename_file` migration operations with a single `migrate_skills_format` operation that scans for all flat skills (built-in and user-authored), runs pre-flight conflict detection, prompts for confirmation, and migrates to directory format (`<name>/SKILL.md`).
-    Reason: The previous approach only migrated built-in skills, leaving user-authored skills stranded. Dual code-path support (flat + directory) added permanent maintenance burden.
-    Tradeoffs: Hard break for repos with flat skills that skip `al upgrade`; accepted because `LoadSkills` returns an actionable error directing users to run `al upgrade`.
-
 - Decision 2026-03-01 breaking-change-metadata: Breaking-change display is data-driven from migration manifests
     Decision: Move breaking-change notices and details into the migration manifest (`breaking`, `breaking_notice`, `breaking_details` fields) instead of hardcoding per-kind display logic in the upgrade report renderer.
     Reason: Hardcoded display logic couples the renderer to specific migration kinds and requires code changes for every new breaking migration. Data-driven display lets future breaking migrations carry their own user-facing copy without touching the renderer.
     Tradeoffs: Migration manifest validation is now stricter (breaking requires notice; notice/details require breaking flag); accepted because manifest authoring is a release-time activity with clear validation feedback.
-
-- Decision 2026-03-01 context-md-memory-file: Add CONTEXT.md as a sixth memory file for general-purpose project context
-    Decision: Add `docs/agent-layer/CONTEXT.md` as a free-form, section-based memory file using the `memory_entries_v1` ownership policy and `<!-- ENTRIES START -->` marker.
-    Reason: The existing five memory files have specific scopes (issues, backlog, roadmap, decisions, commands); project-wide context (domain concepts, naming conventions, team norms) had no canonical home.
-    Tradeoffs: Adds one more file to the memory surface; accepted because the alternative was agents writing miscellaneous context into inappropriate files or losing it between sessions.
 
 - Decision 2026-03-02 user-owned-conventions: Extract project-specific conventions to user-managed `04_conventions.md`
     Decision: Move 5 project-specific instruction items (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety) from `00_base.md` into a new `04_conventions.md` that is user-managed: seeded on `al init`, never overwritten on `al upgrade`, and excluded from managed diffs. A new `append_to_file` migration kind enables delivering new conventions to existing users via opt-in migration entries.
@@ -352,22 +237,12 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Deep-dive analysis showed: (1) the phrase is reliably determinable from conversation context (the agent knows whether it was invoked standalone or by a parent skill); (2) enumerating parent skills would couple these skills to the orchestrator roster, requiring updates whenever an orchestrator is added/removed; (3) all three skills use identical phrasing, confirming it is a stable cross-cutting convention.
     Tradeoffs: Requires the model to reason about invocation context, but this is standard MCP/delegation behavior.
 
-- Decision 2026-03-06 skill-ship-pr-phase7-inline-close: ship-pr Phase 7 stays inline, not extracted
-    Decision: Keep Phase 7 "Audit comment coverage" inline in ship-pr. Do not extract to a separate sub-skill.
-    Reason: Deep-dive analysis showed: (1) Phase 7 has no independent activation trigger — it only runs as a post-delegation verification within ship-pr; (2) extracting it would confuse routing since users would never invoke "verify-comment-coverage" directly; (3) the bot-comment contradiction (the actual issue) was resolved by aligning ship-pr to address-pr-comments on feedback-comment filtering.
-    Tradeoffs: Phase 7 remains ~25 lines inline, but this is proportionate to its verification responsibility.
-
-- Decision 2026-03-06 skill-design-doc: Add `SKILL-DESIGN.md` as a comprehensive skill authoring reference
-    Decision: Create `docs/SKILL-DESIGN.md` as a fully evidence-backed skill design guide with 12 design principles, a key-findings summary section, an evidence-linked anti-patterns table, and 18 academic/industry references covering context engineering, instruction-following degradation, constraint composition, context rot, and position bias.
-    Reason: Skills are the primary interface for guiding LLM behavior; design quality directly affects instruction-following accuracy. Codifying the research with specific evidence (IFScale 68% ceiling at 500 instructions, Lost in the Middle ~20pp middle-position drop, Context Rot single-distractor degradation) prevents recurring design mistakes and grounds design decisions in empirical findings rather than intuition.
-    Tradeoffs: One more doc to maintain; content may need updating as new LLM research emerges. The guide is 756 lines, which is longer than a typical skill but appropriate for a reference document that is read by humans, not loaded into agent context.
-
-- Decision 2026-03-16 copilot-cli-support: Add GitHub Copilot CLI as a supported client
-    Decision: Add `al copilot` command with full support for instructions (via AGENTS.md + .github/copilot-instructions.md), skills (.github/skills/<name>/SKILL.md), MCP servers (.copilot/mcp-config.json, repo-local only), and approval modes (--yolo, --allow-all-tools). No internal prompt server is exposed because Copilot CLI natively reads AGENTS.md and .github/copilot-instructions.md. Model is passed via --model flag (consistent with other CLIs). Reasoning effort is not supported in this release.
-    Reason: Copilot CLI reached GA in February 2026 and supports repo-local MCP config, skills, and instructions in formats compatible with Agent Layer's projection pipeline. Users of multiple agents benefit from consistent Copilot CLI configuration.
-    Tradeoffs: Copilot CLI does not support global MCP config from Agent Layer (only repo-local .copilot/mcp-config.json); users with global-only MCP needs must configure Copilot CLI's global config manually. The Tools: ["*"] field is added to every MCP server entry to enable all tools by default.
-
 - Decision 2026-03-20 claude-max-effort-cli-only: Claude `max` reasoning effort is passed via --effort CLI flag, not settings.json
     Decision: Add `max` to the Claude reasoning_effort field catalog. Pass all effort values (including `max`) via `--effort` CLI arg in the launcher. Exclude `max` from settings.json sync because Claude Code does not support `max` as a persistable `effortLevel` value — it is session-only.
     Reason: Claude Code docs (as of v2.1.79) state `effortLevel` in settings.json accepts only `low`, `medium`, `high`. `max` was removed from the persistent UI in v2.1.72 but remains available via the `--effort` CLI flag and `CLAUDE_CODE_EFFORT_LEVEL` env var as a session-scoped option.
     Tradeoffs: Dual delivery path (CLI arg for all values + settings.json for low/medium/high) adds minor complexity but ensures `max` works correctly and persistable values have a settings.json fallback for non-`al claude` launches.
+
+- Decision 2026-03-21 native-skill-sync: Replace MCP prompt delivery with native skill directory sync
+    Decision: Removed the internal `al mcp-prompts` MCP server. All clients now receive skills via native directory sync (`.claude/skills/`, `.gemini/skills/`, etc.) with full subdirectory support (`scripts/`, `references/`, `assets/`). Supersedes Decision 2026-01-17 e5f6a7b and Decision 2026-02-23 mcp-prompts-dispatch-bypass.
+    Reason: MCP prompts return flat text only — no path context, no subdirectory access. Every agent CLI natively supports the agentskills.io SKILL.md directory format. Native sync eliminates the resource gap and removes an entire server process.
+    Tradeoffs: Lost the unified MCP prompt API for skill delivery, but this was only used by Claude and Gemini, and both support native skills. Gained full Agent Skills spec compatibility and simpler architecture.
