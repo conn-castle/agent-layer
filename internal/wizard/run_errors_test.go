@@ -265,8 +265,15 @@ func TestRun_ConfirmError_RestoreMissing(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
-	// Config without MCP servers so missing defaults trigger
-	validConfig := basicAgentConfig()
+	// A partial legacy default set still triggers the restore prompt. A slim seed
+	// with zero default blocks is expected and goes straight to the catalog picker.
+	validConfig := basicAgentConfig() + `
+[[mcp.servers]]
+id = "context7"
+enabled = false
+transport = "stdio"
+command = "npx"
+`
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 

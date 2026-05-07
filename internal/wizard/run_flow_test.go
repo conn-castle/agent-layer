@@ -88,6 +88,57 @@ enabled = false
 	assert.Contains(t, string(data), `enabled = true`)
 }
 
+func TestRun_SlimSeedDoesNotPromptToRestoreMissingCatalogDefaults(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+
+	initialConfig := `[approvals]
+mode = "none"
+[agents.gemini]
+enabled = false
+[agents.claude]
+enabled = false
+[agents.claude_vscode]
+enabled = false
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = false
+[agents.antigravity]
+enabled = false
+[agents.copilot_cli]
+enabled = false
+[mcp]
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	ui := &MockUI{
+		NoteFunc: func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error {
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			require.NotContains(t, title, "Default MCP server entries are missing")
+			if title == messages.WizardApplyChangesPrompt {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+	require.NoError(t, err)
+
+	data, readErr := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	require.NoError(t, readErr)
+	assert.NotContains(t, string(data), "[[mcp.servers]]")
+}
+
 func TestRun_ApplyCancel(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
@@ -212,9 +263,17 @@ enabled = false
 			*value = true
 			return nil
 		},
-		SelectFunc:      func(title string, options []string, current *string) error { return nil },
-		MultiSelectFunc: func(title string, options []string, selected *[]string) error { return nil },
-		NoteFunc:        func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error { return nil },
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			// Toggle tavily on so the restored block is actually emitted.
+			// (Under wizard-catalog semantics, defaults left disabled in the multiselect
+			// are pruned from the rendered config even when restore-missing was confirmed.)
+			if title == "Enable Default MCP Servers" {
+				*selected = []string{"tavily"}
+			}
+			return nil
+		},
+		NoteFunc: func(title, body string) error { return nil },
 	}
 
 	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -222,7 +281,7 @@ enabled = false
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
 
-	// Verify restored in config
+	// Verify restored block for the toggled-on default appears in config.
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	assert.Contains(t, string(data), `id = "tavily"`)
 }

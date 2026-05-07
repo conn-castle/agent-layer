@@ -60,6 +60,24 @@ func TestMissingDefaultMCPServers_EmptyID(t *testing.T) {
 	assert.Empty(t, missing)
 }
 
+func TestHasAnyDefaultMCPServer(t *testing.T) {
+	defaults := []DefaultMCPServer{{ID: "context7"}, {ID: "tavily"}}
+
+	t.Run("false for slim seed with no servers", func(t *testing.T) {
+		assert.False(t, hasAnyDefaultMCPServer(defaults, nil))
+	})
+
+	t.Run("false for custom-only servers", func(t *testing.T) {
+		servers := []config.MCPServer{{ID: "custom"}}
+		assert.False(t, hasAnyDefaultMCPServer(defaults, servers))
+	})
+
+	t.Run("true when any catalog default exists", func(t *testing.T) {
+		servers := []config.MCPServer{{ID: "custom"}, {ID: "context7"}}
+		assert.True(t, hasAnyDefaultMCPServer(defaults, servers))
+	})
+}
+
 func TestLoadDefaultMCPServersReadError(t *testing.T) {
 	original := templates.ReadFunc
 	templates.ReadFunc = func(path string) ([]byte, error) {
@@ -74,32 +92,11 @@ func TestLoadDefaultMCPServersReadError(t *testing.T) {
 func TestLoadDefaultMCPServersNoServers(t *testing.T) {
 	original := templates.ReadFunc
 	templates.ReadFunc = func(path string) ([]byte, error) {
-		// Return valid TOML with required fields but no MCP servers
-		return []byte(`[approvals]
-mode = "all"
-
-[agents.gemini]
-enabled = true
-
-[agents.claude]
-enabled = true
-
-[agents.claude_vscode]
-enabled = true
-
-[agents.codex]
-enabled = true
-
-[agents.vscode]
-enabled = true
-
-[agents.antigravity]
-enabled = true
-[agents.copilot_cli]
-enabled = true
-
-[mcp]
-`), nil
+		if path == "mcp-catalog.toml" {
+			// Return a syntactically valid catalog file with no [[mcp.servers]] entries.
+			return []byte("# empty catalog\n[mcp]\n"), nil
+		}
+		return original(path)
 	}
 	t.Cleanup(func() { templates.ReadFunc = original })
 

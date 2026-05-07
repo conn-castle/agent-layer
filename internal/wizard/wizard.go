@@ -381,7 +381,7 @@ func promptModels(ui UI, choices *Choices) error {
 
 func promptDefaultMCPServers(ui UI, cfg *config.ProjectConfig, choices *Choices) error {
 	missingDefaults := missingDefaultMCPServers(choices.DefaultMCPServers, cfg.Config.MCP.Servers)
-	if len(missingDefaults) > 0 {
+	if len(missingDefaults) > 0 && hasAnyDefaultMCPServer(choices.DefaultMCPServers, cfg.Config.MCP.Servers) {
 		choices.MissingDefaultMCPServers = missingDefaults
 		restore := true
 		if err := ui.Confirm(fmt.Sprintf(messages.WizardMissingDefaultMCPServersPromptFmt, strings.Join(missingDefaults, ", ")), &restore); err != nil {

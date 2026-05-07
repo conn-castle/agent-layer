@@ -262,10 +262,9 @@ func TestRun_SecretFromEnv_Declined(t *testing.T) {
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			confirmCalls++
-			// Decline env import, accept rest
-			if confirmCalls == 2 {
-				*value = false // Decline env import
+			if title == fmt.Sprintf(messages.WizardEnvSecretFoundPromptFmt, "AL_TAVILY_API_KEY") {
+				confirmCalls++
+				*value = false
 				return nil
 			}
 			*value = true
@@ -411,10 +410,9 @@ func TestRun_SecretBlank_Retry(t *testing.T) {
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			confirmCalls++
-			// Second confirm is disable prompt - decline to retry
-			if confirmCalls == 2 {
-				*value = false // Don't disable, retry
+			if title == fmt.Sprintf(messages.WizardSecretMissingDisablePromptFmt, "AL_TAVILY_API_KEY", "tavily") {
+				confirmCalls++
+				*value = false
 				return nil
 			}
 			*value = true
@@ -507,8 +505,10 @@ func TestRun_SecretInputSkip_DisablesServer(t *testing.T) {
 
 	configData, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	require.NoError(t, err)
-	assert.Contains(t, string(configData), `id = "tavily"`)
-	assert.Contains(t, string(configData), "enabled = false")
+	// Skip-secret sets EnabledMCPServers[tavily] = false, which prunes the block
+	// from the rendered config under wizard-catalog semantics. The user can re-enable
+	// it later by re-running the wizard and supplying the secret.
+	assert.NotContains(t, string(configData), `id = "tavily"`)
 }
 
 func TestRun_SecretInputCancel_StopsWithoutApply(t *testing.T) {

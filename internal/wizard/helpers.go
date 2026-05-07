@@ -282,6 +282,11 @@ func restoredMCPServers(c *Choices) []string {
 		return nil
 	}
 	ids := make([]string, 0, len(c.MissingDefaultMCPServers))
-	ids = append(ids, c.MissingDefaultMCPServers...)
+	for _, id := range c.MissingDefaultMCPServers {
+		if c.EnabledMCPServersTouched && !c.EnabledMCPServers[id] {
+			continue
+		}
+		ids = append(ids, id)
+	}
 	return ids
 }

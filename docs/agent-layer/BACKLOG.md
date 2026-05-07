@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-05-07 mcp-catalog-docs-sibling-repo: Rewrite sibling-repo MCP-catalog docs after seed split
+    Priority: Medium. Area: docs / agent-layer-web
+    Description: After the wizard-catalog split landed (Decision 2026-05-07 mcp-catalog-seed-split), two pages in the sibling `agent-layer-web` repo are factually wrong: `docs/concepts.mdx:218` "Seeded servers (disabled by default)" list still implies the install seed ships six pre-disabled blocks, and `docs/getting-started.mdx:99` "`al init` seeds a small library of high-value MCP servers" sentence is no longer true. Rewrite both to describe the wizard-catalog model. Optionally, author a new canonical config-reference page that the slim seed's `[mcp]` URL (`https://agent-layer.dev/docs/reference#mcp-servers`) eventually points at as a dedicated page rather than a section anchor.
+    Acceptance criteria: `concepts.mdx` and `getting-started.mdx` accurately describe that `al init` ships zero `[[mcp.servers]]` blocks and the wizard owns the catalog; the docs URL referenced in the slim seed renders to a real, usable page.
+    Notes: Cross-repo work; out of scope for the trim PR per user direction. The current `reference#mcp-servers` anchor exists and is accurate, so the slim seed's URL is not broken — this is a follow-up for narrative consistency.
+
 - Backlog 2026-05-07 codex-openai-yaml-skill-metadata: Support Codex `agents/openai.yaml` skill metadata
     Priority: Medium. Area: skills / codex
     Description: Add Agent Layer support for Codex-specific optional skill metadata in `agents/openai.yaml`, including UI metadata, implicit invocation policy, and tool dependency declarations when a concrete built-in or user skill needs those Codex-native extensions.

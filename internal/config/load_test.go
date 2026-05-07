@@ -351,9 +351,14 @@ func TestLoadTemplateConfig(t *testing.T) {
 	if cfg == nil {
 		t.Fatalf("expected config, got nil")
 	}
-	// Verify the template config has MCP servers
-	if len(cfg.MCP.Servers) == 0 {
-		t.Fatalf("expected MCP servers in template config")
+	// The slim install seed deliberately ships no [[mcp.servers]] entries — those
+	// live in the wizard-only mcp-catalog.toml. Verify the seed parses cleanly and
+	// retains other top-level sections.
+	if len(cfg.MCP.Servers) != 0 {
+		t.Fatalf("expected slim seed to ship zero MCP servers, got %d", len(cfg.MCP.Servers))
+	}
+	if cfg.Approvals.Mode == "" {
+		t.Fatalf("expected approvals.mode to be present in template config")
 	}
 }
 
