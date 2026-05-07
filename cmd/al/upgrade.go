@@ -25,6 +25,7 @@ func newUpgradeCmd() *cobra.Command {
 	var applyManagedUpdates bool
 	var applyMemoryUpdates bool
 	var applyDeletions bool
+	var applyTmpDeletions bool
 	var diffLines int
 	var pinVersion string
 
@@ -41,11 +42,12 @@ func newUpgradeCmd() *cobra.Command {
 			}
 
 			policy, err := resolveUpgradeApplyPolicy(upgradeApplyInputs{
-				interactive:    isTerminal(),
-				yes:            yes,
-				applyManaged:   applyManagedUpdates,
-				applyMemory:    applyMemoryUpdates,
-				applyDeletions: applyDeletions,
+				interactive:       isTerminal(),
+				yes:               yes,
+				applyManaged:      applyManagedUpdates,
+				applyMemory:       applyMemoryUpdates,
+				applyDeletions:    applyDeletions,
+				applyTmpDeletions: applyTmpDeletions,
 			})
 			if err != nil {
 				return err
@@ -89,6 +91,7 @@ func newUpgradeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&applyManagedUpdates, "apply-managed-updates", false, messages.UpgradeFlagApplyManagedUpdates)
 	cmd.Flags().BoolVar(&applyMemoryUpdates, "apply-memory-updates", false, messages.UpgradeFlagApplyMemoryUpdates)
 	cmd.Flags().BoolVar(&applyDeletions, "apply-deletions", false, messages.UpgradeFlagApplyDeletions)
+	cmd.Flags().BoolVar(&applyTmpDeletions, "apply-tmp-deletions", false, messages.UpgradeFlagApplyTmpDeletions)
 	cmd.Flags().StringVar(&pinVersion, "version", "", messages.UpgradeFlagVersion)
 	cmd.PersistentFlags().IntVar(&diffLines, "diff-lines", install.DefaultDiffMaxLines, messages.UpgradeFlagDiffLines)
 	return cmd
@@ -189,24 +192,26 @@ func newUpgradeRepairGitignoreBlockCmd() *cobra.Command {
 }
 
 type upgradeApplyInputs struct {
-	interactive    bool
-	yes            bool
-	applyManaged   bool
-	applyMemory    bool
-	applyDeletions bool
+	interactive       bool
+	yes               bool
+	applyManaged      bool
+	applyMemory       bool
+	applyDeletions    bool
+	applyTmpDeletions bool
 }
 
 func (in upgradeApplyInputs) hasAnyApply() bool {
-	return in.applyManaged || in.applyMemory || in.applyDeletions
+	return in.applyManaged || in.applyMemory || in.applyDeletions || in.applyTmpDeletions
 }
 
 type upgradeApplyPolicy struct {
-	interactive      bool
-	yes              bool
-	explicitCategory bool
-	applyManaged     bool
-	applyMemory      bool
-	applyDeletions   bool
+	interactive       bool
+	yes               bool
+	explicitCategory  bool
+	applyManaged      bool
+	applyMemory       bool
+	applyDeletions    bool
+	applyTmpDeletions bool
 }
 
 type upgradeReviewState struct {
@@ -238,12 +243,13 @@ func resolveUpgradeApplyPolicy(in upgradeApplyInputs) (upgradeApplyPolicy, error
 		return upgradeApplyPolicy{}, fmt.Errorf(messages.UpgradeNonInteractiveRequiresYesApply)
 	}
 	return upgradeApplyPolicy{
-		interactive:      in.interactive,
-		yes:              in.yes,
-		explicitCategory: in.hasAnyApply(),
-		applyManaged:     in.applyManaged,
-		applyMemory:      in.applyMemory,
-		applyDeletions:   in.applyDeletions,
+		interactive:       in.interactive,
+		yes:               in.yes,
+		explicitCategory:  in.hasAnyApply(),
+		applyManaged:      in.applyManaged,
+		applyMemory:       in.applyMemory,
+		applyDeletions:    in.applyDeletions,
+		applyTmpDeletions: in.applyTmpDeletions,
 	}, nil
 }
 
@@ -388,10 +394,13 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
 		},
 		DeleteUnknownTmpAllFunc: func(paths []string) (bool, error) {
+			// Tmp deletion is destructive and not snapshot-rollback-protected,
+			// so it is gated by its own flag (--apply-tmp-deletions),
+			// independent of --apply-deletions. In interactive mode it
+			// requires a destructive double-confirm; both prompts default to
+			// "no" so a stray Enter cannot wipe tmp content.
 			if policy.explicitCategory {
-				// Mirror DeleteUnknownAllFunc/DeleteUnknownFunc: explicit category
-				// flags govern whether deletions are applied, prompted, or skipped.
-				if !policy.applyDeletions {
+				if !policy.applyTmpDeletions {
 					return false, nil
 				}
 				if policy.yes {
@@ -401,8 +410,18 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			if err := printFilePaths(cmd.OutOrStdout(), messages.UpgradeDeleteUnknownTmpHeader, paths); err != nil {
 				return false, err
 			}
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), color.YellowString("%s", messages.UpgradeDeleteUnknownTmpDestructiveWarningHeader)); err != nil {
+				return false, err
+			}
 			prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownTmpAllPromptFmt, len(paths))
-			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
+			answer, err := promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
+			if err != nil {
+				return false, err
+			}
+			if !answer {
+				return false, nil
+			}
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeDeleteUnknownTmpDestructiveConfirmPrompt, false)
 		},
 		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []install.SkillsMigrationConflict) (bool, error) {
 			// Conflicts always block, even in headless mode.
@@ -473,6 +492,11 @@ func writeUpgradeSkippedCategoryNotes(out io.Writer, policy upgradeApplyPolicy) 
 	}
 	if !policy.applyDeletions {
 		if _, err := fmt.Fprintln(out, messages.UpgradeSkipDeletionsInfo); err != nil {
+			return err
+		}
+	}
+	if !policy.applyTmpDeletions {
+		if _, err := fmt.Fprintln(out, messages.UpgradeSkipTmpDeletionsInfo); err != nil {
 			return err
 		}
 	}

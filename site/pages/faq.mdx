@@ -116,4 +116,11 @@ Yes, if you configure it accordingly. Set `approvals.mode` to limit automatic ap
 Agent Layer does not install or sandbox MCP servers. It runs exactly what you configure, which makes review and auditing straightforward.
 
 ## Does Agent Layer ever delete files?
-In the default interactive `al upgrade` flow, Agent Layer may prompt about unknown files under `.agent-layer` and will only delete them if you explicitly approve. For non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), unknown-file deletions require the separate `--apply-deletions` flag.
+In the default interactive `al upgrade` flow, Agent Layer may prompt about unknown files under `.agent-layer/` and will only delete them if you explicitly approve. For non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), unknown-file deletions require the separate `--apply-deletions` flag.
+
+Files under `.agent-layer/tmp/` (ephemeral agent run artifacts: plans, reports, scratch dumps) are protected by stricter rules. The interactive prompt requires a destructive **double-confirm** that defaults to "no". Non-interactive deletion requires the dedicated `--apply-tmp-deletions` flag — `--apply-deletions` alone never touches tmp content. The interactive "delete all unknowns?" choice is also scoped to skip tmp; the grouped tmp prompt always fires separately. See [/docs/reference#ephemeral-artifacts-under-agent-layertmp](/docs/reference#ephemeral-artifacts-under-agent-layertmp).
+
+## Will rollback restore files I had under .agent-layer/tmp/?
+No. Pre-upgrade snapshots intentionally exclude `.agent-layer/tmp/` so they stay small (tmp can accumulate hundreds of MB of agent run artifacts). `al upgrade rollback <snapshot-id>` will not recreate plans, reports, or scratch files that were under tmp. If you need to keep an in-progress agent artifact across an upgrade, copy it out of `.agent-layer/tmp/` first.
+
+See [/docs/upgrades#ephemeral-artifacts-and-rollback-scope](/docs/upgrades#ephemeral-artifacts-and-rollback-scope) for the full contract.

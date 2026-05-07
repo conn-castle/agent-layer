@@ -400,6 +400,15 @@ func (inst *installer) captureUpgradeSnapshotDirectory(rootPath string, entries 
 		if err != nil {
 			return err
 		}
+		// Defense-in-depth: refuse to capture anything under .agent-layer/tmp/
+		// even if a caller mistakenly passes a target whose subtree contains
+		// it. Skipping the directory itself stops descent.
+		if inst.isUnderAgentLayerTmp(path) {
+			if dirEntry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		mode := dirEntry.Type()
 		if dirEntry.IsDir() {
 			info, infoErr := dirEntry.Info()
@@ -528,7 +537,15 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	root := inst.root
 	paths := make(map[string]struct{})
 	add := func(path string) {
-		paths[filepath.Clean(path)] = struct{}{}
+		clean := filepath.Clean(path)
+		// `.agent-layer/tmp/` holds ephemeral agent run artifacts (plans,
+		// reports, scratch dumps). Snapshotting it would balloon snapshot
+		// size and is not needed for rollback because tmp deletion now
+		// requires explicit, double-confirmed user consent.
+		if inst.isUnderAgentLayerTmp(clean) {
+			return
+		}
+		paths[clean] = struct{}{}
 	}
 
 	add(filepath.Join(root, ".agent-layer", "al.version"))
@@ -550,8 +567,8 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 		add(path)
 	}
 	// Snapshot capture depends on scanUnknowns() having populated inst.unknowns
-	// before the transaction begins. This ensures rollback can restore unknown
-	// paths that may be deleted in handleUnknowns().
+	// before the transaction begins so rollback can restore paths that
+	// handleUnknowns() may delete.
 	for _, path := range inst.unknowns {
 		add(path)
 	}
@@ -562,6 +579,14 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// isUnderAgentLayerTmp reports whether path is the `.agent-layer/tmp` root or
+// a descendant. Path is cleaned internally so callers may pass any form.
+func (inst *installer) isUnderAgentLayerTmp(path string) bool {
+	tmp := filepath.Join(inst.root, ".agent-layer", "tmp")
+	clean := filepath.Clean(path)
+	return clean == tmp || strings.HasPrefix(clean, tmp+string(os.PathSeparator))
 }
 
 func uniqueNormalizedPaths(paths []string) []string {

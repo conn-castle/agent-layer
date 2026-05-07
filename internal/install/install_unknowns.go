@@ -70,10 +70,11 @@ func (inst *installer) scanUnknownRoot(root string, known map[string]struct{}) e
 // early scanUnknowns call captures unknowns for snapshot/rollback safety but
 // may include paths that migrations have since moved or deleted).
 //
-// Files under .agent-layer/tmp/ are treated as a single group: the top-level
-// summary collapses them into one line, and when the "delete all" prompt is
-// declined, tmp files are surfaced through one grouped prompt rather than the
-// per-file loop used for the rest of the unknowns.
+// Tmp paths under `.agent-layer/tmp/` are routed exclusively through
+// handleTmpUnknowns — they are never deleted via the bulk "delete all" path,
+// nor via the per-file DeleteUnknown loop, so the destructive-action
+// confirmation cannot be bypassed regardless of which top-level option the
+// user picks.
 func (inst *installer) handleUnknowns() error {
 	if !inst.overwrite {
 		return nil
@@ -89,18 +90,32 @@ func (inst *installer) handleUnknowns() error {
 		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
 	}
 	tmpUnknowns, otherUnknowns := inst.partitionTmpUnknowns(unknowns)
+	if err := inst.handleNonTmpUnknowns(tmpUnknowns, otherUnknowns); err != nil {
+		return err
+	}
+	if len(tmpUnknowns) > 0 {
+		if err := inst.handleTmpUnknowns(tmpUnknowns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// handleNonTmpUnknowns runs the bulk-vs-per-file deletion flow for unknowns
+// that are NOT under `.agent-layer/tmp/`. The tmp summary is still passed to
+// the bulk prompt so the user sees the full scope, but tmp deletion is
+// handled separately by handleTmpUnknowns.
+func (inst *installer) handleNonTmpUnknowns(tmpUnknowns, otherUnknowns []string) error {
+	if len(otherUnknowns) == 0 {
+		return nil
+	}
 	rel := inst.collapsedRelativePathList(tmpUnknowns, otherUnknowns)
 	deleteAll, err := inst.prompter.DeleteUnknownAll(rel)
 	if err != nil {
 		return err
 	}
 	if deleteAll {
-		return inst.deleteUnknowns(unknowns)
-	}
-	if len(tmpUnknowns) > 0 {
-		if err := inst.handleTmpUnknowns(tmpUnknowns); err != nil {
-			return err
-		}
+		return inst.deleteUnknowns(otherUnknowns)
 	}
 	for _, path := range otherUnknowns {
 		relPath := inst.relativePath(path)
@@ -118,24 +133,17 @@ func (inst *installer) handleUnknowns() error {
 }
 
 // handleTmpUnknowns asks one grouped yes/no question for every unknown path
-// under .agent-layer/tmp/. Two fallback paths exist for callers that don't
-// supply the grouped capability:
-//
-//  1. The prompter does not implement tmpUnknownsPrompter at all (custom
-//     Prompter implementations or legacy mocks).
-//  2. The prompter is a PromptFuncs that satisfies tmpUnknownsPrompter only
-//     because the method is defined on the struct, but
-//     DeleteUnknownTmpAllFunc was never wired. We detect this case via the
-//     optional promptValidator probe so unwired PromptFuncs callers fall
-//     back instead of getting an "InstallDeleteUnknownPromptRequired" error.
-//
-// In both fallback cases handleTmpUnknowns invokes the per-file
-// DeleteUnknown prompt for each tmp path.
+// under `.agent-layer/tmp/`. Tmp deletion is destructive (it can wipe
+// in-progress agent run artifacts) so it requires an affirmative grouped
+// answer; if the prompter does not implement tmpUnknownsPrompter (or has the
+// method defined but not wired in a PromptFuncs), tmp paths are left
+// untouched rather than falling back to per-file prompts. This guarantees no
+// code path can delete tmp content without going through the dedicated
+// destructive-action confirmation in the grouped prompt.
 func (inst *installer) handleTmpUnknowns(tmpUnknowns []string) error {
 	if len(tmpUnknowns) == 0 {
 		return nil
 	}
-	rel := inst.relativePathList(tmpUnknowns)
 	grouped, ok := inst.prompter.(tmpUnknownsPrompter)
 	if ok {
 		if validator, vok := inst.prompter.(promptValidator); vok && !validator.hasDeleteUnknownTmpAll() {
@@ -143,20 +151,9 @@ func (inst *installer) handleTmpUnknowns(tmpUnknowns []string) error {
 		}
 	}
 	if !ok {
-		for _, path := range tmpUnknowns {
-			relPath := inst.relativePath(path)
-			deletePath, err := inst.prompter.DeleteUnknown(relPath)
-			if err != nil {
-				return err
-			}
-			if deletePath {
-				if err := inst.sys.RemoveAll(path); err != nil {
-					return fmt.Errorf(messages.InstallDeleteUnknownFailedFmt, relPath, err)
-				}
-			}
-		}
 		return nil
 	}
+	rel := inst.relativePathList(tmpUnknowns)
 	deleteTmp, err := grouped.DeleteUnknownTmpAll(rel)
 	if err != nil {
 		return err
