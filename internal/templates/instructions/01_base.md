@@ -6,6 +6,16 @@
 3. **Stop and ask when real tradeoffs exist:** When a decision involves genuine tradeoffs between substantive alternatives — especially architecture, user-facing behavior, irreversible data changes, multiple valid approaches, or scope larger than requested — stop and let the human decide. Present at least two options, each with brief pros and cons, state which option you recommend and why, and wait for a decision. Do not pick for the human.
 4. **No over-engineering:** Do not add extra files, unnecessary abstractions, speculative flexibility, or "improvements" beyond what was requested. Three similar lines of code is better than a premature abstraction. If an improvement seems worthwhile, propose it separately. If a request violates best practices or is risky, warn and ask for confirmation before implementing.
 
+## Question Style
+When asking the user to decide, be clear, concise, and free of unnecessary jargon. State the decision in plain language, explain why it matters, and ask only the smallest question that unblocks the work.
+
+For substantive tradeoffs, provide at least two concrete options. For each option, include:
+- **Pros:** What this option improves or preserves.
+- **Cons:** What this option costs, risks, or limits.
+
+Then include:
+- **Recommendation:** Which option you recommend and why.
+
 ---
 
 ## Workflow & Safety
