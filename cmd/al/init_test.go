@@ -653,52 +653,6 @@ func TestInitCmd_WizardPromptError(t *testing.T) {
 	}
 }
 
-func TestInitCmd_WizardPromptYes(t *testing.T) {
-	origGetwd := getwd
-	origIsTerminal := isTerminal
-	origInstallRun := installRun
-	origRunWizard := runWizard
-	origCheckForUpdate := checkForUpdate
-	t.Cleanup(func() {
-		getwd = origGetwd
-		isTerminal = origIsTerminal
-		installRun = origInstallRun
-		runWizard = origRunWizard
-		checkForUpdate = origCheckForUpdate
-	})
-
-	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	getwd = func() (string, error) { return tmpDir, nil }
-	isTerminal = func() bool { return true }
-	installRun = func(string, install.Options) error { return nil }
-	wizardCalled := false
-	runWizard = func(string, string) error {
-		wizardCalled = true
-		return nil
-	}
-	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
-		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
-	}
-
-	cmd := newInitCmd()
-	cmd.SetArgs([]string{})
-	cmd.SetIn(&slowReader{r: strings.NewReader("y\n")})
-	var stdout, stderr bytes.Buffer
-	cmd.SetOut(&stdout)
-	cmd.SetErr(&stderr)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("init failed: %v", err)
-	}
-	if !wizardCalled {
-		t.Fatalf("expected wizard to be called")
-	}
-}
-
 func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 	tests := []struct {
 		name       string

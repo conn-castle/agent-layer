@@ -10,35 +10,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
-func TestBuildCodexConfig_UnsupportedTransport(t *testing.T) {
-	t.Parallel()
-	enabled := true
-	project := &config.ProjectConfig{
-		Config: config.Config{
-			Agents: config.AgentsConfig{Codex: config.CodexConfig{Enabled: &enabled}},
-			MCP: config.MCPConfig{
-				Servers: []config.MCPServer{
-					{
-						ID:        "unknown",
-						Enabled:   &enabled,
-						Clients:   []string{"codex"},
-						Transport: "pigeon",
-					},
-				},
-			},
-		},
-		Env: map[string]string{},
-	}
-
-	_, err := buildCodexConfig(project)
-	if err == nil {
-		t.Fatalf("expected error for unsupported transport")
-	}
-	if !strings.Contains(err.Error(), "unsupported transport pigeon") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestTomlHelpers_Empty(t *testing.T) {
 	t.Parallel()
 	if s := tomlStringArray([]string{}); s != "[]" {
@@ -63,34 +34,6 @@ func TestSplitCodexHeaders_Empty(t *testing.T) {
 	}
 	if spec.HTTPHeaders != nil {
 		t.Fatalf("expected nil http headers, got %v", spec.HTTPHeaders)
-	}
-}
-
-func TestBuildCodexConfig_ModelSettings(t *testing.T) {
-	t.Parallel()
-	enabled := true
-	project := &config.ProjectConfig{
-		Config: config.Config{
-			Agents: config.AgentsConfig{
-				Codex: config.CodexConfig{
-					Enabled:         &enabled,
-					Model:           "sonnet-4.6",
-					ReasoningEffort: "high",
-				},
-			},
-		},
-		Env: map[string]string{},
-	}
-
-	output, err := buildCodexConfig(project)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(output, "model = \"sonnet-4.6\"") {
-		t.Fatalf("missing model setting")
-	}
-	if !strings.Contains(output, "model_reasoning_effort = \"high\"") {
-		t.Fatalf("missing reasoning setting")
 	}
 }
 

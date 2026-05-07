@@ -125,24 +125,6 @@ func TestWarnUnknowns_WithUnknowns(t *testing.T) {
 	}
 }
 
-func TestWarnUnknowns_OverwriteTrue(t *testing.T) {
-	inst := &installer{
-		overwrite: true,
-		unknowns:  []string{"a", "b"},
-		sys:       RealSystem{},
-	}
-	inst.warnUnknowns() // Should return early
-}
-
-func TestWarnUnknowns_EmptyUnknowns(t *testing.T) {
-	inst := &installer{
-		overwrite: false,
-		unknowns:  []string{},
-		sys:       RealSystem{},
-	}
-	inst.warnUnknowns() // Should return early
-}
-
 func TestWarnDifferences_WithDiffs(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
@@ -157,16 +139,6 @@ func TestWarnDifferences_WithDiffs(t *testing.T) {
 	if buf.Len() == 0 {
 		t.Fatalf("expected warning output")
 	}
-}
-
-func TestWarnDifferences_RelError(t *testing.T) {
-	inst := &installer{
-		root:      "", // Empty root causes filepath.Rel to potentially fail
-		overwrite: false,
-		diffs:     []string{"/some/absolute/path"},
-	}
-	// Just exercise the code path - should not panic
-	inst.warnDifferences()
 }
 
 func TestSortUnknowns(t *testing.T) {

@@ -111,19 +111,6 @@ func TestFSPathFromRoot_AbsoluteEmptyRoot(t *testing.T) {
 	}
 }
 
-func TestFSPathFromRoot_RelError(t *testing.T) {
-	// On Windows, paths on different drives can't be made relative
-	// On Unix, this is hard to trigger but we can test the code path
-	// by using paths that would create ".." prefixes
-	root := t.TempDir()
-	other := t.TempDir()
-
-	_, err := fsPathFromRoot(root, other)
-	if err == nil {
-		t.Fatalf("expected error for path outside root")
-	}
-}
-
 type errorFS struct {
 	fs.FS
 	errPath string

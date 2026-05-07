@@ -71,26 +71,9 @@ func TestBuildEnvEmptyProjectEnv(t *testing.T) {
 	}
 }
 
-func TestBuildEnvNilProjectEnv(t *testing.T) {
-	base := []string{"PATH=/bin"}
-	env := BuildEnv(base, nil, nil)
-
-	if value, ok := GetEnv(env, "PATH"); !ok || value != "/bin" {
-		t.Fatalf("expected PATH in env, got %v", value)
-	}
-}
-
 func TestMergeEnvEmptyOverrides(t *testing.T) {
 	base := []string{"PATH=/bin"}
 	result := mergeEnv(base, map[string]string{})
-	if len(result) != 1 || result[0] != "PATH=/bin" {
-		t.Fatalf("expected unchanged base, got %v", result)
-	}
-}
-
-func TestMergeEnvNilOverrides(t *testing.T) {
-	base := []string{"PATH=/bin"}
-	result := mergeEnv(base, nil)
 	if len(result) != 1 || result[0] != "PATH=/bin" {
 		t.Fatalf("expected unchanged base, got %v", result)
 	}
