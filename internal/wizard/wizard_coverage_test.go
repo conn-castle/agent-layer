@@ -337,4 +337,21 @@ func TestBuildRewritePreview_ErrorAndNoDiffBranches(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("env preview redacts parser-missing assignments and keeps quoted comments", func(t *testing.T) {
+		content := "MISSING=super-secret\nQUOTED=\"old-secret\" # keep me\nUNQUOTED=old-secret # not a comment\n"
+		values := map[string]string{"QUOTED": "old-secret", "UNQUOTED": "old-secret # not a comment"}
+		redacted := redactEnvPreviewSide(content, values, nil, true)
+
+		for _, forbidden := range []string{"super-secret", "old-secret"} {
+			if strings.Contains(redacted, forbidden) {
+				t.Fatalf("redacted preview leaked %q:\n%s", forbidden, redacted)
+			}
+		}
+		for _, expected := range []string{`MISSING=""`, `QUOTED="<redacted current>" # keep me`, `UNQUOTED="<redacted current>"`} {
+			if !strings.Contains(redacted, expected) {
+				t.Fatalf("expected %q in redacted preview:\n%s", expected, redacted)
+			}
+		}
+	})
 }
