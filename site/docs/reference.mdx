@@ -535,11 +535,11 @@ description: Run a code quality audit.
 
 Common outputs include:
 
-- `.agent/skills/`
-- `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`
-- `.codex/` (generated config, rules, and skills)
-- `.copilot/mcp-config.json`, `.github/skills/` (Copilot CLI MCP config and skills)
-- `.vscode/mcp.json`, `.vscode/prompts/`, and a managed block in `.vscode/settings.json`
+- `.agents/skills/`
+- `.gemini/settings.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.codex/` (generated config and rules)
+- `.copilot/mcp-config.json`
+- `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `.github/copilot-instructions.md`
 - `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)

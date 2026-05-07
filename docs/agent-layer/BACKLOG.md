@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-05-07 codex-openai-yaml-skill-metadata: Support Codex `agents/openai.yaml` skill metadata
+    Priority: Medium. Area: skills / codex
+    Description: Add Agent Layer support for Codex-specific optional skill metadata in `agents/openai.yaml`, including UI metadata, implicit invocation policy, and tool dependency declarations when a concrete built-in or user skill needs those Codex-native extensions.
+    Acceptance criteria: Agent Layer can author or project Codex `agents/openai.yaml` metadata without weakening portable Agent Skills support or requiring duplicate source-of-truth files.
+    Notes: Deferred from the native skill folder alignment plan; document in the client skill spec first and implement only when there is a concrete use case.
+
 - Backlog 2026-04-26 design-space-no-cost-prefilter: Do not pre-filter design options by implementation cost
     Priority: Medium. Area: instructions / templates
     Description: Add a principle to template instructions: when presenting design options to the user, present the full design space without pre-filtering by implementation cost, migration size, or code-change effort. Lead with quality and correctness. Cost (migration size, lines touched, test surface) is a separate dimension to lay out alongside the options, not a filter that prunes them. The user picks. Likely home: extend `01_base.md` Critical Protocol rule 3 ("Stop and ask when real tradeoffs exist") with an explicit no-cost-prefilter clause, or add a sibling rule under the same section. If neither fits cleanly, consider a new "Decision presentation" subsection.

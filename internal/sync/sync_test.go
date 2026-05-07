@@ -40,16 +40,10 @@ func TestRunGolden(t *testing.T) {
 		".codex/AGENTS.md",
 		".codex/config.toml",
 		".codex/rules/default.rules",
-		".codex/skills/alpha/SKILL.md",
-		".codex/skills/beta/SKILL.md",
-		".agent/skills/alpha/SKILL.md",
-		".agent/skills/beta/SKILL.md",
+		".agents/skills/alpha/SKILL.md",
+		".agents/skills/beta/SKILL.md",
 		".claude/skills/alpha/SKILL.md",
 		".claude/skills/beta/SKILL.md",
-		".gemini/skills/alpha/SKILL.md",
-		".gemini/skills/beta/SKILL.md",
-		".vscode/prompts/alpha.prompt.md",
-		".vscode/prompts/beta.prompt.md",
 		".vscode/settings.json",
 		".vscode/mcp.json",
 		".gemini/settings.json",
@@ -60,6 +54,75 @@ func TestRunGolden(t *testing.T) {
 		expected := filepath.Join(expectedRoot, rel)
 		actual := filepath.Join(root, rel)
 		assertFileEquals(t, expected, actual, root)
+	}
+
+	absent := []string{
+		".codex/skills",
+		".agent/skills",
+		".gemini/skills",
+		".github/skills",
+		".vscode/prompts",
+	}
+	for _, rel := range absent {
+		if _, err := os.Stat(filepath.Join(root, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected retired skill output %s to be absent", rel)
+		}
+	}
+}
+
+func TestRunCleansLegacySkillOutputs(t *testing.T) {
+	home := t.TempDir()
+	origHome := UserHomeDir
+	UserHomeDir = func() (string, error) { return home, nil }
+	t.Cleanup(func() { UserHomeDir = origHome })
+
+	fixtureRoot := filepath.Join("testdata", "fixture-repo")
+	root := t.TempDir()
+	if err := copyFixtureRepo(fixtureRoot, root); err != nil {
+		t.Fatalf("copy fixture: %v", err)
+	}
+	envPath := filepath.Join(root, ".agent-layer", ".env")
+	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	// Seed legacy projection paths with both generated and manual content. Per the
+	// SKILL-CLIENT-SPEC ownership contract, Agent Layer claims these directories
+	// exclusively and must remove all of it on every sync.
+	legacyEntries := []struct {
+		path    string
+		content string
+	}{
+		{filepath.Join(".codex", "skills", "old", "SKILL.md"), generatedMarkerFixture},
+		{filepath.Join(".agent", "skills", "old", "SKILL.md"), generatedMarkerFixture},
+		{filepath.Join(".gemini", "skills", "old", "SKILL.md"), generatedMarkerFixture},
+		{filepath.Join(".github", "skills", "manual", "SKILL.md"), "# manual\n"},
+		{filepath.Join(".vscode", "prompts", "old.prompt.md"), generatedMarkerFixture},
+	}
+	for _, entry := range legacyEntries {
+		full := filepath.Join(root, entry.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", full, err)
+		}
+		if err := os.WriteFile(full, []byte(entry.content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", full, err)
+		}
+	}
+
+	if _, err := Run(root); err != nil {
+		t.Fatalf("sync run: %v", err)
+	}
+
+	for _, rel := range []string{
+		".codex/skills",
+		".agent/skills",
+		".gemini/skills",
+		".github/skills",
+		".vscode/prompts",
+	} {
+		if _, err := os.Stat(filepath.Join(root, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected retired %s to be removed (Agent Layer claims exclusive ownership), got err=%v", rel, err)
+		}
 	}
 }
 

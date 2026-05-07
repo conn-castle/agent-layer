@@ -193,15 +193,14 @@ GEMINI.md
 .github/copilot-instructions.md
 
 # Client configs and artifacts (generated based on enabled clients)
-.agent/skills/
+.agents/skills/
 .gemini/settings.json
 .claude/settings.json
+.claude/skills/
 .mcp.json
 .codex/
 .copilot/mcp-config.json
-.github/skills/
 .vscode/mcp.json
-.vscode/prompts/
 .vscode/settings.json
 
 # Repo-local launchers (VS Code, when enabled)
@@ -229,7 +228,7 @@ If you prefer to launch VS Code without the repo-local launcher, see the Codex a
 
 You can delete generated outputs at any time. Running `al sync` or `al <client>` will recreate them from `.agent-layer/`.
 
-If you keep your own files under `.vscode/`, delete only the Agent Layer-managed files (`.vscode/mcp.json` and `.vscode/prompts/`). Agent Layer also inserts/updates a managed block in `.vscode/settings.json`.
+If you keep your own files under `.vscode/`, delete only the Agent Layer-managed files (`.vscode/mcp.json` and the managed block in `.vscode/settings.json`). Agent Layer also projects VS Code/GitHub Copilot skills through `.agents/skills/`.
 
 ### Git ignore defaults
 
@@ -253,7 +252,7 @@ Do not commit:
 - `.agent-layer/.env` (secrets)
 - `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
-- generated client outputs like `.agent/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`, `.codex/`, `.copilot/`, `.github/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
+- generated client outputs like `.agents/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
 
 ## CLI command map
 

@@ -221,90 +221,7 @@ func TestWriteCopilotMCPConfigMarshalError(t *testing.T) {
 	}
 }
 
-func TestBuildCopilotSkill(t *testing.T) {
-	t.Parallel()
-	skill := config.Skill{
-		Name:        "code-audit",
-		Description: "Run a code quality audit.",
-		Body:        "Audit the code.\n",
-	}
-
-	content, err := buildCopilotSkill(skill)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if content == "" {
-		t.Fatalf("expected non-empty content")
-	}
-	if !strings.Contains(content, "name: code-audit") {
-		t.Fatalf("expected name in frontmatter, got:\n%s", content)
-	}
-	if !strings.Contains(content, "Run a code quality audit.") {
-		t.Fatalf("expected description in frontmatter, got:\n%s", content)
-	}
-	if !strings.Contains(content, "Audit the code.") {
-		t.Fatalf("expected body in content, got:\n%s", content)
-	}
-}
-
-func TestWriteCopilotSkills(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	skills := []config.Skill{
-		{
-			Name:        "test-skill",
-			Description: "A test skill.",
-			Body:        "Do the thing.\n",
-		},
-	}
-
-	sys := &RealSystem{}
-	if err := WriteCopilotSkills(sys, root, skills); err != nil {
-		t.Fatalf("WriteCopilotSkills error: %v", err)
-	}
-
-	path := filepath.Join(root, ".github", "skills", "test-skill", "SKILL.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read generated skill: %v", err)
-	}
-
-	content := string(data)
-	if !strings.Contains(content, "name: test-skill") {
-		t.Fatalf("expected name in skill, got:\n%s", content)
-	}
-}
-
-func TestWriteCopilotSkillsError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	err := WriteCopilotSkills(RealSystem{}, file, nil)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteCopilotSkillsWriteError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	sys := &MockSystem{
-		Fallback: RealSystem{},
-		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
-			return errors.New("write failed")
-		},
-	}
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteCopilotSkills(sys, root, cmds); err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestCleanCopilotOutputsRemovesMCPConfigAndSkills(t *testing.T) {
+func TestCleanCopilotOutputsRemovesMCPConfig(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	sys := RealSystem{}
@@ -317,13 +234,6 @@ func TestCleanCopilotOutputsRemovesMCPConfigAndSkills(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(copilotDir, "mcp-config.json"), []byte(`{}`), 0o644); err != nil {
 		t.Fatalf("write mcp-config: %v", err)
 	}
-	skillDir := filepath.Join(root, ".github", "skills", "test-skill")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
-		t.Fatalf("mkdir skills: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
-		t.Fatalf("write SKILL.md: %v", err)
-	}
 
 	if err := CleanCopilotOutputs(sys, root); err != nil {
 		t.Fatalf("CleanCopilotOutputs error: %v", err)
@@ -332,58 +242,13 @@ func TestCleanCopilotOutputsRemovesMCPConfigAndSkills(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(copilotDir, "mcp-config.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected mcp-config.json to be removed")
 	}
-	if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
-		t.Fatalf("expected skill dir to be removed")
-	}
 }
 
 func TestCleanCopilotOutputsNoArtifacts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	// No .copilot/ or .github/skills/ exist — should not error.
+	// No .copilot/ exists — should not error.
 	if err := CleanCopilotOutputs(RealSystem{}, root); err != nil {
 		t.Fatalf("CleanCopilotOutputs error on clean dir: %v", err)
-	}
-}
-
-func TestCleanCopilotOutputsPreservesManualSkills(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	sys := RealSystem{}
-
-	// Create a manually-authored skill (no generated marker).
-	manualDir := filepath.Join(root, ".github", "skills", "manual-skill")
-	if err := os.MkdirAll(manualDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("# My manual skill\n"), 0o644); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	if err := CleanCopilotOutputs(sys, root); err != nil {
-		t.Fatalf("CleanCopilotOutputs error: %v", err)
-	}
-
-	if _, err := os.Stat(filepath.Join(manualDir, "SKILL.md")); err != nil {
-		t.Fatalf("expected manual skill to be preserved, got: %v", err)
-	}
-}
-
-func TestWriteCopilotSkillsMkdirSkillDirError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	skillsDir := filepath.Join(root, ".github", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	// Make skills dir read-only so RemoveAll(skillDir) fails.
-	if err := os.Chmod(skillsDir, 0o500); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	err := WriteCopilotSkills(RealSystem{}, root, cmds)
-	if err == nil {
-		t.Fatalf("expected error for skill dir removal/creation failure")
 	}
 }

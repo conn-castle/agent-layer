@@ -101,6 +101,39 @@ func IsAgentEnabled(p *bool) bool {
 	return p != nil && *p
 }
 
+// SharedAgentSkillsEnabled reports whether any agent that consumes the shared
+// `.agents/skills/` projection is enabled. Adding a new shared-skill consumer
+// means updating this function in one place; sync writers and readiness checks
+// both read from it.
+func SharedAgentSkillsEnabled(agents AgentsConfig) bool {
+	return IsAgentEnabled(agents.Codex.Enabled) ||
+		IsAgentEnabled(agents.Gemini.Enabled) ||
+		IsAgentEnabled(agents.Antigravity.Enabled) ||
+		IsAgentEnabled(agents.VSCode.Enabled) ||
+		IsAgentEnabled(agents.CopilotCLI.Enabled)
+}
+
+// LegacySkillProjection names a retired client-side directory that Agent Layer
+// claims exclusive ownership of and removes during every sync. The Suffix is
+// the file extension used to locate generated artifacts during readiness
+// detection. See docs/SKILL-CLIENT-SPEC.md "Ownership of legacy projection
+// paths" for the rationale.
+type LegacySkillProjection struct {
+	Dir    []string
+	Suffix string
+}
+
+// LegacySkillProjections is the canonical list of retired projection paths.
+// It is the single source of truth consumed by both the sync cleanup helper
+// and the upgrade-readiness check.
+var LegacySkillProjections = []LegacySkillProjection{
+	{Dir: []string{".codex", "skills"}, Suffix: "SKILL.md"},
+	{Dir: []string{".agent", "skills"}, Suffix: "SKILL.md"},
+	{Dir: []string{".gemini", "skills"}, Suffix: "SKILL.md"},
+	{Dir: []string{".github", "skills"}, Suffix: "SKILL.md"},
+	{Dir: []string{".vscode", "prompts"}, Suffix: ".prompt.md"},
+}
+
 // InstructionFile holds a single instruction fragment.
 type InstructionFile struct {
 	Name    string

@@ -6,6 +6,14 @@
   "chat.tools.terminal.autoApprove": {
     "/^git status(\\b.*)?$/": true,
     "/^ls(\\b.*)?$/": true
+  },
+  "chat.agentSkillsLocations": {
+    ".agents/skills": true,
+    ".claude/skills": false,
+    ".github/skills": false,
+    "~/.agents/skills": true,
+    "~/.claude/skills": true,
+    "~/.copilot/skills": true
   }
   // <<< agent-layer
 }

@@ -55,18 +55,24 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		func() error {
 			return WriteInstructionShims(sys, root, project.Instructions)
 		},
+		func() error { return CleanLegacySkillOutputs(sys, root) },
 	}
 
 	if config.IsAgentEnabled(agents.Codex.Enabled) {
 		steps = append(steps,
 			func() error { return WriteCodexInstructions(sys, root, project.Instructions) },
-			func() error { return WriteCodexSkills(sys, root, project.Skills) },
 		)
+	}
+
+	if config.SharedAgentSkillsEnabled(agents) {
+		steps = append(steps, func() error { return WriteAgentSkills(sys, root, project.Skills) })
+	} else {
+		steps = append(steps, func() error { return CleanSharedAgentSkills(sys, root) })
 	}
 
 	// VS Code block — granular split:
 	// WriteVSCodeSettings fires for vscode OR claude_vscode.
-	// WriteVSCodeMCPConfig, WriteVSCodePrompts, WriteVSCodeLaunchers fire for vscode only.
+	// WriteVSCodeMCPConfig and WriteVSCodeLaunchers fire for vscode only.
 	vscodeEnabled := config.IsAgentEnabled(agents.VSCode.Enabled)
 	claudeVSCodeEnabled := config.IsAgentEnabled(agents.ClaudeVSCode.Enabled)
 
@@ -77,20 +83,14 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	}
 	if vscodeEnabled {
 		steps = append(steps,
-			func() error { return WriteVSCodePrompts(sys, root, project.Skills) },
 			func() error { return WriteVSCodeMCPConfig(sys, root, project) },
 			func() error { return launchers.WriteVSCodeLaunchers(sys, root) },
 		)
 	}
 
-	if config.IsAgentEnabled(agents.Antigravity.Enabled) {
-		steps = append(steps, func() error { return WriteAntigravitySkills(sys, root, project.Skills) })
-	}
-
 	if config.IsAgentEnabled(agents.CopilotCLI.Enabled) {
 		steps = append(steps,
 			func() error { return WriteCopilotMCPConfig(sys, root, project) },
-			func() error { return WriteCopilotSkills(sys, root, project.Skills) },
 		)
 	} else {
 		steps = append(steps, func() error { return CleanCopilotOutputs(sys, root) })
@@ -99,7 +99,6 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	if config.IsAgentEnabled(agents.Gemini.Enabled) {
 		steps = append(steps,
 			func() error { return WriteGeminiSettings(sys, root, project) },
-			func() error { return WriteGeminiSkills(sys, root, project.Skills) },
 		)
 	}
 
