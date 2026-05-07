@@ -1,11 +1,8 @@
 {
   "_generatedBy": "agent-layer",
-  "tools": {
-    "allowed": [
-      "run_shell_command(git status)",
-      "run_shell_command(ls)"
-    ]
-  },
+  "policyPaths": [
+    ".gemini/policies"
+  ],
   "mcpServers": {
     "example": {
       "url": "https://mcp.example.com?token=${AL_EXAMPLE_TOKEN}",

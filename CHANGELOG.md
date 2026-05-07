@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- Gemini sync migrates from the deprecated `tools.allowed` field to the Policy Engine. `WriteGeminiSettings` no longer emits `tools.allowed` in `.gemini/settings.json` and instead writes a `policyPaths: [".gemini/policies"]` pointer; `WriteGeminiPolicies` generates `.gemini/policies/agent-layer.toml` with one `[[rule]]` block per allowed command (`toolName = "run_shell_command"`, `commandPrefix`, `decision = "allow"`, `priority = 100`, `allowRedirection = true`). `allowRedirection = true` preserves the previous `tools.allowed` behavior for headless workflows that pipe output (e.g., `git ... > file`); without it the policy engine would prompt for confirmation even when a rule matches. Resolves the Gemini CLI deprecation warning ("--allowed-tools cli argument and tools.allowed in settings.json are deprecated and will be removed in 1.0").
+
+### Removed
+- `tools.allowed` field from generated `.gemini/settings.json`. The next `al sync` rewrites the file in the new shape, removing the deprecated key.
+
 ## v0.9.2 - 2026-03-21
 
 Adds GitHub Copilot CLI as a supported agent client, introduces context files for plan/task artifacts, supports `max` reasoning effort for Claude Opus, and consolidates internal abstractions for cleaner dependency injection. Instructions and skills are improved for better autonomy and tradeoff handling.
