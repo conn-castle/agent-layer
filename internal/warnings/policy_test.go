@@ -167,6 +167,29 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 	require.Equal(t, "agents.claude.agent_specific", results[1].Subject)
 }
 
+func TestCheckPolicy_ClaudeReasoningEffortUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		effort string
+		want   bool
+	}{
+		{"xhigh", false}, {"max", false}, {"", false}, {"made-up-level", true},
+	} {
+		t.Run(tc.effort, func(t *testing.T) {
+			project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{Enabled: testutil.BoolPtr(true), Model: "opus", ReasoningEffort: tc.effort},
+			}}}
+			results := CheckPolicy(project)
+			if !tc.want {
+				require.Nil(t, results)
+				return
+			}
+			require.Len(t, results, 1)
+			require.Equal(t, CodePolicyClaudeReasoningUnknown, results[0].Code)
+			require.Contains(t, results[0].Message, tc.effort)
+		})
+	}
+}
+
 func TestCheckPolicy_NilAndDisabledServer(t *testing.T) {
 	require.Nil(t, CheckPolicy(nil))
 

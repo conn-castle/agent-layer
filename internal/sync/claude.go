@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -62,8 +63,9 @@ func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) 
 	}
 	// Write effortLevel to settings.json for persistable values only.
 	// "max" is session-only in Claude Code (passed via --effort CLI flag) and
-	// not valid in settings.json, so it is excluded here.
-	effort := project.Config.Agents.Claude.ReasoningEffort
+	// not valid in settings.json, so it is excluded here. Trim to match the
+	// warning-helper's canonical form so " max " is treated as "max".
+	effort := strings.TrimSpace(project.Config.Agents.Claude.ReasoningEffort)
 	if effort != "" && effort != "max" && !config.HasAgentSpecificKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
 		settings["effortLevel"] = effort
 	}

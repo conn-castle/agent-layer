@@ -27,19 +27,6 @@ func isValidApprovalMode(mode string) bool {
 	return false
 }
 
-func isValidFieldOption(key string, value string) bool {
-	field, ok := LookupField(key)
-	if !ok {
-		return false
-	}
-	for _, opt := range field.Options {
-		if opt.Value == value {
-			return true
-		}
-	}
-	return false
-}
-
 // ClaudeModelSupportsReasoningEffort reports whether the given Claude model
 // string identifies an Opus variant that supports reasoning effort.
 // Matches "opus", "opusplan", "claude-opus-4-6", etc., but not "corpus".
@@ -112,11 +99,11 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigGeminiReasoningEffortUnsupportedFmt, path)
 	}
 
-	claudeReasoningEffort := strings.TrimSpace(c.Agents.Claude.ReasoningEffort)
-	if claudeReasoningEffort != "" {
-		if !isValidFieldOption("agents.claude.reasoning_effort", claudeReasoningEffort) {
-			return fmt.Errorf(messages.ConfigClaudeReasoningEffortInvalidFmt, path)
-		}
+	// Unknown reasoning-effort values are accepted; warnings.CheckPolicy emits a
+	// sync-time warning so new client levels (e.g. xhigh) work before the catalog
+	// catches up. The Opus check below stays a hard error — non-Opus models
+	// reject reasoning_effort outright.
+	if strings.TrimSpace(c.Agents.Claude.ReasoningEffort) != "" {
 		if !ClaudeModelSupportsReasoningEffort(c.Agents.Claude.Model) {
 			return fmt.Errorf(messages.ConfigClaudeReasoningEffortModelUnsupportedFmt, path, c.Agents.Claude.Model)
 		}
