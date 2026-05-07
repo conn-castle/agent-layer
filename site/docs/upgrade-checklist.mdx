@@ -50,8 +50,13 @@ al doctor
 
 Only add these flags when intentionally applying those categories:
 
-- `--apply-memory-updates`
-- `--apply-deletions`
+- `--apply-memory-updates` — apply updates to files under `docs/agent-layer/`
+- `--apply-deletions` — delete unknown files under `.agent-layer/` and `docs/agent-layer/` **except** `.agent-layer/tmp/`
+- `--apply-tmp-deletions` — destructively delete files under `.agent-layer/tmp/` (ephemeral agent run artifacts; not snapshotted, not rollback-restorable). Requires `--yes` and is independent of `--apply-deletions`.
+
+:::warning Tmp deletions are destructive and not rollback-protected
+`--apply-tmp-deletions` permanently removes everything under `.agent-layer/tmp/`. The pre-upgrade snapshot does **not** capture tmp content, so `al upgrade rollback <snapshot-id>` will not bring back deleted plans, reports, or scratch files. Use this flag only when you are sure CI does not host any in-progress agent artifacts you need to keep. See [Ephemeral artifacts under .agent-layer/tmp/](./reference#ephemeral-artifacts-under-agent-layertmp) for the full contract.
+:::
 
 ## Shell quick paths (macOS/Linux)
 
@@ -78,4 +83,5 @@ al upgrade
 - `.agent-layer/al.version` is required for supported usage.
 - `al upgrade prefetch` is the recommended cache warm-up command for offline/air-gapped workflows.
 - Snapshot IDs are JSON filename stems under `.agent-layer/state/upgrade-snapshots/` (run `al upgrade rollback --list` to discover them quickly).
+- Snapshots intentionally exclude `.agent-layer/tmp/`. Rollback will not restore tmp files — if you have in-progress agent artifacts under tmp that must survive an upgrade, copy them out before running `al upgrade`.
 - For policy guarantees and release migration rules, see [Upgrades](./upgrades).

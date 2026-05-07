@@ -32,7 +32,7 @@ func TestIsMemoryPreviewPath(t *testing.T) {
 }
 
 func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
-	// Test --apply-deletions --yes: auto-approve deletions.
+	// --apply-deletions --yes: auto-approve non-tmp deletions.
 	cmd := newUpgradeCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
@@ -49,9 +49,15 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 		t.Fatalf("DeleteUnknown(yes+applyDeletions) = (%v, %v), want (true, nil)", deleteSingle, err)
 	}
 
-	// Test --apply-deletions without --yes (explicit category, not auto): skips deletions.
-	// (In real usage this would still prompt, but with no stdin it would fail.
-	// Instead, test the !applyDeletions path which is the skip-all case.)
+	// --apply-deletions alone (no --apply-tmp-deletions) must NOT delete tmp,
+	// because tmp deletion is destructive and explicitly gated behind its own
+	// flag. This is the headline guarantee callers rely on.
+	if deleteTmp, err := p.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || deleteTmp {
+		t.Fatalf("DeleteUnknownTmpAll(yes+applyDeletions, no tmp flag) = (%v, %v), want (false, nil)", deleteTmp, err)
+	}
+
+	// !applyDeletions (still explicit because another category flag is set):
+	// skip non-tmp deletions.
 	p2 := buildUpgradePrompter(cmd, upgradeApplyPolicy{
 		explicitCategory: true,
 		applyDeletions:   false,
@@ -63,24 +69,33 @@ func TestBuildUpgradePrompter_DeletionPolicyPaths(t *testing.T) {
 	if deleteSingle, err := p2.DeleteUnknown("/tmp/a"); err != nil || deleteSingle {
 		t.Fatalf("DeleteUnknown(!applyDeletions) = (%v, %v), want (false, nil)", deleteSingle, err)
 	}
-
-	// DeleteUnknownTmpAll should mirror DeleteUnknownAll's explicit-category
-	// handling: auto-approve under --apply-deletions --yes, skip when
-	// deletions are not opted in.
-	if deleteTmp, err := p.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || !deleteTmp {
-		t.Fatalf("DeleteUnknownTmpAll(yes+applyDeletions) = (%v, %v), want (true, nil)", deleteTmp, err)
-	}
 	if deleteTmp, err := p2.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || deleteTmp {
-		t.Fatalf("DeleteUnknownTmpAll(!applyDeletions) = (%v, %v), want (false, nil)", deleteTmp, err)
+		t.Fatalf("DeleteUnknownTmpAll(!applyTmpDeletions) = (%v, %v), want (false, nil)", deleteTmp, err)
+	}
+
+	// Both flags + --yes: auto-approve tmp deletion non-interactively.
+	p3 := buildUpgradePrompter(cmd, upgradeApplyPolicy{
+		explicitCategory:  true,
+		applyDeletions:    true,
+		applyTmpDeletions: true,
+		yes:               true,
+	}, nil)
+	if deleteTmp, err := p3.DeleteUnknownTmpAll([]string{"/tmp/x"}); err != nil || !deleteTmp {
+		t.Fatalf("DeleteUnknownTmpAll(yes+applyTmpDeletions) = (%v, %v), want (true, nil)", deleteTmp, err)
 	}
 }
 
 func TestBuildUpgradePrompter_DeleteUnknownTmpAllInteractive(t *testing.T) {
+	// Tmp deletion is destructive: the interactive prompt requires a
+	// double-confirm. The first call answers "y" to the initial prompt and
+	// "y" to the destructive confirm, so the call returns true. The second
+	// call answers "n" to the initial prompt and skips the confirm. The
+	// third call answers "y" then "n", verifying that declining the
+	// destructive confirm aborts the deletion even after an initial "yes".
 	cmd := newUpgradeCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	// First answer "y" applies tmp deletion, second answer "n" declines it.
-	cmd.SetIn(bytes.NewBufferString("y\nn\n"))
+	cmd.SetIn(bytes.NewBufferString("y\ny\nn\ny\nn\n"))
 
 	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{}, nil)
 	yes, err := p.DeleteUnknownTmpAll([]string{".agent-layer/tmp/a", ".agent-layer/tmp/b"})
@@ -88,14 +103,21 @@ func TestBuildUpgradePrompter_DeleteUnknownTmpAllInteractive(t *testing.T) {
 		t.Fatalf("DeleteUnknownTmpAll(yes): %v", err)
 	}
 	if !yes {
-		t.Fatal("expected first DeleteUnknownTmpAll prompt to return true on 'y' input")
+		t.Fatal("expected DeleteUnknownTmpAll to return true after 'y' + 'y' (initial + destructive confirm)")
 	}
 	no, err := p.DeleteUnknownTmpAll([]string{".agent-layer/tmp/c"})
 	if err != nil {
 		t.Fatalf("DeleteUnknownTmpAll(no): %v", err)
 	}
 	if no {
-		t.Fatal("expected second DeleteUnknownTmpAll prompt to return false on 'n' input")
+		t.Fatal("expected DeleteUnknownTmpAll to return false on 'n' to the initial prompt")
+	}
+	declined, err := p.DeleteUnknownTmpAll([]string{".agent-layer/tmp/d"})
+	if err != nil {
+		t.Fatalf("DeleteUnknownTmpAll(decline-confirm): %v", err)
+	}
+	if declined {
+		t.Fatal("expected DeleteUnknownTmpAll to return false when destructive confirm is declined")
 	}
 }
 
@@ -456,10 +478,11 @@ func TestWriteUpgradeSkippedCategoryNotes_AllSkipped(t *testing.T) {
 func TestWriteUpgradeSkippedCategoryNotes_NoneSkipped(t *testing.T) {
 	var buf bytes.Buffer
 	policy := upgradeApplyPolicy{
-		explicitCategory: true,
-		applyManaged:     true,
-		applyMemory:      true,
-		applyDeletions:   true,
+		explicitCategory:  true,
+		applyManaged:      true,
+		applyMemory:       true,
+		applyDeletions:    true,
+		applyTmpDeletions: true,
 	}
 	if err := writeUpgradeSkippedCategoryNotes(&buf, policy); err != nil {
 		t.Fatalf("writeUpgradeSkippedCategoryNotes: %v", err)
