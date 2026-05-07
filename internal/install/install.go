@@ -24,6 +24,11 @@ type PromptDeleteUnknownAllFunc func(paths []string) (bool, error)
 // PromptDeleteUnknownFunc asks whether to delete a specific unknown path.
 type PromptDeleteUnknownFunc func(path string) (bool, error)
 
+// PromptDeleteUnknownTmpAllFunc asks whether to delete every unknown path
+// under .agent-layer/tmp/ as a single group, sparing the user a per-file
+// prompt for that directory's contents.
+type PromptDeleteUnknownTmpAllFunc func(paths []string) (bool, error)
+
 // Options controls installer behavior.
 type Options struct {
 	Overwrite    bool

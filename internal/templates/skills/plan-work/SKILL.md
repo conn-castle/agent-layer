@@ -69,9 +69,14 @@ If subagents are unavailable, do these passes inline and label them clearly.
 
 ## Human checkpoints
 
+- Required: Ask substantive questions as they arise during planning, before choosing or writing the affected approach.
+- Substantive questions are questions where the answer changes user-facing behavior, architecture, scope, sequencing, risk, or cost.
 - Required: ask when ambiguity would materially change scope, behavior, or architecture.
 - Required: ask when repo context reveals multiple valid approaches with real user-facing or sequencing tradeoffs.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
+- Do not save substantive questions for the execution gatekeeper. The gatekeeper catches questions discovered late; it is not a holding area for known decisions.
+- After the user answers, incorporate the decision into the draft and record the chosen direction in the plan's assumptions, approach, or risks as appropriate.
+- Decide non-substantive details autonomously using repo conventions, documented defaults, and the smallest coherent scope.
 - Stay autonomous while gathering context, drafting, critiquing, and gating the artifact set.
 
 ## Planning workflow
@@ -98,6 +103,8 @@ If subagents are unavailable, do these passes inline and label them clearly.
    - treat risky or ambiguous decomposition as a blocker instead of guessing
 
 ### Phase 2: Draft the plan (Planner)
+
+Draft interactively when substantive decisions emerge. While writing the plan, pause and ask before committing to any approach that depends on a human-impacting or architecture-impacting tradeoff. Continue drafting only after the user's answer resolves that decision.
 
 The plan file must include these sections:
 

@@ -41,6 +41,7 @@ type PromptFuncs struct {
 	OverwritePreviewFunc           PromptOverwritePreviewFunc
 	DeleteUnknownAllFunc           PromptDeleteUnknownAllFunc
 	DeleteUnknownFunc              PromptDeleteUnknownFunc
+	DeleteUnknownTmpAllFunc        PromptDeleteUnknownTmpAllFunc
 	ConfigSetDefaultFunc           PromptConfigSetDefaultFunc
 	ConfirmSkillsMigrationFunc     PromptConfirmSkillsMigrationFunc
 }
@@ -99,6 +100,19 @@ func (p PromptFuncs) DeleteUnknown(path string) (bool, error) {
 	return p.DeleteUnknownFunc(path)
 }
 
+// DeleteUnknownTmpAll prompts the user to confirm deleting all unknown paths
+// under .agent-layer/tmp/ as a group. Returns an error when no
+// DeleteUnknownTmpAllFunc is configured, mirroring the no-silent-fallback
+// behavior of the other prompt callbacks. Per-file fallback for legacy
+// Prompter implementations is provided in handleTmpUnknowns via the
+// optional tmpUnknownsPrompter interface, not here.
+func (p PromptFuncs) DeleteUnknownTmpAll(paths []string) (bool, error) {
+	if p.DeleteUnknownTmpAllFunc == nil {
+		return false, fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
+	}
+	return p.DeleteUnknownTmpAllFunc(paths)
+}
+
 // configSetDefaultPrompter is an optional interface that a Prompter can
 // implement to interactively confirm or customize config_set_default
 // migration values. When the Prompter does not implement this interface (or
@@ -154,6 +168,14 @@ type promptValidator interface {
 	hasOverwrite() bool
 	hasDeleteUnknownAll() bool
 	hasDeleteUnknown() bool
+}
+
+// tmpUnknownsPrompter is an optional capability a Prompter can implement to
+// collapse the per-file delete prompts for files under .agent-layer/tmp/ into
+// a single grouped yes/no question. When the Prompter does not implement this
+// interface, handleUnknowns falls back to per-file prompts (legacy behavior).
+type tmpUnknownsPrompter interface {
+	DeleteUnknownTmpAll(paths []string) (bool, error)
 }
 
 func (p PromptFuncs) hasOverwriteAll() bool {

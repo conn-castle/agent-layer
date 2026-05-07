@@ -21,7 +21,8 @@ It should:
 ## Defaults
 
 - Default PR is the current branch's open PR.
-- Default diagnosis uses CI logs from `gh run view --log-failed`.
+- Default diagnosis uses CI logs from `gh run view --log-failed` and any artifacts available from the failed workflow run.
+- Default artifact location is `./.agent-layer/tmp/ci-artifacts/<run-id>` so downloaded reports stay in the agent temp area.
 - Default fix scope is the minimum change needed to make CI pass.
 
 ## Inputs
@@ -58,13 +59,15 @@ Delegate to:
 
 1. Get CI status: `gh pr checks <pr-number>` to identify which checks failed.
 2. Get failure logs: `gh run view <run-id> --log-failed` for each failed check.
-3. Identify the root cause:
+3. Download available artifacts for each failed workflow run before coding if available: `mkdir -p .agent-layer/tmp/ci-artifacts/<run-id>` then `gh run download <run-id> --dir .agent-layer/tmp/ci-artifacts/<run-id>`.
+   - Inspect artifact contents alongside logs. Prioritize test reports, coverage reports, screenshots/videos, build output, generated files, and any tool-specific diagnostic bundles.
+4. Identify the root cause from logs and artifacts:
    - test failures
    - lint/format errors
    - type errors
    - build failures
    - other CI step failures
-4. Read the relevant source files and test files to understand the failure.
+5. Read the relevant source files and test files to understand the failure.
 
 ### Phase 2: Fix the issue (Fixer)
 
@@ -93,12 +96,14 @@ Delegate to:
 - Do not skip the audit-and-fix step before committing.
 - Do not disable or weaken CI checks to make them pass.
 - Do not expand scope beyond what is needed to fix the CI failure.
+- Do not patch from CI logs alone when CI artifacts are available; logs and artifacts together are the diagnostic source of truth.
 - Do not treat CI warnings as failures unless they are configured to fail the build.
 - Track recurring failures and escalate rather than looping indefinitely on the same issue.
 
 ## Definition of done
 
 - `gh pr checks <pr-number>` shows every required CI check passing on the latest pushed commit.
+- Logs and any available artifacts for each failed run were inspected; missing or unavailable artifacts were called out explicitly.
 - Each fix cycle committed through the `audit-and-fix-uncommitted-changes` skill before push; no check was disabled, skipped, weakened, or had its threshold lowered.
 - The fix iteration count is recorded and stayed below the 3-attempt escalation threshold for any single recurring failure.
 - Scope of the changes is confined to what the CI failures required, with no opportunistic edits.

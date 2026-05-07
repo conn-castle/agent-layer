@@ -387,6 +387,23 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownPromptFmt, path)
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
 		},
+		DeleteUnknownTmpAllFunc: func(paths []string) (bool, error) {
+			if policy.explicitCategory {
+				// Mirror DeleteUnknownAllFunc/DeleteUnknownFunc: explicit category
+				// flags govern whether deletions are applied, prompted, or skipped.
+				if !policy.applyDeletions {
+					return false, nil
+				}
+				if policy.yes {
+					return true, nil
+				}
+			}
+			if err := printFilePaths(cmd.OutOrStdout(), messages.UpgradeDeleteUnknownTmpHeader, paths); err != nil {
+				return false, err
+			}
+			prompt := fmt.Sprintf(messages.UpgradeDeleteUnknownTmpAllPromptFmt, len(paths))
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
+		},
 		ConfirmSkillsMigrationFunc: func(flatSkills []string, conflicts []install.SkillsMigrationConflict) (bool, error) {
 			// Conflicts always block, even in headless mode.
 			if len(conflicts) > 0 {

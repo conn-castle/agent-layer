@@ -34,7 +34,7 @@ Do not interpret this skill as permission to review old commits, sweep the whole
 
 ## Inputs
 
-- No fixed round cap. Run as many audit/fix rounds as needed to converge. In practice, simple changes should converge in 2-3 rounds (minimum 2: at least one fix round plus one confirmation round).
+- No fixed round cap. Run as many audit/fix rounds as needed while Critical or High fixes continue to be applied. After each fix pass, stop when zero applied fixes were Critical or High severity.
 
 ## Required behavior
 
@@ -70,11 +70,12 @@ Delegated skill outputs are handled one way:
 - Always review one combined target for the whole working tree.
 - Include untracked files in the default target.
 - Fix all accepted findings regardless of severity.
-- Use Critical and High counts for urgency, escalation, and stop-state reporting only.
-- Do not stop merely because Critical and High findings reach zero if any actionable Medium or Low findings remain.
+- Use Critical and High applied-fix counts as the repeat gate.
+- Rejected findings do not count toward the repeat gate.
+- Do not stop a round merely because Critical and High findings reach zero if any accepted Medium or Low findings from that round remain unfixed.
 - Do not stage, commit, or discard changes unless the user explicitly asks.
 - Keep scope tight to the selected target plus directly required supporting edits.
-- If a fix changes the relevant surface area materially, start the next audit round instead of assuming the old review still applies.
+- If a Critical or High fix changes the relevant surface area materially, start the next audit round instead of assuming the old review still applies.
 
 ## Human checkpoints
 
@@ -120,21 +121,20 @@ Use the `resolve-findings` skill on the Round N review report with authority to 
 
 Copy the fix summary into the master report under `## Round N Fixes` (title, severity, fix description, files touched) and `## Round N Status` (accepted/rejected/deferred counts, unresolved Critical and High counts).
 
-### Phase 4: Confirmation round (Convergence gate)
+### Phase 4: Critical/High fix gate (Convergence gate)
 
 Convergence rule:
-- After any round that applied fixes, return to Phase 2 for a full confirmation round on the updated target.
-- A run converges only when a full numbered round completes Phase 2 and Phase 3 with zero accepted findings.
-- The confirmation round must be a separate round from any round that applied fixes.
-- The confirmation round must have its own `## Round N Findings` and `## Round N Status` sections, explicitly stating zero accepted findings.
-- If the confirmation round produces accepted findings, fix them and repeat — the next round becomes the new confirmation candidate.
+- After fixing Round N findings, count applied fixes whose accepted finding severity was Critical or High.
+- Rejected findings never count toward this gate.
+- If the Critical/High applied-fix count is zero, close the run after recording Round N status.
+- If the Critical/High applied-fix count is greater than zero, return to Phase 2 for another full audit round on the updated target.
 
 Severity rule:
-- The final non-clean round may contain only Medium or Low findings, but they still must be fixed before the confirmation round can begin.
+- A final round may contain accepted Medium or Low findings, but they still must be fixed before the run closes.
 
 If a fix exposes obvious local complexity that is behavior-preserving and in scope:
 - use the `simplify-code` skill
-- then treat the next round as the confirmation candidate
+- then apply the same Critical/High applied-fix gate to decide whether another audit round is required
 
 Escalate if the loop is not converging (same findings recurring, fix attempts not resolving issues, or complexity growing instead of shrinking).
 
@@ -142,10 +142,10 @@ Escalate if the loop is not converging (same findings recurring, fix attempts no
 
 When the loop converges:
 1. add `## Final Verification` to the master report
-2. identify which round was the confirmation round
-3. state how many rounds were required (including the confirmation round)
+2. identify which round stopped the loop
+3. state how many rounds were required
 4. summarize whether any findings were rejected as false positives
-5. state explicitly that the confirmation round produced zero accepted findings
+5. state explicitly that the stopping round applied zero Critical or High fixes
 
 ## Required master report structure
 
@@ -162,32 +162,35 @@ Write `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` wi
 9. `## Residual Risk`
 
 Each Round section uses the format: `- <title> (<Severity>) — <file(s)>`.
-Label confirmation rounds explicitly. If a finding reappears in a later round, say so explicitly.
+In each `## Round N Status`, include `Critical/High applied fixes: <count>`. If a finding reappears in a later round, say so explicitly.
 
 Example:
 ```
 ## Round 1 Findings
 - Missing nil guard in loader path (High) — pkg/foo/loader.go
-## Round 2 Findings (confirmation round)
-- No actionable findings.
+## Round 1 Status
+- Critical/High applied fixes: 1
+## Round 2 Status
+- Critical/High applied fixes: 0
 ```
 
 ## Minimal status protocol
 
-At each major stage, echo the master report path and state the current phase (preflight, auditing round N, fixing round N, confirmation round N, or closing).
+At each major stage, echo the master report path and state the current phase (preflight, auditing round N, fixing round N, repeat-gate round N, or closing).
 
 ## Guardrails
 
 - Do not carry unresolved deferred findings into a clean final report.
 - Do not collapse multiple rounds into one summary.
-- Do not skip the confirmation round. A round that applied fixes cannot also be the confirmation round.
+- Do not run an automatic confirmation round after a round with zero Critical/High applied fixes.
+- Do not count rejected findings toward the Critical/High repeat gate.
 - Do not modify unrelated code just because it is nearby.
 - Keep each round grounded in concrete reviewed diffs, review-scope findings, and observed verification.
 
 ## Definition of done
 
 - The master report exists at `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` with one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round plus `## Final Verification` and `## Residual Risk`.
-- The final round is an explicit confirmation round, distinct from any round that applied fixes, and its section states zero accepted findings.
+- The final round's status states `Critical/High applied fixes: 0`.
 - No accepted finding from any round remains unresolved or deferred in the final report.
 - The working tree was not staged, committed, or discarded by this skill.
 
@@ -201,11 +204,11 @@ Required chat output:
 2. State total rounds, total findings, and final convergence status.
 3. Present a **Key fixes applied** table sorted by Round then Severity. The Round column is required. Example columns: `| Round | Severity | Fix | Files |`.
 4. List rejected and deferred findings (if any) with their round numbers.
-5. State which round was the confirmation round and that it ended with zero accepted findings.
+5. State which round stopped the loop and that it applied zero Critical or High fixes.
 
 Example summary:
 ```
-- 3 rounds to converge (Round 3 confirmation)
+- 2 rounds to converge (Round 2 applied zero Critical/High fixes)
 - 12 findings from 5 parallel reviewers
 - 5 accepted and fixed, 6 rejected, 1 deferred
 ```

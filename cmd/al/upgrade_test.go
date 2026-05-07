@@ -189,7 +189,8 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 		promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
 		promptFuncs.OverwritePreviewFunc == nil ||
 		promptFuncs.DeleteUnknownAllFunc == nil ||
-		promptFuncs.DeleteUnknownFunc == nil {
+		promptFuncs.DeleteUnknownFunc == nil ||
+		promptFuncs.DeleteUnknownTmpAllFunc == nil {
 		t.Fatalf("expected all prompt callbacks to be wired: %+v", promptFuncs)
 	}
 
@@ -319,7 +320,8 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 		promptFuncs.OverwriteAllUnifiedPreviewFunc == nil ||
 		promptFuncs.OverwritePreviewFunc == nil ||
 		promptFuncs.DeleteUnknownAllFunc == nil ||
-		promptFuncs.DeleteUnknownFunc == nil {
+		promptFuncs.DeleteUnknownFunc == nil ||
+		promptFuncs.DeleteUnknownTmpAllFunc == nil {
 		t.Fatalf("expected all prompt callbacks to be wired: %+v", promptFuncs)
 	}
 }

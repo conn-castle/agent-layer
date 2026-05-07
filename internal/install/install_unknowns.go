@@ -69,6 +69,11 @@ func (inst *installer) scanUnknownRoot(root string, known map[string]struct{}) e
 // scan at call time so the list reflects the actual post-migration state (the
 // early scanUnknowns call captures unknowns for snapshot/rollback safety but
 // may include paths that migrations have since moved or deleted).
+//
+// Files under .agent-layer/tmp/ are treated as a single group: the top-level
+// summary collapses them into one line, and when the "delete all" prompt is
+// declined, tmp files are surfaced through one grouped prompt rather than the
+// per-file loop used for the rest of the unknowns.
 func (inst *installer) handleUnknowns() error {
 	if !inst.overwrite {
 		return nil
@@ -83,7 +88,8 @@ func (inst *installer) handleUnknowns() error {
 	if inst.prompter == nil {
 		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
 	}
-	rel := inst.relativePathList(unknowns)
+	tmpUnknowns, otherUnknowns := inst.partitionTmpUnknowns(unknowns)
+	rel := inst.collapsedRelativePathList(tmpUnknowns, otherUnknowns)
 	deleteAll, err := inst.prompter.DeleteUnknownAll(rel)
 	if err != nil {
 		return err
@@ -91,7 +97,12 @@ func (inst *installer) handleUnknowns() error {
 	if deleteAll {
 		return inst.deleteUnknowns(unknowns)
 	}
-	for _, path := range unknowns {
+	if len(tmpUnknowns) > 0 {
+		if err := inst.handleTmpUnknowns(tmpUnknowns); err != nil {
+			return err
+		}
+	}
+	for _, path := range otherUnknowns {
 		relPath := inst.relativePath(path)
 		deletePath, err := inst.prompter.DeleteUnknown(relPath)
 		if err != nil {
@@ -104,6 +115,78 @@ func (inst *installer) handleUnknowns() error {
 		}
 	}
 	return nil
+}
+
+// handleTmpUnknowns asks one grouped yes/no question for every unknown path
+// under .agent-layer/tmp/. When the prompter does not implement
+// tmpUnknownsPrompter (legacy mocks), falls back to the per-file
+// DeleteUnknown prompt to preserve existing behavior.
+func (inst *installer) handleTmpUnknowns(tmpUnknowns []string) error {
+	if len(tmpUnknowns) == 0 {
+		return nil
+	}
+	rel := inst.relativePathList(tmpUnknowns)
+	grouped, ok := inst.prompter.(tmpUnknownsPrompter)
+	if !ok {
+		for _, path := range tmpUnknowns {
+			relPath := inst.relativePath(path)
+			deletePath, err := inst.prompter.DeleteUnknown(relPath)
+			if err != nil {
+				return err
+			}
+			if deletePath {
+				if err := inst.sys.RemoveAll(path); err != nil {
+					return fmt.Errorf(messages.InstallDeleteUnknownFailedFmt, relPath, err)
+				}
+			}
+		}
+		return nil
+	}
+	deleteTmp, err := grouped.DeleteUnknownTmpAll(rel)
+	if err != nil {
+		return err
+	}
+	if !deleteTmp {
+		return nil
+	}
+	return inst.deleteUnknowns(tmpUnknowns)
+}
+
+// partitionTmpUnknowns splits an absolute-path unknowns slice into entries
+// under .agent-layer/tmp/ and everything else, preserving input order in each
+// bucket.
+func (inst *installer) partitionTmpUnknowns(unknowns []string) (tmpUnknowns, otherUnknowns []string) {
+	prefix := filepath.Join(".agent-layer", "tmp") + string(os.PathSeparator)
+	for _, path := range unknowns {
+		rel := inst.relativePath(path)
+		if strings.HasPrefix(rel, prefix) {
+			tmpUnknowns = append(tmpUnknowns, path)
+			continue
+		}
+		otherUnknowns = append(otherUnknowns, path)
+	}
+	return tmpUnknowns, otherUnknowns
+}
+
+// collapsedRelativePathList returns the top-level summary of unknowns shown
+// before the "delete all" prompt: tmp files are folded into a single
+// `.agent-layer/tmp/ (N files)` entry while every non-tmp unknown is listed
+// individually. The output is sorted alphabetically with the tmp summary
+// participating in the sort by its synthetic label.
+func (inst *installer) collapsedRelativePathList(tmpUnknowns, otherUnknowns []string) []string {
+	rel := inst.relativePathList(otherUnknowns)
+	if len(tmpUnknowns) == 0 {
+		return rel
+	}
+	noun := "file"
+	if len(tmpUnknowns) != 1 {
+		noun = "files"
+	}
+	tmpRoot := filepath.Join(".agent-layer", "tmp") + string(os.PathSeparator)
+	summary := fmt.Sprintf("%s (%d %s)", tmpRoot, len(tmpUnknowns), noun)
+	rel = append(rel, summary)
+	sort.Strings(rel)
+	return rel
 }
 
 // scanCurrentUnknowns performs a fresh scan for unknown files, returning the
