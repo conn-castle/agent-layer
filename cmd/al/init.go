@@ -30,6 +30,7 @@ var runWizard = func(root string, pinVersion string) error {
 
 var installRun = install.Run
 var installRollbackUpgradeSnapshot = install.RollbackUpgradeSnapshot
+var syncRun = alsync.Run
 var statAgentLayerPath = os.Stat
 
 var resolveLatestPinVersion = func(ctx context.Context, currentVersion string) (string, error) {

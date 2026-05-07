@@ -11,7 +11,9 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/testutil"
+	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
 func TestUpgradeCmd_RequiresTerminalWithoutApplyFlags(t *testing.T) {
@@ -148,6 +150,7 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 		return nil
 	}
 	t.Cleanup(func() { installRun = origInstallRun })
+	stubSyncRunNoop(t)
 
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
@@ -218,6 +221,7 @@ func TestUpgradeCmd_SuccessMessageOnCompletion(t *testing.T) {
 	origInstallRun := installRun
 	installRun = func(string, install.Options) error { return nil }
 	t.Cleanup(func() { installRun = origInstallRun })
+	stubSyncRunNoop(t)
 
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
@@ -268,6 +272,185 @@ func TestUpgradeCmd_NoSuccessMessageOnError(t *testing.T) {
 	})
 }
 
+func TestUpgradeCmd_RunsSyncAfterSuccessfulInstall(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return nil }
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	origSyncRun := syncRun
+	var syncCalls int
+	var syncRoot string
+	syncRun = func(gotRoot string) (*alsync.Result, error) {
+		syncCalls++
+		syncRoot = gotRoot
+		return &alsync.Result{}, nil
+	}
+	t.Cleanup(func() { syncRun = origSyncRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+		if syncCalls != 1 {
+			t.Fatalf("syncRun called %d times, want 1", syncCalls)
+		}
+		if canonicalPath(syncRoot) != canonicalPath(root) {
+			t.Fatalf("syncRun root = %q, want %q", syncRoot, root)
+		}
+		out := stdout.String()
+		if !strings.Contains(out, messages.UpgradeRunningSync) {
+			t.Fatalf("expected %q in stdout, got %q", messages.UpgradeRunningSync, out)
+		}
+		if !strings.Contains(out, messages.UpgradeSuccessful) {
+			t.Fatalf("expected %q in stdout, got %q", messages.UpgradeSuccessful, out)
+		}
+	})
+}
+
+func TestUpgradeCmd_SyncWarningsPrintedToStderr(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return nil }
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	origSyncRun := syncRun
+	syncRun = func(string) (*alsync.Result, error) {
+		return &alsync.Result{
+			Warnings: []warnings.Warning{{Message: "trusted folders not set"}},
+		}, nil
+	}
+	t.Cleanup(func() { syncRun = origSyncRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout, stderr bytes.Buffer
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&stderr)
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute upgrade: %v", err)
+		}
+		if !strings.Contains(stderr.String(), "trusted folders not set") {
+			t.Fatalf("expected sync warning in stderr, got %q", stderr.String())
+		}
+		if !strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
+			t.Fatalf("expected %q in stdout, got %q", messages.UpgradeSuccessful, stdout.String())
+		}
+	})
+}
+
+func TestUpgradeCmd_SyncFailureWrappedNonFatalLoud(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return nil }
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	syncErr := errors.New("config invalid")
+	origSyncRun := syncRun
+	syncRun = func(string) (*alsync.Result, error) {
+		return nil, syncErr
+	}
+	t.Cleanup(func() { syncRun = origSyncRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		var stdout bytes.Buffer
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
+		cmd.SetOut(&stdout)
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatal("expected error from upgrade when sync fails")
+		}
+		if !errors.Is(err, syncErr) {
+			t.Fatalf("expected wrapped sync error, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "upgrade applied") {
+			t.Fatalf("expected error to indicate upgrade succeeded, got %q", err.Error())
+		}
+		if !strings.Contains(err.Error(), "al sync") {
+			t.Fatalf("expected error to suggest `al sync`, got %q", err.Error())
+		}
+		if strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
+			t.Fatalf("upgrade-successful banner should not appear when sync fails, got %q", stdout.String())
+		}
+	})
+}
+
+func TestUpgradeCmd_SyncNotRunWhenInstallFails(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+
+	origIsTerminal := isTerminal
+	isTerminal = func() bool { return false }
+	t.Cleanup(func() { isTerminal = origIsTerminal })
+
+	origInstallRun := installRun
+	installRun = func(string, install.Options) error { return errors.New("install boom") }
+	t.Cleanup(func() { installRun = origInstallRun })
+
+	origSyncRun := syncRun
+	syncCalled := false
+	syncRun = func(string) (*alsync.Result, error) {
+		syncCalled = true
+		return &alsync.Result{}, nil
+	}
+	t.Cleanup(func() { syncRun = origSyncRun })
+
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newUpgradeCmd()
+		cmd.SetArgs([]string{"--yes", "--apply-managed-updates"})
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetIn(bytes.NewBufferString(""))
+
+		if err := cmd.Execute(); err == nil {
+			t.Fatal("expected install error")
+		}
+	})
+	if syncCalled {
+		t.Fatal("syncRun must not be called when install fails")
+	}
+}
+
 func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
@@ -283,6 +466,7 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { installRun = origInstallRun })
+	stubSyncRunNoop(t)
 
 	var captured install.Options
 	installRun = func(gotRoot string, opts install.Options) error {
@@ -346,6 +530,7 @@ func TestUpgradeCmd_InteractiveApplyManagedAutoApprovesOnlyManaged(t *testing.T)
 		return nil
 	}
 	t.Cleanup(func() { installRun = origInstallRun })
+	stubSyncRunNoop(t)
 
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()
@@ -491,6 +676,7 @@ func TestUpgradeCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { installRun = origInstallRun })
+	stubSyncRunNoop(t)
 
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newUpgradeCmd()

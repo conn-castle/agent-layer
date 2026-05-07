@@ -20,10 +20,12 @@ const (
 
 // DiffPreview is a user-facing, per-file diff preview used by upgrade prompts and plans.
 type DiffPreview struct {
-	Path        string
-	Ownership   OwnershipLabel
-	UnifiedDiff string
-	Truncated   bool
+	Path         string
+	Ownership    OwnershipLabel
+	UnifiedDiff  string
+	Truncated    bool
+	LinesAdded   int
+	LinesRemoved int
 }
 
 func normalizeDiffMaxLines(value int) int {
@@ -139,12 +141,14 @@ func (inst *installer) buildSingleDiffPreview(entry LabeledPath, templatePathByR
 		toContent = normalizeTemplateContent(templateManaged)
 	}
 
-	rendered, truncated := renderTruncatedUnifiedDiff(fromName, toName, fromContent, toContent, inst.diffMaxLines)
+	rendered, truncated, added, removed := renderTruncatedUnifiedDiff(fromName, toName, fromContent, toContent, inst.diffMaxLines)
 	return DiffPreview{
-		Path:        relPath,
-		Ownership:   entry.Ownership,
-		UnifiedDiff: rendered,
-		Truncated:   truncated,
+		Path:         relPath,
+		Ownership:    entry.Ownership,
+		UnifiedDiff:  rendered,
+		Truncated:    truncated,
+		LinesAdded:   added,
+		LinesRemoved: removed,
 	}, nil
 }
 
@@ -165,7 +169,7 @@ func (inst *installer) pinVersionDiffPreview(relPath string, ownership Ownership
 		to = target + "\n"
 	}
 
-	rendered, truncated := renderTruncatedUnifiedDiff(
+	rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
 		pinVersionRelPath+" (current)",
 		pinVersionRelPath+" (target)",
 		from,
@@ -173,26 +177,57 @@ func (inst *installer) pinVersionDiffPreview(relPath string, ownership Ownership
 		inst.diffMaxLines,
 	)
 	return DiffPreview{
-		Path:        relPath,
-		Ownership:   ownership,
-		UnifiedDiff: rendered,
-		Truncated:   truncated,
+		Path:         relPath,
+		Ownership:    ownership,
+		UnifiedDiff:  rendered,
+		Truncated:    truncated,
+		LinesAdded:   added,
+		LinesRemoved: removed,
 	}, nil
 }
 
-func renderTruncatedUnifiedDiff(fromName string, toName string, fromContent string, toContent string, maxLines int) (string, bool) {
+// renderTruncatedUnifiedDiff renders a normalized unified diff capped at
+// maxLines, and also reports the full added/removed line counts (computed
+// before truncation so callers can show accurate stats even when the diff
+// body itself is shortened).
+func renderTruncatedUnifiedDiff(fromName string, toName string, fromContent string, toContent string, maxLines int) (string, bool, int, int) {
 	limit := normalizeDiffMaxLines(maxLines)
 	diff := normalizeUnifiedDiffPreview(udiff.Unified(fromName, toName, fromContent, toContent))
 	lines := splitDiffLines(diff)
+	added, removed := countDiffLineStats(lines)
 	if len(lines) <= limit {
-		return ensureTrailingNewline(strings.Join(lines, "\n")), false
+		return ensureTrailingNewline(strings.Join(lines, "\n")), false, added, removed
 	}
 	truncated := lines[:limit]
 	truncated = append(
 		truncated,
 		fmt.Sprintf("... (truncated to %d lines; rerun with %s <n> to see more)", limit, diffLineCapFlagName),
 	)
-	return ensureTrailingNewline(strings.Join(truncated, "\n")), true
+	return ensureTrailingNewline(strings.Join(truncated, "\n")), true, added, removed
+}
+
+// countDiffLineStats counts unified-diff added (`+`) and removed (`-`) body
+// lines. Only lines after the first `@@` hunk header are counted, so file
+// headers (`--- path` / `+++ path`) are skipped without misclassifying body
+// lines whose content happens to start with `---` or `+++` (e.g. YAML
+// frontmatter delimiters in template files).
+func countDiffLineStats(lines []string) (added, removed int) {
+	inBody := false
+	for _, line := range lines {
+		if !inBody {
+			if strings.HasPrefix(line, "@@") {
+				inBody = true
+			}
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "+"):
+			added++
+		case strings.HasPrefix(line, "-"):
+			removed++
+		}
+	}
+	return added, removed
 }
 
 func splitDiffLines(content string) []string {

@@ -76,6 +76,9 @@ func newUpgradeCmd() *cobra.Command {
 			if err := installRun(root, opts); err != nil {
 				return err
 			}
+			if err := runPostUpgradeSync(cmd.OutOrStdout(), cmd.ErrOrStderr(), root); err != nil {
+				return err
+			}
 			_, writeErr := fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeSuccessful)
 			return writeErr
 		},
@@ -191,6 +194,29 @@ func newUpgradeRepairGitignoreBlockCmd() *cobra.Command {
 	}
 }
 
+// runPostUpgradeSync regenerates client outputs after a successful install so
+// retired projection paths and freshly-introduced templates are reconciled
+// without requiring the user to invoke `al sync` manually. Sync warnings are
+// surfaced on stderr; sync errors are wrapped to make clear that the upgrade
+// itself succeeded.
+func runPostUpgradeSync(stdout, stderr io.Writer, root string) error {
+	_, _ = fmt.Fprintln(stdout, messages.UpgradeRunningSync)
+	result, err := syncRun(root)
+	if err != nil {
+		return fmt.Errorf(messages.UpgradeSyncFailedFmt, err)
+	}
+	if result == nil {
+		return nil
+	}
+	if len(result.Warnings) > 0 {
+		warnColor := color.New(color.FgYellow)
+		for _, w := range result.Warnings {
+			_, _ = warnColor.Fprintf(stderr, messages.WizardWarningFmt, w.Message)
+		}
+	}
+	return nil
+}
+
 type upgradeApplyInputs struct {
 	interactive       bool
 	yes               bool
@@ -292,10 +318,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 				}
 				return reviewState.applyManaged, nil
 			}
-			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews); err != nil {
-				return false, err
-			}
-			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
+			return promptOverwriteSection(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, previews, messages.UpgradeOverwriteAllPrompt, true)
 		},
 		OverwriteAllMemoryPreviewFunc: func(previews []install.DiffPreview) (bool, error) {
 			if policy.explicitCategory {
@@ -307,10 +330,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 				}
 				return reviewState.applyMemory, nil
 			}
-			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews); err != nil {
-				return false, err
-			}
-			return promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
+			return promptOverwriteSection(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, previews, messages.UpgradeOverwriteMemoryAllPrompt, false)
 		},
 		OverwriteAllUnifiedPreviewFunc: func(managedPreviews []install.DiffPreview, memoryPreviews []install.DiffPreview) (bool, bool, error) {
 			if policy.explicitCategory {
@@ -324,29 +344,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 				}
 				return reviewState.applyManaged, reviewState.applyMemory, nil
 			}
-
-			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, managedPreviews); err != nil {
-				return false, false, err
-			}
-			if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, memoryPreviews); err != nil {
-				return false, false, err
-			}
-			applyManaged := false
-			applyMemory := false
-			var err error
-			if len(managedPreviews) > 0 {
-				applyManaged, err = promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
-				if err != nil {
-					return false, false, err
-				}
-			}
-			if len(memoryPreviews) > 0 {
-				applyMemory, err = promptYesNo(stdinReader, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
-				if err != nil {
-					return false, false, err
-				}
-			}
-			return applyManaged, applyMemory, nil
+			return promptUnifiedOverwriteSections(stdinReader, cmd.OutOrStdout(), managedPreviews, memoryPreviews)
 		},
 		OverwritePreviewFunc: func(preview install.DiffPreview) (bool, error) {
 			if policy.explicitCategory {
@@ -441,31 +439,105 @@ func promptUnifiedUpgradeReview(cmd *cobra.Command, in io.Reader, state *upgrade
 	if state.prompted {
 		return nil
 	}
-	if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteManagedHeader, state.managedPreviews); err != nil {
+	applyManaged, applyMemory, err := promptUnifiedOverwriteSections(in, cmd.OutOrStdout(), state.managedPreviews, state.memoryPreviews)
+	if err != nil {
 		return err
-	}
-	if err := printDiffPreviews(cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryHeader, state.memoryPreviews); err != nil {
-		return err
-	}
-	applyManaged := false
-	applyMemory := false
-	var err error
-	if len(state.managedPreviews) > 0 {
-		applyManaged, err = promptYesNo(in, cmd.OutOrStdout(), messages.UpgradeOverwriteAllPrompt, true)
-		if err != nil {
-			return err
-		}
-	}
-	if len(state.memoryPreviews) > 0 {
-		applyMemory, err = promptYesNo(in, cmd.OutOrStdout(), messages.UpgradeOverwriteMemoryAllPrompt, false)
-		if err != nil {
-			return err
-		}
 	}
 	state.applyManaged = applyManaged
 	state.applyMemory = applyMemory
 	state.prompted = true
 	return nil
+}
+
+// promptUnifiedOverwriteSections prints summary lists for both managed and
+// memory previews, asks once whether to view the full diffs (default no),
+// optionally renders them, and then asks the apply prompt for each section.
+func promptUnifiedOverwriteSections(in io.Reader, out io.Writer, managedPreviews []install.DiffPreview, memoryPreviews []install.DiffPreview) (bool, bool, error) {
+	reader := bufferedReader(in)
+	if err := printDiffPreviewSummary(out, messages.UpgradeOverwriteManagedHeader, managedPreviews); err != nil {
+		return false, false, err
+	}
+	if err := printDiffPreviewSummary(out, messages.UpgradeOverwriteMemoryHeader, memoryPreviews); err != nil {
+		return false, false, err
+	}
+	combined := make([]install.DiffPreview, 0, len(managedPreviews)+len(memoryPreviews))
+	combined = append(combined, managedPreviews...)
+	combined = append(combined, memoryPreviews...)
+	if err := promptOptionalViewDiff(reader, out, combined); err != nil {
+		return false, false, err
+	}
+	applyManaged := false
+	applyMemory := false
+	var err error
+	if len(managedPreviews) > 0 {
+		applyManaged, err = promptYesNo(reader, out, messages.UpgradeOverwriteAllPrompt, true)
+		if err != nil {
+			return false, false, err
+		}
+	}
+	if len(memoryPreviews) > 0 {
+		applyMemory, err = promptYesNo(reader, out, messages.UpgradeOverwriteMemoryAllPrompt, false)
+		if err != nil {
+			return false, false, err
+		}
+	}
+	return applyManaged, applyMemory, nil
+}
+
+// promptOverwriteSection renders the file list (with +/- stats), asks if the
+// user wants to view the full diff (default no), optionally renders the diff
+// bodies, and finally asks the apply prompt. Returns false with no prompts
+// when previews is empty.
+func promptOverwriteSection(in io.Reader, out io.Writer, header string, previews []install.DiffPreview, applyPrompt string, applyDefault bool) (bool, error) {
+	if len(previews) == 0 {
+		return false, nil
+	}
+	reader := bufferedReader(in)
+	if err := printDiffPreviewSummary(out, header, previews); err != nil {
+		return false, err
+	}
+	if err := promptOptionalViewDiff(reader, out, previews); err != nil {
+		return false, err
+	}
+	return promptYesNo(reader, out, applyPrompt, applyDefault)
+}
+
+// bufferedReader returns a *bufio.Reader for in, reusing it if in is already
+// buffered. Sharing one reader across consecutive prompts prevents bytes
+// buffered after the first newline from being silently dropped between calls.
+func bufferedReader(in io.Reader) *bufio.Reader {
+	if br, ok := in.(*bufio.Reader); ok {
+		return br
+	}
+	return bufio.NewReader(in)
+}
+
+// promptOptionalViewDiff asks "View the full diff?" defaulting to no, and
+// renders the unified diff bodies when the user accepts. The prompt is
+// suppressed when no preview carries a non-empty diff body, since there is
+// nothing to show.
+func promptOptionalViewDiff(in io.Reader, out io.Writer, previews []install.DiffPreview) error {
+	if !hasNonEmptyDiff(previews) {
+		return nil
+	}
+	view, err := promptYesNo(in, out, messages.UpgradeViewDiffPrompt, false)
+	if err != nil {
+		return err
+	}
+	if !view {
+		return nil
+	}
+	return printDiffPreviewBodies(out, previews)
+}
+
+// hasNonEmptyDiff reports whether any preview has a non-empty unified diff body.
+func hasNonEmptyDiff(previews []install.DiffPreview) bool {
+	for _, preview := range previews {
+		if strings.TrimSpace(preview.UnifiedDiff) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func isMemoryPreviewPath(path string) bool {
@@ -711,7 +783,26 @@ func writeSinglePreviewBlock(out io.Writer, preview install.DiffPreview) error {
 	return nil
 }
 
+// printDiffPreviews renders the file-list summary (with +/- stats) followed
+// by every non-empty diff body. Used by the per-file overwrite prompt where
+// the user has already chosen to inspect a single file.
 func printDiffPreviews(out io.Writer, header string, previews []install.DiffPreview) error {
+	if len(previews) == 0 {
+		return nil
+	}
+	if err := printDiffPreviewSummary(out, header, previews); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintln(out); err != nil {
+		return err
+	}
+	return printDiffPreviewBodies(out, previews)
+}
+
+// printDiffPreviewSummary prints a header (when non-empty) followed by a list
+// of "  - <path>  +N -M" lines, with the +N green and -M red when output is
+// colorized. Paths are left-aligned in a single column for readability.
+func printDiffPreviewSummary(out io.Writer, header string, previews []install.DiffPreview) error {
 	if len(previews) == 0 {
 		return nil
 	}
@@ -723,14 +814,27 @@ func printDiffPreviews(out io.Writer, header string, previews []install.DiffPrev
 			return err
 		}
 	}
+	maxPath := 0
 	for _, preview := range previews {
-		if _, err := fmt.Fprintf(out, messages.InstallDiffLineFmt, preview.Path); err != nil {
+		if n := len(preview.Path); n > maxPath {
+			maxPath = n
+		}
+	}
+	colorize := shouldColorizeDiffOutput()
+	for _, preview := range previews {
+		added := formatDiffStat(preview.LinesAdded, "+", diffColorAdded, colorize)
+		removed := formatDiffStat(preview.LinesRemoved, "-", diffColorRemoved, colorize)
+		if _, err := fmt.Fprintf(out, "  - %-*s  %s %s\n", maxPath, preview.Path, added, removed); err != nil {
 			return err
 		}
 	}
-	if _, err := fmt.Fprintln(out); err != nil {
-		return err
-	}
+	return nil
+}
+
+// printDiffPreviewBodies prints "Diff for <path>:" followed by each preview's
+// unified diff body, separated by blank lines. Previews with empty diff
+// bodies are skipped.
+func printDiffPreviewBodies(out io.Writer, previews []install.DiffPreview) error {
 	colorize := shouldColorizeDiffOutput()
 	for _, preview := range previews {
 		if strings.TrimSpace(preview.UnifiedDiff) == "" {
@@ -747,6 +851,17 @@ func printDiffPreviews(out io.Writer, header string, previews []install.DiffPrev
 		}
 	}
 	return nil
+}
+
+// formatDiffStat formats a stat token like "+5" or "-3", colorized when both
+// colorize is true and the count is non-zero. Zero counts stay plain so the
+// absence of changes does not draw the eye.
+func formatDiffStat(count int, sign string, c *color.Color, colorize bool) string {
+	text := fmt.Sprintf("%s%d", sign, count)
+	if colorize && count > 0 {
+		return c.Sprint(text)
+	}
+	return text
 }
 
 func shouldColorizeDiffOutput() bool {

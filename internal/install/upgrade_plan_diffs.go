@@ -89,7 +89,7 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 		if err != nil {
 			return DiffPreview{}, err
 		}
-		rendered, truncated := renderTruncatedUnifiedDiff(
+		rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
 			change.Path+" (current)",
 			change.Path+" (template)",
 			"",
@@ -97,10 +97,12 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 			inst.diffMaxLines,
 		)
 		return DiffPreview{
-			Path:        change.Path,
-			Ownership:   change.Ownership,
-			UnifiedDiff: rendered,
-			Truncated:   truncated,
+			Path:         change.Path,
+			Ownership:    change.Ownership,
+			UnifiedDiff:  rendered,
+			Truncated:    truncated,
+			LinesAdded:   added,
+			LinesRemoved: removed,
 		}, nil
 	case planDiffModeRemoval:
 		localPath := filepath.Join(inst.root, filepath.FromSlash(change.Path))
@@ -108,7 +110,7 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 		if err != nil {
 			return DiffPreview{}, err
 		}
-		rendered, truncated := renderTruncatedUnifiedDiff(
+		rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
 			change.Path+" (current)",
 			change.Path+" (template)",
 			normalizeTemplateContent(string(localBytes)),
@@ -116,10 +118,12 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 			inst.diffMaxLines,
 		)
 		return DiffPreview{
-			Path:        change.Path,
-			Ownership:   change.Ownership,
-			UnifiedDiff: rendered,
-			Truncated:   truncated,
+			Path:         change.Path,
+			Ownership:    change.Ownership,
+			UnifiedDiff:  rendered,
+			Truncated:    truncated,
+			LinesAdded:   added,
+			LinesRemoved: removed,
 		}, nil
 	default:
 		return DiffPreview{}, fmt.Errorf(messages.InstallUnknownPlanDiffModeFmt, mode)

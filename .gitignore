@@ -17,7 +17,7 @@ coverage.out
 
 
 # >>> agent-layer
-# Template hash: ee083067cb802f1ed1c1b5c444759604dff95deccfb02a3537d69a3f28a3f7fa
+# Template hash: eba5a7d70a56b2e731ca1775b7e3342ccad3c13d550fae87f8cb966e230718d7
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al sync` to apply changes.
 
@@ -36,15 +36,14 @@ coverage.out
 # Agent Layer-generated client configs + artifacts
 # These may contain resolved secrets from .agent-layer/.env — keep gitignored.
 /.agent/
+/.agents/
 /.mcp.json
 /.codex/
 /.copilot/
 /.gemini/
 /.claude/
 /.claude-config/
-/.github/skills/
 /.vscode/mcp.json
-/.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.
 /.vscode/settings.json
 # <<< agent-layer
