@@ -99,6 +99,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	if config.IsAgentEnabled(agents.Gemini.Enabled) {
 		steps = append(steps,
 			func() error { return WriteGeminiSettings(sys, root, project) },
+			func() error { return WriteGeminiPolicies(sys, root, project) },
 		)
 	}
 

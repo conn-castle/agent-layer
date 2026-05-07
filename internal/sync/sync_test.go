@@ -47,6 +47,7 @@ func TestRunGolden(t *testing.T) {
 		".vscode/settings.json",
 		".vscode/mcp.json",
 		".gemini/settings.json",
+		".gemini/policies/agent-layer.toml",
 		".claude/settings.json",
 		".mcp.json",
 	}

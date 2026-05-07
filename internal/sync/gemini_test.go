@@ -26,8 +26,8 @@ func TestBuildGeminiSettingsCommandsOnly(t *testing.T) {
 	if settings.GeneratedBy != "agent-layer" {
 		t.Fatalf("expected _generatedBy agent-layer, got %q", settings.GeneratedBy)
 	}
-	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
-		t.Fatalf("expected allowed tools")
+	if len(settings.PolicyPaths) != 1 || settings.PolicyPaths[0] != ".gemini/policies" {
+		t.Fatalf("expected policyPaths [.gemini/policies], got %#v", settings.PolicyPaths)
 	}
 }
 
@@ -135,8 +135,8 @@ func TestBuildGeminiSettingsMCPServers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildGeminiSettings error: %v", err)
 	}
-	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
-		t.Fatalf("expected tool permissions")
+	if len(settings.PolicyPaths) != 1 {
+		t.Fatalf("expected policyPaths to be set, got %#v", settings.PolicyPaths)
 	}
 	// Gemini preserves ${VAR} placeholders - Gemini CLI resolves them at runtime.
 	httpServer := settings.MCPServers["http"]
@@ -182,8 +182,8 @@ func TestBuildGeminiSettingsYOLO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildGeminiSettings error: %v", err)
 	}
-	if settings.Tools == nil || len(settings.Tools.Allowed) != 1 {
-		t.Fatalf("expected allowed tools for yolo mode")
+	if len(settings.PolicyPaths) != 1 {
+		t.Fatalf("expected policyPaths for yolo mode, got %#v", settings.PolicyPaths)
 	}
 }
 

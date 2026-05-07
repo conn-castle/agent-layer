@@ -179,6 +179,14 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 		t.Fatalf("write gemini settings: %v", err)
 	}
 
+	geminiPolicyPath := filepath.Join(root, ".gemini", "policies", "agent-layer.toml")
+	if err := os.MkdirAll(filepath.Dir(geminiPolicyPath), 0o755); err != nil {
+		t.Fatalf("mkdir gemini policies dir: %v", err)
+	}
+	if err := os.WriteFile(geminiPolicyPath, []byte("# GENERATED FILE\n"), 0o644); err != nil {
+		t.Fatalf("write gemini policy: %v", err)
+	}
+
 	inst := &installer{root: root, sys: RealSystem{}}
 	checks, err := buildUpgradeReadinessChecks(inst)
 	if err != nil {
@@ -189,8 +197,13 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 		t.Fatalf("expected %s check", readinessCheckDisabledArtifacts)
 	}
 	joined := strings.Join(check.Details, "\n")
-	if !strings.Contains(joined, ".gemini/settings.json") {
-		t.Fatalf("expected disabled artifact detail, got %q", joined)
+	for _, expected := range []string{
+		".gemini/settings.json",
+		".gemini/policies/agent-layer.toml",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected disabled artifact detail %q, got %q", expected, joined)
+		}
 	}
 }
 
