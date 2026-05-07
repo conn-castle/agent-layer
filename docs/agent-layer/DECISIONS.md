@@ -33,8 +33,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Tradeoffs: Launching through generated scripts is required to guarantee repo-scoped Codex context.
 
 - Decision 2026-01-17 c9d0e1f: Antigravity limited support
-    Decision: Antigravity supports instructions and slash commands only (no MCP, no approvals). Slash commands map to skills at `.agent/skills/<command>/SKILL.md`.
-    Reason: Antigravity integration is best-effort; core clients (Gemini, Claude, VS Code, Codex) have full parity.
+    Decision: Antigravity supports instructions and skills only (no MCP, no approvals). Skills are projected through shared `.agents/skills/<name>/SKILL.md`; singular `.agent/skills/` is treated as legacy generated output.
+    Reason: Antigravity integration is best-effort; core clients (Gemini, Claude, VS Code, Codex, Copilot CLI) have full parity, and current skill support aligns with the shared Agent Skills path.
     Tradeoffs: Antigravity users get reduced functionality compared with core clients.
 
 - Decision 2026-01-18 e1f2a3b: Secret handling (Codex exception)
@@ -243,9 +243,9 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Tradeoffs: Dual delivery path (CLI arg for all values + settings.json for low/medium/high) adds minor complexity but ensures `max` works correctly and persistable values have a settings.json fallback for non-`al claude` launches.
 
 - Decision 2026-03-21 native-skill-sync: Replace MCP prompt delivery with native skill directory sync
-    Decision: Removed the internal `al mcp-prompts` MCP server. All clients now receive skills via native directory sync (`.claude/skills/`, `.gemini/skills/`, etc.) with full subdirectory support (`scripts/`, `references/`, `assets/`). Supersedes Decision 2026-01-17 e5f6a7b and Decision 2026-02-23 mcp-prompts-dispatch-bypass.
-    Reason: MCP prompts return flat text only — no path context, no subdirectory access. Every agent CLI natively supports the agentskills.io SKILL.md directory format. Native sync eliminates the resource gap and removes an entire server process.
-    Tradeoffs: Lost the unified MCP prompt API for skill delivery, but this was only used by Claude and Gemini, and both support native skills. Gained full Agent Skills spec compatibility and simpler architecture.
+    Decision: Removed the internal `al mcp-prompts` MCP server. Claude receives skills via `.claude/skills/`; Codex, Gemini, Antigravity, VS Code/Copilot, and Copilot CLI share `.agents/skills/`. Full subdirectory support (`scripts/`, `references/`, `assets/`) is preserved. Supersedes Decision 2026-01-17 e5f6a7b and Decision 2026-02-23 mcp-prompts-dispatch-bypass.
+    Reason: MCP prompts return flat text only, while current client docs support directory-format Agent Skills and several clients now document `.agents/skills/` as an interoperable project path. Shared sync avoids duplicate skill catalogs.
+    Tradeoffs: Lost the unified MCP prompt API for skill delivery and stopped generating legacy client-specific skill folders; gained full Agent Skills resource support and fewer duplicate projections.
 
 - Decision 2026-05-07 claude-reasoning-effort-allow-custom: Claude reasoning_effort accepts custom values with a sync-time warning (refines 2026-02-24 reasoning-effort-support-matrix)
     Decision: Set `AllowCustom: true` on `agents.claude.reasoning_effort`, add `xhigh` to the catalog, drop the strict catalog-membership check in validation, and emit a soft policy warning (`POLICY_CLAUDE_REASONING_EFFORT_UNKNOWN`) at sync time when the value is outside the catalog. The Opus-model requirement remains a hard validation error.

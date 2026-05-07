@@ -85,7 +85,7 @@ func TestSkillTemplatesIncludeRequiredFrontMatterAndSections(t *testing.T) {
 			return nil
 		}
 		if filepath.Base(path) != "SKILL.md" {
-			t.Fatalf("unexpected skill template path %q: expected SKILL.md files only", path)
+			return nil
 		}
 		data, err := Read(path)
 		if err != nil {
@@ -103,6 +103,24 @@ func TestSkillTemplatesIncludeRequiredFrontMatterAndSections(t *testing.T) {
 			if !strings.Contains(content, snippet) {
 				t.Fatalf("expected %q in %s", snippet, path)
 			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk error: %v", err)
+	}
+}
+
+func TestSkillTemplatesAllowResourceFiles(t *testing.T) {
+	err := Walk("skills", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || filepath.Base(path) == "SKILL.md" {
+			return nil
+		}
+		if _, err := Read(path); err != nil {
+			t.Fatalf("expected embedded skill resource %s to be readable: %v", path, err)
 		}
 		return nil
 	})

@@ -16,6 +16,7 @@ import (
 type vscodeSettings struct {
 	ChatToolsGlobalAutoApprove          *bool            `json:"chat.tools.global.autoApprove,omitempty"`
 	ChatToolsTerminalAutoApprove        OrderedMap[bool] `json:"chat.tools.terminal.autoApprove,omitempty"`
+	ChatAgentSkillsLocations            OrderedMap[bool] `json:"chat.agentSkillsLocations,omitempty"`
 	ClaudeCodeAllowDangerouslySkipPerms *bool            `json:"claudeCode.allowDangerouslySkipPermissions,omitempty"`
 }
 
@@ -82,6 +83,8 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 
 	// Copilot settings: only when agents.vscode is enabled.
 	if vscodeEnabled {
+		settings.ChatAgentSkillsLocations = buildVSCodeAgentSkillsLocations()
+
 		if isYOLO {
 			trueVal := true
 			settings.ChatToolsGlobalAutoApprove = &trueVal
@@ -106,6 +109,17 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 	}
 
 	return settings, nil
+}
+
+func buildVSCodeAgentSkillsLocations() OrderedMap[bool] {
+	return OrderedMap[bool]{
+		".agents/skills":    true,
+		".github/skills":    false,
+		".claude/skills":    false,
+		"~/.copilot/skills": true,
+		"~/.claude/skills":  true,
+		"~/.agents/skills":  true,
+	}
 }
 
 // formatVSCodeAutoApprovePattern builds a VS Code regex literal string for a command.

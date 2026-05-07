@@ -22,75 +22,6 @@ const (
 	generatedMarkerRegenerate = "Regenerate: al sync"
 )
 
-// WriteVSCodePrompts generates VS Code prompt files for skills.
-func WriteVSCodePrompts(sys System, root string, commands []config.Skill) error {
-	promptDir := filepath.Join(root, ".vscode", "prompts")
-	if err := sys.MkdirAll(promptDir, 0o755); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, promptDir, err)
-	}
-
-	wanted := make(map[string]struct{}, len(commands))
-	for _, cmd := range commands {
-		wanted[cmd.Name] = struct{}{}
-		content := buildVSCodePrompt(cmd)
-		path := filepath.Join(promptDir, fmt.Sprintf("%s.prompt.md", cmd.Name))
-		if err := sys.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
-			return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
-		}
-	}
-
-	return removeStalePromptFiles(sys, promptDir, wanted)
-}
-
-func buildVSCodePrompt(cmd config.Skill) string {
-	var builder strings.Builder
-	builder.WriteString("---\n")
-	builder.WriteString("name: ")
-	builder.WriteString(cmd.Name)
-	builder.WriteString("\n---\n")
-	fmt.Fprintf(&builder, promptHeaderTemplate, generatedSkillSourcePath(cmd))
-	if cmd.Body != "" {
-		builder.WriteString(cmd.Body)
-		if !strings.HasSuffix(cmd.Body, "\n") {
-			builder.WriteString("\n")
-		}
-	}
-	return builder.String()
-}
-
-func removeStalePromptFiles(sys System, promptDir string, wanted map[string]struct{}) error {
-	entries, err := sys.ReadDir(promptDir)
-	if err != nil {
-		return fmt.Errorf(messages.SyncReadFailedFmt, promptDir, err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if !strings.HasSuffix(name, ".prompt.md") {
-			continue
-		}
-		base := strings.TrimSuffix(name, ".prompt.md")
-		if _, ok := wanted[base]; ok {
-			continue
-		}
-		path := filepath.Join(promptDir, name)
-		isGenerated, err := hasGeneratedMarker(sys, path)
-		if err != nil {
-			return err
-		}
-		if isGenerated {
-			if err := sys.Remove(path); err != nil {
-				return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)
-			}
-		}
-	}
-
-	return nil
-}
-
 // skillContentBuilder builds skill file content for a skill.
 type skillContentBuilder func(cmd config.Skill) (string, error)
 
@@ -197,16 +128,10 @@ func copyDirRecursive(sys System, srcDir string, destDir string, skipFiles map[s
 	return nil
 }
 
-// WriteCodexSkills generates Codex skill files for skills.
-func WriteCodexSkills(sys System, root string, commands []config.Skill) error {
-	skillsDir := filepath.Join(root, ".codex", "skills")
-	return writeSkillFiles(sys, skillsDir, commands, buildCodexSkill)
-}
-
-// WriteAntigravitySkills generates Antigravity skill files for skills.
-func WriteAntigravitySkills(sys System, root string, commands []config.Skill) error {
-	skillsDir := filepath.Join(root, ".agent", "skills")
-	return writeSkillFiles(sys, skillsDir, commands, buildAntigravitySkill)
+// WriteAgentSkills generates shared Agent Skills in .agents/skills/<name>/SKILL.md.
+func WriteAgentSkills(sys System, root string, commands []config.Skill) error {
+	skillsDir := filepath.Join(root, ".agents", "skills")
+	return writeSkillFiles(sys, skillsDir, commands, buildAgentSkill)
 }
 
 // WriteClaudeSkills generates Claude Code skill files in .claude/skills/<name>/SKILL.md.
@@ -215,36 +140,8 @@ func WriteClaudeSkills(sys System, root string, commands []config.Skill) error {
 	return writeSkillFiles(sys, skillsDir, commands, buildClaudeSkill)
 }
 
-// WriteGeminiSkills generates Gemini CLI skill files in .gemini/skills/<name>/SKILL.md.
-func WriteGeminiSkills(sys System, root string, commands []config.Skill) error {
-	skillsDir := filepath.Join(root, ".gemini", "skills")
-	return writeSkillFiles(sys, skillsDir, commands, buildGeminiSkill)
-}
-
-func buildCodexSkill(cmd config.Skill) (string, error) {
-	var builder strings.Builder
-	frontMatter, err := buildSkillFrontMatter(cmd)
-	if err != nil {
-		return "", err
-	}
-	builder.WriteString(frontMatter)
-	fmt.Fprintf(&builder, promptHeaderTemplate, generatedSkillSourcePath(cmd))
-	builder.WriteString("\n# ")
-	builder.WriteString(cmd.Name)
-	builder.WriteString("\n\n")
-	builder.WriteString(cmd.Description)
-	builder.WriteString("\n\n")
-	if cmd.Body != "" {
-		builder.WriteString(cmd.Body)
-		if !strings.HasSuffix(cmd.Body, "\n") {
-			builder.WriteString("\n")
-		}
-	}
-	return builder.String(), nil
-}
-
-// buildAntigravitySkill returns the Antigravity SKILL.md content for a skill.
-func buildAntigravitySkill(cmd config.Skill) (string, error) {
+// buildAgentSkill returns portable Agent Skills SKILL.md content.
+func buildAgentSkill(cmd config.Skill) (string, error) {
 	var builder strings.Builder
 	frontMatter, err := buildSkillFrontMatter(cmd)
 	if err != nil {
@@ -265,13 +162,7 @@ func buildAntigravitySkill(cmd config.Skill) (string, error) {
 // buildClaudeSkill returns the Claude Code SKILL.md content.
 // Uses the standard agentskills.io format: YAML frontmatter + body.
 func buildClaudeSkill(cmd config.Skill) (string, error) {
-	return buildAntigravitySkill(cmd)
-}
-
-// buildGeminiSkill returns the Gemini CLI SKILL.md content.
-// Uses the standard agentskills.io format: YAML frontmatter + body.
-func buildGeminiSkill(cmd config.Skill) (string, error) {
-	return buildAntigravitySkill(cmd)
+	return buildAgentSkill(cmd)
 }
 
 func buildSkillFrontMatter(cmd config.Skill) (string, error) {
@@ -408,6 +299,33 @@ func removeStaleSkillDirs(sys System, skillsDir string, wanted map[string]struct
 		}
 	}
 
+	return nil
+}
+
+// CleanSharedAgentSkills removes generated .agents/skills entries when no shared-skill consumer is enabled.
+func CleanSharedAgentSkills(sys System, root string) error {
+	skillsDir := filepath.Join(root, ".agents", "skills")
+	if _, err := sys.ReadDir(skillsDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf(messages.SyncReadFailedFmt, skillsDir, err)
+	}
+	return removeStaleSkillDirs(sys, skillsDir, map[string]struct{}{})
+}
+
+// CleanLegacySkillOutputs removes retired Agent Layer-generated skill
+// projection directories. Agent Layer claims exclusive ownership of these
+// paths (see docs/SKILL-CLIENT-SPEC.md "Ownership of legacy projection
+// paths") and removes them unconditionally. The canonical list lives in
+// config.LegacySkillProjections.
+func CleanLegacySkillOutputs(sys System, root string) error {
+	for _, projection := range config.LegacySkillProjections {
+		path := filepath.Join(append([]string{root}, projection.Dir...)...)
+		if err := sys.RemoveAll(path); err != nil {
+			return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)
+		}
+	}
 	return nil
 }
 

@@ -42,7 +42,8 @@ Sync writes VS Code outputs from `.agent-layer/config.toml`:
 
 - `.vscode/mcp.json` via `internal/sync/vscode_mcp.go`
 - `.vscode/settings.json` managed block via `internal/sync/vscode.go` + `internal/sync/vscode_settings_jsonc.go`
-- `.vscode/prompts/` via prompt writers in `internal/sync/`
+
+The shared `.agents/skills/` projection is also written when VS Code (or any other shared-skill consumer) is enabled, but is not VS-Code-specific. See `docs/SKILL-CLIENT-SPEC.md` for the full projection contract.
 
 `settings.json` uses marker boundaries:
 

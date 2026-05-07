@@ -275,7 +275,7 @@ func TestDetectVSCodeNoSyncStaleness_SkillsStatError(t *testing.T) {
 	}
 }
 
-func TestDetectVSCodeNoSyncStaleness_PromptWalkError(t *testing.T) {
+func TestDetectVSCodeNoSyncStaleness_SharedSkillsWalkError(t *testing.T) {
 	root := t.TempDir()
 	skillsRoot := filepath.Join(root, ".agent-layer", "skills")
 	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
@@ -284,18 +284,18 @@ func TestDetectVSCodeNoSyncStaleness_PromptWalkError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha.md"), []byte("alpha"), 0o644); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
-	promptRoot := filepath.Join(root, ".vscode", "prompts")
-	if err := os.MkdirAll(promptRoot, 0o755); err != nil {
-		t.Fatalf("mkdir prompt root: %v", err)
+	sharedSkillsRoot := filepath.Join(root, ".agents", "skills")
+	if err := os.MkdirAll(sharedSkillsRoot, 0o755); err != nil {
+		t.Fatalf("mkdir shared skills root: %v", err)
 	}
 
 	sys := newFaultSystem(RealSystem{})
-	sys.walkErrs[normalizePath(promptRoot)] = errors.New("walk boom")
+	sys.walkErrs[normalizePath(sharedSkillsRoot)] = errors.New("walk boom")
 	inst := &installer{root: root, sys: sys}
 
 	cfg := config.Config{Agents: config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}}}
 	_, err := detectVSCodeNoSyncStaleness(inst, &cfg, filepath.Join(root, ".agent-layer", "config.toml"), time.Now())
 	if err == nil || !strings.Contains(err.Error(), "walk boom") {
-		t.Fatalf("expected prompt walk error, got %v", err)
+		t.Fatalf("expected shared skills walk error, got %v", err)
 	}
 }

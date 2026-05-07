@@ -46,11 +46,10 @@ MCP = Model Context Protocol (tool/data servers).
 | Antigravity | ✅ | ✅ | ❌ | ❌ |
 
 Notes:
-- VS Code/Codex "skills" are generated in their native formats (prompt files / skills).
-- Copilot CLI skills are generated as `.github/skills/<name>/SKILL.md`.
-- Antigravity skills are generated as skills in `.agent/skills/<command>/SKILL.md`.
+- Codex, Gemini, VS Code/Copilot, Copilot CLI, and Antigravity consume shared skills from `.agents/skills/<name>/SKILL.md`.
+- Claude Code consumes skills from `.claude/skills/<name>/SKILL.md`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
-- Antigravity does not support MCP servers because it only reads from the home directory and does not load repo-local `.gemini/` or `.agent/` MCP configs.
+- Antigravity does not support MCP servers because it only reads from the home directory and does not load repo-local MCP configs.
 
 ---
 
@@ -283,9 +282,9 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 - Instruction shims: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
 - MCP + client configs: `.mcp.json`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`
-- Copilot CLI skills: `.github/skills/`
-- Antigravity skills: `.agent/skills/`
-- VS Code integration: `.vscode/mcp.json`, `.vscode/prompts/`, and an Agent Layer-managed block in `.vscode/settings.json`
+- Shared skills: `.agents/skills/`
+- Claude skills: `.claude/skills/`
+- VS Code integration: `.vscode/mcp.json` and an Agent Layer-managed block in `.vscode/settings.json`
 
 ---
 
@@ -486,7 +485,7 @@ Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/
 - Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
 - Missing or empty `description` is a load/sync error (fail-loud); it is not warning-only.
 - Directory-format skills should use `SKILL.md`; lowercase `skill.md` loads but triggers an `al doctor` warning.
-- Antigravity consumes these as skills in `.agent/skills/<command>/SKILL.md`.
+- Shared-skill clients consume these from `.agents/skills/<name>/SKILL.md`; Claude consumes them from `.claude/skills/<name>/SKILL.md`.
 - Workflow guidance is provided by individual skill sources under `.agent-layer/skills/`.
 
 ### Approved commands: `.agent-layer/commands.allow`
@@ -498,7 +497,7 @@ Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/
 
 ## Skill sync
 
-Skills are synced natively to each client's skill directory (for example `.claude/skills/`, `.gemini/skills/`, `.codex/skills/`) with full subdirectory support (`scripts/`, `references/`, `assets/`). No MCP server is involved; `al sync` copies skill sources directly into each enabled client's native format.
+Skills are synced natively to Agent Skills directories with full subdirectory support (`scripts/`, `references/`, `assets/`). Shared-skill clients use `.agents/skills/`; Claude uses `.claude/skills/`. No MCP server is involved; `al sync` copies skill sources directly into enabled client skill folders. See `docs/SKILL-CLIENT-SPEC.md` for the source-cited client support matrix.
 
 ---
 
@@ -614,7 +613,7 @@ Notes:
 
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
-- generated client config files/directories (for example `.gemini/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.agent/`, `.github/skills/`, `.vscode/mcp.json`, `.vscode/prompts/`, and `.github/copilot-instructions.md`)
+- generated client config files/directories (for example `.agents/`, `.gemini/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, and `.github/copilot-instructions.md`)
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 

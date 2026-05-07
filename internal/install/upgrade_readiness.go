@@ -431,22 +431,24 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 		}
 	}
 
-	// .vscode/prompts/ is only generated when agents.vscode is enabled.
-	if vscodeEnabled {
+	// .agents/skills/ is generated whenever any shared-skill consumer is enabled
+	// (Codex, Gemini, Antigravity, VS Code, or Copilot CLI). claude_vscode alone
+	// does not trigger generation, so gate on the canonical shared predicate.
+	if config.SharedAgentSkillsEnabled(cfg.Agents) {
 		skillCount, err := countMarkdownFiles(inst, filepath.Join(inst.root, ".agent-layer", "skills"))
 		if err != nil {
 			return nil, err
 		}
 		if skillCount > 0 {
-			promptDir := filepath.Join(inst.root, ".vscode", "prompts")
-			promptFiles, newestPrompt, promptErr := listGeneratedFilesWithSuffix(inst, promptDir, ".prompt.md")
-			if promptErr != nil {
-				return nil, promptErr
+			sharedSkillsDir := filepath.Join(inst.root, ".agents", "skills")
+			skillFiles, newestSkill, skillsErr := listGeneratedFilesWithSuffix(inst, sharedSkillsDir, "SKILL.md")
+			if skillsErr != nil {
+				return nil, skillsErr
 			}
-			if len(promptFiles) == 0 {
-				details = append(details, "missing generated VS Code prompt files under .vscode/prompts")
+			if len(skillFiles) == 0 {
+				details = append(details, "missing generated shared skills under .agents/skills")
 			} else {
-				latestGenerated = maxModTime(latestGenerated, newestPrompt)
+				latestGenerated = maxModTime(latestGenerated, newestSkill)
 			}
 		}
 	}
@@ -563,9 +565,6 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				path:     filepath.Join(inst.root, ".gemini", "settings.json"),
 				evidence: hasAgentLayerMCPSignature,
 			}},
-			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".gemini", "skills"), suffix: "SKILL.md"},
-			},
 		},
 		// .mcp.json and .claude/settings.json are generated when either agents.claude
 		// or agents.claude_vscode is enabled.
@@ -588,16 +587,6 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				{path: filepath.Join(inst.root, ".codex", "config.toml"), evidence: hasGeneratedFileMarker},
 				{path: filepath.Join(inst.root, ".codex", "rules", "default.rules"), evidence: hasGeneratedFileMarker},
 			},
-			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".codex", "skills"), suffix: "SKILL.md"},
-			},
-		},
-		{
-			agent:   "antigravity",
-			enabled: cfg.Agents.Antigravity.Enabled,
-			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".agent", "skills"), suffix: "SKILL.md"},
-			},
 		},
 		// .vscode/settings.json is generated when either agents.vscode or agents.claude_vscode is enabled.
 		{
@@ -607,7 +596,7 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				{path: filepath.Join(inst.root, ".vscode", "settings.json"), evidence: hasVSCodeManagedBlock},
 			},
 		},
-		// Prompts and launchers are only generated when agents.vscode is enabled.
+		// Launchers are only generated when agents.vscode is enabled.
 		{
 			agent:   "vscode",
 			enabled: cfg.Agents.VSCode.Enabled,
@@ -618,9 +607,18 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 				{path: launcherPaths.AppInfoPlist, evidence: exactTemplateMatcher("launchers/open-vscode.app/Contents/Info.plist")},
 				{path: launcherPaths.AppExec, evidence: exactTemplateMatcher("launchers/open-vscode.app/Contents/MacOS/open-vscode")},
 			},
+		},
+		{
+			agent:   "shared-skills",
+			enabled: boolPtr(config.SharedAgentSkillsEnabled(cfg.Agents)),
 			dirs: []disabledArtifactDirSpec{
-				{root: filepath.Join(inst.root, ".vscode", "prompts"), suffix: ".prompt.md"},
+				{root: filepath.Join(inst.root, ".agents", "skills"), suffix: "SKILL.md"},
 			},
+		},
+		{
+			agent:   "legacy-skills",
+			enabled: boolPtr(false),
+			dirs:    legacySkillProjectionDirs(inst.root),
 		},
 	}
 
@@ -654,6 +652,22 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 		Summary: "Disabled agents still have generated artifacts on disk.",
 		Details: details,
 	}, nil
+}
+
+// legacySkillProjectionDirs converts the canonical retired-projection list
+// from config into the disabledArtifactDirSpec shape used by the readiness
+// rules engine.
+func legacySkillProjectionDirs(repoRoot string) []disabledArtifactDirSpec {
+	specs := make([]disabledArtifactDirSpec, 0, len(config.LegacySkillProjections))
+	for _, projection := range config.LegacySkillProjections {
+		path := filepath.Join(append([]string{repoRoot}, projection.Dir...)...)
+		specs = append(specs, disabledArtifactDirSpec{root: path, suffix: projection.Suffix})
+	}
+	return specs
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func appendDisabledArtifactDetail(inst *installer, details *[]string, agent string, absPath string, evidence func([]byte) (bool, error)) error {

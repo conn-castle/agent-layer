@@ -59,7 +59,7 @@ The recommended section order is informed by research on how language models pro
 The skill standard defines the format. Agent Layer builds on it with:
 
 - **A built-in library of 22 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available after `al init` with no setup.
-- **Client projection** — Skills are authored once under `.agent-layer/skills/` and projected into each client's native format during `al sync` (e.g., `.agent/skills/` for Claude Code, `.codex/skills/` for Codex).
+- **Client projection** — Skills are authored once under `.agent-layer/skills/` and projected during `al sync` to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
 - **Artifact conventions** — Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention (`<skill-name>.<run-id>.<type>.md`). Planning workflows produce a trio of artifacts — a plan, a task list, and a context file — so that any agent can pick up the work cold without re-discovering what the planner already found.
 - **Orchestrator composition** — Top-level skills delegate to supporting skills automatically, enabling complex multi-step workflows from a single invocation.
