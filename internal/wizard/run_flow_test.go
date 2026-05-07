@@ -276,11 +276,11 @@ command = "npx"
 		},
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			// Toggle tavily on so the restored block is actually emitted.
+			// Toggle fetch on so the restored block is actually emitted.
 			// (Under wizard-catalog semantics, defaults left disabled in the multiselect
 			// are pruned from the rendered config even when restore-missing was confirmed.)
 			if title == "Enable Default MCP Servers" {
-				*selected = []string{"tavily"}
+				*selected = []string{"fetch"}
 			}
 			return nil
 		},
@@ -295,7 +295,7 @@ command = "npx"
 
 	// Verify restored block for the toggled-on default appears in config.
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
-	assert.Contains(t, string(data), `id = "tavily"`)
+	assert.Contains(t, string(data), `id = "fetch"`)
 }
 
 func TestRun_ClaudeLocalConfigDir(t *testing.T) {
