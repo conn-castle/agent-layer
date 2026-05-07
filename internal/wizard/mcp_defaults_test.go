@@ -87,6 +87,7 @@ func TestLoadDefaultMCPServersReadError(t *testing.T) {
 
 	_, err := loadDefaultMCPServers()
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp-catalog.toml")
 }
 
 func TestLoadDefaultMCPServersNoServers(t *testing.T) {
@@ -102,5 +103,5 @@ func TestLoadDefaultMCPServersNoServers(t *testing.T) {
 
 	_, err := loadDefaultMCPServers()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no MCP servers")
+	assert.Contains(t, err.Error(), "mcp-catalog.toml contains no MCP servers")
 }

@@ -37,7 +37,7 @@ func loadDefaultMCPServers() ([]DefaultMCPServer, error) {
 		})
 	}
 	if len(defaults) == 0 {
-		return nil, fmt.Errorf(messages.WizardTemplateNoMCPServers)
+		return nil, fmt.Errorf(messages.WizardCatalogNoMCPServers)
 	}
 	return defaults, nil
 }
@@ -47,7 +47,7 @@ func loadDefaultMCPServers() ([]DefaultMCPServer, error) {
 func loadCatalogMCPServers() ([]config.MCPServer, error) {
 	data, err := templates.Read(catalogTemplatePath)
 	if err != nil {
-		return nil, fmt.Errorf(messages.WizardReadConfigTemplateFailedFmt, err)
+		return nil, fmt.Errorf(messages.WizardLoadMCPCatalogFailedFmt, err)
 	}
 	var doc struct {
 		MCP struct {
@@ -55,7 +55,7 @@ func loadCatalogMCPServers() ([]config.MCPServer, error) {
 		} `toml:"mcp"`
 	}
 	if err := toml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf(messages.WizardReadConfigTemplateFailedFmt, err)
+		return nil, fmt.Errorf(messages.WizardLoadMCPCatalogFailedFmt, err)
 	}
 	return doc.MCP.Servers, nil
 }
@@ -66,7 +66,7 @@ func loadCatalogMCPServers() ([]config.MCPServer, error) {
 func loadCatalogDocument() (tomlDocument, error) {
 	data, err := templates.Read(catalogTemplatePath)
 	if err != nil {
-		return tomlDocument{}, fmt.Errorf(messages.WizardReadConfigTemplateFailedFmt, err)
+		return tomlDocument{}, fmt.Errorf(messages.WizardLoadMCPCatalogFailedFmt, err)
 	}
 	return parseTomlDocument(string(data)), nil
 }

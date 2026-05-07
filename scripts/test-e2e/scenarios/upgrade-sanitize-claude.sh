@@ -102,13 +102,8 @@ PROFILE_EOF
   # Verify blocks survived profile overwrite (they should be cleaned, not removed).
   assert_file_contains "$repo_dir/.agent-layer/config.toml" 'id = "context7"' \
     "context7 block still present after wizard profile overwrite"
-  local github_block_present=0
-  if grep -q 'id = "github"' "$repo_dir/.agent-layer/config.toml"; then
-    github_block_present=1
-    pass "github block still present after wizard profile overwrite"
-  else
-    pass "github block removed by wizard profile (disabled server)"
-  fi
+  assert_file_contains "$repo_dir/.agent-layer/config.toml" 'id = "github"' \
+    "github block still present after wizard profile overwrite"
 
   # Verify context7 block (stdio) no longer has HTTP-only fields.
   # Extract just the context7 block to avoid false matches from other servers.
@@ -128,23 +123,19 @@ PROFILE_EOF
   fi
 
   # Verify github block (HTTP) no longer has stdio-only fields.
-  if [[ "$github_block_present" -eq 1 ]]; then
-    local github_block
-    github_block=$(sed -n '/^id = "github"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
+  local github_block
+  github_block=$(sed -n '/^id = "github"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
 
-    if echo "$github_block" | grep -q '^command = "npx"'; then
-      fail "github block still has 'command' after wizard profile overwrite"
-    else
-      pass "github block clean after profile overwrite: no command"
-    fi
-
-    if echo "$github_block" | grep -q '^args = \["-y"'; then
-      fail "github block still has stdio 'args' after wizard profile overwrite"
-    else
-      pass "github block clean after profile overwrite: no stdio args"
-    fi
+  if echo "$github_block" | grep -q '^command = "npx"'; then
+    fail "github block still has 'command' after wizard profile overwrite"
   else
-    pass "github stdio-only field checks skipped (block removed)"
+    pass "github block clean after profile overwrite: no command"
+  fi
+
+  if echo "$github_block" | grep -q '^args = \["-y"'; then
+    fail "github block still has stdio 'args' after wizard profile overwrite"
+  else
+    pass "github block clean after profile overwrite: no stdio args"
   fi
 
   install_mock_claude "$repo_dir"
