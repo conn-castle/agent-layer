@@ -18,8 +18,8 @@ func TestBuildGeminiPoliciesEmitsRulePerCommand(t *testing.T) {
 		t.Fatalf("expected GENERATED FILE header, got %q", got)
 	}
 	for _, want := range []string{
-		"[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = \"git status\"\ndecision = \"allow\"\npriority = 100\n",
-		"[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = \"ls\"\ndecision = \"allow\"\npriority = 100\n",
+		"[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = \"git status\"\ndecision = \"allow\"\npriority = 100\nallowRedirection = true\n",
+		"[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = \"ls\"\ndecision = \"allow\"\npriority = 100\nallowRedirection = true\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing rule block %q in output:\n%s", want, got)
@@ -32,6 +32,21 @@ func TestBuildGeminiPoliciesQuotesSpecialChars(t *testing.T) {
 	got := buildGeminiPolicies([]string{`echo "hello"`})
 	if !strings.Contains(got, `commandPrefix = "echo \"hello\""`) {
 		t.Fatalf("expected quoted commandPrefix in output:\n%s", got)
+	}
+}
+
+func TestBuildGeminiPoliciesEscapesControlBytesAsTOML(t *testing.T) {
+	t.Parallel()
+	// 0x07 (BEL) and 0x0b (VT) are escaped by Go's %q as backslash-a and
+	// backslash-v, which TOML 1.0 rejects. tomlBasicString must emit the
+	// 6-char Unicode escape (backslash-u0007) instead.
+	got := buildGeminiPolicies([]string{"bell\x07tab\x0b"})
+	want := "commandPrefix = \"bell\\u0007tab\\u000B\""
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected TOML-escaped control bytes %q, got:\n%s", want, got)
+	}
+	if strings.Contains(got, `\a`) || strings.Contains(got, `\v`) {
+		t.Fatalf("output contains TOML-invalid \\a or \\v escape:\n%s", got)
 	}
 }
 

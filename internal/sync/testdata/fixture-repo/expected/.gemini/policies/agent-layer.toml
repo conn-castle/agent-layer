@@ -10,9 +10,11 @@ toolName = "run_shell_command"
 commandPrefix = "git status"
 decision = "allow"
 priority = 100
+allowRedirection = true
 
 [[rule]]
 toolName = "run_shell_command"
 commandPrefix = "ls"
 decision = "allow"
 priority = 100
+allowRedirection = true

@@ -56,9 +56,47 @@ func buildGeminiPolicies(commands []string) string {
 		}
 		b.WriteString("[[rule]]\n")
 		b.WriteString("toolName = \"run_shell_command\"\n")
-		fmt.Fprintf(&b, "commandPrefix = %q\n", cmd)
+		fmt.Fprintf(&b, "commandPrefix = %s\n", tomlBasicString(cmd))
 		b.WriteString("decision = \"allow\"\n")
 		b.WriteString("priority = 100\n")
+		// Without this, the policy engine asks for confirmation when a
+		// matched command includes redirection (>, >>, <, ...), regressing
+		// the previous tools.allowed behavior for headless workflows.
+		b.WriteString("allowRedirection = true\n")
 	}
+	return b.String()
+}
+
+// tomlBasicString quotes s per TOML 1.0 basic-string rules. Go's %q uses
+// strconv.Quote, which emits escapes (\a, \v, \xNN) that TOML rejects.
+func tomlBasicString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
 	return b.String()
 }

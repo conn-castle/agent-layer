@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -59,9 +60,9 @@ func buildGeminiSettings(project *config.ProjectConfig) (*geminiSettings, error)
 
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
 	if approvals.AllowCommands && len(approvals.Commands) > 0 {
-		// Forward slash is correct on every platform: Gemini CLI consumes this
-		// JSON value as a workspace-relative path.
-		settings.PolicyPaths = []string{geminiDir + "/" + geminiPolicyDir}
+		// path.Join (not filepath.Join) keeps the forward-slash separator
+		// that Gemini CLI expects in this JSON value on every platform.
+		settings.PolicyPaths = []string{path.Join(geminiDir, geminiPolicyDir)}
 	}
 
 	allowMCP := approvals.AllowMCP
