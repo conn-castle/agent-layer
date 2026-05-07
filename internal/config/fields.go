@@ -77,12 +77,14 @@ var fields = []FieldDef{
 		},
 	},
 	{
-		Key:  "agents.claude.reasoning_effort",
-		Type: FieldEnum,
+		Key:         "agents.claude.reasoning_effort",
+		Type:        FieldEnum,
+		AllowCustom: true,
 		Options: []FieldOption{
 			{Value: "low"},
 			{Value: "medium"},
 			{Value: "high"},
+			{Value: "xhigh"},
 			{Value: "max"},
 		},
 	},

@@ -43,11 +43,6 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.gemini.reasoning_effort is not supported",
 		},
 		{
-			name:    "invalid claude reasoning effort",
-			cfg:     withClaudeReasoning(valid, "opus", "xhigh"),
-			wantErr: "agents.claude.reasoning_effort must be one of",
-		},
-		{
 			name:    "claude reasoning requires opus model",
 			cfg:     withClaudeReasoning(valid, "sonnet", "high"),
 			wantErr: "requires an Opus model",
@@ -227,6 +222,28 @@ func TestValidateClaudeReasoningEffortMaxWithNonOpusModelRejected(t *testing.T) 
 	}
 	if err := cfg.Validate("config.toml"); err == nil || !strings.Contains(err.Error(), "requires an Opus model") {
 		t.Fatalf("expected opus model error for max effort with sonnet, got %v", err)
+	}
+}
+
+func TestValidateClaudeReasoningEffortAcceptsCustomValueOnOpus(t *testing.T) {
+	// agents.claude.reasoning_effort has AllowCustom: true. Validation must accept
+	// any non-empty value on an Opus model so sync continues to work when Claude
+	// adds new effort levels (e.g. xhigh) before agent-layer's catalog is updated.
+	trueVal := true
+	cfg := Config{
+		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
+		Agents: AgentsConfig{
+			Gemini:       AgentConfig{Enabled: &trueVal},
+			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "made-up-level"},
+			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
+			Codex:        CodexConfig{Enabled: &trueVal},
+			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			CopilotCLI:   AgentConfig{Enabled: &trueVal},
+		},
+	}
+	if err := cfg.Validate("config.toml"); err != nil {
+		t.Fatalf("expected custom claude reasoning effort to be valid, got %v", err)
 	}
 }
 

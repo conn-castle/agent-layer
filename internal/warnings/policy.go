@@ -36,6 +36,9 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	if agentSpecificWarning := agentSpecificOverrideWarning("claude", "agents.claude.agent_specific", project.Config.Agents.Claude.AgentSpecific, config.ClaudeReservedKeys); agentSpecificWarning != nil {
 		results = append(results, *agentSpecificWarning)
 	}
+	if w := claudeReasoningEffortUnknownWarning(project.Config.Agents.Claude.ReasoningEffort); w != nil {
+		results = append(results, *w)
+	}
 
 	for _, server := range project.Config.MCP.Servers {
 		if server.Enabled == nil || !*server.Enabled {
@@ -92,6 +95,30 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	}
 
 	return dedupePolicyWarnings(results)
+}
+
+// claudeReasoningEffortUnknownWarning reports when agents.claude.reasoning_effort
+// is set to a value that is not in the known catalog. The catalog is permissive
+// (AllowCustom: true) so unknown values pass through to the underlying client,
+// but a soft warning surfaces the divergence so users notice typos and learn
+// about agent-layer upgrades when Claude adds new effort levels.
+func claudeReasoningEffortUnknownWarning(effort string) *Warning {
+	trimmed := strings.TrimSpace(effort)
+	if trimmed == "" {
+		return nil
+	}
+	known := config.FieldOptionValues("agents.claude.reasoning_effort")
+	if slices.Contains(known, trimmed) {
+		return nil
+	}
+	return &Warning{
+		Code:     CodePolicyClaudeReasoningUnknown,
+		Subject:  "agents.claude.reasoning_effort",
+		Message:  fmt.Sprintf(messages.WarningsPolicyClaudeReasoningUnknownFmt, trimmed, strings.Join(known, ", ")),
+		Fix:      messages.WarningsPolicyClaudeReasoningUnknownFix,
+		Source:   SourceInternal,
+		Severity: SeverityWarning,
+	}
 }
 
 // agentSpecificOverrideWarning reports when agent-specific config overrides managed keys.

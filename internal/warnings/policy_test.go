@@ -167,6 +167,46 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 	require.Equal(t, "agents.claude.agent_specific", results[1].Subject)
 }
 
+func TestCheckPolicy_ClaudeReasoningEffortUnknownWarns(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					Enabled:         testutil.BoolPtr(true),
+					Model:           "opus",
+					ReasoningEffort: "made-up-level",
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyClaudeReasoningUnknown, results[0].Code)
+	require.Equal(t, "agents.claude.reasoning_effort", results[0].Subject)
+	require.Equal(t, SeverityWarning, results[0].Severity)
+	require.Contains(t, results[0].Message, "made-up-level")
+}
+
+func TestCheckPolicy_ClaudeReasoningEffortKnownValuesNoWarning(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max", ""} {
+		t.Run(effort, func(t *testing.T) {
+			project := &config.ProjectConfig{
+				Config: config.Config{
+					Agents: config.AgentsConfig{
+						Claude: config.ClaudeConfig{
+							Enabled:         testutil.BoolPtr(true),
+							Model:           "opus",
+							ReasoningEffort: effort,
+						},
+					},
+				},
+			}
+			require.Nil(t, CheckPolicy(project))
+		})
+	}
+}
+
 func TestCheckPolicy_NilAndDisabledServer(t *testing.T) {
 	require.Nil(t, CheckPolicy(nil))
 
