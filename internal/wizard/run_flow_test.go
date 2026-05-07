@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -236,7 +237,8 @@ func TestRun_RestoreDefaults(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 
-	// Config with empty [mcp] or missing [mcp]
+	// A partial legacy default set still triggers the restore-missing prompt.
+	// A slim seed with zero default blocks is expected and covered separately.
 	initialConfig := `[approvals]
 mode = "all"
 [agents.gemini]
@@ -253,13 +255,22 @@ enabled = false
 enabled = false
 [agents.copilot_cli]
 enabled = false
+
+[[mcp.servers]]
+id = "context7"
+enabled = false
+transport = "stdio"
+command = "npx"
 `
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
+	restorePromptShown := false
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
-			// "Default MCP server entries are missing..." -> Yes
+			if strings.Contains(title, "Default MCP server entries are missing") {
+				restorePromptShown = true
+			}
 			*value = true
 			return nil
 		},
@@ -280,6 +291,7 @@ enabled = false
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
+	assert.True(t, restorePromptShown, "partial legacy default set should prompt to restore missing defaults")
 
 	// Verify restored block for the toggled-on default appears in config.
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
