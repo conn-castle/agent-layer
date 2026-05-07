@@ -11,12 +11,8 @@ import (
 
 type geminiSettings struct {
 	GeneratedBy string                      `json:"_generatedBy"`
-	Tools       *geminiTools                `json:"tools,omitempty"`
+	PolicyPaths []string                    `json:"policyPaths,omitempty"`
 	MCPServers  OrderedMap[geminiMCPServer] `json:"mcpServers,omitempty"`
-}
-
-type geminiTools struct {
-	Allowed []string `json:"allowed,omitempty"`
 }
 
 type geminiMCPServer struct {
@@ -62,15 +58,10 @@ func buildGeminiSettings(project *config.ProjectConfig) (*geminiSettings, error)
 	}
 
 	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
-	allowCommands := approvals.AllowCommands
-	if allowCommands {
-		allowed := make([]string, 0, len(approvals.Commands))
-		for _, cmd := range approvals.Commands {
-			allowed = append(allowed, fmt.Sprintf("run_shell_command(%s)", cmd))
-		}
-		if len(allowed) > 0 {
-			settings.Tools = &geminiTools{Allowed: allowed}
-		}
+	if approvals.AllowCommands && len(approvals.Commands) > 0 {
+		// Forward slash is correct on every platform: Gemini CLI consumes this
+		// JSON value as a workspace-relative path.
+		settings.PolicyPaths = []string{geminiDir + "/" + geminiPolicyDir}
 	}
 
 	allowMCP := approvals.AllowMCP

@@ -561,10 +561,16 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 		{
 			agent:   "gemini",
 			enabled: cfg.Agents.Gemini.Enabled,
-			files: []disabledArtifactFileSpec{{
-				path:     filepath.Join(inst.root, ".gemini", "settings.json"),
-				evidence: hasAgentLayerMCPSignature,
-			}},
+			files: []disabledArtifactFileSpec{
+				{
+					path:     filepath.Join(inst.root, ".gemini", "settings.json"),
+					evidence: hasAgentLayerMCPSignature,
+				},
+				{
+					path:     filepath.Join(inst.root, ".gemini", "policies", "agent-layer.toml"),
+					evidence: hasGeneratedFileMarker,
+				},
+			},
 		},
 		// .mcp.json and .claude/settings.json are generated when either agents.claude
 		// or agents.claude_vscode is enabled.
