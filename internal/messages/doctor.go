@@ -17,6 +17,8 @@ const (
 
 	DoctorMissingRequiredDirFmt       = "Missing required directory: %s"
 	DoctorMissingRequiredDirRecommend = "Run `al init` to initialize this repository."
+	DoctorMissingOptionalDirFmt       = "Missing optional directory: %s"
+	DoctorMissingOptionalDirRecommend = "No action needed unless this repo uses committed/shared project-memory docs. Create %s if it does."
 	DoctorPathNotDirFmt               = "%s exists but is not a directory"
 	DoctorPathNotDirRecommend         = "Ensure the path is a directory, then run `al init` (fresh repo) or `al upgrade` (existing repo)."
 	DoctorDirExistsFmt                = "Directory exists: %s"

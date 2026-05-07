@@ -542,6 +542,10 @@ func buildRewritePreview(configPath, envPath string, choices *Choices) (string, 
 		return "", err
 	}
 	nextEnv := envfile.Patch(string(currentEnvBytes), choices.Secrets)
+	redactedCurrentEnv, redactedNextEnv, err := redactEnvPreviewContent(string(currentEnvBytes), nextEnv)
+	if err != nil {
+		return "", err
+	}
 
 	parts := make([]string, 0, 2)
 	configDiff := strings.TrimSpace(udiff.Unified(
@@ -557,15 +561,83 @@ func buildRewritePreview(configPath, envPath string, choices *Choices) (string, 
 	envDiff := strings.TrimSpace(udiff.Unified(
 		".agent-layer/.env (current)",
 		".agent-layer/.env (proposed)",
-		string(currentEnvBytes),
-		nextEnv,
+		redactedCurrentEnv,
+		redactedNextEnv,
 	))
 	if envDiff != "" {
-		parts = append(parts, envDiff)
+		parts = append(parts, "Secret values are redacted in the .env preview.\n"+envDiff)
 	}
 
 	if len(parts) == 0 {
 		return "No rewrites needed. Current files already match the selected changes.", nil
 	}
 	return strings.Join(parts, "\n\n"), nil
+}
+
+func redactEnvPreviewContent(currentContent string, nextContent string) (string, string, error) {
+	currentValues, err := envfile.Parse(currentContent)
+	if err != nil {
+		return "", "", fmt.Errorf(messages.WizardInvalidEnvFileFmt, ".agent-layer/.env", err)
+	}
+	nextValues, err := envfile.Parse(nextContent)
+	if err != nil {
+		return "", "", fmt.Errorf(messages.WizardInvalidEnvFileFmt, ".agent-layer/.env", err)
+	}
+	return redactEnvPreviewSide(currentContent, currentValues, nextValues, true),
+		redactEnvPreviewSide(nextContent, nextValues, currentValues, false),
+		nil
+}
+
+func redactEnvPreviewSide(content string, thisValues map[string]string, otherValues map[string]string, currentSide bool) string {
+	if content == "" {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		prefix, key, ok := parseEnvPreviewLine(line)
+		if !ok {
+			continue
+		}
+		thisValue, thisOK := thisValues[key]
+		otherValue, otherOK := otherValues[key]
+		if !thisOK {
+			continue
+		}
+		lines[i] = fmt.Sprintf("%s%s=%s", prefix, key, redactedEnvPreviewValue(thisValue, thisOK, otherValue, otherOK, currentSide))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func parseEnvPreviewLine(line string) (string, string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		return "", "", false
+	}
+	prefix := ""
+	if strings.HasPrefix(trimmed, "export ") {
+		prefix = "export "
+		trimmed = strings.TrimSpace(strings.TrimPrefix(trimmed, "export "))
+	}
+	idx := strings.Index(trimmed, "=")
+	if idx <= 0 {
+		return "", "", false
+	}
+	key := strings.TrimSpace(trimmed[:idx])
+	if key == "" {
+		return "", "", false
+	}
+	return prefix, key, true
+}
+
+func redactedEnvPreviewValue(thisValue string, thisOK bool, otherValue string, otherOK bool, currentSide bool) string {
+	if !thisOK || thisValue == "" {
+		return ""
+	}
+	if otherOK && thisValue == otherValue {
+		return "<redacted>"
+	}
+	if currentSide {
+		return "<redacted current>"
+	}
+	return "<redacted proposed>"
 }

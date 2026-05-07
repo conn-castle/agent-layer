@@ -28,6 +28,63 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-04-26 design-space-no-cost-prefilter: Do not pre-filter design options by implementation cost
+    Priority: Medium. Area: instructions / templates
+    Description: Add a principle to template instructions: when presenting design options to the user, present the full design space without pre-filtering by implementation cost, migration size, or code-change effort. Lead with quality and correctness. Cost (migration size, lines touched, test surface) is a separate dimension to lay out alongside the options, not a filter that prunes them. The user picks. Likely home: extend `01_base.md` Critical Protocol rule 3 ("Stop and ask when real tradeoffs exist") with an explicit no-cost-prefilter clause, or add a sibling rule under the same section. If neither fits cleanly, consider a new "Decision presentation" subsection.
+    Acceptance criteria: Template instructions state explicitly that design-option presentation must not suppress higher-quality options on cost/effort grounds, and that cost is presented as a parallel dimension; agents surface the full design space and let the user choose.
+    Notes: Source: castle-steward (the project that dogfoods agent-layer), 2026-04-26. Agent suppressed cleaner schema designs because they required larger migrations. Nick's correction: "I don't like accidental schema choices driving any decision-making. We have complete control over our design and can do anything that we want. Remove all constraints you're putting on yourself and leave those for me to decide. It is your job to tell me pros and cons and ramifications, but then I get to make the final call." General agent-behavior pattern, not Nick-specific.
+
+- Backlog 2026-04-25 codebase-cleanup-rules-6-7-8: Codify cleanup rules 6–8 into skills and agent instructions
+    Priority: High. Area: skills / code quality
+    Description: Current skills and agent instructions do not enforce the following three cleanup rules well enough. Add them explicitly to audit/cleanup skills and coding conventions:
+      6. Remove all try catch and equivalent defensive programming if it doesn't serve a specific role of handling unknown or unsanitized input or otherwise has a reason to be there, with clear error handling and no error hiding or fallback patterns
+      7. Find any deprecated, legacy or fallback code, remove, and make sure all code paths are clean, concise and as singular as possible
+      8. Find any AI slop, stubs, larp, unnecessary comments and remove. Any comments that describe in-motion work, replacements of previous work with new work, or otherwise are not helpful should be either removed or replaced with helpful comments for a new user trying to understand the codebase -- but if you do edit, be concise
+    Acceptance criteria: Rules 6–8 appear verbatim (or as direct derivatives) in at least one audit/cleanup skill and in coding conventions; agents flag violations during code review.
+    Notes: Source: @shawmakesmagic 8-subagent cleanup prompt (x.com/shawmakesmagic/status/2044269097647779990). Nick flagged these as strongly aligned with his existing values but underrepresented in current firmware.
+
+- Backlog 2026-04-18 cross-provider-hook-matrix: Audit hook support across Claude Code, Codex, and Gemini CLI
+    Priority: Medium. Area: providers / hooks
+    Description: Claude Code has 8 documented hook types (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Notification, Stop, SubagentStop, PreCompact). Determine what equivalent hook systems exist in Codex and Gemini CLI — specifically session-start, pre/post-tool, and stop hooks — and identify gaps or provider-specific capabilities worth exploiting. Produce a cross-provider hook compatibility matrix in agent-layer docs.
+    Acceptance criteria: Matrix doc exists in agent-layer docs listing each Claude hook type with Codex and Gemini CLI equivalents (or "not supported"); firmware improvements that use hooks (e.g., auto-load git context at session start, post-tool formatting) are annotated as cross-provider or Claude-only.
+    Notes: Source: The Code newsletter review session, 2026-04-18. Current hook implementations in agent-layer assume Claude-specific hook names; gaps block parity improvements for Codex and Gemini.
+
+- Backlog 2026-04-18 dynamic-context-injection: Audit skills for `!` dynamic context injection opportunities
+    Priority: Medium. Area: skills
+    Description: Claude Code SKILL.md files support a `!` prefix that auto-executes a shell command and injects the output as context before the skill runs (documented in Anthropic docs under 'Inject dynamic context'). Audit existing skills for places where `!` injection could replace manual setup steps — e.g., current branch, git log, open PRs, inbox state. Also add a `!` injection example to SKILL-DESIGN.md as a design pattern.
+    Acceptance criteria: Priority skills updated to use `!` injection where applicable; SKILL-DESIGN.md documents the pattern with a concrete example (e.g., `!` + gh pr diff for a pr-summary skill).
+    Notes: Source: The Code newsletter review session (2026-04-18). Open questions: whether syntax works in frontmatter vs body only, and token-cost implications for large command outputs (e.g., full git log).
+
+- Backlog 2026-04-15 audit-skill-priority-ranking: Add priority-ranked checks to audit-style skills
+    Priority: Medium. Area: skills
+    Description: SKILL-DESIGN.md now requires audit-style skills to order checks by impact and label them Critical → High → Medium → Low. Retrofit `audit-documentation`, `audit-tests`, and `audit-memory` to apply this ordering throughout their check lists.
+    Acceptance criteria: All three audit skills have their checks explicitly ordered and labeled by priority level; highest-impact checks appear first in each section.
+    Notes: SKILL-DESIGN.md updated 2026-04-15. Leverages primacy bias — agents under context pressure apply earlier checks most reliably.
+
+- Backlog 2026-04-14 lsp-integration: LSP integration for precise code navigation in agent sessions
+    Priority: Low. Area: tooling / agent capabilities
+    Description: Provide Language Server Protocol access as a tool for agents working in any registered project. Enables go-to-definition, find-all-references, and call hierarchies — things grep approximates but cannot do precisely (e.g., can't distinguish a function call from a same-named variable, or find all implementations of an interface across files).
+    Acceptance criteria: Agents can query an LSP for a symbol and get precise cross-file results; works for at least one language (TypeScript or Python); accessible via MCP tool or CLI wrapper from al.
+    Notes: Each language needs its own server (pyright, typescript-language-server, gopls). Run on-demand rather than always-on. Grep covers most cases today — this is a quality-of-life improvement for large, complex codebases.
+
+- Backlog 2026-04-13 magic-constant-rationale-comments: Require motivation comments on magic constants
+    Priority: Medium. Area: conventions / code quality
+    Description: Add a convention to the agent-layer rules (or `04_conventions.md`) that any magic constant — retry counts, timeouts, failure caps, rate limits — must include an inline comment documenting the specific observed failure or reasoning that motivated it. Example pattern: `MAX_RETRIES = 3  # 2026-03-10: saw 27 consecutive failures on email triage burning ~250K API calls — capped at 3`. Makes future decisions auditable and prevents constants from being removed by someone who does not know why they exist.
+    Acceptance criteria: Convention documented in the rules or conventions file with the example pattern; scope (retry counts, timeouts, failure caps, rate limits, and similar thresholds) is explicit.
+    Notes: Optional follow-up: audit the existing codebase for undocumented magic constants and backfill rationale where the reasoning is known.
+
+- Backlog 2026-04-12 worktree-isolation-for-agent-sessions: Worktree isolation mode for risky agent coding tasks
+    Priority: Medium. Area: execution / safety
+    Description: Add an `al worktree` command (or session flag) that creates a fresh git worktree and isolated branch before launching an agent session. Agent work happens on the branch; changes only reach main after review. Prevents incomplete or incorrect agent runs from polluting the default branch, especially in multi-step coding tasks.
+    Acceptance criteria: `al worktree <project> "<prompt>"` creates a worktree, launches the agent scoped to that directory, and prompts to merge or discard on exit; existing `al claude` sessions are unaffected.
+    Notes: Inspired by Claude Code's EnterWorktree/ExitWorktree tool pattern. Known upstream issue: compaction mid-session can cause nested worktrees if CWD reconstruction is wrong — design should account for this.
+
+- Backlog 2026-03-23 disable-client-memory-config: Agent-specific config option to disable client memory systems
+    Priority: Medium. Area: config / sync
+    Description: Add an agent-specific config option (e.g., `disable_client_memory = true`) in config.toml that causes `al sync` to inject the appropriate memory-disable setting into each agent's generated config (e.g., `autoMemoryEnabled=false` for Claude, `save_memory` tool blocked for Gemini, etc.). Centralizes memory disable logic in config.toml rather than requiring users to know each client's specific setting name.
+    Acceptance criteria: A per-agent config.toml flag exists; `al sync` translates it to the correct client-specific setting for each supported agent; documented in README or CONTEXT.md.
+    Notes: Source: claude-assistant project discovered the need while disabling memory across all agents. Each client has a different mechanism — the mapping must be maintained as new clients are added.
+
 - Backlog 2026-03-21 reassess-skill-resources: Audit template skills for scripts/references/assets opportunities
     Priority: Medium. Area: skills
     Description: Now that skill sync copies subdirectories (scripts/, references/, assets/) to all clients, audit existing template skills to identify where adding scripts, reference docs, or asset files would improve skill effectiveness (e.g., validation scripts, detailed reference guides, config templates).
