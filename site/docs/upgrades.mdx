@@ -19,6 +19,7 @@ If guidance in other docs is shorter or summarized, this page is the source of t
 - [How to upgrade](#how-to-upgrade)
 - [Upgrade event model](#upgrade-event-model)
 - [Compatibility guarantees](#compatibility-guarantees)
+- [Ephemeral artifacts and rollback scope](#ephemeral-artifacts-and-rollback-scope)
 - [Migration rules by release](#migration-rules-by-release)
 - [Documentation version retention and access](#documentation-version-retention-and-access)
 - [OS and shell capability matrix](#os-and-shell-capability-matrix)
@@ -73,6 +74,16 @@ What "guaranteed" means:
 What it does not mean:
 - It is not a guarantee that every repo custom state can be auto-migrated.
 - It does not guarantee one-step upgrades for skipped release lines.
+
+## Ephemeral artifacts and rollback scope
+
+`.agent-layer/tmp/` is a scratch directory for agent run artifacts (plans, reports, scratch dumps). It is treated specially across the upgrade lifecycle:
+
+- **Snapshots exclude tmp.** Pre-upgrade snapshots under `.agent-layer/state/upgrade-snapshots/` do not capture files under `.agent-layer/tmp/`. This keeps snapshot size bounded regardless of how much scratch state has accumulated.
+- **Rollback does not restore tmp.** `al upgrade rollback <snapshot-id>` will not recreate any tmp file deleted during the upgrade. If you need to keep an in-progress agent artifact across an upgrade, copy it out of `.agent-layer/tmp/` first.
+- **Tmp deletion is gated.** Interactive deletion requires a destructive double-confirm. Non-interactive deletion requires the dedicated `--apply-tmp-deletions` flag — `--apply-deletions` alone never touches tmp content. The interactive "delete all unknowns?" prompt is similarly scoped: it deletes everything **except** tmp, and the grouped tmp prompt always fires separately.
+
+For full mechanics see [Ephemeral artifacts under .agent-layer/tmp/](./reference#ephemeral-artifacts-under-agent-layertmp) in the reference guide.
 
 ## Migration rules by release
 

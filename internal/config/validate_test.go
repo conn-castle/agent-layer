@@ -43,11 +43,6 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.gemini.reasoning_effort is not supported",
 		},
 		{
-			name:    "invalid claude reasoning effort",
-			cfg:     withClaudeReasoning(valid, "opus", "xhigh"),
-			wantErr: "agents.claude.reasoning_effort must be one of",
-		},
-		{
 			name:    "claude reasoning requires opus model",
 			cfg:     withClaudeReasoning(valid, "sonnet", "high"),
 			wantErr: "requires an Opus model",

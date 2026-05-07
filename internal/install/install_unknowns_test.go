@@ -125,24 +125,6 @@ func TestWarnUnknowns_WithUnknowns(t *testing.T) {
 	}
 }
 
-func TestWarnUnknowns_OverwriteTrue(t *testing.T) {
-	inst := &installer{
-		overwrite: true,
-		unknowns:  []string{"a", "b"},
-		sys:       RealSystem{},
-	}
-	inst.warnUnknowns() // Should return early
-}
-
-func TestWarnUnknowns_EmptyUnknowns(t *testing.T) {
-	inst := &installer{
-		overwrite: false,
-		unknowns:  []string{},
-		sys:       RealSystem{},
-	}
-	inst.warnUnknowns() // Should return early
-}
-
 func TestWarnDifferences_WithDiffs(t *testing.T) {
 	root := t.TempDir()
 	var buf bytes.Buffer
@@ -157,16 +139,6 @@ func TestWarnDifferences_WithDiffs(t *testing.T) {
 	if buf.Len() == 0 {
 		t.Fatalf("expected warning output")
 	}
-}
-
-func TestWarnDifferences_RelError(t *testing.T) {
-	inst := &installer{
-		root:      "", // Empty root causes filepath.Rel to potentially fail
-		overwrite: false,
-		diffs:     []string{"/some/absolute/path"},
-	}
-	// Just exercise the code path - should not panic
-	inst.warnDifferences()
 }
 
 func TestSortUnknowns(t *testing.T) {
@@ -479,6 +451,40 @@ func setupTmpAndOtherUnknowns(t *testing.T) (inst *installer, tmpFile, otherFile
 	return inst, tmpFile, otherFile
 }
 
+func TestHandleUnknowns_DeleteAll_DoesNotBypassTmpGuard(t *testing.T) {
+	// "Delete all" must not delete tmp content. Tmp deletion is destructive
+	// and irreversible (snapshots do not capture tmp); routing tmp through
+	// the bulk path would let a single confirmation wipe in-progress agent
+	// work. The grouped tmp prompt must always fire so tmp deletion gets its
+	// own destructive confirmation regardless of what the user picked at the
+	// top level.
+	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
+	tmpPromptCalls := 0
+	inst.prompter = PromptFuncs{
+		DeleteUnknownAllFunc: func([]string) (bool, error) { return true, nil },
+		DeleteUnknownTmpAllFunc: func([]string) (bool, error) {
+			tmpPromptCalls++
+			return false, nil
+		},
+		DeleteUnknownFunc: func(string) (bool, error) {
+			t.Fatal("per-file prompt should not fire after user chose delete-all")
+			return false, nil
+		},
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if tmpPromptCalls != 1 {
+		t.Fatalf("tmp grouped prompt should fire exactly once after delete-all, got %d", tmpPromptCalls)
+	}
+	if _, err := os.Stat(tmpFile); err != nil {
+		t.Fatalf("tmp file must survive delete-all when grouped prompt declines, got %v", err)
+	}
+	if _, err := os.Stat(otherFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("non-tmp file should be deleted by delete-all, stat err=%v", err)
+	}
+}
+
 func TestHandleUnknowns_TmpGroupedPrompt_DeletesAllTmp(t *testing.T) {
 	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
 
@@ -650,10 +656,12 @@ func TestHandleUnknowns_TopLevelSummaryCollapsesTmp(t *testing.T) {
 	}
 }
 
-func TestHandleUnknowns_TmpFallback_LegacyPrompterUsesPerFile(t *testing.T) {
-	// Prompters that pre-date tmpUnknownsPrompter should keep working: when the
-	// optional grouped capability is absent, tmp files fall back to the
-	// existing per-file prompt loop.
+func TestHandleUnknowns_TmpFallback_LegacyPrompterPreservesTmp(t *testing.T) {
+	// Tmp deletion is destructive (snapshots do not capture tmp). When the
+	// prompter does not implement the grouped tmpUnknownsPrompter capability,
+	// tmp paths must be left untouched rather than falling back to per-file
+	// prompts — the destructive double-confirm only exists in the grouped
+	// path, so the per-file fallback would silently bypass the safety guard.
 	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
 	var perFilePaths []string
 	inst.prompter = legacyDeleteOnlyPrompter{
@@ -666,13 +674,14 @@ func TestHandleUnknowns_TmpFallback_LegacyPrompterUsesPerFile(t *testing.T) {
 	if err := inst.handleUnknowns(); err != nil {
 		t.Fatalf("handleUnknowns: %v", err)
 	}
-	if len(perFilePaths) != 2 {
-		t.Fatalf("legacy prompter should see one per-file prompt per unknown (tmp + non-tmp), got %v", perFilePaths)
+	if len(perFilePaths) != 1 {
+		t.Fatalf("expected per-file prompt only for non-tmp unknown, got %v", perFilePaths)
 	}
-	for _, path := range []string{tmpFile, otherFile} {
-		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("expected %s to be deleted, stat err=%v", path, err)
-		}
+	if _, err := os.Stat(tmpFile); err != nil {
+		t.Fatalf("tmp file must be preserved when grouped prompter is absent, stat err=%v", err)
+	}
+	if _, err := os.Stat(otherFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected non-tmp file to be deleted, stat err=%v", err)
 	}
 }
 
@@ -694,12 +703,14 @@ func (p legacyDeleteOnlyPrompter) DeleteUnknown(path string) (bool, error) {
 	return p.deleteOne(path)
 }
 
-func TestHandleUnknowns_TmpFallback_PromptFuncsWithoutTmpAllFunc(t *testing.T) {
+func TestHandleUnknowns_TmpFallback_PromptFuncsWithoutTmpAllFuncPreservesTmp(t *testing.T) {
 	// PromptFuncs always satisfies tmpUnknownsPrompter (the method is defined
 	// on the struct), but a caller may construct it without wiring
-	// DeleteUnknownTmpAllFunc. In that case handleTmpUnknowns must fall back
-	// to the per-file DeleteUnknown prompt instead of surfacing the
-	// "prompt required" error from PromptFuncs.DeleteUnknownTmpAll.
+	// DeleteUnknownTmpAllFunc. In that case handleTmpUnknowns must preserve
+	// tmp content rather than surfacing the "prompt required" error or
+	// silently routing tmp through the per-file path: the destructive
+	// double-confirm exists only in the grouped path, and routing tmp
+	// elsewhere would bypass it.
 	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
 	var perFilePaths []string
 	inst.prompter = PromptFuncs{
@@ -713,13 +724,14 @@ func TestHandleUnknowns_TmpFallback_PromptFuncsWithoutTmpAllFunc(t *testing.T) {
 	if err := inst.handleUnknowns(); err != nil {
 		t.Fatalf("handleUnknowns: %v", err)
 	}
-	if len(perFilePaths) != 2 {
-		t.Fatalf("expected per-file prompt for both unknowns when tmp grouped callback is unwired, got %v", perFilePaths)
+	if len(perFilePaths) != 1 {
+		t.Fatalf("expected per-file prompt only for non-tmp unknown when tmp grouped callback is unwired, got %v", perFilePaths)
 	}
-	for _, path := range []string{tmpFile, otherFile} {
-		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("expected %s to be deleted, stat err=%v", path, err)
-		}
+	if _, err := os.Stat(tmpFile); err != nil {
+		t.Fatalf("tmp file must be preserved when grouped tmp callback is unwired, stat err=%v", err)
+	}
+	if _, err := os.Stat(otherFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected non-tmp file to be deleted, stat err=%v", err)
 	}
 }
 

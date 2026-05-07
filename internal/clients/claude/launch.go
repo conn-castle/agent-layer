@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -22,7 +23,8 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	// Pass --effort only when there is no agent_specific effortLevel override.
 	// agent_specific.effortLevel is written to settings.json and CLI args take
 	// precedence over settings, so emitting --effort would shadow the override.
-	effort := cfg.Config.Agents.Claude.ReasoningEffort
+	// Trim so " max " is forwarded as "max".
+	effort := strings.TrimSpace(cfg.Config.Agents.Claude.ReasoningEffort)
 	if effort != "" && !config.HasAgentSpecificKey(cfg.Config.Agents.Claude.AgentSpecific, "effortLevel") {
 		args = append(args, "--effort", effort)
 	}

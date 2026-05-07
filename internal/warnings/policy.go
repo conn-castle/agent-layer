@@ -36,6 +36,9 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	if agentSpecificWarning := agentSpecificOverrideWarning("claude", "agents.claude.agent_specific", project.Config.Agents.Claude.AgentSpecific, config.ClaudeReservedKeys); agentSpecificWarning != nil {
 		results = append(results, *agentSpecificWarning)
 	}
+	if w := claudeReasoningEffortUnknownWarning(project.Config.Agents.Claude.ReasoningEffort); w != nil {
+		results = append(results, *w)
+	}
 
 	for _, server := range project.Config.MCP.Servers {
 		if server.Enabled == nil || !*server.Enabled {
@@ -92,6 +95,22 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	}
 
 	return dedupePolicyWarnings(results)
+}
+
+func claudeReasoningEffortUnknownWarning(effort string) *Warning {
+	trimmed := strings.TrimSpace(effort)
+	known := config.FieldOptionValues("agents.claude.reasoning_effort")
+	if trimmed == "" || slices.Contains(known, trimmed) {
+		return nil
+	}
+	return &Warning{
+		Code:     CodePolicyClaudeReasoningUnknown,
+		Subject:  "agents.claude.reasoning_effort",
+		Message:  fmt.Sprintf(messages.WarningsPolicyClaudeReasoningUnknownFmt, trimmed, strings.Join(known, ", ")),
+		Fix:      messages.WarningsPolicyClaudeReasoningUnknownFix,
+		Source:   SourceInternal,
+		Severity: SeverityWarning,
+	}
 }
 
 // agentSpecificOverrideWarning reports when agent-specific config overrides managed keys.

@@ -1321,7 +1321,7 @@ func TestCaptureUpgradeSnapshotTarget_StatError(t *testing.T) {
 
 func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkEntryWithoutFollowingTarget(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".agent-layer", "tmp")
+	dir := filepath.Join(root, ".agent-layer", "state", "links")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
@@ -1340,7 +1340,7 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkEntryWithoutFollowingTar
 	if err := inst.captureUpgradeSnapshotDirectory(dir, entries); err != nil {
 		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
 	}
-	entry, ok := entries[".agent-layer/tmp/icon.link"]
+	entry, ok := entries[".agent-layer/state/links/icon.link"]
 	if !ok {
 		t.Fatalf("expected symlink snapshot entry, got keys: %v", entries)
 	}
@@ -1358,7 +1358,7 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkEntryWithoutFollowingTar
 func TestCaptureUpgradeSnapshotDirectory_CapturesExternalSymlinkWithoutReadingTarget(t *testing.T) {
 	root := t.TempDir()
 	external := t.TempDir()
-	dir := filepath.Join(root, ".agent-layer", "tmp")
+	dir := filepath.Join(root, ".agent-layer", "state", "links")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
@@ -1376,7 +1376,7 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesExternalSymlinkWithoutReadingTa
 	if err := inst.captureUpgradeSnapshotDirectory(dir, entries); err != nil {
 		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
 	}
-	entry, ok := entries[".agent-layer/tmp/outside.link"]
+	entry, ok := entries[".agent-layer/state/links/outside.link"]
 	if !ok {
 		t.Fatalf("expected external symlink snapshot entry, got keys: %v", entries)
 	}
@@ -1393,7 +1393,7 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesExternalSymlinkWithoutReadingTa
 
 func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkToDirectory(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".agent-layer", "tmp")
+	dir := filepath.Join(root, ".agent-layer", "state", "links")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
@@ -1411,7 +1411,7 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkToDirectory(t *testing.T
 	if err := inst.captureUpgradeSnapshotDirectory(dir, entries); err != nil {
 		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
 	}
-	entry, ok := entries[".agent-layer/tmp/dir-link"]
+	entry, ok := entries[".agent-layer/state/links/dir-link"]
 	if !ok {
 		t.Fatalf("expected symlink snapshot entry, got keys: %v", entries)
 	}
@@ -1425,7 +1425,7 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkToDirectory(t *testing.T
 
 func TestCaptureUpgradeSnapshotDirectory_SymlinkReadlinkError(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".agent-layer", "tmp")
+	dir := filepath.Join(root, ".agent-layer", "state", "links")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
@@ -2069,5 +2069,135 @@ func TestWriteUpgradeSnapshot_SizeWarning(t *testing.T) {
 
 	if !strings.Contains(warn.String(), "is large") {
 		t.Fatalf("expected size warning, got %q", warn.String())
+	}
+}
+
+func TestUpgradeSnapshotTargetPaths_ExcludesAgentLayerTmp(t *testing.T) {
+	// `.agent-layer/tmp/` accumulates ephemeral agent run artifacts that may
+	// total hundreds of MB. Snapshot capture must skip them so snapshots stay
+	// small and `al upgrade rollback` does not attempt to restore stale
+	// in-progress agent work.
+	root := t.TempDir()
+	tmpDir := filepath.Join(root, ".agent-layer", "tmp")
+	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		t.Fatalf("mkdir tmp: %v", err)
+	}
+	tmpFile := filepath.Join(tmpDir, "report.md")
+	if err := os.WriteFile(tmpFile, []byte("hi"), 0o644); err != nil {
+		t.Fatalf("write tmp file: %v", err)
+	}
+	otherUnknown := filepath.Join(root, ".agent-layer", "stray.txt")
+	if err := os.WriteFile(otherUnknown, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write stray: %v", err)
+	}
+
+	inst := &installer{
+		root:     root,
+		sys:      RealSystem{},
+		unknowns: []string{tmpDir, tmpFile, otherUnknown},
+	}
+	paths := inst.upgradeSnapshotTargetPaths()
+	for _, p := range paths {
+		if p == tmpDir || p == tmpFile {
+			t.Fatalf("upgradeSnapshotTargetPaths must not include tmp paths, got %q in %v", p, paths)
+		}
+	}
+	foundOther := false
+	for _, p := range paths {
+		if p == filepath.Clean(otherUnknown) {
+			foundOther = true
+			break
+		}
+	}
+	if !foundOther {
+		t.Fatalf("upgradeSnapshotTargetPaths must still include non-tmp unknowns, got %v", paths)
+	}
+}
+
+func TestCaptureUpgradeSnapshotDirectory_DefensivelySkipsTmpDescendants(t *testing.T) {
+	// Belt-and-braces: even if a caller passes a target whose subtree happens
+	// to contain `.agent-layer/tmp/`, the recursive walk must skip the tmp
+	// subtree rather than base64-encoding ephemeral run artifacts.
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp", "runs"), 0o755); err != nil {
+		t.Fatalf("mkdir tmp/runs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "tmp", "runs", "huge.log"), []byte("payload"), 0o644); err != nil {
+		t.Fatalf("write tmp file: %v", err)
+	}
+	keepFile := filepath.Join(root, ".agent-layer", "templates", "keep.txt")
+	if err := os.MkdirAll(filepath.Dir(keepFile), 0o755); err != nil {
+		t.Fatalf("mkdir templates: %v", err)
+	}
+	if err := os.WriteFile(keepFile, []byte("keep"), 0o644); err != nil {
+		t.Fatalf("write keep: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	entries := make(map[string]upgradeSnapshotEntry)
+	if err := inst.captureUpgradeSnapshotDirectory(filepath.Join(root, ".agent-layer"), entries); err != nil {
+		t.Fatalf("captureUpgradeSnapshotDirectory: %v", err)
+	}
+	for path := range entries {
+		if path == ".agent-layer/tmp" || strings.HasPrefix(path, ".agent-layer/tmp/") {
+			t.Fatalf("snapshot must not contain tmp path %q (entries: %v)", path, entries)
+		}
+	}
+	if _, ok := entries[".agent-layer/templates/keep.txt"]; !ok {
+		t.Fatalf("expected non-tmp file to be captured, got entries %v", entries)
+	}
+}
+
+func TestHandleUnknownsTargetPaths_ExcludesAgentLayerTmp(t *testing.T) {
+	// Rollback safety invariant: tmp paths are excluded from snapshots, so
+	// they must also be excluded from rollback targets. Otherwise an
+	// automatic rollback (e.g., a failure during handleUnknowns) would
+	// `RemoveAll` tmp paths during the reset phase with no snapshot entry to
+	// restore, silently wiping tmp content the user never confirmed.
+	root := t.TempDir()
+	tmpFile := filepath.Join(root, ".agent-layer", "tmp", "report.md")
+	otherUnknown := filepath.Join(root, ".agent-layer", "stray.txt")
+	inst := &installer{
+		root:     root,
+		unknowns: []string{tmpFile, otherUnknown},
+	}
+	targets := inst.handleUnknownsTargetPaths()
+	for _, p := range targets {
+		if p == tmpFile {
+			t.Fatalf("handleUnknownsTargetPaths must not include tmp paths, got %q in %v", p, targets)
+		}
+	}
+	foundOther := false
+	for _, p := range targets {
+		if p == filepath.Clean(otherUnknown) {
+			foundOther = true
+			break
+		}
+	}
+	if !foundOther {
+		t.Fatalf("handleUnknownsTargetPaths must still include non-tmp unknowns, got %v", targets)
+	}
+}
+
+func TestIsUnderAgentLayerTmp(t *testing.T) {
+	root := filepath.Join(string(os.PathSeparator), "repo")
+	inst := &installer{root: root}
+	tmp := filepath.Join(root, ".agent-layer", "tmp")
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{tmp, true},
+		{filepath.Join(tmp, "file.md"), true},
+		{filepath.Join(tmp, "runs", "deep", "report.md"), true},
+		{filepath.Join(root, ".agent-layer", "tmp-other"), false},
+		{filepath.Join(root, ".agent-layer", "templates"), false},
+		{filepath.Join(root, "tmp"), false},
+		{root, false},
+	}
+	for _, tc := range tests {
+		if got := inst.isUnderAgentLayerTmp(tc.path); got != tc.want {
+			t.Errorf("isUnderAgentLayerTmp(%q) = %v, want %v", tc.path, got, tc.want)
+		}
 	}
 }

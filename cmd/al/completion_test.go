@@ -189,23 +189,6 @@ func TestInstallCompletion_WriteError(t *testing.T) {
 	}
 }
 
-func TestInstallCompletion_PathError(t *testing.T) {
-	// Unset HOME to fail UserHomeDir
-	t.Setenv("HOME", "")
-	t.Setenv("XDG_DATA_HOME", "") // Ensure no fallback
-
-	var buf bytes.Buffer
-	err := installCompletion("bash", "script", &buf)
-	if err == nil {
-		// If running in an env where UserHomeDir works without HOME (e.g. some CI/OS), this might fail.
-		// os.UserHomeDir implementation depends on OS.
-		// On Unix it checks HOME.
-		// Let's assume it fails or returns error.
-		// If it succeeds, we skip the test assertion or log it.
-		t.Log("os.UserHomeDir succeeded without HOME, skipping failure check")
-	}
-}
-
 func TestNewCompletionCmd_UnknownShell(t *testing.T) {
 	cmd := newCompletionCmd()
 	buf := new(bytes.Buffer)
@@ -219,18 +202,6 @@ func TestNewCompletionCmd_UnknownShell(t *testing.T) {
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error for unknown shell")
-	}
-}
-func TestInstallCompletion_ZshError(t *testing.T) {
-	t.Setenv("FPATH", "")
-	t.Setenv("HOME", "")
-	t.Setenv("XDG_DATA_HOME", "")
-	t.Setenv("PATH", "") // Hide zsh so firstWritableFpath fails
-
-	var buf bytes.Buffer
-	err := installCompletion("zsh", "script", &buf)
-	if err == nil {
-		t.Log("installCompletion zsh succeeded unexpectedly (maybe fallback worked?)")
 	}
 }
 func TestGenerateCompletion(t *testing.T) {
@@ -579,26 +550,5 @@ func TestUserHomeDir_Error(t *testing.T) {
 	_, err = xdgConfigHome()
 	if err == nil {
 		t.Error("expected error from xdgConfigHome when home dir fails")
-	}
-}
-
-func TestWritableDir(t *testing.T) {
-	// We can test writableDir indirectly via firstWritableFpath
-	// or export it? No, keep it internal.
-	// We already tested successful case in TestFirstWritableFpath.
-
-	// Test unwritable dir
-	tempDir := t.TempDir()
-	unwritable := filepath.Join(tempDir, "unwritable")
-	if err := os.Mkdir(unwritable, 0o500); err != nil { // Read/Exec only
-		t.Fatal(err)
-	}
-
-	t.Setenv("FPATH", unwritable)
-	_, ok := firstWritableFpath()
-	// Depending on OS/user (root), this might still be writable.
-	// Skipping explicit fail check to avoid flake on CI/root.
-	if ok {
-		t.Logf("Directory %s is writable (possibly running as root or Windows ignores mode)", unwritable)
 	}
 }

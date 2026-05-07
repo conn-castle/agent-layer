@@ -170,31 +170,6 @@ func TestWriteVSCodeMCPConfigMissingEnv(t *testing.T) {
 	}
 }
 
-func TestBuildVSCodeMCPConfigMissingEnv(t *testing.T) {
-	t.Parallel()
-	enabled := true
-	project := &config.ProjectConfig{
-		Config: config.Config{
-			MCP: config.MCPConfig{
-				Servers: []config.MCPServer{
-					{
-						ID:        "example",
-						Enabled:   &enabled,
-						Transport: "http",
-						URL:       "https://example.com?token=${TOKEN}",
-					},
-				},
-			},
-		},
-		Env: map[string]string{},
-	}
-
-	_, err := buildVSCodeMCPConfig(project)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
 func TestWriteVSCodeMCPConfigMarshalError(t *testing.T) {
 	t.Parallel()
 	sys := &MockSystem{
