@@ -352,7 +352,7 @@ enabled = true
 [mcp]
 # Secrets belong in .agent-layer/.env (never in config.toml).
 # MCP servers here are the *external tool servers* that get projected into client configs.
-# Installer seeds a small library of defaults you can edit, disable, or delete.
+# A fresh `al init` ships no servers; run `al wizard` to pick from a curated catalog (context7, tavily, fetch, playwright, ripgrep, filesystem) or hand-author your own block as shown below.
 
 [[mcp.servers]]
 id = "example-api"

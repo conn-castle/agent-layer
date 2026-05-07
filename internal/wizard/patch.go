@@ -73,6 +73,11 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 	}
 	templateContent := string(templateBytes)
 
+	catalogDoc, err := loadCatalogDocument()
+	if err != nil {
+		return "", err
+	}
+
 	templateDoc := parseTomlDocument(templateContent)
 	currentDoc := parseTomlDocument(content)
 	normalizeLegacySectionAliases(&currentDoc)
@@ -81,7 +86,7 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 		return "", fmt.Errorf(messages.WizardDefaultMCPServersRequired)
 	}
 
-	output, err := assembleCanonicalConfig(currentDoc, templateDoc, choices)
+	output, err := assembleCanonicalConfig(currentDoc, templateDoc, catalogDoc, choices)
 	if err != nil {
 		return "", err
 	}
@@ -90,9 +95,10 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 }
 
 // assembleCanonicalConfig renders updated config content in template order.
-// currentDoc holds the existing config; templateDoc provides the canonical ordering; choices supplies wizard selections.
+// currentDoc holds the existing config; templateDoc provides the canonical ordering and section formatting;
+// catalogDoc provides default-shaped [[mcp.servers]] blocks; choices supplies wizard selections.
 // Returns the ordered lines or an error when required template blocks are missing.
-func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, choices *Choices) ([]string, error) {
+func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, catalogDoc tomlDocument, choices *Choices) ([]string, error) {
 	preamble := choosePreamble(currentDoc.preamble, templateDoc.preamble)
 	output := make([]string, 0, len(preamble))
 	output = append(output, preamble...)
@@ -112,7 +118,7 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 		appendBlock(&output, updated.lines)
 
 		if name == "mcp" {
-			serverBlocks, err := buildMCPServerBlocks(currentDoc, templateDoc, choices)
+			serverBlocks, err := buildMCPServerBlocks(currentDoc, catalogDoc, choices)
 			if err != nil {
 				return nil, err
 			}
@@ -268,11 +274,16 @@ var stdioIncompatibleKeys = []string{"headers", "url", "http_transport"}
 // httpIncompatibleKeys are TOML keys that are not valid for http transport MCP servers.
 var httpIncompatibleKeys = []string{"command", "args", "env"}
 
-// buildMCPServerBlocks returns ordered MCP server blocks using template order for defaults.
-// currentDoc supplies existing blocks; templateDoc provides default blocks; choices controls restore and enabled toggles.
-func buildMCPServerBlocks(currentDoc tomlDocument, templateDoc tomlDocument, choices *Choices) ([]tomlBlock, error) {
+// buildMCPServerBlocks returns ordered MCP server blocks using catalog order for defaults.
+// currentDoc supplies existing blocks; catalogDoc provides default-shaped catalog blocks;
+// choices controls restore, prune-on-disable, and enabled toggles.
+//
+// Prune-on-disable: when choices.EnabledMCPServersTouched is true and choices.EnabledMCPServers[id]
+// is false for a default-catalog id, the block is skipped (regardless of whether the user had
+// hand-customized it). User-defined non-catalog blocks always pass through unchanged.
+func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choices *Choices) ([]tomlBlock, error) {
 	currentBlocks := parseMCPBlocks(currentDoc.arrays["mcp.servers"])
-	templateBlocks := parseMCPBlocks(templateDoc.arrays["mcp.servers"])
+	catalogBlocks := parseMCPBlocks(catalogDoc.arrays["mcp.servers"])
 
 	currentByID := make(map[string]mcpBlock, len(currentBlocks))
 	for _, block := range currentBlocks {
@@ -281,14 +292,14 @@ func buildMCPServerBlocks(currentDoc tomlDocument, templateDoc tomlDocument, cho
 		}
 	}
 
-	templateByID := make(map[string]mcpBlock, len(templateBlocks))
-	for _, block := range templateBlocks {
+	catalogByID := make(map[string]mcpBlock, len(catalogBlocks))
+	for _, block := range catalogBlocks {
 		if block.id != "" {
-			templateByID[block.id] = block
+			catalogByID[block.id] = block
 		}
 	}
 
-	defaultIDs := defaultServerIDs(choices, templateBlocks)
+	defaultIDs := defaultServerIDs(choices, catalogBlocks)
 	defaultSet := make(map[string]struct{}, len(defaultIDs))
 	for _, id := range defaultIDs {
 		defaultSet[id] = struct{}{}
@@ -301,14 +312,36 @@ func buildMCPServerBlocks(currentDoc tomlDocument, templateDoc tomlDocument, cho
 
 	var ordered []tomlBlock
 	for _, id := range defaultIDs {
-		block, ok := currentByID[id]
-		switch {
-		case ok:
-			tb := updateMCPEnabled(block, templateByID[id], choices, id)
+		if choices.EnabledMCPServersTouched {
+			// Prune-on-disable: user expressed an opinion on MCP servers and disabled
+			// this default-catalog id. Skip regardless of any current customization;
+			// the wizard's diff preview surfaces the removal before write.
+			if !choices.EnabledMCPServers[id] {
+				continue
+			}
+			// Enable: prefer the current block if present, otherwise insert from catalog.
+			block, ok := currentByID[id]
+			if !ok {
+				tpl, exists := catalogByID[id]
+				if !exists {
+					return nil, fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
+				}
+				block = tpl
+			}
+			tb := updateMCPEnabled(block, catalogByID[id], choices, id)
 			sanitizeMCPServerBlock(&tb)
 			ordered = append(ordered, tb)
-		case choices.RestoreMissingMCPServers && containsKey(missingDefaults, id):
-			tpl, exists := templateByID[id]
+			continue
+		}
+		// MCP step not touched: preserve existing state, or restore from catalog when requested.
+		if block, ok := currentByID[id]; ok {
+			tb := updateMCPEnabled(block, catalogByID[id], choices, id)
+			sanitizeMCPServerBlock(&tb)
+			ordered = append(ordered, tb)
+			continue
+		}
+		if choices.RestoreMissingMCPServers && containsKey(missingDefaults, id) {
+			tpl, exists := catalogByID[id]
 			if !exists {
 				return nil, fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
 			}

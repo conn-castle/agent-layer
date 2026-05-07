@@ -851,7 +851,11 @@ func TestAssembleCanonicalConfig_SkipsNilBlock(t *testing.T) {
 		order:    []string{"missing"},
 	}
 
-	out, err := assembleCanonicalConfig(current, template, NewChoices())
+	catalog := tomlDocument{
+		sections: map[string]*tomlBlock{},
+		arrays:   map[string][]*tomlBlock{},
+	}
+	out, err := assembleCanonicalConfig(current, template, catalog, NewChoices())
 	require.NoError(t, err)
 	assert.Equal(t, []string{"# current preamble"}, out)
 }

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Upgrade from old version with transport-incompatible MCP fields,
-# wizard sanitizes them, al claude works.
+# wizard profile overwrite repairs them, al claude works.
 
 run_scenario_upgrade_sanitize_claude() {
-  section "Upgrade + wizard sanitization + al claude"
+  section "Upgrade + wizard profile overwrite + al claude"
 
   if skip_if_no_oldest_binary; then return; fi
   E2E_UPGRADE_SCENARIO_COUNT=$((E2E_UPGRADE_SCENARIO_COUNT + 1))
@@ -15,7 +15,7 @@ run_scenario_upgrade_sanitize_claude() {
   assert_al_version_content "$repo_dir" "$E2E_OLDEST_VERSION"
 
   # Inject transport-incompatible fields into config.toml to simulate a
-  # pre-sanitization state:
+  # polluted state:
   #   - context7 (stdio): add HTTP-only fields (headers, url)
   #   - github (HTTP): add stdio-only fields (command, args)
   local config="$repo_dir/.agent-layer/config.toml"
@@ -31,7 +31,7 @@ run_scenario_upgrade_sanitize_claude() {
   # Inject HTTP-only fields into context7 (stdio server)
   sed -i.bak '/^id = "context7"/,/^\[\[mcp/ {
     /^env = /a\
-# SYNTHETIC: transport-incompatible fields (HTTP on stdio) for sanitization testing\
+# SYNTHETIC: transport-incompatible fields (HTTP on stdio) for overwrite-repair testing\
 headers = { Authorization = "Bearer ${AL_CONTEXT7_API_KEY}" }\
 url = "https://example.com/context7"
   }' "$config"
@@ -39,7 +39,7 @@ url = "https://example.com/context7"
   # Inject stdio-only fields into github (HTTP server)
   sed -i.bak '/^id = "github"/,/^\[\[mcp/ {
     /^headers = /a\
-# SYNTHETIC: transport-incompatible fields (stdio on HTTP) for sanitization testing\
+# SYNTHETIC: transport-incompatible fields (stdio on HTTP) for overwrite-repair testing\
 command = "npx"\
 args = ["-y", "example-github-mcp"]
   }' "$config"
@@ -71,20 +71,39 @@ AL_GITHUB_PERSONAL_ACCESS_TOKEN=e2e-test
 AL_TAVILY_API_KEY=e2e-test
 ENVEOF
 
-  # Run wizard to trigger sanitizeMCPServerBlock
-  assert_exit_zero_in "$repo_dir" "al wizard defaults after upgrade" \
-    al wizard --profile "$E2E_DEFAULTS_TOML" --yes
+  # Profile mode writes validated profile bytes verbatim; it does not exercise
+  # the interactive sanitizer path. Build a scenario-local clean profile so this
+  # e2e proves a profile overwrite can recover from polluted upgraded config.
+  # Unit tests cover sanitizeMCPServerBlock and the interactive patch path.
+  local sanitize_profile="$repo_dir/.agent-layer/.sanitize-profile.toml"
+  cp "$E2E_DEFAULTS_TOML" "$sanitize_profile"
+  cat >> "$sanitize_profile" <<'PROFILE_EOF'
 
-  # Verify blocks survived sanitization (they should be cleaned, not removed)
+[[mcp.servers]]
+id = "context7"
+enabled = false
+transport = "stdio"
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@2.1.1"]
+env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
+
+[[mcp.servers]]
+id = "github"
+enabled = false
+transport = "http"
+url = "https://api.githubcopilot.com/mcp/"
+headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}" }
+PROFILE_EOF
+
+  # Run wizard with the scenario-local profile to overwrite the polluted blocks.
+  assert_exit_zero_in "$repo_dir" "al wizard clean profile after upgrade" \
+    al wizard --profile "$sanitize_profile" --yes
+
+  # Verify blocks survived profile overwrite (they should be cleaned, not removed).
   assert_file_contains "$repo_dir/.agent-layer/config.toml" 'id = "context7"' \
-    "context7 block still present after wizard sanitization"
-  local github_block_present=0
-  if grep -q 'id = "github"' "$repo_dir/.agent-layer/config.toml"; then
-    github_block_present=1
-    pass "github block still present after wizard sanitization"
-  else
-    pass "github block removed by wizard profile (disabled server)"
-  fi
+    "context7 block still present after wizard profile overwrite"
+  assert_file_contains "$repo_dir/.agent-layer/config.toml" 'id = "github"' \
+    "github block still present after wizard profile overwrite"
 
   # Verify context7 block (stdio) no longer has HTTP-only fields.
   # Extract just the context7 block to avoid false matches from other servers.
@@ -92,35 +111,31 @@ ENVEOF
   context7_block=$(sed -n '/^id = "context7"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
 
   if echo "$context7_block" | grep -q 'headers'; then
-    fail "context7 block still has 'headers' after wizard sanitization"
+    fail "context7 block still has 'headers' after wizard profile overwrite"
   else
-    pass "context7 block sanitized: no headers"
+    pass "context7 block clean after profile overwrite: no headers"
   fi
 
   if echo "$context7_block" | grep -q 'url = "https://example.com'; then
-    fail "context7 block still has transport-incompatible url after wizard sanitization"
+    fail "context7 block still has transport-incompatible url after wizard profile overwrite"
   else
-    pass "context7 block sanitized: no incompatible url"
+    pass "context7 block clean after profile overwrite: no incompatible url"
   fi
 
   # Verify github block (HTTP) no longer has stdio-only fields.
-  if [[ "$github_block_present" -eq 1 ]]; then
-    local github_block
-    github_block=$(sed -n '/^id = "github"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
+  local github_block
+  github_block=$(sed -n '/^id = "github"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
 
-    if echo "$github_block" | grep -q '^command = "npx"'; then
-      fail "github block still has 'command' after wizard sanitization"
-    else
-      pass "github block sanitized: no command"
-    fi
-
-    if echo "$github_block" | grep -q '^args = \["-y"'; then
-      fail "github block still has stdio 'args' after wizard sanitization"
-    else
-      pass "github block sanitized: no stdio args"
-    fi
+  if echo "$github_block" | grep -q '^command = "npx"'; then
+    fail "github block still has 'command' after wizard profile overwrite"
   else
-    pass "github stdio-only field checks skipped (block removed)"
+    pass "github block clean after profile overwrite: no command"
+  fi
+
+  if echo "$github_block" | grep -q '^args = \["-y"'; then
+    fail "github block still has stdio 'args' after wizard profile overwrite"
+  else
+    pass "github block clean after profile overwrite: no stdio args"
   fi
 
   install_mock_claude "$repo_dir"

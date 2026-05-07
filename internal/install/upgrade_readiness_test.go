@@ -6,7 +6,31 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
+
+// injectMCPCatalogIntoSeed appends the wizard MCP catalog blocks into a seeded
+// .agent-layer/config.toml. The slim install seed deliberately ships zero
+// [[mcp.servers]] blocks; readiness tests that need to mutate specific server
+// blocks (context7, ripgrep, filesystem, etc.) call this helper after Run() to
+// recreate the legacy "all defaults present, disabled" shape they were written for.
+func injectMCPCatalogIntoSeed(t *testing.T, root string) {
+	t.Helper()
+	configPath := filepath.Join(root, ".agent-layer", "config.toml")
+	existing, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read seeded config: %v", err)
+	}
+	catalog, err := templates.Read("mcp-catalog.toml")
+	if err != nil {
+		t.Fatalf("read mcp-catalog.toml: %v", err)
+	}
+	combined := strings.TrimRight(string(existing), "\n") + "\n\n" + string(catalog)
+	if err := os.WriteFile(configPath, []byte(combined), 0o644); err != nil {
+		t.Fatalf("write seeded config with catalog: %v", err)
+	}
+}
 
 func TestBuildUpgradeReadinessChecks_UnrecognizedConfigKeys(t *testing.T) {
 	root := t.TempDir()
@@ -93,6 +117,7 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	cfg, err := os.ReadFile(configPath)
@@ -187,6 +212,7 @@ func TestBuildUpgradeReadinessChecks_UnresolvedConfigPlaceholders(t *testing.T) 
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	cfg, err := os.ReadFile(configPath)
@@ -222,6 +248,7 @@ func TestBuildUpgradeReadinessChecks_ProcessEnvOverridesDotenv_UsesSystemLookupE
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	cfg, err := os.ReadFile(configPath)
@@ -262,6 +289,7 @@ func TestBuildUpgradeReadinessChecks_IgnoredEmptyDotenvAssignments_UsesSystemLoo
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	cfg, err := os.ReadFile(configPath)
@@ -302,6 +330,7 @@ func TestBuildUpgradeReadinessChecks_PathExpansionAnomalies(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	cfg, err := os.ReadFile(configPath)
