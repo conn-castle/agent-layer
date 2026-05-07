@@ -2148,6 +2148,37 @@ func TestCaptureUpgradeSnapshotDirectory_DefensivelySkipsTmpDescendants(t *testi
 	}
 }
 
+func TestHandleUnknownsTargetPaths_ExcludesAgentLayerTmp(t *testing.T) {
+	// Rollback safety invariant: tmp paths are excluded from snapshots, so
+	// they must also be excluded from rollback targets. Otherwise an
+	// automatic rollback (e.g., a failure during handleUnknowns) would
+	// `RemoveAll` tmp paths during the reset phase with no snapshot entry to
+	// restore, silently wiping tmp content the user never confirmed.
+	root := t.TempDir()
+	tmpFile := filepath.Join(root, ".agent-layer", "tmp", "report.md")
+	otherUnknown := filepath.Join(root, ".agent-layer", "stray.txt")
+	inst := &installer{
+		root:     root,
+		unknowns: []string{tmpFile, otherUnknown},
+	}
+	targets := inst.handleUnknownsTargetPaths()
+	for _, p := range targets {
+		if p == tmpFile {
+			t.Fatalf("handleUnknownsTargetPaths must not include tmp paths, got %q in %v", p, targets)
+		}
+	}
+	foundOther := false
+	for _, p := range targets {
+		if p == filepath.Clean(otherUnknown) {
+			foundOther = true
+			break
+		}
+	}
+	if !foundOther {
+		t.Fatalf("handleUnknownsTargetPaths must still include non-tmp unknowns, got %v", targets)
+	}
+}
+
 func TestIsUnderAgentLayerTmp(t *testing.T) {
 	root := filepath.Join(string(os.PathSeparator), "repo")
 	inst := &installer{root: root}

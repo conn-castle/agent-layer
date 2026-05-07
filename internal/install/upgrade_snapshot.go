@@ -530,7 +530,19 @@ func (inst *installer) writeVSCodeLaunchersTargetPaths() []string {
 }
 
 func (inst *installer) handleUnknownsTargetPaths() []string {
-	return uniqueNormalizedPaths(inst.unknowns)
+	// Mirror upgradeSnapshotTargetPaths: tmp paths are not snapshotted, so
+	// they must not be rollback targets either. If they were, an automatic
+	// rollback would `RemoveAll` tmp paths without any snapshot entry to
+	// restore them — silently wiping tmp content the user never confirmed
+	// for deletion.
+	filtered := make([]string, 0, len(inst.unknowns))
+	for _, path := range inst.unknowns {
+		if inst.isUnderAgentLayerTmp(path) {
+			continue
+		}
+		filtered = append(filtered, path)
+	}
+	return uniqueNormalizedPaths(filtered)
 }
 
 func (inst *installer) upgradeSnapshotTargetPaths() []string {

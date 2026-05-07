@@ -64,7 +64,7 @@ const (
 	UpgradeOverwriteManagedHeader                   = "Existing managed files that differ from templates:"
 	UpgradeOverwriteMemoryHeader                    = "Existing memory files in docs/agent-layer that differ from templates:"
 	UpgradeOverwriteMemoryAllPrompt                 = "Overwrite all existing memory files in docs/agent-layer with template versions?"
-	UpgradeDeleteUnknownAllPrompt                   = "Delete all unknown files found during upgrade scan?"
+	UpgradeDeleteUnknownAllPrompt                   = "Delete all unknown files found during upgrade scan (excludes .agent-layer/tmp/, which is prompted separately)?"
 	UpgradeDeleteUnknownPromptFmt                   = "Delete %s?"
 	UpgradeDeleteUnknownTmpAllPromptFmt             = "Delete all %d file(s) under .agent-layer/tmp/?"
 	UpgradeDeleteUnknownTmpHeader                   = "Files under .agent-layer/tmp/:"
