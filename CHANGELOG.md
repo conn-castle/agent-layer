@@ -3,13 +3,35 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.10.0 - 2026-05-07
+
+Consolidates skill projection into a shared `.agents/skills/` directory for non-Claude clients, migrates Gemini sync to the Policy Engine, splits the MCP catalog from the install seed, adds `xhigh` reasoning effort for Claude, and improves the upgrade experience with automatic post-upgrade sync and opt-in diff preview.
+
+### Added
+- Skills synced to a shared `.agents/skills/<name>/SKILL.md` tree for non-Claude clients (Codex, Gemini, Antigravity, VS Code/Copilot, Copilot CLI). Per-client directories (`.codex/skills/`, `.gemini/skills/`, `.agent/skills/`, `.vscode/prompts/`, `.github/skills/`) are retired and cleaned automatically by `al sync`. Projection rules and ownership contract documented in `docs/SKILL-CLIENT-SPEC.md`.
+- `chat.agentSkillsLocations` written to `.vscode/settings.json` pointing at `.agents/skills/` so VS Code Copilot picks up the consolidated location.
+- `xhigh` as a valid `reasoning_effort` value for Claude. Custom (unknown) effort values now pass through with a warning instead of a hard validation error.
+- `_generatedBy: agent-layer` provenance field added to generated `.mcp.json` and `.gemini/settings.json` for stronger ownership detection during upgrade readiness checks; replaces the weak `mcpServers`-only signature.
+- Internal MCP server catalog (`mcp-catalog.toml`) embedded in the binary and consumed by `al wizard` for its MCP server multiselect; decoupled from the install seed so fresh `config.toml` files start with a minimal `[mcp]` section.
+
 ### Changed
-- Gemini sync migrates from the deprecated `tools.allowed` field to the Policy Engine. `WriteGeminiSettings` no longer emits `tools.allowed` in `.gemini/settings.json` and instead writes a `policyPaths: [".gemini/policies"]` pointer; `WriteGeminiPolicies` generates `.gemini/policies/agent-layer.toml` with one `[[rule]]` block per allowed command (`toolName = "run_shell_command"`, `commandPrefix`, `decision = "allow"`, `priority = 100`, `allowRedirection = true`). `allowRedirection = true` preserves the previous `tools.allowed` behavior for headless workflows that pipe output (e.g., `git ... > file`); without it the policy engine would prompt for confirmation even when a rule matches. Resolves the Gemini CLI deprecation warning ("--allowed-tools cli argument and tools.allowed in settings.json are deprecated and will be removed in 1.0").
-- `al upgrade` now runs `al sync` automatically on success so retired projection paths and freshly-introduced templates are reconciled without a manual follow-up. Sync warnings surface on stderr; sync failures are wrapped (`upgrade applied; sync failed: <err> (run \`al sync\` to retry)`) with `errors.Is` preserved on the wrapped error, and the "Upgrade successful." banner is suppressed when sync fails so the failure is unmissable.
-- `al upgrade` overwrite prompts now show a compact summary (file path with `+N -M` line stats, colorized when output is a terminal) and ask "View the full diff?" (default no) before printing unified diff bodies. The previous behavior of unconditionally printing every full diff body before the apply prompt is gone; answer `y` at the new prompt to restore the full view for the current section.
+- Gemini sync migrates from the deprecated `tools.allowed` field to the Policy Engine. `WriteGeminiSettings` no longer emits `tools.allowed` in `.gemini/settings.json` and instead writes a `policyPaths: [".gemini/policies"]` pointer; `WriteGeminiPolicies` generates `.gemini/policies/agent-layer.toml` with one `[[rule]]` block per allowed command (`toolName = "run_shell_command"`, `commandPrefix`, `decision = "allow"`, `priority = 100`, `allowRedirection = true`). `allowRedirection = true` preserves the previous `tools.allowed` behavior for headless workflows that pipe output (e.g., `git ... > file`). Resolves the Gemini CLI deprecation warning.
+- `al upgrade` now runs `al sync` automatically on success so retired projection paths and freshly-introduced templates are reconciled without a manual follow-up. Sync warnings surface on stderr; sync failures are wrapped (`upgrade applied; sync failed: <err> (run \`al sync\` to retry)`) with `errors.Is` preserved, and the "Upgrade successful." banner is suppressed when sync fails so the failure is unmissable.
+- `al upgrade` overwrite prompts now show a compact summary (file path with `+N -M` line stats, colorized when output is a terminal) and ask "View the full diff?" (default no) before printing unified diff bodies.
+- `.agent-layer/tmp/` excluded from pre-upgrade snapshots; rollback does not restore tmp content. Interactive bulk-delete prompt is scoped to non-tmp content; a separate grouped prompt handles tmp unknowns. Non-interactive deletion requires `--apply-tmp-deletions`; `--apply-deletions` alone never touches tmp.
+- `config.toml` install seed no longer includes inline MCP server entries; the `[mcp]` section now points to `al wizard` for server configuration. Existing repos are unaffected.
+- Stale `.claude/skills/` and `.gemini/skills/` directories flagged for cleanup during upgrade readiness when those agents are disabled.
+
+### Fixed
+- `.mcp.json` no longer omits the `mcpServers` key when no servers are configured.
+- Rollback no longer silently wipes `.agent-layer/tmp/` content that was excluded from the snapshot.
+- Grouped tmp-unknowns deletion fallback fixed when `DeleteUnknownTmpAllFunc` is not wired in `PromptFuncs`.
+- Env preview redaction edge cases in `al wizard` hardened.
+- Doctor and wizard previews hardened for additional edge cases.
 
 ### Removed
 - `tools.allowed` field from generated `.gemini/settings.json`. The next `al sync` rewrites the file in the new shape, removing the deprecated key.
+- Per-client skill directories (`.codex/skills/`, `.gemini/skills/`, `.agent/skills/`, `.vscode/prompts/`, `.github/skills/`) retired; `al sync` cleans these paths and writes to `.agents/skills/` instead.
 
 ## v0.9.2 - 2026-03-21
 
