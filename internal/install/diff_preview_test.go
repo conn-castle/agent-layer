@@ -24,7 +24,7 @@ func TestNormalizeDiffMaxLines_DefaultAndPositive(t *testing.T) {
 func TestRenderTruncatedUnifiedDiff(t *testing.T) {
 	from := "a\nb\nc\n"
 	to := "a\nx\ny\nz\n"
-	diff, truncated := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 2)
+	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 2)
 	if !truncated {
 		t.Fatal("expected truncated diff")
 	}
@@ -34,18 +34,26 @@ func TestRenderTruncatedUnifiedDiff(t *testing.T) {
 	if !strings.Contains(diff, diffLineCapFlagName) {
 		t.Fatalf("expected diff to mention %s:\n%s", diffLineCapFlagName, diff)
 	}
+	// Even though the body is truncated, stats reflect the full diff:
+	// 2 lines removed (b, c) and 3 added (x, y, z).
+	if added != 3 || removed != 2 {
+		t.Fatalf("stats = (+%d, -%d), want (+3, -2)", added, removed)
+	}
 }
 
 func TestRenderTruncatedUnifiedDiff_IgnoresTrailingWhitespaceOnlyChanges(t *testing.T) {
 	from := "stable\nline with spaces   \n"
 	to := "stable\nline with spaces\n"
 
-	diff, truncated := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
 	if truncated {
 		t.Fatal("did not expect truncation")
 	}
 	if strings.Contains(diff, "-line with spaces") || strings.Contains(diff, "+line with spaces") {
 		t.Fatalf("expected trailing-whitespace-only lines to be suppressed, got:\n%s", diff)
+	}
+	if added != 0 || removed != 0 {
+		t.Fatalf("stats = (+%d, -%d), want (+0, -0)", added, removed)
 	}
 }
 
@@ -53,7 +61,7 @@ func TestRenderTruncatedUnifiedDiff_CollapsesEquivalentMovedLines(t *testing.T) 
 	from := "/.gemini/\n/.claude/\n"
 	to := "/.claude/\n/.gemini/\n"
 
-	diff, truncated := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
+	diff, truncated, added, removed := renderTruncatedUnifiedDiff("from.txt", "to.txt", from, to, 40)
 	if truncated {
 		t.Fatal("did not expect truncation")
 	}
@@ -63,6 +71,66 @@ func TestRenderTruncatedUnifiedDiff_CollapsesEquivalentMovedLines(t *testing.T) 
 	if strings.Contains(diff, "-/.gemini/") || strings.Contains(diff, "+/.gemini/") ||
 		strings.Contains(diff, "-/.claude/") || strings.Contains(diff, "+/.claude/") {
 		t.Fatalf("expected equivalent moved lines to be suppressed, got:\n%s", diff)
+	}
+	if added != 0 || removed != 0 {
+		t.Fatalf("stats = (+%d, -%d), want (+0, -0)", added, removed)
+	}
+}
+
+func TestCountDiffLineStats(t *testing.T) {
+	lines := []string{
+		"--- a.txt",
+		"+++ b.txt",
+		"@@ -1,1 +1,2 @@",
+		"-old",
+		"+new1",
+		"+new2",
+		" context",
+	}
+	added, removed := countDiffLineStats(lines)
+	if added != 2 || removed != 1 {
+		t.Fatalf("countDiffLineStats = (+%d, -%d), want (+2, -1)", added, removed)
+	}
+	if a, r := countDiffLineStats(nil); a != 0 || r != 0 {
+		t.Fatalf("countDiffLineStats(nil) = (+%d, -%d), want (+0, -0)", a, r)
+	}
+}
+
+// TestCountDiffLineStats_FrontmatterDelimitersInBody guards against the
+// historical bug where body lines whose content starts with `---` or `+++`
+// (e.g. YAML frontmatter delimiters in template files) were misclassified as
+// file headers and dropped from the +/- counts. After the change, only lines
+// after the first `@@` hunk header are counted.
+func TestCountDiffLineStats_FrontmatterDelimitersInBody(t *testing.T) {
+	lines := []string{
+		"--- a/template.md",
+		"+++ b/template.md",
+		"@@ -1,4 +1,4 @@",
+		"----",
+		"-name: old",
+		"----",
+		"++++",
+		"+name: new",
+		"++++",
+		" body",
+	}
+	added, removed := countDiffLineStats(lines)
+	if added != 3 || removed != 3 {
+		t.Fatalf("countDiffLineStats with frontmatter body = (+%d, -%d), want (+3, -3)", added, removed)
+	}
+}
+
+// TestCountDiffLineStats_NoHunkHeader covers the case where the input has no
+// `@@` line at all (e.g. empty diff input). The function must report zeros
+// rather than counting the file headers themselves.
+func TestCountDiffLineStats_NoHunkHeader(t *testing.T) {
+	lines := []string{
+		"--- a.txt",
+		"+++ b.txt",
+	}
+	added, removed := countDiffLineStats(lines)
+	if added != 0 || removed != 0 {
+		t.Fatalf("countDiffLineStats no hunk = (+%d, -%d), want (+0, -0)", added, removed)
 	}
 }
 

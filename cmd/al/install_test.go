@@ -65,6 +65,32 @@ func TestPromptYesNo_InvalidThenNo(t *testing.T) {
 	}
 }
 
+// TestPromptYesNo_ReusesBufferedReaderAcrossCalls guards against the
+// regression where a fresh `bufio.NewReader` per call could discard bytes
+// already buffered by a previous prompt's read-ahead. Pre-wrapping with
+// `bufferedReader` once and passing the shared `*bufio.Reader` into two
+// consecutive `promptYesNo` calls must preserve the second answer.
+func TestPromptYesNo_ReusesBufferedReaderAcrossCalls(t *testing.T) {
+	shared := bufferedReader(strings.NewReader("y\nn\n"))
+	var out bytes.Buffer
+
+	first, err := promptYesNo(shared, &out, "First?", false)
+	if err != nil {
+		t.Fatalf("promptYesNo first call: %v", err)
+	}
+	if !first {
+		t.Fatal("expected first prompt to read 'y'")
+	}
+
+	second, err := promptYesNo(shared, &out, "Second?", true)
+	if err != nil {
+		t.Fatalf("promptYesNo second call: %v", err)
+	}
+	if second {
+		t.Fatal("expected second prompt to read 'n'; bytes buffered after the first newline must survive between calls")
+	}
+}
+
 // errorWriter fails after a configurable number of writes
 type errorWriter struct {
 	failAfter int

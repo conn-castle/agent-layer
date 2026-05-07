@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -30,6 +29,7 @@ var runWizard = func(root string, pinVersion string) error {
 
 var installRun = install.Run
 var installRollbackUpgradeSnapshot = install.RollbackUpgradeSnapshot
+var syncRun = alsync.Run
 var statAgentLayerPath = os.Stat
 
 var resolveLatestPinVersion = func(ctx context.Context, currentVersion string) (string, error) {
@@ -196,8 +196,14 @@ func validatePinnedReleaseVersion(ctx context.Context, pinVersion string) error 
 
 // promptYesNo asks a yes/no question and returns the user's choice or an error.
 // defaultYes controls the result when the user provides an empty response.
+//
+// Reuses an existing `*bufio.Reader` via `bufferedReader` when one is passed
+// in so consecutive prompts share a single read-ahead buffer; otherwise
+// bytes buffered after the first newline could be silently discarded between
+// calls. Relying on `bufio.NewReader`'s same-size reuse optimization here
+// would make that invariant implicit and brittle.
 func promptYesNo(in io.Reader, out io.Writer, prompt string, defaultYes bool) (bool, error) {
-	reader := bufio.NewReader(in)
+	reader := bufferedReader(in)
 	for {
 		if defaultYes {
 			if _, err := fmt.Fprintf(out, messages.PromptYesDefaultFmt, prompt); err != nil {

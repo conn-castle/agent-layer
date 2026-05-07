@@ -64,6 +64,7 @@ const (
 	UpgradeOverwriteManagedHeader                   = "Existing managed files that differ from templates:"
 	UpgradeOverwriteMemoryHeader                    = "Existing memory files in docs/agent-layer that differ from templates:"
 	UpgradeOverwriteMemoryAllPrompt                 = "Overwrite all existing memory files in docs/agent-layer with template versions?"
+	UpgradeViewDiffPrompt                           = "View the full diff?"
 	UpgradeDeleteUnknownAllPrompt                   = "Delete all unknown files found during upgrade scan (excludes .agent-layer/tmp/, which is prompted separately)?"
 	UpgradeDeleteUnknownPromptFmt                   = "Delete %s?"
 	UpgradeDeleteUnknownTmpAllPromptFmt             = "Delete all %d file(s) under .agent-layer/tmp/?"
@@ -76,6 +77,8 @@ const (
 	UpgradeSkipDeletionsInfo                        = "Info: skipping unknown file deletions outside .agent-layer/tmp/ (pass --apply-deletions to include them)."
 	UpgradeSkipTmpDeletionsInfo                     = "Info: skipping deletions under .agent-layer/tmp/ (pass --apply-tmp-deletions to include them; this is destructive and may impact ongoing agent work)."
 	UpgradeSuccessful                               = "Upgrade successful."
+	UpgradeRunningSync                              = "Running sync..."
+	UpgradeSyncFailedFmt                            = "upgrade applied; sync failed: %w (run `al sync` to retry)"
 
 	InitWarnUpdateCheckFailedFmt = "Warning: failed to check for updates: %v\n"
 	InitWarnDevBuildFmt          = "Warning: running dev build; latest release is %s\n"

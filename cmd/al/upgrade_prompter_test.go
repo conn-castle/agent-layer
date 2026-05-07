@@ -616,3 +616,201 @@ func TestWriteUpgradeSummary_NoReadinessWarnings(t *testing.T) {
 		t.Fatalf("expected no-review summary, got:\n%s", output)
 	}
 }
+
+func TestPrintDiffPreviewSummary_RendersStats(t *testing.T) {
+	var buf bytes.Buffer
+	previews := []install.DiffPreview{
+		{Path: "file-a.txt", LinesAdded: 5, LinesRemoved: 2},
+		{Path: "longer-name.md", LinesAdded: 0, LinesRemoved: 7},
+	}
+	if err := printDiffPreviewSummary(&buf, "Header", previews); err != nil {
+		t.Fatalf("printDiffPreviewSummary: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "Header") {
+		t.Fatalf("expected header in output:\n%s", output)
+	}
+	if !strings.Contains(output, "file-a.txt") || !strings.Contains(output, "+5") || !strings.Contains(output, "-2") {
+		t.Fatalf("expected file-a stats in output:\n%s", output)
+	}
+	if !strings.Contains(output, "longer-name.md") || !strings.Contains(output, "+0") || !strings.Contains(output, "-7") {
+		t.Fatalf("expected longer-name stats in output:\n%s", output)
+	}
+	// "Diff for ..." block must NOT appear — summary only.
+	if strings.Contains(output, "Diff for") {
+		t.Fatalf("did not expect diff body in summary output:\n%s", output)
+	}
+}
+
+func TestPrintDiffPreviewSummary_Colorizes(t *testing.T) {
+	enableTestColorOutput(t)
+
+	var buf bytes.Buffer
+	previews := []install.DiffPreview{
+		{Path: "a.txt", LinesAdded: 3, LinesRemoved: 1},
+	}
+	if err := printDiffPreviewSummary(&buf, "Header", previews); err != nil {
+		t.Fatalf("printDiffPreviewSummary: %v", err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatalf("expected ANSI color sequences in stats output:\n%s", output)
+	}
+}
+
+func TestPrintDiffPreviewSummary_ZeroCountsPlainEvenWhenColorized(t *testing.T) {
+	enableTestColorOutput(t)
+
+	var buf bytes.Buffer
+	previews := []install.DiffPreview{
+		{Path: "a.txt", LinesAdded: 0, LinesRemoved: 0},
+	}
+	if err := printDiffPreviewSummary(&buf, "Header", previews); err != nil {
+		t.Fatalf("printDiffPreviewSummary: %v", err)
+	}
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Fatalf("expected no ANSI sequences for zero counts:\n%s", buf.String())
+	}
+}
+
+func TestPromptOverwriteSection_EmptyPreviewsSkipsAllPrompts(t *testing.T) {
+	var out bytes.Buffer
+	apply, err := promptOverwriteSection(strings.NewReader(""), &out, "Header", nil, "Apply?", true)
+	if err != nil {
+		t.Fatalf("promptOverwriteSection empty: %v", err)
+	}
+	if apply {
+		t.Fatal("expected apply=false when there are no previews")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("expected no output for empty previews, got %q", out.String())
+	}
+}
+
+func TestPromptOverwriteSection_DeclinesViewDiffByDefaultThenApplies(t *testing.T) {
+	var out bytes.Buffer
+	// "" accepts the view-diff default (no), then "y" approves the apply prompt.
+	in := strings.NewReader("\ny\n")
+	previews := []install.DiffPreview{
+		{Path: "a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n", LinesAdded: 1, LinesRemoved: 1},
+	}
+	apply, err := promptOverwriteSection(in, &out, "Header", previews, "Apply?", true)
+	if err != nil {
+		t.Fatalf("promptOverwriteSection: %v", err)
+	}
+	if !apply {
+		t.Fatal("expected apply=true after accepting apply prompt")
+	}
+	output := out.String()
+	if !strings.Contains(output, "+1") || !strings.Contains(output, "-1") {
+		t.Fatalf("expected stats in summary, got:\n%s", output)
+	}
+	if strings.Contains(output, "Diff for a.txt:") {
+		t.Fatalf("did not expect diff body when view declined, got:\n%s", output)
+	}
+	if !strings.Contains(output, messages.UpgradeViewDiffPrompt) {
+		t.Fatalf("expected view-diff prompt in output:\n%s", output)
+	}
+}
+
+func TestPromptOverwriteSection_AcceptsViewDiffShowsBodyThenApplies(t *testing.T) {
+	var out bytes.Buffer
+	// "y" views the diff, "n" declines the apply prompt.
+	in := strings.NewReader("y\nn\n")
+	previews := []install.DiffPreview{
+		{Path: "a.txt", UnifiedDiff: "--- a\n+++ b\n-old\n+new\n", LinesAdded: 1, LinesRemoved: 1},
+	}
+	apply, err := promptOverwriteSection(in, &out, "Header", previews, "Apply?", false)
+	if err != nil {
+		t.Fatalf("promptOverwriteSection: %v", err)
+	}
+	if apply {
+		t.Fatal("expected apply=false after declining apply prompt")
+	}
+	output := out.String()
+	if !strings.Contains(output, "Diff for a.txt:") {
+		t.Fatalf("expected diff body when view accepted, got:\n%s", output)
+	}
+}
+
+func TestPromptOverwriteSection_NoDiffBodySkipsViewPrompt(t *testing.T) {
+	var out bytes.Buffer
+	// Only the apply prompt is asked because no preview has a diff body.
+	in := strings.NewReader("y\n")
+	previews := []install.DiffPreview{
+		{Path: "a.txt", UnifiedDiff: "", LinesAdded: 0, LinesRemoved: 0},
+	}
+	apply, err := promptOverwriteSection(in, &out, "Header", previews, "Apply?", true)
+	if err != nil {
+		t.Fatalf("promptOverwriteSection: %v", err)
+	}
+	if !apply {
+		t.Fatal("expected apply=true")
+	}
+	if strings.Contains(out.String(), messages.UpgradeViewDiffPrompt) {
+		t.Fatalf("expected view-diff prompt to be skipped when no diff body, got:\n%s", out.String())
+	}
+}
+
+func TestPromptUnifiedOverwriteSections_AsksViewDiffOnce(t *testing.T) {
+	var out bytes.Buffer
+	// View=yes, then managed=yes, then memory=no.
+	in := strings.NewReader("y\ny\nn\n")
+	managed := []install.DiffPreview{
+		{Path: "managed.txt", UnifiedDiff: "--- a\n+++ b\n-x\n+y\n", LinesAdded: 1, LinesRemoved: 1},
+	}
+	memory := []install.DiffPreview{
+		{Path: "docs/agent-layer/ROADMAP.md", UnifiedDiff: "--- a\n+++ b\n-foo\n+bar\n", LinesAdded: 1, LinesRemoved: 1},
+	}
+	applyManaged, applyMemory, err := promptUnifiedOverwriteSections(in, &out, managed, memory)
+	if err != nil {
+		t.Fatalf("promptUnifiedOverwriteSections: %v", err)
+	}
+	if !applyManaged {
+		t.Fatal("expected applyManaged=true")
+	}
+	if applyMemory {
+		t.Fatal("expected applyMemory=false")
+	}
+	output := out.String()
+	if !strings.Contains(output, "managed.txt") || !strings.Contains(output, "docs/agent-layer/ROADMAP.md") {
+		t.Fatalf("expected both summaries in output:\n%s", output)
+	}
+	if !strings.Contains(output, "Diff for managed.txt:") || !strings.Contains(output, "Diff for docs/agent-layer/ROADMAP.md:") {
+		t.Fatalf("expected diff bodies for both sections, got:\n%s", output)
+	}
+	// Exactly one view-diff prompt should appear, not two.
+	if got := strings.Count(output, messages.UpgradeViewDiffPrompt); got != 1 {
+		t.Fatalf("expected exactly 1 view-diff prompt, got %d in:\n%s", got, output)
+	}
+}
+
+func TestPromptUnifiedOverwriteSections_NoDiffBodySkipsViewPrompt(t *testing.T) {
+	var out bytes.Buffer
+	// Only managed apply + memory apply are asked.
+	in := strings.NewReader("y\nn\n")
+	managed := []install.DiffPreview{{Path: "managed.txt"}}
+	memory := []install.DiffPreview{{Path: "docs/agent-layer/ROADMAP.md"}}
+	applyManaged, applyMemory, err := promptUnifiedOverwriteSections(in, &out, managed, memory)
+	if err != nil {
+		t.Fatalf("promptUnifiedOverwriteSections: %v", err)
+	}
+	if !applyManaged || applyMemory {
+		t.Fatalf("unexpected results: applyManaged=%v applyMemory=%v", applyManaged, applyMemory)
+	}
+	if strings.Contains(out.String(), messages.UpgradeViewDiffPrompt) {
+		t.Fatalf("did not expect view-diff prompt when no diff bodies, got:\n%s", out.String())
+	}
+}
+
+func TestHasNonEmptyDiff(t *testing.T) {
+	if hasNonEmptyDiff(nil) {
+		t.Fatal("expected hasNonEmptyDiff(nil)=false")
+	}
+	if hasNonEmptyDiff([]install.DiffPreview{{UnifiedDiff: "  \n\t"}}) {
+		t.Fatal("expected hasNonEmptyDiff(whitespace-only)=false")
+	}
+	if !hasNonEmptyDiff([]install.DiffPreview{{UnifiedDiff: "real"}}) {
+		t.Fatal("expected hasNonEmptyDiff(real diff)=true")
+	}
+}

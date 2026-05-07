@@ -388,7 +388,8 @@ In non-interactive environments, the wizard is skipped.
 
 - Updates `.agent-layer/al.version` to match the currently running `al` binary
 - Prompts before overwriting managed template files unless apply flags are explicitly selected
-- Shows line-level diff previews before overwrite decisions by default
+- Shows a compact per-file summary (path with `+N -M` line stats) before overwrite decisions, and asks "View the full diff?" (default no) before printing unified diff bodies; per-file overwrite prompts always render the full diff
+- Runs `al sync` automatically after a successful upgrade so retired projection paths and freshly-introduced templates are reconciled (sync warnings surface on stderr; sync failures are wrapped and suppress the success banner)
 - In the default interactive flow, prompts about unknown files under `.agent-layer/` and `docs/agent-layer/` and only deletes them if you explicitly approve
 - In non-interactive or explicit-category apply (e.g., `--yes --apply-managed-updates`), requires the separate `--apply-deletions` flag before unknown files outside `.agent-layer/tmp/` are eligible for deletion
 - **Treats `.agent-layer/tmp/` as protected ephemeral storage:** files under that directory are never deleted by `--apply-deletions`, never bulk-deleted by the interactive "delete all unknowns?" prompt, and never restored by rollback. Tmp deletion requires either an interactive double-confirm or the dedicated `--apply-tmp-deletions` flag (in addition to `--yes`). See [Ephemeral artifacts under .agent-layer/tmp/](#ephemeral-artifacts-under-agent-layertmp)
