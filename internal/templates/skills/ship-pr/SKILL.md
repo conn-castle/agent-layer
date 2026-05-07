@@ -1,10 +1,11 @@
 ---
 name: ship-pr
 description: >-
-  Orchestrate the full PR lifecycle: audit uncommitted changes, commit, push,
-  create a PR, wait for CI (fixing failures), wait for review comments, address
-  them, and ensure CI passes before finishing. Delegates to fix-ci and
-  address-pr-comments sub-skills.
+  Run the full PR lifecycle for completed local work: audit changes, commit,
+  push, open PR, monitor CI, handle review comments, and finish green. Use when
+  the user asks to ship, open, or take work to a PR. Use `fix-ci` for an
+  existing failing PR, `address-pr-comments` for review feedback, and
+  `finish-task` when no PR is needed.
 ---
 
 # ship-pr
@@ -35,8 +36,6 @@ Accept any combination of:
 - whether to skip the comment wait period
 
 ## Required behavior
-
-Use subagents liberally when available.
 
 Delegate to:
 - `audit-and-fix-uncommitted-changes` for pre-commit quality gates
@@ -200,6 +199,13 @@ it must be fixed, not deferred.
 - Do not force-push or rewrite history unless explicitly instructed.
 - Do not create duplicate PRs.
 - If a previously declined suggestion is subsequently implemented, the follow-up reply must acknowledge the reversal.
+
+## Definition of done
+
+- A PR exists for the current branch and `gh pr checks` shows every required CI check passing on the final pushed commit.
+- Every feedback comment (excluding pure bot status/CI notifications) has a reply that opens with one of the three bold verdicts (`Fixed in <hash>`, `No change — <reason>`, `Deferred — tracked in <location>`) and passes the Phase 7 audit.
+- Phase 7 was executed by re-fetching the PR state; no comment is flagged as missing reply, hollow fix, unjustified decline, lazy deferral, or generic dismissal at close.
+- The skill did not force-push, did not create a duplicate PR, and did not end with CI failing.
 
 ## Final handoff
 

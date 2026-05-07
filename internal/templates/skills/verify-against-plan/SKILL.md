@@ -1,9 +1,11 @@
 ---
 name: verify-against-plan
 description: >-
-  Compare the current implementation and working tree against a
-  plan/task/context artifact set, then report completeness gaps, regressions,
-  missing tests or docs, and scope drift.
+  Read-only check of the current implementation and working tree against an
+  existing plan/task/context set. Reports completeness gaps, regressions,
+  missing tests/docs, and scope drift without edits. Use when the user wants a
+  plan-alignment check. Use `review-plan` to critique the plan, `finish-task`
+  for closeout, and `implement-plan` to fix gaps.
 ---
 
 # verify-against-plan
@@ -12,6 +14,8 @@ This is a completeness review, not just a code audit.
 The main question is:
 
 Did the implementation deliver what the plan promised, without missing critical verification, docs, or cleanup?
+
+Use `review-plan` instead when the target is the plan itself, not the implementation against it. Use `implement-plan` instead when gaps should be closed rather than just reported.
 
 ## Defaults
 
@@ -45,8 +49,6 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 Create the file with `touch` before writing.
 
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Plan reader`: extracts promises, scope, and exit criteria.
@@ -134,6 +136,13 @@ For every finding, include:
 - Do not ignore missing verification.
 - Do not confuse scope drift with value-add; drift is still drift.
 - If the implementation is better than the plan in a harmless way, note it, but still call out undocumented deviation.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/verify-against-plan.<run-id>.report.md` with every required section (`Completion Verdict`, `Inputs`, `Plan Coverage`, `Findings`, `Verification Assessment`, `Docs and Memory Assessment`, `Recommended Next Step`).
+- `Plan Coverage` lists every in-scope plan item with an item-by-item status; partial completions are not presented as done.
+- The report carries exactly one verdict: `complete`, `complete-with-follow-up`, or `incomplete`; `complete-with-follow-up` is used only when remaining items are clearly outside planned scope.
+- Implementation, plan, task, and context artifacts were not modified by this run.
 
 ## Final handoff
 

@@ -19,6 +19,8 @@ The plan should be specific, testable, and tightly scoped to the user's request.
 The context file provides the orientation a fresh agent needs to begin implementing
 without re-discovering what the planner already found.
 
+Use `implement-plan` instead when a valid plan/task/context set already exists and the request is to execute it. Use `complete-current-phase` instead when the scope is a full roadmap phase that also needs orchestrated implementation and closeout.
+
 ## Defaults
 
 - Default to planning only. Do not edit code unless the user explicitly asks for implementation too.
@@ -48,8 +50,6 @@ Accept any combination of:
 If the user does not provide targets, infer the minimum necessary scope from the request and say what you chose.
 
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Scout`: gathers focused repo context and constraints.
@@ -214,6 +214,13 @@ If the verdict is `rewrite-because-out-of-scope`, rewrite the plan around the sm
 - Do not assume missing inputs, secrets, schema details, or desired behavior.
 - Prefer root-cause plans over band-aids, but call out when root-cause work expands scope.
 - If the right fix is materially larger than requested, say so in the scope section.
+
+## Definition of done
+
+- All three artifacts exist at `.agent-layer/tmp/plan-work.<run-id>.{plan,task,context}.md` under one shared run-id.
+- The plan contains every required section (`Objective`, `Scope`, `Context`, `Approach`, `Risks`, `Verification`, `Exit Criteria`); the task file has an ordered checklist ending in a verification step; the context file lists key files, current state, constraints, and entry point.
+- The Critic pass recorded an answer for every checklist question in Phase 4, and any `no` answers were revised before presenting.
+- The execution gatekeeper recorded exactly one verdict (`proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`) and the artifacts are in a state consistent with that verdict.
 
 ## Final handoff
 

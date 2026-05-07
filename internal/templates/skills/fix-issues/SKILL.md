@@ -1,10 +1,10 @@
 ---
 name: fix-issues
 description: >-
-  Fix all open issues in `ISSUES.md` by default: plan the full set, batch into
-  coherent groups for execution, implement, audit, verify, and keep `ISSUES.md`
-  current throughout. Narrow the batch only when the user explicitly limits
-  scope.
+  Fix open items in `ISSUES.md` by default: plan the set, batch work,
+  implement, audit, verify, and keep the ledger current. Use when the user asks
+  to clear or work through known issues. Use `debug-issue` for one unexplained
+  symptom and `resolve-findings` for a review findings report.
 ---
 
 # fix-issues
@@ -46,8 +46,6 @@ Accept any combination of:
 - a scope preference such as targeted or all-selected
 
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Issue triage lead`: selects the issue batch.
@@ -172,6 +170,13 @@ If it reveals incomplete issue resolution or stale memory/docs, jump back to the
 - Do not close issues that were only partially addressed.
 - Do not treat `rewrite-because-out-of-scope` as permission to silently drop selected issues; record the deferrals explicitly.
 - Do not stop after the first batch if unprocessed batches remain.
+
+## Definition of done
+
+- The four artifacts exist at `.agent-layer/tmp/fix-issues.<run-id>.{plan,task,context,report}.md`, and the report lists every selected issue with a disposition of fixed, deferred, rejected, or reclassified.
+- Every resolved issue is removed from `ISSUES.md`; reclassified items moved to `BACKLOG.md`; newly discovered out-of-scope issues are logged as fresh `ISSUES.md` entries.
+- The repo-defined verification command ran at least once per batch and its result is recorded in the report.
+- The run processed every selected batch in order — no early stop with unprocessed batches, unless a human checkpoint blocked progress and the report names it.
 
 ## Final handoff
 

@@ -38,8 +38,6 @@ Do not interpret this skill as permission to review old commits, sweep the whole
 
 ## Required behavior
 
-Use subagents liberally when available.
-
 At minimum, use:
 - parallel audit reviewers with different lenses
 - a findings resolver/fixer
@@ -59,14 +57,12 @@ Always create:
 
 Create the file with `touch` before writing.
 
-Reuse and reference the per-round artifacts created by the delegated skills:
-- `.agent-layer/tmp/review-scope.<run-id>.report.md`
-- `.agent-layer/tmp/resolve-findings.<run-id>.report.md`
-- `.agent-layer/tmp/resolve-findings.<run-id>.plan.md`
-- `.agent-layer/tmp/resolve-findings.<run-id>.task.md`
-- `.agent-layer/tmp/resolve-findings.<run-id>.context.md`
+The master report is the human-facing round ledger and the single place to preserve orchestrator state.
 
-The master report is the human-facing round ledger. It must remain readable without opening the child artifacts.
+Delegated skill outputs are handled one way:
+- Use `review-scope` report artifacts as findings input to `resolve-findings`.
+- Copy `resolve-findings` outcomes from its final handoff into the master report.
+- Do not require, open, echo, or cross-reference `resolve-findings` report, plan, task, or context artifacts.
 
 ## Global constraints
 
@@ -146,7 +142,7 @@ Escalate if the loop is not converging (same findings recurring, fix attempts no
 
 When the loop converges:
 1. add `## Final Verification` to the master report
-2. identify which round was the confirmation round and state its artifact path
+2. identify which round was the confirmation round
 3. state how many rounds were required (including the confirmation round)
 4. summarize whether any findings were rejected as false positives
 5. state explicitly that the confirmation round produced zero accepted findings
@@ -180,6 +176,21 @@ Example:
 
 At each major stage, echo the master report path and state the current phase (preflight, auditing round N, fixing round N, confirmation round N, or closing).
 
+## Guardrails
+
+- Do not carry unresolved deferred findings into a clean final report.
+- Do not collapse multiple rounds into one summary.
+- Do not skip the confirmation round. A round that applied fixes cannot also be the confirmation round.
+- Do not modify unrelated code just because it is nearby.
+- Keep each round grounded in concrete reviewed diffs, review-scope findings, and observed verification.
+
+## Definition of done
+
+- The master report exists at `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` with one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round plus `## Final Verification` and `## Residual Risk`.
+- The final round is an explicit confirmation round, distinct from any round that applied fixes, and its section states zero accepted findings.
+- No accepted finding from any round remains unresolved or deferred in the final report.
+- The working tree was not staged, committed, or discarded by this skill.
+
 ## Final handoff
 
 After the run, present the results to the user in chat so that every finding and fix is clearly attributed to the round that produced it.
@@ -198,11 +209,3 @@ Example summary:
 - 12 findings from 5 parallel reviewers
 - 5 accepted and fixed, 6 rejected, 1 deferred
 ```
-
-## Guardrails
-
-- Do not carry unresolved deferred findings into a clean final report.
-- Do not collapse multiple rounds into one summary.
-- Do not skip the confirmation round. A round that applied fixes cannot also be the confirmation round.
-- Do not modify unrelated code just because it is nearby.
-- Keep each round grounded in concrete review and resolution artifacts.

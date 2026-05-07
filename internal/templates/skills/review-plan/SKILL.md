@@ -47,8 +47,6 @@ Fallback:
 
 ## Multi-agent pattern
 
-Use subagents liberally when available.
-
 Recommended roles:
 1. `Plan reader`: extracts the stated objective, scope, risks, and exit criteria.
 2. `Risk reviewer`: looks for missing sequencing, dependencies, and non-goals.
@@ -139,6 +137,13 @@ The report must contain:
 - Do not invent implementation problems that are not implied by the plan.
 - Do not collapse multiple plan problems into one oversized finding.
 - If the task list or context file is missing but the plan exists, call that out explicitly instead of pretending the artifact set is complete.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/review-plan.<run-id>.report.md` with every required section (`Summary`, `Findings`, `Open Questions`, `Strengths`, `Recommendation`).
+- Every finding names its artifact path + section, severity, evidence, and specific recommendation — no vague "needs more detail" entries.
+- The report ends with exactly one recommendation: `approve`, `approve-with-changes`, or `revise`.
+- Plan, task, and context artifacts were not modified by this run.
 
 ## Final handoff
 

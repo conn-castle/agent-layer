@@ -1,10 +1,11 @@
 ---
 name: boost-coverage
 description: >-
-  Raise coverage iteratively by discovering the repo's real coverage commands,
-  selecting the next eligible low-coverage file, adding tests, and repeating
-  until the documented threshold is met or a high-value blocker requires human
-  input.
+  Raise test coverage by discovering the repo's real coverage command,
+  selecting under-covered files, adding tests, and iterating to the documented
+  target or blocker. Use when the user asks to increase coverage. Use
+  `audit-tests` for suite-quality cleanup and `debug-issue` for reproducing a
+  specific bug.
 ---
 
 # boost-coverage
@@ -41,8 +42,6 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 Create the file with `touch` before writing.
 
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Coverage scout`: identifies domains, commands, and threshold sources.
@@ -175,6 +174,13 @@ Write `.agent-layer/tmp/boost-coverage.<run-id>.report.md` with:
 - Do not keep iterating when coverage is no longer improving.
 - Do not silently swap to a weaker coverage command.
 - Do not claim threshold success without the observed command output.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/boost-coverage.<run-id>.report.md` with the required sections (`Summary`, `Threshold and Commands`, `Iterations`, `Coverage Before and After`, `Remaining Blockers or Diminishing Returns`).
+- The documented coverage command was run at least once per iteration, and the report cites observed command output for each before/after number.
+- The run stopped for one of the named reasons: threshold met, diminishing returns, iteration cap, or a documented human-checkpoint blocker; no implicit stops.
+- No production behavior was changed to move the coverage number; any added seams are explicit in the report.
 
 ## Final handoff
 

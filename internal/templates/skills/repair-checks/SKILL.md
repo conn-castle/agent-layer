@@ -1,9 +1,10 @@
 ---
 name: repair-checks
 description: >-
-  Run the repository's documented checks in the intended order, fix the
-  failures that are in scope, and repeat until the checks pass or a real
-  blocker requires human direction.
+  Run the repo's documented local checks, fix in-scope failures, and repeat
+  until checks pass or a real blocker remains. Use when the user asks to fix
+  lint, typecheck, tests, format, or pre-PR checks. Use `fix-ci` for remote PR
+  checks and `audit-and-fix-uncommitted-changes` for broader diff review.
 ---
 
 # repair-checks
@@ -31,17 +32,7 @@ Accept any combination of:
 - an iteration cap
 - whether repeatable command discoveries should update `COMMANDS.md`
 
-## Required artifact
-
-Write the report to:
-- `.agent-layer/tmp/repair-checks.<run-id>.report.md`
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
-
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Repo scout`: discovers the required check sequence.
@@ -105,17 +96,6 @@ If a reusable command was discovered and repo rules allow it, update `COMMANDS.m
    - the iteration cap is hit
    - or a blocker requires human input
 
-## Required report structure
-
-Write `.agent-layer/tmp/repair-checks.<run-id>.report.md` with:
-
-1. `# Check Repair Summary`
-2. `## Lane`
-3. `## Commands Run`
-4. `## Failures Fixed`
-5. `## Pass Status`
-6. `## Remaining Blockers`
-
 ## Guardrails
 
 - Do not treat flaky output as fixed unless a re-run proves it.
@@ -123,9 +103,14 @@ Write `.agent-layer/tmp/repair-checks.<run-id>.report.md` with:
 - Do not change test expectations unless the original expectation is actually wrong and the fix remains in scope.
 - Do not call the repo green without the observed passing command output.
 
+## Definition of done
+
+- The documented check lane was run to completion on the final iteration and the observed passing output is cited in the final handoff; no green claim without observed output.
+- The run stopped for a named reason: lane passed, iteration cap hit, or human-checkpoint blocker — no silent abandonment.
+- No check was disabled, skipped, or weakened; any broader-scope failures were logged as blockers rather than fixed inline.
+
 ## Final handoff
 
-After writing the report:
-1. Echo the report path.
-2. Summarize the lane used, commands run, and failures fixed.
-3. State whether all checks passed and call out any blocker that prevented a clean finish.
+After the lane passes or blocks:
+1. Summarize the lane used, commands run, and failures fixed.
+2. State whether all checks passed and call out any blocker that prevented a clean finish.

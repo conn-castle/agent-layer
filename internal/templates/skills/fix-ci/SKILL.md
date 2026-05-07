@@ -1,9 +1,10 @@
 ---
 name: fix-ci
 description: >-
-  Diagnose and fix CI failures for a PR, iterating through fix cycles until all
-  CI checks pass. Each cycle: diagnose failure, fix code, audit uncommitted
-  changes, commit, push, and re-check CI.
+  Diagnose and fix failing CI/checks on an open PR, iterating through diagnose,
+  patch, audit, commit, push, and re-check until green or blocked. Use when a
+  PR's GitHub checks are failing. Use `repair-checks` for local checks and
+  `address-pr-comments` for reviewer feedback.
 ---
 
 # fix-ci
@@ -31,8 +32,6 @@ Accept any combination of:
 - hints about the failure from the caller
 
 ## Required behavior
-
-Use subagents liberally when available.
 
 Delegate to:
 - `audit-and-fix-uncommitted-changes` before every commit
@@ -96,6 +95,13 @@ Delegate to:
 - Do not expand scope beyond what is needed to fix the CI failure.
 - Do not treat CI warnings as failures unless they are configured to fail the build.
 - Track recurring failures and escalate rather than looping indefinitely on the same issue.
+
+## Definition of done
+
+- `gh pr checks <pr-number>` shows every required CI check passing on the latest pushed commit.
+- Each fix cycle committed through the `audit-and-fix-uncommitted-changes` skill before push; no check was disabled, skipped, weakened, or had its threshold lowered.
+- The fix iteration count is recorded and stayed below the 3-attempt escalation threshold for any single recurring failure.
+- Scope of the changes is confined to what the CI failures required, with no opportunistic edits.
 
 ## Final handoff
 

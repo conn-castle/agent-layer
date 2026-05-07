@@ -5,6 +5,8 @@ description: >-
   and split files that mix unrelated responsibilities. Uses complexity metrics
   as diagnostic signals and applies judgment rather than rigid thresholds.
   Scoped to uncommitted changes when they exist, otherwise the full codebase.
+  Use for cleanup/refactor requests. Use `improve-codebase` for broad audits,
+  test skills for test-suite work, and `debug-issue` for bug investigations.
 ---
 
 # simplify-code
@@ -74,8 +76,6 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 Create the file with `touch` before writing.
 
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Repo scout`: finds commands, target files, and verification lanes.
@@ -228,6 +228,13 @@ Write `.agent-layer/tmp/simplify-code.<run-id>.report.md` with:
   external contracts unless the evidence is explicit.
 - Do not simplify code that is already clear just to improve a number.
 - Do not add abstraction to reduce line count.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/simplify-code.<run-id>.report.md` with every required section (`Summary`, `Scope`, `Complexity Assessment`, `Large File Decisions`, `Dead Code Removed`, `Simplifications Applied`, `File Splits`, `Verification`, `Deferred Opportunities`).
+- Every large file in scope has an explicit `keep` or `split` verdict with reasoning in `Large File Decisions` — none silently omitted.
+- Every applied change is behavior-preserving, no public contract changed without an approved checkpoint, and the fastest credible repo-defined checks ran with observed output cited in `Verification`.
+- Any "dead" code removal either has trusted-tooling evidence or the manual evidence is recorded in the report.
 
 ## Final handoff
 

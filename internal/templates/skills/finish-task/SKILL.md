@@ -1,9 +1,11 @@
 ---
 name: finish-task
 description: >-
-  Wrap up a completed task by checking plan alignment, updating the project
-  memory files with only the necessary changes, running credible verification,
-  and summarizing the outcome.
+  Close out finished work by checking plan alignment, updating only necessary
+  memory/docs, running credible verification, and summarizing outcome. Use when
+  code work is done but no PR is needed. Use `ship-pr` for commit/push/PR,
+  `verify-against-plan` for read-only checks, and `complete-current-phase` for
+  roadmap phases.
 ---
 
 # finish-task
@@ -27,17 +29,7 @@ Accept any combination of:
 - whether roadmap updates should be considered
 - whether to skip specific memory files
 
-## Required artifact
-
-Write the report to:
-- `.agent-layer/tmp/finish-task.<run-id>.report.md`
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
-
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Change reviewer`: compares the delivered work to the intended scope.
@@ -98,17 +90,6 @@ Report:
 - what verification ran
 - what remains deferred
 
-## Required report structure
-
-Write `.agent-layer/tmp/finish-task.<run-id>.report.md` with:
-
-1. `# Task Closeout Summary`
-2. `## Scope and Inputs`
-3. `## Plan Alignment`
-4. `## Memory Updates`
-5. `## Verification`
-6. `## Deferred Follow-up`
-
 ## Guardrails
 
 - Do not log speculative future work that was not actually observed.
@@ -116,9 +97,14 @@ Write `.agent-layer/tmp/finish-task.<run-id>.report.md` with:
 - Do not mark roadmap work complete without evidence in code, docs, or tests.
 - Do not skip verification silently.
 
+## Definition of done
+
+- A credible repo-defined verification command was run and its result is included in the final handoff; if no such command exists, that limitation is stated explicitly.
+- Memory files were touched only where the completed task actually changed project truth; no speculative or duplicate entries were added.
+- If a plan artifact existed, its deliverables are compared item-by-item; if not, the final handoff states that explicitly.
+
 ## Final handoff
 
-After writing the report:
-1. Echo the report path.
-2. Summarize the task outcome and any memory updates made.
-3. State the verification run and result, plus any deferred risk or follow-up.
+After closeout:
+1. Summarize the task outcome and any memory updates made.
+2. State the verification run and result, plus any deferred risk or follow-up.

@@ -56,19 +56,14 @@ Always create:
 
 Create the file with `touch` before writing.
 
-Reuse and reference per-chunk artifacts created by delegated skills:
-- `.agent-layer/tmp/review-scope.<run-id>.report.md`
-- `.agent-layer/tmp/resolve-findings.<run-id>.report.md`
-- `.agent-layer/tmp/simplify-code.<run-id>.report.md`
-- `.agent-layer/tmp/boost-coverage.<run-id>.report.md`
-- `.agent-layer/tmp/audit-tests.<run-id>.report.md`
-- `.agent-layer/tmp/fix-issues.<run-id>.report.md`
+The master report is the human-facing ledger and the single place to preserve orchestrator state.
 
-The master report is the human-facing ledger. It must remain readable without opening child artifacts.
+Delegated skill outputs are handled one way:
+- Use `review-scope` report artifacts as findings input to `resolve-findings`.
+- Copy `resolve-findings`, `simplify-code`, `boost-coverage`, `audit-tests`, and `fix-issues` outcomes from their final handoffs into the master report.
+- Do not require, open, echo, or cross-reference child report artifacts from `resolve-findings`, `simplify-code`, `boost-coverage`, `audit-tests`, or `fix-issues`.
 
 ## Required behavior
-
-Use subagents liberally when available.
 
 At minimum, use:
 - a survey scout that maps the repository structure
@@ -227,6 +222,24 @@ At each major stage, echo the master report path, identify the current chunk, an
 - delegating to <skill-name>
 - closing the run
 
+## Guardrails
+
+- Do not attempt to review every line. Prioritize by risk.
+- Do not silently skip chunks that were in the plan.
+- Do not carry unresolved deferred findings without logging them to `ISSUES.md`.
+- Do not expand a chunk review into unrelated areas.
+- Do not treat the cross-cutting review as optional.
+- Do not claim a clean codebase without evidence from the audit rounds.
+- Do not modify unrelated code just because it is nearby.
+- Keep each chunk review grounded in concrete reviewed code, review-scope findings, and observed verification.
+
+## Definition of done
+
+- The master report exists at `.agent-layer/tmp/improve-codebase.<run-id>.report.md` with every required section, including one `## Chunk N: <name> Findings` + `## Chunk N: <name> Fixes` pair per chunk in the plan and a populated `## Cross-Cutting Findings` section.
+- Every chunk in the planned chunk map was audited (no silent skips), and per-chunk re-audit loops ended with no new Critical or High findings or with an explicit 3-iteration escalation recorded.
+- Every deferred finding has a matching entry in `ISSUES.md` cited by the master report.
+- The `## Final Summary` states overall codebase health with evidence, and `## Residual Risk` names any systemic concerns that remain.
+
 ## Final handoff
 
 After the run, present the results to the user in chat:
@@ -237,14 +250,3 @@ After the run, present the results to the user in chat:
 4. Below the table, list deferred findings with their `ISSUES.md` entry references.
 5. State the overall codebase health assessment.
 6. List any complementary skills that were invoked and their outcomes.
-
-## Guardrails
-
-- Do not attempt to review every line. Prioritize by risk.
-- Do not silently skip chunks that were in the plan.
-- Do not carry unresolved deferred findings without logging them to `ISSUES.md`.
-- Do not expand a chunk review into unrelated areas.
-- Do not treat the cross-cutting review as optional.
-- Do not claim a clean codebase without evidence from the audit rounds.
-- Do not modify unrelated code just because it is nearby.
-- Keep each chunk review grounded in concrete artifacts.

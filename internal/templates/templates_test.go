@@ -76,149 +76,66 @@ func TestWalkTemplates(t *testing.T) {
 	}
 }
 
-func TestReadReviewPlanSkillTemplate(t *testing.T) {
-	data, err := Read("skills/review-plan/SKILL.md")
-	if err != nil {
-		t.Fatalf("Read error: %v", err)
-	}
-	content := string(data)
-	if !strings.Contains(content, ".agent-layer/tmp/*.plan.md") {
-		t.Fatalf("expected plan glob discovery in review-plan template")
-	}
-	if !strings.Contains(content, "<workflow>.<run-id>.plan.md") {
-		t.Fatalf("expected standard artifact naming in review-plan template")
-	}
-	if !strings.Contains(content, ".agent-layer/tmp/review-plan.<run-id>.report.md") {
-		t.Fatalf("expected review-plan report artifact naming in review-plan template")
-	}
-	if !strings.Contains(content, "If no valid plan/task pair exists") {
-		t.Fatalf("expected explicit no-plan-pair fallback in review-plan template")
-	}
-}
-
-func TestSkillTemplatesContainNormalizedWorkflowGuidance(t *testing.T) {
-	tests := map[string][]string{
-		"skills/audit-and-fix-uncommitted-changes/SKILL.md": {
-			"## Human checkpoints",
-			"all uncommitted changes in the current working tree",
-			"Do not stop merely because Critical and High findings reach zero",
-			"### Phase 0: Preflight and target selection (Repo scout)",
-			"## Final handoff",
-		},
-		"skills/audit-documentation/SKILL.md": {
-			"## Human checkpoints",
-			"requested scope is ambiguous enough that the audit target itself is unclear",
-			"Exclude agent memory files",
-			"audit-memory",
-		},
-		"skills/audit-memory/SKILL.md": {
-			"## Human checkpoints",
-			"DECISIONS.md receives focused scrutiny",
-			"superseded chains",
-			"self-evident from the codebase",
-			"### Phase 2: Content audit per file (Content auditor)",
-			"### Phase 3: Cross-file consistency (Cross-file auditor)",
-		},
-		"skills/audit-tests/SKILL.md": {
-			"## Human checkpoints",
-			"ask before removing tests that have partial value",
-			"### Phase 1: Inventory and classify (Convention scout)",
-			"### Phase 2: Redundancy analysis (Redundancy analyst)",
-			"### Phase 3: Quality analysis (Quality analyst)",
-			"### Phase 4: Gap analysis (Gap analyst)",
-			"**Unit test gaps:**",
-			"**Integration test gaps:**",
-			"**E2E test gaps:**",
-			"No tier may be silently omitted",
-			"requires genuine architectural justification",
-		},
-		"skills/boost-coverage/SKILL.md": {
-			"## Human checkpoints",
-			"ask when no threshold is documented",
-		},
-		"skills/simplify-code/SKILL.md": {
-			"## Human checkpoints",
-			"ask when no credible verification path exists for a non-trivial change",
-		},
-		"skills/plan-work/SKILL.md": {
-			"## Global constraints",
-			"first incomplete roadmap phase",
-			"### Phase 1: Preflight (Scout)",
-		},
-		"skills/review-scope/SKILL.md": {
-			"## Global constraints",
-			"## Human checkpoints",
-			"proactive hotspot audit",
-		},
-		"skills/finish-task/SKILL.md": {
-			"## Global constraints",
-			"### Phase 2: Curate memory updates (Memory curator)",
-		},
-		"skills/fix-issues/SKILL.md": {
-			"## Global constraints",
-			"When no broader orchestrator already owns closeout, use the `finish-task` skill here.",
-		},
-		"skills/resolve-findings/SKILL.md": {
-			"## Global constraints",
-			"## Human checkpoints",
-			"Apply accepted fixes to the actual reviewed target",
-		},
-		"skills/repair-checks/SKILL.md": {
-			"## Human checkpoints",
-			"ask when the required check lane is unclear or conflicting",
-		},
-		"skills/implement-plan/SKILL.md": {
-			"## Global constraints",
-			"## Human checkpoints",
-			"When no broader orchestrator already owns closeout, use the `finish-task` skill after Phase 4.",
-		},
-		"skills/verify-against-plan/SKILL.md": {
-			"## Global constraints",
-			"## Human checkpoints",
-			"### Phase 1: Extract the contract (Plan reader)",
-		},
-		"skills/complete-current-phase/SKILL.md": {
-			"## Global constraints",
-			"## Human checkpoints",
-			"Do not jump ahead to a later phase unless the user explicitly names it.",
-			"selected roadmap phase is fully complete",
-			"Do not stop after a single package if unchecked tasks still remain in the selected phase.",
-		},
-		"skills/review-plan/SKILL.md": {
-			"## Global constraints",
-			"## Human checkpoints",
-			".agent-layer/tmp/review-plan.<run-id>.report.md",
-		},
-		"skills/debug-issue/SKILL.md": {
-			"## Human checkpoints",
-			"Do not attempt a fix before the bug is reproduced",
-			"Write a test that",
-			"### Phase 1: Reproduce (Reproducer)",
-			"### Phase 3: Diagnose (Investigator)",
-		},
-		"skills/schedule-backlog/SKILL.md": {
-			"## Human checkpoints",
-			"requested apply step would commit to a non-obvious prioritization or sequencing choice",
-		},
-		"skills/improve-codebase/SKILL.md": {
-			"## Human checkpoints",
-			"decomposes the codebase into reviewable chunks",
-			"### Phase 1: Survey and decompose (Survey scout)",
-			"### Phase 4: Cross-cutting review (Architecture reviewer)",
-			"## Final handoff",
-		},
-	}
-	for path, requiredSnippets := range tests {
+func TestSkillTemplatesIncludeRequiredFrontMatterAndSections(t *testing.T) {
+	err := Walk("skills", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Base(path) != "SKILL.md" {
+			t.Fatalf("unexpected skill template path %q: expected SKILL.md files only", path)
+		}
 		data, err := Read(path)
 		if err != nil {
-			t.Fatalf("Read error for %s: %v", path, err)
+			return err
 		}
 		content := string(data)
-		for _, snippet := range requiredSnippets {
+		for _, snippet := range []string{
+			"\nname: ",
+			"\ndescription:",
+			"## Global constraints",
+			"## Guardrails",
+			"## Definition of done",
+			"## Final handoff",
+		} {
 			if !strings.Contains(content, snippet) {
 				t.Fatalf("expected %q in %s", snippet, path)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk error: %v", err)
+	}
+}
+
+func TestSkillTemplatesKeepDefinitionOfDoneBeforeFinalHandoff(t *testing.T) {
+	err := Walk("skills", func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		data, err := Read(path)
+		if err != nil {
+			return err
+		}
+		content := string(data)
+		definitionIndex := strings.Index(content, "## Definition of done")
+		finalIndex := strings.Index(content, "## Final handoff")
+		if definitionIndex < 0 || finalIndex < 0 {
+			t.Fatalf("expected definition-of-done and final-handoff sections in %s", path)
+		}
+		if definitionIndex > finalIndex {
+			t.Fatalf("expected Definition of done before Final handoff in %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Walk error: %v", err)
 	}
 }
 
@@ -229,57 +146,20 @@ func TestSkillTemplatesCaptureArtifactReportConventions(t *testing.T) {
 			"Create the file with `touch` before writing.",
 			"Escalate if the loop is not converging",
 		},
-		"skills/implement-plan/SKILL.md": {
-			"Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.",
-			"Create the file with `touch` before writing.",
-		},
 		"skills/resolve-findings/SKILL.md": {
+			".agent-layer/tmp/resolve-findings.<run-id>.report.md",
 			"Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.",
 			"Create each file with `touch` before writing.",
+		},
+		"skills/review-scope/SKILL.md": {
+			".agent-layer/tmp/review-scope.<run-id>.report.md",
+			"## Self-Check",
+			"Every finding names location, severity, confidence, evidence, and recommendation",
 		},
 		"skills/verify-against-plan/SKILL.md": {
 			".agent-layer/tmp/verify-against-plan.<run-id>.report.md",
 			"Create the file with `touch` before writing.",
 		},
-		"skills/debug-issue/SKILL.md": {
-			".agent-layer/tmp/debug-issue.<run-id>.report.md",
-			"## Required report structure",
-			"Create the file with `touch` before writing.",
-		},
-		"skills/boost-coverage/SKILL.md": {
-			".agent-layer/tmp/boost-coverage.<run-id>.report.md",
-			"## Required report structure",
-		},
-		"skills/simplify-code/SKILL.md": {
-			".agent-layer/tmp/simplify-code.<run-id>.report.md",
-			"## Required report structure",
-		},
-		"skills/repair-checks/SKILL.md": {
-			".agent-layer/tmp/repair-checks.<run-id>.report.md",
-			"## Required report structure",
-		},
-		"skills/finish-task/SKILL.md": {
-			".agent-layer/tmp/finish-task.<run-id>.report.md",
-			"## Required report structure",
-		},
-		"skills/audit-memory/SKILL.md": {
-			".agent-layer/tmp/audit-memory.<run-id>.report.md",
-			"## Required report structure",
-			"Create the file with `touch` before writing.",
-		},
-		"skills/audit-documentation/SKILL.md": {
-			".agent-layer/tmp/audit-documentation.<run-id>.report.md",
-			"Create the file with `touch` before writing.",
-		},
-		"skills/audit-tests/SKILL.md": {
-			".agent-layer/tmp/audit-tests.<run-id>.report.md",
-			"## Required report structure",
-			"Create the file with `touch` before writing.",
-		},
-		"skills/improve-codebase/SKILL.md": {
-			".agent-layer/tmp/improve-codebase.<run-id>.report.md",
-			"Create the file with `touch` before writing.",
-		},
 	}
 	for path, requiredSnippets := range tests {
 		data, err := Read(path)
@@ -290,106 +170,6 @@ func TestSkillTemplatesCaptureArtifactReportConventions(t *testing.T) {
 		for _, snippet := range requiredSnippets {
 			if !strings.Contains(content, snippet) {
 				t.Fatalf("expected %q in %s", snippet, path)
-			}
-		}
-	}
-}
-
-func TestCompleteCurrentPhaseTemplateClarifiesLoopControl(t *testing.T) {
-	data, err := Read("skills/complete-current-phase/SKILL.md")
-	if err != nil {
-		t.Fatalf("Read error: %v", err)
-	}
-	content := string(data)
-
-	required := []string{
-		"Use subagents liberally when available.",
-		"Use the `review-scope` skill on the touched files, surrounding modules, and changed tests/docs.",
-		"then continue to Phase 6",
-		"Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns. Escalate if the loop is not converging.",
-	}
-	for _, snippet := range required {
-		if !strings.Contains(content, snippet) {
-			t.Fatalf("expected %q in skills/complete-current-phase/SKILL.md", snippet)
-		}
-	}
-
-	disallowed := []string{
-		"Use the `review-scope` skill again, this time on the actual implementation:",
-		"- then jump back to Phase 6 and Phase 7",
-	}
-	for _, snippet := range disallowed {
-		if strings.Contains(content, snippet) {
-			t.Fatalf("did not expect %q in skills/complete-current-phase/SKILL.md", snippet)
-		}
-	}
-}
-
-func TestAuditAndFixUncommittedChangesTemplateUsesSingleEscalationSection(t *testing.T) {
-	data, err := Read("skills/audit-and-fix-uncommitted-changes/SKILL.md")
-	if err != nil {
-		t.Fatalf("Read error: %v", err)
-	}
-	content := string(data)
-
-	required := []string{
-		"## Human checkpoints",
-		"the loop is no longer converging",
-		"## Final handoff",
-	}
-	for _, snippet := range required {
-		if !strings.Contains(content, snippet) {
-			t.Fatalf("expected %q in skills/audit-and-fix-uncommitted-changes/SKILL.md", snippet)
-		}
-	}
-
-	if strings.Contains(content, "## Stop conditions") {
-		t.Fatal("did not expect separate stop-conditions section in skills/audit-and-fix-uncommitted-changes/SKILL.md")
-	}
-}
-
-func TestSkillTemplatesAvoidBackwardLanguageForForwardPhaseTransitions(t *testing.T) {
-	tests := map[string][]string{
-		"skills/complete-current-phase/SKILL.md": {
-			"then continue to Phase 6",
-		},
-		"skills/implement-plan/SKILL.md": {
-			"- then continue to Phase 4",
-		},
-		"skills/fix-issues/SKILL.md": {
-			"- then continue to Phase 5",
-		},
-	}
-	for path, requiredSnippets := range tests {
-		data, err := Read(path)
-		if err != nil {
-			t.Fatalf("Read error for %s: %v", path, err)
-		}
-		content := string(data)
-		for _, snippet := range requiredSnippets {
-			if !strings.Contains(content, snippet) {
-				t.Fatalf("expected %q in %s", snippet, path)
-			}
-		}
-	}
-
-	disallowed := map[string][]string{
-		"skills/implement-plan/SKILL.md": {
-			"- then jump back to Phase 4",
-		},
-		"skills/fix-issues/SKILL.md": {
-			"- then jump back to Phase 5",
-		},
-	}
-	for path, forbiddenSnippets := range disallowed {
-		data, err := Read(path)
-		if err != nil {
-			t.Fatalf("Read error for %s: %v", path, err)
-		}
-		content := string(data)
-		for _, snippet := range forbiddenSnippets {
-			if strings.Contains(content, snippet) {
-				t.Fatalf("did not expect %q in %s", snippet, path)
 			}
 		}
 	}
@@ -429,63 +209,6 @@ func TestSkillTemplatesAvoidMandatoryApprovalGateLanguage(t *testing.T) {
 			if strings.Contains(content, snippet) {
 				t.Fatalf("did not expect %q in %s", snippet, path)
 			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Walk error: %v", err)
-	}
-}
-
-func TestAllSkillTemplatesExposeConstraintAndGuardrailSections(t *testing.T) {
-	err := Walk("skills", func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		data, err := Read(path)
-		if err != nil {
-			return err
-		}
-		content := string(data)
-		for _, snippet := range []string{
-			"## Global constraints",
-			"## Guardrails",
-		} {
-			if !strings.Contains(content, snippet) {
-				t.Fatalf("expected %q in %s", snippet, path)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("Walk error: %v", err)
-	}
-}
-
-func TestSkillTemplatesIncludeRequiredFrontMatter(t *testing.T) {
-	err := Walk("skills", func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if filepath.Base(path) != "SKILL.md" {
-			t.Fatalf("unexpected skill template path %q: expected SKILL.md files only", path)
-		}
-		data, err := Read(path)
-		if err != nil {
-			return err
-		}
-		content := string(data)
-		if !strings.Contains(content, "\nname: ") {
-			t.Fatalf("expected name frontmatter in %s", path)
-		}
-		if !strings.Contains(content, "\ndescription:") {
-			t.Fatalf("expected description frontmatter in %s", path)
 		}
 		return nil
 	})

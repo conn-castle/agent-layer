@@ -40,8 +40,6 @@ Create the file with `touch` before writing.
 
 ## Multi-agent pattern
 
-Use subagents liberally when available.
-
 Recommended roles:
 1. `Structure auditor`: checks format compliance, markers, and entry templates for each file.
 2. `Content auditor`: checks staleness, misplacement, and deduplication within each file.
@@ -175,6 +173,13 @@ Write `.agent-layer/tmp/audit-memory.<run-id>.report.md` with:
 - Do not add new memory entries during the audit (that would conflict with the audit's own findings).
 - Do not consolidate DECISIONS.md entries in a way that loses the reason or tradeoff information.
 - Do not modify files outside of the 6 memory files.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/audit-memory.<run-id>.report.md` with the required sections (`Summary`, `Structural Findings`, `Content Findings`, `Cross-File Findings`, `Fixes Applied`, `Deferred Findings`, `Recommendations`).
+- The report states the DECISIONS.md entry count before and after, and every DECISIONS.md flagged entry has a recommendation of consolidate, remove, or keep.
+- Only the 6 memory files were modified; no source code, tests, or repo documentation was touched.
+- Every deferred finding records the specific question that blocked a mechanical fix.
 
 ## Final handoff
 

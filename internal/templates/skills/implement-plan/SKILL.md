@@ -1,9 +1,11 @@
 ---
 name: implement-plan
 description: >-
-  Implement an execution-ready plan, task list, and context file set. Keep
-  changes aligned to the artifacts, and verify code, tests, docs, and memory
-  updates before closing the task.
+  Execute an existing plan/task/context artifact set: make code changes, keep
+  them aligned to the artifacts, and verify code, tests, docs, and memory before
+  closeout. Use when the user asks to implement an already-written plan. Use
+  `plan-work` when no plan exists and `complete-current-phase` for roadmap
+  phases.
 ---
 
 # implement-plan
@@ -16,12 +18,14 @@ This skill expects three artifacts:
 
 If they are not supplied explicitly, discover the latest matching set under `.agent-layer/tmp/`.
 
+Use `plan-work` instead when no plan exists and the artifact set must be written first. Use `verify-against-plan` instead when the request is to report completeness without making changes.
+
 ## Defaults
 
 - Do not start coding until you have a plan and task file, or clear user approval to infer a missing artifact.
 - Default scope is exactly what the plan and task list describe.
 - If the plan is ambiguous in a way that changes code behavior or scope, treat that as a blocker instead of guessing.
-- If the context file is missing, proceed with just the plan and task but note its absence in the report.
+- If the context file is missing, proceed with just the plan and task but note its absence in the final handoff.
 
 ## Artifact discovery
 
@@ -40,17 +44,7 @@ Discovery rules:
 Fallback:
 - If no valid plan/task pair exists, ask the user for explicit paths or regenerate them first.
 
-## Required artifact
-
-Write an execution report to:
-- `.agent-layer/tmp/implement-plan.<run-id>.report.md`
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
-
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Context scout`: maps plan steps to actual files and dependencies.
@@ -106,7 +100,7 @@ For multi-file work, parallelize read-only exploration first, then implement in 
 If the verdict is `proceed`, continue to Phase 2.
 If the verdict is `revise`, update or regenerate the plan/task pair and restart Phase 1.
 If the verdict is `escalate`, ask the smallest question that unblocks trustworthy execution.
-If the verdict is `rewrite-because-out-of-scope`, rewrite the current task batch or task ordering to stay inside the plan's real scope, record the rewrite in the report, and restart Phase 1.
+If the verdict is `rewrite-because-out-of-scope`, rewrite the current task batch or task ordering to stay inside the plan's real scope, record the rewrite for the final handoff, and restart Phase 1.
 
 ### Phase 2: Execute the task list (Implementer)
 
@@ -119,7 +113,7 @@ Execution rules:
 
 When a task becomes larger than expected:
 - split it
-- note the split in the report
+- note the split for the final handoff
 - continue only if scope still matches the plan
 
 If the touched scope accumulates obvious local complexity, dead scaffolding, or oversized files and the simplification would remain behavior-preserving and in-scope:
@@ -129,7 +123,7 @@ If the touched scope accumulates obvious local complexity, dead scaffolding, or 
 ### Phase 3: Track deviations (Implementer)
 
 If you must deviate from the plan:
-- document the deviation in the report
+- document the deviation for the final handoff
 - explain why
 - note whether the change is:
   - equivalent
@@ -149,21 +143,6 @@ Before wrapping up, confirm:
 When no broader orchestrator already owns closeout, use the `finish-task` skill after Phase 4.
 If it finds stale memory, incomplete plan work, or missing verification, jump back to the earliest affected phase.
 
-## Execution report format
-
-Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` with:
-
-1. `# Objective`
-2. `## Inputs`
-   - plan path
-   - task path
-   - context path (or note if absent)
-3. `## Work Completed`
-4. `## Deviations`
-5. `## Verification Run`
-6. `## Docs and Memory Updates`
-7. `## Remaining Follow-up`
-
 ## Guardrails
 
 - Do not treat the plan as inspiration. Treat it as the execution contract.
@@ -172,9 +151,15 @@ Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` with:
 - Do not claim verification without observed command output.
 - Do not expand into unrelated cleanup just because you noticed it.
 
+## Definition of done
+
+- Every planned task-list item is either marked complete (with observable code/test/doc evidence) or recorded as a named deviation with classification (equivalent / narrower / broader).
+- Tests, docs, and memory updates promised by the plan were delivered in the same run; any skipped updates are listed in the final handoff with reasons.
+- Verification commands from the plan ran and their observed output is recorded — no "should pass" claims without execution.
+
 ## Final handoff
 
 After execution:
-1. Echo the report path.
-2. Summarize completed work.
+1. Summarize completed work, including plan/task/context paths used.
+2. Name any deviations, task splits, or missing context file.
 3. State whether the plan appears complete or whether follow-up remains.

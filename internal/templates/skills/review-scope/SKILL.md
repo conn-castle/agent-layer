@@ -64,8 +64,6 @@ For proactive hotspot mode, keep the review scope narrow and state why each hots
 
 ## Multi-agent review pattern
 
-Use subagents liberally when available.
-
 Recommended review lenses:
 1. `Correctness reviewer`
    - logic bugs
@@ -181,6 +179,13 @@ The report must contain:
 - Do not silently expand a no-target review into the last commit.
 - Do not silently widen a proactive audit into the whole repository.
 - If a finding depends on an assumption, say so explicitly.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/review-scope.<run-id>.report.md` with every required section (`Summary`, `Findings`, `Open Questions`, `Strengths`, `Suggested Next Steps`, `Self-Check`).
+- The `Self-Check` section contains written answers to all four questions for every remaining finding; any finding that failed a check was demoted or dropped before finalizing.
+- Every finding names location, severity, confidence, evidence, and recommendation tied to the actual reviewed scope.
+- The report was not used to edit code, docs, or issue files; the handoff ends with one of `proceed`, `proceed after fixes`, or `revise first`.
 
 ## Final handoff
 

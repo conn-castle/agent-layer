@@ -1,9 +1,10 @@
 ---
 name: address-pr-comments
 description: >-
-  Review all PR comments, implement fixes for agreed feedback, reply to every
-  comment with what was done or justification for not addressing it, audit
-  changes, and commit and push.
+  Review comments on an open pull request, implement agreed fixes, reply to
+  every comment, audit changes, then commit and push. Use when the user asks to
+  handle PR review comments or reviewer feedback. Use `fix-ci` for failing
+  checks and `ship-pr` to create or ship a PR.
 ---
 
 # address-pr-comments
@@ -34,8 +35,6 @@ Accept any combination of:
 - guidance on which comments to prioritize
 
 ## Required behavior
-
-Use subagents liberally when available.
 
 Delegate to:
 - `audit-and-fix-uncommitted-changes` before committing
@@ -115,6 +114,13 @@ Evaluation rules:
 - Do not implement changes that conflict with the project's established patterns without justification.
 - Do not skip the audit-and-fix step before committing.
 - Do not reply to comments before the changes are committed and pushed.
+
+## Definition of done
+
+- Every non-excluded feedback comment on the PR has a reply posted by this agent, with no generic batch responses.
+- For every agreed comment, the implemented change is present in a pushed commit and the reply names that commit.
+- For every disagreed comment, the reply contains a specific technical justification (not a deferral).
+- The `audit-and-fix-uncommitted-changes` skill ran before the final commit, and all resulting changes are pushed to the PR branch.
 
 ## Final handoff
 

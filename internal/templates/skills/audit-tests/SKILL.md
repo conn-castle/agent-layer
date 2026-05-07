@@ -50,8 +50,6 @@ Create the file with `touch` before writing.
 
 ## Multi-agent pattern
 
-Use subagents liberally when available.
-
 Recommended roles:
 1. `Convention scout`: discovers test runner, directory layout, naming
    patterns, and tier conventions.
@@ -228,6 +226,13 @@ Write `.agent-layer/tmp/audit-tests.<run-id>.report.md` with:
   concerns.
 - Do not flag framework-generated or conventional boilerplate as redundant.
 - Do not widen a test audit into a production code audit.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/audit-tests.<run-id>.report.md` with every required section (`Summary`, `Fixes Applied`, `Test Inventory`, `Redundancy Findings`, `Quality Findings`, `Gap Findings`, `Strengths`, `Recommended Actions`).
+- The `Gap Findings` section contains one subsection per discovered tier, each with an explicit conclusion (gaps exist / no gaps / not applicable with justification / tier missing).
+- Every finding names the tier, test file(s), function(s), evidence, and `What was done` verdict; no tier is silently omitted.
+- If any tests were removed or consolidated, the test suite was re-run and the report records the outcome.
 
 ## Final handoff
 

@@ -2,8 +2,8 @@
 name: audit-documentation
 description: >-
   Audit Markdown documentation for static accuracy and cross-document
-  consistency against the repository, fix what can be fixed, and produce a
-  report. Excludes agent memory files by default (use `audit-memory` for those).
+  consistency against the repository, and fix what can be fixed. Excludes agent
+  memory files by default (use `audit-memory` for those).
 ---
 
 # audit-documentation
@@ -25,24 +25,14 @@ Accept any combination of:
 - a maximum finding count
 - whether to include short excerpts
 
-## Required artifact
-
-Write the audit report to:
-- `.agent-layer/tmp/audit-documentation.<run-id>.report.md`
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
-
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Doc inventory`: selects Markdown files in scope.
 2. `Claim validator`: extracts commands, paths, config keys, and architecture claims.
 3. `Consistency reviewer`: checks contradictions and drift across documents.
 4. `Fixer`: applies mechanical corrections.
-5. `Reporter`: writes the report.
+5. `Reporter`: summarizes findings and fixes.
 
 ## Global constraints
 
@@ -101,7 +91,7 @@ Look for:
 2. For corrections that change meaning or interpretation, ask the user before applying.
 3. Log findings that cannot be fixed in docs to `ISSUES.md`.
 
-### Phase 5: Write the report (Reporter)
+### Phase 5: Summarize findings and fixes (Reporter)
 
 Each finding must include:
 - `Title`
@@ -112,9 +102,9 @@ Each finding must include:
 - `Why it matters`
 - `What was done`: fixed | logged to ISSUES.md | needs human decision
 
-## Required report structure
+## Final summary structure
 
-The report must contain:
+The final summary must contain:
 
 1. `# Documentation Audit Summary`
    - audited scope
@@ -136,9 +126,15 @@ The report must contain:
 - Do not widen a doc audit into a code audit.
 - If memory file issues are found during the audit, note them and recommend `audit-memory` rather than auditing memory files in this workflow.
 
+## Definition of done
+
+- The final summary includes the required sections (`Summary`, `Fixes Applied`, `Findings Requiring Human Decision`, and `Strengths`).
+- Every finding in the final summary names its file, section, check performed, and `What was done` verdict (fixed / logged to ISSUES.md / needs human decision).
+- Mechanical corrections are applied in-place; no meaning-changing edits were made without a human checkpoint.
+- Memory files (ISSUES, BACKLOG, ROADMAP, DECISIONS, COMMANDS, CONTEXT) were not modified by this run.
+
 ## Final handoff
 
-After writing the report:
-1. Echo the report path.
-2. Summarize fixes applied and any findings that need human decision.
-3. If memory file issues were noticed, recommend running `audit-memory`.
+After the audit:
+1. Summarize fixes applied and any findings that need human decision.
+2. If memory file issues were noticed, recommend running `audit-memory`.

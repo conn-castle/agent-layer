@@ -1,9 +1,10 @@
 ---
 name: resolve-findings
 description: >-
-  Triage a review findings report, verify each finding independently, implement
-  accepted fixes, and record why any finding was rejected, deferred, or already
-  resolved.
+  Triage an existing review findings report, verify each finding, implement
+  accepted fixes, and record rejected, deferred, or already-resolved items. Use
+  when the user asks to work through review findings. Use `fix-issues` for
+  `ISSUES.md` and `address-pr-comments` for GitHub PR review comments.
 ---
 
 # resolve-findings
@@ -48,8 +49,6 @@ The final report is the resolution log.
 Create each file with `touch` before writing.
 
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Verifier`: checks whether each reported finding is actually valid.
@@ -154,6 +153,13 @@ For every non-fixed finding, explain why in concrete terms.
 - Do not rewrite the report author's conclusion without preserving the actual verdict.
 - Do not let a Medium or Low finding pull in unrelated opportunistic work.
 - If a Critical or High finding remains unresolved, say so prominently in the final report.
+
+## Definition of done
+
+- The resolution report exists at `.agent-layer/tmp/resolve-findings.<run-id>.report.md` with every required section (`Summary`, `Accepted and Fixed`, `Rejected`, `Deferred`, `Already Resolved`, `Verification`, `Residual Risk`).
+- Every finding from the input review report has exactly one explicit verdict of accept, reject, defer, or already-resolved — none silently dropped.
+- When at least one finding is accepted, the plan/task/context artifacts also exist at the documented paths; when zero are accepted, they are absent and the report says `No accepted findings`.
+- Every non-fixed finding carries a concrete explanation, and any unresolved Critical or High finding is surfaced prominently in the report and handoff.
 
 ## Final handoff
 

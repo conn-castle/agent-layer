@@ -3,7 +3,7 @@
 This document is the canonical skill-authoring guide for repo-local skill
 sources such as `.agent-layer/skills/<name>/SKILL.md`.
 
-Research and standards in this guide were re-verified on 2026-03-06. The guide
+Research and standards in this guide were re-verified on 2026-04-18. The guide
 intentionally separates:
 - specification or product requirements
 - evidence-backed authoring guidance
@@ -92,12 +92,34 @@ trigger conditions [ref 8]. This maps directly to skill activation: the
 Authoring guidance:
 - Write the `description` for routing, not marketing. State the job, likely
   trigger phrases, and nearby non-goals.
+- Every description should answer two questions: **what** the skill does and
+  **when** it should fire. Descriptions that answer only "what" leak into
+  neighboring territory; descriptions that answer only "when" fail to help the
+  router distinguish between similar triggers.
 - Add explicit `Use this when` and `Do not use this when` guidance when
-  adjacent skills are easy to confuse.
+  adjacent skills are easy to confuse. Negative cases prevent one-directional
+  optimization — without them, you only know whether the skill fires when
+  expected, not whether it avoids firing when it shouldn't.
+- Include concrete trigger phrases ("when the user says X, Y, or Z") when the
+  routing decision depends on recognizing natural-language intent rather than
+  artifact shape.
 - Evaluate both positive and negative prompts. A good prompt set should include
   `should_trigger = false` cases, not just happy paths.
 - Test activation against the descriptions of all sibling skills to ensure the
   routing signal is unambiguous.
+
+**Bad vs good description examples:**
+
+| Weak | Why it fails | Stronger |
+| --- | --- | --- |
+| `Helps with documents` | No domain, no trigger, no negative | `Create, edit, and analyze .docx files. Use for tracked changes, comments, formatting, or text extraction. Do not use for PDFs or plain text.` |
+| `API helper` | Fires on anything API-shaped | `Use when writing code that calls the Gemini API. Covers authentication, request construction, and streaming responses.` |
+| `Fix code quality` | Overlaps with every quality skill | `Assess code complexity, remove dead code, simplify complex functions. Scoped to uncommitted changes when they exist, otherwise full codebase. Use audit-tests for test suite health; use boost-coverage to add missing tests.` |
+| `Review things` | Router cannot disambiguate review-scope vs review-plan | `Review explicit files, directories, diffs, or uncommitted changes and produce a findings report. Use review-plan instead when the target is a plan/task/context artifact set.` |
+
+Philipp Schmid reports "50% improvements just by improving the description"
+[ref 19] — refining a vague description is often the highest-leverage change
+available to a skill author.
 
 ### 2. Keep each skill focused on one workflow
 
@@ -237,6 +259,11 @@ Authoring guidance:
   Phase 6.
 - Consider the recency effect too: guardrails and final-handoff instructions at
   the very end of the skill benefit from the tail of the U-shaped curve.
+- For audit-style skills (skills that enumerate checks or rules rather than
+  workflow steps), order checks by impact and label them explicitly: Critical →
+  High → Medium → Low. Agents operating under context pressure will apply
+  earlier checks most reliably; the highest-impact checks should never appear
+  mid-list.
 
 ### 5. Prefer explicit contracts over vague prose
 
@@ -271,6 +298,19 @@ Authoring guidance:
   look.
 - Use markdown headers and consistent formatting to create unambiguous section
   boundaries.
+- Write directives, not essays. Prefer `Always use X for Y` over `The X API is
+  generally recommended`. Lead with the rule and supply the *why* only when the
+  rationale changes behavior — agents generalize better than they memorize
+  [ref 19].
+- Describe the outcome, not the steps, unless the steps are actually
+  load-bearing. `Update the database port in the config file to the value the
+  user specifies` is more robust than `Step 1: Read config. Step 2: Find URL.
+  Step 3: Update port...`. Rigid step lists remove the model's ability to adapt
+  to unexpected structure; if the exact sequence truly must be followed, use a
+  script instead [ref 19].
+- Prefer constraints (`Always run tests before opening a PR`) to procedures
+  (`First, run tests; then, open a PR; then, wait for CI`) when the order is
+  already obvious from the constraint.
 
 ### 6. Use progressive disclosure and shallow delegation
 
@@ -499,6 +539,35 @@ Authoring guidance:
 - Design phases so each one can be re-run independently if the previous
   attempt failed.
 
+### 13. Retire skills that base models have absorbed
+
+A skill that no longer changes behavior is pure context tax. Philipp Schmid
+[ref 19] observes that capability skills especially become obsolete as base
+models improve — a skill teaching PDF structure to a 2024 model may be
+redundant for a 2026 model. The same applies to preference skills when the
+underlying convention has become standard in the agent or repo.
+
+**Evidence — redundant context still costs:**
+- "Same Task, More Tokens" [ref 10] and "Context Rot" [ref 16] both show that
+  even duplicated or irrelevant content degrades reasoning — a retired-but-
+  loaded skill is not free.
+- OpenAI's eval-skills guide [ref 7] recommends running evals with and without
+  the skill to establish baseline performance; this is the same instrument used
+  for retirement decisions.
+
+Authoring guidance:
+- Periodically re-run the skill's positive-trigger evals **without** loading
+  the skill. If the agent still passes, the behavior has been absorbed and the
+  skill can be retired.
+- Retire over mothball: delete the skill rather than leaving it disabled. A
+  commented-out or disabled skill still drains maintenance attention.
+- Retirement candidates: capability skills that wrap an API the base model now
+  knows natively; preference skills whose conventions have moved into always-
+  loaded firmware; skills that have not fired in any recent session.
+- Note the retirement rationale in the commit message so the skill can be
+  restored with full context if a future model regression reintroduces the
+  need.
+
 ---
 
 ## Recommended section order for agent-layer skills
@@ -514,6 +583,7 @@ Authoring guidance:
 | Human checkpoints | Exact ask-user triggers | Keeps escalation explicit and rare |
 | Workflow phases | Ordered execution steps | Main operational body |
 | Guardrails | Common failure modes and negative constraints | Benefits from recency at the tail [ref 11] |
+| Definition of done | Observable evidence the skill completed successfully | Falsifiable criteria prevent assertion-based close-outs |
 | Final handoff | What to report back | Keeps closeout deterministic |
 
 This order is consistent with OpenAI's recommended prompt structure [ref 4]:
@@ -538,13 +608,15 @@ Practical ordering rule:
 ## Authoring checklist
 
 Before considering a skill done, verify that:
-- The `description` clearly says what the skill does and when it should trigger.
+- The `description` clearly says **what** the skill does and **when** it should
+  trigger, and names at least one adjacent non-goal when a sibling skill could
+  be confused for it.
 - The skill has one primary job and one primary output contract.
 - The top of the file contains the defaults, artifact rules, and hard stop
   conditions.
 - Every required file or report path is explicit.
 - Human checkpoints are concrete and sparse.
-- The workflow has measurable success criteria.
+- The skill has a `## Definition of done` section with 2–5 falsifiable completion criteria — observable evidence (not process steps) that prove the skill succeeded.
 - Any required script is non-interactive and documented with inputs/outputs.
 - The skill still makes sense if a client only loads `SKILL.md`.
 - The body is as short as possible without making behavior ambiguous.
@@ -752,3 +824,6 @@ instructions. Principle 3.
     multi-constraint instruction following`. 2025.
 18. `Context Length Alone Hurts LLM Performance Despite Perfect Retrieval`.
     2025. https://arxiv.org/abs/2510.05381
+19. Schmid, Philipp. `8 Tips for Writing Better Agent Skills`. 2026.
+    https://www.philschmid.de/agent-skills-tips. Companion: `Testing Agent
+    Skills`. https://www.philschmid.de/testing-skills

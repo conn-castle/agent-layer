@@ -1,10 +1,11 @@
 ---
 name: schedule-backlog
 description: >-
-  Propose reviewable backlog scheduling updates by mapping a coherent subset of
-  backlog work into existing or new roadmap phases, cross-checking issue and
-  decision impacts, and using judgment-based human checkpoints before any
-  roadmap file edits.
+  Propose backlog-to-roadmap scheduling updates by mapping `BACKLOG.md` items
+  into roadmap phases, checking issue/decision impacts, and pausing before
+  roadmap edits. Use when the user asks to schedule backlog work or reshape the
+  roadmap. Use `plan-work` for a single implementation plan and `fix-issues`
+  for `ISSUES.md` execution.
 ---
 
 # schedule-backlog
@@ -31,17 +32,7 @@ Accept any combination of:
 - whether issue-impact notes should be included
 - whether approved changes should later be applied
 
-## Required artifact
-
-Write the proposal report to:
-- `.agent-layer/tmp/schedule-backlog.<run-id>.report.md`
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
-
 ## Multi-agent pattern
-
-Use subagents liberally when available.
 
 Recommended roles:
 1. `Standards reader`: extracts roadmap and decision constraints.
@@ -107,9 +98,9 @@ If a new phase is needed, include:
 - high-level tasks
 - exit criteria
 
-### Phase 4: Write the proposal report (Reporter)
+### Phase 4: Draft the proposal summary (Reporter)
 
-The report must contain:
+The proposal summary must contain:
 
 1. `# Roadmap Update Summary`
    - current roadmap shape
@@ -131,9 +122,15 @@ The report must contain:
 - Do not mutate roadmap files in the same step as drafting the proposal unless the request already includes applying a clear, low-ambiguity proposal.
 - Do not present engineering refactors as user-visible roadmap work unless the roadmap truly needs them there.
 
+## Definition of done
+
+- The proposal summary includes every required section (`Summary`, `Suggestions`, `Backlog Hygiene Notes`, `Open Questions`, `Approval Options`).
+- `ROADMAP.md`, `BACKLOG.md`, and `ISSUES.md` were not mutated in this run unless the user's request explicitly included an apply step with a clear, low-ambiguity proposal.
+- Each proposal entry names its target phase (existing or new), included backlog items, grouping rationale, prerequisites, and issue impacts.
+- Misclassified engineering-only items are flagged in `Backlog Hygiene Notes` rather than silently included in a roadmap phase.
+
 ## Final handoff
 
-After writing the report:
-1. Echo the report path.
-2. Summarize the best proposal options in chat.
-3. Tell the user how to approve, reject, or modify each suggestion.
+After drafting the proposal:
+1. Summarize the best proposal options.
+2. Tell the user how to approve, reject, or modify each suggestion.

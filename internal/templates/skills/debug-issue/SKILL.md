@@ -44,8 +44,6 @@ Create the file with `touch` before writing.
 
 ## Multi-agent pattern
 
-Use subagents liberally when available.
-
 Recommended roles:
 1. `Repo scout`: gathers context — related code, recent changes, test history, and memory files.
 2. `Reproducer`: builds and runs a minimal reproduction.
@@ -190,6 +188,13 @@ Write `.agent-layer/tmp/debug-issue.<run-id>.report.md` with:
 - Do not treat a passing test suite as proof the bug is fixed unless the specific failing test now passes.
 - Do not expand investigation into a general code review or cleanup.
 - Do not silently drop the investigation if reproduction fails — escalate with what was tried.
+
+## Definition of done
+
+- The report exists at `.agent-layer/tmp/debug-issue.<run-id>.report.md` with every required section (`Summary`, `Reproduction`, `Investigation`, `Root Cause`, `Fix`, `Verification`, `Follow-up`) and states the outcome as fixed, diagnosed-only, or blocked.
+- The bug was observably reproduced before any fix, and the report cites the observed vs expected behavior.
+- A test exists that failed on pre-fix code and passes on post-fix code (investigate-and-fix mode), or the failing test is captured and logged with the `ISSUES.md` entry (diagnosis-only mode).
+- Unrelated bugs discovered during investigation are logged to `ISSUES.md` rather than fixed inline.
 
 ## Final handoff
 

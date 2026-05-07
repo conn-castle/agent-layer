@@ -1,10 +1,11 @@
 ---
 name: complete-current-phase
 description: >-
-  Drive the current incomplete roadmap phase through planning, plan review,
-  implementation, verification against plan, broader audit, cleanup/fix loops,
-  and closeout until the selected roadmap phase is fully complete or a real
-  blocker requires human input.
+  Complete the current roadmap phase through planning, plan review,
+  implementation, verification, audit, cleanup, and closeout. Use when the user
+  asks to finish, complete, or work through a roadmap phase. Use `plan-work`
+  for planning only, `implement-plan` when artifacts already exist, and
+  `finish-task` for non-roadmap closeout.
 ---
 
 # complete-current-phase
@@ -46,11 +47,9 @@ If the user specifies a phase number, use that phase instead of the first incomp
 
 ## Required behavior
 
-Use subagents liberally when available.
-
 At minimum, use:
 - a scout/planner subagent
-- parallel review subagents with different lenses
+- a review subagent
 - an execution gatekeeper subagent that decides `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`
 - one or more implementation subagents when the work spans distinct files or subsystems
 
@@ -193,3 +192,18 @@ At each major stage, echo the current artifact path(s), identify the active phas
 - Do not turn the skill into an unbounded autonomous backlog sweeper.
 - Do not carry unresolved Critical/High findings forward without calling them out.
 - Keep each loop grounded in concrete artifacts and observed verification.
+
+## Definition of done
+
+- Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
+- Each internal work package ran the full plan / review-plan / implement / verify-against-plan / review-scope / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
+- The `finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
+- The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.
+
+## Final handoff
+
+After the selected phase is complete or blocked:
+1. Echo the final plan/task/context/report artifact paths used during the phase.
+2. State the selected roadmap phase, whether it is complete, and any remaining blocker.
+3. Summarize the work packages completed, verification run, and memory/doc updates applied.
+4. List any deferred findings with `ISSUES.md` or `BACKLOG.md` references.
