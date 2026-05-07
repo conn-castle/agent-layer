@@ -463,6 +463,8 @@ func TestHelperProcess(t *testing.T) {
 }
 
 func TestFirstWritableFpath_ExecZsh(t *testing.T) {
+	t.Setenv("FPATH", "")
+
 	origLookPath := lookPath
 	origExecCommand := execCommand
 	defer func() {
@@ -494,6 +496,8 @@ func TestFirstWritableFpath_ExecZsh(t *testing.T) {
 }
 
 func TestFirstWritableFpath_ExecFail(t *testing.T) {
+	t.Setenv("FPATH", "")
+
 	origLookPath := lookPath
 	origExecCommand := execCommand
 	defer func() {
@@ -526,6 +530,8 @@ func TestFirstWritableFpath_ExecFail(t *testing.T) {
 }
 
 func TestFirstWritableFpath_ExecZshSkipsEmpty(t *testing.T) {
+	t.Setenv("FPATH", "")
+
 	origLookPath := lookPath
 	origExecCommand := execCommand
 	t.Cleanup(func() {

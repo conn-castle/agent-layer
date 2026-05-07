@@ -307,4 +307,51 @@ func TestBuildRewritePreview_ErrorAndNoDiffBranches(t *testing.T) {
 			t.Fatalf("expected no-diff message, got %q", preview)
 		}
 	})
+
+	t.Run("env preview redacts secret values", func(t *testing.T) {
+		root := t.TempDir()
+		setupRepo(t, root)
+		configPath := filepath.Join(root, ".agent-layer", "config.toml")
+		envPath := filepath.Join(root, ".agent-layer", ".env")
+		if err := os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+		if err := os.WriteFile(envPath, []byte("AL_TOKEN=old-secret\nUNCHANGED=same-secret\n"), 0o600); err != nil {
+			t.Fatalf("write env: %v", err)
+		}
+		choices := NewChoices()
+		choices.Secrets["AL_TOKEN"] = "new-secret"
+
+		preview, err := buildRewritePreview(configPath, envPath, choices)
+		if err != nil {
+			t.Fatalf("buildRewritePreview: %v", err)
+		}
+		for _, forbidden := range []string{"old-secret", "new-secret", "same-secret"} {
+			if strings.Contains(preview, forbidden) {
+				t.Fatalf("preview leaked secret %q:\n%s", forbidden, preview)
+			}
+		}
+		for _, expected := range []string{"<redacted current>", "<redacted proposed>", "Secret values are redacted"} {
+			if !strings.Contains(preview, expected) {
+				t.Fatalf("expected %q in redacted preview:\n%s", expected, preview)
+			}
+		}
+	})
+
+	t.Run("env preview redacts parser-missing assignments and keeps quoted comments", func(t *testing.T) {
+		content := "MISSING=super-secret\nQUOTED=\"old-secret\" # keep me\nUNQUOTED=old-secret # not a comment\n"
+		values := map[string]string{"QUOTED": "old-secret", "UNQUOTED": "old-secret # not a comment"}
+		redacted := redactEnvPreviewSide(content, values, nil, true)
+
+		for _, forbidden := range []string{"super-secret", "old-secret"} {
+			if strings.Contains(redacted, forbidden) {
+				t.Fatalf("redacted preview leaked %q:\n%s", forbidden, redacted)
+			}
+		}
+		for _, expected := range []string{`MISSING=""`, `QUOTED="<redacted current>" # keep me`, `UNQUOTED="<redacted current>"`} {
+			if !strings.Contains(redacted, expected) {
+				t.Fatalf("expected %q in redacted preview:\n%s", expected, redacted)
+			}
+		}
+	})
 }

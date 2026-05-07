@@ -61,6 +61,49 @@ func TestDoctorCommand(t *testing.T) {
 	}
 }
 
+func TestDoctorCommand_MissingOptionalDocsDirDoesNotFail(t *testing.T) {
+	root := t.TempDir()
+	writeDoctorTestRepo(t, root)
+	if err := os.RemoveAll(filepath.Join(root, "docs", "agent-layer")); err != nil {
+		t.Fatalf("remove optional docs dir: %v", err)
+	}
+	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+
+	origInstructions := checkInstructions
+	origMCP := checkMCPServers
+	origPolicy := checkPolicy
+	t.Cleanup(func() {
+		checkInstructions = origInstructions
+		checkMCPServers = origMCP
+		checkPolicy = origPolicy
+	})
+	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
+		return nil, nil
+	}
+	checkPolicy = func(*config.ProjectConfig) []warnings.Warning { return nil }
+
+	var out bytes.Buffer
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		cmd.SetOut(&out)
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("doctor failed with only optional docs dir missing: %v", err)
+		}
+	})
+
+	output := out.String()
+	if !strings.Contains(output, fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, "docs/agent-layer")) {
+		t.Fatalf("expected optional directory warning in output, got:\n%s", output)
+	}
+	if strings.Contains(output, fmt.Sprintf(messages.DoctorMissingRequiredDirFmt, "docs/agent-layer")) {
+		t.Fatalf("expected docs/agent-layer to stop being described as required, got:\n%s", output)
+	}
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
 func TestDoctorCommand_UpdateSkippedNoNetwork(t *testing.T) {
 	root := t.TempDir()
 	writeDoctorTestRepo(t, root)

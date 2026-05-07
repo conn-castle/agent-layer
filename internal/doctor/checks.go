@@ -18,20 +18,34 @@ var (
 	loadEnvFunc           = config.LoadEnv
 )
 
-// CheckStructure verifies that the required project directories exist.
+// CheckStructure verifies that required and optional project directories are sane.
 func CheckStructure(root string) []Result {
 	var results []Result
-	paths := []string{".agent-layer", "docs/agent-layer"}
+	paths := []struct {
+		path     string
+		required bool
+	}{
+		{path: ".agent-layer", required: true},
+		{path: "docs/agent-layer", required: false},
+	}
 
-	for _, p := range paths {
-		fullPath := filepath.Join(root, p)
+	for _, entry := range paths {
+		fullPath := filepath.Join(root, entry.path)
 		info, err := os.Stat(fullPath)
 		if err != nil {
+			status := StatusWarn
+			message := fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, entry.path)
+			recommendation := fmt.Sprintf(messages.DoctorMissingOptionalDirRecommend, entry.path)
+			if entry.required {
+				status = StatusFail
+				message = fmt.Sprintf(messages.DoctorMissingRequiredDirFmt, entry.path)
+				recommendation = messages.DoctorMissingRequiredDirRecommend
+			}
 			results = append(results, Result{
-				Status:         StatusFail,
+				Status:         status,
 				CheckName:      messages.DoctorCheckNameStructure,
-				Message:        fmt.Sprintf(messages.DoctorMissingRequiredDirFmt, p),
-				Recommendation: messages.DoctorMissingRequiredDirRecommend,
+				Message:        message,
+				Recommendation: recommendation,
 			})
 			continue
 		}
@@ -39,7 +53,7 @@ func CheckStructure(root string) []Result {
 			results = append(results, Result{
 				Status:         StatusFail,
 				CheckName:      messages.DoctorCheckNameStructure,
-				Message:        fmt.Sprintf(messages.DoctorPathNotDirFmt, p),
+				Message:        fmt.Sprintf(messages.DoctorPathNotDirFmt, entry.path),
 				Recommendation: messages.DoctorPathNotDirRecommend,
 			})
 			continue
@@ -47,7 +61,7 @@ func CheckStructure(root string) []Result {
 		results = append(results, Result{
 			Status:    StatusOK,
 			CheckName: messages.DoctorCheckNameStructure,
-			Message:   fmt.Sprintf(messages.DoctorDirExistsFmt, p),
+			Message:   fmt.Sprintf(messages.DoctorDirExistsFmt, entry.path),
 		})
 	}
 	return results
