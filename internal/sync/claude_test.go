@@ -207,6 +207,44 @@ func TestBuildClaudeSettingsMaxEffortExcludedFromSettings(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeSettingsTrimsReasoningEffort(t *testing.T) {
+	t.Parallel()
+	// Regression: whitespace-padded reasoning_effort must be trimmed before the
+	// "max" comparison, otherwise " max " is treated as a persistable level and
+	// erroneously written to settings.json (max is session-only).
+	maxProject := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{ReasoningEffort: " max "},
+			},
+		},
+	}
+	settings, err := buildClaudeSettings(maxProject)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if _, ok := settings["effortLevel"]; ok {
+		t.Fatal("expected effortLevel to be excluded for whitespace-padded max")
+	}
+
+	highProject := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{ReasoningEffort: " high "},
+			},
+		},
+	}
+	settings, err = buildClaudeSettings(highProject)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	if got, ok := settings["effortLevel"].(string); !ok || got != "high" {
+		t.Fatalf("expected effortLevel=high (trimmed), got %#v", settings["effortLevel"])
+	}
+}
+
 func TestBuildClaudeSettingsMaxEffortWithAgentSpecificOverride(t *testing.T) {
 	t.Parallel()
 	project := &config.ProjectConfig{
