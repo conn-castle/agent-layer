@@ -118,15 +118,30 @@ func (inst *installer) handleUnknowns() error {
 }
 
 // handleTmpUnknowns asks one grouped yes/no question for every unknown path
-// under .agent-layer/tmp/. When the prompter does not implement
-// tmpUnknownsPrompter (legacy mocks), falls back to the per-file
-// DeleteUnknown prompt to preserve existing behavior.
+// under .agent-layer/tmp/. Two fallback paths exist for callers that don't
+// supply the grouped capability:
+//
+//  1. The prompter does not implement tmpUnknownsPrompter at all (custom
+//     Prompter implementations or legacy mocks).
+//  2. The prompter is a PromptFuncs that satisfies tmpUnknownsPrompter only
+//     because the method is defined on the struct, but
+//     DeleteUnknownTmpAllFunc was never wired. We detect this case via the
+//     optional promptValidator probe so unwired PromptFuncs callers fall
+//     back instead of getting an "InstallDeleteUnknownPromptRequired" error.
+//
+// In both fallback cases handleTmpUnknowns invokes the per-file
+// DeleteUnknown prompt for each tmp path.
 func (inst *installer) handleTmpUnknowns(tmpUnknowns []string) error {
 	if len(tmpUnknowns) == 0 {
 		return nil
 	}
 	rel := inst.relativePathList(tmpUnknowns)
 	grouped, ok := inst.prompter.(tmpUnknownsPrompter)
+	if ok {
+		if validator, vok := inst.prompter.(promptValidator); vok && !validator.hasDeleteUnknownTmpAll() {
+			ok = false
+		}
+	}
 	if !ok {
 		for _, path := range tmpUnknowns {
 			relPath := inst.relativePath(path)

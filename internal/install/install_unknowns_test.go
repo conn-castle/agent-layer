@@ -694,6 +694,35 @@ func (p legacyDeleteOnlyPrompter) DeleteUnknown(path string) (bool, error) {
 	return p.deleteOne(path)
 }
 
+func TestHandleUnknowns_TmpFallback_PromptFuncsWithoutTmpAllFunc(t *testing.T) {
+	// PromptFuncs always satisfies tmpUnknownsPrompter (the method is defined
+	// on the struct), but a caller may construct it without wiring
+	// DeleteUnknownTmpAllFunc. In that case handleTmpUnknowns must fall back
+	// to the per-file DeleteUnknown prompt instead of surfacing the
+	// "prompt required" error from PromptFuncs.DeleteUnknownTmpAll.
+	inst, tmpFile, otherFile := setupTmpAndOtherUnknowns(t)
+	var perFilePaths []string
+	inst.prompter = PromptFuncs{
+		DeleteUnknownAllFunc: func([]string) (bool, error) { return false, nil },
+		DeleteUnknownFunc: func(path string) (bool, error) {
+			perFilePaths = append(perFilePaths, path)
+			return true, nil
+		},
+		// DeleteUnknownTmpAllFunc intentionally left nil.
+	}
+	if err := inst.handleUnknowns(); err != nil {
+		t.Fatalf("handleUnknowns: %v", err)
+	}
+	if len(perFilePaths) != 2 {
+		t.Fatalf("expected per-file prompt for both unknowns when tmp grouped callback is unwired, got %v", perFilePaths)
+	}
+	for _, path := range []string{tmpFile, otherFile} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected %s to be deleted, stat err=%v", path, err)
+		}
+	}
+}
+
 func TestRelativeUnknowns_Empty(t *testing.T) {
 	inst := &installer{
 		unknowns: nil,
