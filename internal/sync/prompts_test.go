@@ -12,98 +12,11 @@ import (
 
 const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/skills/test.md\n  Regenerate: al sync\n-->\n"
 
-func TestBuildVSCodePrompt(t *testing.T) {
-	cmd := config.Skill{Name: "alpha", Body: "Body"}
-	content := buildVSCodePrompt(cmd)
-	if !strings.Contains(content, "name: alpha") {
-		t.Fatalf("expected name in prompt")
-	}
-	if !strings.HasSuffix(content, "\n") {
-		t.Fatalf("expected trailing newline")
-	}
-}
-
-func TestWriteVSCodePromptsError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	err := WriteVSCodePrompts(RealSystem{}, file, nil)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteVSCodePromptsWriteError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	promptDir := filepath.Join(root, ".vscode", "prompts")
-	if err := os.MkdirAll(promptDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.Mkdir(filepath.Join(promptDir, "alpha.prompt.md"), 0o755); err != nil {
-		t.Fatalf("mkdir prompt: %v", err)
-	}
-	cmds := []config.Skill{{Name: "alpha", Body: "Body"}}
-	if err := WriteVSCodePrompts(RealSystem{}, root, cmds); err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestRemoveStalePromptFilesMissingDir(t *testing.T) {
-	t.Parallel()
-	err := removeStalePromptFiles(RealSystem{}, filepath.Join(t.TempDir(), "missing"), map[string]struct{}{})
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestRemoveStalePromptFiles(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	wanted := map[string]struct{}{
-		"keep": {},
-	}
-
-	keep := filepath.Join(dir, "keep.prompt.md")
-	stale := filepath.Join(dir, "stale.prompt.md")
-	manual := filepath.Join(dir, "manual.prompt.md")
-	other := filepath.Join(dir, "notes.txt")
-	subdir := filepath.Join(dir, "nested")
-	if err := os.WriteFile(keep, []byte(generatedMarkerFixture), 0o644); err != nil {
-		t.Fatalf("write keep: %v", err)
-	}
-	if err := os.WriteFile(stale, []byte(generatedMarkerFixture), 0o644); err != nil {
-		t.Fatalf("write stale: %v", err)
-	}
-	if err := os.WriteFile(manual, []byte("manual"), 0o644); err != nil {
-		t.Fatalf("write manual: %v", err)
-	}
-	if err := os.WriteFile(other, []byte("note"), 0o644); err != nil {
-		t.Fatalf("write other: %v", err)
-	}
-	if err := os.MkdirAll(subdir, 0o755); err != nil {
-		t.Fatalf("mkdir subdir: %v", err)
-	}
-
-	if err := removeStalePromptFiles(RealSystem{}, dir, wanted); err != nil {
-		t.Fatalf("removeStalePromptFiles error: %v", err)
-	}
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
-		t.Fatalf("expected stale to be removed")
-	}
-	if _, err := os.Stat(manual); err != nil {
-		t.Fatalf("expected manual to remain: %v", err)
-	}
-}
-
-func TestBuildCodexSkill(t *testing.T) {
+func TestBuildAgentSkill(t *testing.T) {
 	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
-	content, err := buildCodexSkill(cmd)
+	content, err := buildAgentSkill(cmd)
 	if err != nil {
-		t.Fatalf("buildCodexSkill error: %v", err)
+		t.Fatalf("buildAgentSkill error: %v", err)
 	}
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in skill")
@@ -111,19 +24,21 @@ func TestBuildCodexSkill(t *testing.T) {
 	if !strings.Contains(content, "description: >-") {
 		t.Fatalf("expected folded description in frontmatter")
 	}
-	if !strings.Contains(content, "# alpha") {
-		t.Fatalf("expected heading in skill")
-	}
 	if !strings.HasSuffix(content, "\n") {
 		t.Fatalf("expected trailing newline")
 	}
+	// The agentskills.io format relies on the `name:` front-matter field; the
+	// builder must not also inject a `# <name>` heading into the body.
+	if strings.Contains(content, "# alpha") {
+		t.Fatalf("did not expect injected name heading in body, got:\n%s", content)
+	}
 }
 
-func TestBuildAntigravitySkill(t *testing.T) {
+func TestBuildAgentSkillBody(t *testing.T) {
 	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
-	content, err := buildAntigravitySkill(cmd)
+	content, err := buildAgentSkill(cmd)
 	if err != nil {
-		t.Fatalf("buildAntigravitySkill error: %v", err)
+		t.Fatalf("buildAgentSkill error: %v", err)
 	}
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in skill")
@@ -152,9 +67,9 @@ func TestBuildSkillFrontMatter_FieldOrderAndMetadataSorting(t *testing.T) {
 		AllowedTools: "Bash(git:*) Read",
 	}
 
-	content, err := buildAntigravitySkill(cmd)
+	content, err := buildAgentSkill(cmd)
 	if err != nil {
-		t.Fatalf("buildAntigravitySkill error: %v", err)
+		t.Fatalf("buildAgentSkill error: %v", err)
 	}
 
 	expectedOrder := []string{
@@ -197,9 +112,9 @@ func TestBuildSkillFrontMatter_OmitsEmptyOptionalFields(t *testing.T) {
 		AllowedTools:  "",
 	}
 
-	content, err := buildCodexSkill(cmd)
+	content, err := buildAgentSkill(cmd)
 	if err != nil {
-		t.Fatalf("buildCodexSkill error: %v", err)
+		t.Fatalf("buildAgentSkill error: %v", err)
 	}
 	if strings.Contains(content, "license:") {
 		t.Fatalf("did not expect license field in output:\n%s", content)
@@ -217,29 +132,29 @@ func TestBuildSkillFrontMatter_OmitsEmptyOptionalFields(t *testing.T) {
 
 func TestBuildSkillFrontMatter_UsesLiteralDescriptionForMultiline(t *testing.T) {
 	cmd := config.Skill{Name: "alpha", Description: "line1\nline2"}
-	content, err := buildAntigravitySkill(cmd)
+	content, err := buildAgentSkill(cmd)
 	if err != nil {
-		t.Fatalf("buildAntigravitySkill error: %v", err)
+		t.Fatalf("buildAgentSkill error: %v", err)
 	}
 	if !strings.Contains(content, "description: |-") {
 		t.Fatalf("expected literal description style for multiline description, got:\n%s", content)
 	}
 }
 
-func TestWriteCodexSkillsError(t *testing.T) {
+func TestWriteAgentSkillsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
 	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-	err := WriteCodexSkills(RealSystem{}, file, nil)
+	err := WriteAgentSkills(RealSystem{}, file, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestWriteCodexSkillsWriteError(t *testing.T) {
+func TestWriteAgentSkillsWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	sys := &MockSystem{
@@ -249,43 +164,15 @@ func TestWriteCodexSkillsWriteError(t *testing.T) {
 		},
 	}
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteCodexSkills(sys, root, cmds); err == nil {
+	if err := WriteAgentSkills(sys, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
 }
 
-func TestWriteAntigravitySkillsError(t *testing.T) {
+func TestWriteAgentSkillsMkdirSkillDirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	err := WriteAntigravitySkills(RealSystem{}, file, nil)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteAntigravitySkillsWriteError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	sys := &MockSystem{
-		Fallback: RealSystem{},
-		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
-			return errors.New("write failed")
-		},
-	}
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteAntigravitySkills(sys, root, cmds); err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteAntigravitySkillsMkdirSkillDirError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	skillsDir := filepath.Join(root, ".agent", "skills")
+	skillsDir := filepath.Join(root, ".agents", "skills")
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -295,26 +182,7 @@ func TestWriteAntigravitySkillsMkdirSkillDirError(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	err := WriteAntigravitySkills(RealSystem{}, root, cmds)
-	if err == nil {
-		t.Fatalf("expected error for skill dir removal/creation failure")
-	}
-}
-
-func TestWriteCodexSkillsMkdirSkillDirError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	skillsDir := filepath.Join(root, ".codex", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	// Make skills dir read-only so RemoveAll(skillDir) fails.
-	if err := os.Chmod(skillsDir, 0o500); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	err := WriteCodexSkills(RealSystem{}, root, cmds)
+	err := WriteAgentSkills(RealSystem{}, root, cmds)
 	if err == nil {
 		t.Fatalf("expected error for skill dir removal/creation failure")
 	}
@@ -325,20 +193,6 @@ func TestBuildClaudeSkill(t *testing.T) {
 	content, err := buildClaudeSkill(cmd)
 	if err != nil {
 		t.Fatalf("buildClaudeSkill error: %v", err)
-	}
-	if !strings.Contains(content, "name: alpha") {
-		t.Fatalf("expected name in skill")
-	}
-	if !strings.Contains(content, "Body") {
-		t.Fatalf("expected body in skill")
-	}
-}
-
-func TestBuildGeminiSkill(t *testing.T) {
-	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
-	content, err := buildGeminiSkill(cmd)
-	if err != nil {
-		t.Fatalf("buildGeminiSkill error: %v", err)
 	}
 	if !strings.Contains(content, "name: alpha") {
 		t.Fatalf("expected name in skill")
@@ -365,14 +219,14 @@ func TestWriteClaudeSkills(t *testing.T) {
 	}
 }
 
-func TestWriteGeminiSkills(t *testing.T) {
+func TestWriteAgentSkills(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cmds := []config.Skill{{Name: "beta", Description: "desc", Body: "Body"}}
-	if err := WriteGeminiSkills(RealSystem{}, root, cmds); err != nil {
-		t.Fatalf("WriteGeminiSkills error: %v", err)
+	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteAgentSkills error: %v", err)
 	}
-	path := filepath.Join(root, ".gemini", "skills", "beta", "SKILL.md")
+	path := filepath.Join(root, ".agents", "skills", "beta", "SKILL.md")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read skill: %v", err)
@@ -493,6 +347,67 @@ func TestRemoveStaleSkillDirsMissingDir(t *testing.T) {
 	}
 }
 
+func TestCleanSharedAgentSkillsRemovesGeneratedOnly(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	generatedDir := filepath.Join(root, ".agents", "skills", "generated")
+	manualDir := filepath.Join(root, ".agents", "skills", "manual")
+	for _, dir := range []string{generatedDir, manualDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(generatedDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
+		t.Fatalf("write generated skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("# manual\n"), 0o644); err != nil {
+		t.Fatalf("write manual skill: %v", err)
+	}
+
+	if err := CleanSharedAgentSkills(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanSharedAgentSkills error: %v", err)
+	}
+	if _, err := os.Stat(generatedDir); !os.IsNotExist(err) {
+		t.Fatalf("expected generated shared skill to be removed")
+	}
+	if _, err := os.Stat(manualDir); err != nil {
+		t.Fatalf("expected manual shared skill to remain: %v", err)
+	}
+}
+
+func TestCleanLegacySkillOutputsRemovesRetiredDirs(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	for _, rel := range []string{
+		filepath.Join(".codex", "skills", "alpha"),
+		filepath.Join(".agent", "skills", "alpha"),
+		filepath.Join(".gemini", "skills", "alpha"),
+		filepath.Join(".github", "skills", "alpha"),
+		filepath.Join(".vscode", "prompts"),
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+	}
+
+	if err := CleanLegacySkillOutputs(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanLegacySkillOutputs error: %v", err)
+	}
+
+	for _, rel := range []string{
+		filepath.Join(".codex", "skills"),
+		filepath.Join(".agent", "skills"),
+		filepath.Join(".gemini", "skills"),
+		filepath.Join(".github", "skills"),
+		filepath.Join(".vscode", "prompts"),
+	} {
+		if _, err := os.Stat(filepath.Join(root, rel)); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be removed", rel)
+		}
+	}
+}
+
 func TestHasGeneratedMarker(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -610,34 +525,6 @@ func TestWriteClaudeSkillsWriteError(t *testing.T) {
 	}
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	if err := WriteClaudeSkills(sys, root, cmds); err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteGeminiSkillsError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	err := WriteGeminiSkills(RealSystem{}, file, nil)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteGeminiSkillsWriteError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	sys := &MockSystem{
-		Fallback: RealSystem{},
-		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
-			return errors.New("write failed")
-		},
-	}
-	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
-	if err := WriteGeminiSkills(sys, root, cmds); err == nil {
 		t.Fatalf("expected error")
 	}
 }

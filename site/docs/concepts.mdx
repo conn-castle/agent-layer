@@ -51,10 +51,10 @@ Some teams keep `.agent-layer/` local while experimenting; others commit it so e
 
 When you run `al sync` or `al <client>`, Agent Layer generates client-specific config files and launchers, such as:
 
-- `.agent/skills/`
-- `.gemini/settings.json`, `.claude/settings.json`, `.mcp.json`
-- `.codex/` (generated config, rules, and skills)
-- `.vscode/mcp.json`, `.vscode/prompts/`, and a managed block in `.vscode/settings.json`
+- `.agents/skills/`
+- `.gemini/settings.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.codex/` (generated config and rules)
+- `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `AGENTS.md`
 - `CLAUDE.md`
 - `GEMINI.md`
@@ -73,8 +73,8 @@ Agent Layer avoids that by forcing everything through a single canonical input. 
 
 ### Anti-patterns to avoid
 
-- Editing generated files under `.gemini/`, `.claude/`, `.codex/`, `.copilot/`, `.agent/skills/`, `.github/skills/`, or `.mcp.json`
-- Editing Agent Layer-managed files under `.vscode/` (`mcp.json`, `prompts/`, and the managed block in `settings.json`)
+- Editing generated files under `.agents/skills/`, `.gemini/`, `.claude/`, `.codex/`, `.copilot/`, or `.mcp.json`
+- Editing Agent Layer-managed files under `.vscode/` (`mcp.json` and the managed block in `settings.json`)
 - Copying instructions manually between clients
 - Maintaining separate MCP configs for each agent
 - Treating generated files as source of truth
@@ -300,7 +300,7 @@ For the full checklist, see [Doctor](./reference#doctor).
 
 ### Skill sync
 
-Skills are synced natively to each client's skill directory with full subdirectory support (`scripts/`, `references/`, `assets/`). No MCP server is involved; `al sync` copies skill sources directly into each enabled client's native format.
+Skills are synced natively to Agent Skills directories with full subdirectory support (`scripts/`, `references/`, `assets/`). Shared-skill clients use `.agents/skills/`; Claude uses `.claude/skills/`. No MCP server is involved.
 
 ### Common pitfalls
 

@@ -27,6 +27,41 @@ func TestBuildVSCodeSettings(t *testing.T) {
 	if len(settings.ChatToolsTerminalAutoApprove) != 1 {
 		t.Fatalf("expected 1 auto-approve entry")
 	}
+	if settings.ChatAgentSkillsLocations[".agents/skills"] != true {
+		t.Fatalf("expected shared project skills to be enabled")
+	}
+	if settings.ChatAgentSkillsLocations[".github/skills"] != false {
+		t.Fatalf("expected duplicate GitHub project skills to be disabled")
+	}
+	if settings.ChatAgentSkillsLocations[".claude/skills"] != false {
+		t.Fatalf("expected duplicate Claude project skills to be disabled")
+	}
+	if settings.ChatAgentSkillsLocations["~/.copilot/skills"] != true ||
+		settings.ChatAgentSkillsLocations["~/.claude/skills"] != true ||
+		settings.ChatAgentSkillsLocations["~/.agents/skills"] != true {
+		t.Fatalf("expected personal skill locations to remain enabled")
+	}
+}
+
+func TestBuildVSCodeSettingsOmitsSkillLocationsWhenVSCodeDisabled(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+			Agents: config.AgentsConfig{
+				VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+				ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+			},
+		},
+	}
+
+	settings, err := buildVSCodeSettings(project)
+	if err != nil {
+		t.Fatalf("buildVSCodeSettings error: %v", err)
+	}
+	if len(settings.ChatAgentSkillsLocations) != 0 {
+		t.Fatalf("did not expect Copilot skill locations when agents.vscode is disabled")
+	}
 }
 
 func TestBuildVSCodeSettingsEscapesSlash(t *testing.T) {
@@ -64,8 +99,55 @@ func TestWriteVSCodeSettings(t *testing.T) {
 	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
 		t.Fatalf("WriteVSCodeSettings error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".vscode", "settings.json")); err != nil {
-		t.Fatalf("expected settings.json: %v", err)
+	settingsPath := filepath.Join(root, ".vscode", "settings.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("read settings.json: %v", err)
+	}
+	got := string(data)
+	for _, key := range []string{
+		`"chat.agentSkillsLocations"`,
+		`".agents/skills": true`,
+		`".github/skills": false`,
+		`".claude/skills": false`,
+		`"~/.agents/skills": true`,
+		`"~/.claude/skills": true`,
+		`"~/.copilot/skills": true`,
+	} {
+		if !strings.Contains(got, key) {
+			t.Fatalf("expected %s in settings.json, got:\n%s", key, got)
+		}
+	}
+}
+
+func TestWriteVSCodeSettingsAgentSkillsLocationsIdempotent(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeCommands},
+			Agents:    config.AgentsConfig{VSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)}},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("first WriteVSCodeSettings error: %v", err)
+	}
+	first, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json"))
+	if err != nil {
+		t.Fatalf("read first: %v", err)
+	}
+
+	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second WriteVSCodeSettings error: %v", err)
+	}
+	second, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json"))
+	if err != nil {
+		t.Fatalf("read second: %v", err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("expected idempotent re-sync output; first vs second differ:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 }
 

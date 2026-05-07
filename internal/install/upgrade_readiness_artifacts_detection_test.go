@@ -362,3 +362,61 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectDisabledAgentArtifacts_SharedSkillsEnabledByAnyConsumer(t *testing.T) {
+	root := t.TempDir()
+	sharedSkill := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(sharedSkill), 0o755); err != nil {
+		t.Fatalf("mkdir shared skill dir: %v", err)
+	}
+	if err := os.WriteFile(sharedSkill, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o644); err != nil {
+		t.Fatalf("write shared skill: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		Gemini:       config.AgentConfig{Enabled: testutil.BoolPtr(false)},
+		Claude:       config.ClaudeConfig{Enabled: testutil.BoolPtr(false)},
+		ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(true)},
+		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(false)},
+	}}
+	check, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err != nil {
+		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
+	}
+	if check != nil && strings.Contains(strings.Join(check.Details, "\n"), ".agents/skills/alpha/SKILL.md") {
+		t.Fatalf("did not expect shared skills to be stale while Codex is enabled, got %#v", check.Details)
+	}
+}
+
+func TestDetectDisabledAgentArtifacts_FlagsSharedSkillsWhenNoConsumerEnabled(t *testing.T) {
+	root := t.TempDir()
+	sharedSkill := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(sharedSkill), 0o755); err != nil {
+		t.Fatalf("mkdir shared skill dir: %v", err)
+	}
+	if err := os.WriteFile(sharedSkill, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o644); err != nil {
+		t.Fatalf("write shared skill: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	cfg := config.Config{Agents: config.AgentsConfig{
+		Gemini:       config.AgentConfig{Enabled: testutil.BoolPtr(false)},
+		Claude:       config.ClaudeConfig{Enabled: testutil.BoolPtr(false)},
+		ClaudeVSCode: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+		Codex:        config.CodexConfig{Enabled: testutil.BoolPtr(false)},
+		VSCode:       config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+		Antigravity:  config.EnableOnlyConfig{Enabled: testutil.BoolPtr(false)},
+		CopilotCLI:   config.AgentConfig{Enabled: testutil.BoolPtr(false)},
+	}}
+	check, err := detectDisabledAgentArtifacts(inst, &cfg)
+	if err != nil {
+		t.Fatalf("detectDisabledAgentArtifacts: %v", err)
+	}
+	if check == nil || !strings.Contains(strings.Join(check.Details, "\n"), ".agents/skills/alpha/SKILL.md") {
+		t.Fatalf("expected stale shared skill finding, got %#v", check)
+	}
+}

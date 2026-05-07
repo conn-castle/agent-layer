@@ -21,10 +21,10 @@ Rule of thumb: generated files include:
 
 - Instruction shims: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
 - Agent config: `.mcp.json`, `.gemini/settings.json`, `.claude/settings.json`, `.copilot/mcp-config.json`
-- Codex config and skills: `.codex/`
-- Copilot CLI skills: `.github/skills/`
-- Antigravity skills: `.agent/skills/`
-- VS Code integration: `.vscode/mcp.json`, `.vscode/prompts/`, and a managed block in `.vscode/settings.json`
+- Shared skills: `.agents/skills/`
+- Claude skills: `.claude/skills/`
+- Codex config and rules: `.codex/`
+- VS Code integration: `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 
 If VS Code is enabled, Agent Layer also generates repo-local launchers under `.agent-layer/` (for example `open-vscode.command` and `open-vscode.app/`). These are kept untracked by `.agent-layer/.gitignore`.
 

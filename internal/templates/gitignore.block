@@ -13,14 +13,13 @@
 # Agent Layer-generated client configs + artifacts
 # These may contain resolved secrets from .agent-layer/.env — keep gitignored.
 /.agent/
+/.agents/
 /.mcp.json
 /.codex/
 /.copilot/
 /.gemini/
 /.claude/
 /.claude-config/
-/.github/skills/
 /.vscode/mcp.json
-/.vscode/prompts/
 # Optional: keep uncommented to ignore VS Code settings.
 /.vscode/settings.json
