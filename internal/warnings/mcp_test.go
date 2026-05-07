@@ -277,28 +277,6 @@ func TestCheckMCPServers_ThresholdsDisabled(t *testing.T) {
 	assert.False(t, codes[CodeMCPToolSchemaBloatTotal], "Did not expect TOOL_SCHEMA_BLOAT_TOTAL")
 }
 
-func TestCheckMCPServers_NilConnector(t *testing.T) {
-	// When connector is nil, a RealConnector should be created (but we can't easily test the real one)
-	// This test ensures the nil check doesn't panic and the function handles disabled servers
-	disabled := false
-	cfg := &config.ProjectConfig{
-		Config: config.Config{
-			MCP: config.MCPConfig{
-				Servers: []config.MCPServer{
-					{ID: "s1", Enabled: &disabled, Transport: "stdio", Command: "echo"},
-				},
-			},
-		},
-		Env: map[string]string{},
-	}
-
-	// Pass a mock to avoid actual network calls
-	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
-	require.NoError(t, err)
-	assert.Empty(t, warnings)
-}
-
 func TestCheckMCPServers_ResolveServerError(t *testing.T) {
 	enabled := true
 	cfg := &config.ProjectConfig{

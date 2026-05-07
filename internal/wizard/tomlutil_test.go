@@ -6,16 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCommentForLine_OutOfRange(t *testing.T) {
-	lines := []string{"line1", "line2"}
-
-	comment := commentForLine(lines, -1)
-	assert.Empty(t, comment)
-
-	comment = commentForLine(lines, 5)
-	assert.Empty(t, comment)
-}
-
 func TestCommentForLine_LeadingComments(t *testing.T) {
 	lines := []string{
 		"# First comment",

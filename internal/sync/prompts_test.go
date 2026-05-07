@@ -24,6 +24,9 @@ func TestBuildAgentSkill(t *testing.T) {
 	if !strings.Contains(content, "description: >-") {
 		t.Fatalf("expected folded description in frontmatter")
 	}
+	if !strings.Contains(content, "Body") {
+		t.Fatalf("expected body in skill")
+	}
 	if !strings.HasSuffix(content, "\n") {
 		t.Fatalf("expected trailing newline")
 	}
@@ -31,26 +34,6 @@ func TestBuildAgentSkill(t *testing.T) {
 	// builder must not also inject a `# <name>` heading into the body.
 	if strings.Contains(content, "# alpha") {
 		t.Fatalf("did not expect injected name heading in body, got:\n%s", content)
-	}
-}
-
-func TestBuildAgentSkillBody(t *testing.T) {
-	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
-	content, err := buildAgentSkill(cmd)
-	if err != nil {
-		t.Fatalf("buildAgentSkill error: %v", err)
-	}
-	if !strings.Contains(content, "name: alpha") {
-		t.Fatalf("expected name in skill")
-	}
-	if !strings.Contains(content, "description:") {
-		t.Fatalf("expected description in skill")
-	}
-	if !strings.Contains(content, "Body") {
-		t.Fatalf("expected body in skill")
-	}
-	if !strings.HasSuffix(content, "\n") {
-		t.Fatalf("expected trailing newline")
 	}
 }
 

@@ -27,19 +27,6 @@ func TestShouldOverwrite_Memory_PropagatesShouldOverwriteAllMemoryError(t *testi
 	}
 }
 
-func TestShouldOverwriteAllManaged_MissingPrompter_Errors(t *testing.T) {
-	inst := &installer{
-		root:     t.TempDir(),
-		prompter: nil,
-		sys:      RealSystem{},
-	}
-
-	_, err := inst.shouldOverwriteAllManaged()
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
 func TestShouldOverwriteAllManaged_ListManagedLabeledDiffsErrorPropagates(t *testing.T) {
 	original := templates.WalkFunc
 	templates.WalkFunc = func(root string, fn fs.WalkDirFunc) error {

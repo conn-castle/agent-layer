@@ -151,11 +151,3 @@ func TestWizardCommandCleanupBackups(t *testing.T) {
 		t.Fatalf("cleanup execute error: %v", err)
 	}
 }
-
-func TestIsTerminalDefaultImplementation(t *testing.T) {
-	originalIsTerminal := isTerminal
-	t.Cleanup(func() { isTerminal = originalIsTerminal })
-
-	isTerminal = originalIsTerminal
-	_ = isTerminal()
-}

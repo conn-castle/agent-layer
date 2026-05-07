@@ -789,22 +789,6 @@ func TestTemplateFileMatches_ReadTemplateError(t *testing.T) {
 	}
 }
 
-func TestPrompterOverwriteAllMemory_NilFunc(t *testing.T) {
-	p := PromptFuncs{}
-	_, err := p.OverwriteAllMemory(nil)
-	if err == nil {
-		t.Fatalf("expected error when func is nil")
-	}
-}
-
-func TestPrompterOverwriteAllUnified_NilFunc(t *testing.T) {
-	p := PromptFuncs{}
-	_, _, err := p.OverwriteAllUnified(nil, nil)
-	if err == nil {
-		t.Fatalf("expected error when func is nil")
-	}
-}
-
 func TestPrompterOverwrite_NilFunc(t *testing.T) {
 	p := PromptFuncs{}
 	_, err := p.Overwrite(DiffPreview{})

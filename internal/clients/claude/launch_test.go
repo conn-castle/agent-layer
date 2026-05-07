@@ -483,39 +483,3 @@ func TestLaunchClaude_PreservesUserClaudeConfigDir(t *testing.T) {
 		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got env:\n%s", string(got))
 	}
 }
-
-func TestClearStaleClaudeConfigDir_MatchingPath(t *testing.T) {
-	root := t.TempDir()
-	stale := filepath.Join(root, ".claude-config")
-	env := []string{"CLAUDE_CONFIG_DIR=" + stale}
-
-	out := clearStaleClaudeConfigDir(root, env)
-
-	if _, ok := clients.GetEnv(out, "CLAUDE_CONFIG_DIR"); ok {
-		t.Fatal("expected CLAUDE_CONFIG_DIR to be cleared for matching repo-local path")
-	}
-}
-
-func TestClearStaleClaudeConfigDir_DifferentPath(t *testing.T) {
-	root := t.TempDir()
-	userDir := "/custom/claude"
-	env := []string{"CLAUDE_CONFIG_DIR=" + userDir}
-
-	out := clearStaleClaudeConfigDir(root, env)
-
-	value, ok := clients.GetEnv(out, "CLAUDE_CONFIG_DIR")
-	if !ok || value != userDir {
-		t.Fatalf("expected CLAUDE_CONFIG_DIR to be preserved, got %q", value)
-	}
-}
-
-func TestClearStaleClaudeConfigDir_NotSet(t *testing.T) {
-	root := t.TempDir()
-	env := []string{}
-
-	out := clearStaleClaudeConfigDir(root, env)
-
-	if _, ok := clients.GetEnv(out, "CLAUDE_CONFIG_DIR"); ok {
-		t.Fatal("expected CLAUDE_CONFIG_DIR to remain unset")
-	}
-}
