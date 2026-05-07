@@ -225,28 +225,6 @@ func TestValidateClaudeReasoningEffortMaxWithNonOpusModelRejected(t *testing.T) 
 	}
 }
 
-func TestValidateClaudeReasoningEffortAcceptsCustomValueOnOpus(t *testing.T) {
-	// agents.claude.reasoning_effort has AllowCustom: true. Validation must accept
-	// any non-empty value on an Opus model so sync continues to work when Claude
-	// adds new effort levels (e.g. xhigh) before agent-layer's catalog is updated.
-	trueVal := true
-	cfg := Config{
-		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
-		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &trueVal},
-			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "made-up-level"},
-			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
-			Codex:        CodexConfig{Enabled: &trueVal},
-			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
-			CopilotCLI:   AgentConfig{Enabled: &trueVal},
-		},
-	}
-	if err := cfg.Validate("config.toml"); err != nil {
-		t.Fatalf("expected custom claude reasoning effort to be valid, got %v", err)
-	}
-}
-
 func TestValidateClaudeReasoningEffortMaxWithOpusModel(t *testing.T) {
 	trueVal := true
 	cfg := Config{

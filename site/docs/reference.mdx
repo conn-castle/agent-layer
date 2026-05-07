@@ -46,7 +46,7 @@ enabled = true
 enabled = true
 # model = "..."
 # reasoning_effort is optional for Opus models only.
-# reasoning_effort = "medium" # low | medium | high | xhigh | max (custom values pass through with a warning)
+# reasoning_effort = "medium" # low | medium | high | max
 # local_config_dir isolates Claude Code settings and caches per repo.
 # When true, al claude sets CLAUDE_CONFIG_DIR=<repo>/.claude-config.
 # For al vscode, CLAUDE_CONFIG_DIR is set only when both local_config_dir
@@ -131,7 +131,7 @@ Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.clau
 
 ### Agents
 
-Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`, `xhigh`, `max`) for Opus models; `max` is session-only and is passed via the `--effort` CLI flag (it is not written to settings.json). Custom values outside the catalog pass through with a warning so sync continues to work when Claude introduces new effort levels before agent-layer is updated. Codex supports `reasoning_effort` with its own set of options. Copilot CLI supports `model` but not `reasoning_effort`. Omit `reasoning_effort` (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Note: auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
+Each agent has an `enabled` flag and optional `model` value. Claude supports `reasoning_effort` (`low`, `medium`, `high`, `max`) for Opus models; `max` is session-only and is passed via the `--effort` CLI flag (it is not written to settings.json). Codex supports `reasoning_effort` with its own set of options. Copilot CLI supports `model` but not `reasoning_effort`. Omit `reasoning_effort` (and `model`) to use the client defaults. Claude also supports `local_config_dir` (boolean, default `false`); when `true`, `al claude` sets `CLAUDE_CONFIG_DIR` to a repo-local directory for per-repo settings and caches isolation. Note: auth credentials are stored globally by Claude Code in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation). For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when both `local_config_dir` is `true` and `agents.claude_vscode` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values.
 
 Supported agents:
 

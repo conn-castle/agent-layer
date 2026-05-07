@@ -99,15 +99,11 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigGeminiReasoningEffortUnsupportedFmt, path)
 	}
 
-	claudeReasoningEffort := strings.TrimSpace(c.Agents.Claude.ReasoningEffort)
-	if claudeReasoningEffort != "" {
-		// Reasoning-effort values are intentionally not validated against the field
-		// catalog. The field has AllowCustom: true so users can set values that the
-		// downstream client supports before this catalog is updated (e.g. when
-		// Claude adds a new effort level). Unknown values surface as a sync-time
-		// warning via warnings.CheckPolicy. The Opus check below remains an error
-		// because the underlying client rejects reasoning_effort outright on
-		// non-Opus models.
+	// Unknown reasoning-effort values are accepted; warnings.CheckPolicy emits a
+	// sync-time warning so new client levels (e.g. xhigh) work before the catalog
+	// catches up. The Opus check below stays a hard error — non-Opus models
+	// reject reasoning_effort outright.
+	if strings.TrimSpace(c.Agents.Claude.ReasoningEffort) != "" {
 		if !ClaudeModelSupportsReasoningEffort(c.Agents.Claude.Model) {
 			return fmt.Errorf(messages.ConfigClaudeReasoningEffortModelUnsupportedFmt, path, c.Agents.Claude.Model)
 		}

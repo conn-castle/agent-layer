@@ -97,18 +97,10 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	return dedupePolicyWarnings(results)
 }
 
-// claudeReasoningEffortUnknownWarning reports when agents.claude.reasoning_effort
-// is set to a value that is not in the known catalog. The catalog is permissive
-// (AllowCustom: true) so unknown values pass through to the underlying client,
-// but a soft warning surfaces the divergence so users notice typos and learn
-// about agent-layer upgrades when Claude adds new effort levels.
 func claudeReasoningEffortUnknownWarning(effort string) *Warning {
 	trimmed := strings.TrimSpace(effort)
-	if trimmed == "" {
-		return nil
-	}
 	known := config.FieldOptionValues("agents.claude.reasoning_effort")
-	if slices.Contains(known, trimmed) {
+	if trimmed == "" || slices.Contains(known, trimmed) {
 		return nil
 	}
 	return &Warning{

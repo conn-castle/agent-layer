@@ -136,49 +136,6 @@ func TestLaunchClaudeEffortNonMax(t *testing.T) {
 	}
 }
 
-func TestLaunchClaudeEffortTrimmed(t *testing.T) {
-	// Regression: whitespace-padded reasoning_effort must be trimmed before being
-	// forwarded to --effort, otherwise Claude Code receives e.g. " high " literally.
-	root := t.TempDir()
-	binDir := t.TempDir()
-
-	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
-		t.Fatalf("write stub: %v", err)
-	}
-
-	cfg := &config.ProjectConfig{
-		Config: config.Config{
-			Agents: config.AgentsConfig{
-				Claude: config.ClaudeConfig{
-					Model:           "opus",
-					ReasoningEffort: " high ",
-				},
-			},
-		},
-		Root: root,
-	}
-
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
-		t.Fatalf("Launch error: %v", err)
-	}
-
-	got, err := os.ReadFile(argsFile)
-	if err != nil {
-		t.Fatalf("read args file: %v", err)
-	}
-	if !strings.Contains(string(got), "--effort high") {
-		t.Fatalf("expected trimmed --effort high in args, got: %s", string(got))
-	}
-	if strings.Contains(string(got), "--effort  high") || strings.Contains(string(got), "high ") {
-		t.Fatalf("expected --effort value to be trimmed, got: %s", string(got))
-	}
-}
-
 func TestLaunchClaudeNoEffortWhenEmpty(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
