@@ -74,6 +74,10 @@ Use the authoritative files only as needed:
 - update `DECISIONS.md` only for non-obvious, durable choices
 
 Merge near-duplicates instead of appending noise.
+Before adding a DECISIONS.md entry, search existing decisions for the same
+subsystem or decision axis. Update or replace an existing entry when possible.
+If the new or changed decision supersedes older entries, consolidate them in
+the same closeout pass instead of leaving a decision chain behind.
 
 ### Phase 3: Verify the delivered slice (Verifier)
 
@@ -94,6 +98,7 @@ Report:
 
 - Do not log speculative future work that was not actually observed.
 - Do not add routine implementation details to `DECISIONS.md`.
+- Do not append a DECISIONS.md entry while leaving an older superseded decision in place.
 - Do not mark roadmap work complete without evidence in code, docs, or tests.
 - Do not skip verification silently.
 
@@ -101,6 +106,9 @@ Report:
 
 - A credible repo-defined verification command was run and its result is included in the final handoff; if no such command exists, that limitation is stated explicitly.
 - Memory files were touched only where the completed task actually changed project truth; no speculative or duplicate entries were added.
+- If DECISIONS.md was updated, superseded or near-duplicate decisions in the
+  same subsystem were consolidated or the final handoff explains why none were
+  present.
 - If a plan artifact existed, its deliverables are compared item-by-item; if not, the final handoff states that explicitly.
 
 ## Final handoff

@@ -216,7 +216,7 @@ Notes: Includes `make tidy-check`, `make test-release`, `make test-e2e-ci` (onli
 ./scripts/generate-template-manifest.sh --tag vX.Y.Z
 ```
 Run from: repo root
-Prerequisites: none (reads from the working tree, no git tag required)
+Prerequisites: Go 1.26.0+ (reads from the working tree, no git tag required)
 Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new release version and commit the generated manifest.
 
 - Validate release readiness (run before tagging)

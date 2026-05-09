@@ -39,14 +39,18 @@ Accept any combination of:
 
 Delegate to:
 - `audit-and-fix-uncommitted-changes` for pre-commit quality gates
+- `repair-checks` for pre-push local verification when the current session has not already observed the repo-defined local lane passing after the latest changes
 - `fix-ci` for CI failure diagnosis and repair
 - `address-pr-comments` for review comment handling
 
 ## Global constraints
 
 - Do not create a PR if the current branch is the default branch and there is nothing to ship.
+- CI is not the first debugger: run the repo's local check lane before the initial push/PR, and use CI only to confirm parity after local verification.
+- Do not let ship-pr push CI-fix commits unless `fix-ci` found a local reproducer and observed it pass after the fix, or `fix-ci` hit a human checkpoint without pushing.
+- Pre-push local verification must use the repo-documented CI-equivalent lane when one exists; do not silently downgrade to a fast lane.
 - Do not skip CI checks.
-- Every feedback comment (not pure bot status messages or CI notifications) must have a reply before the skill completes. Automated review comments from tools such as Copilot or CodeRabbit count as feedback.
+- PR feedback handling must pass the `address-pr-comments` definition of done before this skill completes.
 - The skill must end with CI passing.
 - Do not force-push unless explicitly instructed.
 
@@ -75,7 +79,13 @@ Delegate to:
    d. Commit the changes.
 5. If no uncommitted changes exist and the current branch is not the default branch, proceed — the branch's existing commits are the content to ship.
 6. If no uncommitted changes exist and the current branch is the default branch, trigger a human checkpoint — there is nothing to ship.
-7. Push the branch to the remote.
+7. Run or delegate to `repair-checks` for the repo-defined local check lane unless the current session already observed that lane passing after the latest branch changes.
+8. If local verification changes files:
+   a. Use `audit-and-fix-uncommitted-changes` to stabilize those changes.
+   b. Stage all changes: `git add -A`
+   c. Commit the local-check fixes.
+   d. Re-run the repo-defined local check lane.
+9. Push the branch to the remote.
 
 ### Phase 2: Create the PR (PR creator)
 
@@ -94,6 +104,7 @@ Delegate to:
 3. If any CI check failed:
    a. Use the `fix-ci` skill, passing the PR number.
    b. The fix-ci skill handles the internal loop of diagnose, fix, audit, commit, push, re-check.
+   c. Confirm `fix-ci` satisfied its local-reproducer definition of done; if it stopped at a human checkpoint, stop here too.
 4. CI must be passing before proceeding.
 
 ### Phase 4: Wait for review comments (Timer)
@@ -106,57 +117,28 @@ The review-comment wait timer starts at PR creation (`start_time` from Phase 2).
 
 ### Phase 5: Address PR comments (Comment handler)
 
-1. Read all PR comments (review comments and conversation comments).
-2. Filter out pure bot status messages and CI notifications. Automated review comments from tools such as Copilot or CodeRabbit are feedback, not status messages.
-3. If there are feedback comments to address:
-   a. Use the `address-pr-comments` skill, passing the PR number and all feedback comments.
-   b. The address-pr-comments skill handles implementation, audit, commit, push, and replies.
-   c. Every feedback comment must receive a reply.
-4. If no feedback comments exist, proceed.
+1. Use the `address-pr-comments` skill, passing the PR number.
+2. If it reports no feedback comments, proceed.
+3. If it addressed comments, continue with CI verification before closing.
 
 ### Phase 6: Final CI verification (CI monitor)
 
 1. If changes were pushed in Phase 5:
    a. Wait for CI to complete.
    b. If CI fails, use the `fix-ci` skill again.
-   c. Repeat until CI passes.
+   c. Confirm `fix-ci` satisfied its local-reproducer definition of done; if it stopped at a human checkpoint, stop here too.
+   d. Repeat until CI passes.
 2. Confirm CI is green.
 
 ### Phase 7: Audit comment coverage (Comment auditor)
 
-Independently verify that every review comment was properly handled. Do not
-trust the sub-skill output alone — re-read the PR state and validate.
+Independently verify that `address-pr-comments` reached its definition of done.
+Do not trust the sub-skill output alone — re-fetch the PR state and validate.
 
-1. Re-fetch all PR comments (review comments, conversation comments, and review
-   bodies) using the same commands from Phase 5 / the address-pr-comments skill.
-2. For every feedback comment, verify:
-   a. A reply exists from this agent (not just from a human or bot).
-   b. The reply opens with one of the three bold verdicts defined in
-      "Comment reply format" below.
-   c. If the verdict is **Fixed**, the named commit exists and contains a
-      relevant change.
-   d. If the verdict is **No change**, the justification is substantive and
-      technically grounded — not vague or generic.
-   e. If the verdict is **Deferred**, the named location actually contains
-      the tracked item, and the deferral is legitimate (not a bug introduced
-      by this PR).
-3. Flag any comment that fails verification:
-   - **Missing reply:** never responded to.
-   - **Missing verdict:** reply exists but does not open with a bold verdict.
-   - **Hollow fix:** verdict says "Fixed" but no code change exists in the
-     named commit.
-   - **Unjustified decline:** verdict says "No change" but the justification
-     is vague, generic, or missing.
-   - **Lazy deferral:** verdict says "Deferred" but the item is not actually
-     tracked, or the comment points to a bug introduced by this PR.
-   - **Generic dismissal:** batch-style reply covering multiple comments
-     rather than addressing each specifically.
-4. If any comments are flagged:
-   a. Re-address them: implement the fix or write a proper justification.
-   b. Audit, commit, and push the new changes.
-   c. Post a follow-up reply on each re-addressed comment. If a previously declined suggestion was subsequently implemented, acknowledge the reversal and describe the concrete change.
-   d. Re-run this phase to confirm all flags are resolved.
-5. Only proceed when every feedback comment passes verification.
+1. Re-fetch PR comments, review comments, and review bodies.
+2. Verify the `address-pr-comments` definition of done against the fetched PR state.
+3. If any feedback comment fails that definition, run `address-pr-comments` again with the flagged comments, then repeat this audit.
+4. Only proceed when every feedback comment passes the `address-pr-comments` definition of done.
 
 ### Phase 8: Close the run (Reporter)
 
@@ -166,51 +148,25 @@ trust the sub-skill output alone — re-read the PR state and validate.
    - all changes are committed and pushed
 2. Summarize the PR lifecycle outcome.
 
-## Comment reply format
-
-Every reply to a review comment must open with a **bold verdict** on one line,
-followed by a concise justification. There are exactly three verdicts:
-
-1. **Fixed in `<short-hash>`.** — The suggestion was implemented. Describe the
-   concrete change.
-2. **No change — `<reason>`.** — The suggestion was evaluated and declined.
-   `<reason>` is a short label: `by design`, `pre-existing behavior`,
-   `not a regression`, `testability`, etc. Follow with the technical
-   justification.
-3. **Deferred — tracked in `<location>`.** — The suggestion has merit but is
-   out of scope. `<location>` names where it was recorded (e.g.,
-   `ISSUES.md`, `BACKLOG.md`, a GitHub issue link). The suggestion must
-   actually be recorded there before using this verdict.
-
-Do not use "deferred" as a way to avoid doing work that belongs in this PR.
-A comment is only legitimately deferred when:
-- It requests a new feature or enhancement beyond the PR's scope.
-- It identifies a pre-existing issue not introduced by this PR.
-- Fixing it would require a non-trivial refactor unrelated to the PR's purpose.
-
-If the suggestion points to a bug or correctness issue introduced by this PR,
-it must be fixed, not deferred.
-
 ## Guardrails
 
 - Do not skip the audit-and-fix step before committing.
-- Do not leave any feedback comment without a reply.
 - Do not end with CI failing.
 - Do not force-push or rewrite history unless explicitly instructed.
 - Do not create duplicate PRs.
-- If a previously declined suggestion is subsequently implemented, the follow-up reply must acknowledge the reversal.
 
 ## Definition of done
 
 - A PR exists for the current branch and `gh pr checks` shows every required CI check passing on the final pushed commit.
-- Every feedback comment (excluding pure bot status/CI notifications) has a reply that opens with one of the three bold verdicts (`Fixed in <hash>`, `No change — <reason>`, `Deferred — tracked in <location>`) and passes the Phase 7 audit.
-- Phase 7 was executed by re-fetching the PR state; no comment is flagged as missing reply, hollow fix, unjustified decline, lazy deferral, or generic dismissal at close.
+- The repo-defined local check lane passed before the first push/PR, and CI-fix commits were not pushed without a local reproducer and passing post-fix local verification.
+- `address-pr-comments` reached its definition of done, and Phase 7 independently verified that result by re-fetching the PR state.
 - The skill did not force-push, did not create a duplicate PR, and did not end with CI failing.
 
 ## Final handoff
 
 After the run:
 1. Echo the PR URL.
-2. Summarize: what was committed, CI status, comments addressed.
-3. State whether all comments passed the Phase 7 audit or if any require further human attention.
-4. If any comments were re-addressed during the audit, list them and explain what was corrected.
+2. Summarize: what was committed, local verification run before push, CI status, comments addressed.
+3. For any CI fixes, summarize the `fix-ci` local-reproducer evidence.
+4. State whether all comments passed the Phase 7 audit or if any require further human attention.
+5. If any comments were re-addressed during the audit, list them and explain what was corrected.

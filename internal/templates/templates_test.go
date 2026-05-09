@@ -193,6 +193,36 @@ func TestSkillTemplatesCaptureArtifactReportConventions(t *testing.T) {
 	}
 }
 
+func TestMemorySkillsConstrainDecisionLogBloat(t *testing.T) {
+	tests := map[string][]string{
+		"skills/audit-memory/SKILL.md": {
+			"classify every entry as `keep`, `consolidate`, `remove`, or `defer`",
+			"Group decisions by subsystem or decision axis",
+			"Unique rationale alone is not enough to keep an entry",
+			"the rationale must still guide future work",
+		},
+		"skills/finish-task/SKILL.md": {
+			"search existing decisions for the same",
+			"subsystem or decision axis",
+			"consolidate them in",
+			"the same closeout pass",
+			"Do not append a DECISIONS.md entry while leaving an older superseded decision in place",
+		},
+	}
+	for path, requiredSnippets := range tests {
+		data, err := Read(path)
+		if err != nil {
+			t.Fatalf("Read error for %s: %v", path, err)
+		}
+		content := string(data)
+		for _, snippet := range requiredSnippets {
+			if !strings.Contains(content, snippet) {
+				t.Fatalf("expected %q in %s", snippet, path)
+			}
+		}
+	}
+}
+
 func TestFixCISkillDownloadsAvailableArtifacts(t *testing.T) {
 	data, err := Read("skills/fix-ci/SKILL.md")
 	if err != nil {
@@ -207,6 +237,83 @@ func TestFixCISkillDownloadsAvailableArtifacts(t *testing.T) {
 	} {
 		if !strings.Contains(content, snippet) {
 			t.Fatalf("expected %q in fix-ci skill", snippet)
+		}
+	}
+}
+
+func TestCISkillsRequireLocalReproducerBeforePush(t *testing.T) {
+	tests := map[string][]string{
+		"skills/fix-ci/SKILL.md": {
+			"Do not push speculative fixes without a local reproducer.",
+			"Treat GitHub-only failures as local-reproduction bugs",
+			"write or adapt a local test or command that fails for the same reason",
+			"stop at a human checkpoint instead of pushing a guess",
+			"local reproducer command, initial red result, fix, and final green result",
+		},
+		"skills/ship-pr/SKILL.md": {
+			"CI is not the first debugger",
+			"Do not let ship-pr push CI-fix commits unless `fix-ci` found a local reproducer",
+			"Run or delegate to `repair-checks` for the repo-defined local check lane",
+			"CI-fix commits were not pushed without a local reproducer",
+		},
+	}
+	for path, requiredSnippets := range tests {
+		data, err := Read(path)
+		if err != nil {
+			t.Fatalf("Read error for %s: %v", path, err)
+		}
+		content := string(data)
+		for _, snippet := range requiredSnippets {
+			if !strings.Contains(content, snippet) {
+				t.Fatalf("expected %q in %s", snippet, path)
+			}
+		}
+	}
+}
+
+func TestPRCommentPolicyLivesInAddressPRComments(t *testing.T) {
+	addressData, err := Read("skills/address-pr-comments/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	addressContent := string(addressData)
+	for _, snippet := range []string{
+		"Comment reply format",
+		"Fixed in `<short-hash>`",
+		"No change",
+		"Deferred",
+		"missing reply",
+		"hollow fix",
+		"unjustified decline",
+		"lazy deferral",
+		"generic dismissal",
+		"If a previously declined suggestion is subsequently implemented",
+	} {
+		if !strings.Contains(addressContent, snippet) {
+			t.Fatalf("expected %q in address-pr-comments skill", snippet)
+		}
+	}
+
+	shipData, err := Read("skills/ship-pr/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	shipContent := string(shipData)
+	for _, snippet := range []string{
+		"PR feedback handling must pass the `address-pr-comments` definition of done",
+		"Verify the `address-pr-comments` definition of done against the fetched PR state",
+	} {
+		if !strings.Contains(shipContent, snippet) {
+			t.Fatalf("expected %q in ship-pr skill", snippet)
+		}
+	}
+	for _, snippet := range []string{
+		"## Comment reply format",
+		"hollow fix",
+		"lazy deferral",
+	} {
+		if strings.Contains(shipContent, snippet) {
+			t.Fatalf("did not expect comment-policy detail %q in ship-pr skill", snippet)
 		}
 	}
 }
@@ -246,6 +353,79 @@ func TestInstructionTemplatesDefineQuestionStyle(t *testing.T) {
 		if !strings.Contains(content, snippet) {
 			t.Fatalf("expected %q in 01_base instruction template", snippet)
 		}
+	}
+}
+
+func TestInstructionTemplatesRejectTautologicalOrSelfConfirmingTests(t *testing.T) {
+	data, err := Read("instructions/00_rules.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"No tautological or self-confirming tests",
+		"Every test must be able to fail because of a real implementation defect",
+		"mocked values echoed back unchanged",
+		"constraints already enforced by a language, compiler, type checker, schema, or static analyzer",
+		"test behavior, logic, integration, and runtime failure modes instead",
+		"Prefer a visible coverage gap to false coverage",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in 00_rules instruction template", snippet)
+		}
+	}
+
+	conventions, err := Read("instructions/04_conventions.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	if strings.Contains(string(conventions), "self-confirming tests") {
+		t.Fatalf("expected tautological/self-confirming test rule to live in 00_rules, not 04_conventions")
+	}
+}
+
+func TestAuditTestsSkillDeletesTautologicalOrSelfConfirmingTests(t *testing.T) {
+	data, err := Read("skills/audit-tests/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"Tautological/self-confirming tests",
+		"assertions are satisfied",
+		"delete clear cases instead of counting them as coverage",
+		"only re-check constraints already enforced",
+		"language, compiler, type checker, schema, or static analyzer",
+		"report the resulting",
+		"coverage gap instead of replacing them with false coverage",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in audit-tests skill", snippet)
+		}
+	}
+	if strings.Contains(content, "Rules file") {
+		t.Fatalf("expected audit-tests skill not to reference always-loaded rules")
+	}
+}
+
+func TestBoostCoverageSkillRejectsTautologicalOrSelfConfirmingTests(t *testing.T) {
+	data, err := Read("skills/boost-coverage/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"Do not add tautological or self-confirming tests",
+		"stop at the real shortfall instead",
+		"Do not add runtime tests for constraints already enforced",
+		"behavior, logic, integration, or runtime failure modes",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in boost-coverage skill", snippet)
+		}
+	}
+	if strings.Contains(content, "Rules file") {
+		t.Fatalf("expected boost-coverage skill not to reference always-loaded rules")
 	}
 }
 

@@ -40,6 +40,8 @@ Delegate to:
 ## Global constraints
 
 - Keep fixes minimal and targeted to the CI failure.
+- Do not push speculative fixes without a local reproducer.
+- Treat GitHub-only failures as local-reproduction bugs: identify the environmental difference, then write or adapt a local test or command that fails for the same reason before fixing.
 - Do not make unrelated changes just because CI logs reveal other warnings.
 - Do not disable, skip, or weaken tests or CI checks to make them pass.
 - Do not lower coverage thresholds or remove failing tests.
@@ -50,6 +52,7 @@ Delegate to:
 - Required: ask when the CI failure appears to be an infrastructure or environment issue rather than a code issue.
 - Required: ask when the same CI failure persists after 3 fix attempts.
 - Required: ask when fixing the CI failure would require a materially broader scope change.
+- Required: ask when no credible local reproducer can be built after inspecting logs, artifacts, CI config, environmental differences, and relevant code.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal diagnose, fix, audit, commit, push, re-check cycles.
 
@@ -67,14 +70,19 @@ Delegate to:
    - type errors
    - build failures
    - other CI step failures
-5. Read the relevant source files and test files to understand the failure.
+5. Identify the CI-vs-local execution surface: command, OS, toolchain version, environment variables, working directory, cache behavior, permissions, timezone, filesystem behavior, and network requirements.
+6. Read the relevant source files and test files to understand the failure.
 
 ### Phase 2: Fix the issue (Fixer)
 
 1. If the fix requires understanding project conventions, read `COMMANDS.md` first.
-2. When the CI failure is locally testable, find or create a local reproducer (failing test or command) before fixing. This confirms the diagnosis and prevents false-green commits.
-3. Implement the minimum fix needed to resolve the CI failure.
-4. Run local verification (the same commands CI runs) to confirm the fix before committing.
+2. Run the same failing CI command locally, or the closest repo-documented local equivalent, before changing code.
+3. If the command fails locally for the same reason, use that command as the red reproducer.
+4. If the command passes locally while CI failed, treat the mismatch as a bug: identify the environmental difference and write or adapt a local test or command that fails for the same reason.
+5. If no credible local reproducer can be built, stop at a human checkpoint instead of pushing a guess.
+6. Implement the minimum fix needed to resolve the CI failure.
+7. Re-run the local reproducer to confirm it passes, then run local verification using the same commands CI runs.
+8. Record the local reproducer command, initial red result, fix, and final green result before committing.
 
 ### Phase 3: Audit and commit (Auditor + Committer)
 
@@ -97,6 +105,8 @@ Delegate to:
 - Do not disable or weaken CI checks to make them pass.
 - Do not expand scope beyond what is needed to fix the CI failure.
 - Do not patch from CI logs alone when CI artifacts are available; logs and artifacts together are the diagnostic source of truth.
+- Do not use GitHub Actions or other CI systems as debuggers; CI is only the final parity check after local red/green verification.
+- Do not push when the only evidence is a theory from CI logs.
 - Do not treat CI warnings as failures unless they are configured to fail the build.
 - Track recurring failures and escalate rather than looping indefinitely on the same issue.
 
@@ -104,6 +114,7 @@ Delegate to:
 
 - `gh pr checks <pr-number>` shows every required CI check passing on the latest pushed commit.
 - Logs and any available artifacts for each failed run were inspected; missing or unavailable artifacts were called out explicitly.
+- Each fix cycle recorded the local reproducer command, initial red result, fix, and final green result before committing.
 - Each fix cycle committed through the `audit-and-fix-uncommitted-changes` skill before push; no check was disabled, skipped, weakened, or had its threshold lowered.
 - The fix iteration count is recorded and stayed below the 3-attempt escalation threshold for any single recurring failure.
 - Scope of the changes is confined to what the CI failures required, with no opportunistic edits.
@@ -113,4 +124,5 @@ Delegate to:
 After CI passes:
 1. State which CI checks were failing and what was fixed.
 2. State how many fix iterations were needed.
-3. Confirm all CI checks are now passing.
+3. State the local reproducer command, initial red result, and final green result for each fix cycle.
+4. Confirm all CI checks are now passing.

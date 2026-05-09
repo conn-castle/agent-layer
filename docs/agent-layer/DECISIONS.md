@@ -177,11 +177,6 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: The previous "template order is policy" coupling made ordering intent implicit and brittle when templates were reorganized.
     Tradeoffs: Existing user files are still rewritten to canonical wizard order; manual ordering/layout edits are not preserved.
 
-- Decision 2026-02-24 reasoning-effort-support-matrix: Reasoning effort is explicit per-client capability, not universal
-    Decision: Keep `reasoning_effort` supported for Codex and add Claude support (validated options, projected to `.claude/settings.json` as `effortLevel`); Gemini `reasoning_effort` is rejected with a hard validation error until a supported upstream control exists.
-    Reason: Claude exposes a stable settings surface for effort control now, while Gemini currently has no verified equivalent in this integration path; silent omission would violate fail-loud policy.
-    Tradeoffs: Configs attempting Gemini reasoning fail fast and must remove that key; future Gemini support requires explicit schema/validation/prompt updates.
-
 - Decision 2026-02-24 required-field-migration-guardrail: Required config fields need migration defaults with a legacy baseline allowlist
     Decision: Add an automated guardrail test that enforces migration-manifest `config_set_default` coverage for required config fields introduced after baseline version `0.8.1`, with an explicit allowlist for legacy required fields that predate manifest enforcement.
     Reason: A naive all-fields check would fail forever because historical required fields existed before migration manifests had operations.
@@ -192,15 +187,10 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Unbounded version snapshots in `agent-layer-web` grow maintenance and deploy footprint over time; retention must be enforced in the publisher because deploy only publishes `main`.
     Tradeoffs: Older historical docs snapshots beyond the retention window are intentionally removed on each release publish; maintainers must run publisher manually if immediate cleanup is needed before the next release. Prerelease docs publication is unavailable until prerelease support is explicitly reintroduced end-to-end.
 
-- Decision 2026-02-26 phase15-frontmatter-parser-yaml-org-path: Skill frontmatter uses `go.yaml.in/yaml/v3` with strict per-field validation (supersedes phase15-frontmatter-parser-yaml-v3)
-    Decision: Parse and serialize skill frontmatter with `go.yaml.in/yaml/v3` (not `gopkg.in/yaml.v3`), enforce required/typed fields in code (`description` required, `metadata` string-map, `compatibility`/`allowed-tools` string), and keep unknown keys parse-tolerant until validator work lands.
-    Reason: YAML parsing replaces brittle line-scanning while enabling metadata serialization. The `go.yaml.in` path avoids reliance on the archived `gopkg.in` module path while preserving stable v3 behavior and avoiding pre-release `v4` adoption.
-    Tradeoffs: `gopkg.in/yaml.v3` may still appear transitively until upstream dependencies migrate. Migration to `go.yaml.in/yaml/v4` is deferred.
-
-- Decision 2026-02-26 phase15-skill-parse-validate-separation: Keep skill parsing tolerant and enforce spec in validator/doctor
-    Decision: `internal/config` skill parsing remains backward-compatible (path-derived canonical names, unknown frontmatter tolerated, no hard requirement for frontmatter `name` at parse time), while Phase 15 spec checks are enforced in `internal/skillvalidator` and surfaced as `al doctor` skill warnings.
-    Reason: Existing repos contain flat legacy skills that would break under strict parse-time enforcement; validator-level diagnostics preserve upgradeability while still driving standards alignment.
-    Tradeoffs: Non-compliant skills can still load/sync until users act on doctor warnings; strict enforcement can be added later only with an explicit migration path.
+- Decision 2026-02-26 phase15-skill-frontmatter-validation: Skill frontmatter parsing stays YAML-based and validator-enforced
+    Decision: Parse/serialize skill frontmatter with `go.yaml.in/yaml/v3`; keep parsing backward-compatible (path-derived names, unknown frontmatter tolerated), and enforce Agent Skills spec checks in `internal/skillvalidator` / `al doctor`.
+    Reason: YAML parsing replaces brittle line scanning and supports metadata serialization; validator-level diagnostics preserve upgradeability for existing flat/legacy skills while still driving standards alignment.
+    Tradeoffs: `gopkg.in/yaml.v3` may appear transitively, non-compliant skills can still load/sync until users act on doctor warnings, and strict parse-time enforcement needs an explicit migration path.
 
 - Decision 2026-02-27 e2e-github-api-auth: E2E harness authenticates GitHub API calls with GITHUB_TOKEN
     Decision: `resolve_latest_release_version()` in `scripts/test-e2e/harness.sh` now passes `GITHUB_TOKEN` (or `GH_TOKEN`) as a Bearer token in the Authorization header when available. CI workflow exports `GITHUB_TOKEN` to the `make ci` step.
@@ -237,20 +227,15 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Reason: Deep-dive analysis showed: (1) the phrase is reliably determinable from conversation context (the agent knows whether it was invoked standalone or by a parent skill); (2) enumerating parent skills would couple these skills to the orchestrator roster, requiring updates whenever an orchestrator is added/removed; (3) all three skills use identical phrasing, confirming it is a stable cross-cutting convention.
     Tradeoffs: Requires the model to reason about invocation context, but this is standard MCP/delegation behavior.
 
-- Decision 2026-03-20 claude-max-effort-cli-only: Claude `max` reasoning effort is passed via --effort CLI flag, not settings.json
-    Decision: Add `max` to the Claude reasoning_effort field catalog. Pass all effort values (including `max`) via `--effort` CLI arg in the launcher. Exclude `max` from settings.json sync because Claude Code does not support `max` as a persistable `effortLevel` value — it is session-only.
-    Reason: Claude Code docs (as of v2.1.79) state `effortLevel` in settings.json accepts only `low`, `medium`, `high`. `max` was removed from the persistent UI in v2.1.72 but remains available via the `--effort` CLI flag and `CLAUDE_CODE_EFFORT_LEVEL` env var as a session-scoped option.
-    Tradeoffs: Dual delivery path (CLI arg for all values + settings.json for low/medium/high) adds minor complexity but ensures `max` works correctly and persistable values have a settings.json fallback for non-`al claude` launches.
-
 - Decision 2026-03-21 native-skill-sync: Replace MCP prompt delivery with native skill directory sync
     Decision: Removed the internal `al mcp-prompts` MCP server. Claude receives skills via `.claude/skills/`; Codex, Gemini, Antigravity, VS Code/Copilot, and Copilot CLI share `.agents/skills/`. Full subdirectory support (`scripts/`, `references/`, `assets/`) is preserved. Supersedes Decision 2026-01-17 e5f6a7b and Decision 2026-02-23 mcp-prompts-dispatch-bypass.
     Reason: MCP prompts return flat text only, while current client docs support directory-format Agent Skills and several clients now document `.agents/skills/` as an interoperable project path. Shared sync avoids duplicate skill catalogs.
     Tradeoffs: Lost the unified MCP prompt API for skill delivery and stopped generating legacy client-specific skill folders; gained full Agent Skills resource support and fewer duplicate projections.
 
-- Decision 2026-05-07 claude-reasoning-effort-allow-custom: Claude reasoning_effort accepts custom values with a sync-time warning (refines 2026-02-24 reasoning-effort-support-matrix)
-    Decision: Set `AllowCustom: true` on `agents.claude.reasoning_effort`, add `xhigh` to the catalog, drop the strict catalog-membership check in validation, and emit a soft policy warning (`POLICY_CLAUDE_REASONING_EFFORT_UNKNOWN`) at sync time when the value is outside the catalog. The Opus-model requirement remains a hard validation error.
-    Reason: Claude periodically introduces new effort levels (e.g. `xhigh`); strict catalog membership broke `al sync` until an agent-layer release shipped, even though the underlying client accepted the new value. This mirrors the existing Codex pattern (`AllowCustom: true`, downstream client is the authority on valid values) but adds a soft warning so users still notice typos.
-    Tradeoffs: Typos no longer fail loud — they surface as warnings instead. The Opus check is preserved because non-Opus Claude models reject `effortLevel` outright; that constraint is structural, not a release-cadence question.
+- Decision 2026-05-07 reasoning-effort-capability-matrix: Reasoning effort is per-client and custom-tolerant where upstream cadence demands it
+    Decision: Support Codex and Claude `reasoning_effort` as custom-tolerant fields; reject Gemini/Copilot CLI effort until a verified control exists; for Claude, require Opus, pass all values via `--effort`, and write settings `effortLevel` only for non-`max` values.
+    Reason: Silent omission breaks fail-loud behavior, but strict Claude catalogs broke when upstream added values such as `xhigh`; `max` is session-only while low/medium/high/xhigh are cataloged.
+    Tradeoffs: Typos surface as sync warnings instead of hard errors for Claude/Codex; Gemini/Copilot configs still fail fast until support is intentionally added.
 
 - Decision 2026-05-07 mcp-catalog-seed-split: MCP server catalog moves to wizard-only embedded file; install seed ships zero `[[mcp.servers]]`
     Decision: Default MCP blocks now live in a wizard-only embedded catalog; the install seed ships only an empty `[mcp]` section with docs guidance. Interactive wizard selection inserts selected catalog blocks and prunes disabled catalog IDs, including customized variants. Profile mode remains verbatim and does not prune.

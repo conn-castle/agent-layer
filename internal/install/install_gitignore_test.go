@@ -587,7 +587,7 @@ func TestAgentLayerGitignoreTemplateEntries(t *testing.T) {
 		".env",
 		"config.toml.bak",
 		".env.bak",
-		"templates/",
+		"/templates/",
 		"state/",
 		"tmp/",
 		"open-vscode.app/",

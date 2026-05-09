@@ -55,6 +55,11 @@ Recommended roles:
 
 - Do not guess coverage commands, thresholds, or domain boundaries.
 - Do not change production behavior to inflate coverage.
+- Do not add tautological or self-confirming tests to reach a coverage target;
+  stop at the real shortfall instead.
+- Do not add runtime tests for constraints already enforced by a language,
+  compiler, type checker, schema, or static analyzer; coverage should come from
+  behavior, logic, integration, or runtime failure modes.
 - Keep each iteration focused on one target file unless the repo's test runner forces a broader command.
 - Keep tests deterministic and aligned with repo conventions.
 

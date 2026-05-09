@@ -48,10 +48,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 - Backlog 2026-04-25 codebase-cleanup-rules-6-7-8: Codify cleanup rules 6–8 into skills and agent instructions
     Priority: High. Area: skills / code quality
-    Description: Current skills and agent instructions do not enforce the following three cleanup rules well enough. Add them explicitly to audit/cleanup skills and coding conventions:
-      6. Remove all try catch and equivalent defensive programming if it doesn't serve a specific role of handling unknown or unsanitized input or otherwise has a reason to be there, with clear error handling and no error hiding or fallback patterns
-      7. Find any deprecated, legacy or fallback code, remove, and make sure all code paths are clean, concise and as singular as possible
-      8. Find any AI slop, stubs, larp, unnecessary comments and remove. Any comments that describe in-motion work, replacements of previous work with new work, or otherwise are not helpful should be either removed or replaced with helpful comments for a new user trying to understand the codebase -- but if you do edit, be concise
+    Description: Codify three cleanup rules in audit/cleanup skills and coding conventions: remove unnecessary try/catch or defensive programming; remove deprecated, legacy, or fallback code; remove AI slop, stubs, larp, and unhelpful in-motion comments or replace them with concise useful comments.
     Acceptance criteria: Rules 6–8 appear verbatim (or as direct derivatives) in at least one audit/cleanup skill and in coding conventions; agents flag violations during code review.
     Notes: Source: @shawmakesmagic 8-subagent cleanup prompt (x.com/shawmakesmagic/status/2044269097647779990). Nick flagged these as strongly aligned with his existing values but underrepresented in current firmware.
 

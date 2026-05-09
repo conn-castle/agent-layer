@@ -20,6 +20,7 @@ Audit and fix the agent memory files. Default behavior is audit-and-fix:
 - Default mode is audit-and-fix for mechanical corrections.
 - Validate content against the repository (code, tests, docs) to detect staleness and drift.
 - DECISIONS.md receives focused scrutiny for bloat and consolidation opportunities.
+- Optimize for current and future constraints, not historical completeness.
 - Do not audit repo documentation (README, docs/, etc.) — use `audit-documentation` for that.
 
 ## Inputs
@@ -54,13 +55,13 @@ Recommended roles:
 - Do not guess whether an issue is fixed — verify against the code or ask.
 - Do not remove entries without evidence (code search, file existence check, or user confirmation).
 - Do not modify repo documentation, source code, or test files in this workflow.
-- Prefer consolidating entries over removing them when the underlying information is still valuable.
+- Prefer consolidating entries over removing them when the underlying information still constrains future work.
 - Treat DECISIONS.md consolidation as a first-class audit task, not an afterthought.
 
 ## Human checkpoints
 
 - Required: ask when staleness evidence is ambiguous (e.g., an issue might be partially fixed).
-- Required: ask when a DECISIONS.md entry removal or consolidation would lose unique tradeoff information.
+- Required: ask when a DECISIONS.md entry removal or consolidation would lose unique tradeoff information that still needs to guide future work.
 - Required: ask when a memory file entry references external state that cannot be verified from the repository.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous for clear mechanical fixes: format corrections, obvious duplicates, entries that are definitively stale by code evidence, and straightforward misplacements.
@@ -100,12 +101,13 @@ For each memory file, check:
 - Check for orphaned references to issues or backlog items that no longer exist
 
 **DECISIONS.md** (receives focused scrutiny):
-- Count total entries and flag when the log is growing large (approaching ~25 entries is a signal to investigate, not a hard limit)
-- Identify superseded chains: decisions that were later changed by newer decisions (these should be consolidated to the final decision)
-- Identify entries that are now self-evident from the codebase (the decision is embodied in code, tests, or docs in a way that makes the log entry redundant)
-- Identify entries that duplicate information already in CONTEXT.md, COMMANDS.md, or README.md
-- Identify entries that record routine best-practice adherence rather than non-obvious tradeoffs
-- For each flagged entry, recommend: consolidate (fold into a newer entry), remove (self-evident or duplicated), or keep (unique tradeoff information)
+- Critical: Count total entries. When the log has more than 25 entries, classify every entry as `keep`, `consolidate`, `remove`, or `defer`.
+- Critical: For each decision entry, record evidence checked, whether it still constrains future work, whether the rationale is future-guiding or merely historical, and the recommended action.
+- High: Group decisions by subsystem or decision axis (upgrade, skills, reasoning effort, MCP, docs/site, wizard, launchers, config) before pruning.
+- High: Identify superseded chains and sequential refinements; prefer one current-state decision over a chain of historical decisions.
+- High: Identify entries that are now self-evident from code, tests, README, site docs, COMMANDS.md, CONTEXT.md, or newer decisions.
+- Medium: Identify entries that record completed implementation mechanics, routine best-practice adherence, or release history rather than non-obvious future constraints.
+- Medium: Remove or consolidate entries whose only remaining value is historical rationale. Unique rationale alone is not enough to keep an entry.
 
 **COMMANDS.md:**
 - Verify each command is still valid (check referenced files, scripts, and tool availability)
@@ -132,10 +134,11 @@ For findings with clear mechanical fixes:
 1. Remove definitively stale entries (backed by code evidence)
 2. Move misplaced entries to the correct file (features from ISSUES.md to BACKLOG.md and vice versa)
 3. Fix format violations (indentation, spacing, missing fields)
-4. Consolidate superseded DECISIONS.md chains: keep the final decision, fold valuable tradeoff context from earlier entries into it, remove the superseded entries
+4. Consolidate superseded DECISIONS.md chains and subsystem clusters: keep the current constraint, fold only future-guiding tradeoff context into it, and remove historical entries
 5. Remove obvious duplicates (keep the more complete version)
-6. Update phase/task status in ROADMAP.md when evidence is clear
-7. Remove BACKLOG.md entries that are already scheduled in ROADMAP.md
+6. Remove DECISIONS.md entries whose current behavior is recoverable from code/docs and whose rationale no longer guides future work
+7. Update phase/task status in ROADMAP.md when evidence is clear
+8. Remove BACKLOG.md entries that are already scheduled in ROADMAP.md
 
 For findings requiring judgment:
 - Present the finding and evidence at a human checkpoint
@@ -168,7 +171,8 @@ Write `.agent-layer/tmp/audit-memory.<run-id>.report.md` with:
 ## Guardrails
 
 - Do not turn memory file cleanup into a policy change.
-- Do not remove DECISIONS.md entries that still contain unique tradeoff information, even if the decision itself is now embodied in code.
+- Do not remove DECISIONS.md entries that still contain unique tradeoff information needed for future decisions, even if the decision itself is now embodied in code.
+- Do not keep DECISIONS.md entries solely because they contain unique historical rationale; the rationale must still guide future work.
 - Do not widen the audit into a code audit or documentation audit (point to `audit-documentation` for repo docs).
 - Do not add new memory entries during the audit (that would conflict with the audit's own findings).
 - Do not consolidate DECISIONS.md entries in a way that loses the reason or tradeoff information.
@@ -177,7 +181,8 @@ Write `.agent-layer/tmp/audit-memory.<run-id>.report.md` with:
 ## Definition of done
 
 - The report exists at `.agent-layer/tmp/audit-memory.<run-id>.report.md` with the required sections (`Summary`, `Structural Findings`, `Content Findings`, `Cross-File Findings`, `Fixes Applied`, `Deferred Findings`, `Recommendations`).
-- The report states the DECISIONS.md entry count before and after, and every DECISIONS.md flagged entry has a recommendation of consolidate, remove, or keep.
+- The report states the DECISIONS.md entry count before and after.
+- If DECISIONS.md has more than 25 entries, every decision entry is classified as `keep`, `consolidate`, `remove`, or `defer`; otherwise every flagged decision entry has a recommendation.
 - Only the 6 memory files were modified; no source code, tests, or repo documentation was touched.
 - Every deferred finding records the specific question that blocked a mechanical fix.
 
