@@ -317,7 +317,7 @@ enabled = true
 # reasoning_effort = "medium" # low | medium | high | xhigh | max (custom values pass through with a warning)
 # Note: "max" is session-only (passed via --effort CLI flag) and is not written to .claude/settings.json.
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
-# Object values are deep-merged into .claude/settings.json; arrays and scalars replace.
+# Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
 # Disable Claude Code's structured clarification-question tool for this project.

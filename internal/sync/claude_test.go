@@ -448,13 +448,19 @@ func TestBuildClaudeSettingsAgentSpecificMergeDoesNotMutateConfig(t *testing.T) 
 		t.Fatalf("expected merged settings to include managed allow entries")
 	}
 	// Mutate the merged result and confirm the source agent-specific map is untouched
-	// — this exercises the map-clone path in cloneClaudeSettingValue, not just non-mutation.
+	// — this exercises the map- and slice-clone paths in cloneClaudeSettingValue, not
+	// just non-mutation.
 	mergedPermissions["injected"] = "from-test"
 	mergedNested, ok := mergedPermissions["nested"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected nested map in merged permissions")
 	}
 	mergedNested["injected"] = true
+	mergedDeny, ok := mergedPermissions["deny"].([]string)
+	if !ok {
+		t.Fatalf("expected deny slice in merged permissions, got %#v", mergedPermissions["deny"])
+	}
+	mergedDeny[0] = "Mutated"
 	if !reflect.DeepEqual(agentSpecific, before) {
 		t.Fatalf("expected agent-specific config to remain unchanged after mutating merged settings, got %#v", agentSpecific)
 	}

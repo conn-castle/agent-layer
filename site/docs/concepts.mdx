@@ -89,7 +89,7 @@ Use them sparingly:
 
 - Colliding keys intentionally override Agent Layer-managed values.
 - Sync emits a warning whenever agent-specific keys overlap managed keys, with one carve-out: Claude `permissions.deny` is additive and does not warn.
-- Claude agent-specific values are deep-merged into `.claude/settings.json` for object values; arrays and scalars replace at their key.
+- Claude agent-specific values are deep-merged into `.claude/settings.json` for object values; arrays and scalar values are replaced at their key.
 - Codex agent-specific values are written at the TOML root before managed MCP tables so top-level overrides stay explicit.
 
 If you find yourself carrying many permanent overrides, that is usually a sign the setting should become a first-class key in `.agent-layer/config.toml`.
