@@ -11,6 +11,14 @@ run_scenario_agent_specific_config() {
 
   local config_path="$repo_dir/.agent-layer/config.toml"
 
+  # Remove the seeded `agent_specific.permissions.deny = ["AskUserQuestion"]` line
+  # under `[agents.claude]` so this scenario can install its own
+  # `[agents.claude.agent_specific]` block without redefining the implicit table.
+  # The seed default is exercised by dedicated template tests; it is not what
+  # this scenario verifies.
+  awk '!/^agent_specific\.permissions\.deny = \["AskUserQuestion"\]$/' \
+    "$config_path" > "$config_path.tmp" && mv "$config_path.tmp" "$config_path"
+
   cat >> "$config_path" <<'EOF'
 
 [agents.codex.agent_specific]
