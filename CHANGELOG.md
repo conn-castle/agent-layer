@@ -3,6 +3,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- `agent_specific.permissions.deny = ["AskUserQuestion"]` shipped in the install seed (`internal/templates/config.toml`). Fresh `al init` now disables Claude Code's structured clarification-question tool by default; remove the line to keep it. Existing repos are unaffected.
+
+### Changed
+- Claude `agent_specific` is now deep-merged into `.claude/settings.json` for object values (arrays and scalars still replace at their key). Previously, top-level objects were replaced wholesale. `permissions.deny` is additive and does not trigger an override warning; `permissions.allow` continues to warn when present.
+
 ## v0.10.0 - 2026-05-07
 
 Consolidates skill projection into a shared `.agents/skills/` directory for non-Claude clients, migrates Gemini sync to the Policy Engine, splits the MCP catalog from the install seed, adds `xhigh` reasoning effort for Claude, and improves the upgrade experience with automatic post-upgrade sync and opt-in diff preview.

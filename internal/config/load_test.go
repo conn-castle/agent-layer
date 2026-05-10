@@ -360,6 +360,31 @@ func TestLoadTemplateConfig(t *testing.T) {
 	if cfg.Approvals.Mode == "" {
 		t.Fatalf("expected approvals.mode to be present in template config")
 	}
+	permissions, ok := cfg.Agents.Claude.AgentSpecific["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected template Claude agent-specific permissions map")
+	}
+	if !stringSliceValueContains(permissions["deny"], "AskUserQuestion") {
+		t.Fatalf("expected template to deny AskUserQuestion, got %v", permissions["deny"])
+	}
+}
+
+func stringSliceValueContains(value any, want string) bool {
+	switch values := value.(type) {
+	case []string:
+		for _, value := range values {
+			if value == want {
+				return true
+			}
+		}
+	case []any:
+		for _, value := range values {
+			if value == want {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func TestLoadTemplateConfigReadError(t *testing.T) {

@@ -165,6 +165,114 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 	require.Equal(t, "agents.codex.agent_specific", results[0].Subject)
 	require.Equal(t, CodePolicyAgentSpecificOverrides, results[1].Code)
 	require.Equal(t, "agents.claude.agent_specific", results[1].Subject)
+	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[1].Details)
+}
+
+func TestCheckPolicy_ClaudeAgentSpecificPermissionsDenyDoesNotWarn(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"deny": []string{"AskUserQuestion"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.Nil(t, CheckPolicy(project))
+}
+
+func TestCheckPolicy_ClaudeAgentSpecificPermissionsAllowWarns(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"allow": []string{"Bash(ls:*)"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, "agents.claude.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[0].Details)
+}
+
+func TestCheckPolicy_ClaudeAgentSpecificMixedPermissionsWarnsOnlyForAllow(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"allow": []string{"Bash(ls:*)"},
+							"deny":  []string{"AskUserQuestion"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, "agents.claude.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[0].Details)
+}
+
+func TestCheckPolicy_ClaudeAgentSpecificNonMapPermissionsWarns(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"permissions": []string{"Bash(ls:*)"},
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, "agents.claude.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: permissions"}, results[0].Details)
+}
+
+func TestCheckPolicy_ClaudeAgentSpecificEffortAndAllowCombinedIntoOneWarning(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"effortLevel": "low",
+						"permissions": map[string]any{
+							"allow": []string{"Bash(ls:*)"},
+							"deny":  []string{"AskUserQuestion"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, "agents.claude.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: effortLevel, permissions.allow"}, results[0].Details)
 }
 
 func TestCheckPolicy_ClaudeReasoningEffortUnknown(t *testing.T) {

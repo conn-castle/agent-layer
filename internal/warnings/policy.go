@@ -33,7 +33,7 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	if agentSpecificWarning := agentSpecificOverrideWarning("codex", "agents.codex.agent_specific", project.Config.Agents.Codex.AgentSpecific, config.CodexReservedKeys); agentSpecificWarning != nil {
 		results = append(results, *agentSpecificWarning)
 	}
-	if agentSpecificWarning := agentSpecificOverrideWarning("claude", "agents.claude.agent_specific", project.Config.Agents.Claude.AgentSpecific, config.ClaudeReservedKeys); agentSpecificWarning != nil {
+	if agentSpecificWarning := claudeAgentSpecificOverrideWarning(project.Config.Agents.Claude.AgentSpecific); agentSpecificWarning != nil {
 		results = append(results, *agentSpecificWarning)
 	}
 	if w := claudeReasoningEffortUnknownWarning(project.Config.Agents.Claude.ReasoningEffort); w != nil {
@@ -132,6 +132,37 @@ func agentSpecificOverrideWarning(label string, subject string, agentSpecific ma
 		Code:     CodePolicyAgentSpecificOverrides,
 		Subject:  subject,
 		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, label),
+		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
+		Details:  []string{fmt.Sprintf("overridden keys: %s", strings.Join(keys, ", "))},
+		Source:   SourceInternal,
+		Severity: SeverityWarning,
+	}
+}
+
+func claudeAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {
+	if len(agentSpecific) == 0 {
+		return nil
+	}
+	var keys []string
+	if _, ok := agentSpecific["effortLevel"]; ok {
+		keys = append(keys, "effortLevel")
+	}
+	if permissions, ok := agentSpecific["permissions"]; ok {
+		permissionsMap, mapOK := permissions.(map[string]any)
+		if !mapOK {
+			keys = append(keys, "permissions")
+		} else if _, ok := permissionsMap["allow"]; ok {
+			keys = append(keys, "permissions.allow")
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	slices.Sort(keys)
+	return &Warning{
+		Code:     CodePolicyAgentSpecificOverrides,
+		Subject:  "agents.claude.agent_specific",
+		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, "claude"),
 		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
 		Details:  []string{fmt.Sprintf("overridden keys: %s", strings.Join(keys, ", "))},
 		Source:   SourceInternal,

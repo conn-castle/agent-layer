@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -325,6 +326,140 @@ func TestBuildClaudeSettingsAgentSpecificWithApprovals(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeSettingsAgentSpecificDenyPreservesManagedAllow(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"deny": []string{"AskUserQuestion"},
+						},
+					},
+				},
+			},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
+				},
+			},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map")
+	}
+	allow, ok := permissions["allow"].([]string)
+	if !ok || len(allow) < 2 {
+		t.Fatalf("expected managed permissions allow list, got %#v", permissions["allow"])
+	}
+	if !stringSliceContains(allow, "Bash(git status:*)") {
+		t.Fatalf("expected generated command allow entry, got %#v", allow)
+	}
+	if !stringSliceContains(allow, "mcp__example__*") {
+		t.Fatalf("expected generated MCP allow entry, got %#v", allow)
+	}
+	deny, ok := permissions["deny"].([]string)
+	if !ok || !stringSliceContains(deny, "AskUserQuestion") {
+		t.Fatalf("expected custom permissions deny list, got %#v", permissions["deny"])
+	}
+}
+
+func TestBuildClaudeSettingsAgentSpecificAllowOverridesManagedAllow(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"allow": []string{"Bash(custom:*)"},
+						},
+					},
+				},
+			},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map")
+	}
+	allow, ok := permissions["allow"].([]string)
+	if !ok {
+		t.Fatalf("expected permissions allow list, got %#v", permissions["allow"])
+	}
+	if len(allow) != 1 || allow[0] != "Bash(custom:*)" {
+		t.Fatalf("expected custom allow list to replace managed allow entries, got %#v", allow)
+	}
+}
+
+func TestBuildClaudeSettingsAgentSpecificMergeDoesNotMutateConfig(t *testing.T) {
+	t.Parallel()
+	permissions := map[string]any{
+		"deny": []string{"AskUserQuestion"},
+		"nested": map[string]any{
+			"custom": true,
+		},
+	}
+	agentSpecific := map[string]any{"permissions": permissions}
+	before := map[string]any{
+		"permissions": map[string]any{
+			"deny": []string{"AskUserQuestion"},
+			"nested": map[string]any{
+				"custom": true,
+			},
+		},
+	}
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{AgentSpecific: agentSpecific},
+			},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	mergedPermissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map")
+	}
+	if _, ok := mergedPermissions["allow"]; !ok {
+		t.Fatalf("expected merged settings to include managed allow entries")
+	}
+	// Mutate the merged result and confirm the source agent-specific map is untouched
+	// — this exercises the map-clone path in cloneClaudeSettingValue, not just non-mutation.
+	mergedPermissions["injected"] = "from-test"
+	mergedNested, ok := mergedPermissions["nested"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected nested map in merged permissions")
+	}
+	mergedNested["injected"] = true
+	if !reflect.DeepEqual(agentSpecific, before) {
+		t.Fatalf("expected agent-specific config to remain unchanged after mutating merged settings, got %#v", agentSpecific)
+	}
+}
+
 func TestWriteClaudeSettingsMarshalError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -343,4 +478,13 @@ func TestWriteClaudeSettingsMarshalError(t *testing.T) {
 	if err := WriteClaudeSettings(sys, root, project); err == nil {
 		t.Fatal("expected marshal error")
 	}
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

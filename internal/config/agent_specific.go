@@ -10,12 +10,6 @@ var CodexReservedKeys = map[string]struct{}{
 	"web_search":             {},
 }
 
-// ClaudeReservedKeys are top-level keys in .claude/settings.json managed by Agent Layer.
-var ClaudeReservedKeys = map[string]struct{}{
-	"effortLevel": {},
-	"permissions": {},
-}
-
 // HasAgentSpecificKey returns true when the agent-specific map defines a top-level key.
 func HasAgentSpecificKey(agentSpecific map[string]any, key string) bool {
 	if len(agentSpecific) == 0 {
