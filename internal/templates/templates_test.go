@@ -271,6 +271,27 @@ func TestCISkillsRequireLocalReproducerBeforePush(t *testing.T) {
 	}
 }
 
+func TestShipPRSkillRequiresExplicitMergeAuthorizationAndSafeCleanup(t *testing.T) {
+	data, err := Read("skills/ship-pr/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"Sub-skill returns are intermediate, not terminal.",
+		"I approve merging PR #<N>",
+		"Do not pass `--admin`.",
+		"viewerDefaultMergeMethod",
+		"stop and ask the user to choose one of the allowed methods",
+		"no remote maps unambiguously",
+		"Never delete the repository's default branch",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in ship-pr skill", snippet)
+		}
+	}
+}
+
 func TestPRCommentPolicyLivesInAddressPRComments(t *testing.T) {
 	addressData, err := Read("skills/address-pr-comments/SKILL.md")
 	if err != nil {

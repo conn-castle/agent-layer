@@ -1,11 +1,9 @@
 ---
 name: audit-and-fix-uncommitted-changes
 description: >-
-  Audit and iteratively fix all uncommitted working-tree changes until a
-  confirming review finds no remaining actionable issues. Use when the agent
-  needs to stabilize in-progress diffs from any author or process, run repeated
-  review/fix cycles, and deliver a round-by-round severity report of what was
-  found and fixed.
+  Audit and iteratively fix uncommitted working-tree changes until a confirming
+  review finds no remaining actionable issues. Use to stabilize in-progress
+  diffs and report each review/fix round with severity.
 ---
 
 # audit-and-fix-uncommitted-changes

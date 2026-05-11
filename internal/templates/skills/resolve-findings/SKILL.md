@@ -1,10 +1,9 @@
 ---
 name: resolve-findings
 description: >-
-  Triage an existing review findings report, verify each finding, implement
-  accepted fixes, and record rejected, deferred, or already-resolved items. Use
-  when the user asks to work through review findings. Use `fix-issues` for
-  `ISSUES.md` and `address-pr-comments` for GitHub PR review comments.
+  Triage a review findings report: verify each finding, implement accepted
+  fixes, and record rejected, deferred, or already-resolved items. Use for
+  report-driven follow-up work.
 ---
 
 # resolve-findings

@@ -4,10 +4,14 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
+- `al init --here` flag installs Agent Layer in the current directory without walking up to an ancestor `.agent-layer/` or `.git`. Lets users add a separate `.agent-layer/` inside a subfolder of an existing repo. When `al init` resolves to an already-initialized ancestor, the error now points at `--here` so the option is discoverable.
 - `agent_specific.permissions.deny = ["AskUserQuestion"]` shipped in the install seed (`internal/templates/config.toml`). Fresh `al init` now disables Claude Code's structured clarification-question tool by default; remove the line to keep it. Existing repos are unaffected.
 
 ### Changed
+- Built-in skill frontmatter descriptions are shorter and more routing-focused, reducing Claude skill listing budget pressure while keeping key trigger language.
 - Claude `agent_specific` is now deep-merged into `.claude/settings.json` for object values (arrays and scalars still replace at their key). Previously, top-level objects were replaced wholesale. `permissions.deny` is additive and does not trigger an override warning; `permissions.allow` continues to warn when present.
+- `ship-pr` skill adds a human-gated Phase 9: the agent merges the PR only when the user replies with the exact phrase `I approve merging PR #<N>` matching the run's PR number, using an unambiguous GitHub merge method or pausing for a strategy choice when multiple methods are available; on a successful merge it deletes the source branch locally and remotely. The skill refuses to delete the repository's default branch.
+- `ship-pr` skill adds an upfront "Continuation rule" framing sub-skill returns as intermediate, not terminal. Addresses a recurring failure where the orchestrator stopped after `audit-and-fix-uncommitted-changes` returned, mistaking the sub-skill's closeout summary for ship-pr's completion.
 
 ## v0.10.0 - 2026-05-07
 

@@ -1,10 +1,9 @@
 ---
 name: review-plan
 description: >-
-  Review a plan/task/context artifact set before execution and produce a
-  findings report covering scope gaps, sequencing problems, weak verification,
-  and missing docs/tests/memory updates. Use this instead of `review-scope`
-  when the target is specifically a workflow plan.
+  Review a plan/task/context artifact set before execution, reporting scope
+  gaps, sequencing problems, weak verification, and missing docs/tests/memory
+  updates.
 ---
 
 # review-plan

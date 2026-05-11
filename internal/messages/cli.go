@@ -23,10 +23,14 @@ const (
 	InitShort = "Initialize Agent Layer in this repository"
 	// InitAlreadyInitialized is returned when init is invoked on an already-initialized repo.
 	InitAlreadyInitialized = "agent layer is already initialized (or partially initialized) in this repository; run 'al upgrade' to upgrade or repair templates"
-	InitRunWizardPrompt    = "Run the setup wizard now? (recommended)"
+	// InitAlreadyInitializedAncestorFmt is returned when init walks up to an ancestor that is already initialized,
+	// so the user knows they can scope the install to the current directory with --here.
+	InitAlreadyInitializedAncestorFmt = "agent layer is already initialized in an ancestor directory (%s); run 'al upgrade' there to upgrade or repair templates, or re-run as `al init --here` to install a separate agent-layer in %s"
+	InitRunWizardPrompt               = "Run the setup wizard now? (recommended)"
 
 	InitFlagNoWizard = "Skip prompting to run the setup wizard after init"
 	InitFlagVersion  = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
+	InitFlagHere     = "Install in the current directory without walking up to an ancestor .agent-layer/ or .git"
 
 	UpgradeUse                            = "upgrade"
 	UpgradeShort                          = "Apply template-managed updates and update the repo pin"

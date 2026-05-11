@@ -1,11 +1,9 @@
 ---
 name: implement-plan
 description: >-
-  Execute an existing plan/task/context artifact set: make code changes, keep
-  them aligned to the artifacts, and verify code, tests, docs, and memory before
-  closeout. Use when the user asks to implement an already-written plan. Use
-  `plan-work` when no plan exists and `complete-current-phase` for roadmap
-  phases.
+  Execute an existing plan/task/context artifact set: make aligned code changes
+  and verify code, tests, docs, and memory before closeout. Use `plan-work`
+  when no plan exists.
 ---
 
 # implement-plan

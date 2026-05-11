@@ -1,11 +1,9 @@
 ---
 name: complete-current-phase
 description: >-
-  Complete the current roadmap phase through planning, plan review,
-  implementation, verification, audit, cleanup, and closeout. Use when the user
-  asks to finish, complete, or work through a roadmap phase. Use `plan-work`
-  for planning only, `implement-plan` when artifacts already exist, and
-  `finish-task` for non-roadmap closeout.
+  Complete the current roadmap phase through planning, review, implementation,
+  verification, audit, cleanup, and closeout. Use `plan-work` for planning only
+  and `finish-task` for non-roadmap closeout.
 ---
 
 # complete-current-phase

@@ -2,9 +2,8 @@
 name: plan-work
 description: >-
   Write a scoped implementation plan, task list, and context file for a
-  requested change. Use when the user asks for a plan, roadmap slice, execution
-  strategy, task breakdown, current roadmap-phase slice, or pre-implementation
-  design artifact before coding.
+  requested change, roadmap slice, execution strategy, task breakdown, or
+  pre-implementation design artifact.
 ---
 
 # plan-work

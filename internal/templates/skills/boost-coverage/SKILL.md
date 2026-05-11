@@ -1,11 +1,9 @@
 ---
 name: boost-coverage
 description: >-
-  Raise test coverage by discovering the repo's real coverage command,
-  selecting under-covered files, adding tests, and iterating to the documented
-  target or blocker. Use when the user asks to increase coverage. Use
-  `audit-tests` for suite-quality cleanup and `debug-issue` for reproducing a
-  specific bug.
+  Raise coverage by finding the real coverage command, selecting under-covered
+  files, adding behavior-focused tests, and iterating to target or blocker. Use
+  `audit-tests` for suite cleanup.
 ---
 
 # boost-coverage

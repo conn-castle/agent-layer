@@ -1,9 +1,9 @@
 ---
 name: audit-documentation
 description: >-
-  Audit Markdown documentation for static accuracy and cross-document
-  consistency against the repository, and fix what can be fixed. Excludes agent
-  memory files by default (use `audit-memory` for those).
+  Audit Markdown docs for static accuracy and cross-document consistency
+  against the repo, fixing what is safe. Excludes memory files by default; use
+  `audit-memory` for those.
 ---
 
 # audit-documentation

@@ -1,10 +1,9 @@
 ---
 name: debug-issue
 description: >-
-  Investigate a reported bug or unexpected behavior from symptom to root cause:
-  reproduce, narrow down, diagnose, write a failing test, fix, and verify. Use
-  when the root cause is unknown and investigation is needed before a fix can be
-  planned.
+  Investigate a reported bug from symptom to root cause: reproduce, narrow,
+  diagnose, write a failing test, fix, and verify. Use when the cause is unknown
+  and investigation must precede planning.
 ---
 
 # debug-issue

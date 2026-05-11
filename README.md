@@ -101,6 +101,7 @@ al doctor
 Notes:
 - `al init` prompts to run `al wizard` after seeding files. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
 - `al init` is intended to be run once per repo. If the repo is already initialized, use `al upgrade plan` and `al upgrade` to refresh template-managed files.
+- By default `al init` first walks up for an ancestor `.agent-layer/`, then for an ancestor `.git`. To install a separate Agent Layer in a subfolder of an existing repo (for example a sub-project that needs its own `.agent-layer/`), pass `al init --here` to target the current directory.
 - `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories.
 - `al upgrade` automatically creates a managed-file snapshot and rolls changes back if an upgrade step fails. Snapshots are written under `.agent-layer/state/upgrade-snapshots/`.
 - Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, Copilot CLI, VS Code, etc.).
