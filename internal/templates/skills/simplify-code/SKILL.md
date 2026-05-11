@@ -1,12 +1,10 @@
 ---
 name: simplify-code
 description: >-
-  Assess code complexity, remove dead code, simplify overly complex functions,
-  and split files that mix unrelated responsibilities. Uses complexity metrics
-  as diagnostic signals and applies judgment rather than rigid thresholds.
-  Scoped to uncommitted changes when they exist, otherwise the full codebase.
-  Use for cleanup/refactor requests. Use `improve-codebase` for broad audits,
-  test skills for test-suite work, and `debug-issue` for bug investigations.
+  Simplify code by removing dead code, reducing overly complex functions, and
+  splitting files with mixed responsibilities. Uses complexity metrics as
+  signals, scoped to uncommitted changes when present. Use for cleanup/refactor
+  requests.
 ---
 
 # simplify-code

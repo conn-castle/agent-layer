@@ -1,11 +1,9 @@
 ---
 name: verify-against-plan
 description: >-
-  Read-only check of the current implementation and working tree against an
-  existing plan/task/context set. Reports completeness gaps, regressions,
-  missing tests/docs, and scope drift without edits. Use when the user wants a
-  plan-alignment check. Use `review-plan` to critique the plan, `finish-task`
-  for closeout, and `implement-plan` to fix gaps.
+  Read-only check of current implementation and working tree against a
+  plan/task/context set, reporting completeness gaps, regressions, missing
+  tests/docs, and scope drift. Use `review-plan` to critique the plan.
 ---
 
 # verify-against-plan

@@ -1,10 +1,9 @@
 ---
 name: audit-memory
 description: >-
-  Audit the agent memory files (ISSUES, BACKLOG, ROADMAP, DECISIONS, COMMANDS,
-  CONTEXT) for structural compliance, staleness, misplacement, cross-file
-  consistency, and DECISIONS.md bloat, then fix accepted findings. Use
-  `audit-documentation` for repo documentation accuracy.
+  Audit agent memory files (ISSUES, BACKLOG, ROADMAP, DECISIONS, COMMANDS,
+  CONTEXT) for structure, staleness, placement, consistency, and DECISIONS.md
+  bloat; fix accepted findings.
 ---
 
 # audit-memory

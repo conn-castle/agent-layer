@@ -1,10 +1,9 @@
 ---
 name: fix-ci
 description: >-
-  Diagnose and fix failing CI/checks on an open PR, iterating through diagnose,
-  patch, audit, commit, push, and re-check until green or blocked. Use when a
-  PR's GitHub checks are failing. Use `repair-checks` for local checks and
-  `address-pr-comments` for reviewer feedback.
+  Diagnose and fix failing CI/checks on an open PR: inspect logs/artifacts,
+  create a local reproducer when possible, patch, audit, commit, push, and
+  re-check. Use `repair-checks` for local failures.
 ---
 
 # fix-ci

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/root"
@@ -28,11 +29,25 @@ func resolveRepoRoot() (string, error) {
 	return repoRoot, nil
 }
 
-// resolveInitRoot finds the best candidate root for initialization (prefers .agent-layer, then .git).
-func resolveInitRoot() (string, error) {
-	cwd, err := getwd()
+// resolveInitRoot finds the candidate root for initialization and returns it alongside the absolute cwd.
+// When here is true the absolute cwd is returned verbatim so users can install in a subfolder of an
+// existing agent-layer or git repo; otherwise the closest ancestor with .agent-layer/ (preferred) or
+// .git is returned, falling back to cwd.
+func resolveInitRoot(here bool) (root string, cwd string, err error) {
+	wd, err := getwd()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return findRepoRoot(cwd)
+	absCwd, err := filepath.Abs(wd)
+	if err != nil {
+		return "", "", fmt.Errorf(messages.RootResolvePathFmt, wd, err)
+	}
+	if here {
+		return absCwd, absCwd, nil
+	}
+	root, err = findRepoRoot(wd)
+	if err != nil {
+		return "", "", err
+	}
+	return root, absCwd, nil
 }

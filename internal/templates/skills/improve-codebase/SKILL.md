@@ -1,12 +1,9 @@
 ---
 name: improve-codebase
 description: >-
-  Deep, autonomous audit and improvement of the entire codebase (or user-specified
-  subsystems): survey the repository structure, decompose into reviewable chunks,
-  run parallel multi-lens reviews, fix findings iteratively, and delegate to
-  complementary skills (simplify-code, boost-coverage, audit-tests, fix-issues) where
-  appropriate. Use after a release, during a maintenance window, or whenever a
-  thorough independent quality sweep is needed.
+  Run a deep autonomous quality sweep of the whole codebase or named
+  subsystems: survey, split into reviewable chunks, run multi-lens reviews, fix
+  findings iteratively, and delegate to cleanup/test skills as needed.
 ---
 
 # improve-codebase

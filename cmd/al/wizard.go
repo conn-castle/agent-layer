@@ -30,7 +30,7 @@ func newWizardCmd() *cobra.Command {
 		Long:  messages.WizardLong,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveInitRoot()
+			root, _, err := resolveInitRoot(false)
 			if err != nil {
 				return err
 			}

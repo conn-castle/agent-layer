@@ -1,12 +1,9 @@
 ---
 name: audit-tests
 description: >-
-  Audit the test suite for redundancy, quality gaps, and organizational health
-  across unit, integration, and e2e tiers. Discovers test conventions from the
-  project, classifies tests by tier, identifies duplicate, tautological, or
-  self-confirming tests, finds coverage gaps that metrics miss, fixes what can be
-  fixed safely, and reports findings. Use `boost-coverage` to fill gaps; use
-  this skill to assess and clean up the existing test suite.
+  Audit the test suite for redundancy, quality gaps, and organization across
+  unit, integration, and e2e tiers. Finds duplicate or self-confirming tests,
+  coverage gaps metrics miss, and safe cleanup fixes.
 ---
 
 # audit-tests

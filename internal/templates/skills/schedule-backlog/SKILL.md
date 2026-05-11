@@ -1,11 +1,9 @@
 ---
 name: schedule-backlog
 description: >-
-  Propose backlog-to-roadmap scheduling updates by mapping `BACKLOG.md` items
-  into roadmap phases, checking issue/decision impacts, and pausing before
-  roadmap edits. Use when the user asks to schedule backlog work or reshape the
-  roadmap. Use `plan-work` for a single implementation plan and `fix-issues`
-  for `ISSUES.md` execution.
+  Map BACKLOG.md items into roadmap phases, checking issue/decision impacts and
+  pausing before roadmap edits. Use when scheduling backlog work or reshaping
+  the roadmap; use `plan-work` for one implementation plan.
 ---
 
 # schedule-backlog

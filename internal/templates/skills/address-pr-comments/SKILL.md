@@ -1,10 +1,9 @@
 ---
 name: address-pr-comments
 description: >-
-  Review comments on an open pull request, implement agreed fixes, reply to
-  every comment, audit changes, then commit and push. Use when the user asks to
-  handle PR review comments or reviewer feedback. Use `fix-ci` for failing
-  checks and `ship-pr` to create or ship a PR.
+  Handle reviewer feedback on an open PR: evaluate comments, implement agreed
+  fixes, justify or track deferrals, reply to every comment, audit changes,
+  then commit and push. Use `fix-ci` for failing checks.
 ---
 
 # address-pr-comments

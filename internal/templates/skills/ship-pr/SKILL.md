@@ -1,11 +1,10 @@
 ---
 name: ship-pr
 description: >-
-  Run the full PR lifecycle for completed local work: audit changes, commit,
-  push, open PR, monitor CI, handle review comments, and finish green. Use when
-  the user asks to ship, open, or take work to a PR. Use `fix-ci` for an
-  existing failing PR, `address-pr-comments` for review feedback, and
-  `finish-task` when no PR is needed.
+  Run completed local work through PR delivery: audit changes, verify locally,
+  commit, push, open PR, monitor CI, handle review comments, and finish green.
+  After exact approval (`I approve merging PR #<N>`), merge the PR and clean up
+  its source branch. Use `fix-ci` for failing PR checks.
 ---
 
 # ship-pr
@@ -42,6 +41,12 @@ Delegate to:
 - `repair-checks` for pre-push local verification when the current session has not already observed the repo-defined local lane passing after the latest changes
 - `fix-ci` for CI failure diagnosis and repair
 - `address-pr-comments` for review comment handling
+
+## Continuation rule
+
+Sub-skill returns are intermediate, not terminal. After every delegation (`audit-and-fix-uncommitted-changes`, `repair-checks`, `fix-ci`, `address-pr-comments`), continue to the next numbered step in the same turn — the sub-skill's closing summary is not ship-pr's closeout. The most common failure is stopping after `audit-and-fix-uncommitted-changes` returns, before staging and commit happen.
+
+The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored sub-skill checkpoint (e.g., `fix-ci` halting without pushing — Phase 3 step 3c, Phase 6 step 1c).
 
 ## Global constraints
 
@@ -147,6 +152,36 @@ Do not trust the sub-skill output alone — re-fetch the PR state and validate.
    - every comment has a reply that passes the Phase 7 audit
    - all changes are committed and pushed
 2. Summarize the PR lifecycle outcome.
+3. Tell the user the exact phrase required to authorize merge (Phase 9). For example: `Reply "I approve merging PR #<N>" to merge this PR and delete the source branch.`
+
+### Phase 9: Merge — only on explicit human authorization
+
+This phase does not run automatically. After Phase 8 the skill stops and waits.
+
+**Authorization trigger.** The agent may merge the PR only when the user replies with the exact phrase `I approve merging PR #<N>` (case-insensitive), where `<N>` is the exact PR number for this run. No other wording — "approved", "looks good", "merge it", "ship it", a thumbs-up, etc. — counts as authorization. If the user uses a similar but non-matching phrase, ask them to issue the exact phrase rather than inferring intent. If the PR number in the user's message does not match the PR for this run, refuse the merge and tell the user which PR number the skill is operating on. Authorization is single-use and scoped to the PR number it names.
+
+**Merge steps (after authorization):**
+
+1. Re-verify the PR is mergeable and CI is still green: `gh pr view <N> --json mergeable,mergeStateStatus,state`.
+2. Determine the merge method without guessing:
+   a. Run `gh repo view --json mergeCommitAllowed,rebaseMergeAllowed,squashMergeAllowed,viewerDefaultMergeMethod`.
+   b. If exactly one method is allowed, run `gh pr merge <N>` with that explicit flag (`--merge`, `--rebase`, or `--squash`).
+   c. If multiple methods are allowed and `viewerDefaultMergeMethod` names one of them, run `gh pr merge <N>` with the matching explicit flag.
+   d. If multiple methods are allowed and no explicit default method is available, stop and ask the user to choose one of the allowed methods. Do not infer a method from branch names, commit history, or personal preference.
+3. Do not pass `--admin`. Do not bypass branch protections. If the merge fails, surface the error and stop. Do not retry destructively.
+
+**Post-merge cleanup (after a successful merge):**
+
+1. Fetch PR head metadata: `gh pr view <N> --json baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,state`.
+2. Switch to the base branch and update it: `git checkout <base> && git pull`.
+3. Delete the local branch: `git branch -d <branch>`. If `-d` refuses, re-confirm the PR is merged via `gh pr view <N> --json state` before considering `-D`; never force-delete an unmerged branch.
+4. Delete the remote branch only after mapping the PR head repository to a local git remote. Use `git remote -v` to find the remote whose fetch or push URL matches `headRepository`; if no remote maps unambiguously, stop and report the unmapped head repository instead of deleting from `origin` by assumption.
+5. Delete the mapped remote branch: `git push <remote> --delete <headRefName>`. If `git ls-remote --heads <remote> <headRefName>` shows it is already gone (e.g., GitHub auto-deleted it), skip this step.
+6. Verify the branch is gone:
+   - Local: `git branch --list <branch>` returns no output.
+   - Remote: `git ls-remote --heads <remote> <headRefName>` returns no output.
+
+**Never delete the repository's default branch under any circumstances**, regardless of what the user says.
 
 ## Guardrails
 
@@ -154,6 +189,8 @@ Do not trust the sub-skill output alone — re-fetch the PR state and validate.
 - Do not end with CI failing.
 - Do not force-push or rewrite history unless explicitly instructed.
 - Do not create duplicate PRs.
+- Do not merge the PR unless the user issues the exact authorization phrase `I approve merging PR #<N>` with a number that matches this run's PR.
+- Never delete the repository's default branch.
 
 ## Definition of done
 
@@ -161,6 +198,7 @@ Do not trust the sub-skill output alone — re-fetch the PR state and validate.
 - The repo-defined local check lane passed before the first push/PR, and CI-fix commits were not pushed without a local reproducer and passing post-fix local verification.
 - `address-pr-comments` reached its definition of done, and Phase 7 independently verified that result by re-fetching the PR state.
 - The skill did not force-push, did not create a duplicate PR, and did not end with CI failing.
+- The skill ends after Phase 8 with the PR open and green unless the user issues the exact authorization phrase `I approve merging PR #<N>`; in that case the PR is merged with an explicit, unambiguous GitHub merge method and the source branch is deleted both locally and remotely.
 
 ## Final handoff
 
@@ -170,3 +208,5 @@ After the run:
 3. For any CI fixes, summarize the `fix-ci` local-reproducer evidence.
 4. State whether all comments passed the Phase 7 audit or if any require further human attention.
 5. If any comments were re-addressed during the audit, list them and explain what was corrected.
+6. State the exact phrase required to authorize merge: `I approve merging PR #<N>` with this PR's number. If the user has not issued it, do not merge.
+7. If a merge was performed, report the merge outcome and confirm both local and remote branch deletion succeeded.

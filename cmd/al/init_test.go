@@ -784,6 +784,108 @@ func TestInitCmd_StatAgentLayerErrorFailsFast(t *testing.T) {
 	}
 }
 
+func TestInitCmd_HereInstallsInSubfolderOfExistingAgentLayer(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origRunWizard := runWizard
+	origCheckForUpdate := checkForUpdate
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		runWizard = origRunWizard
+		checkForUpdate = origCheckForUpdate
+	})
+
+	parent := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(parent, ".agent-layer"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(parent, "child")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	getwd = func() (string, error) { return sub, nil }
+	isTerminal = func() bool { return false }
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
+	}
+	runWizard = func(string, string) error { return nil }
+
+	var gotRoot string
+	installRun = func(root string, _ install.Options) error {
+		gotRoot = root
+		return nil
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--no-wizard", "--here"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init --here failed: %v", err)
+	}
+	wantAbs, err := filepath.Abs(sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotRoot != wantAbs {
+		t.Fatalf("installRun root = %q, want %q (--here should target cwd, not ancestor)", gotRoot, wantAbs)
+	}
+}
+
+func TestInitCmd_AncestorAgentLayerErrorHintsHere(t *testing.T) {
+	origGetwd := getwd
+	origIsTerminal := isTerminal
+	origInstallRun := installRun
+	origCheckForUpdate := checkForUpdate
+	t.Cleanup(func() {
+		getwd = origGetwd
+		isTerminal = origIsTerminal
+		installRun = origInstallRun
+		checkForUpdate = origCheckForUpdate
+	})
+
+	parent := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(parent, ".agent-layer"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(parent, "child")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	getwd = func() (string, error) { return sub, nil }
+	isTerminal = func() bool { return false }
+	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
+	}
+	installRun = func(string, install.Options) error {
+		t.Fatal("installRun should not be called when ancestor already initialized")
+		return nil
+	}
+
+	cmd := newInitCmd()
+	cmd.SetArgs([]string{"--no-wizard"})
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when ancestor is already initialized")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "ancestor directory") {
+		t.Fatalf("error should mention ancestor directory, got %q", msg)
+	}
+	if !strings.Contains(msg, "al init --here") {
+		t.Fatalf("error should hint at --here, got %q", msg)
+	}
+}
+
 func TestInitCmd_AgentLayerIsFileErrors(t *testing.T) {
 	origGetwd := getwd
 	origIsTerminal := isTerminal

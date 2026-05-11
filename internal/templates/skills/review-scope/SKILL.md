@@ -1,11 +1,9 @@
 ---
 name: review-scope
 description: >-
-  Review explicit files, directories, diffs, uncommitted changes, or a
-  proactive hotspot set and produce a findings report covering correctness,
-  gaps, risks, architecture, tests, docs, performance, reliability, and
-  maintainability. Use the `review-plan` skill instead when the target is
-  specifically a plan/task/context artifact set.
+  Review explicit files, directories, diffs, uncommitted changes, or proactive
+  hotspots for correctness, gaps, risks, architecture, tests, docs, performance,
+  reliability, and maintainability. Use `review-plan` for plans.
 ---
 
 # review-scope

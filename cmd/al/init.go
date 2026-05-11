@@ -51,12 +51,13 @@ var validatePinnedReleaseVersionFunc = validatePinnedReleaseVersion
 func newInitCmd() *cobra.Command {
 	var noWizard bool
 	var pinVersion string
+	var here bool
 
 	cmd := &cobra.Command{
 		Use:   messages.InitUse,
 		Short: messages.InitShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := resolveInitRoot()
+			root, cwd, err := resolveInitRoot(here)
 			if err != nil {
 				return err
 			}
@@ -64,6 +65,9 @@ func newInitCmd() *cobra.Command {
 			if info, err := statAgentLayerPath(agentLayerPath); err == nil {
 				if !info.IsDir() {
 					return fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
+				}
+				if root != cwd {
+					return fmt.Errorf(messages.InitAlreadyInitializedAncestorFmt, root, cwd)
 				}
 				return fmt.Errorf(messages.InitAlreadyInitialized)
 			} else if !errors.Is(err, os.ErrNotExist) {
@@ -103,6 +107,7 @@ func newInitCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&noWizard, "no-wizard", false, messages.InitFlagNoWizard)
 	cmd.Flags().StringVar(&pinVersion, "version", "", messages.InitFlagVersion)
+	cmd.Flags().BoolVar(&here, "here", false, messages.InitFlagHere)
 
 	return cmd
 }

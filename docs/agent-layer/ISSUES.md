@@ -27,11 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-03-22 init-subfolder-of-repo: `al init` cannot install in a subfolder of another git repo
-    Priority: Medium. Area: internal/root / init.
-    Description: `FindRepoRoot` first calls `FindAgentLayerRoot` (walks upward for `.agent-layer/`) then falls back to walking upward for `.git`. Both walks return the first ancestor match, so running `al init` in a subfolder of a repo that already has agent-layer installed always resolves to the parent. Even `git init` in the subfolder doesn't help because the `.agent-layer` check takes priority. No clean workaround exists.
-    Next step: Add a flag or heuristic so `al init` can target the current directory when the user intends to install in a subfolder (e.g. `--here` flag, or prompt when cwd != detected root).
-
 - Issue 2026-03-02 color-gating-consistency: Centralize CLI color gating beyond fatih/color built-in detection
     Priority: Low. Area: CLI output / color handling.
     Description: `color.YellowString()` gates ANSI output via fatih/color's global `NoColor` flag (terminal detection + `NO_COLOR` env var), but `shouldColorizeDiffOutput()` uses a separate `isTerminal() && !color.NoColor` check for unified-diff rendering with custom `color.New()` objects. The two gating mechanisms are inconsistent — `color.YellowString()` self-gates while diff colors require explicit gating. If Cobra's `io.Writer` is redirected (e.g., `cmd.SetOut()` in tests or embedding), `color.YellowString()` still checks `os.Stdout` for terminal detection, which could emit ANSI codes to non-terminal outputs.

@@ -1,10 +1,9 @@
 ---
 name: repair-checks
 description: >-
-  Run the repo's documented local checks, fix in-scope failures, and repeat
-  until checks pass or a real blocker remains. Use when the user asks to fix
-  lint, typecheck, tests, format, or pre-PR checks. Use `fix-ci` for remote PR
-  checks and `audit-and-fix-uncommitted-changes` for broader diff review.
+  Run documented local checks, fix in-scope failures, and repeat until checks
+  pass or a real blocker remains. Use for lint, typecheck, tests, format, or
+  pre-PR check failures.
 ---
 
 # repair-checks

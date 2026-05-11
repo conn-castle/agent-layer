@@ -2,10 +2,8 @@
 name: finish-task
 description: >-
   Close out finished work by checking plan alignment, updating only necessary
-  memory/docs, running credible verification, and summarizing outcome. Use when
-  code work is done but no PR is needed. Use `ship-pr` for commit/push/PR,
-  `verify-against-plan` for read-only checks, and `complete-current-phase` for
-  roadmap phases.
+  memory/docs, running credible verification, and summarizing outcome. Use
+  `ship-pr` for PR work or `verify-against-plan` for read-only checks.
 ---
 
 # finish-task
