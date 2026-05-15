@@ -2,6 +2,7 @@ package warnings
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -137,8 +138,12 @@ func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
 }
 
 func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
+	root := t.TempDir()
+	absRoot, err := filepath.Abs(root)
+	require.NoError(t, err)
+
 	project := &config.ProjectConfig{
-		Root: "/repo",
+		Root: root,
 		Config: config.Config{
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
@@ -148,7 +153,7 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 							"multi_agent": true,
 						},
 						"projects": map[string]any{
-							"/repo": map[string]any{
+							absRoot: map[string]any{
 								"trust_level": "trusted",
 							},
 						},
@@ -176,14 +181,18 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 }
 
 func TestCheckPolicy_CodexAgentSpecificProjectsDifferentRootDoesNotWarn(t *testing.T) {
+	root := t.TempDir()
+	otherRoot, err := filepath.Abs(t.TempDir())
+	require.NoError(t, err)
+
 	project := &config.ProjectConfig{
-		Root: "/repo",
+		Root: root,
 		Config: config.Config{
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
 					AgentSpecific: map[string]any{
 						"projects": map[string]any{
-							"/other": map[string]any{
+							otherRoot: map[string]any{
 								"trust_level": "trusted",
 							},
 						},
@@ -198,7 +207,7 @@ func TestCheckPolicy_CodexAgentSpecificProjectsDifferentRootDoesNotWarn(t *testi
 
 func TestCheckPolicy_CodexAgentSpecificProjectsNonMapWarns(t *testing.T) {
 	project := &config.ProjectConfig{
-		Root: "/repo",
+		Root: t.TempDir(),
 		Config: config.Config{
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
