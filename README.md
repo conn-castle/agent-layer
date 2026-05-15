@@ -336,6 +336,7 @@ enabled = true
 # reasoning_effort = "xhigh" # codex only
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
 # These are appended to .codex/config.toml and can override top-level managed keys.
+# Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # multi_agent = true
@@ -390,7 +391,7 @@ mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
 ```
 
-Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.claude.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys.
+Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.claude.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys. Codex project trust is managed automatically for the current absolute repo root.
 
 #### Built-in placeholders
 

@@ -22,7 +22,7 @@ func appendCodexAgentSpecific(builder *strings.Builder, agentSpecific map[string
 	if encoded == "" {
 		return nil
 	}
-	builder.WriteString("\n")
+	appendCodexSectionBreak(builder)
 	builder.WriteString(encoded)
 	return nil
 }

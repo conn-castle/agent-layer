@@ -146,6 +146,11 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 						"features": map[string]any{
 							"multi_agent": true,
 						},
+						"projects": map[string]any{
+							"/repo": map[string]any{
+								"trust_level": "trusted",
+							},
+						},
 					},
 				},
 				Claude: config.ClaudeConfig{
@@ -163,6 +168,7 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 	require.Len(t, results, 2)
 	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
 	require.Equal(t, "agents.codex.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: approval_policy, projects"}, results[0].Details)
 	require.Equal(t, CodePolicyAgentSpecificOverrides, results[1].Code)
 	require.Equal(t, "agents.claude.agent_specific", results[1].Subject)
 	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[1].Details)

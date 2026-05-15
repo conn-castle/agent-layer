@@ -16,6 +16,8 @@ const (
 	SyncMarshalVSCodeSettingsFailedFmt              = "failed to marshal vscode settings: %w"
 	SyncMarshalVSCodeMCPConfigFailedFmt             = "failed to marshal vscode mcp config: %w"
 	SyncMarshalCodexAgentSpecificFailedFmt          = "failed to marshal codex agent-specific config: %w"
+	SyncCodexTrustRootRequired                      = "repo root required for codex trust stanza"
+	SyncCodexTrustRootResolveFailedFmt              = "failed to resolve repo root for codex trust stanza %q: %w"
 	SyncMarshalCopilotMCPConfigFailedFmt            = "failed to marshal copilot mcp config: %w"
 	SyncInvalidVSCodeSettingsFmt                    = "invalid vscode settings %s: %w"
 	SyncReadTemplateFailedFmt                       = "failed to read template %s: %w"

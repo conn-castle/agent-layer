@@ -151,7 +151,7 @@ This creates a stable non-managed tail position for extension writes.
 
 This is primarily a VS Code fallback.
 
-Continue using `al codex` on the CLI. `al codex` sets a repo-local `CODEX_HOME`, so Codex uses the repo-local `.codex/config.toml` (which Agent Layer generates from `.agent-layer/config.toml`, including MCP servers).
+Continue using `al codex` on the CLI. `al codex` sets a repo-local `CODEX_HOME`, so Codex uses the repo-local `.codex/config.toml` (which Agent Layer generates from `.agent-layer/config.toml`, including the current repo trust stanza and MCP servers).
 
 If you launch VS Code without Agent Layer's repo-local launcher, the Codex VS Code extension will not receive the repo-local `CODEX_HOME`. In that case, the extension continues to use repo-local instructions and skills, but it uses MCP servers from your global Codex config instead.
 

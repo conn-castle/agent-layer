@@ -91,7 +91,7 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc", "API_KEY": "def"},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc"},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -190,6 +190,97 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 	}
 }
 
+func TestBuildCodexConfigAgentSpecificDifferentProjectDoesNotSuppressTrust(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "repo")
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatalf("abs root: %v", err)
+	}
+	otherRoot := absRoot + "-other"
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"projects": map[string]any{
+							otherRoot: map[string]any{
+								"trust_level": "trusted",
+							},
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(root, project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(output), &parsed); err != nil {
+		t.Fatalf("parse generated toml: %v\n%s", err, output)
+	}
+	projects := parsed["projects"].(map[string]any)
+	if _, ok := projects[absRoot].(map[string]any); !ok {
+		t.Fatalf("expected managed exact-path project %q, got %#v", absRoot, projects)
+	}
+	if _, ok := projects[otherRoot].(map[string]any); !ok {
+		t.Fatalf("expected agent-specific project %q, got %#v", otherRoot, projects)
+	}
+}
+
+func TestBuildCodexConfigAgentSpecificSameProjectSuppressesManagedTrust(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "repo")
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatalf("abs root: %v", err)
+	}
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"projects": map[string]any{
+							absRoot: map[string]any{
+								"trust_level": "on-request",
+							},
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(root, project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(output), &parsed); err != nil {
+		t.Fatalf("parse generated toml: %v\n%s", err, output)
+	}
+	projects, ok := parsed["projects"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected projects map, got %#v", parsed["projects"])
+	}
+	entry, ok := projects[absRoot].(map[string]any)
+	if !ok {
+		t.Fatalf("expected projects[%q] map, got %#v", absRoot, projects[absRoot])
+	}
+	if got := entry["trust_level"]; got != "on-request" {
+		t.Fatalf("expected agent-specific trust_level to win, got %#v", got)
+	}
+	// The managed trust stanza must not appear after the user override.
+	if strings.Count(output, "[projects.") != 1 {
+		t.Fatalf("expected exactly one [projects.…] table, got:\n%s", output)
+	}
+}
+
 func TestBuildCodexConfigYOLO(t *testing.T) {
 	t.Parallel()
 	enabled := true
@@ -201,7 +292,7 @@ func TestBuildCodexConfigYOLO(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -242,7 +333,7 @@ func TestBuildCodexConfigAgentSpecific(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -288,7 +379,7 @@ func TestBuildCodexConfigAgentSpecificOverrides(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -339,7 +430,7 @@ func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -399,7 +490,7 @@ func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc"},
 	}
 
-	_, err := buildCodexConfig(project)
+	_, err := buildCodexConfig(t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -426,7 +517,7 @@ func TestBuildCodexConfigMissingEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(project)
+	_, err := buildCodexConfig(t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -570,7 +661,7 @@ func TestBuildCodexConfigMultipleServers(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(project)
+	output, err := buildCodexConfig(t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -604,7 +695,7 @@ func TestBuildCodexConfigUnsupportedTransport(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(project)
+	_, err := buildCodexConfig(t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for unsupported transport")
 	}
@@ -634,7 +725,7 @@ func TestBuildCodexConfigStdioMissingCommandEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(project)
+	_, err := buildCodexConfig(t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for missing command env var")
 	}
@@ -665,7 +756,7 @@ func TestBuildCodexConfigStdioMissingArgEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(project)
+	_, err := buildCodexConfig(t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for missing arg env var")
 	}
@@ -696,7 +787,7 @@ func TestBuildCodexConfigStdioMissingEnvVarEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(project)
+	_, err := buildCodexConfig(t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for missing env var env")
 	}

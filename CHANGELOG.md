@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - Built-in skill frontmatter descriptions are shorter and more routing-focused, reducing Claude skill listing budget pressure while keeping key trigger language.
 - Claude `agent_specific` is now deep-merged into `.claude/settings.json` for object values (arrays and scalars still replace at their key). Previously, top-level objects were replaced wholesale. `permissions.deny` is additive and does not trigger an override warning; `permissions.allow` continues to warn when present.
+- Codex sync now writes `[projects."<repo root>"] trust_level = "trusted"` to repo-local `.codex/config.toml`, preserving Codex's exact absolute-path trust semantics without requiring a per-repo `agents.codex.agent_specific.projects` passthrough.
 - `ship-pr` skill adds a human-gated Phase 9: the agent merges the PR only when the user replies with the exact phrase `I approve merging PR #<N>` matching the run's PR number, using an unambiguous GitHub merge method or pausing for a strategy choice when multiple methods are available; on a successful merge it deletes the source branch locally and remotely. The skill refuses to delete the repository's default branch.
 - `ship-pr` skill adds an upfront "Continuation rule" framing sub-skill returns as intermediate, not terminal. Addresses a recurring failure where the orchestrator stopped after `audit-and-fix-uncommitted-changes` returned, mistaking the sub-skill's closeout summary for ship-pr's completion.
 

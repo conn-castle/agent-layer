@@ -49,6 +49,7 @@ enabled = true
 # reasoning_effort = "xhigh" # codex only
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
 # These are appended to .codex/config.toml and can override top-level managed keys.
+# Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
 # Overlapping keys override Agent Layer-managed values and trigger a sync warning.
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]

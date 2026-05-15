@@ -6,6 +6,7 @@ var CodexReservedKeys = map[string]struct{}{
 	"mcp_servers":            {},
 	"model":                  {},
 	"model_reasoning_effort": {},
+	"projects":               {},
 	"sandbox_mode":           {},
 	"web_search":             {},
 }
