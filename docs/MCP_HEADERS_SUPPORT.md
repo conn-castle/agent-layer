@@ -131,6 +131,8 @@ Notes:
 **File (repo-local):** `.codex/config.toml` (trusted projects)
 **File (user):** `~/.codex/config.toml`
 
+Agent Layer writes the current absolute repo root under `[projects."<repo root>"]` with `trust_level = "trusted"` before MCP server tables.
+
 Codex supports three ways to send headers to HTTP MCP servers:
 
 * `bearer_token_env_var` (recommended for `Authorization: Bearer ...`)

@@ -90,7 +90,7 @@ Use them sparingly:
 - Colliding keys intentionally override Agent Layer-managed values.
 - Sync emits a warning whenever agent-specific keys overlap managed keys, with one carve-out: Claude `permissions.deny` is additive and does not warn.
 - Claude agent-specific values are deep-merged into `.claude/settings.json` for object values; arrays and scalar values are replaced at their key.
-- Codex agent-specific values are written at the TOML root before managed MCP tables so top-level overrides stay explicit.
+- Codex agent-specific values are written at the TOML root before managed project trust and MCP tables so top-level overrides stay explicit.
 
 If you find yourself carrying many permanent overrides, that is usually a sign the setting should become a first-class key in `.agent-layer/config.toml`.
 
@@ -101,7 +101,7 @@ Agent Layer gives each repository its own agent configuration so work in one rep
 
 ### How it works
 
-**Codex** isolation is automatic. Every repo that enables `[agents.vscode]` gets its own `CODEX_HOME`, so Codex authentication is always per-repo with no extra configuration.
+**Codex** isolation is automatic. `al codex` and repos that enable `[agents.vscode]` use a repo-local `CODEX_HOME`. The generated `.codex/config.toml` also includes a trust stanza for the current absolute repo root, so Codex authentication and trust are per-repo with no extra configuration.
 
 **Claude** isolation is opt-in. Set `local_config_dir = true` under `[agents.claude]` in `.agent-layer/config.toml`:
 

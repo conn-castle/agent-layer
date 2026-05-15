@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -20,7 +21,7 @@ const codexHeader = `# GENERATED FILE — MAY CONTAIN SECRETS
 
 // WriteCodexConfig generates .codex/config.toml.
 func WriteCodexConfig(sys System, root string, project *config.ProjectConfig) error {
-	content, err := buildCodexConfig(project)
+	content, err := buildCodexConfig(root, project)
 	if err != nil {
 		return err
 	}
@@ -52,7 +53,12 @@ func WriteCodexRules(sys System, root string, project *config.ProjectConfig) err
 	return nil
 }
 
-func buildCodexConfig(project *config.ProjectConfig) (string, error) {
+func buildCodexConfig(root string, project *config.ProjectConfig) (string, error) {
+	trustedRoot, err := codexTrustedProjectRoot(root)
+	if err != nil {
+		return "", err
+	}
+
 	var builder strings.Builder
 	builder.WriteString(codexHeader)
 
@@ -80,6 +86,8 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 		return "", err
 	}
 
+	appendCodexTrustedProject(&builder, trustedRoot, project.Config.Agents.Codex.AgentSpecific)
+
 	if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "mcp_servers") {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
 		resolved, err := projection.ResolveMCPServers(
@@ -92,6 +100,9 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 			return "", err
 		}
 
+		if len(resolved) > 0 {
+			appendCodexSectionBreak(&builder)
+		}
 		for i, server := range resolved {
 			if i > 0 {
 				builder.WriteString("\n")
@@ -113,6 +124,51 @@ func buildCodexConfig(project *config.ProjectConfig) (string, error) {
 	}
 
 	return builder.String(), nil
+}
+
+func codexTrustedProjectRoot(root string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", errors.New(messages.SyncCodexTrustRootRequired)
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf(messages.SyncCodexTrustRootResolveFailedFmt, root, err)
+	}
+	return absRoot, nil
+}
+
+func appendCodexTrustedProject(builder *strings.Builder, repoRoot string, agentSpecific map[string]any) {
+	if codexAgentSpecificDefinesProject(agentSpecific, repoRoot) {
+		return
+	}
+	appendCodexSectionBreak(builder)
+	fmt.Fprintf(builder, "[projects.%q]\n", repoRoot)
+	builder.WriteString("trust_level = \"trusted\"\n")
+}
+
+func appendCodexSectionBreak(builder *strings.Builder) {
+	content := builder.String()
+	if content == "" || strings.HasSuffix(content, "\n\n") {
+		return
+	}
+	if strings.HasSuffix(content, "\n") {
+		builder.WriteString("\n")
+		return
+	}
+	builder.WriteString("\n\n")
+}
+
+func codexAgentSpecificDefinesProject(agentSpecific map[string]any, repoRoot string) bool {
+	projects, ok := agentSpecific["projects"]
+	if !ok {
+		return false
+	}
+	projectsMap, ok := projects.(map[string]any)
+	if !ok {
+		return true
+	}
+	_, ok = projectsMap[repoRoot]
+	return ok
 }
 
 func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMCPServer, env map[string]string) error {

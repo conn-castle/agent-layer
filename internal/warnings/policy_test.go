@@ -2,6 +2,7 @@ package warnings
 
 import (
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -137,7 +138,12 @@ func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
 }
 
 func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
+	root := t.TempDir()
+	absRoot, err := filepath.Abs(root)
+	require.NoError(t, err)
+
 	project := &config.ProjectConfig{
+		Root: root,
 		Config: config.Config{
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
@@ -145,6 +151,11 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 						"approval_policy": "never",
 						"features": map[string]any{
 							"multi_agent": true,
+						},
+						"projects": map[string]any{
+							absRoot: map[string]any{
+								"trust_level": "trusted",
+							},
 						},
 					},
 				},
@@ -163,9 +174,55 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 	require.Len(t, results, 2)
 	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
 	require.Equal(t, "agents.codex.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: approval_policy, projects"}, results[0].Details)
 	require.Equal(t, CodePolicyAgentSpecificOverrides, results[1].Code)
 	require.Equal(t, "agents.claude.agent_specific", results[1].Subject)
 	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[1].Details)
+}
+
+func TestCheckPolicy_CodexAgentSpecificProjectsDifferentRootDoesNotWarn(t *testing.T) {
+	root := t.TempDir()
+	otherRoot, err := filepath.Abs(t.TempDir())
+	require.NoError(t, err)
+
+	project := &config.ProjectConfig{
+		Root: root,
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"projects": map[string]any{
+							otherRoot: map[string]any{
+								"trust_level": "trusted",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.Nil(t, CheckPolicy(project))
+}
+
+func TestCheckPolicy_CodexAgentSpecificProjectsNonMapWarns(t *testing.T) {
+	project := &config.ProjectConfig{
+		Root: t.TempDir(),
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"projects": "trusted",
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, []string{"overridden keys: projects"}, results[0].Details)
 }
 
 func TestCheckPolicy_ClaudeAgentSpecificPermissionsDenyDoesNotWarn(t *testing.T) {
