@@ -3,6 +3,7 @@ package warnings
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -30,7 +31,7 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 
 	results := make([]Warning, 0)
 
-	if agentSpecificWarning := agentSpecificOverrideWarning("codex", "agents.codex.agent_specific", project.Config.Agents.Codex.AgentSpecific, config.CodexReservedKeys); agentSpecificWarning != nil {
+	if agentSpecificWarning := codexAgentSpecificOverrideWarning(project.Root, project.Config.Agents.Codex.AgentSpecific); agentSpecificWarning != nil {
 		results = append(results, *agentSpecificWarning)
 	}
 	if agentSpecificWarning := claudeAgentSpecificOverrideWarning(project.Config.Agents.Claude.AgentSpecific); agentSpecificWarning != nil {
@@ -113,16 +114,23 @@ func claudeReasoningEffortUnknownWarning(effort string) *Warning {
 	}
 }
 
-// agentSpecificOverrideWarning reports when agent-specific config overrides managed keys.
-func agentSpecificOverrideWarning(label string, subject string, agentSpecific map[string]any, reserved map[string]struct{}) *Warning {
-	if len(agentSpecific) == 0 || len(reserved) == 0 {
+// codexAgentSpecificOverrideWarning reports when codex agent-specific config overrides
+// managed keys. The `projects` key only collides when the user's map contains the
+// managed exact-path entry (the resolved repo root); other paths coexist without override.
+func codexAgentSpecificOverrideWarning(repoRoot string, agentSpecific map[string]any) *Warning {
+	if len(agentSpecific) == 0 {
 		return nil
 	}
 	var keys []string
-	for key := range agentSpecific {
-		if _, ok := reserved[key]; ok {
-			keys = append(keys, key)
+	for key := range config.CodexReservedKeys {
+		value, present := agentSpecific[key]
+		if !present {
+			continue
 		}
+		if key == "projects" && !codexProjectsCollides(value, repoRoot) {
+			continue
+		}
+		keys = append(keys, key)
 	}
 	if len(keys) == 0 {
 		return nil
@@ -130,13 +138,32 @@ func agentSpecificOverrideWarning(label string, subject string, agentSpecific ma
 	slices.Sort(keys)
 	return &Warning{
 		Code:     CodePolicyAgentSpecificOverrides,
-		Subject:  subject,
-		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, label),
+		Subject:  "agents.codex.agent_specific",
+		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, "codex"),
 		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
 		Details:  []string{fmt.Sprintf("overridden keys: %s", strings.Join(keys, ", "))},
 		Source:   SourceInternal,
 		Severity: SeverityWarning,
 	}
+}
+
+// codexProjectsCollides reports whether the user's agent_specific.projects value
+// actually overrides the managed exact-path trust entry for the current repo root.
+func codexProjectsCollides(value any, repoRoot string) bool {
+	projectsMap, ok := value.(map[string]any)
+	if !ok {
+		// Non-map projects fully replaces the managed entry at sync time.
+		return true
+	}
+	if strings.TrimSpace(repoRoot) == "" {
+		return false
+	}
+	absRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return false
+	}
+	_, ok = projectsMap[absRoot]
+	return ok
 }
 
 func claudeAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {

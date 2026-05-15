@@ -138,6 +138,7 @@ func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
 
 func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 	project := &config.ProjectConfig{
+		Root: "/repo",
 		Config: config.Config{
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
@@ -172,6 +173,47 @@ func TestCheckPolicy_AgentSpecificOverrideWarnings(t *testing.T) {
 	require.Equal(t, CodePolicyAgentSpecificOverrides, results[1].Code)
 	require.Equal(t, "agents.claude.agent_specific", results[1].Subject)
 	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[1].Details)
+}
+
+func TestCheckPolicy_CodexAgentSpecificProjectsDifferentRootDoesNotWarn(t *testing.T) {
+	project := &config.ProjectConfig{
+		Root: "/repo",
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"projects": map[string]any{
+							"/other": map[string]any{
+								"trust_level": "trusted",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.Nil(t, CheckPolicy(project))
+}
+
+func TestCheckPolicy_CodexAgentSpecificProjectsNonMapWarns(t *testing.T) {
+	project := &config.ProjectConfig{
+		Root: "/repo",
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"projects": "trusted",
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, []string{"overridden keys: projects"}, results[0].Details)
 }
 
 func TestCheckPolicy_ClaudeAgentSpecificPermissionsDenyDoesNotWarn(t *testing.T) {
