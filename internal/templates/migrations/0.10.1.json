@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "target_version": "0.10.1",
+  "min_prior_version": "0.10.0",
+  "operations": [
+    {
+      "id": "a-delete-skill-simplify-code",
+      "kind": "delete_file",
+      "path": ".agent-layer/skills/simplify-code",
+      "rationale": "Remove deprecated simplify-code skill directory; replaced by simplify-codebase (full-repo) and simplify-new-code (diff-scoped).",
+      "source_agnostic": true
+    }
+  ]
+}

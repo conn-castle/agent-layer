@@ -3,6 +3,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## v0.10.1 - 2026-05-17
+
+Adds diff-scoped cleanup skills (`prune-new-tests`, `simplify-new-code`) and wires fresh-context reviewer subagents into five existing skills to prevent narrative-driven rationalization. Introduces `al init --here` for in-place installs in subdirectories of existing repos, deep-merges Claude `agent_specific` configuration so `permissions.deny` is additive, auto-writes a Codex per-repo trust stanza, and adds a human-gated merge phase to `ship-pr`.
+
 ### Added
 - `al init --here` flag installs Agent Layer in the current directory without walking up to an ancestor `.agent-layer/` or `.git`. Lets users add a separate `.agent-layer/` inside a subfolder of an existing repo. When `al init` resolves to an already-initialized ancestor, the error now points at `--here` so the option is discoverable.
 - `agent_specific.permissions.deny = ["AskUserQuestion"]` shipped in the install seed (`internal/templates/config.toml`). Fresh `al init` now disables Claude Code's structured clarification-question tool by default; remove the line to keep it. Existing repos are unaffected.
