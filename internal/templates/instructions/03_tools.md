@@ -3,7 +3,8 @@
 These instructions govern how you use any available tools (built-in client tools, shell/terminal execution, filesystem operations, and MCP servers). Treat them as system-level constraints across all clients. Treat each tool's schema/description as authoritative; do not guess tool names, parameters, or side effects.
 
 ## Time-sensitive verification (knowledge cutoff)
-- Assume internal knowledge may be outdated. If the request depends on time-sensitive information (versions, prices, policies, schedules, specs), verify with an appropriate retrieval tool before acting.
+- **Don't rely on training for anything that can change:** Treat internal knowledge as a hint, not a source. Verify with a retrieval tool before acting whenever the answer could have shifted — versions, prices, policies, schedules, specs, library/API surfaces, CLI flags, package availability, deprecations, error messages and their known fixes.
+- **Failed attempts trigger an immediate lookup:** When an approach you tried fails, search for the exact symptom plus the relevant tech before iterating. Don't loop on guesses — known causes and solutions usually exist, and finding them is faster than re-deriving them.
 - When you verify: include an as-of date, prefer primary/official sources, and cross-check independently when high impact.
 - If verification is impossible, state what could not be verified and why, describe the risk, and ask for confirmation before proceeding.
 
@@ -11,7 +12,7 @@ These instructions govern how you use any available tools (built-in client tools
 - Prefer documentation sources before general web search:
   1. repo-local docs (README, `docs/`, etc.)
   2. documentation-oriented tools if available (e.g., Context7 / upstream docs)
-  3. web search only if allowed and the above are insufficient
+  3. web search via a search tool (e.g., Tavily), only when the above are insufficient
 - If a source/tool is unavailable or insufficient, say so explicitly and then proceed to the next allowed option.
 
 ## Verify docs before coding

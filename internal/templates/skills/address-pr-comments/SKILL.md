@@ -2,8 +2,8 @@
 name: address-pr-comments
 description: >-
   Handle reviewer feedback on an open PR: evaluate comments, implement agreed
-  fixes, justify or track deferrals, reply to every comment, audit changes,
-  then commit and push. Use `fix-ci` for failing checks.
+  fixes, justify or track deferrals, reply to every comment, audit substantive
+  changes when warranted, then commit and push. Use `fix-ci` for failing checks.
 ---
 
 # address-pr-comments
@@ -15,7 +15,7 @@ It should:
 - implement fixes for agreed feedback
 - prepare justifications for disagreed feedback
 - track legitimate deferrals before replying
-- audit all changes before committing
+- audit substantive changes before committing when warranted
 - commit and push
 - reply to every feedback comment using the required verdict format
 
@@ -36,8 +36,10 @@ Accept any combination of:
 
 ## Required behavior
 
-Delegate to:
-- `audit-and-fix-uncommitted-changes` before committing
+Use judgement before committing:
+- Delegate to `audit-and-fix-uncommitted-changes` when the implemented changes are substantive, touch more than 500 lines of code, or touch more than 10 files excluding docs.
+- Do not call `audit-and-fix-uncommitted-changes` for non-substantive changes such as docs-only updates, typo fixes, obvious bug fixes, metadata-only edits, or reply-only outcomes.
+- Always run verification appropriate to the actual change.
 
 ## Global constraints
 
@@ -91,12 +93,14 @@ Evaluation rules:
 4. If a comment's suggestion conflicts with another comment, note the conflict and ask if needed.
 5. Record every deferred item in the appropriate tracker (`ISSUES.md`, `BACKLOG.md`, or a GitHub issue) before replying with a deferred verdict.
 
-### Phase 4: Audit and commit (Auditor + Committer)
+### Phase 4: Audit decision and commit (Auditor + Committer)
 
-1. Use the `audit-and-fix-uncommitted-changes` skill to review and stabilize all changes.
-2. Stage all changes: `git add -A`
-3. Craft a commit message summarizing the comment-driven changes.
-4. Commit and push.
+1. Decide whether the implemented changes are substantive using the Required behavior rules above.
+2. For substantive changes, use the `audit-and-fix-uncommitted-changes` skill to review and stabilize them.
+3. For non-substantive changes, do not call `audit-and-fix-uncommitted-changes`; record the judgement in your working notes and run targeted verification appropriate to the change.
+4. Stage all changes: `git add -A`
+5. Craft a commit message summarizing the comment-driven changes.
+6. Commit and push.
 
 ### Phase 5: Reply to every comment (Replier)
 
@@ -111,22 +115,27 @@ Evaluation rules:
    - For review comments: `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies -f body="<reply>"`
    - For conversation comments: `gh pr comment <pr-number> --body "<reply>"`
 
-### Phase 6: Audit reply coverage (Comment auditor)
+### Phase 6: Audit reply coverage (Fresh-context comment auditor)
+
+This phase uses a **fresh-context reviewer subagent**, not the same agent that authored the replies. The author already rationalized each reply when writing it; re-grading from the same context just self-confirms.
 
 1. Re-fetch all PR comments, review comments, and review bodies.
-2. For every feedback comment, verify:
-   - a reply exists from this agent
-   - the reply opens with one of the required bold verdicts
-   - **Fixed** replies name a commit that contains a relevant change
-   - **No change** replies contain a specific, technically grounded justification
-   - **Deferred** replies name a real tracked location and the deferral is legitimate
-3. Re-address any flagged comment before finishing:
+2. For each feedback comment, package an audit triple:
+   - the original comment text (with author, location, and surrounding code excerpt as posted)
+   - the reply this agent posted
+   - the named commit hash (when the reply is `Fixed in <hash>`), with `git show <hash>` output for the relevant files
+
+3. Invoke the fresh-context reviewer subagent once per triple — or in tightly bounded batches — with the verbatim contents of [`reviewer-prompt.md`](reviewer-prompt.md). Do not paraphrase or summarize the prompt. The subagent must run with no prior conversation, no other PR context, and no implementer narrative.
+
+4. Re-address any non-`pass` verdicts before finishing:
    - missing reply
    - missing verdict
    - hollow fix
    - unjustified decline
    - lazy deferral
    - generic dismissal
+
+5. After re-addressing, re-run the fresh-context auditor on the affected triples. Do not declare Phase 6 done until every comment returns `pass` from a fresh-context invocation.
 
 ## Comment reply format
 
@@ -160,7 +169,8 @@ it must be fixed, not deferred.
 - Do not disagree with a comment just to avoid work or defer the issue.
 - Do not defer a comment without first recording the item in the named location.
 - Do not implement changes that conflict with the project's established patterns without justification.
-- Do not skip the audit-and-fix step before committing.
+- Do not call `audit-and-fix-uncommitted-changes` reflexively for non-substantive changes.
+- Do not skip `audit-and-fix-uncommitted-changes` when the changes are substantive.
 - Do not reply to comments before the changes are committed and pushed.
 - If a previously declined suggestion is subsequently implemented, the follow-up reply must acknowledge the reversal.
 
@@ -171,8 +181,8 @@ it must be fixed, not deferred.
 - For every agreed comment, the implemented change is present in a pushed commit and the reply names that commit.
 - For every disagreed comment, the reply contains a specific technical justification.
 - For every deferred comment, the named tracking location exists and the deferral is legitimate.
-- The Phase 6 reply audit completed with no missing reply, missing verdict, hollow fix, unjustified decline, lazy deferral, or generic dismissal.
-- The `audit-and-fix-uncommitted-changes` skill ran before the final commit, and all resulting changes are pushed to the PR branch.
+- The Phase 6 reply audit was performed by a fresh-context reviewer subagent (not by the agent that wrote the replies) and every comment came back with a `pass` verdict — no `missing_reply`, `missing_verdict`, `hollow_fix`, `unjustified_decline`, `lazy_deferral`, or `generic_dismissal`.
+- Substantive changes were reviewed with `audit-and-fix-uncommitted-changes`; for non-substantive changes, the final handoff states why it was not called and what verification ran.
 
 ## Final handoff
 
@@ -181,4 +191,5 @@ After all comments are addressed:
 2. State how many comments were disagreed with and why (briefly).
 3. State how many comments were deferred and where they were tracked.
 4. Confirm all comments have replies and passed the reply audit.
-5. State whether changes were pushed.
+5. Audit ran: include its `Key fixes applied` table (`| Round | Severity | Fix | Files |`); no audit: state why and what verification ran.
+6. State whether changes were pushed.

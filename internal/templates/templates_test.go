@@ -137,6 +137,9 @@ func TestSkillTemplatesKeepDefinitionOfDoneBeforeFinalHandoff(t *testing.T) {
 		if d.IsDir() {
 			return nil
 		}
+		if filepath.Base(path) != "SKILL.md" {
+			return nil
+		}
 		data, err := Read(path)
 		if err != nil {
 			return err
@@ -303,6 +306,7 @@ func TestPRCommentPolicyLivesInAddressPRComments(t *testing.T) {
 		"Fixed in `<short-hash>`",
 		"No change",
 		"Deferred",
+		"Audit ran: include its `Key fixes applied` table (`| Round | Severity | Fix | Files |`); no audit: state why and what verification ran.",
 		"missing reply",
 		"hollow fix",
 		"unjustified decline",
@@ -461,6 +465,8 @@ func TestAuditAndFixSkillUsesCriticalHighAppliedFixGate(t *testing.T) {
 		"Rejected findings do not count toward the repeat gate.",
 		"Critical/High applied fixes: <count>",
 		"Do not run an automatic confirmation round after a round with zero Critical/High applied fixes.",
+		"Present a **Key fixes applied** table sorted by Round then Severity.",
+		"The Round and Severity columns are required",
 	} {
 		if !strings.Contains(content, snippet) {
 			t.Fatalf("expected %q in audit-and-fix skill", snippet)
@@ -481,9 +487,245 @@ func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 		"skills/continue-roadmap/SKILL.md",
 		"skills/find-issues/SKILL.md",
 		"skills/mechanical-cleanup/SKILL.md",
+		"skills/simplify-code/SKILL.md",
 	} {
 		if _, err := Read(path); err == nil {
 			t.Fatalf("expected removed skill template %s to stay absent", path)
+		}
+	}
+}
+
+func TestSimplifyCodebaseSkillRenamed(t *testing.T) {
+	data, err := Read("skills/simplify-codebase/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"name: simplify-codebase",
+		".agent-layer/tmp/simplify-codebase.<run-id>.report.md",
+		"Use `simplify-new-code` instead when the target is the current uncommitted",
+		"Default scope is the full codebase",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in simplify-codebase skill", snippet)
+		}
+	}
+	if strings.Contains(content, "name: simplify-code\n") {
+		t.Fatalf("simplify-codebase skill still has legacy name")
+	}
+}
+
+func TestPruneNewTestsSkillEnforcesBurdenOfProof(t *testing.T) {
+	data, err := Read("skills/prune-new-tests/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"name: prune-new-tests",
+		".agent-layer/tmp/prune-new-tests.<run-id>.report.md",
+		"tests added in the current uncommitted diff",
+		"concrete mutation in production code that would flip the assertion",
+		"Burden-of-proof reviewer",
+		"It does **not** receive the implementer's narrative",
+		"Survival Check",
+		"> 0.90",
+		"Surviving Coverage Gaps",
+		"`audit-tests` instead when the target is the full existing suite",
+		"`boost-coverage` instead when the goal is to **add** tests",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in prune-new-tests skill", snippet)
+		}
+	}
+}
+
+func TestSimplifyNewCodeSkillScansForScopeCreep(t *testing.T) {
+	skillData, err := Read("skills/simplify-new-code/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	skillContent := string(skillData)
+	for _, snippet := range []string{
+		"name: simplify-new-code",
+		".agent-layer/tmp/simplify-new-code.<run-id>.report.md",
+		"current uncommitted diff only",
+		"Smell-pattern reviewer",
+		"It does **not** receive the user's original",
+		"Preserve the user-requested behavior",
+		"Use `simplify-codebase` instead",
+	} {
+		if !strings.Contains(skillContent, snippet) {
+			t.Fatalf("expected %q in simplify-new-code SKILL.md", snippet)
+		}
+	}
+
+	promptData, err := Read("skills/simplify-new-code/reviewer-prompt.md")
+	if err != nil {
+		t.Fatalf("Read error for reviewer-prompt.md: %v", err)
+	}
+	promptContent := string(promptData)
+	for _, snippet := range []string{
+		"Speculative flexibility",
+		"Premature abstraction",
+		"Single-caller indirection",
+		"Dead branches",
+		"Error handling for impossible cases",
+		"Defensive scaffolding",
+		"Overly clever patterns",
+		"Half-finished implementations",
+	} {
+		if !strings.Contains(promptContent, snippet) {
+			t.Fatalf("expected %q in simplify-new-code reviewer-prompt.md", snippet)
+		}
+	}
+}
+
+func TestImplementPlanWiresInDiffScopedCleanupSkills(t *testing.T) {
+	data, err := Read("skills/implement-plan/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"### Phase 4: Prune speculative tests",
+		"Run the `prune-new-tests` skill against the uncommitted diff before verification.",
+		"### Phase 5: Simplify agent-added code",
+		"Run the `simplify-new-code` skill against the uncommitted diff before verification.",
+		"### Phase 6: Verify against the plan",
+		"`prune-new-tests` ran when Phase 2 added or modified test files",
+		"`simplify-new-code` ran when Phase 2 produced production-code changes",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in implement-plan skill", snippet)
+		}
+	}
+	if strings.Contains(content, "- use the `simplify-code` skill") {
+		t.Fatalf("implement-plan still references legacy simplify-code skill")
+	}
+}
+
+func TestAuditAndFixAddsCleanupPrePass(t *testing.T) {
+	data, err := Read("skills/audit-and-fix-uncommitted-changes/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"### Phase 0.5: Prune agent-side scope creep before any review round",
+		"**`prune-new-tests`** when the diff contains added test files",
+		"**`simplify-new-code`** when the diff contains added or modified production code",
+		"## Pre-pass Cleanup",
+		"`prune-new-tests` (mandatory pre-pass when the diff added test files)",
+		"`simplify-new-code` (mandatory pre-pass when the diff added or modified production code)",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in audit-and-fix-uncommitted-changes skill", snippet)
+		}
+	}
+	if strings.Contains(content, "- `simplify-code` when a fix exposes obvious local complexity") {
+		t.Fatalf("audit-and-fix still references legacy simplify-code skill")
+	}
+}
+
+func TestVerifyAgainstPlanUsesPlanAnchoredReviewer(t *testing.T) {
+	data, err := Read("skills/verify-against-plan/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	content := string(data)
+	for _, snippet := range []string{
+		"Plan-anchored reviewer",
+		"no implementer narrative, no prior conversation, and no rationalizations",
+		"The plan/task/context artifacts ARE in scope",
+		"implementer's narrative ABOUT those artifacts is NOT in scope",
+		"Phase 2 used the plan-anchored fresh-context reviewer subagent",
+	} {
+		if !strings.Contains(content, snippet) {
+			t.Fatalf("expected %q in verify-against-plan skill", snippet)
+		}
+	}
+}
+
+func TestAddressPRCommentsPhase6UsesFreshContextAuditor(t *testing.T) {
+	skillData, err := Read("skills/address-pr-comments/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	skillContent := string(skillData)
+	for _, snippet := range []string{
+		"### Phase 6: Audit reply coverage (Fresh-context comment auditor)",
+		"fresh-context reviewer subagent",
+		"every comment came back with a `pass` verdict",
+	} {
+		if !strings.Contains(skillContent, snippet) {
+			t.Fatalf("expected %q in address-pr-comments SKILL.md", snippet)
+		}
+	}
+
+	promptData, err := Read("skills/address-pr-comments/reviewer-prompt.md")
+	if err != nil {
+		t.Fatalf("Read error for reviewer-prompt.md: %v", err)
+	}
+	if !strings.Contains(string(promptData), "You are auditing a single PR comment reply") {
+		t.Fatalf("expected reviewer-prompt.md to contain the auditor prompt opening")
+	}
+}
+
+func TestImproveCodebasePerChunkReauditUsesFreshContext(t *testing.T) {
+	skillData, err := Read("skills/improve-codebase/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read error: %v", err)
+	}
+	skillContent := string(skillData)
+	for _, snippet := range []string{
+		"fresh-context reviewer subagent",
+		"never the fix narrative",
+		"per-chunk re-audit loops used a fresh-context reviewer subagent (not the fixer's context)",
+	} {
+		if !strings.Contains(skillContent, snippet) {
+			t.Fatalf("expected %q in improve-codebase SKILL.md", snippet)
+		}
+	}
+
+	promptData, err := Read("skills/improve-codebase/reviewer-prompt.md")
+	if err != nil {
+		t.Fatalf("Read error for reviewer-prompt.md: %v", err)
+	}
+	if !strings.Contains(string(promptData), "You are re-auditing a chunk of code after fixes were applied") {
+		t.Fatalf("expected reviewer-prompt.md to contain the re-audit prompt opening")
+	}
+}
+
+func TestFreshContextReviewerPromptsAreExtractedToSiblingFiles(t *testing.T) {
+	cases := []struct {
+		skill        string
+		promptAnchor string
+	}{
+		{"prune-new-tests", "concrete mutation in the production"},
+		{"simplify-new-code", "Speculative flexibility"},
+		{"verify-against-plan", "undocumented_deviation"},
+		{"address-pr-comments", "You are auditing a single PR comment reply"},
+		{"improve-codebase", "You are re-auditing a chunk of code after fixes were applied"},
+	}
+	for _, tc := range cases {
+		skillPath := "skills/" + tc.skill + "/SKILL.md"
+		skillData, err := Read(skillPath)
+		if err != nil {
+			t.Fatalf("Read error %s: %v", skillPath, err)
+		}
+		if !strings.Contains(string(skillData), "reviewer-prompt.md") {
+			t.Fatalf("expected %s to reference reviewer-prompt.md", skillPath)
+		}
+
+		promptPath := "skills/" + tc.skill + "/reviewer-prompt.md"
+		promptData, err := Read(promptPath)
+		if err != nil {
+			t.Fatalf("Read error %s: %v", promptPath, err)
+		}
+		if !strings.Contains(string(promptData), tc.promptAnchor) {
+			t.Fatalf("expected %s to contain %q", promptPath, tc.promptAnchor)
 		}
 	}
 }

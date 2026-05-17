@@ -42,13 +42,23 @@ Discovery rules:
 Fallback:
 - If no valid plan/task pair exists, ask the user for explicit paths or regenerate them first.
 
+## Required artifact
+
+Write an execution report to:
+- `.agent-layer/tmp/implement-plan.<run-id>.report.md`
+
+Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
+Create the file with `touch` before writing.
+
 ## Multi-agent pattern
 
 Recommended roles:
 1. `Context scout`: maps plan steps to actual files and dependencies.
 2. `Execution gatekeeper`: decides whether the current task batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
 3. `Implementer`: owns a focused subset of the changes.
-4. `Verifier`: runs commands and checks behavior against the plan.
+4. `Burden-of-proof reviewer`: delegated via the `prune-new-tests` skill — prunes speculative tests added during implementation. Runs with fresh context against the diff.
+5. `Smell-pattern reviewer`: delegated via the `simplify-new-code` skill — undoes agent-side scope creep introduced during implementation. Runs with fresh context against the diff.
+6. `Verifier`: runs commands and checks behavior against the plan.
 
 For multi-file work, parallelize read-only exploration first, then implement in reviewable batches.
 
@@ -98,7 +108,7 @@ For multi-file work, parallelize read-only exploration first, then implement in 
 If the verdict is `proceed`, continue to Phase 2.
 If the verdict is `revise`, update or regenerate the plan/task pair and restart Phase 1.
 If the verdict is `escalate`, ask the smallest question that unblocks trustworthy execution.
-If the verdict is `rewrite-because-out-of-scope`, rewrite the current task batch or task ordering to stay inside the plan's real scope, record the rewrite for the final handoff, and restart Phase 1.
+If the verdict is `rewrite-because-out-of-scope`, rewrite the current task batch or task ordering to stay inside the plan's real scope, record the rewrite in the report, and restart Phase 1.
 
 ### Phase 2: Execute the task list (Implementer)
 
@@ -111,17 +121,13 @@ Execution rules:
 
 When a task becomes larger than expected:
 - split it
-- note the split for the final handoff
+- note the split in the report
 - continue only if scope still matches the plan
-
-If the touched scope accumulates obvious local complexity, dead scaffolding, or oversized files and the simplification would remain behavior-preserving and in-scope:
-- use the `simplify-code` skill
-- then continue to Phase 4
 
 ### Phase 3: Track deviations (Implementer)
 
 If you must deviate from the plan:
-- document the deviation for the final handoff
+- document the deviation in the report
 - explain why
 - note whether the change is:
   - equivalent
@@ -130,7 +136,19 @@ If you must deviate from the plan:
 
 If the deviation broadens scope materially, hand it back to the execution gatekeeper instead of freelancing.
 
-### Phase 4: Verify against the plan (Verifier)
+### Phase 4: Prune speculative tests (Burden-of-proof reviewer)
+
+Run the `prune-new-tests` skill against the uncommitted diff before verification. Tests added during implementation must defend their existence with a concrete production-code mutation that would flip their assertion; ones that cannot are auto-deleted. This phase is mandatory whenever Phase 2 added or modified test files.
+
+Record the prune-new-tests report path under `## Remaining Follow-up` if it surfaced surviving coverage gaps that warrant a separate `boost-coverage` pass.
+
+### Phase 5: Simplify agent-added code (Smell-pattern reviewer)
+
+Run the `simplify-new-code` skill against the uncommitted diff before verification. The skill scans for agent-side scope creep (speculative flexibility, premature abstractions, dead branches, impossible-case error handling, defensive scaffolding, clever patterns, half-finished work) and auto-applies simplifications while preserving the user-requested behavior. This phase is mandatory whenever Phase 2 produced production-code changes.
+
+If simplifications change the diff materially, the verification commands in Phase 6 must run against the post-simplification working tree.
+
+### Phase 6: Verify against the plan (Verifier)
 
 Before wrapping up, confirm:
 - every planned user-visible or maintainer-visible outcome exists
@@ -138,8 +156,22 @@ Before wrapping up, confirm:
 - verification commands were actually run
 - no major task list item was skipped silently
 
-When no broader orchestrator already owns closeout, use the `finish-task` skill after Phase 4.
+When no broader orchestrator already owns closeout, use the `finish-task` skill after Phase 6.
 If it finds stale memory, incomplete plan work, or missing verification, jump back to the earliest affected phase.
+
+## Execution report format
+
+Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` with only these sections:
+
+1. `## Deviations`
+   - Each deviation tagged `equivalent`, `narrower`, or `broader`, with a one-line reason.
+   - Include task splits and any `rewrite-because-out-of-scope` rewrites here.
+   - Use `None` when no deviations occurred.
+2. `## Remaining Follow-up`
+   - Plan items skipped, tests/docs/memory updates deferred, missing context file, and any other open threads, each with a reason.
+   - Use `None` when nothing is outstanding.
+
+Keep the report short. Do not re-narrate work that is already visible in the diff.
 
 ## Guardrails
 
@@ -151,13 +183,16 @@ If it finds stale memory, incomplete plan work, or missing verification, jump ba
 
 ## Definition of done
 
-- Every planned task-list item is either marked complete (with observable code/test/doc evidence) or recorded as a named deviation with classification (equivalent / narrower / broader).
-- Tests, docs, and memory updates promised by the plan were delivered in the same run; any skipped updates are listed in the final handoff with reasons.
+- Every planned task-list item is either marked complete (with observable code/test/doc evidence) or recorded as a named deviation in the report.
+- Tests, docs, and memory updates promised by the plan were delivered in the same run; any skipped updates are listed in the report's `Remaining Follow-up` with reasons.
+- `prune-new-tests` ran when Phase 2 added or modified test files; any surviving coverage gaps it surfaced are captured under `## Remaining Follow-up`.
+- `simplify-new-code` ran when Phase 2 produced production-code changes; verification in Phase 6 ran against the post-simplification working tree.
 - Verification commands from the plan ran and their observed output is recorded — no "should pass" claims without execution.
 
 ## Final handoff
 
 After execution:
-1. Summarize completed work, including plan/task/context paths used.
-2. Name any deviations, task splits, or missing context file.
-3. State whether the plan appears complete or whether follow-up remains.
+1. Echo the report path.
+2. Summarize completed work, including plan/task/context paths used.
+3. Name any deviations, task splits, or missing context file.
+4. State whether the plan appears complete or whether follow-up remains.

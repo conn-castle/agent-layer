@@ -41,7 +41,7 @@ Accept any combination of:
 - audit lens filters (all, correctness, architecture, security, quality, coverage)
 - a chunk iteration cap
 - a findings-per-chunk severity threshold for stopping early
-- whether to run complementary skills (simplify-code, boost-coverage, fix-issues)
+- whether to run complementary skills (simplify-codebase, boost-coverage, fix-issues)
 - whether to operate in report-only mode (no fixes)
 
 ## Required artifacts
@@ -57,8 +57,8 @@ The master report is the human-facing ledger and the single place to preserve or
 
 Delegated skill outputs are handled one way:
 - Use `review-scope` report artifacts as findings input to `resolve-findings`.
-- Copy `resolve-findings`, `simplify-code`, `boost-coverage`, `audit-tests`, and `fix-issues` outcomes from their final handoffs into the master report.
-- Do not require, open, echo, or cross-reference child report artifacts from `resolve-findings`, `simplify-code`, `boost-coverage`, `audit-tests`, or `fix-issues`.
+- Copy `resolve-findings`, `simplify-codebase`, `boost-coverage`, `audit-tests`, and `fix-issues` outcomes from their final handoffs into the master report.
+- Do not require, open, echo, or cross-reference child report artifacts from `resolve-findings`, `simplify-codebase`, `boost-coverage`, `audit-tests`, or `fix-issues`.
 
 ## Required behavior
 
@@ -72,7 +72,7 @@ At minimum, use:
 Prefer the dedicated skills that already exist:
 - `review-scope` for per-chunk auditing
 - `resolve-findings` for triaging and fixing findings
-- `simplify-code` when complexity warrants it
+- `simplify-codebase` when complexity warrants it
 - `boost-coverage` when test gaps are significant
 - `audit-tests` when test suite quality, redundancy, or organization is concerning
 - `fix-issues` when existing `ISSUES.md` entries overlap with findings
@@ -153,12 +153,21 @@ Fix every accepted finding regardless of severity. For findings that cannot be f
 Copy the fix summary into the master report under `## Chunk N: <name> Fixes`.
 
 If a fix exposes obvious local complexity:
-- use the `simplify-code` skill on the affected area
+- use the `simplify-codebase` skill on the affected area
 
-After fixes are applied, run one explicit re-audit pass on the chunk using `review-scope`:
-- if the re-audit finds new Critical or High findings, fix them and re-audit again
-- stop the per-chunk loop when no new Critical or High findings remain
-- if the loop does not converge after 3 iterations, escalate to the user
+After fixes are applied, run one explicit re-audit pass on the chunk using a **fresh-context reviewer subagent**, not a continuation of the fixer's context. The fixer just rationalized each change as correct; re-grading from the same context inherits that bias and produces sunk-cost "we just fixed that" agreement. The fresh-context reviewer sees only the post-fix chunk and the originating findings, never the fix narrative.
+
+Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the reviewer subagent verbatim — do not paraphrase, summarize, or modify the rubric.
+
+Inputs the reviewer receives alongside the prompt:
+- The post-fix content of every file in the chunk.
+- The originating findings list (titles, severities, locations only).
+- Nothing else. No fixer narrative, no `resolve-findings` report, no chat history, no "we decided to ___" rationalizations.
+
+Loop rules:
+- If the fresh-context re-audit returns new Critical or High findings, fix them and re-invoke the reviewer (fresh context again, fresh inputs each time).
+- Stop the per-chunk loop when the fresh-context re-audit returns no Critical or High findings.
+- If the loop does not converge after 3 iterations, escalate to the user.
 
 ### Phase 4: Cross-cutting review (Architecture reviewer)
 
@@ -176,7 +185,7 @@ Fix accepted cross-cutting findings using the same resolve-findings workflow.
 
 ### Phase 5: Complementary skill delegation (Orchestrator)
 
-Delegate to complementary skills only when the audit surfaces systemic issues in their domain: `boost-coverage` for significant test gaps, `audit-tests` for widespread redundancy/misclassification, `simplify-code` for significant complexity, `fix-issues` for overlapping `ISSUES.md` entries. Skip delegation when no meaningful gaps exist.
+Delegate to complementary skills only when the audit surfaces systemic issues in their domain: `boost-coverage` for significant test gaps, `audit-tests` for widespread redundancy/misclassification, `simplify-codebase` for significant complexity, `fix-issues` for overlapping `ISSUES.md` entries. Skip delegation when no meaningful gaps exist.
 
 Record delegation outcomes in the master report under `## Complementary Skill Results`.
 
@@ -233,7 +242,7 @@ At each major stage, echo the master report path, identify the current chunk, an
 ## Definition of done
 
 - The master report exists at `.agent-layer/tmp/improve-codebase.<run-id>.report.md` with every required section, including one `## Chunk N: <name> Findings` + `## Chunk N: <name> Fixes` pair per chunk in the plan and a populated `## Cross-Cutting Findings` section.
-- Every chunk in the planned chunk map was audited (no silent skips), and per-chunk re-audit loops ended with no new Critical or High findings or with an explicit 3-iteration escalation recorded.
+- Every chunk in the planned chunk map was audited (no silent skips); per-chunk re-audit loops used a fresh-context reviewer subagent (not the fixer's context) and ended with no new Critical or High findings or with an explicit 3-iteration escalation recorded.
 - Every deferred finding has a matching entry in `ISSUES.md` cited by the master report.
 - The `## Final Summary` states overall codebase health with evidence, and `## Residual Risk` names any systemic concerns that remain.
 

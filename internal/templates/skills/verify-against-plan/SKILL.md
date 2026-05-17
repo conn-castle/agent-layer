@@ -48,10 +48,19 @@ Create the file with `touch` before writing.
 
 ## Multi-agent pattern
 
-Recommended roles:
-1. `Plan reader`: extracts promises, scope, and exit criteria.
-2. `Implementation reviewer`: compares the code and docs to those promises.
+Required roles:
+1. `Plan reader`: extracts promises, scope, and exit criteria from the plan/task/context artifacts as written. Does not consume the implementer's narrative.
+2. `Plan-anchored reviewer` (fresh-context subagent): performs the plan-vs-implementation comparison with **no implementer narrative, no prior conversation, and no rationalizations** in scope. See the inputs and prompt contract below.
 3. `Verifier reviewer`: checks whether the reported validation actually proves completion.
+
+### Reviewer subagent prompt
+
+Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the reviewer subagent verbatim — do not paraphrase, summarize, or modify the rubric. Send no implementer narrative, no prior conversation, no chat history. The plan/task/context artifacts ARE in scope — they are what the reviewer compares against. The implementer's narrative ABOUT those artifacts is NOT in scope; including it collapses the comparison into the implementer's own self-grading.
+
+Inputs the reviewer receives alongside the prompt:
+- The plan file, the task file, and the context file (if present) — read as artifacts, not as conversation context.
+- `git status --porcelain`, the staged/unstaged/untracked file list, and the post-implementation content of the touched files.
+- Nothing else. No implementer report (`implement-plan.<run-id>.report.md`), no chat transcript, no deviation justifications.
 
 ## Global constraints
 
@@ -81,9 +90,11 @@ From the plan, task, and context artifacts, extract:
 - explicit exit criteria
 - key files and entry point (from context file, if present)
 
-### Phase 2: Compare contract to implementation (Implementation reviewer)
+### Phase 2: Compare contract to implementation (Plan-anchored reviewer)
 
-Check for:
+Invoke the plan-anchored reviewer subagent with the contents of `reviewer-prompt.md` and the inputs listed above. The subagent runs with fresh context — no implementer narrative, no prior conversation. It receives only the plan/task/context artifacts and the post-implementation working-tree state, and returns JSON-line findings.
+
+The reviewer covers:
 - missing deliverables
 - partially completed tasks presented as done
 - code that diverges from the stated approach without explanation
@@ -91,7 +102,9 @@ Check for:
 - missing docs or memory updates
 - scope creep that was not acknowledged
 
-### Phase 3: Review quality of completion (Implementation reviewer + Verifier reviewer)
+Collect the reviewer's findings under the report's `## Findings` section. Do **not** filter findings by re-reading the implementer's narrative — that defeats the fresh-context contract.
+
+### Phase 3: Review quality of completion (Verifier reviewer)
 
 Even if the plan was followed, check whether the implementation is sound:
 - obvious regressions
@@ -139,6 +152,7 @@ For every finding, include:
 
 - The report exists at `.agent-layer/tmp/verify-against-plan.<run-id>.report.md` with every required section (`Completion Verdict`, `Inputs`, `Plan Coverage`, `Findings`, `Verification Assessment`, `Docs and Memory Assessment`, `Recommended Next Step`).
 - `Plan Coverage` lists every in-scope plan item with an item-by-item status; partial completions are not presented as done.
+- Phase 2 used the plan-anchored fresh-context reviewer subagent; findings reflect that reviewer's verdicts, not a re-grading by the orchestrator after consulting implementer narrative.
 - The report carries exactly one verdict: `complete`, `complete-with-follow-up`, or `incomplete`; `complete-with-follow-up` is used only when remaining items are clearly outside planned scope.
 - Implementation, plan, task, and context artifacts were not modified by this run.
 

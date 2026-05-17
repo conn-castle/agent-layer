@@ -142,7 +142,7 @@ If the root cause is ambiguous after investigation, escalate with the competing 
 3. If the correct fix is materially larger than a targeted change, escalate before proceeding.
 
 If the fix touches scope that accumulates obvious local complexity or dead scaffolding:
-- use the `simplify-code` skill
+- use the `simplify-new-code` skill
 - then continue to Phase 6
 
 ### Phase 6: Verify (Verifier)

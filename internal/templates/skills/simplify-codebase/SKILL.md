@@ -1,13 +1,13 @@
 ---
-name: simplify-code
+name: simplify-codebase
 description: >-
-  Simplify code by removing dead code, reducing overly complex functions, and
-  splitting files with mixed responsibilities. Uses complexity metrics as
-  signals, scoped to uncommitted changes when present. Use for cleanup/refactor
-  requests.
+  Codebase-wide complexity reduction: remove dead code, simplify overly complex
+  functions, and split files with mixed responsibilities across explicit paths
+  or the whole repo. Use `simplify-new-code` instead when the target is the
+  current uncommitted diff.
 ---
 
-# simplify-code
+# simplify-codebase
 
 This is a complexity-reduction workflow, not a redesign workflow.
 Default behavior is:
@@ -36,15 +36,17 @@ of reducing a metric.
 
 ## Scope default
 
-- If uncommitted changes exist (staged, unstaged, or untracked), scope to the
-  changed files only.
-- If no uncommitted changes exist, scope to the full codebase or user-supplied
-  paths.
-- The user can always override with explicit paths or file-type filters.
+- Default scope is the full codebase (the repository source tree, excluding
+  generated files, vendor directories, and build artifacts).
+- The user can narrow scope with explicit paths, directories, or file-type
+  filters.
+- Use `simplify-new-code` instead when the target is the current uncommitted
+  diff — that skill is the diff-scoped sibling. This skill never operates on
+  the diff alone.
 
-When scoped to the full codebase, focus effort on the worst offenders rather
-than exhaustively rewriting everything. Identify, prioritize, and fix the
-highest-value simplifications first.
+Focus effort on the worst offenders rather than exhaustively rewriting
+everything. Identify, prioritize, and fix the highest-value simplifications
+first.
 
 ## Defaults
 
@@ -68,7 +70,7 @@ Accept any combination of:
 ## Required artifact
 
 Write the report to:
-- `.agent-layer/tmp/simplify-code.<run-id>.report.md`
+- `.agent-layer/tmp/simplify-codebase.<run-id>.report.md`
 
 Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 Create the file with `touch` before writing.
@@ -107,14 +109,11 @@ Recommended roles:
 
 ### Phase 0: Preflight (Repo scout)
 
-1. Confirm baseline with:
-   - `git status --porcelain`
-   - `git diff --stat`
+1. Confirm baseline with `git status --porcelain` and `git diff --stat`.
 2. Read `COMMANDS.md` before selecting verification commands.
-3. Determine the actual target scope:
-   - if uncommitted changes exist, scope to changed files
-   - if no uncommitted changes exist, scope to the full codebase or explicit
-     paths
+3. Determine the actual target scope: the full codebase by default, or the
+   explicit paths/file-type filters the user supplied. Do not implicitly
+   narrow to uncommitted changes — that is `simplify-new-code`'s job.
 4. Identify the language(s) and any available complexity tooling in the project.
 
 ### Phase 1: Assess complexity (Complexity analyst)
@@ -201,7 +200,7 @@ Do not split when:
 
 ## Required report structure
 
-Write `.agent-layer/tmp/simplify-code.<run-id>.report.md` with:
+Write `.agent-layer/tmp/simplify-codebase.<run-id>.report.md` with:
 
 1. `# Simplification Summary`
 2. `## Scope`
@@ -229,7 +228,7 @@ Write `.agent-layer/tmp/simplify-code.<run-id>.report.md` with:
 
 ## Definition of done
 
-- The report exists at `.agent-layer/tmp/simplify-code.<run-id>.report.md` with every required section (`Summary`, `Scope`, `Complexity Assessment`, `Large File Decisions`, `Dead Code Removed`, `Simplifications Applied`, `File Splits`, `Verification`, `Deferred Opportunities`).
+- The report exists at `.agent-layer/tmp/simplify-codebase.<run-id>.report.md` with every required section (`Summary`, `Scope`, `Complexity Assessment`, `Large File Decisions`, `Dead Code Removed`, `Simplifications Applied`, `File Splits`, `Verification`, `Deferred Opportunities`).
 - Every large file in scope has an explicit `keep` or `split` verdict with reasoning in `Large File Decisions` — none silently omitted.
 - Every applied change is behavior-preserving, no public contract changed without an approved checkpoint, and the fastest credible repo-defined checks ran with observed output cited in `Verification`.
 - Any "dead" code removal either has trusted-tooling evidence or the manual evidence is recorded in the report.

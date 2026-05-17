@@ -42,9 +42,11 @@ At minimum, use:
 - a synthesizer that keeps the round-by-round report current
 
 Prefer the dedicated skills that already exist:
+- `prune-new-tests` (mandatory pre-pass when the diff added test files)
+- `simplify-new-code` (mandatory pre-pass when the diff added or modified production code)
 - `review-scope`
 - `resolve-findings`
-- `simplify-code` when a fix exposes obvious local complexity that remains behavior-preserving and in scope
+- `simplify-new-code` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover
 
 ## Required artifacts
 
@@ -100,6 +102,15 @@ Delegated skill outputs are handled one way:
 5. Review staged + unstaged + untracked as one working-tree change set.
 6. State the actual target and baseline assumptions at the top of the master report.
 
+### Phase 0.5: Prune agent-side scope creep before any review round (Pre-pass)
+
+Before the first audit round, run the diff-scoped cleanup pre-passes so reviewers never spend budget on code that is about to be deleted or simplified:
+
+1. **`prune-new-tests`** when the diff contains added test files or added test functions. This auto-deletes tests added during implementation that cannot defend their existence with a concrete production-code mutation.
+2. **`simplify-new-code`** when the diff contains added or modified production code. This auto-applies simplifications that undo agent-side scope creep (speculative flexibility, premature abstractions, dead branches, impossible-case error handling, defensive scaffolding, clever patterns, half-finished work) while preserving the user-requested behavior.
+
+Run them in order. Record each sub-skill's report path under `## Pre-pass Cleanup` in the master report along with a one-line outcome. If either pre-pass materially changes the working tree, restart Phase 0 to refresh the target before continuing.
+
 ### Phase 1: Gather only the needed context (Lead reviewer)
 
 1. Read the minimum surrounding code and tests needed to understand the target.
@@ -131,7 +142,7 @@ Severity rule:
 - A final round may contain accepted Medium or Low findings, but they still must be fixed before the run closes.
 
 If a fix exposes obvious local complexity that is behavior-preserving and in scope:
-- use the `simplify-code` skill
+- use the `simplify-new-code` skill on the affected files
 - then apply the same Critical/High applied-fix gate to decide whether another audit round is required
 
 Escalate if the loop is not converging (same findings recurring, fix attempts not resolving issues, or complexity growing instead of shrinking).
@@ -152,12 +163,15 @@ Write `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` wi
 1. `# Audit and Fix Summary`
 2. `## Target`
 3. `## Assumptions`
-4. `## Round 1 Findings`
-5. `## Round 1 Fixes`
-6. `## Round 1 Status`
-7. Repeat the three Round sections for each additional round
-8. `## Final Verification`
-9. `## Residual Risk`
+4. `## Pre-pass Cleanup`
+   - `prune-new-tests` outcome (report path, deleted-count, surviving-gap count) or `Not applicable — no added tests`
+   - `simplify-new-code` outcome (report path, applied-count, reverted-count, out-of-scope count) or `Not applicable — no production-code changes`
+5. `## Round 1 Findings`
+6. `## Round 1 Fixes`
+7. `## Round 1 Status`
+8. Repeat the three Round sections for each additional round
+9. `## Final Verification`
+10. `## Residual Risk`
 
 Each Round section uses the format: `- <title> (<Severity>) — <file(s)>`.
 In each `## Round N Status`, include `Critical/High applied fixes: <count>`. If a finding reappears in a later round, say so explicitly.
@@ -174,7 +188,7 @@ Example:
 
 ## Minimal status protocol
 
-At each major stage, echo the master report path and state the current phase (preflight, auditing round N, fixing round N, repeat-gate round N, or closing).
+At each major stage, echo the master report path and state the current phase (preflight, pre-pass cleanup, auditing round N, fixing round N, repeat-gate round N, or closing).
 
 ## Guardrails
 
@@ -187,7 +201,8 @@ At each major stage, echo the master report path and state the current phase (pr
 
 ## Definition of done
 
-- The master report exists at `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` with one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round plus `## Final Verification` and `## Residual Risk`.
+- The master report exists at `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` with `## Pre-pass Cleanup` populated (or marked not applicable for each sub-skill), one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round, plus `## Final Verification` and `## Residual Risk`.
+- The `## Pre-pass Cleanup` section names both `prune-new-tests` and `simplify-new-code` outcomes; either ran or is explicitly recorded as not applicable.
 - The final round's status states `Critical/High applied fixes: 0`.
 - No accepted finding from any round remains unresolved or deferred in the final report.
 - The working tree was not staged, committed, or discarded by this skill.
@@ -200,7 +215,7 @@ Required chat output:
 
 1. Echo the master report path.
 2. State total rounds, total findings, and final convergence status.
-3. Present a **Key fixes applied** table sorted by Round then Severity. The Round column is required. Example columns: `| Round | Severity | Fix | Files |`.
+3. Present a **Key fixes applied** table sorted by Round then Severity. The Round and Severity columns are required so every fix stays tied to the iteration that produced it. Example columns: `| Round | Severity | Fix | Files |`. If no fixes were applied, still print the table with a single `No fixes applied` row.
 4. List rejected and deferred findings (if any) with their round numbers.
 5. State which round stopped the loop and that it applied zero Critical or High fixes.
 
