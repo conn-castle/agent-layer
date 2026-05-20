@@ -94,7 +94,7 @@ func TestUpgradePlanCmd_TextOutputHidesOwnershipDiagnostics(t *testing.T) {
 	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte("# custom allowlist\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte("# custom allowlist\n"), 0o600); err != nil {
 		t.Fatalf("write custom allowlist: %v", err)
 	}
 
@@ -300,10 +300,10 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 	oldRoadmap := []byte("# ROADMAP\n\nLegacy header\n\n<!-- PHASES START -->\n")
 	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
 	baselineRoadmapPath := filepath.Join(root, ".agent-layer", "templates", "docs", "ROADMAP.md")
-	if err := os.WriteFile(roadmapPath, oldRoadmap, 0o644); err != nil {
+	if err := os.WriteFile(roadmapPath, oldRoadmap, 0o600); err != nil {
 		t.Fatalf("write roadmap: %v", err)
 	}
-	if err := os.WriteFile(baselineRoadmapPath, oldRoadmap, 0o644); err != nil {
+	if err := os.WriteFile(baselineRoadmapPath, oldRoadmap, 0o600); err != nil {
 		t.Fatalf("write baseline roadmap: %v", err)
 	}
 	issuesTemplate, err := templates.Read("docs/agent-layer/ISSUES.md")
@@ -311,7 +311,7 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 		t.Fatalf("read issues template: %v", err)
 	}
 	customIssues := strings.Replace(string(issuesTemplate), "<!-- ENTRIES START -->\n", "<!-- ENTRIES START -->\n\n- issue from repo\n", 1)
-	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ISSUES.md"), []byte(customIssues), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ISSUES.md"), []byte(customIssues), 0o600); err != nil {
 		t.Fatalf("write issues: %v", err)
 	}
 
@@ -323,7 +323,7 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("read plan-work template: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md"), planWorkTemplate, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md"), planWorkTemplate, 0o600); err != nil {
 		t.Fatalf("write orphan rename file: %v", err)
 	}
 	return root

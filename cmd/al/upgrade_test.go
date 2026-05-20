@@ -18,7 +18,7 @@ import (
 
 func TestUpgradeCmd_RequiresTerminalWithoutApplyFlags(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestUpgradeCmd_RequiresTerminalWithoutApplyFlags(t *testing.T) {
 
 func TestUpgradeCmd_YesWithoutApplyFlagsErrors(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestUpgradeCmd_YesWithoutApplyFlagsErrors(t *testing.T) {
 
 func TestUpgradeCmd_NonInteractiveApplyWithoutYesErrors(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestUpgradeCmd_NonInteractiveApplyWithoutYesErrors(t *testing.T) {
 
 func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -210,7 +210,7 @@ func TestUpgradeCmd_NonInteractiveYesApplyManagedRunsInstallWithPrompter(t *test
 
 func TestUpgradeCmd_SuccessMessageOnCompletion(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -242,7 +242,7 @@ func TestUpgradeCmd_SuccessMessageOnCompletion(t *testing.T) {
 
 func TestUpgradeCmd_NoSuccessMessageOnError(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -274,7 +274,7 @@ func TestUpgradeCmd_NoSuccessMessageOnError(t *testing.T) {
 
 func TestUpgradeCmd_RunsSyncAfterSuccessfulInstall(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -325,7 +325,7 @@ func TestUpgradeCmd_RunsSyncAfterSuccessfulInstall(t *testing.T) {
 
 func TestUpgradeCmd_SyncWarningsPrintedToStderr(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -367,7 +367,7 @@ func TestUpgradeCmd_SyncWarningsPrintedToStderr(t *testing.T) {
 
 func TestUpgradeCmd_SyncFailureWrappedNonFatalLoud(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -415,7 +415,7 @@ func TestUpgradeCmd_SyncFailureWrappedNonFatalLoud(t *testing.T) {
 
 func TestUpgradeCmd_SyncNotRunWhenInstallFails(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -453,7 +453,7 @@ func TestUpgradeCmd_SyncNotRunWhenInstallFails(t *testing.T) {
 
 func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -512,7 +512,7 @@ func TestUpgradeCmd_InteractiveWiresPrompter(t *testing.T) {
 
 func TestUpgradeCmd_InteractiveApplyManagedAutoApprovesOnlyManaged(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -570,7 +570,7 @@ func TestUpgradeCmd_InteractiveApplyManagedAutoApprovesOnlyManaged(t *testing.T)
 
 func TestUpgradeCmd_PropagatesInstallErrors(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -625,7 +625,7 @@ func TestUpgradeCmd_MissingAgentLayerErrors(t *testing.T) {
 
 func TestUpgradeCmd_InvalidDiffLines(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 	testutil.WithWorkingDir(t, root, func() {
@@ -647,7 +647,7 @@ func TestUpgradeCmd_InvalidDiffLines(t *testing.T) {
 
 func TestUpgradeCmd_VersionFlagValidatesExplicitPin(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -825,7 +825,7 @@ func TestWriteMigrationReportSection_SkippedSourceTooOldBreakingNoAnnotation(t *
 
 func TestUpgradeCmd_VersionFlagValidationError(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 

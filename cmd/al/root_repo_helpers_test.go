@@ -19,13 +19,13 @@ func writeTestRepo(t *testing.T, root string) {
 	t.Cleanup(func() { alsync.UserHomeDir = origHome })
 
 	paths := config.DefaultPaths(root)
-	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.SkillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
 
@@ -53,13 +53,13 @@ enabled = true
 [agents.copilot_cli]
 enabled = true
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	command := `---
@@ -68,13 +68,13 @@ description: test
 
 Do it.`
 	alphaDir := filepath.Join(paths.SkillsDir, "alpha")
-	if err := os.MkdirAll(alphaDir, 0o755); err != nil {
+	if err := os.MkdirAll(alphaDir, 0o700); err != nil {
 		t.Fatalf("mkdir skill dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte(command), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte(command), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
 	writeGitignoreBlock(t, root)
@@ -83,13 +83,13 @@ Do it.`
 func writeTestRepoInvalidConfig(t *testing.T, root string) {
 	t.Helper()
 	agentLayerDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+	if err := os.MkdirAll(agentLayerDir, 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(agentLayerDir, "config.toml"), []byte("invalid = "), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(agentLayerDir, "config.toml"), []byte("invalid = "), 0o600); err != nil {
 		t.Fatalf("write invalid config: %v", err)
 	}
 }
@@ -102,13 +102,13 @@ func writeTestRepoWithWarnings(t *testing.T, root string) {
 	t.Cleanup(func() { alsync.UserHomeDir = origHome })
 
 	paths := config.DefaultPaths(root)
-	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.SkillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
 
@@ -140,18 +140,18 @@ enabled = true
 [warnings]
 instruction_token_threshold = 1
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 	// Write large instructions to exceed the threshold
 	largeContent := strings.Repeat("This is a test instruction that will exceed the low token threshold. ", 50)
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte(largeContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte(largeContent), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
 	writeGitignoreBlock(t, root)
@@ -164,7 +164,7 @@ func writeGitignoreBlock(t *testing.T, root string) {
 		t.Fatalf("read gitignore.block template: %v", err)
 	}
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
-	if err := os.WriteFile(blockPath, templateBytes, 0o644); err != nil {
+	if err := os.WriteFile(blockPath, templateBytes, 0o600); err != nil {
 		t.Fatalf("write gitignore.block: %v", err)
 	}
 }

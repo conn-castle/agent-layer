@@ -66,7 +66,7 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 
 // syncDir fsyncs a directory to ensure rename durability.
 func syncDir(dir string) error {
-	d, err := os.Open(dir)
+	d, err := os.Open(dir) // #nosec G304 -- dir is the parent of a write target chosen by an internal caller of WriteFileAtomic; not user input.
 	if err != nil {
 		return fmt.Errorf(messages.FsutilOpenDirFmt, dir, err)
 	}

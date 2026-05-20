@@ -105,7 +105,7 @@ var allowedFrontMatterFields = map[string]struct{}{
 
 // ParseSkillSource reads and parses a skill source file into validator input.
 func ParseSkillSource(path string) (ParsedSkill, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- skill source path is provided by the al CLI which resolved it from a configured templates directory, not user input.
 	if err != nil {
 		return ParsedSkill{}, fmt.Errorf("read skill source %s: %w", path, err)
 	}

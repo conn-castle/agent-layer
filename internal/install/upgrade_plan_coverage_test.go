@@ -35,10 +35,10 @@ func TestBuildUpgradePlan_CurrentTemplateEntriesError(t *testing.T) {
 func TestBuildUpgradePlan_MatchTemplateError(t *testing.T) {
 	root := t.TempDir()
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
 		t.Fatalf("mkdir allow dir: %v", err)
 	}
-	if err := os.WriteFile(allowPath, []byte("custom\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("custom\n"), 0o600); err != nil {
 		t.Fatalf("write allow: %v", err)
 	}
 
@@ -54,18 +54,18 @@ func TestBuildUpgradePlan_MatchTemplateError(t *testing.T) {
 func TestBuildUpgradePlan_ClassifyOwnershipDetailError(t *testing.T) {
 	root := t.TempDir()
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
 		t.Fatalf("mkdir allow dir: %v", err)
 	}
-	if err := os.WriteFile(allowPath, []byte("custom\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("custom\n"), 0o600); err != nil {
 		t.Fatalf("write allow: %v", err)
 	}
 
 	statePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatalf("mkdir baseline dir: %v", err)
 	}
-	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o644); err != nil {
+	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o600); err != nil {
 		t.Fatalf("write baseline: %v", err)
 	}
 
@@ -78,10 +78,10 @@ func TestBuildUpgradePlan_ClassifyOwnershipDetailError(t *testing.T) {
 func TestBuildUpgradePlan_DetectUpgradeRenamesError(t *testing.T) {
 	root := t.TempDir()
 	orphanPath := filepath.Join(root, ".agent-layer", "skills", "orphan-coverage-test.md")
-	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o700); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
-	if err := os.WriteFile(orphanPath, []byte("orphan\n"), 0o644); err != nil {
+	if err := os.WriteFile(orphanPath, []byte("orphan\n"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
 
@@ -115,10 +115,10 @@ func TestBuildUpgradePlan_PinVersionDiffError(t *testing.T) {
 func TestTemplateOrphans_ClassifyOrphanOwnershipDetailError(t *testing.T) {
 	root := t.TempDir()
 	orphanPath := filepath.Join(root, "docs", "agent-layer", "ORPHAN.md")
-	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o700); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
-	if err := os.WriteFile(orphanPath, []byte("orphan\n"), 0o644); err != nil {
+	if err := os.WriteFile(orphanPath, []byte("orphan\n"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
 
@@ -139,13 +139,13 @@ func TestTemplateOrphans_SortsOrphans(t *testing.T) {
 	root := t.TempDir()
 	aPath := filepath.Join(root, "docs", "agent-layer", "A.md")
 	zPath := filepath.Join(root, "docs", "agent-layer", "Z.md")
-	if err := os.MkdirAll(filepath.Dir(aPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(aPath), 0o700); err != nil {
 		t.Fatalf("mkdir docs dir: %v", err)
 	}
-	if err := os.WriteFile(aPath, []byte("a\n"), 0o644); err != nil {
+	if err := os.WriteFile(aPath, []byte("a\n"), 0o600); err != nil {
 		t.Fatalf("write a: %v", err)
 	}
-	if err := os.WriteFile(zPath, []byte("z\n"), 0o644); err != nil {
+	if err := os.WriteFile(zPath, []byte("z\n"), 0o600); err != nil {
 		t.Fatalf("write z: %v", err)
 	}
 
@@ -181,7 +181,7 @@ func TestWalkTemplateOrphans_MissingRootReturnsNil(t *testing.T) {
 func TestWalkTemplateOrphans_CallbackErrorPropagates(t *testing.T) {
 	root := t.TempDir()
 	existing := filepath.Join(root, "exists")
-	if err := os.MkdirAll(existing, 0o755); err != nil {
+	if err := os.MkdirAll(existing, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -208,13 +208,13 @@ func TestDetectUpgradeRenames_SortsRenames(t *testing.T) {
 
 	orphanZ := filepath.Join(root, ".agent-layer", "skills", "z.md")
 	orphanA := filepath.Join(root, ".agent-layer", "skills", "a.md")
-	if err := os.MkdirAll(filepath.Dir(orphanZ), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(orphanZ), 0o700); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
-	if err := os.WriteFile(orphanZ, configBytes, 0o644); err != nil {
+	if err := os.WriteFile(orphanZ, configBytes, 0o600); err != nil {
 		t.Fatalf("write orphan z: %v", err)
 	}
-	if err := os.WriteFile(orphanA, allowBytes, 0o644); err != nil {
+	if err := os.WriteFile(orphanA, allowBytes, 0o600); err != nil {
 		t.Fatalf("write orphan a: %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 	inst := &installer{root: root, sys: RealSystem{}}
 
 	absPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(absPath), 0o700); err != nil {
 		t.Fatalf("mkdir docs dir: %v", err)
 	}
 
@@ -263,7 +263,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 
 	t.Run("template read error", func(t *testing.T) {
 		inst.sys = RealSystem{}
-		if err := os.WriteFile(absPath, []byte("# ok\n\n<!-- ENTRIES START -->\n"), 0o644); err != nil {
+		if err := os.WriteFile(absPath, []byte("# ok\n\n<!-- ENTRIES START -->\n"), 0o600); err != nil {
 			t.Fatalf("write local: %v", err)
 		}
 		_, err := inst.templates().sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "missing-template.md")
@@ -274,7 +274,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 
 	t.Run("local parse error falls through", func(t *testing.T) {
 		inst.sys = RealSystem{}
-		if err := os.WriteFile(absPath, []byte("# missing marker\n"), 0o644); err != nil {
+		if err := os.WriteFile(absPath, []byte("# missing marker\n"), 0o600); err != nil {
 			t.Fatalf("write local: %v", err)
 		}
 		match, err := inst.templates().sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "docs/agent-layer/ISSUES.md")
@@ -288,7 +288,7 @@ func TestSectionAwareTemplateMatch_EdgeCases(t *testing.T) {
 
 	t.Run("target parse error falls through", func(t *testing.T) {
 		inst.sys = RealSystem{}
-		if err := os.WriteFile(absPath, []byte("# ok\n\n<!-- ENTRIES START -->\n"), 0o644); err != nil {
+		if err := os.WriteFile(absPath, []byte("# ok\n\n<!-- ENTRIES START -->\n"), 0o600); err != nil {
 			t.Fatalf("write local: %v", err)
 		}
 		match, err := inst.templates().sectionAwareTemplateMatch("docs/agent-layer/ISSUES.md", absPath, "commands.allow")

@@ -13,7 +13,7 @@ import (
 func TestCheckConfig_LenientFallback(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -36,7 +36,7 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Create remaining files needed for LoadProjectConfig (env, instructions, etc.).
@@ -44,16 +44,16 @@ enabled = false
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_TEST_TOKEN=loaded\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -97,7 +97,7 @@ enabled = false
 func TestCheckConfig_LenientFallback_UnknownKeysGuidance(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,22 +122,22 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -188,7 +188,7 @@ enabled = false
 func TestCheckConfig_LenientFallback_UnknownKeysGuidance_SuggestsRename(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -212,22 +212,22 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(legacyKeyConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(legacyKeyConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -250,7 +250,7 @@ enabled = false
 func TestCheckConfig_LenientFallback_LoadsSkillsForDoctor(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -271,23 +271,23 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	alphaDir := filepath.Join(configDir, "skills", "alpha")
-	if err := os.MkdirAll(alphaDir, 0o755); err != nil {
+	if err := os.MkdirAll(alphaDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	skillPath := filepath.Join(alphaDir, "SKILL.md")
@@ -297,10 +297,10 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(skillPath, []byte(skillContent), 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(skillContent), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -324,7 +324,7 @@ Body.
 func TestCheckConfig_LenientFallback_MissingSkillsDir_DoesNotAddSkillsFailure(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -345,7 +345,7 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -372,7 +372,7 @@ enabled = false
 func TestCheckConfig_LenientFallback_SkillsPathIsFile_ReportsLoadFailure(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -393,10 +393,10 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "skills"), []byte("not-a-directory"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "skills"), []byte("not-a-directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -426,7 +426,7 @@ enabled = false
 func TestCheckConfig_LenientFallback_InvalidSkillFile_ReportsLoadFailure(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -447,31 +447,31 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	// Malformed YAML frontmatter should make LoadSkills fail.
 	brokenDir := filepath.Join(configDir, "skills", "broken")
-	if err := os.MkdirAll(brokenDir, 0o755); err != nil {
+	if err := os.MkdirAll(brokenDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	badSkill := "---\nname: [\n---\nBody.\n"
-	if err := os.WriteFile(filepath.Join(brokenDir, "SKILL.md"), []byte(badSkill), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(brokenDir, "SKILL.md"), []byte(badSkill), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -495,7 +495,7 @@ enabled = false
 func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -517,22 +517,22 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

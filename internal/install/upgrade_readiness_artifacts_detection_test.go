@@ -15,10 +15,10 @@ import (
 func TestDetectDisabledAgentArtifacts_IgnoresUserFileWithoutEvidence(t *testing.T) {
 	root := t.TempDir()
 	geminiPath := filepath.Join(root, ".gemini", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o700); err != nil {
 		t.Fatalf("mkdir gemini dir: %v", err)
 	}
-	if err := os.WriteFile(geminiPath, []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(geminiPath, []byte("{}\n"), 0o600); err != nil {
 		t.Fatalf("write gemini settings: %v", err)
 	}
 
@@ -36,7 +36,7 @@ func TestDetectDisabledAgentArtifacts_IgnoresUserFileWithoutEvidence(t *testing.
 func TestDetectDisabledAgentArtifacts_IgnoresDirectories(t *testing.T) {
 	root := t.TempDir()
 	codexConfigPath := filepath.Join(root, ".codex", "config.toml")
-	if err := os.MkdirAll(codexConfigPath, 0o755); err != nil {
+	if err := os.MkdirAll(codexConfigPath, 0o700); err != nil {
 		t.Fatalf("mkdir codex config directory: %v", err)
 	}
 
@@ -92,10 +92,10 @@ func TestDetectDisabledAgentArtifacts_ClaudeSettingsStatError(t *testing.T) {
 func TestDetectDisabledAgentArtifacts_FlagsClaudeSettings(t *testing.T) {
 	root := t.TempDir()
 	claudeSettingsPath := filepath.Join(root, ".claude", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(claudeSettingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(claudeSettingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir claude dir: %v", err)
 	}
-	if err := os.WriteFile(claudeSettingsPath, []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(claudeSettingsPath, []byte("{}\n"), 0o600); err != nil {
 		t.Fatalf("write claude settings: %v", err)
 	}
 
@@ -147,10 +147,10 @@ func TestDetectDisabledAgentArtifacts_CodexStatError(t *testing.T) {
 func TestDetectDisabledAgentArtifacts_VSCodeTemplateReadError(t *testing.T) {
 	root := t.TempDir()
 	launcherPath := filepath.Join(root, ".agent-layer", "open-vscode.command")
-	if err := os.MkdirAll(filepath.Dir(launcherPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(launcherPath), 0o700); err != nil {
 		t.Fatalf("mkdir launcher dir: %v", err)
 	}
-	if err := os.WriteFile(launcherPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(launcherPath, []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write launcher file: %v", err)
 	}
 
@@ -176,11 +176,11 @@ func TestDetectDisabledAgentArtifacts_VSCodeTemplateReadError(t *testing.T) {
 func TestDetectDisabledAgentArtifacts_VSCodeSettingsReadError(t *testing.T) {
 	root := t.TempDir()
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir settings dir: %v", err)
 	}
 	settings := "{\n  // >>> agent-layer\n  // managed\n  // <<< agent-layer\n}\n"
-	if err := os.WriteFile(settingsPath, []byte(settings), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(settings), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestDetectDisabledAgentArtifacts_VSCodeSettingsReadError(t *testing.T) {
 func TestDetectDisabledAgentArtifacts_VSCodePromptWalkError(t *testing.T) {
 	root := t.TempDir()
 	promptRoot := filepath.Join(root, ".vscode", "prompts")
-	if err := os.MkdirAll(promptRoot, 0o755); err != nil {
+	if err := os.MkdirAll(promptRoot, 0o700); err != nil {
 		t.Fatalf("mkdir prompt dir: %v", err)
 	}
 	sys := newFaultSystem(RealSystem{})
@@ -234,10 +234,10 @@ func TestDetectDisabledAgentArtifacts_FlagsClaudeAndGeminiSkillDirs(t *testing.T
 		filepath.Join(root, ".gemini", "skills", "deploy", "SKILL.md"): "<!--\n  GENERATED FILE\n-->\n",
 	}
 	for absPath, content := range skillFiles {
-		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(absPath), 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", absPath, err)
 		}
-		if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(absPath, []byte(content), 0o600); err != nil {
 			t.Fatalf("write %s: %v", absPath, err)
 		}
 	}
@@ -281,24 +281,24 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 		filepath.Join(root, ".agent", "skills", "beta", "SKILL.md"):  "<!--\n  GENERATED FILE\n-->\n",
 	}
 	for absPath, content := range codexFiles {
-		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(absPath), 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", absPath, err)
 		}
-		if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(absPath, []byte(content), 0o600); err != nil {
 			t.Fatalf("write %s: %v", absPath, err)
 		}
 	}
 
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
 	promptPath := filepath.Join(root, ".vscode", "prompts", "alpha.prompt.md")
-	if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(promptPath), 0o700); err != nil {
 		t.Fatalf("mkdir vscode prompt dir: %v", err)
 	}
 	settings := "{\n  // >>> agent-layer\n  // managed\n  // <<< agent-layer\n}\n"
-	if err := os.WriteFile(settingsPath, []byte(settings), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(settings), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
-	if err := os.WriteFile(promptPath, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o644); err != nil {
+	if err := os.WriteFile(promptPath, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o600); err != nil {
 		t.Fatalf("write prompt: %v", err)
 	}
 
@@ -307,10 +307,10 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 		t.Fatalf("read launcher template: %v", err)
 	}
 	launcherPath := filepath.Join(root, ".agent-layer", "open-vscode.command")
-	if err := os.MkdirAll(filepath.Dir(launcherPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(launcherPath), 0o700); err != nil {
 		t.Fatalf("mkdir launcher dir: %v", err)
 	}
-	if err := os.WriteFile(launcherPath, launcherTemplate, 0o755); err != nil {
+	if err := os.WriteFile(launcherPath, launcherTemplate, 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write launcher: %v", err)
 	}
 
@@ -366,10 +366,10 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 func TestDetectDisabledAgentArtifacts_SharedSkillsEnabledByAnyConsumer(t *testing.T) {
 	root := t.TempDir()
 	sharedSkill := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(sharedSkill), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sharedSkill), 0o700); err != nil {
 		t.Fatalf("mkdir shared skill dir: %v", err)
 	}
-	if err := os.WriteFile(sharedSkill, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o644); err != nil {
+	if err := os.WriteFile(sharedSkill, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o600); err != nil {
 		t.Fatalf("write shared skill: %v", err)
 	}
 
@@ -395,10 +395,10 @@ func TestDetectDisabledAgentArtifacts_SharedSkillsEnabledByAnyConsumer(t *testin
 func TestDetectDisabledAgentArtifacts_FlagsSharedSkillsWhenNoConsumerEnabled(t *testing.T) {
 	root := t.TempDir()
 	sharedSkill := filepath.Join(root, ".agents", "skills", "alpha", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(sharedSkill), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sharedSkill), 0o700); err != nil {
 		t.Fatalf("mkdir shared skill dir: %v", err)
 	}
-	if err := os.WriteFile(sharedSkill, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o644); err != nil {
+	if err := os.WriteFile(sharedSkill, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o600); err != nil {
 		t.Fatalf("write shared skill: %v", err)
 	}
 

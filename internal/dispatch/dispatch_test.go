@@ -17,11 +17,11 @@ import (
 func TestReadPinnedVersion(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	path := filepath.Join(dir, "al.version")
-	if err := os.WriteFile(path, []byte("v0.5.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("v0.5.0\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -43,12 +43,12 @@ func TestReadPinnedVersion(t *testing.T) {
 func TestReadPinnedVersion_CommentsAndBlankLines(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	path := filepath.Join(dir, "al.version")
 	content := "\n# repo pin\n\nv0.6.1\n"
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -70,11 +70,11 @@ func TestReadPinnedVersion_CommentsAndBlankLines(t *testing.T) {
 func TestReadPinnedVersionEmptyFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	path := filepath.Join(dir, "al.version")
-	if err := os.WriteFile(path, []byte("\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -99,11 +99,11 @@ func TestReadPinnedVersionEmptyFile(t *testing.T) {
 func TestReadPinnedVersion_InvalidContent_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	path := filepath.Join(dir, "al.version")
-	if err := os.WriteFile(path, []byte("not-a-version\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("not-a-version\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -128,11 +128,11 @@ func TestReadPinnedVersion_InvalidContent_ReturnsWarning(t *testing.T) {
 func TestReadPinnedVersion_MultipleVersionLines_ReturnsWarning(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	path := filepath.Join(dir, "al.version")
-	if err := os.WriteFile(path, []byte("0.5.0\n0.5.1\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("0.5.0\n0.5.1\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -157,7 +157,7 @@ func TestReadPinnedVersion_PermissionDenied_ReturnsError(t *testing.T) {
 	}
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	path := filepath.Join(dir, "al.version")
@@ -199,10 +199,10 @@ func TestResolveRequestedVersionPrefersOverride(t *testing.T) {
 func TestResolveRequestedVersionUsesPin(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "al.version"), []byte("0.9.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "al.version"), []byte("0.9.0\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -380,10 +380,10 @@ func TestMaybeExec_OverrideSameAsCurrent(t *testing.T) {
 func TestMaybeExec_OverrideWarnsWhenPinExists(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("0.9.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("0.9.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -459,7 +459,7 @@ func TestMaybeExec_InvalidOverride(t *testing.T) {
 func TestMaybeExec_ReadPinnedVersionError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	pinFile := filepath.Join(alDir, "al.version")
@@ -470,7 +470,7 @@ func TestMaybeExec_ReadPinnedVersionError(t *testing.T) {
 	// But ensureCachedBinary isn't called if error occurs earlier.
 
 	// Create a dummy config to ensure root is found
-	if err := os.WriteFile(filepath.Join(alDir, "config.toml"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alDir, "config.toml"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -585,15 +585,15 @@ func TestMaybeExec_CurrentIsDev(t *testing.T) {
 func TestMaybeExec_CorruptPinFallsThroughToCurrentVersion(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write config.toml so root is found
-	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.toml"), []byte(""), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// Write corrupt pin
-	if err := os.WriteFile(filepath.Join(dir, "al.version"), []byte("garbage\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "al.version"), []byte("garbage\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -666,10 +666,10 @@ func TestMaybeExec_PinMatchPrintsVersionSourceOnce(t *testing.T) {
 	// When requested == current (no dispatch), version source must appear exactly once.
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -698,10 +698,10 @@ func TestMaybeExec_DispatchRoundTrip_PrintsVersionSourceOnce(t *testing.T) {
 	// The combined stderr must contain exactly one "version source" line.
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -777,10 +777,10 @@ func TestMaybeExec_DispatchRoundTrip_OverrideWithPin_PrintsOnce(t *testing.T) {
 	// must each appear exactly once across both "binaries".
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("0.8.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("0.8.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -1001,10 +1001,10 @@ func TestSupportsQuietFlag(t *testing.T) {
 func TestMaybeExec_UsesProvidedStderr(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alDir, "al.version"), []byte("1.0.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 

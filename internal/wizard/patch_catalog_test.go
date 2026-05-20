@@ -336,7 +336,7 @@ command = "npx"
 args = ["-y", "@upstash/context7-mcp@2.1.1"]
 env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 `
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_CONTEXT7_API_KEY=set\n"), 0o600))
 
 	ui := &MockUI{

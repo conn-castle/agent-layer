@@ -47,7 +47,7 @@ func TestCheckStructure(t *testing.T) {
 	}
 
 	// Test exists but not directory
-	if err := os.WriteFile(filepath.Join(tmpDir, ".agent-layer"), []byte("file"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, ".agent-layer"), []byte("file"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	results = CheckStructure(tmpDir)
@@ -66,7 +66,7 @@ func TestCheckStructure(t *testing.T) {
 	_ = os.Remove(filepath.Join(tmpDir, ".agent-layer"))
 
 	// Test optional docs directory warning does not block a valid repo structure.
-	if err := os.Mkdir(filepath.Join(tmpDir, ".agent-layer"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".agent-layer"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	results = CheckStructure(tmpDir)
@@ -80,10 +80,10 @@ func TestCheckStructure(t *testing.T) {
 	}
 
 	// Test existing directories
-	if err := os.Mkdir(filepath.Join(tmpDir, ".agent-layer"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".agent-layer"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(tmpDir, "docs/agent-layer"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(tmpDir, "docs/agent-layer"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	results = CheckStructure(tmpDir)
@@ -203,10 +203,10 @@ func TestCheckConfig(t *testing.T) {
 
 	// Invalid config
 	configDir := filepath.Join(tmpDir, ".agent-layer")
-	if err := os.Mkdir(configDir, 0755); err != nil {
+	if err := os.Mkdir(configDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("invalid"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("invalid"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	results, cfg = CheckConfig(tmpDir)
@@ -237,23 +237,23 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600); err != nil {
 		t.Fatal(err)
 	}
 	// Create minimal valid setup
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(configDir, "instructions"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(configDir, "instructions"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(filepath.Join(configDir, "skills"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(configDir, "skills"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -269,18 +269,18 @@ enabled = false
 func TestCheckFlatFormatSkills_DetectsStaleFiles(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	// Create a flat-format skill file
-	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill.md"), []byte("# test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill.md"), []byte("# test"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Create a directory-format skill (should be ignored)
-	if err := os.MkdirAll(filepath.Join(skillsDir, "good-skill"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "good-skill"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "good-skill", "SKILL.md"), []byte("# ok"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "good-skill", "SKILL.md"), []byte("# ok"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -305,14 +305,14 @@ func TestCheckFlatFormatSkills_DetectsStaleFiles(t *testing.T) {
 func TestCheckFlatFormatSkills_CleanDirectory(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	// Only directory-format skills
-	if err := os.MkdirAll(filepath.Join(skillsDir, "my-skill"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "my-skill"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill", "SKILL.md"), []byte("# ok"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill", "SKILL.md"), []byte("# ok"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -333,10 +333,10 @@ func TestCheckFlatFormatSkills_MissingSkillsDir(t *testing.T) {
 func TestCheckFlatFormatSkills_SkillsPathNotDirectory(t *testing.T) {
 	root := t.TempDir()
 	agentLayerDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+	if err := os.MkdirAll(agentLayerDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(agentLayerDir, "skills"), []byte("not-a-dir"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(agentLayerDir, "skills"), []byte("not-a-dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

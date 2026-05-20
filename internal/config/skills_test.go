@@ -20,7 +20,7 @@ Do the thing.
 
 func TestLoadSkills_FlatFormatReturnsError(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte(skillContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "b.md"), []byte(skillContent), 0o600); err != nil {
 		t.Fatalf("write b: %v", err)
 	}
 
@@ -38,7 +38,7 @@ func TestLoadSkills_FlatFormatReturnsError(t *testing.T) {
 
 func TestLoadSkills_DirectoryFormat(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir alpha: %v", err)
 	}
 	content := `---
@@ -53,7 +53,7 @@ allowed-tools: Bash(git:*) Read
 ---
 
 Body.`
-	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte(content), 0o600); err != nil {
 		t.Fatalf("write SKILL.md: %v", err)
 	}
 
@@ -187,7 +187,7 @@ Body.`
 
 func TestLoadSkills_DirectoryFormat_NameDerivedWhenFrontMatterNameMissing(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir alpha: %v", err)
 	}
 	content := `---
@@ -195,7 +195,7 @@ description: Directory skill
 ---
 
 Body.`
-	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "alpha", "SKILL.md"), []byte(content), 0o600); err != nil {
 		t.Fatalf("write SKILL.md: %v", err)
 	}
 
@@ -213,7 +213,7 @@ Body.`
 
 func TestLoadSkills_DirectoryFormat_NameMatchUsesNFKCNormalization(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "café"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "café"), 0o700); err != nil {
 		t.Fatalf("mkdir café: %v", err)
 	}
 	content := `---
@@ -222,7 +222,7 @@ description: Directory skill
 ---
 
 Body.`
-	if err := os.WriteFile(filepath.Join(dir, "café", "SKILL.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "café", "SKILL.md"), []byte(content), 0o600); err != nil {
 		t.Fatalf("write SKILL.md: %v", err)
 	}
 
@@ -240,13 +240,13 @@ Body.`
 
 func TestLoadSkills_FlatFileRejectsBeforeDirectoryLoads(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "foo.md"), []byte("---\ndescription: flat\n---\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "foo.md"), []byte("---\ndescription: flat\n---\n"), 0o600); err != nil {
 		t.Fatalf("write flat: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "foo"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "foo"), 0o700); err != nil {
 		t.Fatalf("mkdir foo: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "foo", "SKILL.md"), []byte("---\ndescription: dir\n---\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "foo", "SKILL.md"), []byte("---\ndescription: dir\n---\n"), 0o600); err != nil {
 		t.Fatalf("write dir skill: %v", err)
 	}
 
@@ -258,7 +258,7 @@ func TestLoadSkills_FlatFileRejectsBeforeDirectoryLoads(t *testing.T) {
 
 func TestLoadSkills_DirectoryMissingSkillFileFailsLoudly(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "foo"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "foo"), 0o700); err != nil {
 		t.Fatalf("mkdir foo: %v", err)
 	}
 
@@ -276,10 +276,10 @@ func TestLoadSkills_NameMismatch(t *testing.T) {
 	// Flat .md at the skills root is now rejected before we even parse
 	// the front-matter, so put the mismatched skill in directory format.
 	skillDir := filepath.Join(dir, "foo")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
 		t.Fatalf("mkdir foo: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: bar\ndescription: test\n---\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: bar\ndescription: test\n---\n"), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 

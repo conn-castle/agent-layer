@@ -56,7 +56,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 	}
 
 	lockPath := binPath + ".lock"
-	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil { // #nosec G301 -- user-level cache dir (~/.cache/agent-layer/...) must be traversable by the user's shell to invoke the cached 0o755 binary; the lock file is created separately.
 		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
 	}
 

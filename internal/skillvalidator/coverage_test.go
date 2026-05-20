@@ -222,7 +222,7 @@ func TestParseSkillSource_MissingFile(t *testing.T) {
 
 func TestParseSkillSource_EmptyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty.md")
-	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
+	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := ParseSkillSource(path)
@@ -233,7 +233,7 @@ func TestParseSkillSource_EmptyFile(t *testing.T) {
 
 func TestParseSkillSource_MissingFrontMatterDelimiter(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "no-fm.md")
-	if err := os.WriteFile(path, []byte("no frontmatter\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("no frontmatter\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := ParseSkillSource(path)
@@ -244,7 +244,7 @@ func TestParseSkillSource_MissingFrontMatterDelimiter(t *testing.T) {
 
 func TestParseSkillSource_UnterminatedFrontMatter(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unterm.md")
-	if err := os.WriteFile(path, []byte("---\nname: test\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("---\nname: test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := ParseSkillSource(path)
@@ -256,7 +256,7 @@ func TestParseSkillSource_UnterminatedFrontMatter(t *testing.T) {
 func TestParseSkillSource_InvalidFrontMatterYAML(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad-yaml.md")
 	content := "---\n{{invalid yaml\n---\nBody.\n"
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := ParseSkillSource(path)
@@ -268,7 +268,7 @@ func TestParseSkillSource_InvalidFrontMatterYAML(t *testing.T) {
 func TestParseSkillSource_UTF8BOMStripped(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bom.md")
 	content := append([]byte{0xEF, 0xBB, 0xBF}, []byte("---\nname: bom\ndescription: test\n---\nBody.\n")...)
-	if err := os.WriteFile(path, content, 0o644); err != nil {
+	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	parsed, err := ParseSkillSource(path)

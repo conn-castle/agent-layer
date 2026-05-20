@@ -145,7 +145,7 @@ func TestInstallCompletion_Error(t *testing.T) {
 	// Setup unwritable XDG_DATA_HOME to force MkdirAll/WriteFileAtomic error
 	xdg := t.TempDir()
 	// Make xdg read-only
-	if err := os.Chmod(xdg, 0o555); err != nil {
+	if err := os.Chmod(xdg, 0o555); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatal(err)
 	}
 	t.Setenv("XDG_DATA_HOME", xdg)
@@ -171,11 +171,11 @@ func TestInstallCompletion_WriteError(t *testing.T) {
 
 	// Create directory where the file should be to force write error
 	targetDir := filepath.Join(xdg, "bash-completion", "completions")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	targetFile := filepath.Join(targetDir, "al")
-	if err := os.Mkdir(targetFile, 0o755); err != nil {
+	if err := os.Mkdir(targetFile, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -403,7 +403,7 @@ func TestFirstWritableFpath(t *testing.T) {
 	// Setup a mix of invalid and valid paths in FPATH
 	tempDir := t.TempDir()
 	validDir := filepath.Join(tempDir, "valid")
-	if err := os.Mkdir(validDir, 0o755); err != nil {
+	if err := os.Mkdir(validDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	invalidDir := filepath.Join(tempDir, "invalid")

@@ -9,7 +9,7 @@ import (
 
 func TestInstallerScriptHandlesDotSlashChecksums(t *testing.T) {
 	path := filepath.Join("..", "..", "al-install.sh")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read installer script: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestInstallerScriptHandlesDotSlashChecksums(t *testing.T) {
 
 func TestInstallerScriptProvidesErrorOutput(t *testing.T) {
 	path := filepath.Join("..", "..", "al-install.sh")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read installer script: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestInstallerScriptProvidesErrorOutput(t *testing.T) {
 
 func TestInstallerScriptSupportsCompletionFlags(t *testing.T) {
 	path := filepath.Join("..", "..", "al-install.sh")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read installer script: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestInstallerScriptSupportsCompletionFlags(t *testing.T) {
 
 func TestInstallerScriptSupportsPrefixFlag(t *testing.T) {
 	path := filepath.Join("..", "..", "al-install.sh")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read installer script: %v", err)
 	}

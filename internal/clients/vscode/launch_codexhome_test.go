@@ -26,7 +26,7 @@ func TestLaunchVSCode_NoCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -55,7 +55,7 @@ func TestLaunchVSCode_NoCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestLaunchVSCode_ClearsInheritedCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -101,7 +101,7 @@ func TestLaunchVSCode_ClearsInheritedCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeEnabled(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -151,7 +151,7 @@ func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeEnabled(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestLaunchVSCode_SetsCLAUDECONFIGDIRWhenClaudeVSCodeEnabled(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -202,7 +202,7 @@ func TestLaunchVSCode_SetsCLAUDECONFIGDIRWhenClaudeVSCodeEnabled(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestLaunchVSCode_ClearsInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(t *
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -256,7 +256,7 @@ func TestLaunchVSCode_ClearsInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(t *
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestLaunchVSCode_PreservesInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -302,7 +302,7 @@ func TestLaunchVSCode_PreservesInheritedCLAUDECONFIGDIRWhenClaudeVSCodeDisabled(
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestLaunchVSCode_BothVarsWhenBothEnabled(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -354,7 +354,7 @@ func TestLaunchVSCode_BothVarsWhenBothEnabled(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestLaunchVSCode_ClearsCLAUDECONFIGDIRWhenLocalConfigDirDisabled(t *testing
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -412,7 +412,7 @@ func TestLaunchVSCode_ClearsCLAUDECONFIGDIRWhenLocalConfigDirDisabled(t *testing
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestLaunchVSCode_PreservesInheritedCLAUDECONFIGDIRWhenLocalConfigDirDisable
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -456,7 +456,7 @@ func TestLaunchVSCode_PreservesInheritedCLAUDECONFIGDIRWhenLocalConfigDirDisable
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}

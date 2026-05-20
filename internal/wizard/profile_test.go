@@ -19,11 +19,11 @@ func TestRunProfile_PreviewOnly(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
 	profile := strings.ReplaceAll(basicAgentConfig(), `mode = "none"`, `mode = "all"`)
-	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o600))
 
 	syncCalled := false
 	var out bytes.Buffer
@@ -44,11 +44,11 @@ func TestRunProfile_Apply(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
 	profile := strings.ReplaceAll(basicAgentConfig(), `mode = "none"`, `mode = "all"`)
-	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o600))
 
 	syncCalled := false
 	var out bytes.Buffer
@@ -71,11 +71,11 @@ func TestRunProfile_ApplyWarnsWhenExistingConfigIsInvalidTOML(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte("[approvals"), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte("[approvals"), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
 	profile := strings.ReplaceAll(basicAgentConfig(), `mode = "none"`, `mode = "all"`)
-	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o600))
 
 	syncCalled := false
 	var out bytes.Buffer
@@ -96,8 +96,8 @@ func TestCleanupBackups(t *testing.T) {
 	root := t.TempDir()
 	configBackup := filepath.Join(root, ".agent-layer", "config.toml.bak")
 	envBackup := filepath.Join(root, ".agent-layer", ".env.bak")
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755))
-	require.NoError(t, os.WriteFile(configBackup, []byte("x"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700))
+	require.NoError(t, os.WriteFile(configBackup, []byte("x"), 0o600))
 	require.NoError(t, os.WriteFile(envBackup, []byte("y"), 0o600))
 
 	removed, err := CleanupBackups(root)
@@ -120,7 +120,7 @@ func TestRunProfile_PathRequired(t *testing.T) {
 func TestRunProfile_InstallFailureWhenConfigMissing(t *testing.T) {
 	root := t.TempDir()
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
 
 	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "not-a-version", profilePath, false, nil)
 	require.ErrorContains(t, err, "install failed")
@@ -129,8 +129,8 @@ func TestRunProfile_InstallFailureWhenConfigMissing(t *testing.T) {
 func TestRunProfile_ConfigStatError(t *testing.T) {
 	root := t.TempDir()
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("not-a-dir"), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("not-a-dir"), 0o600))
 
 	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, false, nil)
 	require.Error(t, err)
@@ -140,7 +140,7 @@ func TestRunProfile_ProfileReadError(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 
 	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", filepath.Join(root, "missing.toml"), false, nil)
 	require.ErrorContains(t, err, "failed to read profile")
@@ -150,10 +150,10 @@ func TestRunProfile_ProfileInvalid(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte("[approvals"), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte("[approvals"), 0o600))
 
 	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, false, nil)
 	require.ErrorContains(t, err, "invalid profile")
@@ -163,12 +163,12 @@ func TestRunProfile_CurrentConfigReadError(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 	require.NoError(t, os.Remove(configPath))
-	require.NoError(t, os.Mkdir(configPath, 0o755))
+	require.NoError(t, os.Mkdir(configPath, 0o700))
 
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
 
 	err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, false, nil)
 	require.Error(t, err)
@@ -178,10 +178,10 @@ func TestRunProfile_NoConfigChangesPreviewOnly(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
 
 	syncCalled := false
 	var out bytes.Buffer
@@ -199,10 +199,10 @@ func TestRunProfile_NoConfigChangesApplyWithWarningAndSyncError(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
-	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(basicAgentConfig()), 0o600))
 
 	t.Run("warning output", func(t *testing.T) {
 		var out bytes.Buffer
@@ -228,14 +228,14 @@ func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
 
 	profilePath := filepath.Join(root, "profile.toml")
 	profile := strings.ReplaceAll(basicAgentConfig(), `mode = "none"`, `mode = "all"`)
-	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o644))
+	require.NoError(t, os.WriteFile(profilePath, []byte(profile), 0o600))
 
 	t.Run("backup write failure", func(t *testing.T) {
-		require.NoError(t, os.Mkdir(configPath+".bak", 0o755))
+		require.NoError(t, os.Mkdir(configPath+".bak", 0o700))
 		err := RunProfile(root, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "", profilePath, true, nil)
 		require.ErrorContains(t, err, "failed to backup config")
 	})
@@ -258,15 +258,15 @@ func TestRunProfile_BackupAndWriteErrors(t *testing.T) {
 
 func TestCleanupBackups_MissingAndRemoveError(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700))
 
 	removed, err := CleanupBackups(root)
 	require.NoError(t, err)
 	require.Empty(t, removed)
 
 	badPath := filepath.Join(root, ".agent-layer", "config.toml.bak")
-	require.NoError(t, os.Mkdir(badPath, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(badPath, "child"), []byte("x"), 0o644))
+	require.NoError(t, os.Mkdir(badPath, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(badPath, "child"), []byte("x"), 0o600))
 
 	_, err = CleanupBackups(root)
 	require.Error(t, err)

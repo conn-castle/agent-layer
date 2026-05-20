@@ -51,7 +51,7 @@ func (RealSystem) MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 
 // ReadFile reads the named file and returns the contents.
 func (RealSystem) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
+	return os.ReadFile(name) // #nosec G304 -- pass-through wrapper for the System abstraction; callers (sync internals) are responsible for the path origin.
 }
 
 // ReadDir reads the named directory and returns all directory entries.

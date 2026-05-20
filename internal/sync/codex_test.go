@@ -571,7 +571,7 @@ func TestWriteCodexConfigError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
@@ -584,10 +584,10 @@ func TestWriteCodexConfigWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	codexDir := filepath.Join(root, ".codex")
-	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(codexDir, "config.toml"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(codexDir, "config.toml"), 0o700); err != nil {
 		t.Fatalf("mkdir config.toml: %v", err)
 	}
 	project := &config.ProjectConfig{
@@ -604,7 +604,7 @@ func TestWriteCodexRulesError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
@@ -617,10 +617,10 @@ func TestWriteCodexRulesWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	rulesDir := filepath.Join(root, ".codex", "rules")
-	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
+	if err := os.MkdirAll(rulesDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(rulesDir, "default.rules"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(rulesDir, "default.rules"), 0o700); err != nil {
 		t.Fatalf("mkdir default.rules: %v", err)
 	}
 	project := &config.ProjectConfig{

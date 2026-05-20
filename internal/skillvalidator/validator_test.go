@@ -16,7 +16,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write flat skill: %v", err)
 	}
 
@@ -41,7 +41,7 @@ Body.
 func TestParseSkillSource_Directory(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "beta")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir beta: %v", err)
 	}
 	path := filepath.Join(dir, "SKILL.md")
@@ -52,7 +52,7 @@ compatibility: requires git
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write directory skill: %v", err)
 	}
 
@@ -74,7 +74,7 @@ Body.
 func TestParseSkillSource_DirectoryLowercaseSkillFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "beta")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir beta: %v", err)
 	}
 	path := filepath.Join(dir, "skill.md")
@@ -84,7 +84,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write directory skill: %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestParseSkillSource_LongLineDoesNotFail(t *testing.T) {
 	path := filepath.Join(root, "alpha.md")
 	longLine := strings.Repeat("a", 70*1024)
 	content := "---\nname: alpha\ndescription: test\n---\n" + longLine + "\n"
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -126,7 +126,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -149,7 +149,7 @@ description: null
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -175,7 +175,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -201,7 +201,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -224,7 +224,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -247,7 +247,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -271,7 +271,7 @@ foo: bar
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -297,7 +297,7 @@ compatibility: ` + compatibilityTooLong + `
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -334,7 +334,7 @@ func TestValidateParsedSkill_NameLengthCountsRunes(t *testing.T) {
 func TestValidateParsedSkill_NamePathMismatch(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "beta")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir beta: %v", err)
 	}
 	path := filepath.Join(dir, "SKILL.md")
@@ -344,7 +344,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -361,7 +361,7 @@ Body.
 func TestValidateParsedSkill_NamePathMatchUsesNFKCNormalization(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "café")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir café: %v", err)
 	}
 	path := filepath.Join(dir, "SKILL.md")
@@ -371,7 +371,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -397,7 +397,7 @@ name: alpha
 description: test
 ---
 ` + bodyBuilder.String()
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 

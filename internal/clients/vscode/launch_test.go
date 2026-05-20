@@ -98,11 +98,11 @@ func TestLaunchVSCodePreflight_ManagedBlockConflict(t *testing.T) {
 	}
 
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	content := "{\n  // >>> agent-layer\n}\n"
-	if err := os.WriteFile(settingsPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -133,10 +133,10 @@ func TestCheckManagedSettingsConflict_ReadError(t *testing.T) {
 func TestCheckManagedSettingsConflict_NoMarkers(t *testing.T) {
 	root := t.TempDir()
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(settingsPath, []byte("{\"editor.formatOnSave\":true}\n"), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte("{\"editor.formatOnSave\":true}\n"), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -148,11 +148,11 @@ func TestCheckManagedSettingsConflict_NoMarkers(t *testing.T) {
 func TestCheckManagedSettingsConflict_StartAfterEnd(t *testing.T) {
 	root := t.TempDir()
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	content := "{\n  // <<< agent-layer\n  // >>> agent-layer\n}\n"
-	if err := os.WriteFile(settingsPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -165,11 +165,11 @@ func TestCheckManagedSettingsConflict_StartAfterEnd(t *testing.T) {
 func TestCheckManagedSettingsConflict_ValidManagedBlock(t *testing.T) {
 	root := t.TempDir()
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	content := "{\n  // >>> agent-layer\n  \"x\": 1,\n  // <<< agent-layer\n}\n"
-	if err := os.WriteFile(settingsPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -221,7 +221,7 @@ func TestLaunchVSCode_SkipsDotWhenPositionalArgPresent(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -235,7 +235,7 @@ func TestLaunchVSCode_SkipsDotWhenPositionalArgPresent(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(argsFile)
+	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestLaunchVSCode_AppendsDotWithShortFlagsOnly(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -276,7 +276,7 @@ func TestLaunchVSCode_AppendsDotWithShortFlagsOnly(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(argsFile)
+	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestLaunchVSCode_AppendsDotWhenNoPositionalArg(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	stubPath := filepath.Join(binDir, "code")
 	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -314,7 +314,7 @@ func TestLaunchVSCode_AppendsDotWhenNoPositionalArg(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(argsFile)
+	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}

@@ -24,11 +24,11 @@ func TestRunWithProjectGeminiTrustWarningNoiseControlled(t *testing.T) {
 
 	// Write minimal gitignore.block so updateGitignore succeeds.
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	block := ".agent-layer/\n"
-	if err := os.WriteFile(filepath.Join(alDir, "gitignore.block"), []byte(block), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alDir, "gitignore.block"), []byte(block), 0o600); err != nil {
 		t.Fatalf("write gitignore.block: %v", err)
 	}
 

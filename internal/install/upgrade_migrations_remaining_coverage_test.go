@@ -17,10 +17,10 @@ import (
 func writePinVersionFile(t *testing.T, root string, version string) {
 	t.Helper()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte(version+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte(version+"\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 }
@@ -205,11 +205,11 @@ func TestExecuteConfigMigrations_AdditionalErrorBranches(t *testing.T) {
 func TestResolveAndInferSourceVersion_ErrorNotesAndBranches(t *testing.T) {
 	root := t.TempDir()
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
 

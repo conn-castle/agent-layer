@@ -20,7 +20,7 @@ func TestFindAgentLayerRoot_StatError(t *testing.T) {
 	if err := os.Mkdir(locked, 0o000); err != nil {
 		t.Fatalf("mkdir locked: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	// Starting at an unreadable directory should produce a non-NotExist
 	// stat error which FindAgentLayerRoot wraps as RootCheckPathFmt.
@@ -42,7 +42,7 @@ func TestFindRepoRoot_StatError(t *testing.T) {
 	if err := os.Mkdir(locked, 0o000); err != nil {
 		t.Fatalf("mkdir locked: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	// FindRepoRoot calls FindAgentLayerRoot first; an EACCES from the locked
 	// directory must propagate as an error rather than fall back to start.

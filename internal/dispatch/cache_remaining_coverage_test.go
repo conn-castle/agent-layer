@@ -28,10 +28,10 @@ func TestEnsureCachedBinaryWithSystem_MkdirAllErrorBranch(t *testing.T) {
 		t.Fatalf("platformStrings: %v", err)
 	}
 	blockedDir := filepath.Join(cacheRoot, "versions", version, osName+"-"+arch)
-	if err := os.MkdirAll(filepath.Dir(blockedDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(blockedDir), 0o700); err != nil {
 		t.Fatalf("mkdir parent: %v", err)
 	}
-	if err := os.WriteFile(blockedDir, []byte("block"), 0o644); err != nil {
+	if err := os.WriteFile(blockedDir, []byte("block"), 0o600); err != nil {
 		t.Fatalf("write blocking file: %v", err)
 	}
 
@@ -91,10 +91,10 @@ func TestDownloadToFileWithSystem_TruncateErrorBranch(t *testing.T) {
 	defer server.Close()
 
 	tmpPath := filepath.Join(t.TempDir(), "readonly")
-	if err := os.WriteFile(tmpPath, []byte("seed"), 0o644); err != nil {
+	if err := os.WriteFile(tmpPath, []byte("seed"), 0o600); err != nil {
 		t.Fatalf("write seed file: %v", err)
 	}
-	f, err := os.Open(tmpPath) // read-only; truncate must fail
+	f, err := os.Open(tmpPath) // #nosec G304 -- read-only; truncate must fail. Path is rooted in t.TempDir().
 	if err != nil {
 		t.Fatalf("open read-only file: %v", err)
 	}

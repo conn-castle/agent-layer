@@ -450,10 +450,10 @@ func TestBuildCurrentTemplateManifest_ErrorPaths(t *testing.T) {
 func TestReadCurrentPinVersion_EmptyContentReturnsEmpty(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte(" \n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte(" \n"), 0o600); err != nil {
 		t.Fatalf("write pin file: %v", err)
 	}
 
@@ -470,10 +470,10 @@ func TestWriteManagedBaselineIfConsistent_ErrorPaths(t *testing.T) {
 	t.Run("listManagedDiffs error", func(t *testing.T) {
 		root := t.TempDir()
 		allowPath := filepath.Join(root, filepath.FromSlash(commandsAllowRelPath))
-		if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
 			t.Fatalf("mkdir allow dir: %v", err)
 		}
-		if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
+		if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o600); err != nil {
 			t.Fatalf("write allow: %v", err)
 		}
 

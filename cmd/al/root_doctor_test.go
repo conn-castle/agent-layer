@@ -331,7 +331,7 @@ enabled = true
 noise_mode = "quiet"
 instruction_token_threshold = 1
 `
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "config.toml"), []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -470,10 +470,10 @@ func TestDoctorCommand_FlatSkillsDetectedEvenWhenConfigFails(t *testing.T) {
 
 	// Add a flat-format skill file.
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill.md"), []byte("# test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "my-skill.md"), []byte("# test"), 0o600); err != nil {
 		t.Fatalf("write flat skill: %v", err)
 	}
 

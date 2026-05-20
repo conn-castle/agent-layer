@@ -63,7 +63,7 @@ func TestLaunchClaudeEffort(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func TestLaunchClaudeEffort(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(argsFile)
+	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestLaunchClaudeEffortNonMax(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestLaunchClaudeEffortNonMax(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(argsFile)
+	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestLaunchClaudeNoEffortWhenEmpty(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func TestLaunchClaudeNoEffortWhenEmpty(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(argsFile)
+	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestLaunchClaudeEffortSkippedWithAgentSpecificOverride(t *testing.T) {
 	argsFile := filepath.Join(t.TempDir(), "args.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -203,7 +203,7 @@ func TestLaunchClaudeEffortSkippedWithAgentSpecificOverride(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(argsFile)
+	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestLaunchClaude_NoLocalConfigDir(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -352,7 +352,7 @@ func TestLaunchClaude_NoLocalConfigDir(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -368,7 +368,7 @@ func TestLaunchClaude_SetsClaudeConfigDirWhenEnabled(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -396,7 +396,7 @@ func TestLaunchClaude_SetsClaudeConfigDirWhenEnabled(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestLaunchClaude_ClearsStaleClaudeConfigDir(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -436,7 +436,7 @@ func TestLaunchClaude_ClearsStaleClaudeConfigDir(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestLaunchClaude_PreservesUserClaudeConfigDir(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "env.txt")
 	stubPath := filepath.Join(binDir, "claude")
 	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil {
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 
@@ -474,7 +474,7 @@ func TestLaunchClaude_PreservesUserClaudeConfigDir(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile)
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env file: %v", err)
 	}

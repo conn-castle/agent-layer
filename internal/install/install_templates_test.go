@@ -14,14 +14,14 @@ import (
 func TestWriteTemplateIfMissingExisting(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
-	if err := os.WriteFile(path, []byte("custom"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("custom"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
 	if err := writeTemplateIfMissing(RealSystem{}, path, "config.toml", 0o644); err != nil {
 		t.Fatalf("writeTemplateIfMissing error: %v", err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestWriteSectionAwareTemplateFile_CreatesMissingFile(t *testing.T) {
 		t.Fatalf("writeSectionAwareTemplateFile: %v", err)
 	}
 
-	content, err := os.ReadFile(destPath)
+	content, err := os.ReadFile(destPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read written section-aware file: %v", err)
 	}
@@ -88,10 +88,10 @@ func TestBuildLabeledDiffs_NormalizesRelativePath(t *testing.T) {
 func TestBuildLabeledDiffs_UsesSlashNormalizedTemplateMapping(t *testing.T) {
 	root := t.TempDir()
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.WriteFile(allowPath, []byte("custom allowlist\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("custom allowlist\n"), 0o600); err != nil {
 		t.Fatalf("write commands.allow: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestBuildLabeledDiffs_UsesSlashNormalizedTemplateMapping(t *testing.T) {
 func TestWriteTemplateIfMissingStatError(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -133,7 +133,7 @@ func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	if err := os.WriteFile(path, templateBytes, 0o644); err != nil {
+	if err := os.WriteFile(path, templateBytes, 0o600); err != nil {
 		t.Fatalf("write config.toml: %v", err)
 	}
 
@@ -177,7 +177,7 @@ func TestWriteTemplateDirWalkError(t *testing.T) {
 func TestFileMatchesTemplateReadError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
-	if err := os.WriteFile(path, []byte("test"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("test"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -199,7 +199,7 @@ func TestFileMatchesTemplateReadError(t *testing.T) {
 func TestWriteTemplateFile_FileMatchesError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
-	if err := os.WriteFile(path, []byte("existing"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("existing"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	matchTemplate := func(sys System, path string, templatePath string, info fs.FileInfo) (bool, error) {
@@ -214,7 +214,7 @@ func TestWriteTemplateFile_FileMatchesError(t *testing.T) {
 func TestWriteTemplateFile_OverwritePromptError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
-	if err := os.WriteFile(path, []byte("different"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("different"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -291,7 +291,7 @@ func TestWriteTemplateFile_StatError(t *testing.T) {
 	if err := os.Mkdir(dir, 0o000); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	path := filepath.Join(dir, "config.toml")
 	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil, nil)
@@ -304,7 +304,7 @@ func TestWriteTemplateFile_MkdirError(t *testing.T) {
 	root := t.TempDir()
 	// Create a file where directory should be
 	blocker := filepath.Join(root, "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	path := filepath.Join(blocker, "subdir", "config.toml")
@@ -317,7 +317,7 @@ func TestWriteTemplateFile_MkdirError(t *testing.T) {
 func TestWriteTemplateFiles_GitignoreBlockError(t *testing.T) {
 	root := t.TempDir()
 	// Create parent dir but block gitignore.block directory creation
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -328,7 +328,7 @@ func TestWriteTemplateFiles_GitignoreBlockError(t *testing.T) {
 	// First, we need the earlier files to succeed. Let's block the gitignore.block path specifically
 	// by making it a directory
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
-	if err := os.Mkdir(blockPath, 0o755); err != nil {
+	if err := os.Mkdir(blockPath, 0o700); err != nil {
 		t.Fatalf("mkdir block: %v", err)
 	}
 
@@ -348,7 +348,7 @@ func TestWriteTemplateFiles_WriteError(t *testing.T) {
 	if err := os.MkdirAll(alDir, 0o500); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(alDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(alDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	err := inst.templates().writeTemplateFiles()
@@ -364,14 +364,14 @@ func TestWriteTemplateDirs_WriteError(t *testing.T) {
 	root := t.TempDir()
 	// Create instructions dir first with normal perms, then make it read-only
 	instrDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(instrDir, 0o755); err != nil {
+	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Now make it read-only to prevent file writes
-	if err := os.Chmod(instrDir, 0o500); err != nil {
+	if err := os.Chmod(instrDir, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	err := inst.templates().writeTemplateDirs()
@@ -387,14 +387,14 @@ func TestWriteTemplateFile_WriteAfterOverwriteError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
 	// Write existing file with different content
-	if err := os.WriteFile(path, []byte("old content"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("old content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// Make dir read-only to cause write error during overwrite
-	if err := os.Chmod(root, 0o500); err != nil {
+	if err := os.Chmod(root, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	prompt := func(p string) (bool, error) {
 		return true, nil // Agree to overwrite
@@ -423,7 +423,7 @@ func TestWriteTemplateFile_ExactMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	if err := os.WriteFile(path, templateBytes, 0o644); err != nil {
+	if err := os.WriteFile(path, templateBytes, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -479,7 +479,7 @@ func (m *mockDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
 func TestWriteTemplateDirSuccess(t *testing.T) {
 	root := t.TempDir()
 	destRoot := filepath.Join(root, "dest")
-	if err := os.MkdirAll(destRoot, 0o755); err != nil {
+	if err := os.MkdirAll(destRoot, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -506,13 +506,13 @@ func TestWriteTemplateDirSuccess(t *testing.T) {
 func TestWriteTemplateDirWithOverwrite(t *testing.T) {
 	root := t.TempDir()
 	destRoot := filepath.Join(root, "dest")
-	if err := os.MkdirAll(destRoot, 0o755); err != nil {
+	if err := os.MkdirAll(destRoot, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Write an existing file that differs
 	existingPath := filepath.Join(destRoot, "00_rules.md")
-	if err := os.WriteFile(existingPath, []byte("different content"), 0o644); err != nil {
+	if err := os.WriteFile(existingPath, []byte("different content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -534,13 +534,13 @@ func TestWriteTemplateDirWithOverwrite(t *testing.T) {
 func TestWriteTemplateDirNoOverwrite(t *testing.T) {
 	root := t.TempDir()
 	destRoot := filepath.Join(root, "dest")
-	if err := os.MkdirAll(destRoot, 0o755); err != nil {
+	if err := os.MkdirAll(destRoot, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Write an existing file that differs
 	existingPath := filepath.Join(destRoot, "00_rules.md")
-	if err := os.WriteFile(existingPath, []byte("different content"), 0o644); err != nil {
+	if err := os.WriteFile(existingPath, []byte("different content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -565,13 +565,13 @@ func TestListManagedDiffs_DirDiffError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
 	instrDir := filepath.Join(alDir, "instructions")
-	if err := os.MkdirAll(instrDir, 0o755); err != nil {
+	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create an instruction file as a directory to cause stat error during matchTemplate
 	instrFile := filepath.Join(instrDir, "00_rules.md")
-	if err := os.Mkdir(instrFile, 0o755); err != nil {
+	if err := os.Mkdir(instrFile, 0o700); err != nil {
 		t.Fatalf("mkdir instruction: %v", err)
 	}
 
@@ -585,7 +585,7 @@ func TestListManagedDiffs_DirDiffError(t *testing.T) {
 func TestWriteTemplateDirCached_Success(t *testing.T) {
 	root := t.TempDir()
 	instrDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(instrDir, 0o755); err != nil {
+	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -614,19 +614,19 @@ func TestWriteTemplateDirCached_Error(t *testing.T) {
 	root := t.TempDir()
 	instrDir := filepath.Join(root, ".agent-layer", "instructions")
 	// Create with full permissions first
-	if err := os.MkdirAll(instrDir, 0o755); err != nil {
+	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write an existing file that differs from template
 	existingFile := filepath.Join(instrDir, "00_rules.md")
-	if err := os.WriteFile(existingFile, []byte("different content"), 0o644); err != nil {
+	if err := os.WriteFile(existingFile, []byte("different content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// Make the directory read-only (can't create/modify files)
-	if err := os.Chmod(instrDir, 0o500); err != nil {
+	if err := os.Chmod(instrDir, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{
 		root:                root,
@@ -677,7 +677,7 @@ func TestMatchTemplate_NilSys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	if err := os.WriteFile(configPath, templateBytes, 0o644); err != nil {
+	if err := os.WriteFile(configPath, templateBytes, 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -701,7 +701,7 @@ func TestMatchTemplate_NoInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	if err := os.WriteFile(configPath, templateBytes, 0o644); err != nil {
+	if err := os.WriteFile(configPath, templateBytes, 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -720,7 +720,7 @@ func TestMatchTemplate_NoInfo(t *testing.T) {
 func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -730,7 +730,7 @@ func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	if err := os.WriteFile(blockPath, templateBytes, 0o644); err != nil {
+	if err := os.WriteFile(blockPath, templateBytes, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -748,13 +748,13 @@ func TestTemplateFileMatches_GitignoreBlockMatchesTemplate(t *testing.T) {
 func TestTemplateFileMatches_GitignoreBlockNoMatch(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	blockPath := filepath.Join(alDir, "gitignore.block")
 	// Write different content that doesn't match
-	if err := os.WriteFile(blockPath, []byte("# custom content\nsome-pattern\n"), 0o644); err != nil {
+	if err := os.WriteFile(blockPath, []byte("# custom content\nsome-pattern\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -775,7 +775,7 @@ func TestAppendTemplateFileDiffs_StatError(t *testing.T) {
 	}
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -784,7 +784,7 @@ func TestAppendTemplateFileDiffs_StatError(t *testing.T) {
 	if err := os.Mkdir(configPath, 0o000); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(configPath, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(configPath, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	diffs := make(map[string]struct{})
@@ -803,20 +803,20 @@ func TestAppendTemplateDirDiffs_StatError_Permissions(t *testing.T) {
 	}
 	root := t.TempDir()
 	instrDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(instrDir, 0o755); err != nil {
+	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create a file with unreadable permissions to cause stat error
 	basePath := filepath.Join(instrDir, "00_rules.md")
-	if err := os.WriteFile(basePath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(basePath, []byte("content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// Make parent directory unreadable
 	if err := os.Chmod(instrDir, 0o000); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(instrDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := templateDir{
@@ -900,7 +900,7 @@ func TestWriteTemplateFileWithMatch_NilMatchTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read template: %v", err)
 	}
-	if err := os.WriteFile(path, templateBytes, 0o644); err != nil {
+	if err := os.WriteFile(path, templateBytes, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -915,7 +915,7 @@ func TestWriteTemplateFileWithMatch_MkdirAllError(t *testing.T) {
 	root := t.TempDir()
 	// Create a file that will block directory creation
 	blocker := filepath.Join(root, "blocker")
-	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -933,7 +933,7 @@ func TestTemplateFileMatches_ReadError(t *testing.T) {
 	}
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -942,7 +942,7 @@ func TestTemplateFileMatches_ReadError(t *testing.T) {
 	if err := os.WriteFile(blockPath, []byte("content"), 0o000); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(blockPath, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(blockPath, 0o600) })
 
 	info, _ := os.Stat(blockPath)
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -964,12 +964,12 @@ func TestTemplateFileMatches_TemplateReadError(t *testing.T) {
 
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	blockPath := filepath.Join(alDir, "gitignore.block")
-	if err := os.WriteFile(blockPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(blockPath, []byte("content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -984,10 +984,10 @@ func TestTemplateFileMatches_TemplateReadError(t *testing.T) {
 func TestAppendTemplateFileDiffs_StatErrorInjected(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write commands.allow: %v", err)
 	}
 
@@ -1006,11 +1006,11 @@ func TestAppendTemplateFileDiffs_StatErrorInjected(t *testing.T) {
 func TestAppendTemplateDirDiffs_SectionAwareErrorsAndDiffs(t *testing.T) {
 	root := t.TempDir()
 	memoryDir := filepath.Join(root, "docs", "agent-layer")
-	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+	if err := os.MkdirAll(memoryDir, 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
 	issuesPath := filepath.Join(memoryDir, "ISSUES.md")
-	if err := os.Mkdir(issuesPath, 0o755); err != nil {
+	if err := os.Mkdir(issuesPath, 0o700); err != nil {
 		t.Fatalf("mkdir issues dir: %v", err)
 	}
 
@@ -1027,11 +1027,11 @@ func TestAppendTemplateDirDiffs_SectionAwareErrorsAndDiffs(t *testing.T) {
 func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 	root := t.TempDir()
 	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(instructionsDir, 0o755); err != nil {
+	if err := os.MkdirAll(instructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
 	targetPath := filepath.Join(instructionsDir, "00_rules.md")
-	if err := os.WriteFile(targetPath, []byte("custom instructions\n"), 0o644); err != nil {
+	if err := os.WriteFile(targetPath, []byte("custom instructions\n"), 0o600); err != nil {
 		t.Fatalf("write instruction: %v", err)
 	}
 
@@ -1052,10 +1052,10 @@ func TestAppendTemplateDirDiffs_AddsNonSectionAwareMismatch(t *testing.T) {
 func TestWriteTemplateDirCached_SectionAwareError(t *testing.T) {
 	root := t.TempDir()
 	memoryDir := filepath.Join(root, "docs", "agent-layer")
-	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+	if err := os.MkdirAll(memoryDir, 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(memoryDir, "ISSUES.md"), []byte("# invalid\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(memoryDir, "ISSUES.md"), []byte("# invalid\n"), 0o600); err != nil {
 		t.Fatalf("write invalid issues: %v", err)
 	}
 
@@ -1072,7 +1072,7 @@ func TestWriteTemplateDirCached_SectionAwareError(t *testing.T) {
 func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 	root := t.TempDir()
 	memoryDir := filepath.Join(root, "docs", "agent-layer")
-	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+	if err := os.MkdirAll(memoryDir, 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
 	relPath := "docs/agent-layer/ISSUES.md"
@@ -1083,7 +1083,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 		if err := os.RemoveAll(path); err != nil {
 			t.Fatalf("remove file: %v", err)
 		}
-		if err := os.Mkdir(path, 0o755); err != nil {
+		if err := os.Mkdir(path, 0o700); err != nil {
 			t.Fatalf("mkdir path: %v", err)
 		}
 		t.Cleanup(func() { _ = os.RemoveAll(path) })
@@ -1095,7 +1095,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 
 	t.Run("template read error", func(t *testing.T) {
 		content := "# header\n" + ownershipMarkerEntriesStart + "\n- entry\n"
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatalf("write issues: %v", err)
 		}
 		original := templates.ReadFunc
@@ -1113,7 +1113,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("local split error", func(t *testing.T) {
-		if err := os.WriteFile(path, []byte("# no marker\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte("# no marker\n"), 0o600); err != nil {
 			t.Fatalf("write issues: %v", err)
 		}
 		err := inst.templates().writeSectionAwareTemplateFile(path, "docs/agent-layer/ISSUES.md", 0o644, relPath, ownershipMarkerEntriesStart)
@@ -1124,7 +1124,7 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 
 	t.Run("template split error", func(t *testing.T) {
 		content := "# header\n" + ownershipMarkerEntriesStart + "\n- local entry\n"
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 			t.Fatalf("write issues: %v", err)
 		}
 		original := templates.ReadFunc
@@ -1145,13 +1145,13 @@ func TestWriteSectionAwareTemplateFile_ErrorPaths(t *testing.T) {
 func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 	root := t.TempDir()
 	memoryDir := filepath.Join(root, "docs", "agent-layer")
-	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+	if err := os.MkdirAll(memoryDir, 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
 	relPath := "docs/agent-layer/ISSUES.md"
 	path := filepath.Join(memoryDir, "ISSUES.md")
 	content := "# custom header\n" + ownershipMarkerEntriesStart + "\n- custom entry\n"
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write issues: %v", err)
 	}
 
@@ -1238,7 +1238,7 @@ func TestUserOwnedInstructionFile_SeededOnInit(t *testing.T) {
 		t.Fatalf("Run error: %v", err)
 	}
 	convPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	data, err := os.ReadFile(convPath)
+	data, err := os.ReadFile(convPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("expected 04_conventions.md to exist after init: %v", err)
 	}
@@ -1256,7 +1256,7 @@ func TestUserOwnedInstructionFile_NotOverwrittenOnUpgrade(t *testing.T) {
 	// Edit the conventions file.
 	convPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
 	customContent := "# My Custom Conventions\n- Custom rule\n"
-	if err := os.WriteFile(convPath, []byte(customContent), 0o644); err != nil {
+	if err := os.WriteFile(convPath, []byte(customContent), 0o600); err != nil {
 		t.Fatalf("write custom conventions: %v", err)
 	}
 
@@ -1265,7 +1265,7 @@ func TestUserOwnedInstructionFile_NotOverwrittenOnUpgrade(t *testing.T) {
 		t.Fatalf("upgrade Run error: %v", err)
 	}
 
-	data, err := os.ReadFile(convPath)
+	data, err := os.ReadFile(convPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read conventions after upgrade: %v", err)
 	}
@@ -1282,7 +1282,7 @@ func TestUserOwnedInstructionFile_ExcludedFromManagedDiffs(t *testing.T) {
 
 	// Edit the conventions file so it differs from template.
 	convPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	if err := os.WriteFile(convPath, []byte("custom conventions\n"), 0o644); err != nil {
+	if err := os.WriteFile(convPath, []byte("custom conventions\n"), 0o600); err != nil {
 		t.Fatalf("write custom: %v", err)
 	}
 

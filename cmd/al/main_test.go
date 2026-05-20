@@ -236,11 +236,11 @@ func TestHasQuietFlag(t *testing.T) {
 func TestIsQuiet(t *testing.T) {
 	root := t.TempDir()
 	agentLayerDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(agentLayerDir, 0o755); err != nil {
+	if err := os.MkdirAll(agentLayerDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	configPath := filepath.Join(agentLayerDir, "config.toml")
-	if err := os.WriteFile(configPath, []byte("[warnings]\nnoise_mode = \"quiet\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("[warnings]\nnoise_mode = \"quiet\"\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

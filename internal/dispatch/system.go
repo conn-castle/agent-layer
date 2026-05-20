@@ -51,7 +51,7 @@ func (RealSystem) UserCacheDir() (string, error) {
 
 // ReadFile reads the named file and returns the contents.
 func (RealSystem) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
+	return os.ReadFile(name) // #nosec G304 -- pass-through wrapper for the System abstraction; callers (dispatch internals) are responsible for the path origin.
 }
 
 // Getenv returns the value of the environment variable named by key.

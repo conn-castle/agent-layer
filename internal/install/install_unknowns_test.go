@@ -17,7 +17,7 @@ func TestScanUnknownRoot_StatError(t *testing.T) {
 	if err := os.Mkdir(locked, 0o000); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: locked, sys: RealSystem{}}
 	// scanUnknowns may or may not error depending on OS behavior with 000 perms.
@@ -32,11 +32,11 @@ func setupUnknownFile(t *testing.T) (*installer, string) {
 	t.Helper()
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	unknownPath := filepath.Join(alDir, "unknown.txt")
-	if err := os.WriteFile(unknownPath, []byte("data"), 0o644); err != nil {
+	if err := os.WriteFile(unknownPath, []byte("data"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	inst := &installer{
@@ -81,18 +81,18 @@ func TestHandleUnknowns_DeleteError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
 	protectedDir := filepath.Join(alDir, "protected")
-	if err := os.MkdirAll(protectedDir, 0o755); err != nil {
+	if err := os.MkdirAll(protectedDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	file := filepath.Join(protectedDir, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// Make dir read-only to prevent deletion.
-	if err := os.Chmod(protectedDir, 0o500); err != nil {
+	if err := os.Chmod(protectedDir, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{
 		root:      root,
@@ -215,18 +215,18 @@ func TestHandleUnknowns_IndividualDeleteError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
 	protectedDir := filepath.Join(alDir, "protected")
-	if err := os.MkdirAll(protectedDir, 0o755); err != nil {
+	if err := os.MkdirAll(protectedDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	file := filepath.Join(protectedDir, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	// Make dir read-only to prevent deletion.
-	if err := os.Chmod(protectedDir, 0o500); err != nil {
+	if err := os.Chmod(protectedDir, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(protectedDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{
 		root:      root,
@@ -253,14 +253,14 @@ func TestScanUnknownRoot_WalkDirError(t *testing.T) {
 	}
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	subDir := filepath.Join(alDir, "subdir")
 	if err := os.Mkdir(subDir, 0o000); err != nil {
 		t.Fatalf("mkdir subdir: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(subDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(subDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	known := map[string]struct{}{
@@ -276,14 +276,14 @@ func TestScanUnknownRoot_StatErrorNonNotExist(t *testing.T) {
 	}
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Remove read permissions from alDir to cause stat error
 	if err := os.Chmod(alDir, 0o000); err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(alDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(alDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	known := make(map[string]struct{})
@@ -301,11 +301,11 @@ func TestBuildKnownPaths_IncludesUpgradeSnapshots(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
 	snapshotPath := filepath.Join(snapshotDir, "example.json")
-	if err := os.WriteFile(snapshotPath, []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(snapshotPath, []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write snapshot file: %v", err)
 	}
 
@@ -342,7 +342,7 @@ func TestHandleUnknowns_DocsAgentLayerOrphan_DetectedAndDeleted(t *testing.T) {
 	}
 	// Create an orphan file in docs/agent-layer/ that has no template.
 	orphanPath := filepath.Join(root, "docs", "agent-layer", "CUSTOM.md")
-	if err := os.WriteFile(orphanPath, []byte("custom"), 0o644); err != nil {
+	if err := os.WriteFile(orphanPath, []byte("custom"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
 
@@ -378,7 +378,7 @@ func TestScanUnknowns_DocsAgentLayerOrphan_Detected(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 	orphanPath := filepath.Join(root, "docs", "agent-layer", "ORPHAN.md")
-	if err := os.WriteFile(orphanPath, []byte("orphan"), 0o644); err != nil {
+	if err := os.WriteFile(orphanPath, []byte("orphan"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
 
@@ -432,15 +432,15 @@ func setupTmpAndOtherUnknowns(t *testing.T) (inst *installer, tmpFile, otherFile
 	t.Helper()
 	root := t.TempDir()
 	tmpDir := filepath.Join(root, ".agent-layer", "tmp")
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		t.Fatalf("mkdir tmp: %v", err)
 	}
 	tmpFile = filepath.Join(tmpDir, "scratch.log")
-	if err := os.WriteFile(tmpFile, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write tmp file: %v", err)
 	}
 	otherFile = filepath.Join(root, ".agent-layer", "stray.txt")
-	if err := os.WriteFile(otherFile, []byte("y"), 0o644); err != nil {
+	if err := os.WriteFile(otherFile, []byte("y"), 0o600); err != nil {
 		t.Fatalf("write other file: %v", err)
 	}
 	inst = &installer{
@@ -564,11 +564,11 @@ func TestHandleUnknowns_NoTmpFiles_TmpPromptNotCalled(t *testing.T) {
 func TestHandleUnknowns_OnlyTmpFiles_NoPerFileLoop(t *testing.T) {
 	root := t.TempDir()
 	tmpDir := filepath.Join(root, ".agent-layer", "tmp")
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	for _, name := range []string{"a.log", "b.log", "c.log"} {
-		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
@@ -605,16 +605,16 @@ func TestHandleUnknowns_OnlyTmpFiles_NoPerFileLoop(t *testing.T) {
 func TestHandleUnknowns_TopLevelSummaryCollapsesTmp(t *testing.T) {
 	root := t.TempDir()
 	tmpDir := filepath.Join(root, ".agent-layer", "tmp")
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		t.Fatalf("mkdir tmp: %v", err)
 	}
 	for _, name := range []string{"one.log", "two.log"} {
-		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write tmp file: %v", err)
 		}
 	}
 	otherFile := filepath.Join(root, ".agent-layer", "stray.txt")
-	if err := os.WriteFile(otherFile, []byte("y"), 0o644); err != nil {
+	if err := os.WriteFile(otherFile, []byte("y"), 0o600); err != nil {
 		t.Fatalf("write other: %v", err)
 	}
 

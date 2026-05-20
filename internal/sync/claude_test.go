@@ -59,7 +59,7 @@ func TestWriteClaudeSettingsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
@@ -72,10 +72,10 @@ func TestWriteClaudeSettingsWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	claudeDir := filepath.Join(root, ".claude")
-	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(claudeDir, "settings.json"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(claudeDir, "settings.json"), 0o700); err != nil {
 		t.Fatalf("mkdir settings.json: %v", err)
 	}
 	project := &config.ProjectConfig{

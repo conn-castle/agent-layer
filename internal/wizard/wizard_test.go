@@ -59,10 +59,10 @@ func TestRunWithWriter_LenientFallbackOnBrokenConfig(t *testing.T) {
 
 	// Create the config file on disk so ensureWizardConfig doesn't try to install.
 	configDir := root + "/.agent-layer"
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(configDir+"/config.toml", []byte("# broken config"), 0o644); err != nil {
+	if err := os.WriteFile(configDir+"/config.toml", []byte("# broken config"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -137,10 +137,10 @@ func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {
 
 	// Create the config file on disk so ensureWizardConfig doesn't try to install.
 	configDir := root + "/.agent-layer"
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(configDir+"/config.toml", []byte("# unknown keys config"), 0o644); err != nil {
+	if err := os.WriteFile(configDir+"/config.toml", []byte("# unknown keys config"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -212,10 +212,10 @@ func TestRunWithWriter_NonValidationErrorPropagates(t *testing.T) {
 
 	// Create the config file on disk so ensureWizardConfig doesn't try to install.
 	configDir := root + "/.agent-layer"
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(configDir+"/config.toml", []byte("# placeholder"), 0o644); err != nil {
+	if err := os.WriteFile(configDir+"/config.toml", []byte("# placeholder"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -243,10 +243,10 @@ func TestRunWithWriter_ValidationErrorLenientAlsoFails(t *testing.T) {
 
 	// Create the config file on disk so ensureWizardConfig doesn't try to install.
 	configDir := root + "/.agent-layer"
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(configDir+"/config.toml", []byte("# placeholder"), 0o644); err != nil {
+	if err := os.WriteFile(configDir+"/config.toml", []byte("# placeholder"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

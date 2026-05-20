@@ -139,11 +139,11 @@ func TestInitCmd(t *testing.T) {
 			// Setup temp dir as root
 			tmpDir := t.TempDir()
 			// Create .git to make it a valid root
-			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0700); err != nil {
 				t.Fatal(err)
 			}
 			if tt.precreateAgentLayerDir {
-				if err := os.MkdirAll(filepath.Join(tmpDir, ".agent-layer"), 0o755); err != nil {
+				if err := os.MkdirAll(filepath.Join(tmpDir, ".agent-layer"), 0o700); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -389,7 +389,7 @@ func TestInitCmd_VersionLatestPinsResolvedRelease(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -444,7 +444,7 @@ func TestInitCmd_VersionValidationFailureBlocksInstall(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -494,7 +494,7 @@ func TestInitCmd_UpdateWarning(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -543,7 +543,7 @@ func TestInitCmd_UpdateWarningRateLimitSuppressed(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -590,7 +590,7 @@ func TestInitCmd_UpdateWarningDevBuild(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -628,7 +628,7 @@ func TestInitCmd_WizardPromptError(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -698,7 +698,7 @@ func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 			})
 
 			tmpDir := t.TempDir()
-			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0755); err != nil {
+			if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0700); err != nil {
 				t.Fatal(err)
 			}
 			getwd = func() (string, error) { return tmpDir, nil }
@@ -748,7 +748,7 @@ func TestInitCmd_StatAgentLayerErrorFailsFast(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -799,11 +799,11 @@ func TestInitCmd_HereInstallsInSubfolderOfExistingAgentLayer(t *testing.T) {
 	})
 
 	parent := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(parent, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(parent, ".agent-layer"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	sub := filepath.Join(parent, "child")
-	if err := os.Mkdir(sub, 0o755); err != nil {
+	if err := os.Mkdir(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -850,11 +850,11 @@ func TestInitCmd_AncestorAgentLayerErrorHintsHere(t *testing.T) {
 	})
 
 	parent := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(parent, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(parent, ".agent-layer"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	sub := filepath.Join(parent, "child")
-	if err := os.Mkdir(sub, 0o755); err != nil {
+	if err := os.Mkdir(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -897,10 +897,10 @@ func TestInitCmd_AgentLayerIsFileErrors(t *testing.T) {
 	})
 
 	tmpDir := t.TempDir()
-	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(tmpDir, ".git"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, ".agent-layer"), []byte("not a dir"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmpDir, ".agent-layer"), []byte("not a dir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

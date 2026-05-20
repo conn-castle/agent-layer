@@ -78,10 +78,10 @@ func TestShouldOverwriteAllMemory_ListMemoryLabeledDiffsErrorPropagates(t *testi
 func TestShouldOverwriteAllManaged_UsesUnifiedDecision(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
 		t.Fatalf("mkdir managed path: %v", err)
 	}
-	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o600); err != nil {
 		t.Fatalf("write managed path: %v", err)
 	}
 
@@ -113,10 +113,10 @@ func TestShouldOverwriteAllManaged_UsesUnifiedDecision(t *testing.T) {
 func TestShouldOverwriteAllMemory_UsesUnifiedDecision(t *testing.T) {
 	root := t.TempDir()
 	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o700); err != nil {
 		t.Fatalf("mkdir memory path: %v", err)
 	}
-	if err := os.WriteFile(memoryPath, []byte("<!-- ENTRIES START -->\nlocal memory entry\n"), 0o644); err != nil {
+	if err := os.WriteFile(memoryPath, []byte("<!-- ENTRIES START -->\nlocal memory entry\n"), 0o600); err != nil {
 		t.Fatalf("write memory path: %v", err)
 	}
 
@@ -148,7 +148,7 @@ func TestShouldOverwriteAllMemory_UsesUnifiedDecision(t *testing.T) {
 func TestShouldOverwriteAllManaged_UnifiedResolutionErrorPropagates(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(managedPath, 0o755); err != nil {
+	if err := os.MkdirAll(managedPath, 0o700); err != nil {
 		t.Fatalf("mkdir managed path directory: %v", err)
 	}
 
@@ -227,10 +227,10 @@ func TestShouldOverwrite_PropagatesLookupDiffPreviewError(t *testing.T) {
 func TestShouldOverwrite_PropagatesUnifiedResolutionError(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
 		t.Fatalf("mkdir managed dir: %v", err)
 	}
-	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o600); err != nil {
 		t.Fatalf("write managed file: %v", err)
 	}
 
@@ -267,10 +267,10 @@ func TestShouldOverwrite_PropagatesUnifiedResolutionError(t *testing.T) {
 func TestResolveUnifiedOverwriteAllDecisions_BuildManagedDiffPreviewsError(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
 		t.Fatalf("mkdir managed dir: %v", err)
 	}
-	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o600); err != nil {
 		t.Fatalf("write managed file: %v", err)
 	}
 
@@ -306,10 +306,10 @@ func TestResolveUnifiedOverwriteAllDecisions_BuildManagedDiffPreviewsError(t *te
 func TestResolveUnifiedOverwriteAllDecisions_ListMemoryLabeledDiffsError(t *testing.T) {
 	root := t.TempDir()
 	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
-	if err := os.WriteFile(memoryPath, []byte("# Issues\n\n<!-- ENTRIES START -->\nlocal\n"), 0o644); err != nil {
+	if err := os.WriteFile(memoryPath, []byte("# Issues\n\n<!-- ENTRIES START -->\nlocal\n"), 0o600); err != nil {
 		t.Fatalf("write memory file: %v", err)
 	}
 
@@ -341,10 +341,10 @@ func TestResolveUnifiedOverwriteAllDecisions_ListMemoryLabeledDiffsError(t *test
 func TestResolveUnifiedOverwriteAllDecisions_BuildMemoryDiffPreviewsError(t *testing.T) {
 	root := t.TempDir()
 	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
-	if err := os.WriteFile(memoryPath, []byte("# Issues\n\n<!-- ENTRIES START -->\nlocal\n"), 0o644); err != nil {
+	if err := os.WriteFile(memoryPath, []byte("# Issues\n\n<!-- ENTRIES START -->\nlocal\n"), 0o600); err != nil {
 		t.Fatalf("write memory file: %v", err)
 	}
 
@@ -380,10 +380,10 @@ func TestResolveUnifiedOverwriteAllDecisions_BuildMemoryDiffPreviewsError(t *tes
 func TestShouldOverwriteAllManaged_BuildManagedDiffPreviewsError(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
 		t.Fatalf("mkdir managed dir: %v", err)
 	}
-	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o600); err != nil {
 		t.Fatalf("write managed file: %v", err)
 	}
 
@@ -419,10 +419,10 @@ func TestShouldOverwriteAllManaged_BuildManagedDiffPreviewsError(t *testing.T) {
 func TestShouldOverwriteAllMemory_BuildMemoryDiffPreviewsError(t *testing.T) {
 	root := t.TempDir()
 	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o700); err != nil {
 		t.Fatalf("mkdir memory dir: %v", err)
 	}
-	if err := os.WriteFile(memoryPath, []byte("# Issues\n\n<!-- ENTRIES START -->\nlocal\n"), 0o644); err != nil {
+	if err := os.WriteFile(memoryPath, []byte("# Issues\n\n<!-- ENTRIES START -->\nlocal\n"), 0o600); err != nil {
 		t.Fatalf("write memory file: %v", err)
 	}
 
@@ -477,10 +477,10 @@ func TestLookupDiffPreview_MemoryTemplatePathByRelError(t *testing.T) {
 func TestLookupDiffPreview_BuildSingleDiffPreviewError(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
 		t.Fatalf("mkdir managed dir: %v", err)
 	}
-	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o600); err != nil {
 		t.Fatalf("write managed file: %v", err)
 	}
 

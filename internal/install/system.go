@@ -41,7 +41,7 @@ func (RealSystem) Stat(name string) (os.FileInfo, error) {
 
 // ReadFile reads the named file and returns the contents.
 func (RealSystem) ReadFile(name string) ([]byte, error) {
-	return os.ReadFile(name)
+	return os.ReadFile(name) // #nosec G304 -- pass-through wrapper for the System abstraction; callers (install internals) are responsible for the path origin.
 }
 
 // Readlink returns the destination of a symbolic link.

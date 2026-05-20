@@ -61,7 +61,7 @@ func TestWriteInstructionShimsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
@@ -74,7 +74,7 @@ func TestWriteCodexInstructionsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
@@ -93,35 +93,35 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 		{
 			name: "agents write fails",
 			setup: func(root string) error {
-				return os.Mkdir(filepath.Join(root, "AGENTS.md"), 0o755)
+				return os.Mkdir(filepath.Join(root, "AGENTS.md"), 0o700)
 			},
 		},
 		{
 			name: "claude write fails",
 			setup: func(root string) error {
-				return os.Mkdir(filepath.Join(root, "CLAUDE.md"), 0o755)
+				return os.Mkdir(filepath.Join(root, "CLAUDE.md"), 0o700)
 			},
 		},
 		{
 			name: "gemini write fails",
 			setup: func(root string) error {
-				return os.Mkdir(filepath.Join(root, "GEMINI.md"), 0o755)
+				return os.Mkdir(filepath.Join(root, "GEMINI.md"), 0o700)
 			},
 		},
 		{
 			name: "github mkdir fails",
 			setup: func(root string) error {
-				return os.WriteFile(filepath.Join(root, ".github"), []byte("x"), 0o644)
+				return os.WriteFile(filepath.Join(root, ".github"), []byte("x"), 0o600)
 			},
 		},
 		{
 			name: "copilot write fails",
 			setup: func(root string) error {
 				githubDir := filepath.Join(root, ".github")
-				if err := os.Mkdir(githubDir, 0o755); err != nil {
+				if err := os.Mkdir(githubDir, 0o700); err != nil {
 					return err
 				}
-				return os.Mkdir(filepath.Join(githubDir, "copilot-instructions.md"), 0o755)
+				return os.Mkdir(filepath.Join(githubDir, "copilot-instructions.md"), 0o700)
 			},
 		},
 	}

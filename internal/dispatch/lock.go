@@ -35,7 +35,7 @@ func withFileLock(sys System, path string, fn func() error) error {
 
 // acquireFileLock opens or creates path and acquires an exclusive lock.
 func acquireFileLock(sys System, path string) (*fileLock, error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304,G302 -- lock file path is built from the dispatch cache layout (binPath+".lock"), not user input; 0o644 matches the cached binary perms so the file is visible to debug tooling but only writable by the owner.
 	if err != nil {
 		return nil, fmt.Errorf(messages.DispatchOpenLockFmt, path, err)
 	}

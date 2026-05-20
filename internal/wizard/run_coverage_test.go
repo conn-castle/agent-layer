@@ -46,7 +46,7 @@ enabled = true
 transport = "stdio"
 command = "tool"
 `
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(config), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(config), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
 
 	origDefaults := loadDefaultMCPServersFunc
@@ -91,7 +91,7 @@ func TestRun_InvalidEnvFile(t *testing.T) {
 	configDir := filepath.Join(root, ".agent-layer")
 
 	config := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(config), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(config), 0o600))
 	envPath := filepath.Join(configDir, ".env")
 	require.NoError(t, os.WriteFile(envPath, []byte("AL_TOKEN=valid"), 0o600))
 
@@ -124,7 +124,7 @@ func TestRun_EnvReadError(t *testing.T) {
 	configDir := filepath.Join(root, ".agent-layer")
 
 	config := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(config), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(config), 0o600))
 	envPath := filepath.Join(configDir, ".env")
 	require.NoError(t, os.WriteFile(envPath, []byte("AL_TOKEN=valid"), 0o600))
 
@@ -146,7 +146,7 @@ func TestRun_EnvReadError(t *testing.T) {
 			if err := os.Remove(envPath); err != nil {
 				return err
 			}
-			return os.Mkdir(envPath, 0o755)
+			return os.Mkdir(envPath, 0o700)
 		},
 	}
 

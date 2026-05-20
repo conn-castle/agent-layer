@@ -90,7 +90,7 @@ func TestWriteMCPConfigError(t *testing.T) {
 		Fallback: RealSystem{},
 	}
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{Root: root}
@@ -105,7 +105,7 @@ func TestWriteMCPConfigWriteError(t *testing.T) {
 	sys := &MockSystem{
 		Fallback: RealSystem{},
 	}
-	if err := os.Mkdir(filepath.Join(root, ".mcp.json"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(root, ".mcp.json"), 0o700); err != nil {
 		t.Fatalf("mkdir .mcp.json: %v", err)
 	}
 	project := &config.ProjectConfig{

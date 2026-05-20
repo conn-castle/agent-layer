@@ -128,7 +128,7 @@ func TestWriteAgentSkillsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	err := WriteAgentSkills(RealSystem{}, file, nil)
@@ -156,14 +156,14 @@ func TestWriteAgentSkillsMkdirSkillDirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agents", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Make skills dir read-only so RemoveAll(skillDir) fails.
-	if err := os.Chmod(skillsDir, 0o500); err != nil {
+	if err := os.Chmod(skillsDir, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(skillsDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
 	err := WriteAgentSkills(RealSystem{}, root, cmds)
 	if err == nil {
@@ -193,7 +193,7 @@ func TestWriteClaudeSkills(t *testing.T) {
 		t.Fatalf("WriteClaudeSkills error: %v", err)
 	}
 	path := filepath.Join(root, ".claude", "skills", "alpha", "SKILL.md")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read skill: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestWriteAgentSkills(t *testing.T) {
 		t.Fatalf("WriteAgentSkills error: %v", err)
 	}
 	path := filepath.Join(root, ".agents", "skills", "beta", "SKILL.md")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read skill: %v", err)
 	}
@@ -225,22 +225,22 @@ func TestCopySkillSubFiles(t *testing.T) {
 	destDir := t.TempDir()
 
 	// Create source structure: scripts/run.sh, references/REF.md, .hidden, SKILL.md
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o700); err != nil {
 		t.Fatalf("mkdir scripts: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "run.sh"), []byte("#!/bin/sh\necho hi"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "run.sh"), []byte("#!/bin/sh\necho hi"), 0o600); err != nil {
 		t.Fatalf("write script: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o700); err != nil {
 		t.Fatalf("mkdir references: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, "references", "REF.md"), []byte("# Ref"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "references", "REF.md"), []byte("# Ref"), 0o600); err != nil {
 		t.Fatalf("write ref: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: test\n---\nBody"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: test\n---\nBody"), 0o600); err != nil {
 		t.Fatalf("write SKILL.md: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, ".hidden"), []byte("secret"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, ".hidden"), []byte("secret"), 0o600); err != nil {
 		t.Fatalf("write hidden: %v", err)
 	}
 
@@ -250,7 +250,7 @@ func TestCopySkillSubFiles(t *testing.T) {
 	}
 
 	// scripts/run.sh should be copied
-	data, err := os.ReadFile(filepath.Join(destDir, "scripts", "run.sh"))
+	data, err := os.ReadFile(filepath.Join(destDir, "scripts", "run.sh")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read copied script: %v", err)
 	}
@@ -294,20 +294,20 @@ func TestRemoveStaleSkillDirs(t *testing.T) {
 	manualDir := filepath.Join(dir, "manual")
 	ignoreFile := filepath.Join(dir, "ignore.txt")
 	for _, d := range []string{keepDir, staleDir, manualDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
+		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", d, err)
 		}
 	}
-	if err := os.WriteFile(ignoreFile, []byte("ignore"), 0o644); err != nil {
+	if err := os.WriteFile(ignoreFile, []byte("ignore"), 0o600); err != nil {
 		t.Fatalf("write ignore: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(keepDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(keepDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o600); err != nil {
 		t.Fatalf("write keep: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(staleDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(staleDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o600); err != nil {
 		t.Fatalf("write stale: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("manual"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("manual"), 0o600); err != nil {
 		t.Fatalf("write manual: %v", err)
 	}
 
@@ -336,14 +336,14 @@ func TestCleanSharedAgentSkillsRemovesGeneratedOnly(t *testing.T) {
 	generatedDir := filepath.Join(root, ".agents", "skills", "generated")
 	manualDir := filepath.Join(root, ".agents", "skills", "manual")
 	for _, dir := range []string{generatedDir, manualDir} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(generatedDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(generatedDir, "SKILL.md"), []byte(generatedMarkerFixture), 0o600); err != nil {
 		t.Fatalf("write generated skill: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("# manual\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(manualDir, "SKILL.md"), []byte("# manual\n"), 0o600); err != nil {
 		t.Fatalf("write manual skill: %v", err)
 	}
 
@@ -369,7 +369,7 @@ func TestCleanLegacySkillOutputsRemovesRetiredDirs(t *testing.T) {
 		filepath.Join(".vscode", "prompts"),
 	} {
 		path := filepath.Join(root, rel)
-		if err := os.MkdirAll(path, 0o755); err != nil {
+		if err := os.MkdirAll(path, 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", path, err)
 		}
 	}
@@ -395,7 +395,7 @@ func TestHasGeneratedMarker(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "file.md")
-	if err := os.WriteFile(path, []byte(generatedMarkerFixture), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(generatedMarkerFixture), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	ok, err := hasGeneratedMarker(RealSystem{}, path)
@@ -406,7 +406,7 @@ func TestHasGeneratedMarker(t *testing.T) {
 	if err != nil || missing {
 		t.Fatalf("expected missing to return false, got %v %v", missing, err)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "dir"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "dir"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	_, err = hasGeneratedMarker(RealSystem{}, filepath.Join(dir, "dir"))
@@ -437,7 +437,7 @@ func TestCopyDirRecursive_ReadFilePermissionError(t *testing.T) {
 	if err := os.WriteFile(unreadable, []byte("data"), 0o000); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o644) })
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o600) })
 
 	err := copyDirRecursive(RealSystem{}, srcDir, destDir, nil)
 	if err == nil {
@@ -462,11 +462,11 @@ func TestCopyDirRecursive_PreservesExecutePermission(t *testing.T) {
 	srcDir := t.TempDir()
 	destDir := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o700); err != nil {
 		t.Fatalf("mkdir scripts: %v", err)
 	}
 	scriptPath := filepath.Join(srcDir, "scripts", "run.sh")
-	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hi"), 0o755); err != nil {
+	if err := os.WriteFile(scriptPath, []byte("#!/bin/sh\necho hi"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write script: %v", err)
 	}
 
@@ -488,7 +488,7 @@ func TestWriteClaudeSkillsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	err := WriteClaudeSkills(RealSystem{}, file, nil)
@@ -517,13 +517,13 @@ func TestWriteClaudeSkillsWithSubdirectory(t *testing.T) {
 
 	// Set up a source skill directory with scripts/ subdirectory.
 	srcDir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir, "scripts"), 0o700); err != nil {
 		t.Fatalf("mkdir scripts: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "deploy.sh"), []byte("#!/bin/sh\necho deploy"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "scripts", "deploy.sh"), []byte("#!/bin/sh\necho deploy"), 0o755); err != nil { // #nosec G306 -- test writes a fixture whose perm value drives the production code path under test.
 		t.Fatalf("write deploy.sh: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: deploy\n---\nDeploy body"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("---\nname: deploy\n---\nDeploy body"), 0o600); err != nil {
 		t.Fatalf("write SKILL.md: %v", err)
 	}
 
@@ -540,7 +540,7 @@ func TestWriteClaudeSkillsWithSubdirectory(t *testing.T) {
 
 	// Verify SKILL.md was written (by the builder, not copied from source).
 	skillPath := filepath.Join(root, ".claude", "skills", "deploy", "SKILL.md")
-	data, err := os.ReadFile(skillPath)
+	data, err := os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read SKILL.md: %v", err)
 	}
@@ -550,7 +550,7 @@ func TestWriteClaudeSkillsWithSubdirectory(t *testing.T) {
 
 	// Verify scripts/deploy.sh was copied with execute permission preserved.
 	scriptPath := filepath.Join(root, ".claude", "skills", "deploy", "scripts", "deploy.sh")
-	scriptData, err := os.ReadFile(scriptPath)
+	scriptData, err := os.ReadFile(scriptPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read deploy.sh: %v", err)
 	}
@@ -572,10 +572,10 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 
 	// First sync: skill with scripts/old.sh
 	srcDir1 := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(srcDir1, "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir1, "scripts"), 0o700); err != nil {
 		t.Fatalf("mkdir scripts: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir1, "scripts", "old.sh"), []byte("#!/bin/sh\necho old"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir1, "scripts", "old.sh"), []byte("#!/bin/sh\necho old"), 0o755); err != nil { // #nosec G306 -- test writes a fixture whose perm value drives the production code path under test.
 		t.Fatalf("write old.sh: %v", err)
 	}
 
@@ -597,10 +597,10 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 
 	// Second sync: skill now has scripts/new.sh (old.sh removed from source).
 	srcDir2 := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(srcDir2, "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir2, "scripts"), 0o700); err != nil {
 		t.Fatalf("mkdir scripts: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir2, "scripts", "new.sh"), []byte("#!/bin/sh\necho new"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir2, "scripts", "new.sh"), []byte("#!/bin/sh\necho new"), 0o755); err != nil { // #nosec G306 -- test writes a fixture whose perm value drives the production code path under test.
 		t.Fatalf("write new.sh: %v", err)
 	}
 
@@ -631,7 +631,7 @@ func TestCopyDirRecursive_StatError(t *testing.T) {
 	srcDir := t.TempDir()
 	destDir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -659,7 +659,7 @@ func TestCopyDirRecursive_WriteFileAtomicSubFileError(t *testing.T) {
 	srcDir := t.TempDir()
 	destDir := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -688,7 +688,7 @@ func TestCopyDirRecursive_SkipsSymlinks(t *testing.T) {
 	destDir := t.TempDir()
 
 	// Create a regular file and a symlink.
-	if err := os.WriteFile(filepath.Join(srcDir, "real.txt"), []byte("real"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "real.txt"), []byte("real"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	if err := os.Symlink(filepath.Join(srcDir, "real.txt"), filepath.Join(srcDir, "link.txt")); err != nil {
@@ -728,13 +728,13 @@ func TestCopySkillSubFiles_SkipOnlyTopLevelSkillMd(t *testing.T) {
 	destDir := t.TempDir()
 
 	// Create a top-level SKILL.md (should be skipped) and a nested SKILL.md (should be copied).
-	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("top-level"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte("top-level"), 0o600); err != nil {
 		t.Fatalf("write top SKILL.md: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0o700); err != nil {
 		t.Fatalf("mkdir references: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(srcDir, "references", "SKILL.md"), []byte("nested"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(srcDir, "references", "SKILL.md"), []byte("nested"), 0o600); err != nil {
 		t.Fatalf("write nested SKILL.md: %v", err)
 	}
 
@@ -748,7 +748,7 @@ func TestCopySkillSubFiles_SkipOnlyTopLevelSkillMd(t *testing.T) {
 		t.Fatalf("expected top-level SKILL.md to be skipped")
 	}
 	// Nested references/SKILL.md SHOULD be copied.
-	data, err := os.ReadFile(filepath.Join(destDir, "references", "SKILL.md"))
+	data, err := os.ReadFile(filepath.Join(destDir, "references", "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("expected nested SKILL.md to be copied: %v", err)
 	}

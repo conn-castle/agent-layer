@@ -16,7 +16,7 @@ export AL_API_KEY="abc123"
 NAME=plain
 AL_QUOTED='value with spaces'
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func TestLoadEnvMissing(t *testing.T) {
 func TestLoadEnvInvalidLine(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
-	if err := os.WriteFile(path, []byte("not-an-env-line"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("not-an-env-line"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func TestLoadEnvInvalidLine(t *testing.T) {
 func TestLoadEnvMissingKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
-	if err := os.WriteFile(path, []byte("=value"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("=value"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 

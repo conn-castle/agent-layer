@@ -10,7 +10,7 @@ import (
 func TestResolvePath_EvalSymlinksSuccess(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "real")
-	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(""), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

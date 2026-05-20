@@ -152,7 +152,7 @@ func TestWriteCopilotMCPConfig(t *testing.T) {
 	}
 
 	path := filepath.Join(root, ".copilot", "mcp-config.json")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("failed to read generated file: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestWriteCopilotMCPConfigMkdirError(t *testing.T) {
 	root := t.TempDir()
 	// Place a file where the .copilot directory would be created.
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{Env: map[string]string{}}
@@ -189,11 +189,11 @@ func TestWriteCopilotMCPConfigWriteError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	copilotDir := filepath.Join(root, ".copilot")
-	if err := os.MkdirAll(copilotDir, 0o755); err != nil {
+	if err := os.MkdirAll(copilotDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Create a directory where the file would be written.
-	if err := os.Mkdir(filepath.Join(copilotDir, "mcp-config.json"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(copilotDir, "mcp-config.json"), 0o700); err != nil {
 		t.Fatalf("mkdir mcp-config.json: %v", err)
 	}
 	project := &config.ProjectConfig{Env: map[string]string{}}
@@ -228,10 +228,10 @@ func TestCleanCopilotOutputsRemovesMCPConfig(t *testing.T) {
 
 	// Set up artifacts as if Copilot were previously enabled.
 	copilotDir := filepath.Join(root, ".copilot")
-	if err := os.MkdirAll(copilotDir, 0o755); err != nil {
+	if err := os.MkdirAll(copilotDir, 0o700); err != nil {
 		t.Fatalf("mkdir .copilot: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(copilotDir, "mcp-config.json"), []byte(`{}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(copilotDir, "mcp-config.json"), []byte(`{}`), 0o600); err != nil {
 		t.Fatalf("write mcp-config: %v", err)
 	}
 

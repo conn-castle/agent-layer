@@ -58,7 +58,7 @@ enabled = true
 [agents.copilot_cli]
 enabled = true
 `
-	if err := os.WriteFile(paths, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -100,7 +100,7 @@ enabled = true
 [agents.copilot_cli]
 enabled = true
 `
-	if err := os.WriteFile(paths, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -122,10 +122,10 @@ func TestRunVSCodeNoSyncManagedBlockConflict(t *testing.T) {
 	writeTestRepo(t, root)
 
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir .vscode: %v", err)
 	}
-	if err := os.WriteFile(settingsPath, []byte("{\n// >>> agent-layer\n}\n"), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte("{\n// >>> agent-layer\n}\n"), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 

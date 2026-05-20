@@ -45,7 +45,7 @@ func TestPrefetchVersion_DownloadsToConfiguredCache(t *testing.T) {
 	}
 
 	expectedPath := filepath.Join(cacheRoot, "versions", version, runtime.GOOS+"-"+runtime.GOARCH, asset)
-	data, err := os.ReadFile(expectedPath)
+	data, err := os.ReadFile(expectedPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read prefetched binary: %v", err)
 	}

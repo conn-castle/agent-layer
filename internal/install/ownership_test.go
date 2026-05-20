@@ -38,10 +38,10 @@ func TestOwnershipLabelState_Mappings(t *testing.T) {
 func TestShouldOverwriteAllManaged_FormatsOwnershipLabels(t *testing.T) {
 	root := t.TempDir()
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o600); err != nil {
 		t.Fatalf("write allowlist: %v", err)
 	}
 
@@ -73,19 +73,19 @@ func TestShouldOverwriteAllManaged_FormatsOwnershipLabels(t *testing.T) {
 
 func TestShouldOverwriteAllMemory_FormatsOwnershipLabels(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "templates", "docs"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "templates", "docs"), 0o700); err != nil {
 		t.Fatalf("mkdir baseline docs: %v", err)
 	}
 	content := []byte("# ISSUES\n\nLegacy header\n\n<!-- ENTRIES START -->\n")
 	docPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
 	baselinePath := filepath.Join(root, ".agent-layer", "templates", "docs", "ISSUES.md")
-	if err := os.WriteFile(docPath, content, 0o644); err != nil {
+	if err := os.WriteFile(docPath, content, 0o600); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
-	if err := os.WriteFile(baselinePath, content, 0o644); err != nil {
+	if err := os.WriteFile(baselinePath, content, 0o600); err != nil {
 		t.Fatalf("write baseline doc: %v", err)
 	}
 
@@ -119,17 +119,17 @@ func TestClassifyOrphanOwnership_DocsAgentLayer_UsesBaseline(t *testing.T) {
 	root := t.TempDir()
 	localPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
 	baselinePath := filepath.Join(root, ".agent-layer", "templates", "docs", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
 		t.Fatalf("mkdir local: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(baselinePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(baselinePath), 0o700); err != nil {
 		t.Fatalf("mkdir baseline: %v", err)
 	}
 	content := []byte("# ROADMAP\n\nLegacy header\n\n<!-- PHASES START -->\n")
-	if err := os.WriteFile(localPath, content, 0o644); err != nil {
+	if err := os.WriteFile(localPath, content, 0o600); err != nil {
 		t.Fatalf("write local: %v", err)
 	}
-	if err := os.WriteFile(baselinePath, content, 0o644); err != nil {
+	if err := os.WriteFile(baselinePath, content, 0o600); err != nil {
 		t.Fatalf("write baseline: %v", err)
 	}
 
@@ -146,10 +146,10 @@ func TestClassifyOrphanOwnership_DocsAgentLayer_UsesBaseline(t *testing.T) {
 func TestClassifyOrphanOwnership_TemplatesDocs_AlwaysUpstream(t *testing.T) {
 	root := t.TempDir()
 	orphanPath := filepath.Join(root, ".agent-layer", "templates", "docs", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o700); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
-	if err := os.WriteFile(orphanPath, []byte("orphan template snapshot\n"), 0o644); err != nil {
+	if err := os.WriteFile(orphanPath, []byte("orphan template snapshot\n"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
 
@@ -166,17 +166,17 @@ func TestClassifyOrphanOwnership_TemplatesDocs_AlwaysUpstream(t *testing.T) {
 func TestClassifyOrphanOwnership_DocsMissingBaselineAndDefaultFallback(t *testing.T) {
 	root := t.TempDir()
 	docsPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
 		t.Fatalf("mkdir docs: %v", err)
 	}
-	if err := os.WriteFile(docsPath, []byte("# ISSUES\n\nLocal header\n\n<!-- ENTRIES START -->\n"), 0o644); err != nil {
+	if err := os.WriteFile(docsPath, []byte("# ISSUES\n\nLocal header\n\n<!-- ENTRIES START -->\n"), 0o600); err != nil {
 		t.Fatalf("write docs orphan: %v", err)
 	}
 	defaultPath := filepath.Join(root, ".agent-layer", "skills", "local-orphan.md")
-	if err := os.MkdirAll(filepath.Dir(defaultPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(defaultPath), 0o700); err != nil {
 		t.Fatalf("mkdir default orphan dir: %v", err)
 	}
-	if err := os.WriteFile(defaultPath, []byte("local orphan\n"), 0o644); err != nil {
+	if err := os.WriteFile(defaultPath, []byte("local orphan\n"), 0o600); err != nil {
 		t.Fatalf("write default orphan: %v", err)
 	}
 
@@ -318,10 +318,10 @@ func TestResolveBaselineComparable_PinManifestAndLegacyPaths(t *testing.T) {
 
 	inst := &installer{root: root, sys: RealSystem{}}
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("9.9.9\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("9.9.9\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -338,10 +338,10 @@ func TestResolveBaselineComparable_PinManifestAndLegacyPaths(t *testing.T) {
 
 	docsRelPath := "docs/agent-layer/BACKLOG.md"
 	legacyPath := filepath.Join(root, ".agent-layer", "templates", "docs", "BACKLOG.md")
-	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
 		t.Fatalf("mkdir legacy dir: %v", err)
 	}
-	if err := os.WriteFile(legacyPath, []byte("# BACKLOG\n\nmissing marker\n"), 0o644); err != nil {
+	if err := os.WriteFile(legacyPath, []byte("# BACKLOG\n\nmissing marker\n"), 0o600); err != nil {
 		t.Fatalf("write legacy docs: %v", err)
 	}
 	_, _, err = inst.ownership().readLegacyDocsBaselineComparable(docsRelPath)
@@ -360,10 +360,10 @@ func TestResolveBaselineComparable_ReadErrors(t *testing.T) {
 
 	// Corrupted canonical baseline should fail loudly.
 	statePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
-	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o644); err != nil {
+	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o600); err != nil {
 		t.Fatalf("write corrupted baseline: %v", err)
 	}
 	inst := &installer{root: root, sys: RealSystem{}}

@@ -9,7 +9,7 @@ import (
 func TestRealSystem_Stat(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "test.txt")
-	if err := os.WriteFile(file, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("content"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

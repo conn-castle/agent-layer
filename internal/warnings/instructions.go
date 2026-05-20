@@ -43,7 +43,7 @@ func getInstructionPayload(rootDir string) (string, string, error) {
 	// 1. Try AGENTS.md
 	agentsPath := filepath.Join(rootDir, "AGENTS.md")
 	if _, err := os.Stat(agentsPath); err == nil {
-		content, err := os.ReadFile(agentsPath)
+		content, err := os.ReadFile(agentsPath) // #nosec G304 -- path is rootDir/AGENTS.md, joined from caller-resolved repo root.
 		if err != nil {
 			return "", "", err
 		}
@@ -72,7 +72,7 @@ func getInstructionPayload(rootDir string) (string, string, error) {
 	var sb strings.Builder
 	for i, name := range filenames {
 		path := filepath.Join(instructionsDir, name)
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(path) // #nosec G304 -- path joins rootDir/.agent-layer/instructions/ with a filename produced by os.ReadDir of that same directory; all components are caller-resolved.
 		if err != nil {
 			return "", "", err
 		}

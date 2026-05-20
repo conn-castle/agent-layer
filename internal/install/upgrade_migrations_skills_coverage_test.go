@@ -41,7 +41,7 @@ func TestMigrateSingleFlatSkill_FlatStatError(t *testing.T) {
 func TestMigrateSingleFlatSkill_DestStatError(t *testing.T) {
 	dir := t.TempDir()
 	flatPath := filepath.Join(dir, "skill.md")
-	if err := os.WriteFile(flatPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	destDir := filepath.Join(dir, "skill")
@@ -63,13 +63,13 @@ func TestMigrateSingleFlatSkill_SameContentDedup(t *testing.T) {
 	flatPath := filepath.Join(dir, "alpha.md")
 	destDir := filepath.Join(dir, "alpha")
 	destPath := filepath.Join(destDir, "SKILL.md")
-	if err := os.WriteFile(flatPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(destPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -91,13 +91,13 @@ func TestMigrateSingleFlatSkill_DifferentContentConflict(t *testing.T) {
 	destDir := filepath.Join(dir, "alpha")
 	destPath := filepath.Join(destDir, "SKILL.md")
 
-	if err := os.WriteFile(flatPath, []byte("flat content"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("flat content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destPath, []byte("different content"), 0o644); err != nil {
+	if err := os.WriteFile(destPath, []byte("different content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -112,7 +112,7 @@ func TestMigrateSingleFlatSkill_RenameSuccess(t *testing.T) {
 	flatPath := filepath.Join(dir, "beta.md")
 	destDir := filepath.Join(dir, "beta")
 	destPath := filepath.Join(destDir, "SKILL.md")
-	if err := os.WriteFile(flatPath, []byte("skill content"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("skill content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -123,7 +123,7 @@ func TestMigrateSingleFlatSkill_RenameSuccess(t *testing.T) {
 	if !migrated {
 		t.Fatal("expected migrated=true")
 	}
-	data, err := os.ReadFile(destPath)
+	data, err := os.ReadFile(destPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read dest: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestMigrateSingleFlatSkill_MkdirError(t *testing.T) {
 	flatPath := filepath.Join(dir, "gamma.md")
 	destDir := filepath.Join(dir, "gamma")
 	destPath := filepath.Join(destDir, "SKILL.md")
-	if err := os.WriteFile(flatPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -155,7 +155,7 @@ func TestMigrateSingleFlatSkill_RenameError(t *testing.T) {
 	flatPath := filepath.Join(dir, "delta.md")
 	destDir := filepath.Join(dir, "delta")
 	destPath := filepath.Join(destDir, "SKILL.md")
-	if err := os.WriteFile(flatPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -175,13 +175,13 @@ func TestMigrateSingleFlatSkill_DedupRemoveError(t *testing.T) {
 	destDir := filepath.Join(dir, "epsilon")
 	destPath := filepath.Join(destDir, "SKILL.md")
 
-	if err := os.WriteFile(flatPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(destPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,13 +200,13 @@ func TestMigrateSingleFlatSkill_DedupReadFlatError(t *testing.T) {
 	destDir := filepath.Join(dir, "zeta")
 	destPath := filepath.Join(destDir, "SKILL.md")
 
-	if err := os.WriteFile(flatPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(destPath, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -225,13 +225,13 @@ func TestMigrateSingleFlatSkill_DedupReadDestError(t *testing.T) {
 	destDir := filepath.Join(dir, "eta")
 	destPath := filepath.Join(destDir, "SKILL.md")
 
-	if err := os.WriteFile(flatPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(destPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(destPath, []byte("content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

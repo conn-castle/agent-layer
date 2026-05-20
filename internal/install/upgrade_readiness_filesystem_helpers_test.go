@@ -13,7 +13,7 @@ import (
 func TestCountMarkdownFiles_ErrorBranches(t *testing.T) {
 	root := t.TempDir()
 	markdownRoot := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(markdownRoot, 0o755); err != nil {
+	if err := os.MkdirAll(markdownRoot, 0o700); err != nil {
 		t.Fatalf("mkdir markdown root: %v", err)
 	}
 
@@ -54,11 +54,11 @@ func TestCountMarkdownFiles_ErrorBranches(t *testing.T) {
 func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 	root := t.TempDir()
 	promptRoot := filepath.Join(root, ".vscode", "prompts")
-	if err := os.MkdirAll(promptRoot, 0o755); err != nil {
+	if err := os.MkdirAll(promptRoot, 0o700); err != nil {
 		t.Fatalf("mkdir prompts root: %v", err)
 	}
 	promptPath := filepath.Join(promptRoot, "alpha.prompt.md")
-	if err := os.WriteFile(promptPath, []byte("<!--\n  "+generatedFileMarker+"\n-->\n"), 0o644); err != nil {
+	if err := os.WriteFile(promptPath, []byte("<!--\n  "+generatedFileMarker+"\n-->\n"), 0o600); err != nil {
 		t.Fatalf("write prompt: %v", err)
 	}
 
@@ -122,10 +122,10 @@ func TestListGeneratedFilesWithSuffix_ErrorBranches(t *testing.T) {
 	t.Run("ignores non-generated files", func(t *testing.T) {
 		manualPromptPath := filepath.Join(promptRoot, "manual.prompt.md")
 		otherPath := filepath.Join(promptRoot, "notes.txt")
-		if err := os.WriteFile(manualPromptPath, []byte("manual\n"), 0o644); err != nil {
+		if err := os.WriteFile(manualPromptPath, []byte("manual\n"), 0o600); err != nil {
 			t.Fatalf("write manual prompt: %v", err)
 		}
-		if err := os.WriteFile(otherPath, []byte("notes\n"), 0o644); err != nil {
+		if err := os.WriteFile(otherPath, []byte("notes\n"), 0o600); err != nil {
 			t.Fatalf("write notes: %v", err)
 		}
 

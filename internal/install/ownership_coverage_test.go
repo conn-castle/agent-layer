@@ -28,10 +28,10 @@ func TestClassifyOwnership_PropagatesReadError(t *testing.T) {
 func TestClassifyOwnershipDetail_TemplateReadError(t *testing.T) {
 	root := t.TempDir()
 	localPath := filepath.Join(root, filepath.FromSlash(commandsAllowRelPath))
-	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o700); err != nil {
 		t.Fatalf("mkdir local dir: %v", err)
 	}
-	if err := os.WriteFile(localPath, []byte("git status\n"), 0o644); err != nil {
+	if err := os.WriteFile(localPath, []byte("git status\n"), 0o600); err != nil {
 		t.Fatalf("write local file: %v", err)
 	}
 
@@ -77,10 +77,10 @@ func TestClassifyAgainstBaseline_TargetParseError(t *testing.T) {
 func TestClassifyAgainstBaseline_PropagatesBaselineError(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatalf("mkdir baseline dir: %v", err)
 	}
-	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o644); err != nil {
+	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o600); err != nil {
 		t.Fatalf("write baseline: %v", err)
 	}
 
@@ -93,10 +93,10 @@ func TestClassifyAgainstBaseline_PropagatesBaselineError(t *testing.T) {
 func TestResolveBaselineComparable_PinManifestDecodeError(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.0.1\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.0.1\n"), 0o600); err != nil {
 		t.Fatalf("write pin file: %v", err)
 	}
 
@@ -123,10 +123,10 @@ func TestResolveBaselineComparable_PinManifestDecodeError(t *testing.T) {
 func TestResolveBaselineComparable_PinManifestPolicyMismatchAddsReason(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.0.1\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.0.1\n"), 0o600); err != nil {
 		t.Fatalf("write pin file: %v", err)
 	}
 
@@ -275,10 +275,10 @@ func TestResolveBaselineComparable_MatchAnyOtherManifestAddsReason(t *testing.T)
 
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.1.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.1.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin file: %v", err)
 	}
 
@@ -349,10 +349,10 @@ func TestResolveBaselineComparable_MatchAnyOtherManifestErrorPropagates(t *testi
 
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.1.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.1.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin file: %v", err)
 	}
 

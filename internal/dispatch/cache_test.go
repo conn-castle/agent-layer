@@ -89,7 +89,7 @@ func TestEnsureCachedBinary(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("binary not found at %s", path)
 	}
-	gotContent, err := os.ReadFile(path)
+	gotContent, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read binary: %v", err)
 	}
@@ -353,12 +353,12 @@ func TestEnsureCachedBinary_MkdirError(t *testing.T) {
 	dirToBlock := filepath.Join(cacheRoot, "versions", version, osName+"-"+arch)
 
 	// Create parent dirs
-	if err := os.MkdirAll(filepath.Dir(dirToBlock), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dirToBlock), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a file at dirToBlock
-	if err := os.WriteFile(dirToBlock, []byte("block"), 0o644); err != nil {
+	if err := os.WriteFile(dirToBlock, []byte("block"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -377,12 +377,12 @@ func TestEnsureCachedBinary_LockCreationError(t *testing.T) {
 	lockPath := binPath + ".lock"
 
 	// Create parent dirs
-	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
 	// Create a directory at lockPath
-	if err := os.Mkdir(lockPath, 0o755); err != nil {
+	if err := os.Mkdir(lockPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -426,10 +426,10 @@ func TestEnsureCachedBinary_NoNetwork_Exists(t *testing.T) {
 	asset := assetName(osName, arch)
 	binPath := filepath.Join(cacheRoot, "versions", version, osName+"-"+arch, asset)
 
-	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(binPath, []byte("fake-binary"), 0o755); err != nil {
+	if err := os.WriteFile(binPath, []byte("fake-binary"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatal(err)
 	}
 
@@ -459,7 +459,7 @@ func TestDownloadToFile_CopyError(t *testing.T) {
 	defer server.Close()
 
 	tmp := filepath.Join(t.TempDir(), "partial")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestDownloadToFile_CopyError(t *testing.T) {
 
 func TestDownloadToFileWithSystem_RequiresSystem(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -642,7 +642,7 @@ func TestDownloadToFile_ClientGetError(t *testing.T) {
 	}
 
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -745,7 +745,7 @@ func TestEnsureCachedBinary_CreateTempError(t *testing.T) {
 func TestVerifyChecksum_HashMismatch(t *testing.T) {
 	// Create a file with known content
 	tmp := filepath.Join(t.TempDir(), "file")
-	if err := os.WriteFile(tmp, []byte("test content"), 0o644); err != nil {
+	if err := os.WriteFile(tmp, []byte("test content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -886,7 +886,7 @@ func TestDownloadToFile_404_ActionableMessage(t *testing.T) {
 	defer server.Close()
 
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -940,7 +940,7 @@ func TestDownloadToFile_Timeout_ActionableMessage(t *testing.T) {
 	}
 
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1029,10 +1029,10 @@ func TestEnsureCachedBinary_NoProgressOnCacheHit(t *testing.T) {
 	cacheRoot := t.TempDir()
 	binPath := filepath.Join(cacheRoot, "versions", version, osName+"-"+arch, asset)
 
-	if err := os.MkdirAll(filepath.Dir(binPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(binPath), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(binPath, []byte("fake-binary"), 0o755); err != nil {
+	if err := os.WriteFile(binPath, []byte("fake-binary"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatal(err)
 	}
 
@@ -1081,7 +1081,7 @@ func TestDownloadToFile_TooLarge(t *testing.T) {
 
 	t.Setenv("AL_MAX_DOWNLOAD_BYTES", "5")
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1118,7 +1118,7 @@ func TestDownloadToFile_RetryOnTransientError(t *testing.T) {
 	}
 
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1159,7 +1159,7 @@ func TestDownloadToFile_RetryOnCopyErrorResetsDestination(t *testing.T) {
 	}
 
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1171,7 +1171,7 @@ func TestDownloadToFile_RetryOnCopyErrorResetsDestination(t *testing.T) {
 	if attempt != 2 {
 		t.Fatalf("expected 2 attempts, got %d", attempt)
 	}
-	data, err := os.ReadFile(tmp)
+	data, err := os.ReadFile(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
@@ -1196,7 +1196,7 @@ func TestDownloadToFileWithSystem_TooLargeFromSystemEnv(t *testing.T) {
 	}
 
 	tmp := filepath.Join(t.TempDir(), "file")
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatal(err)
 	}

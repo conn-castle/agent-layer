@@ -540,14 +540,14 @@ func TestUpgradeSubcommands_ErrorBranches(t *testing.T) {
 		}
 		root := t.TempDir()
 		snapshotDir := filepath.Join(root, ".agent-layer", "state", "upgrade-snapshots")
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshots dir: %v", err)
 		}
 		if err := os.Chmod(snapshotDir, 0o000); err != nil {
 			t.Fatalf("chmod snapshots dir: %v", err)
 		}
 		t.Cleanup(func() {
-			_ = os.Chmod(snapshotDir, 0o755)
+			_ = os.Chmod(snapshotDir, 0o755) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		})
 
 		testutil.WithWorkingDir(t, root, func() {
@@ -1086,7 +1086,7 @@ func TestUpgradePlanCmd_BuildAndPreviewErrorBranches(t *testing.T) {
 		if err := os.Chmod(agentLayerDir, 0o000); err != nil {
 			t.Fatalf("chmod .agent-layer: %v", err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(agentLayerDir, 0o755) })
+		t.Cleanup(func() { _ = os.Chmod(agentLayerDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 		testutil.WithWorkingDir(t, root, func() {
 			diffLines := install.DefaultDiffMaxLines
@@ -1106,13 +1106,13 @@ func TestUpgradePlanCmd_BuildAndPreviewErrorBranches(t *testing.T) {
 		}
 		root := prepareUpgradeTestRepo(t)
 		orphanPath := filepath.Join(root, "docs", "agent-layer", "UNTRACKED.md")
-		if err := os.WriteFile(orphanPath, []byte("orphan"), 0o644); err != nil {
+		if err := os.WriteFile(orphanPath, []byte("orphan"), 0o600); err != nil {
 			t.Fatalf("write orphan file: %v", err)
 		}
 		if err := os.Chmod(orphanPath, 0o000); err != nil {
 			t.Fatalf("chmod orphan file: %v", err)
 		}
-		t.Cleanup(func() { _ = os.Chmod(orphanPath, 0o644) })
+		t.Cleanup(func() { _ = os.Chmod(orphanPath, 0o600) })
 
 		testutil.WithWorkingDir(t, root, func() {
 			diffLines := install.DefaultDiffMaxLines

@@ -59,7 +59,7 @@ func TestWriteGeminiSettingsError(t *testing.T) {
 		Fallback: RealSystem{},
 	}
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{Root: root}
@@ -75,10 +75,10 @@ func TestWriteGeminiSettingsWriteError(t *testing.T) {
 		Fallback: RealSystem{},
 	}
 	geminiDir := filepath.Join(root, ".gemini")
-	if err := os.MkdirAll(geminiDir, 0o755); err != nil {
+	if err := os.MkdirAll(geminiDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.Mkdir(filepath.Join(geminiDir, "settings.json"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(geminiDir, "settings.json"), 0o700); err != nil {
 		t.Fatalf("mkdir settings.json: %v", err)
 	}
 	project := &config.ProjectConfig{
