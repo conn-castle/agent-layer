@@ -763,7 +763,7 @@ func TestRun_SectionAwareOverwritePreservesUserEntries(t *testing.T) {
 
 	updated := strings.Replace(string(initial), "# Issues", "# Issues (local old header)", 1)
 	updated += "\n- Issue 2099-01-01 localtest: keep me\n    Priority: Low. Area: tests.\n    Description: local entry.\n    Next step: keep.\n"
-	if err := os.WriteFile(issuesPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(issuesPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- path is constructed from test-controlled inputs.
 		t.Fatalf("write custom issues: %v", err)
 	}
 
@@ -796,7 +796,7 @@ func TestRun_OverwriteAllDeclineFallsBackToPerFileDiffPreview(t *testing.T) {
 		t.Fatalf("read managed file: %v", err)
 	}
 	updated := string(original) + "\n# local customization\n"
-	if err := os.WriteFile(managedPath, []byte(updated), 0o600); err != nil {
+	if err := os.WriteFile(managedPath, []byte(updated), 0o600); err != nil { // #nosec G703 -- path is constructed from test-controlled inputs.
 		t.Fatalf("write managed customization: %v", err)
 	}
 
