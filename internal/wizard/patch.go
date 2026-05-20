@@ -1001,7 +1001,13 @@ func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
 			return nil
 		}
 		if hasUncommentedKeyLine(parentBlock.lines, "features") {
-			if apps, exists := codexAppsValueFromAgentSpecificBlock(parentBlock); exists && apps == choices.CodexApps {
+			if apps, exists := codexAppsValueFromAgentSpecificBlock(parentBlock); exists {
+				if apps != choices.CodexApps {
+					return fmt.Errorf(messages.WizardCodexAppsInlineFeaturesUnsupported)
+				}
+				return nil
+			}
+			if !choices.CodexApps {
 				return nil
 			}
 			return fmt.Errorf(messages.WizardCodexAppsInlineFeaturesUnsupported)

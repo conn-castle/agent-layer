@@ -1945,6 +1945,26 @@ features = { apps = false, multi_agent = true }
 	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
 }
 
+func TestPatchConfig_CodexAppsInlineFeaturesWithoutAppsDefaultFalsePreserved(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "features = { multi_agent = true }")
+	assert.NotContains(t, out, "apps = false")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
 func TestPatchConfig_CodexAppsCommentedInlineFeaturesIgnored(t *testing.T) {
 	content := `
 [agents.codex]
