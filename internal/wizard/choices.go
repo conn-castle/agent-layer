@@ -29,6 +29,9 @@ type Choices struct {
 	CodexReasoning        string
 	CodexReasoningTouched bool
 
+	CodexApps        bool
+	CodexAppsTouched bool
+
 	CopilotCLIModel        string
 	CopilotCLIModelTouched bool
 

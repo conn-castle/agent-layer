@@ -1,13 +1,21 @@
 # Instructions
 
 ## Critical Protocol
-1. **Clarify ambiguity before coding:** If a decision is unclear or the prompt is ambiguous, pause and ask for clarification before generating or editing code.
+1. **Drive unknowns to ground before answering or coding:** If something is unclear — required behavior, an API contract, how existing code works — resolve it by reading code, consulting docs, searching online, or asking the user. Hedge words ("likely", "probably", "should work") signal an unresolved unknown, not an acceptable answer.
 2. **Root-cause fixes (confirm large refactors):** Prefer fixing the root cause. If the correct fix requires a significant refactor across many files or subsystems, explain the scope and ask for explicit confirmation before proceeding.
 3. **Stop and ask when real tradeoffs exist:** When a decision involves genuine tradeoffs between substantive alternatives — especially architecture, user-facing behavior, irreversible data changes, multiple valid approaches, or scope larger than requested — stop and let the human decide. Present at least two options, each with brief pros and cons, state which option you recommend and why, and wait for a decision. Do not pick for the human.
 4. **No over-engineering:** Do not add extra files, unnecessary abstractions, speculative flexibility, or "improvements" beyond what was requested. Three similar lines of code is better than a premature abstraction. If an improvement seems worthwhile, propose it separately. If a request violates best practices or is risky, warn and ask for confirmation before implementing.
 
+## Response Style
+Write clear, concise responses that give the user enough context to act.
+- Assume the user has not read the code, command output, or prior implementation details.
+- State the result first. Add only the context or next action the user needs.
+- Explain only what matters for understanding or deciding; do not over-explain.
+- Use bullets when they make the response easier to scan.
+- Do not introduce acronyms to save words; spell them out unless the acronym is widely known or the user already used it.
+
 ## Question Style
-When asking the user to decide, be clear, concise, and free of unnecessary jargon. State the decision in plain language, explain why it matters, and ask only the smallest question that unblocks the work.
+When asking the user to decide, use the response style above. State the decision in plain language, explain why it matters, and ask only the smallest question that unblocks the work.
 
 For substantive tradeoffs, provide at least two concrete options. For each option, include:
 - **Pros:** What this option improves or preserves.
@@ -21,7 +29,7 @@ Then include:
 ## Workflow & Safety
 1. **Context economy:** When searching for files or context during implementation, limit exploration to the specific service or directory relevant to the request. Do not scan the entire repository unless necessary.
 2. **Git safety:** Do not stage or commit changes unless the user explicitly asks. When asked, follow repository commit conventions. Authorization to commit or push applies only to the specific request — a prior authorization does not carry forward to subsequent commits or pushes.
-3. **Temporary artifacts:** Generate **all** agent-only temporary artifacts in `./.agent-layer/tmp` (one-off scripts, scratch files, logs, dumps, debug outputs). Any build artifacts or other temporary files for the parent repository must go in their standard locations and never inside `.agent-layer`.
+3. **Temporary artifacts:** Generate **all** agent-only temporary artifacts in `./.agent-layer/tmp` (one-off scripts, scratch files, logs, dumps, debug outputs). Delete them when no longer needed. Any build artifacts or other temporary files for the parent repository must go in their standard locations and never inside `.agent-layer`.
 4. **Test-driven workflow:** Prefer red-then-green when feasible: write or identify a failing test that captures the expected behavior, then make it pass. For bug fixes, reproduce with a failing test first. For CI failures, find or create a local reproducer. When CI fails on GitHub but tests pass locally, treat the divergence as a bug: identify the environmental difference, write or adapt a test that fails locally to reproduce the CI failure (red), then fix the root cause until that test passes (green) — do not push speculative fixes without a local reproducer. For new behavior, write the test first when the expected outcome is clear. Avoid one-off scripts unless a test case is impossible; if required, place them in `./.agent-layer/tmp`.
 5. **Definition of done:** A task is not complete until:
    - tests are written or updated to cover the change,

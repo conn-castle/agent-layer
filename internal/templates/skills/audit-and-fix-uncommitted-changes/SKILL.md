@@ -42,11 +42,11 @@ At minimum, use:
 - a synthesizer that keeps the round-by-round report current
 
 Prefer the dedicated skills that already exist:
-- `prune-new-tests` (mandatory pre-pass when the diff added test files)
-- `simplify-new-code` (mandatory pre-pass when the diff added or modified production code)
+- `prune-new-tests` (mandatory pre-pass when the diff added test files; delegated to subagent)
+- `simplify-new-code` (mandatory pre-pass when the diff added or modified production code; delegated to subagent)
 - `review-scope`
 - `resolve-findings`
-- `simplify-new-code` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover
+- `simplify-new-code` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover (delegated to subagent)
 
 ## Required artifacts
 
@@ -63,6 +63,10 @@ Delegated skill outputs are handled one way:
 - Use `review-scope` report artifacts as findings input to `resolve-findings`.
 - Copy `resolve-findings` outcomes from its final handoff into the master report.
 - Do not require, open, echo, or cross-reference `resolve-findings` report, plan, task, or context artifacts.
+
+## Continuation rule
+
+Sub-skill returns are intermediate, not terminal. After every delegation, continue to the next numbered step in the same turn — the sub-skill's closing summary is not audit-and-fix's closeout. The loop exits only at the end of Phase 5, a listed human checkpoint, or a sub-skill that halts on its own human checkpoint without applying its changes.
 
 ## Global constraints
 
@@ -104,12 +108,12 @@ Delegated skill outputs are handled one way:
 
 ### Phase 0.5: Prune agent-side scope creep before any review round (Pre-pass)
 
-Before the first audit round, run the diff-scoped cleanup pre-passes so reviewers never spend budget on code that is about to be deleted or simplified:
+Delegate each pre-pass to a subagent so its iterative loop does not register as audit-and-fix's closeout. Run in order:
 
-1. **`prune-new-tests`** when the diff contains added test files or added test functions. This auto-deletes tests added during implementation that cannot defend their existence with a concrete production-code mutation.
-2. **`simplify-new-code`** when the diff contains added or modified production code. This auto-applies simplifications that undo agent-side scope creep (speculative flexibility, premature abstractions, dead branches, impossible-case error handling, defensive scaffolding, clever patterns, half-finished work) while preserving the user-requested behavior.
+1. `prune-new-tests` subagent — when the diff added test files or test functions. Returns master report path plus deleted-count / surviving-gap count.
+2. `simplify-new-code` subagent — when the diff added or modified production code. Returns master report path plus applied-count / reverted-count.
 
-Run them in order. Record each sub-skill's report path under `## Pre-pass Cleanup` in the master report along with a one-line outcome. If either pre-pass materially changes the working tree, restart Phase 0 to refresh the target before continuing.
+Record each report path and one-line outcome under `## Pre-pass Cleanup`. If a pre-pass materially changes the working tree, restart Phase 0.
 
 ### Phase 1: Gather only the needed context (Lead reviewer)
 
@@ -142,7 +146,7 @@ Severity rule:
 - A final round may contain accepted Medium or Low findings, but they still must be fixed before the run closes.
 
 If a fix exposes obvious local complexity that is behavior-preserving and in scope:
-- use the `simplify-new-code` skill on the affected files
+- delegate `simplify-new-code` to a subagent on the affected files
 - then apply the same Critical/High applied-fix gate to decide whether another audit round is required
 
 Escalate if the loop is not converging (same findings recurring, fix attempts not resolving issues, or complexity growing instead of shrinking).

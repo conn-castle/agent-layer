@@ -330,6 +330,69 @@ func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T)
 	require.False(t, choices.CodexReasoningTouched)
 }
 
+func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
+	require.True(t, ok)
+
+	var agentCalls, mcpCalls, secondModelCalls int
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			switch title {
+			case messages.WizardApprovalModeTitle:
+				*current = allLabel
+			case messages.WizardCodexModelTitle:
+				if mcpCalls > 0 {
+					secondModelCalls++
+					return errWizardBack
+				}
+				*current = messages.WizardLeaveBlankOption
+			case messages.WizardCodexReasoningEffortTitle:
+				*current = messages.WizardLeaveBlankOption
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			switch title {
+			case messages.WizardEnableAgentsTitle:
+				agentCalls++
+				if agentCalls == 1 {
+					*selected = []string{AgentCodex}
+				} else {
+					*selected = []string{}
+				}
+			case messages.WizardEnableDefaultMCPServersTitle:
+				mcpCalls++
+				if mcpCalls == 1 {
+					return errWizardBack
+				}
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			switch title {
+			case messages.WizardCodexAppsPrompt:
+				*value = true
+			case messages.WizardEnableWarningsPrompt:
+				*value = false
+			}
+			return nil
+		},
+	}
+
+	cfg := &config.ProjectConfig{Config: config.Config{}}
+	err := promptWizardFlow(t.TempDir(), ui, cfg, choices)
+	require.NoError(t, err)
+	require.Equal(t, 2, agentCalls, "expected back navigation to revisit agent selection")
+	require.Equal(t, 1, secondModelCalls, "expected second model step to go back to agent selection")
+	require.False(t, choices.EnabledAgents[AgentCodex])
+	require.False(t, choices.CodexApps)
+	require.False(t, choices.CodexAppsTouched)
+}
+
 func TestPromptWizardFlow_CtrlCExitsImmediatelyWithoutConfirmation(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll

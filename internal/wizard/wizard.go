@@ -173,6 +173,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
+	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CopilotCLIModel = cfg.Config.Agents.CopilotCLI.Model
 
 	for _, srv := range cfg.Config.MCP.Servers {
@@ -207,6 +208,30 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 
 	return choices, nil
+}
+
+// readCodexAppsEnabled returns the current value of
+// agents.codex.agent_specific.features.apps, defaulting to false when absent
+// or not a bool. The wizard's default is to disable the upstream Codex apps
+// surface; absence in config is treated as opting in to that default.
+func readCodexAppsEnabled(agentSpecific map[string]any) bool {
+	apps, ok := readCodexAppsValue(agentSpecific)
+	if !ok {
+		return false
+	}
+	return apps
+}
+
+func readCodexAppsValue(agentSpecific map[string]any) (bool, bool) {
+	features, ok := agentSpecific["features"].(map[string]any)
+	if !ok {
+		return false, false
+	}
+	apps, ok := features["apps"].(bool)
+	if !ok {
+		return false, false
+	}
+	return apps, true
 }
 
 type wizardFlowStep int
@@ -298,6 +323,10 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 	}
 	choices.EnabledAgents = agentIDSet(enabledAgents)
 	choices.EnabledAgentsTouched = true
+	if !choices.EnabledAgents[AgentCodex] {
+		choices.CodexApps = false
+		choices.CodexAppsTouched = false
+	}
 	return nil
 }
 
@@ -368,6 +397,13 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.CodexReasoningTouched = true
+
+		codexApps := choices.CodexApps
+		if err := ui.Confirm(messages.WizardCodexAppsPrompt, &codexApps); err != nil {
+			return err
+		}
+		choices.CodexApps = codexApps
+		choices.CodexAppsTouched = true
 	}
 	if choices.EnabledAgents[AgentCopilotCLI] {
 		if err := selectOptionalValue(ui, messages.WizardCopilotCLIModelTitle, CopilotCLIModels(), &choices.CopilotCLIModel); err != nil {

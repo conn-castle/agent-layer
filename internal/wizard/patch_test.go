@@ -1784,6 +1784,286 @@ local_config_dir = true
 	assert.NotContains(t, out, "local_config_dir = true")
 }
 
+func TestPatchConfig_CodexAppsDisabledOnFreshConfig(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific.features]")
+	assert.Contains(t, out, "apps = false")
+}
+
+func TestPatchConfig_CodexAppsSectionStaysWithCodexConfig(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	codexIndex := strings.Index(out, "[agents.codex]\n")
+	featuresIndex := strings.Index(out, "[agents.codex.agent_specific.features]\n")
+	vscodeIndex := strings.Index(out, "[agents.vscode]\n")
+	require.NotEqual(t, -1, codexIndex)
+	require.NotEqual(t, -1, featuresIndex)
+	require.NotEqual(t, -1, vscodeIndex)
+	assert.Less(t, codexIndex, featuresIndex)
+	assert.Less(t, featuresIndex, vscodeIndex)
+}
+
+func TestPatchConfig_CodexAppsAddsToExistingFeatures(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific.features]
+multi_agent = true
+prevent_idle_sleep = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific.features]")
+	assert.Contains(t, out, "apps = false")
+	assert.Contains(t, out, "multi_agent = true")
+	assert.Contains(t, out, "prevent_idle_sleep = true")
+}
+
+func TestPatchConfig_CodexAppsUpdatesExistingValue(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific.features]
+apps = true
+multi_agent = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "apps = false")
+	assert.NotContains(t, out, "apps = true")
+	assert.Contains(t, out, "multi_agent = true")
+}
+
+func TestPatchConfig_CodexAppsUpdatesExistingDottedValue(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features.apps = true
+features.multi_agent = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific]")
+	assert.Contains(t, out, "features.apps = false")
+	assert.NotContains(t, out, "features.apps = true")
+	assert.Contains(t, out, "features.multi_agent = true")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
+func TestPatchConfig_CodexAppsUsesDottedValueWhenOtherFeatureDottedKeysExist(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features.multi_agent = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific]")
+	assert.Contains(t, out, "features.apps = false")
+	assert.Contains(t, out, "features.multi_agent = true")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
+func TestPatchConfig_CodexAppsInlineFeaturesErrors(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { apps = true, multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	_, err := PatchConfig(content, choices)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "inline table syntax")
+}
+
+func TestPatchConfig_CodexAppsInlineFeaturesSameValuePreserved(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { apps = false, multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "features = { apps = false, multi_agent = true }")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
+func TestPatchConfig_CodexAppsInlineFeaturesWithoutAppsDefaultFalsePreserved(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "features = { multi_agent = true }")
+	assert.NotContains(t, out, "apps = false")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
+func TestPatchConfig_CodexAppsCommentedInlineFeaturesIgnored(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+# features = { apps = true, multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "# features = { apps = true, multi_agent = true }")
+	assert.Contains(t, out, "[agents.codex.agent_specific.features]")
+	assert.Contains(t, out, "apps = false")
+}
+
+func TestPatchConfig_CodexAppsSkippedWhenCodexDisabled(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentCodex] = false
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex]")
+	assert.Contains(t, out, "enabled = false")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+	assert.NotContains(t, out, "apps = false")
+}
+
+func TestPatchConfig_CodexAppsUntouchedPreservesExistingValue(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific.features]
+apps = true
+multi_agent = true
+`
+	choices := NewChoices()
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "apps = true")
+	assert.NotContains(t, out, "apps = false")
+	assert.Contains(t, out, "multi_agent = true")
+}
+
+func TestPatchConfig_CodexAppsEnabledExplicitlyWrittenTrue(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific.features]")
+	assert.Contains(t, out, "apps = true")
+}
+
+func TestReadCodexAppsEnabled(t *testing.T) {
+	t.Run("missing agent_specific returns false", func(t *testing.T) {
+		assert.False(t, readCodexAppsEnabled(nil))
+	})
+	t.Run("missing features returns false", func(t *testing.T) {
+		assert.False(t, readCodexAppsEnabled(map[string]any{"other": true}))
+	})
+	t.Run("features wrong type returns false", func(t *testing.T) {
+		assert.False(t, readCodexAppsEnabled(map[string]any{"features": "not-a-map"}))
+	})
+	t.Run("apps wrong type returns false", func(t *testing.T) {
+		agentSpecific := map[string]any{"features": map[string]any{"apps": "yes"}}
+		assert.False(t, readCodexAppsEnabled(agentSpecific))
+	})
+	t.Run("apps true returns true", func(t *testing.T) {
+		agentSpecific := map[string]any{"features": map[string]any{"apps": true}}
+		assert.True(t, readCodexAppsEnabled(agentSpecific))
+	})
+	t.Run("apps false returns false", func(t *testing.T) {
+		agentSpecific := map[string]any{"features": map[string]any{"apps": false}}
+		assert.False(t, readCodexAppsEnabled(agentSpecific))
+	})
+}
+
 func TestPatchHelpers_EdgeCases(t *testing.T) {
 	assert.Nil(t, cloneBlock(nil))
 	assert.Nil(t, cloneLines(nil))

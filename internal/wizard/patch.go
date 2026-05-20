@@ -81,6 +81,9 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 	templateDoc := parseTomlDocument(templateContent)
 	currentDoc := parseTomlDocument(content)
 	normalizeLegacySectionAliases(&currentDoc)
+	if err := applyCodexAppsUpdate(&currentDoc, choices); err != nil {
+		return "", err
+	}
 
 	if (choices.EnabledMCPServersTouched || choices.RestoreMissingMCPServers) && len(choices.DefaultMCPServers) == 0 {
 		return "", fmt.Errorf(messages.WizardDefaultMCPServersRequired)
@@ -91,7 +94,12 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 		return "", err
 	}
 
-	return strings.Join(output, "\n"), nil
+	rendered := strings.Join(output, "\n")
+	if _, err := toml.LoadBytes([]byte(rendered)); err != nil {
+		return "", fmt.Errorf(messages.WizardRenderConfigFailedFmt, err)
+	}
+
+	return rendered, nil
 }
 
 // assembleCanonicalConfig renders updated config content in template order.
@@ -116,6 +124,12 @@ func assembleCanonicalConfig(currentDoc tomlDocument, templateDoc tomlDocument, 
 		updated := cloneBlock(block)
 		applySectionUpdates(name, updated, templateDoc.sections[name], choices)
 		appendBlock(&output, updated.lines)
+
+		if name == "agents.codex" {
+			for _, block := range codexAgentSpecificSectionBlocks(currentDoc.sections, templateDoc.sections) {
+				appendBlock(&output, block.lines)
+			}
+		}
 
 		if name == "mcp" {
 			serverBlocks, err := buildMCPServerBlocks(currentDoc, catalogDoc, choices)
@@ -960,6 +974,117 @@ func parseTomlDocument(content string) tomlDocument {
 	}
 }
 
+// codexAppsFeaturesSection is the dotted TOML path for the Codex
+// agent_specific.features table where the apps toggle lives.
+const codexAppsFeaturesSection = "agents.codex.agent_specific.features"
+
+const codexAgentSpecificSectionPrefix = "agents.codex.agent_specific"
+
+// applyCodexAppsUpdate writes choices.CodexApps into the
+// [agents.codex.agent_specific.features] section of doc when CodexAppsTouched.
+// Creates the section when missing so the extra-section preservation flow in
+// assembleCanonicalConfig renders it. Mutates doc in place.
+func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
+	if !choices.CodexAppsTouched {
+		return nil
+	}
+	if choices.EnabledAgentsTouched && !choices.EnabledAgents[AgentCodex] {
+		return nil
+	}
+	if block, exists := doc.sections[codexAppsFeaturesSection]; exists {
+		setKeyValue(block, nil, "apps", formatTomlValue(choices.CodexApps), "")
+		return nil
+	}
+	if parentBlock, exists := doc.sections[codexAgentSpecificSectionPrefix]; exists {
+		if hasUncommentedKeyLine(parentBlock.lines, "features.apps") {
+			setKeyValue(parentBlock, nil, "features.apps", formatTomlValue(choices.CodexApps), "")
+			return nil
+		}
+		if hasUncommentedKeyLine(parentBlock.lines, "features") {
+			if apps, exists := codexAppsValueFromAgentSpecificBlock(parentBlock); exists {
+				if apps != choices.CodexApps {
+					return fmt.Errorf(messages.WizardCodexAppsInlineFeaturesUnsupported)
+				}
+				return nil
+			}
+			if !choices.CodexApps {
+				return nil
+			}
+			return fmt.Errorf(messages.WizardCodexAppsInlineFeaturesUnsupported)
+		}
+		if hasUncommentedKeyWithPrefix(parentBlock.lines, "features.") {
+			setKeyValue(parentBlock, nil, "features.apps", formatTomlValue(choices.CodexApps), "")
+			return nil
+		}
+	}
+	block := &tomlBlock{
+		name:  codexAppsFeaturesSection,
+		lines: []string{"[" + codexAppsFeaturesSection + "]"},
+	}
+	doc.sections[codexAppsFeaturesSection] = block
+	doc.order = append(doc.order, codexAppsFeaturesSection)
+	setKeyValue(block, nil, "apps", formatTomlValue(choices.CodexApps), "")
+	return nil
+}
+
+func codexAppsValueFromAgentSpecificBlock(block *tomlBlock) (bool, bool) {
+	if block == nil {
+		return false, false
+	}
+	var cfg struct {
+		Agents struct {
+			Codex struct {
+				AgentSpecific map[string]any `toml:"agent_specific"`
+			} `toml:"codex"`
+		} `toml:"agents"`
+	}
+	if err := toml.Unmarshal([]byte(strings.Join(block.lines, "\n")), &cfg); err != nil {
+		return false, false
+	}
+	return readCodexAppsValue(cfg.Agents.Codex.AgentSpecific)
+}
+
+func isCodexAgentSpecificSection(name string) bool {
+	return name == codexAgentSpecificSectionPrefix || strings.HasPrefix(name, codexAgentSpecificSectionPrefix+".")
+}
+
+func hasUncommentedKeyWithPrefix(lines []string, prefix string) bool {
+	found := false
+	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
+		trimmed := strings.TrimLeft(line, " \t")
+		if strings.HasPrefix(trimmed, "#") {
+			return tomlLineWalkResult{}
+		}
+		commentPos, _ := ScanTomlLineForComment(trimmed, state)
+		if commentPos >= 0 {
+			trimmed = strings.TrimSpace(trimmed[:commentPos])
+		}
+		key, _, ok := strings.Cut(trimmed, "=")
+		if !ok {
+			return tomlLineWalkResult{}
+		}
+		if strings.HasPrefix(strings.TrimSpace(key), prefix) {
+			found = true
+			return tomlLineWalkResult{stop: true}
+		}
+		return tomlLineWalkResult{}
+	})
+	return found
+}
+
+func hasUncommentedKeyLine(lines []string, key string) bool {
+	found := false
+	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
+		parsed, ok := parseKeyLineWithState(line, key, state)
+		if ok && !parsed.commented {
+			found = true
+			return tomlLineWalkResult{stop: true}
+		}
+		return tomlLineWalkResult{}
+	})
+	return found
+}
+
 func normalizeLegacySectionAliases(doc *tomlDocument) {
 	for legacyName, canonicalName := range legacySectionAliases {
 		legacyBlock, hasLegacy := doc.sections[legacyName]
@@ -1102,6 +1227,26 @@ func extraSectionBlocks(sections map[string]*tomlBlock, templateSections map[str
 	extra := make([]*tomlBlock, 0)
 	for name, block := range sections {
 		if _, exists := templateSections[name]; exists {
+			continue
+		}
+		if isCodexAgentSpecificSection(name) {
+			continue
+		}
+		extra = append(extra, cloneBlock(block))
+	}
+	sort.Slice(extra, func(i, j int) bool {
+		return extra[i].name < extra[j].name
+	})
+	return extra
+}
+
+func codexAgentSpecificSectionBlocks(sections map[string]*tomlBlock, templateSections map[string]*tomlBlock) []*tomlBlock {
+	extra := make([]*tomlBlock, 0)
+	for name, block := range sections {
+		if _, exists := templateSections[name]; exists {
+			continue
+		}
+		if !isCodexAgentSpecificSection(name) {
 			continue
 		}
 		extra = append(extra, cloneBlock(block))
