@@ -36,12 +36,16 @@ linters:
     goconst:
       min-len: 3
       min-occurrences: 3
-    gosec:
-      excludes:
-        - G301  # Expect directory permissions to be 0750 or less
-        - G302  # Expect file permissions to be 0600 or less
-        - G304  # Potential file inclusion via variable
-        - G306  # Expect WriteFile permissions to be 0600 or less
+    staticcheck:
+      # Mirror golangci-lint's default checks set but enable ST1020/ST1021/ST1022 to
+      # enforce the canonical Go doc-comment form on exported funcs, types, and vars/consts
+      # (belt-and-suspenders with revive `exported`). ST1000/ST1003/ST1016 stay disabled,
+      # matching the default.
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
   exclusions:
     generated: lax
     paths:
@@ -107,15 +111,22 @@ linters:
         linters:
           - gosec
         text: G101
-      # G602 false positives on well-bounded line iteration
-      - path: internal/config/skills\.go$
+      # config loader reads caller-resolved paths (config.toml / .env / templates) — the path
+      # comes from internal callers that already resolved it via paths.AgentLayerDir(), not user input.
+      - path: internal/config/load\.go$
         linters:
           - gosec
-        text: G602
-      - path: internal/wizard/tomlutil\.go$
+        text: G304
+      # wizard tests repeatedly read files under test-controlled temporary config roots.
+      - path: internal/wizard/.*_test\.go$
         linters:
           - gosec
-        text: G602
+        text: G304
+      # testutil writes executable shell stubs (0o755) used by tests as PATH-shadowed binaries.
+      - path: internal/testutil/
+        linters:
+          - gosec
+        text: G306
       # Binary download uses HTTP without context (appropriate for non-cancellable downloads)
       - path: internal/dispatch/cache\.go$
         linters:
@@ -148,3 +159,7 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+issues:
+  # Disable default per-linter and per-rule caps so future findings are never silently capped.
+  max-issues-per-linter: 0
+  max-same-issues: 0

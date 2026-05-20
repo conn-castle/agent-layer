@@ -17,10 +17,10 @@ func testBool(v bool) *bool { return &v }
 func writeReadinessConfig(t *testing.T, root string, content string) {
 	t.Helper()
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
-	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 }
@@ -172,19 +172,19 @@ func TestDetectVSCodeNoSyncStaleness_ClaudeBranches(t *testing.T) {
 		vscodeSettingsPath := filepath.Join(root, ".vscode", "settings.json")
 		mcpPath := filepath.Join(root, ".mcp.json")
 		claudeSettingsPath := filepath.Join(root, ".claude", "settings.json")
-		if err := os.MkdirAll(filepath.Dir(vscodeSettingsPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(vscodeSettingsPath), 0o700); err != nil {
 			t.Fatalf("mkdir vscode dir: %v", err)
 		}
-		if err := os.MkdirAll(filepath.Dir(claudeSettingsPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(claudeSettingsPath), 0o700); err != nil {
 			t.Fatalf("mkdir claude dir: %v", err)
 		}
-		if err := os.WriteFile(vscodeSettingsPath, []byte(vscodeManagedStart+"\n{}\n"+vscodeManagedEnd), 0o644); err != nil {
+		if err := os.WriteFile(vscodeSettingsPath, []byte(vscodeManagedStart+"\n{}\n"+vscodeManagedEnd), 0o600); err != nil {
 			t.Fatalf("write vscode settings: %v", err)
 		}
-		if err := os.WriteFile(mcpPath, []byte(`{"_generatedBy":"agent-layer","mcpServers":{"example":{}}}`), 0o644); err != nil {
+		if err := os.WriteFile(mcpPath, []byte(`{"_generatedBy":"agent-layer","mcpServers":{"example":{}}}`), 0o600); err != nil {
 			t.Fatalf("write .mcp.json: %v", err)
 		}
-		if err := os.WriteFile(claudeSettingsPath, []byte(`{}`), 0o644); err != nil {
+		if err := os.WriteFile(claudeSettingsPath, []byte(`{}`), 0o600); err != nil {
 			t.Fatalf("write claude settings: %v", err)
 		}
 
@@ -206,10 +206,10 @@ func TestDetectVSCodeNoSyncStaleness_ClaudeBranches(t *testing.T) {
 	t.Run("claude settings stat error propagates", func(t *testing.T) {
 		root := t.TempDir()
 		vscodeSettingsPath := filepath.Join(root, ".vscode", "settings.json")
-		if err := os.MkdirAll(filepath.Dir(vscodeSettingsPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(vscodeSettingsPath), 0o700); err != nil {
 			t.Fatalf("mkdir vscode dir: %v", err)
 		}
-		if err := os.WriteFile(vscodeSettingsPath, []byte(vscodeManagedStart+"\n{}\n"+vscodeManagedEnd), 0o644); err != nil {
+		if err := os.WriteFile(vscodeSettingsPath, []byte(vscodeManagedStart+"\n{}\n"+vscodeManagedEnd), 0o600); err != nil {
 			t.Fatalf("write vscode settings: %v", err)
 		}
 		cfg := &config.Config{
@@ -233,10 +233,10 @@ func TestReadinessFilesystemWalkErrCallbackBranches(t *testing.T) {
 	root := t.TempDir()
 	mdRoot := filepath.Join(root, ".agent-layer", "skills")
 	promptRoot := filepath.Join(root, ".vscode", "prompts")
-	if err := os.MkdirAll(mdRoot, 0o755); err != nil {
+	if err := os.MkdirAll(mdRoot, 0o700); err != nil {
 		t.Fatalf("mkdir markdown root: %v", err)
 	}
-	if err := os.MkdirAll(promptRoot, 0o755); err != nil {
+	if err := os.MkdirAll(promptRoot, 0o700); err != nil {
 		t.Fatalf("mkdir prompt root: %v", err)
 	}
 

@@ -88,7 +88,7 @@ func TestRun_InstallFailure(t *testing.T) {
 	root := t.TempDir()
 	// Create a file where install expects to create the docs/agent-layer
 	// directory so the repo still looks like a fresh install target.
-	require.NoError(t, os.WriteFile(filepath.Join(root, "docs"), []byte("blocker"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "docs"), []byte("blocker"), 0o600))
 
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
@@ -104,7 +104,7 @@ func TestRun_InstallFailure(t *testing.T) {
 
 func TestRun_PartialInstallMissingConfigRequiresUpgrade(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700))
 
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
@@ -130,7 +130,7 @@ func TestRun_ConfigLoadFailure(t *testing.T) {
 	// Write invalid TOML that will fail to parse
 	invalidConfig := `[approvals
 mode = "none"`
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(invalidConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(invalidConfig), 0600))
 
 	ui := &MockUI{
 		NoteFunc:        func(title, body string) error { return nil },

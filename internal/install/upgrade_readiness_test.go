@@ -18,7 +18,7 @@ import (
 func injectMCPCatalogIntoSeed(t *testing.T, root string) {
 	t.Helper()
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	existing, err := os.ReadFile(configPath)
+	existing, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read seeded config: %v", err)
 	}
@@ -27,7 +27,7 @@ func injectMCPCatalogIntoSeed(t *testing.T, root string) {
 		t.Fatalf("read mcp-catalog.toml: %v", err)
 	}
 	combined := strings.TrimRight(string(existing), "\n") + "\n\n" + string(catalog)
-	if err := os.WriteFile(configPath, []byte(combined), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(combined), 0o600); err != nil {
 		t.Fatalf("write seeded config with catalog: %v", err)
 	}
 }
@@ -39,12 +39,12 @@ func TestBuildUpgradeReadinessChecks_UnrecognizedConfigKeys(t *testing.T) {
 	}
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
 	cfg = append(cfg, []byte("\n[unknown_section]\nvalue = true\n")...)
-	if err := os.WriteFile(configPath, cfg, 0o644); err != nil {
+	if err := os.WriteFile(configPath, cfg, 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -66,18 +66,18 @@ func TestBuildUpgradeReadinessChecks_VSCodeNoSyncStaleByMTime(t *testing.T) {
 	}
 
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(filepath.Join(vscodeDir, "prompts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(vscodeDir, "prompts"), 0o700); err != nil {
 		t.Fatalf("mkdir prompts: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(vscodeDir, "mcp.json"), []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "mcp.json"), []byte("{}\n"), 0o600); err != nil {
 		t.Fatalf("write mcp.json: %v", err)
 	}
 	settings := "{\n  // >>> agent-layer\n  // managed\n  // <<< agent-layer\n}\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(settings), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(settings), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 	prompt := "---\nname: alpha\n---\n<!--\n  GENERATED FILE\n-->\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "prompts", "alpha.prompt.md"), []byte(prompt), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "prompts", "alpha.prompt.md"), []byte(prompt), 0o600); err != nil {
 		t.Fatalf("write prompt: %v", err)
 	}
 
@@ -120,7 +120,7 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	if !strings.Contains(updated, "mcp-ripgrep@latest") {
 		t.Fatal("failed to set floating ripgrep dependency in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -158,7 +158,7 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 	}
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -166,24 +166,24 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 	if updated == string(cfg) {
 		t.Fatal("failed to disable gemini in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	geminiPath := filepath.Join(root, ".gemini", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o700); err != nil {
 		t.Fatalf("mkdir gemini dir: %v", err)
 	}
 	generatedGemini := "{\n  \"_generatedBy\": \"agent-layer\",\n  \"mcpServers\": {\n    \"example\": {\n      \"url\": \"https://mcp.example.com\"\n    }\n  }\n}\n"
-	if err := os.WriteFile(geminiPath, []byte(generatedGemini), 0o644); err != nil {
+	if err := os.WriteFile(geminiPath, []byte(generatedGemini), 0o600); err != nil {
 		t.Fatalf("write gemini settings: %v", err)
 	}
 
 	geminiPolicyPath := filepath.Join(root, ".gemini", "policies", "agent-layer.toml")
-	if err := os.MkdirAll(filepath.Dir(geminiPolicyPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(geminiPolicyPath), 0o700); err != nil {
 		t.Fatalf("mkdir gemini policies dir: %v", err)
 	}
-	if err := os.WriteFile(geminiPolicyPath, []byte("# GENERATED FILE\n"), 0o644); err != nil {
+	if err := os.WriteFile(geminiPolicyPath, []byte("# GENERATED FILE\n"), 0o600); err != nil {
 		t.Fatalf("write gemini policy: %v", err)
 	}
 
@@ -215,7 +215,7 @@ func TestBuildUpgradeReadinessChecks_UnresolvedConfigPlaceholders(t *testing.T) 
 	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestBuildUpgradeReadinessChecks_UnresolvedConfigPlaceholders(t *testing.T) 
 	if updated == string(cfg) {
 		t.Fatal("failed to enable context7 in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -251,7 +251,7 @@ func TestBuildUpgradeReadinessChecks_ProcessEnvOverridesDotenv_UsesSystemLookupE
 	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -259,10 +259,10 @@ func TestBuildUpgradeReadinessChecks_ProcessEnvOverridesDotenv_UsesSystemLookupE
 	if updated == string(cfg) {
 		t.Fatal("failed to enable context7 in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=from-file\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=from-file\n"), 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
 
@@ -292,7 +292,7 @@ func TestBuildUpgradeReadinessChecks_IgnoredEmptyDotenvAssignments_UsesSystemLoo
 	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -300,10 +300,10 @@ func TestBuildUpgradeReadinessChecks_IgnoredEmptyDotenvAssignments_UsesSystemLoo
 	if updated == string(cfg) {
 		t.Fatal("failed to enable context7 in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_CONTEXT7_API_KEY=\n"), 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func TestBuildUpgradeReadinessChecks_PathExpansionAnomalies(t *testing.T) {
 	injectMCPCatalogIntoSeed(t, root)
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestBuildUpgradeReadinessChecks_PathExpansionAnomalies(t *testing.T) {
 	if !strings.Contains(updated, "missing-readiness-dir") {
 		t.Fatal("failed to update filesystem path in test config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -388,7 +388,7 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(configPath, []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(partialConfig), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

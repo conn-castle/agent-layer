@@ -25,7 +25,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 	}
 
 	// Config
-	rawConfig, err := os.ReadFile(configPath)
+	rawConfig, err := os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used by wizard apply.
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 
 	// Env
 	// Backup if exists
-	rawEnv, err := os.ReadFile(envPath)
+	rawEnv, err := os.ReadFile(envPath) // #nosec G304 -- envPath is the caller-resolved .agent-layer/.env path used by wizard apply.
 	envPerm, permErr := filePermOr(envPath, 0600)
 	if permErr != nil {
 		if configBackupCreated {

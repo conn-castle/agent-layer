@@ -41,7 +41,7 @@ func TestRealSystem_MkdirAll(t *testing.T) {
 func TestRealSystem_ReadDir(t *testing.T) {
 	sys := RealSystem{}
 	dir := t.TempDir()
-	if err := os.WriteFile(dir+"/a.txt", []byte("a"), 0o644); err != nil {
+	if err := os.WriteFile(dir+"/a.txt", []byte("a"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := sys.ReadDir(dir)
@@ -57,7 +57,7 @@ func TestRealSystem_Remove(t *testing.T) {
 	sys := RealSystem{}
 	dir := t.TempDir()
 	path := dir + "/remove-me.txt"
-	if err := os.WriteFile(path, []byte("bye"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("bye"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := sys.Remove(path); err != nil {
@@ -72,7 +72,7 @@ func TestRealSystem_RemoveAll(t *testing.T) {
 	sys := RealSystem{}
 	dir := t.TempDir()
 	sub := dir + "/sub"
-	if err := os.MkdirAll(sub, 0o755); err != nil {
+	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := sys.RemoveAll(sub); err != nil {

@@ -479,7 +479,7 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 func promptSecrets(root string, ui UI, choices *Choices) error {
 	envPath := filepath.Join(root, ".agent-layer", ".env")
 	envValues := make(map[string]string)
-	if b, err := os.ReadFile(envPath); err == nil {
+	if b, err := os.ReadFile(envPath); err == nil { // #nosec G304 -- envPath is the caller-resolved .agent-layer/.env path used by wizard prompts.
 		parsed, parseErr := envfile.Parse(string(b))
 		if parseErr != nil {
 			return fmt.Errorf(messages.WizardInvalidEnvFileFmt, envPath, parseErr)
@@ -564,7 +564,7 @@ func promptSecrets(root string, ui UI, choices *Choices) error {
 }
 
 func buildRewritePreview(configPath, envPath string, choices *Choices) (string, error) {
-	currentConfigBytes, err := os.ReadFile(configPath)
+	currentConfigBytes, err := os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used for the rewrite preview.
 	if err != nil {
 		return "", err
 	}
@@ -573,7 +573,7 @@ func buildRewritePreview(configPath, envPath string, choices *Choices) (string, 
 		return "", fmt.Errorf(messages.WizardPatchConfigFailedFmt, err)
 	}
 
-	currentEnvBytes, err := os.ReadFile(envPath)
+	currentEnvBytes, err := os.ReadFile(envPath) // #nosec G304 -- envPath is the caller-resolved .agent-layer/.env path used for the rewrite preview.
 	if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}

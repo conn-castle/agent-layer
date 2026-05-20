@@ -36,7 +36,7 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return err
 	}
 
-	profileBytes, err := os.ReadFile(profilePath)
+	profileBytes, err := os.ReadFile(profilePath) // #nosec G304 -- profilePath is an explicit wizard profile input intentionally read by this command.
 	if err != nil {
 		return fmt.Errorf(messages.WizardProfileReadFailedFmt, profilePath, err)
 	}
@@ -44,7 +44,7 @@ func RunProfile(root string, runSync syncer, pinVersion string, profilePath stri
 		return fmt.Errorf(messages.WizardProfileInvalidFmt, err)
 	}
 
-	currentConfig, err := os.ReadFile(configPath)
+	currentConfig, err := os.ReadFile(configPath) // #nosec G304 -- configPath is the caller-resolved .agent-layer/config.toml path used as the profile merge target.
 	if err != nil {
 		return err
 	}

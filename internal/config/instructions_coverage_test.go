@@ -18,7 +18,7 @@ func TestLoadInstructions_ReadDirError(t *testing.T) {
 func TestLoadInstructions_ReadFileError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.md")
-	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
+	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -48,7 +48,7 @@ func TestWalkInstructionFiles_ReadDirError(t *testing.T) {
 
 func TestWalkInstructionFiles_FnError(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "file"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "file"), []byte(""), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

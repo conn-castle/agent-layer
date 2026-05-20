@@ -43,10 +43,10 @@ func TestPlanUpgradeMigrations_UnknownSourceSkipsSourceDependent(t *testing.T) {
 	root := t.TempDir()
 	// Create the target file so the agnostic delete migration covers it.
 	legacyJSON := filepath.Join(root, ".vscode", "legacy.json")
-	if err := os.MkdirAll(filepath.Dir(legacyJSON), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(legacyJSON), 0o700); err != nil {
 		t.Fatalf("mkdir .vscode: %v", err)
 	}
-	if err := os.WriteFile(legacyJSON, []byte(`{}`), 0o644); err != nil {
+	if err := os.WriteFile(legacyJSON, []byte(`{}`), 0o600); err != nil {
 		t.Fatalf("write legacy.json: %v", err)
 	}
 	withMigrationManifestOverride(t, "0.7.0", `{
@@ -104,10 +104,10 @@ func TestPlanUpgradeMigrations_UnknownSourceSkipsSourceDependent(t *testing.T) {
 func TestPlanUpgradeMigrations_SourceTooOldSkipsSourceDependent(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.5.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.5.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -150,10 +150,10 @@ func TestPlanUpgradeMigrations_SourceTooOldSkipsSourceDependent(t *testing.T) {
 func TestPlanUpgradeMigrations_RollbackTargetsIncludeRenameDestination(t *testing.T) {
 	root := t.TempDir()
 	legacyPath := filepath.Join(root, ".agent-layer", "legacy.md")
-	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
 		t.Fatalf("mkdir legacy dir: %v", err)
 	}
-	if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o644); err != nil {
+	if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o600); err != nil {
 		t.Fatalf("write legacy file: %v", err)
 	}
 
@@ -191,10 +191,10 @@ func TestPlanUpgradeMigrations_RollbackTargetsIncludeRenameDestination(t *testin
 func TestRunMigrations_AppliesAndReportsStatus(t *testing.T) {
 	root := t.TempDir()
 	legacyPath := filepath.Join(root, ".agent-layer", "legacy.md")
-	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
 		t.Fatalf("mkdir legacy dir: %v", err)
 	}
-	if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o644); err != nil {
+	if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o600); err != nil {
 		t.Fatalf("write legacy file: %v", err)
 	}
 
@@ -254,7 +254,7 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 		t.Fatalf("read template: %v", err)
 	}
 	legacyPath := filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")
-	if err := os.WriteFile(legacyPath, planWorkTemplate, 0o644); err != nil {
+	if err := os.WriteFile(legacyPath, planWorkTemplate, 0o600); err != nil {
 		t.Fatalf("write legacy path: %v", err)
 	}
 
@@ -301,7 +301,7 @@ func TestBuildUpgradePlan_ManifestCoverageFiltersTemplateUpdates(t *testing.T) {
 	}
 
 	commandsAllowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(commandsAllowPath, []byte("echo custom\n"), 0o644); err != nil {
+	if err := os.WriteFile(commandsAllowPath, []byte("echo custom\n"), 0o600); err != nil {
 		t.Fatalf("write custom commands.allow: %v", err)
 	}
 
@@ -385,7 +385,7 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 		t.Fatalf("read template: %v", err)
 	}
 	legacyPath := filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")
-	if err := os.WriteFile(legacyPath, planWorkTemplate, 0o644); err != nil {
+	if err := os.WriteFile(legacyPath, planWorkTemplate, 0o600); err != nil {
 		t.Fatalf("write legacy path: %v", err)
 	}
 
@@ -420,10 +420,10 @@ func TestExecuteConfigSetDefaultMigration_CallsPrompt(t *testing.T) {
 
 	// Write a config file missing the key.
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("[agents]\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("[agents]\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -472,7 +472,7 @@ func TestExecuteConfigSetDefaultMigration_CallsPrompt(t *testing.T) {
 	}
 
 	// Verify the user's chosen value (true) was written, not the manifest default (false).
-	data, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	data, err := os.ReadFile(filepath.Join(configDir, "config.toml")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -486,10 +486,10 @@ func TestExecuteConfigSetDefaultMigration_NoPromptUsesDefault(t *testing.T) {
 
 	// Write a config file missing the key.
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("[agents]\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte("[agents]\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -512,7 +512,7 @@ func TestExecuteConfigSetDefaultMigration_NoPromptUsesDefault(t *testing.T) {
 	}
 
 	// Verify the manifest default (false) was written.
-	data, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	data, err := os.ReadFile(filepath.Join(configDir, "config.toml")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -669,10 +669,10 @@ func TestMigration_0_9_0_RenamesSlashCommandsAndMigratesFlatSkills(t *testing.T)
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, ".agent-layer", "slash-commands")
 	legacyFile := filepath.Join(legacyDir, "custom.md")
-	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
 		t.Fatalf("mkdir legacy dir: %v", err)
 	}
-	if err := os.WriteFile(legacyFile, []byte("custom skill\n"), 0o644); err != nil {
+	if err := os.WriteFile(legacyFile, []byte("custom skill\n"), 0o600); err != nil {
 		t.Fatalf("write legacy file: %v", err)
 	}
 
@@ -690,7 +690,7 @@ func TestMigration_0_9_0_RenamesSlashCommandsAndMigratesFlatSkills(t *testing.T)
 	// After rename (slash-commands -> skills) and skills format migration,
 	// custom.md should be at custom/SKILL.md.
 	migratedFile := filepath.Join(root, ".agent-layer", "skills", "custom", "SKILL.md")
-	got, err := os.ReadFile(migratedFile)
+	got, err := os.ReadFile(migratedFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read migrated file: %v", err)
 	}
@@ -730,16 +730,16 @@ func TestMigration_0_9_0_FailsWhenSlashCommandsAndSkillsBothExist(t *testing.T) 
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, ".agent-layer", "slash-commands")
 	newDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
 		t.Fatalf("mkdir legacy dir: %v", err)
 	}
-	if err := os.MkdirAll(newDir, 0o755); err != nil {
+	if err := os.MkdirAll(newDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(legacyDir, "alpha.md"), []byte("legacy\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(legacyDir, "alpha.md"), []byte("legacy\n"), 0o600); err != nil {
 		t.Fatalf("write legacy file: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(newDir, "alpha.md"), []byte("new\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(newDir, "alpha.md"), []byte("new\n"), 0o600); err != nil {
 		t.Fatalf("write new file: %v", err)
 	}
 
@@ -794,11 +794,11 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	cfgPath := filepath.Join(alDir, "config.toml")
-	if err := os.WriteFile(cfgPath, []byte(legacyConfig), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(legacyConfig), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -817,7 +817,7 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 	}
 
 	// Read resulting config and verify it passes strict parsing.
-	data, err := os.ReadFile(cfgPath)
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -851,13 +851,13 @@ func migrationReportEntryByID(entries []UpgradeMigrationEntry, id string) (Upgra
 func TestExecuteMigrateSkillsFormat_BasicMigration(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("alpha content\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("alpha content\n"), 0o600); err != nil {
 		t.Fatalf("write alpha: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "beta.md"), []byte("beta content\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "beta.md"), []byte("beta content\n"), 0o600); err != nil {
 		t.Fatalf("write beta: %v", err)
 	}
 
@@ -872,7 +872,7 @@ func TestExecuteMigrateSkillsFormat_BasicMigration(t *testing.T) {
 	}
 	// Verify flat files were moved to directory format.
 	for _, name := range []string{"alpha", "beta"} {
-		data, readErr := os.ReadFile(filepath.Join(skillsDir, name, "SKILL.md"))
+		data, readErr := os.ReadFile(filepath.Join(skillsDir, name, "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 		if readErr != nil {
 			t.Fatalf("read %s/SKILL.md: %v", name, readErr)
 		}
@@ -903,10 +903,10 @@ func TestExecuteMigrateSkillsFormat_BasicMigration(t *testing.T) {
 func TestExecuteMigrateSkillsFormat_NoFlatFiles(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("content\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("content\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -937,15 +937,15 @@ func TestExecuteMigrateSkillsFormat_SkillsDirMissing(t *testing.T) {
 func TestExecuteMigrateSkillsFormat_ConflictDifferentContent(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Flat file with one content
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("flat content\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("flat content\n"), 0o600); err != nil {
 		t.Fatalf("write flat: %v", err)
 	}
 	// Directory file with different content
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("dir content\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("dir content\n"), 0o600); err != nil {
 		t.Fatalf("write dir: %v", err)
 	}
 
@@ -960,14 +960,14 @@ func TestExecuteMigrateSkillsFormat_ConflictDifferentContent(t *testing.T) {
 func TestExecuteMigrateSkillsFormat_DuplicateContentCleansUp(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	content := "same content\n"
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte(content), 0o600); err != nil {
 		t.Fatalf("write flat: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte(content), 0o600); err != nil {
 		t.Fatalf("write dir: %v", err)
 	}
 
@@ -985,7 +985,7 @@ func TestExecuteMigrateSkillsFormat_DuplicateContentCleansUp(t *testing.T) {
 		t.Fatalf("expected flat file removed, stat err = %v", statErr)
 	}
 	// Directory file should still exist.
-	data, readErr := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md"))
+	data, readErr := os.ReadFile(filepath.Join(skillsDir, "alpha", "SKILL.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if readErr != nil {
 		t.Fatalf("read dir file: %v", readErr)
 	}
@@ -1006,10 +1006,10 @@ func TestExecuteMigrateSkillsFormat_DuplicateContentCleansUp(t *testing.T) {
 func TestExecuteMigrateSkillsFormat_UserCancels(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("content\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("content\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -1037,13 +1037,13 @@ func TestExecuteMigrateSkillsFormat_UserCancels(t *testing.T) {
 func TestPreflightSkillsMigration_DetectsConflicts(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, "skills")
-	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("flat\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha.md"), []byte("flat\n"), 0o600); err != nil {
 		t.Fatalf("write flat: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("dir\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "alpha", "SKILL.md"), []byte("dir\n"), 0o600); err != nil {
 		t.Fatalf("write dir: %v", err)
 	}
 
@@ -1065,16 +1065,16 @@ func TestPreflightSkillsMigration_DetectsConflicts(t *testing.T) {
 func TestPreflightSkillsMigration_CountsFlatSkills(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, "skills")
-	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "a.md"), []byte("a\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "a.md"), []byte("a\n"), 0o600); err != nil {
 		t.Fatalf("write a: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsDir, "b.md"), []byte("b\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsDir, "b.md"), []byte("b\n"), 0o600); err != nil {
 		t.Fatalf("write b: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(skillsDir, "c"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "c"), 0o700); err != nil {
 		t.Fatalf("mkdir c: %v", err)
 	}
 
@@ -1093,7 +1093,7 @@ func TestPreflightSkillsMigration_CountsFlatSkills(t *testing.T) {
 func TestPreflightSkillsMigration_PathNotDirectory(t *testing.T) {
 	root := t.TempDir()
 	skillsPath := filepath.Join(root, "skills")
-	if err := os.WriteFile(skillsPath, []byte("not-a-dir"), 0o644); err != nil {
+	if err := os.WriteFile(skillsPath, []byte("not-a-dir"), 0o600); err != nil {
 		t.Fatalf("write skills path: %v", err)
 	}
 
@@ -1108,11 +1108,11 @@ func TestPreflightSkillsMigration_PathNotDirectory(t *testing.T) {
 
 func TestExecuteMigrateSkillsFormat_PathNotDirectory(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 	skillsPath := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.WriteFile(skillsPath, []byte("not-a-dir"), 0o644); err != nil {
+	if err := os.WriteFile(skillsPath, []byte("not-a-dir"), 0o600); err != nil {
 		t.Fatalf("write skills path: %v", err)
 	}
 
@@ -1213,10 +1213,10 @@ func TestCollectMigrationChain(t *testing.T) {
 func TestPlanUpgradeMigrations_ChainsIntermediateManifests(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -1266,10 +1266,10 @@ func TestPlanUpgradeMigrations_ChainsIntermediateManifests(t *testing.T) {
 func TestPlanUpgradeMigrations_ChainDeduplicatesOperationIDs(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -1349,13 +1349,13 @@ func TestPlanUpgradeMigrations_UnknownSourceFallsBackToTargetOnly(t *testing.T) 
 func TestPlanUpgradeMigrations_ChainSourceTooOldPerManifest(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
 	// Source is 0.5.0 — older than 0.6.1's min_prior_version (0.6.0) but
 	// the agnostic op should still execute. The non-agnostic op in 0.6.1
 	// should be skipped as source-too-old.
-	if err := os.WriteFile(pinPath, []byte("0.5.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.5.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -1416,10 +1416,10 @@ func TestPlanUpgradeMigrations_ChainSourceTooOldPerManifest(t *testing.T) {
 func TestPlanUpgradeMigrations_KnownSourceMissingTargetManifestFails(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -1482,18 +1482,18 @@ func TestRun_SkillsMigrationDeclinedBeforeMutations(t *testing.T) {
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
 	flatSkillPath := filepath.Join(skillsDir, "my-custom-skill.md")
 	flatContent := []byte("---\ndescription: Custom skill\n---\nDo something custom.\n")
-	if err := os.WriteFile(flatSkillPath, flatContent, 0o644); err != nil {
+	if err := os.WriteFile(flatSkillPath, flatContent, 0o600); err != nil {
 		t.Fatalf("write flat skill: %v", err)
 	}
 
 	// Capture pre-upgrade file state for mutation detection.
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
-	preVersionContent, err := os.ReadFile(versionPath)
+	preVersionContent, err := os.ReadFile(versionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pre-upgrade version file: %v", err)
 	}
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	preConfigContent, err := os.ReadFile(configPath)
+	preConfigContent, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pre-upgrade config: %v", err)
 	}
@@ -1568,7 +1568,7 @@ func TestRun_SkillsMigrationDeclinedBeforeMutations(t *testing.T) {
 
 	// ── Verify NO disk mutations ──
 	// Version file: still 0.8.8, not 0.9.0.
-	postVersionContent, err := os.ReadFile(versionPath)
+	postVersionContent, err := os.ReadFile(versionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read post-upgrade version file: %v", err)
 	}
@@ -1576,7 +1576,7 @@ func TestRun_SkillsMigrationDeclinedBeforeMutations(t *testing.T) {
 		t.Fatalf("version file was mutated: pre=%q post=%q", string(preVersionContent), string(postVersionContent))
 	}
 	// Config: unchanged.
-	postConfigContent, err := os.ReadFile(configPath)
+	postConfigContent, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read post-upgrade config: %v", err)
 	}
@@ -1584,7 +1584,7 @@ func TestRun_SkillsMigrationDeclinedBeforeMutations(t *testing.T) {
 		t.Fatalf("config file was mutated: pre=%q post=%q", string(preConfigContent), string(postConfigContent))
 	}
 	// Flat skill file: still present with original content.
-	postFlatContent, err := os.ReadFile(flatSkillPath)
+	postFlatContent, err := os.ReadFile(flatSkillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("flat skill should still exist after declined migration: %v", err)
 	}
@@ -1613,21 +1613,21 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 	// Create a conflict: flat and directory versions with different content.
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
 	conflictDir := filepath.Join(skillsDir, "my-skill")
-	if err := os.MkdirAll(conflictDir, 0o755); err != nil {
+	if err := os.MkdirAll(conflictDir, 0o700); err != nil {
 		t.Fatalf("mkdir conflict dir: %v", err)
 	}
 	flatPath := filepath.Join(skillsDir, "my-skill.md")
-	if err := os.WriteFile(flatPath, []byte("flat version\n"), 0o644); err != nil {
+	if err := os.WriteFile(flatPath, []byte("flat version\n"), 0o600); err != nil {
 		t.Fatalf("write flat: %v", err)
 	}
 	dirPath := filepath.Join(conflictDir, "SKILL.md")
-	if err := os.WriteFile(dirPath, []byte("directory version\n"), 0o644); err != nil {
+	if err := os.WriteFile(dirPath, []byte("directory version\n"), 0o600); err != nil {
 		t.Fatalf("write dir: %v", err)
 	}
 
 	// Capture pre-upgrade state.
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
-	preVersionContent, err := os.ReadFile(versionPath)
+	preVersionContent, err := os.ReadFile(versionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pre-upgrade version: %v", err)
 	}
@@ -1704,7 +1704,7 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 	}
 
 	// ── Verify NO disk mutations ──
-	postVersionContent, err := os.ReadFile(versionPath)
+	postVersionContent, err := os.ReadFile(versionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read post-upgrade version: %v", err)
 	}
@@ -1712,14 +1712,14 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 		t.Fatalf("version file was mutated: pre=%q post=%q", string(preVersionContent), string(postVersionContent))
 	}
 	// Both flat and directory files should be untouched.
-	flatData, err := os.ReadFile(flatPath)
+	flatData, err := os.ReadFile(flatPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("flat file should still exist: %v", err)
 	}
 	if string(flatData) != "flat version\n" {
 		t.Fatalf("flat file content was mutated: %q", string(flatData))
 	}
-	dirData, err := os.ReadFile(dirPath)
+	dirData, err := os.ReadFile(dirPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("dir file should still exist: %v", err)
 	}
@@ -1731,11 +1731,11 @@ func TestRun_SkillsMigrationBlockedByConflict(t *testing.T) {
 func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
 	root := t.TempDir()
 	targetDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	targetPath := filepath.Join(targetDir, "04_conventions.md")
-	if err := os.WriteFile(targetPath, []byte("# Existing content\n"), 0o644); err != nil {
+	if err := os.WriteFile(targetPath, []byte("# Existing content\n"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 
@@ -1755,7 +1755,7 @@ func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
 	if !changed {
 		t.Fatal("expected migration to report changed")
 	}
-	data, err := os.ReadFile(targetPath)
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
@@ -1770,12 +1770,12 @@ func TestExecuteAppendToFile_AppendsWhenMatchAbsent(t *testing.T) {
 func TestExecuteAppendToFile_NoopWhenMatchPresent(t *testing.T) {
 	root := t.TempDir()
 	targetDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	targetPath := filepath.Join(targetDir, "04_conventions.md")
 	original := "# Existing content\n- **New rule:** Do the thing.\n"
-	if err := os.WriteFile(targetPath, []byte(original), 0o644); err != nil {
+	if err := os.WriteFile(targetPath, []byte(original), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 
@@ -1795,7 +1795,7 @@ func TestExecuteAppendToFile_NoopWhenMatchPresent(t *testing.T) {
 	if changed {
 		t.Fatal("expected no_op when match is present")
 	}
-	data, err := os.ReadFile(targetPath)
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
@@ -1823,7 +1823,7 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
 		t.Fatal("expected migration to report changed")
 	}
 	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	data, err := os.ReadFile(targetPath)
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
@@ -1856,7 +1856,7 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing_NoTemplate(t *testing.T) {
 		t.Fatal("expected migration to report changed")
 	}
 	targetPath := filepath.Join(root, ".agent-layer", "custom", "no_template_here.md")
-	data, err := os.ReadFile(targetPath)
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
@@ -1887,7 +1887,7 @@ func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.
 		t.Fatal("expected migration to report changed (template seeded)")
 	}
 	targetPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	data, err := os.ReadFile(targetPath)
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
@@ -1908,12 +1908,12 @@ func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.
 func TestExecuteAppendToFile_HandlesNoTrailingNewline(t *testing.T) {
 	root := t.TempDir()
 	targetDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	targetPath := filepath.Join(targetDir, "04_conventions.md")
 	// No trailing newline.
-	if err := os.WriteFile(targetPath, []byte("# Existing content"), 0o644); err != nil {
+	if err := os.WriteFile(targetPath, []byte("# Existing content"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 
@@ -1933,7 +1933,7 @@ func TestExecuteAppendToFile_HandlesNoTrailingNewline(t *testing.T) {
 	if !changed {
 		t.Fatal("expected migration to report changed")
 	}
-	data, err := os.ReadFile(targetPath)
+	data, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
@@ -1946,11 +1946,11 @@ func TestExecuteAppendToFile_HandlesNoTrailingNewline(t *testing.T) {
 func TestExecuteAppendToFile_RollbackCoverage(t *testing.T) {
 	root := t.TempDir()
 	targetDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	targetPath := filepath.Join(targetDir, "04_conventions.md")
-	if err := os.WriteFile(targetPath, []byte("# Existing\n"), 0o644); err != nil {
+	if err := os.WriteFile(targetPath, []byte("# Existing\n"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 
@@ -2023,10 +2023,10 @@ func TestValidateUpgradeMigrationOperation_AppendToFile(t *testing.T) {
 func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
 	root := t.TempDir()
 	targetDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(targetDir, "04_conventions.md"), []byte("# Conventions\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(targetDir, "04_conventions.md"), []byte("# Conventions\n"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 
@@ -2066,7 +2066,7 @@ func TestRunMigrations_AppendToFileAppliesAndReports(t *testing.T) {
 		t.Fatalf("expected migration report output, got %q", warn.String())
 	}
 
-	data, err := os.ReadFile(filepath.Join(targetDir, "04_conventions.md"))
+	data, err := os.ReadFile(filepath.Join(targetDir, "04_conventions.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}

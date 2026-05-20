@@ -366,7 +366,7 @@ func TestBuildSingleDiffPreview_SectionAwareMarkerError(t *testing.T) {
 		t.Fatalf("seed repo: %v", err)
 	}
 	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.WriteFile(roadmapPath, []byte("# no marker here\n"), 0o644); err != nil {
+	if err := os.WriteFile(roadmapPath, []byte("# no marker here\n"), 0o600); err != nil {
 		t.Fatalf("write roadmap without marker: %v", err)
 	}
 

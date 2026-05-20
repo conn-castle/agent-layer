@@ -102,10 +102,10 @@ func TestRunCleansLegacySkillOutputs(t *testing.T) {
 	}
 	for _, entry := range legacyEntries {
 		full := filepath.Join(root, entry.path)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", full, err)
 		}
-		if err := os.WriteFile(full, []byte(entry.content), 0o644); err != nil {
+		if err := os.WriteFile(full, []byte(entry.content), 0o600); err != nil {
 			t.Fatalf("write %s: %v", full, err)
 		}
 	}
@@ -149,7 +149,7 @@ func copyFixtureRepo(src string, dest string) error {
 		if info.IsDir() {
 			return os.MkdirAll(target, info.Mode())
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 		if err != nil {
 			return err
 		}
@@ -158,11 +158,11 @@ func copyFixtureRepo(src string, dest string) error {
 }
 
 func assertFileEquals(t *testing.T, expectedPath string, actualPath string, repoRoot string) {
-	expected, err := os.ReadFile(expectedPath)
+	expected, err := os.ReadFile(expectedPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read expected %s: %v", expectedPath, err)
 	}
-	actual, err := os.ReadFile(actualPath)
+	actual, err := os.ReadFile(actualPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read actual %s: %v", actualPath, err)
 	}

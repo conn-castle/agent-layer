@@ -19,7 +19,7 @@ func TestBuildUpgradePlanDiffPreviews_GeneratesChangedFileAndPinDiffs(t *testing
 	}
 
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("git status\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("git status\n"), 0o600); err != nil {
 		t.Fatalf("write managed customization: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestBuildPlanChangeDiffPreview_Modes(t *testing.T) {
 		diffMaxLines: 20,
 	}
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("git status\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("git status\n"), 0o600); err != nil {
 		t.Fatalf("write managed customization: %v", err)
 	}
 	templatePathByRel, err := inst.allTemplatePathByRel()
@@ -202,7 +202,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 	}
 
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(managedPath, []byte("git status\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("git status\n"), 0o600); err != nil {
 		t.Fatalf("write managed customization: %v", err)
 	}
 
@@ -297,7 +297,7 @@ func TestBuildPlanChangeDiffPreview_AdditionTemplateReadError(t *testing.T) {
 func TestBuildPlanChangeDiffPreview_RemovalReadError(t *testing.T) {
 	root := t.TempDir()
 	dirAsFile := filepath.Join(root, ".agent-layer", "dir-as-file")
-	if err := os.MkdirAll(dirAsFile, 0o755); err != nil {
+	if err := os.MkdirAll(dirAsFile, 0o700); err != nil {
 		t.Fatalf("mkdir dir-as-file: %v", err)
 	}
 
@@ -419,7 +419,7 @@ func TestBuildUpgradePlanDiffPreviews_PropagatesSectionAwareUpdateError(t *testi
 
 func TestBuildUpgradePlanDiffPreviews_PropagatesTemplateRemovalError(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "dir-as-file"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "dir-as-file"), 0o700); err != nil {
 		t.Fatalf("mkdir dir-as-file: %v", err)
 	}
 	plan := UpgradePlan{

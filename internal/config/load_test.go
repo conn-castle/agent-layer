@@ -14,10 +14,10 @@ func TestLoadProjectConfig(t *testing.T) {
 	root := t.TempDir()
 	paths := DefaultPaths(root)
 
-	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.SkillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 
@@ -45,13 +45,13 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
@@ -60,13 +60,13 @@ description: test command
 
 Do it.`
 	helloDir := filepath.Join(paths.SkillsDir, "hello")
-	if err := os.MkdirAll(helloDir, 0o755); err != nil {
+	if err := os.MkdirAll(helloDir, 0o700); err != nil {
 		t.Fatalf("mkdir skill dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(helloDir, "SKILL.md"), []byte(cmdContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(helloDir, "SKILL.md"), []byte(cmdContent), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
 
@@ -102,10 +102,10 @@ func TestLoadProjectConfigMissingEnv(t *testing.T) {
 	root := t.TempDir()
 	paths := DefaultPaths(root)
 
-	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.SkillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
@@ -132,10 +132,10 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
@@ -143,10 +143,10 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
 
@@ -163,7 +163,7 @@ func TestLoadProjectConfigMissingInstructions(t *testing.T) {
 	root := t.TempDir()
 	paths := DefaultPaths(root)
 
-	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.SkillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
@@ -190,10 +190,10 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 	cmdContent := `---
@@ -201,10 +201,10 @@ description: test command
 ---
 
 Do it.`
-	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.SkillsDir, "hello.md"), []byte(cmdContent), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
 
@@ -218,7 +218,7 @@ func TestLoadProjectConfigMissingSkills(t *testing.T) {
 	root := t.TempDir()
 	paths := DefaultPaths(root)
 
-	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
 	config := `
@@ -245,16 +245,16 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte("git status"), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
 
@@ -268,10 +268,10 @@ func TestLoadProjectConfigMissingCommandsAllow(t *testing.T) {
 	root := t.TempDir()
 	paths := DefaultPaths(root)
 
-	if err := os.MkdirAll(paths.InstructionsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
-	if err := os.MkdirAll(paths.SkillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.SkillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	config := `
@@ -298,13 +298,13 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	cmdContent := `---
@@ -313,10 +313,10 @@ description: test command
 
 Do it.`
 	helloDir := filepath.Join(paths.SkillsDir, "hello")
-	if err := os.MkdirAll(helloDir, 0o755); err != nil {
+	if err := os.MkdirAll(helloDir, 0o700); err != nil {
 		t.Fatalf("mkdir skill dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(helloDir, "SKILL.md"), []byte(cmdContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(helloDir, "SKILL.md"), []byte(cmdContent), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 
@@ -330,7 +330,7 @@ func TestLoadEnvInvalidFormat(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".env")
 	// Invalid env file - line without equals sign
-	if err := os.WriteFile(path, []byte("INVALID"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("INVALID"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 
@@ -463,7 +463,7 @@ mode = "all"
 [agents.gemini]
 enabled = true
 `
-	if err := os.WriteFile(path, []byte(toml), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

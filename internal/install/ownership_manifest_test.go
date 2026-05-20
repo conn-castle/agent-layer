@@ -136,10 +136,10 @@ func TestRun_WritesManagedBaselineState(t *testing.T) {
 func TestRun_DoesNotWriteBaselineWhenManagedDiffsRemain(t *testing.T) {
 	root := t.TempDir()
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(allowPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(allowPath), 0o700); err != nil {
 		t.Fatalf("mkdir allow dir: %v", err)
 	}
-	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o600); err != nil {
 		t.Fatalf("write custom allow: %v", err)
 	}
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
@@ -229,10 +229,10 @@ func TestValidateManagedBaselineState_ErrorPaths(t *testing.T) {
 func TestReadManagedBaselineState_DecodeError(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
-	if err := os.WriteFile(statePath, []byte("{not-json"), 0o644); err != nil {
+	if err := os.WriteFile(statePath, []byte("{not-json"), 0o600); err != nil {
 		t.Fatalf("write invalid state: %v", err)
 	}
 	_, err := readManagedBaselineState(root, RealSystem{})
@@ -271,7 +271,7 @@ func TestRun_WritesManagedBaselineSourceUpgrade(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("custom allow\n"), 0o600); err != nil {
 		t.Fatalf("write custom allow: %v", err)
 	}
 	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter()}); err != nil {
@@ -357,11 +357,11 @@ func TestReadManagedBaselineState_NilSystem(t *testing.T) {
 func TestReadManagedBaselineState_ValidationError(t *testing.T) {
 	root := t.TempDir()
 	statePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-	if err := os.MkdirAll(filepath.Dir(statePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
 	invalid := `{"schema_version":9,"baseline_version":"0.7.0","source":"written_by_init","created_at_utc":"2026-02-09T00:00:00Z","updated_at_utc":"2026-02-09T00:00:00Z","files":[{"path":"` + commandsAllowRelPath + `","full_hash_normalized":"abc"}]}`
-	if err := os.WriteFile(statePath, []byte(invalid), 0o644); err != nil {
+	if err := os.WriteFile(statePath, []byte(invalid), 0o600); err != nil {
 		t.Fatalf("write invalid state: %v", err)
 	}
 	if _, err := readManagedBaselineState(root, RealSystem{}); err == nil {
@@ -409,10 +409,10 @@ func TestResolveBaselineVersion_Cases(t *testing.T) {
 	}
 
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(versionPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(versionPath), 0o700); err != nil {
 		t.Fatalf("mkdir version dir: %v", err)
 	}
-	if err := os.WriteFile(versionPath, []byte("v0.7.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(versionPath, []byte("v0.7.0\n"), 0o600); err != nil {
 		t.Fatalf("write version: %v", err)
 	}
 	inst.pinVersion = ""
@@ -420,7 +420,7 @@ func TestResolveBaselineVersion_Cases(t *testing.T) {
 		t.Fatalf("resolveBaselineVersion(file) = %q, want 0.7.0", got)
 	}
 
-	if err := os.WriteFile(versionPath, []byte("dev\n"), 0o644); err != nil {
+	if err := os.WriteFile(versionPath, []byte("dev\n"), 0o600); err != nil {
 		t.Fatalf("write invalid version: %v", err)
 	}
 	if got := resolveBaselineVersion(inst); got != baselineVersionUnknown {
@@ -435,10 +435,10 @@ func TestReadCurrentPinVersion_ErrorPaths(t *testing.T) {
 
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir pin dir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.7.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.7.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -465,7 +465,7 @@ func TestWriteManagedBaselineIfConsistent_EarlyReturnAndBaselineReadError(t *tes
 		t.Fatalf("seed repo: %v", err)
 	}
 	statePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o644); err != nil {
+	if err := os.WriteFile(statePath, []byte("{bad-json"), 0o600); err != nil {
 		t.Fatalf("corrupt baseline: %v", err)
 	}
 	inst := &installer{root: root, sys: RealSystem{}}

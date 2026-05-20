@@ -84,7 +84,7 @@ func run() error {
 
 	// Publish unversioned pages by replacing Repo B src/pages.
 	dstPages := filepath.Join(repoB, "src", "pages")
-	if err := os.MkdirAll(filepath.Join(repoB, "src"), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repoB, "src"), 0o755); err != nil { // #nosec G301 -- publish tool runs in the developer's own checkout; the src/ tree it mirrors must be world-readable so the static site build (Next.js) can read it.
 		return fmt.Errorf("failed to create src dir: %w", err)
 	}
 	fmt.Printf("Copying %s -> %s\n", sitePages, dstPages)

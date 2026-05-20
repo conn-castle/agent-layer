@@ -34,7 +34,7 @@ func TestRunWithWriter_AdditionalBranches(t *testing.T) {
 		root := t.TempDir()
 		setupRepo(t, root)
 		configDir := filepath.Join(root, ".agent-layer")
-		if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o600); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
 		if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
@@ -226,7 +226,7 @@ func TestConfirmAndApply_ErrorBranches(t *testing.T) {
 		setupRepo(t, root)
 		configPath := filepath.Join(root, ".agent-layer", "config.toml")
 		envPath := filepath.Join(root, ".agent-layer", ".env")
-		if err := os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644); err != nil {
+		if err := os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
 		if err := os.WriteFile(envPath, []byte(""), 0o600); err != nil {
@@ -285,7 +285,7 @@ func TestBuildRewritePreview_ErrorAndNoDiffBranches(t *testing.T) {
 		root := t.TempDir()
 		configPath := filepath.Join(root, "config.toml")
 		envPath := filepath.Join(root, ".env")
-		if err := os.WriteFile(configPath, []byte("[approvals"), 0o644); err != nil {
+		if err := os.WriteFile(configPath, []byte("[approvals"), 0o600); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
 		if err := os.WriteFile(envPath, []byte(""), 0o600); err != nil {
@@ -301,10 +301,10 @@ func TestBuildRewritePreview_ErrorAndNoDiffBranches(t *testing.T) {
 		root := t.TempDir()
 		configPath := filepath.Join(root, "config.toml")
 		envPath := filepath.Join(root, ".env")
-		if err := os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644); err != nil {
+		if err := os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
-		if err := os.MkdirAll(envPath, 0o755); err != nil {
+		if err := os.MkdirAll(envPath, 0o700); err != nil {
 			t.Fatalf("mkdir env path: %v", err)
 		}
 		_, err := buildRewritePreview(configPath, envPath, NewChoices())
@@ -322,7 +322,7 @@ func TestBuildRewritePreview_ErrorAndNoDiffBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read config template: %v", err)
 		}
-		if err := os.WriteFile(configPath, templateConfig, 0o644); err != nil {
+		if err := os.WriteFile(configPath, templateConfig, 0o600); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
 		if err := os.WriteFile(envPath, []byte(""), 0o600); err != nil {
@@ -341,7 +341,7 @@ func TestBuildRewritePreview_ErrorAndNoDiffBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PatchConfig: %v", err)
 		}
-		if err := os.WriteFile(configPath, []byte(canonicalConfig), 0o644); err != nil {
+		if err := os.WriteFile(configPath, []byte(canonicalConfig), 0o600); err != nil {
 			t.Fatalf("rewrite canonical config: %v", err)
 		}
 
@@ -359,7 +359,7 @@ func TestBuildRewritePreview_ErrorAndNoDiffBranches(t *testing.T) {
 		setupRepo(t, root)
 		configPath := filepath.Join(root, ".agent-layer", "config.toml")
 		envPath := filepath.Join(root, ".agent-layer", ".env")
-		if err := os.WriteFile(configPath, []byte(basicAgentConfig()), 0o644); err != nil {
+		if err := os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600); err != nil {
 			t.Fatalf("write config: %v", err)
 		}
 		if err := os.WriteFile(envPath, []byte("AL_TOKEN=old-secret\nUNCHANGED=same-secret\n"), 0o600); err != nil {

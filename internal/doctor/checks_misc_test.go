@@ -13,7 +13,7 @@ import (
 func TestCheckConfig_LenientFallback_InjectsBuiltInEnv_NoEnvFile(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -33,20 +33,20 @@ enabled = true
 [agents.antigravity]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// Deliberately omit .env file.
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -70,7 +70,7 @@ enabled = false
 func TestCheckConfig_LenientFallback_UnknownKeys(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -95,22 +95,22 @@ enabled = true
 [agents.antigravity]
 enabled = false
 `
-	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(unknownKeyConfig), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(unknownKeyConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,7 +218,7 @@ func TestCheckSkills_NoSkills(t *testing.T) {
 func TestCheckSkills_Compliant(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	skillPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
@@ -228,7 +228,7 @@ description: test
 ---
 Body.
 `
-	if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 	cfg := &config.ProjectConfig{
@@ -252,7 +252,7 @@ Body.
 func TestCheckSkills_Warnings(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
 		t.Fatalf("mkdir skills: %v", err)
 	}
 	skillPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
@@ -262,7 +262,7 @@ foo: bar
 ---
 Body.
 `
-	if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 	cfg := &config.ProjectConfig{

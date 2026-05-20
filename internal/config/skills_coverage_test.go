@@ -18,11 +18,11 @@ func TestLoadSkills_ReadDirError(t *testing.T) {
 func TestLoadSkills_ReadFileError(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "bad")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	skillPath := filepath.Join(skillDir, "SKILL.md")
-	if err := os.WriteFile(skillPath, []byte{}, 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte{}, 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -47,12 +47,12 @@ func TestLoadSkills_ReadFileError(t *testing.T) {
 func TestLoadSkills_ParseError(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "invalid")
-	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	skillPath := filepath.Join(skillDir, "SKILL.md")
 	// Invalid content (no frontmatter)
-	if err := os.WriteFile(skillPath, []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(skillPath, []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

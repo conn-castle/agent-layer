@@ -220,7 +220,7 @@ func TestWizardCommand_AdditionalBranches(t *testing.T) {
 		})
 
 		root := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
 		getwd = func() (string, error) { return root, nil }

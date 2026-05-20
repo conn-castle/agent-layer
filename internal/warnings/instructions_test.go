@@ -14,7 +14,7 @@ func TestCheckInstructions_AgentsMD(t *testing.T) {
 	threshold := 4000
 
 	// Create AGENTS.md with small content
-	err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("small content"), 0644)
+	err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("small content"), 0600)
 	require.NoError(t, err)
 
 	warnings, err := CheckInstructions(tmpDir, &threshold)
@@ -28,7 +28,7 @@ func TestCheckInstructions_AgentsMD(t *testing.T) {
 	for i := range largeContent {
 		largeContent[i] = 'a'
 	}
-	err = os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), largeContent, 0644)
+	err = os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), largeContent, 0600)
 	require.NoError(t, err)
 
 	warnings, err = CheckInstructions(tmpDir, &threshold)
@@ -42,14 +42,14 @@ func TestCheckInstructions_Fallback(t *testing.T) {
 	tmpDir := t.TempDir()
 	threshold := 4000
 	instDir := filepath.Join(tmpDir, ".agent-layer", "instructions")
-	err := os.MkdirAll(instDir, 0755)
+	err := os.MkdirAll(instDir, 0700)
 	require.NoError(t, err)
 
 	// file A
-	err = os.WriteFile(filepath.Join(instDir, "01_a.md"), []byte("part one"), 0644)
+	err = os.WriteFile(filepath.Join(instDir, "01_a.md"), []byte("part one"), 0600)
 	require.NoError(t, err)
 	// file B
-	err = os.WriteFile(filepath.Join(instDir, "02_b.md"), []byte("part two"), 0644)
+	err = os.WriteFile(filepath.Join(instDir, "02_b.md"), []byte("part two"), 0600)
 	require.NoError(t, err)
 
 	warnings, err := CheckInstructions(tmpDir, &threshold)
@@ -61,7 +61,7 @@ func TestCheckInstructions_Fallback(t *testing.T) {
 	for i := range largeContent {
 		largeContent[i] = 'b'
 	}
-	err = os.WriteFile(filepath.Join(instDir, "02_b.md"), largeContent, 0644)
+	err = os.WriteFile(filepath.Join(instDir, "02_b.md"), largeContent, 0600)
 	require.NoError(t, err)
 
 	warnings, err = CheckInstructions(tmpDir, &threshold)
@@ -77,7 +77,7 @@ func TestCheckInstructions_Disabled(t *testing.T) {
 	for i := range largeContent {
 		largeContent[i] = 'a'
 	}
-	err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), largeContent, 0644)
+	err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), largeContent, 0600)
 	require.NoError(t, err)
 
 	warnings, err := CheckInstructions(tmpDir, nil)
@@ -99,7 +99,7 @@ func TestCheckInstructions_AgentsMDReadError(t *testing.T) {
 	agentsPath := filepath.Join(tmpDir, "AGENTS.md")
 
 	// Create a directory with the same name to cause ReadFile to fail
-	err := os.Mkdir(agentsPath, 0755)
+	err := os.Mkdir(agentsPath, 0700)
 	require.NoError(t, err)
 
 	_, err = CheckInstructions(tmpDir, &threshold)
@@ -112,9 +112,9 @@ func TestCheckInstructions_InstructionsDirReadError(t *testing.T) {
 	instDir := filepath.Join(tmpDir, ".agent-layer", "instructions")
 
 	// Create a file instead of a directory to cause ReadDir to fail
-	err := os.MkdirAll(filepath.Join(tmpDir, ".agent-layer"), 0755)
+	err := os.MkdirAll(filepath.Join(tmpDir, ".agent-layer"), 0700)
 	require.NoError(t, err)
-	err = os.WriteFile(instDir, []byte("not a directory"), 0644)
+	err = os.WriteFile(instDir, []byte("not a directory"), 0600)
 	require.NoError(t, err)
 
 	_, err = CheckInstructions(tmpDir, &threshold)

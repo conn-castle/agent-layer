@@ -67,7 +67,7 @@ func TestWriteGeminiPoliciesWritesFile(t *testing.T) {
 	}
 
 	policyPath := filepath.Join(root, ".gemini", "policies", "agent-layer.toml")
-	data, err := os.ReadFile(policyPath)
+	data, err := os.ReadFile(policyPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read policy file: %v", err)
 	}
@@ -80,10 +80,10 @@ func TestWriteGeminiPoliciesRemovesStaleFile(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	policyPath := filepath.Join(root, ".gemini", "policies", "agent-layer.toml")
-	if err := os.MkdirAll(filepath.Dir(policyPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(policyPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(policyPath, []byte("# stale\n"), 0o644); err != nil {
+	if err := os.WriteFile(policyPath, []byte("# stale\n"), 0o600); err != nil {
 		t.Fatalf("write stale: %v", err)
 	}
 

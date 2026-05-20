@@ -77,7 +77,7 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 
 	// Verify macOS .command launcher content
 	shPath := filepath.Join(root, ".agent-layer", "open-vscode.command")
-	shContent, err := os.ReadFile(shPath)
+	shContent, err := os.ReadFile(shPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read .command file: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 	// Verify macOS .app bundle content
 	appDir := filepath.Join(root, ".agent-layer", "open-vscode.app")
 
-	infoPlistContent, err := os.ReadFile(filepath.Join(appDir, "Contents", "Info.plist"))
+	infoPlistContent, err := os.ReadFile(filepath.Join(appDir, "Contents", "Info.plist")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read Info.plist: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 		t.Fatal("Info.plist missing LSUIElement (needed to hide from dock)")
 	}
 
-	execContent, err := os.ReadFile(filepath.Join(appDir, "Contents", "MacOS", "open-vscode"))
+	execContent, err := os.ReadFile(filepath.Join(appDir, "Contents", "MacOS", "open-vscode")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read app executable: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 
 	// Verify Linux shell script content
 	shLinuxPath := filepath.Join(root, ".agent-layer", "open-vscode.sh")
-	shLinuxContent, err := os.ReadFile(shLinuxPath)
+	shLinuxContent, err := os.ReadFile(shLinuxPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read .sh file: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestWriteVSCodeLaunchersContent(t *testing.T) {
 
 	// Verify Linux desktop entry content - delegates to .sh script
 	desktopPath := filepath.Join(root, ".agent-layer", "open-vscode.desktop")
-	desktopContent, err := os.ReadFile(desktopPath)
+	desktopContent, err := os.ReadFile(desktopPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read .desktop file: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestWriteVSCodeLaunchersDirectoryError(t *testing.T) {
 	root := t.TempDir()
 	// Create a file where the directory should be
 	file := filepath.Join(root, ".agent-layer")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -247,7 +247,7 @@ func TestWriteVSCodeAppBundle(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	paths := VSCodePaths(root)
-	if err := os.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.AgentLayerDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -268,12 +268,12 @@ func TestWriteVSCodeAppBundleMkdirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	paths := VSCodePaths(root)
-	if err := os.MkdirAll(paths.AgentLayerDir, 0o755); err != nil {
+	if err := os.MkdirAll(paths.AgentLayerDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create a file where the .app directory should be
-	if err := os.WriteFile(paths.AppDir, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(paths.AppDir, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

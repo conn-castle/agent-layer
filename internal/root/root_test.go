@@ -10,11 +10,11 @@ import (
 
 func TestFindAgentLayerRootFound(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 	sub := filepath.Join(root, "a", "b")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
+	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatalf("mkdir sub: %v", err)
 	}
 
@@ -43,7 +43,7 @@ func TestFindAgentLayerRootMissing(t *testing.T) {
 
 func TestFindAgentLayerRootFileError(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	_, _, err := FindAgentLayerRoot(root)
@@ -54,14 +54,14 @@ func TestFindAgentLayerRootFileError(t *testing.T) {
 
 func TestFindRepoRootPrefersAgentLayer(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
 	sub := filepath.Join(root, "nested")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
+	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatalf("mkdir sub: %v", err)
 	}
 
@@ -76,11 +76,11 @@ func TestFindRepoRootPrefersAgentLayer(t *testing.T) {
 
 func TestFindRepoRootUsesGit(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
 	sub := filepath.Join(root, "nested")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
+	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatalf("mkdir sub: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestFindRootsRequireStartPath(t *testing.T) {
 func TestFindRepoRootUsesGitFile(t *testing.T) {
 	root := t.TempDir()
 	gitPath := filepath.Join(root, ".git")
-	if err := os.WriteFile(gitPath, []byte("gitdir: .git/worktrees/x\n"), 0o644); err != nil {
+	if err := os.WriteFile(gitPath, []byte("gitdir: .git/worktrees/x\n"), 0o600); err != nil {
 		t.Fatalf("write .git file: %v", err)
 	}
 

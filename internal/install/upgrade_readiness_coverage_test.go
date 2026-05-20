@@ -61,10 +61,10 @@ func TestBuildUpgradeReadinessChecks_ConfigStatError(t *testing.T) {
 func TestBuildUpgradeReadinessChecks_ConfigParseFailure(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
-	if err := os.WriteFile(configPath, []byte("[agents]\ninvalid = ["), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("[agents]\ninvalid = ["), 0o600); err != nil {
 		t.Fatalf("write invalid config: %v", err)
 	}
 
@@ -107,7 +107,7 @@ func TestBuildUpgradeReadinessChecks_DisabledArtifactErrorPropagates(t *testing.
 	}
 
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	cfg, err := os.ReadFile(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestBuildUpgradeReadinessChecks_DisabledArtifactErrorPropagates(t *testing.
 	if updated == string(cfg) {
 		t.Fatal("failed to disable claude in config")
 	}
-	if err := os.WriteFile(configPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -133,10 +133,10 @@ func TestBuildUpgradeReadinessChecks_DisabledArtifactErrorPropagates(t *testing.
 func TestDetectVSCodeNoSyncStaleness_SettingsReadError(t *testing.T) {
 	root := t.TempDir()
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir settings dir: %v", err)
 	}
-	if err := os.WriteFile(settingsPath, []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte("{}\n"), 0o600); err != nil {
 		t.Fatalf("write settings file: %v", err)
 	}
 
@@ -170,10 +170,10 @@ func TestDetectVSCodeNoSyncStaleness_VSCodeDisabledNoFinding(t *testing.T) {
 func TestDetectVSCodeNoSyncStaleness_ClaudeVSCodeOnlyEnabled(t *testing.T) {
 	root := t.TempDir()
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir settings dir: %v", err)
 	}
-	if err := os.WriteFile(settingsPath, []byte("{\"editor.tabSize\":2}\n"), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte("{\"editor.tabSize\":2}\n"), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -212,10 +212,10 @@ func TestDetectVSCodeNoSyncStaleness_ClaudeVSCodeOnlyEnabled(t *testing.T) {
 func TestDetectVSCodeNoSyncStaleness_MissingManagedBlockDetail(t *testing.T) {
 	root := t.TempDir()
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
 		t.Fatalf("mkdir settings dir: %v", err)
 	}
-	if err := os.WriteFile(settingsPath, []byte("{\"editor.tabSize\":2}\n"), 0o644); err != nil {
+	if err := os.WriteFile(settingsPath, []byte("{\"editor.tabSize\":2}\n"), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
 
@@ -278,14 +278,14 @@ func TestDetectVSCodeNoSyncStaleness_SkillsStatError(t *testing.T) {
 func TestDetectVSCodeNoSyncStaleness_SharedSkillsWalkError(t *testing.T) {
 	root := t.TempDir()
 	skillsRoot := filepath.Join(root, ".agent-layer", "skills")
-	if err := os.MkdirAll(skillsRoot, 0o755); err != nil {
+	if err := os.MkdirAll(skillsRoot, 0o700); err != nil {
 		t.Fatalf("mkdir skills root: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha.md"), []byte("alpha"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillsRoot, "alpha.md"), []byte("alpha"), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
 	sharedSkillsRoot := filepath.Join(root, ".agents", "skills")
-	if err := os.MkdirAll(sharedSkillsRoot, 0o755); err != nil {
+	if err := os.MkdirAll(sharedSkillsRoot, 0o700); err != nil {
 		t.Fatalf("mkdir shared skills root: %v", err)
 	}
 

@@ -18,7 +18,7 @@ func TestRun_ApprovalModeLabelUnknown(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -40,7 +40,7 @@ func TestRun_SelectError_Approvals(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -63,7 +63,7 @@ func TestRun_MultiSelectError_Agents(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -87,7 +87,7 @@ func TestRun_NoteError_PreviewModelWarning(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -116,7 +116,7 @@ func TestRun_SelectError_GeminiModel(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	callCount := 0
@@ -147,7 +147,7 @@ func TestRun_SelectError_ClaudeModel(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -176,7 +176,7 @@ func TestRun_SelectError_ClaudeReasoning(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -208,7 +208,7 @@ func TestRun_SelectError_CodexModel(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -237,7 +237,7 @@ func TestRun_SelectError_CodexReasoning(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -274,7 +274,7 @@ enabled = false
 transport = "stdio"
 command = "npx"
 `
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	confirmCalls := 0
@@ -304,7 +304,7 @@ func TestRun_MultiSelectError_MCPServers(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -332,7 +332,7 @@ func TestRun_NoteError_Summary(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -360,7 +360,7 @@ func TestRun_ConfirmError_Apply(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -386,9 +386,9 @@ func TestRun_EnvFileReadError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	// Create .env as a directory so ReadFile fails with permission-like error
-	require.NoError(t, os.Mkdir(filepath.Join(configDir, ".env"), 0755))
+	require.NoError(t, os.Mkdir(filepath.Join(configDir, ".env"), 0700))
 
 	ui := &MockUI{
 		NoteFunc:        func(title, body string) error { return nil },
@@ -409,7 +409,7 @@ func TestRun_EnvFileParseError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	// Invalid env file content
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("INVALID LINE WITHOUT EQUALS"), 0600))
 
@@ -433,7 +433,7 @@ func TestRun_LoadDefaultMCPServersError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{}
@@ -454,7 +454,7 @@ func TestRun_LoadWarningDefaultsError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{}

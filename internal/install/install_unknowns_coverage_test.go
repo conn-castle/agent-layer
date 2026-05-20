@@ -52,11 +52,11 @@ func TestHandleUnknowns_MissingPrompter_ReturnsError(t *testing.T) {
 func TestHandleUnknowns_DeleteAllTrue_DeletesUnknowns(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	unknownPath := filepath.Join(alDir, "custom.txt")
-	if err := os.WriteFile(unknownPath, []byte("custom"), 0o644); err != nil {
+	if err := os.WriteFile(unknownPath, []byte("custom"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 

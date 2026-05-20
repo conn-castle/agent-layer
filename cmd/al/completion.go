@@ -91,7 +91,7 @@ func installCompletion(shell string, script string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- shell completion dirs (e.g. ~/.zfunc, ~/.bash_completion.d) must be world-traversable so the user's interactive shell can source the script.
 		return fmt.Errorf(messages.CompletionCreateDirErrFmt, err)
 	}
 	if err := fsutil.WriteFileAtomic(path, []byte(script), 0o644); err != nil {

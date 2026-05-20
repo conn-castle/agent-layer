@@ -57,7 +57,7 @@ func TestRunWithOverwrite_RollbackRestoresGitignoreOnFailure(t *testing.T) {
 	}
 	originalGitignore := "node_modules/\n# user line\n"
 	gitignorePath := filepath.Join(root, ".gitignore")
-	if err := os.WriteFile(gitignorePath, []byte(originalGitignore), 0o644); err != nil {
+	if err := os.WriteFile(gitignorePath, []byte(originalGitignore), 0o600); err != nil {
 		t.Fatalf("write gitignore: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestRunWithOverwrite_RollbackRestoresGitignoreOnFailure(t *testing.T) {
 		t.Fatalf("expected failure in writeVSCodeLaunchers, got %v", err)
 	}
 
-	restored, readErr := os.ReadFile(gitignorePath)
+	restored, readErr := os.ReadFile(gitignorePath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if readErr != nil {
 		t.Fatalf("read gitignore: %v", readErr)
 	}
@@ -99,10 +99,10 @@ func TestRunWithOverwrite_RollbackRestoresDeletedUnknownPath(t *testing.T) {
 	}
 	unknownA := filepath.Join(root, ".agent-layer", "a-unknown.txt")
 	unknownB := filepath.Join(root, ".agent-layer", "b-unknown.txt")
-	if err := os.WriteFile(unknownA, []byte("a"), 0o644); err != nil {
+	if err := os.WriteFile(unknownA, []byte("a"), 0o600); err != nil {
 		t.Fatalf("write unknownA: %v", err)
 	}
-	if err := os.WriteFile(unknownB, []byte("b"), 0o644); err != nil {
+	if err := os.WriteFile(unknownB, []byte("b"), 0o600); err != nil {
 		t.Fatalf("write unknownB: %v", err)
 	}
 
@@ -218,20 +218,20 @@ func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
 
 func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer/tmp: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs/agent-layer: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md"), []byte("new roadmap\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md"), []byte("new roadmap\n"), 0o600); err != nil {
 		t.Fatalf("write current roadmap: %v", err)
 	}
 	extraPath := filepath.Join(root, ".agent-layer", "tmp", "extra.txt")
-	if err := os.WriteFile(extraPath, []byte("remove me"), 0o644); err != nil {
+	if err := os.WriteFile(extraPath, []byte("remove me"), 0o600); err != nil {
 		t.Fatalf("write extra file: %v", err)
 	}
 
@@ -275,14 +275,14 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 		t.Fatalf("manual rollback: %v", err)
 	}
 
-	versionBytes, err := os.ReadFile(filepath.Join(root, ".agent-layer", "al.version"))
+	versionBytes, err := os.ReadFile(filepath.Join(root, ".agent-layer", "al.version")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read restored pin: %v", err)
 	}
 	if string(versionBytes) != "0.5.0\n" {
 		t.Fatalf("restored pin = %q, want %q", string(versionBytes), "0.5.0\n")
 	}
-	roadmapBytes, err := os.ReadFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md"))
+	roadmapBytes, err := os.ReadFile(filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read restored roadmap: %v", err)
 	}
@@ -301,12 +301,12 @@ func TestRollbackUpgradeSnapshot_RestoresAppliedSnapshot(t *testing.T) {
 
 func TestRollbackUpgradeSnapshot_RestoresCreatedSnapshot(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 	// Simulate a partially-applied upgrade (Ctrl-C after snapshot creation
 	// but before the transaction marked the snapshot as applied).
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.9.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.9.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
 
@@ -334,7 +334,7 @@ func TestRollbackUpgradeSnapshot_RestoresCreatedSnapshot(t *testing.T) {
 		t.Fatalf("rollback of created snapshot should succeed: %v", err)
 	}
 
-	versionBytes, err := os.ReadFile(filepath.Join(root, ".agent-layer", "al.version"))
+	versionBytes, err := os.ReadFile(filepath.Join(root, ".agent-layer", "al.version")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read restored pin: %v", err)
 	}
@@ -530,18 +530,18 @@ func TestRollbackUpgradeSnapshotState_NoTargets(t *testing.T) {
 
 func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir docs/agent-layer: %v", err)
 	}
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
 	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write current version: %v", err)
 	}
-	if err := os.WriteFile(roadmapPath, []byte("new roadmap\n"), 0o644); err != nil {
+	if err := os.WriteFile(roadmapPath, []byte("new roadmap\n"), 0o600); err != nil {
 		t.Fatalf("write current roadmap: %v", err)
 	}
 
@@ -572,14 +572,14 @@ func TestRollbackUpgradeSnapshotState_AlwaysRestoresVersionEntry(t *testing.T) {
 		t.Fatalf("rollbackUpgradeSnapshotState: %v", err)
 	}
 
-	versionBytes, err := os.ReadFile(versionPath)
+	versionBytes, err := os.ReadFile(versionPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read restored version: %v", err)
 	}
 	if string(versionBytes) != "0.5.0\n" {
 		t.Fatalf("restored version = %q, want %q", string(versionBytes), "0.5.0\n")
 	}
-	roadmapBytes, err := os.ReadFile(roadmapPath)
+	roadmapBytes, err := os.ReadFile(roadmapPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read restored roadmap: %v", err)
 	}
@@ -772,10 +772,10 @@ func TestRestoreUpgradeSnapshotEntriesAtRoot_RestoresSymlinkEntries(t *testing.T
 func TestRollbackUpgradeSnapshot_MalformedSnapshotFailsLoudly(t *testing.T) {
 	root := t.TempDir()
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(snapshotDir, "bad.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(snapshotDir, "bad.json"), []byte("{"), 0o600); err != nil {
 		t.Fatalf("write malformed snapshot: %v", err)
 	}
 
@@ -790,10 +790,10 @@ func TestRollbackUpgradeSnapshot_MalformedSnapshotFailsLoudly(t *testing.T) {
 
 func TestRollbackUpgradeSnapshot_FailureMarksSnapshotRollbackFailed(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "al.version"), []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
 
@@ -850,11 +850,11 @@ func TestRollbackUpgradeSnapshot_FailureMarksSnapshotRollbackFailed(t *testing.T
 
 func TestRollbackUpgradeSnapshot_FailureAndStatusWriteFailure(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(versionPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write current pin: %v", err)
 	}
 
@@ -895,16 +895,16 @@ func TestRollbackUpgradeSnapshot_FailureAndStatusWriteFailure(t *testing.T) {
 func TestRollbackUpgradeSnapshot_RestoresSpecialPathEntries(t *testing.T) {
 	root := t.TempDir()
 	deepDir := filepath.Join(root, "docs", "agent-layer", "Deep Space")
-	if err := os.MkdirAll(deepDir, 0o755); err != nil {
+	if err := os.MkdirAll(deepDir, 0o700); err != nil {
 		t.Fatalf("mkdir deep dir: %v", err)
 	}
 
 	targetPath := filepath.Join(deepDir, "notes v1.md")
-	if err := os.WriteFile(targetPath, []byte("new notes\n"), 0o644); err != nil {
+	if err := os.WriteFile(targetPath, []byte("new notes\n"), 0o600); err != nil {
 		t.Fatalf("write current notes: %v", err)
 	}
 	extraPath := filepath.Join(deepDir, "extra.tmp")
-	if err := os.WriteFile(extraPath, []byte("remove"), 0o644); err != nil {
+	if err := os.WriteFile(extraPath, []byte("remove"), 0o600); err != nil {
 		t.Fatalf("write extra path: %v", err)
 	}
 
@@ -936,7 +936,7 @@ func TestRollbackUpgradeSnapshot_RestoresSpecialPathEntries(t *testing.T) {
 		t.Fatalf("rollback snapshot: %v", err)
 	}
 
-	restored, err := os.ReadFile(targetPath)
+	restored, err := os.ReadFile(targetPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read restored notes: %v", err)
 	}
@@ -1112,10 +1112,10 @@ func TestWriteUpgradeSnapshot_PruneAndMkdirErrors(t *testing.T) {
 
 	// prune-before-create propagates malformed snapshot failures.
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(snapshotDir, "bad.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(snapshotDir, "bad.json"), []byte("{"), 0o600); err != nil {
 		t.Fatalf("write malformed snapshot: %v", err)
 	}
 	err := inst.writeUpgradeSnapshot(snapshot, true)
@@ -1165,11 +1165,11 @@ func TestPruneUpgradeSnapshots_SkipsMalformedSnapshot(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
 	malformedPath := filepath.Join(snapshotDir, "bad.json")
-	if err := os.WriteFile(malformedPath, []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(malformedPath, []byte("{"), 0o600); err != nil {
 		t.Fatalf("write malformed snapshot: %v", err)
 	}
 	err := inst.pruneUpgradeSnapshots(1)
@@ -1182,7 +1182,7 @@ func TestPruneUpgradeSnapshots_SkipsInvalidSnapshot(t *testing.T) {
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
 	invalidPath := filepath.Join(snapshotDir, "invalid.json")
@@ -1193,7 +1193,7 @@ func TestPruneUpgradeSnapshots_SkipsInvalidSnapshot(t *testing.T) {
   "status": "bad-status",
   "entries": []
 }`
-	if err := os.WriteFile(invalidPath, []byte(invalid), 0o644); err != nil {
+	if err := os.WriteFile(invalidPath, []byte(invalid), 0o600); err != nil {
 		t.Fatalf("write invalid snapshot: %v", err)
 	}
 	err := inst.pruneUpgradeSnapshots(1)
@@ -1255,10 +1255,10 @@ func TestCaptureUpgradeSnapshotTarget_AbsentThenFile(t *testing.T) {
 		t.Fatalf("expected absent entry, got %+v", entry)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	if err := inst.captureUpgradeSnapshotTarget(path, entries); err != nil {
@@ -1273,11 +1273,11 @@ func TestCaptureUpgradeSnapshotTarget_AbsentThenFile(t *testing.T) {
 func TestCaptureUpgradeSnapshotTarget_CapturesSymlink(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
 	target := filepath.Join(root, ".agent-layer", "target.txt")
-	if err := os.WriteFile(target, []byte("payload"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("payload"), 0o600); err != nil {
 		t.Fatalf("write target: %v", err)
 	}
 	link := filepath.Join(root, ".agent-layer", "al.version")
@@ -1322,12 +1322,12 @@ func TestCaptureUpgradeSnapshotTarget_StatError(t *testing.T) {
 func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkEntryWithoutFollowingTarget(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer", "state", "links")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
 	target := filepath.Join(root, ".agent-layer", "target.bin")
 	targetBytes := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 0x01, 0x02}
-	if err := os.WriteFile(target, targetBytes, 0o644); err != nil {
+	if err := os.WriteFile(target, targetBytes, 0o600); err != nil {
 		t.Fatalf("write target file: %v", err)
 	}
 	link := filepath.Join(dir, "icon.link")
@@ -1359,11 +1359,11 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesExternalSymlinkWithoutReadingTa
 	root := t.TempDir()
 	external := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer", "state", "links")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
 	target := filepath.Join(external, "outside.txt")
-	if err := os.WriteFile(target, []byte("outside"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("outside"), 0o600); err != nil {
 		t.Fatalf("write external target file: %v", err)
 	}
 	link := filepath.Join(dir, "outside.link")
@@ -1394,11 +1394,11 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesExternalSymlinkWithoutReadingTa
 func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkToDirectory(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer", "state", "links")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
 	targetDir := filepath.Join(root, ".agent-layer", "target-dir")
-	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
 		t.Fatalf("mkdir target dir: %v", err)
 	}
 	link := filepath.Join(dir, "dir-link")
@@ -1426,11 +1426,11 @@ func TestCaptureUpgradeSnapshotDirectory_CapturesSymlinkToDirectory(t *testing.T
 func TestCaptureUpgradeSnapshotDirectory_SymlinkReadlinkError(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer", "state", "links")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
 	target := filepath.Join(root, ".agent-layer", "target.bin")
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write target file: %v", err)
 	}
 	link := filepath.Join(dir, "broken.png")
@@ -1450,10 +1450,10 @@ func TestCaptureUpgradeSnapshotDirectory_SymlinkReadlinkError(t *testing.T) {
 func TestCaptureUpgradeSnapshotFile_ReadError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir dir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -1796,7 +1796,7 @@ func TestCaptureUpgradeSnapshotDirectory_CallbackErrAndRepoRelativeErrors(t *tes
 func TestCaptureUpgradeSnapshotFile_RepoRelativeError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "file.txt")
-	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	inst := &installer{root: "relative/root", sys: RealSystem{}}
@@ -2021,7 +2021,7 @@ func TestListUpgradeSnapshots(t *testing.T) {
 
 	// Unreadable snapshot should be skipped.
 	snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-	if err := os.WriteFile(filepath.Join(snapshotDir, "unreadable.json"), []byte("{"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(snapshotDir, "unreadable.json"), []byte("{"), 0o600); err != nil {
 		t.Fatalf("write unreadable snapshot: %v", err)
 	}
 	snapshots, err = ListUpgradeSnapshots(root, RealSystem{})
@@ -2079,15 +2079,15 @@ func TestUpgradeSnapshotTargetPaths_ExcludesAgentLayerTmp(t *testing.T) {
 	// in-progress agent work.
 	root := t.TempDir()
 	tmpDir := filepath.Join(root, ".agent-layer", "tmp")
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0o700); err != nil {
 		t.Fatalf("mkdir tmp: %v", err)
 	}
 	tmpFile := filepath.Join(tmpDir, "report.md")
-	if err := os.WriteFile(tmpFile, []byte("hi"), 0o644); err != nil {
+	if err := os.WriteFile(tmpFile, []byte("hi"), 0o600); err != nil {
 		t.Fatalf("write tmp file: %v", err)
 	}
 	otherUnknown := filepath.Join(root, ".agent-layer", "stray.txt")
-	if err := os.WriteFile(otherUnknown, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(otherUnknown, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write stray: %v", err)
 	}
 
@@ -2119,17 +2119,17 @@ func TestCaptureUpgradeSnapshotDirectory_DefensivelySkipsTmpDescendants(t *testi
 	// to contain `.agent-layer/tmp/`, the recursive walk must skip the tmp
 	// subtree rather than base64-encoding ephemeral run artifacts.
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp", "runs"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "tmp", "runs"), 0o700); err != nil {
 		t.Fatalf("mkdir tmp/runs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "tmp", "runs", "huge.log"), []byte("payload"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "tmp", "runs", "huge.log"), []byte("payload"), 0o600); err != nil {
 		t.Fatalf("write tmp file: %v", err)
 	}
 	keepFile := filepath.Join(root, ".agent-layer", "templates", "keep.txt")
-	if err := os.MkdirAll(filepath.Dir(keepFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(keepFile), 0o700); err != nil {
 		t.Fatalf("mkdir templates: %v", err)
 	}
-	if err := os.WriteFile(keepFile, []byte("keep"), 0o644); err != nil {
+	if err := os.WriteFile(keepFile, []byte("keep"), 0o600); err != nil {
 		t.Fatalf("write keep: %v", err)
 	}
 

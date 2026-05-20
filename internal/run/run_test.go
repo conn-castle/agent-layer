@@ -43,7 +43,7 @@ func TestCreateRunDirMissingRoot(t *testing.T) {
 func TestCreateRunDirMkdirError(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	if _, err := Create(file); err == nil {

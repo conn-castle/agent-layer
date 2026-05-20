@@ -30,7 +30,7 @@ func TestClientArgsPassThrough(t *testing.T) {
 		}
 	})
 
-	data, err := os.ReadFile(argsFile)
+	data, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestClientArgsPassThroughWithSeparator(t *testing.T) {
 		}
 	})
 
-	data, err := os.ReadFile(argsFile)
+	data, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read args file: %v", err)
 	}
@@ -180,7 +180,7 @@ func writeArgsStub(t *testing.T, dir string, name string, outputPath string) {
 	t.Helper()
 	path := filepath.Join(dir, name)
 	content := []byte(fmt.Sprintf("#!/bin/sh\nprintf '%s\\n' \"$@\" > %s\n", "%s", strconv.Quote(outputPath)))
-	if err := os.WriteFile(path, content, 0o755); err != nil {
+	if err := os.WriteFile(path, content, 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write stub: %v", err)
 	}
 }

@@ -38,7 +38,7 @@ func TestRunWithProjectError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -73,7 +73,7 @@ func TestRunStepsError(t *testing.T) {
 func TestCollectWarningsInstructionsError(t *testing.T) {
 	root := t.TempDir()
 	agentsPath := filepath.Join(root, "AGENTS.md")
-	if err := os.MkdirAll(agentsPath, 0o755); err != nil {
+	if err := os.MkdirAll(agentsPath, 0o700); err != nil {
 		t.Fatalf("mkdir AGENTS.md dir: %v", err)
 	}
 	threshold := 1
@@ -93,11 +93,11 @@ func TestCollectWarningsInstructionsError(t *testing.T) {
 func TestUpdateGitignoreValidationError(t *testing.T) {
 	root := t.TempDir()
 	blockPath := filepath.Join(root, ".agent-layer", "gitignore.block")
-	if err := os.MkdirAll(filepath.Dir(blockPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(blockPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	invalid := "# >>> agent-layer\n.agent-layer/\n"
-	if err := os.WriteFile(blockPath, []byte(invalid), 0o644); err != nil {
+	if err := os.WriteFile(blockPath, []byte(invalid), 0o600); err != nil {
 		t.Fatalf("write gitignore.block: %v", err)
 	}
 

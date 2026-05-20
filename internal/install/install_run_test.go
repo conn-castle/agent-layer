@@ -33,7 +33,7 @@ func TestRunCreatesStructure(t *testing.T) {
 	}
 
 	gitignorePath := filepath.Join(root, ".gitignore")
-	data, err := os.ReadFile(gitignorePath)
+	data, err := os.ReadFile(gitignorePath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read gitignore: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestRunWritesPinVersion(t *testing.T) {
 		t.Fatalf("Run error: %v", err)
 	}
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pin file: %v", err)
 	}
@@ -60,16 +60,16 @@ func TestRunWritesPinVersion(t *testing.T) {
 func TestRunPinVersionDoesNotOverwriteWithoutFlag(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("0.4.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("0.4.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin file: %v", err)
 	}
 	if err := Run(root, Options{PinVersion: "0.5.0", System: RealSystem{}}); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pin file: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestRunRejectsInvalidPinVersion(t *testing.T) {
 func TestEnsureBaseDirsError(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	inst := &installer{root: file, sys: RealSystem{}}
@@ -122,7 +122,7 @@ func TestRunWithExistingDifferentFiles(t *testing.T) {
 
 	// Modify a managed file to differ from template.
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("# custom allow\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("# custom allow\n"), 0o600); err != nil {
 		t.Fatalf("write custom allowlist: %v", err)
 	}
 
@@ -132,7 +132,7 @@ func TestRunWithExistingDifferentFiles(t *testing.T) {
 	}
 
 	// Verify file was not overwritten.
-	data, err := os.ReadFile(allowPath)
+	data, err := os.ReadFile(allowPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read commands.allow: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestRunWithOverwrite(t *testing.T) {
 
 	// Modify user-owned files to differ from templates.
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.WriteFile(configPath, []byte("# custom config"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("# custom config"), 0o600); err != nil {
 		t.Fatalf("write custom config: %v", err)
 	}
 	envPath := filepath.Join(root, ".agent-layer", ".env")
@@ -161,7 +161,7 @@ func TestRunWithOverwrite(t *testing.T) {
 
 	// Modify a managed file to differ from template.
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("# custom allow\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("# custom allow\n"), 0o600); err != nil {
 		t.Fatalf("write custom allowlist: %v", err)
 	}
 
@@ -171,7 +171,7 @@ func TestRunWithOverwrite(t *testing.T) {
 	}
 
 	// Verify user-owned files were not overwritten.
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestRunWithOverwrite(t *testing.T) {
 		t.Fatalf("expected config to remain unchanged")
 	}
 
-	envData, err := os.ReadFile(envPath)
+	envData, err := os.ReadFile(envPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read env: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestRunWithOverwrite(t *testing.T) {
 	}
 
 	// Verify managed file was overwritten with template content.
-	allowData, err := os.ReadFile(allowPath)
+	allowData, err := os.ReadFile(allowPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read commands.allow: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestRunWithOverwriteDeletesUnknownsWhenApproved(t *testing.T) {
 	}
 
 	unknownPath := filepath.Join(root, ".agent-layer", "custom.txt")
-	if err := os.WriteFile(unknownPath, []byte("custom"), 0o644); err != nil {
+	if err := os.WriteFile(unknownPath, []byte("custom"), 0o600); err != nil {
 		t.Fatalf("write unknown: %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestRunWithOverwritePromptsUnknownDeletion(t *testing.T) {
 	}
 
 	unknownPath := filepath.Join(root, ".agent-layer", "custom.txt")
-	if err := os.WriteFile(unknownPath, []byte("custom"), 0o644); err != nil {
+	if err := os.WriteFile(unknownPath, []byte("custom"), 0o600); err != nil {
 		t.Fatalf("write unknown: %v", err)
 	}
 
@@ -318,7 +318,7 @@ func TestRunWithOverwritePromptDecline(t *testing.T) {
 
 	// Modify a file to differ from template.
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o600); err != nil {
 		t.Fatalf("write custom allowlist: %v", err)
 	}
 
@@ -342,7 +342,7 @@ func TestRunWithOverwritePromptDecline(t *testing.T) {
 		t.Fatalf("overwrite Run error: %v", err)
 	}
 
-	data, err := os.ReadFile(allowPath)
+	data, err := os.ReadFile(allowPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read commands.allow: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestShouldOverwrite_UsesMemoryPrompt(t *testing.T) {
 
 func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -395,7 +395,7 @@ func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 	}
 	rendered := renderGitignoreBlock(normalizeGitignoreBlock(string(templateBytes)))
 	gitignorePath := filepath.Join(root, ".agent-layer", "gitignore.block")
-	if err := os.WriteFile(gitignorePath, []byte(rendered), 0o644); err != nil {
+	if err := os.WriteFile(gitignorePath, []byte(rendered), 0o600); err != nil {
 		t.Fatalf("write gitignore.block: %v", err)
 	}
 
@@ -420,11 +420,11 @@ func TestListManagedDiffs_ReportsGitignoreBlockHash(t *testing.T) {
 func TestWriteVersionFile_ExistingEmpty_AutoRepairs(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write empty file
-	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(""), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -434,7 +434,7 @@ func TestWriteVersionFile_ExistingEmpty_AutoRepairs(t *testing.T) {
 		t.Fatalf("expected auto-repair success, got error: %v", err)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pin: %v", err)
 	}
@@ -446,11 +446,11 @@ func TestWriteVersionFile_ExistingEmpty_AutoRepairs(t *testing.T) {
 func TestWriteVersionFile_ExistingCorrupt_AutoRepairs(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write corrupt (non-semver) content
-	if err := os.WriteFile(path, []byte("not-a-version\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("not-a-version\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -460,7 +460,7 @@ func TestWriteVersionFile_ExistingCorrupt_AutoRepairs(t *testing.T) {
 		t.Fatalf("expected auto-repair success, got error: %v", err)
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pin: %v", err)
 	}
@@ -472,11 +472,11 @@ func TestWriteVersionFile_ExistingCorrupt_AutoRepairs(t *testing.T) {
 func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write a valid but different version
-	if err := os.WriteFile(path, []byte("0.9.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("0.9.0\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -488,7 +488,7 @@ func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
 
 	// Without overwrite, pin should NOT be changed; no diff is recorded because
 	// al.version changes are expected during upgrades and should not be surfaced.
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read pin: %v", err)
 	}
@@ -503,11 +503,11 @@ func TestWriteVersionFile_ExistingValid_RequiresOverwrite(t *testing.T) {
 func TestWriteVersionFile_InvalidExisting(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write invalid version
-	if err := os.WriteFile(path, []byte("invalid"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("invalid"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -536,7 +536,7 @@ func TestWriteVersionFile_InvalidExisting(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	data, _ := os.ReadFile(path)
+	data, _ := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if string(data) != "1.0.0\n" {
 		t.Fatalf("expected overwrite")
 	}
@@ -545,10 +545,10 @@ func TestWriteVersionFile_InvalidExisting(t *testing.T) {
 func TestWriteVersionFile_UpgradeSkipsPrompt(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("0.9.0"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("0.9.0"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -564,7 +564,7 @@ func TestWriteVersionFile_UpgradeSkipsPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	data, _ := os.ReadFile(path)
+	data, _ := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if string(data) != "1.0.0\n" {
 		t.Fatalf("expected pin to be updated, got %q", string(data))
 	}
@@ -573,10 +573,10 @@ func TestWriteVersionFile_UpgradeSkipsPrompt(t *testing.T) {
 func TestWriteVersionFile_InitKeepsExistingPin(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("0.9.0"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("0.9.0"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -591,7 +591,7 @@ func TestWriteVersionFile_InitKeepsExistingPin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	data, _ := os.ReadFile(path)
+	data, _ := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if strings.TrimSpace(string(data)) != "0.9.0" {
 		t.Fatalf("expected existing pin to be preserved, got %q", string(data))
 	}
@@ -601,7 +601,7 @@ func TestWriteVersionFile_MkdirError(t *testing.T) {
 	root := t.TempDir()
 	// Create a file where directory should be
 	path := filepath.Join(root, ".agent-layer")
-	if err := os.WriteFile(path, []byte("file"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("file"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -618,13 +618,13 @@ func TestWriteVersionFile_WriteError(t *testing.T) {
 	}
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.Chmod(filepath.Dir(path), 0o500); err != nil {
+	if err := os.Chmod(filepath.Dir(path), 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(path), 0o755) })
+	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(path), 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	inst := &installer{root: root, pinVersion: "1.0.0", sys: RealSystem{}}
 	err := inst.writeVersionFile()
@@ -639,12 +639,12 @@ func TestWriteVersionFile_ReadError(t *testing.T) {
 	}
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Create a directory where file should be (causes ReadFile to error)
 	path := filepath.Join(alDir, "al.version")
-	if err := os.Mkdir(path, 0o755); err != nil {
+	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -658,11 +658,11 @@ func TestWriteVersionFile_ReadError(t *testing.T) {
 func TestWriteVersionFile_OverwriteFalse(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Write different version
-	if err := os.WriteFile(path, []byte("0.9.0"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("0.9.0"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -756,14 +756,14 @@ func TestRun_SectionAwareOverwritePreservesUserEntries(t *testing.T) {
 	}
 
 	issuesPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	initial, err := os.ReadFile(issuesPath)
+	initial, err := os.ReadFile(issuesPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read issues: %v", err)
 	}
 
 	updated := strings.Replace(string(initial), "# Issues", "# Issues (local old header)", 1)
 	updated += "\n- Issue 2099-01-01 localtest: keep me\n    Priority: Low. Area: tests.\n    Description: local entry.\n    Next step: keep.\n"
-	if err := os.WriteFile(issuesPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(issuesPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write custom issues: %v", err)
 	}
 
@@ -771,7 +771,7 @@ func TestRun_SectionAwareOverwritePreservesUserEntries(t *testing.T) {
 		t.Fatalf("overwrite run: %v", err)
 	}
 
-	finalContent, err := os.ReadFile(issuesPath)
+	finalContent, err := os.ReadFile(issuesPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read final issues: %v", err)
 	}
@@ -791,12 +791,12 @@ func TestRun_OverwriteAllDeclineFallsBackToPerFileDiffPreview(t *testing.T) {
 	}
 
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	original, err := os.ReadFile(managedPath)
+	original, err := os.ReadFile(managedPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read managed file: %v", err)
 	}
 	updated := string(original) + "\n# local customization\n"
-	if err := os.WriteFile(managedPath, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write managed customization: %v", err)
 	}
 
@@ -852,7 +852,7 @@ func TestRun_OverwriteAllDeclineFallsBackToPerFileDiffPreview(t *testing.T) {
 		t.Fatal("expected per-file prompt after declining overwrite-all batch prompt")
 	}
 
-	finalContent, err := os.ReadFile(managedPath)
+	finalContent, err := os.ReadFile(managedPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read final managed file: %v", err)
 	}

@@ -17,7 +17,7 @@ func TestRun_WarningsConfirmError(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
 
 	ui := &MockUI{
@@ -42,7 +42,7 @@ func TestRun_WarningsEnabled_UsesDefaultsWithoutThresholdPrompts(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
 
 	inputCalls := 0
@@ -80,7 +80,7 @@ func TestRun_WarningsDisabled_RemovesWarningsSection(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(basicAgentConfig()), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
 
 	ui := &MockUI{

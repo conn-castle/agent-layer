@@ -51,10 +51,10 @@ func TestReadAgentLayerEnvForReadiness_Branches(t *testing.T) {
 	t.Run("read error is surfaced", func(t *testing.T) {
 		root := t.TempDir()
 		envPath := filepath.Join(root, ".agent-layer", ".env")
-		if err := os.MkdirAll(filepath.Dir(envPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(envPath), 0o700); err != nil {
 			t.Fatalf("mkdir env dir: %v", err)
 		}
-		if err := os.WriteFile(envPath, []byte("AL_SAMPLE=value\n"), 0o644); err != nil {
+		if err := os.WriteFile(envPath, []byte("AL_SAMPLE=value\n"), 0o600); err != nil {
 			t.Fatalf("write env file: %v", err)
 		}
 
@@ -70,10 +70,10 @@ func TestReadAgentLayerEnvForReadiness_Branches(t *testing.T) {
 	t.Run("parse error is surfaced", func(t *testing.T) {
 		root := t.TempDir()
 		envPath := filepath.Join(root, ".agent-layer", ".env")
-		if err := os.MkdirAll(filepath.Dir(envPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(envPath), 0o700); err != nil {
 			t.Fatalf("mkdir env dir: %v", err)
 		}
-		if err := os.WriteFile(envPath, []byte("BROKEN_LINE\n"), 0o644); err != nil {
+		if err := os.WriteFile(envPath, []byte("BROKEN_LINE\n"), 0o600); err != nil {
 			t.Fatalf("write invalid env file: %v", err)
 		}
 
@@ -87,10 +87,10 @@ func TestReadAgentLayerEnvForReadiness_Branches(t *testing.T) {
 	t.Run("only AL_ keys are retained", func(t *testing.T) {
 		root := t.TempDir()
 		envPath := filepath.Join(root, ".agent-layer", ".env")
-		if err := os.MkdirAll(filepath.Dir(envPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(envPath), 0o700); err != nil {
 			t.Fatalf("mkdir env dir: %v", err)
 		}
-		if err := os.WriteFile(envPath, []byte("AL_KEEP=1\nOTHER=2\nAL_EMPTY=\n"), 0o644); err != nil {
+		if err := os.WriteFile(envPath, []byte("AL_KEEP=1\nOTHER=2\nAL_EMPTY=\n"), 0o600); err != nil {
 			t.Fatalf("write env file: %v", err)
 		}
 
@@ -188,7 +188,7 @@ func TestCheckPathExpansionValue_Branches(t *testing.T) {
 	}
 
 	commandDir := filepath.Join(root, "bin")
-	if err := os.MkdirAll(commandDir, 0o755); err != nil {
+	if err := os.MkdirAll(commandDir, 0o700); err != nil {
 		t.Fatalf("mkdir command dir: %v", err)
 	}
 	detail, err = checkPathExpansionValue(inst, map[string]string{}, 1, "s2", "command", "${AL_REPO_ROOT}/bin", true)
@@ -200,7 +200,7 @@ func TestCheckPathExpansionValue_Branches(t *testing.T) {
 	}
 
 	commandPath := filepath.Join(commandDir, "tool")
-	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
 		t.Fatalf("write command path: %v", err)
 	}
 	if detail, err = checkPathExpansionValue(inst, map[string]string{}, 2, "s3", "command", "${AL_REPO_ROOT}/bin/tool", true); err != nil || detail != "" {

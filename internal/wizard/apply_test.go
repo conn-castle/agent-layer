@@ -32,7 +32,7 @@ mode = "none"
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.toml")
 		envPath := filepath.Join(tmpDir, ".env")
-		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0644))
+		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0600))
 		require.NoError(t, os.WriteFile(envPath, []byte(initialEnv), 0600))
 		return tmpDir, configPath, envPath
 	}
@@ -67,7 +67,7 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 
 		// Create a directory at configPath.bak to cause WriteFile to fail
-		err := os.Mkdir(configPath+".bak", 0755)
+		err := os.Mkdir(configPath+".bak", 0700)
 		require.NoError(t, err)
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -81,7 +81,7 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 
 		// Create a directory at envPath.bak to cause WriteFile to fail
-		err := os.Mkdir(envPath+".bak", 0755)
+		err := os.Mkdir(envPath+".bak", 0700)
 		require.NoError(t, err)
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -132,7 +132,7 @@ mode = "none"
 	t.Run("backup exists", func(t *testing.T) {
 		tmpDir, configPath, envPath := setup(t)
 		// Pre-create backups
-		require.NoError(t, os.WriteFile(configPath+".bak", []byte("old-backup"), 0644))
+		require.NoError(t, os.WriteFile(configPath+".bak", []byte("old-backup"), 0600))
 		require.NoError(t, os.WriteFile(envPath+".bak", []byte("old-backup"), 0600))
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -161,13 +161,13 @@ mode = "none"
 		configPath := filepath.Join(tmpDir, "config.toml")
 		envPath := filepath.Join(tmpDir, ".env")
 		// Create config but make parent dir unreadable for stat
-		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0644))
+		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0600))
 		require.NoError(t, os.WriteFile(envPath, []byte(initialEnv), 0600))
 		// Replace config with a directory to cause stat to fail for a different error
 		require.NoError(t, os.Remove(configPath))
-		require.NoError(t, os.Mkdir(configPath, 0755))
+		require.NoError(t, os.Mkdir(configPath, 0700))
 		// Write a file inside so we can't read configPath as file
-		require.NoError(t, os.WriteFile(filepath.Join(configPath, "dummy"), []byte(""), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(configPath, "dummy"), []byte(""), 0600))
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync, io.Discard)
@@ -178,8 +178,8 @@ mode = "none"
 		tmpDir, configPath, envPath := setup(t)
 		// Make env path a directory with content
 		require.NoError(t, os.Remove(envPath))
-		require.NoError(t, os.Mkdir(envPath, 0755))
-		require.NoError(t, os.WriteFile(filepath.Join(envPath, "dummy"), []byte(""), 0644))
+		require.NoError(t, os.Mkdir(envPath, 0700))
+		require.NoError(t, os.WriteFile(filepath.Join(envPath, "dummy"), []byte(""), 0600))
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
 		err := applyChanges(tmpDir, configPath, envPath, choices, mockSync, io.Discard)
@@ -265,10 +265,10 @@ mode = "none"
 	t.Run("env perm error cleans config backup", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.toml")
-		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0644))
+		require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0600))
 
 		envRoot := filepath.Join(tmpDir, "env-root")
-		require.NoError(t, os.WriteFile(envRoot, []byte("not a dir"), 0644))
+		require.NoError(t, os.WriteFile(envRoot, []byte("not a dir"), 0600))
 		envPath := filepath.Join(envRoot, ".env")
 
 		mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -282,7 +282,7 @@ func TestFilePermOr(t *testing.T) {
 	t.Run("file exists", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "test.txt")
-		require.NoError(t, os.WriteFile(path, []byte("test"), 0755))
+		require.NoError(t, os.WriteFile(path, []byte("test"), 0755)) // #nosec G306 -- test writes a fixture whose perm value drives the production code path under test.
 
 		perm, err := filePermOr(path, 0644)
 		require.NoError(t, err)
@@ -302,7 +302,7 @@ func TestFilePermOr(t *testing.T) {
 		tmpDir := t.TempDir()
 		// Create a file to use as "directory" in path
 		file := filepath.Join(tmpDir, "file")
-		require.NoError(t, os.WriteFile(file, []byte("x"), 0644))
+		require.NoError(t, os.WriteFile(file, []byte("x"), 0600))
 		// Path through a file causes stat to fail with not ENOENT
 		path := filepath.Join(file, "config.toml")
 
@@ -328,7 +328,7 @@ func TestWriteBackup(t *testing.T) {
 	t.Run("backup already exists", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "backup.bak")
-		require.NoError(t, os.WriteFile(path, []byte("old"), 0644))
+		require.NoError(t, os.WriteFile(path, []byte("old"), 0600))
 
 		created, err := writeBackup(path, []byte("new"), 0644)
 		require.NoError(t, err)
@@ -342,7 +342,7 @@ func TestWriteBackup(t *testing.T) {
 		tmpDir := t.TempDir()
 		path := filepath.Join(tmpDir, "backup.bak")
 		// Create directory to cause write error
-		require.NoError(t, os.Mkdir(path, 0755))
+		require.NoError(t, os.Mkdir(path, 0700))
 
 		created, err := writeBackup(path, []byte("data"), 0644)
 		assert.Error(t, err)
@@ -353,7 +353,7 @@ func TestWriteBackup(t *testing.T) {
 		tmpDir := t.TempDir()
 		// Create a file to use as "directory" in path
 		file := filepath.Join(tmpDir, "file")
-		require.NoError(t, os.WriteFile(file, []byte("x"), 0644))
+		require.NoError(t, os.WriteFile(file, []byte("x"), 0600))
 		// Path through a file causes stat to fail with not ENOENT
 		path := filepath.Join(file, "backup.bak")
 
@@ -375,7 +375,7 @@ func TestApplyChanges_PatchConfigError(t *testing.T) {
 	// Invalid TOML to cause PatchConfig to fail
 	invalidConfig := `[approvals
 broken toml`
-	require.NoError(t, os.WriteFile(configPath, []byte(invalidConfig), 0644))
+	require.NoError(t, os.WriteFile(configPath, []byte(invalidConfig), 0600))
 	require.NoError(t, os.WriteFile(envPath, []byte("KEY=val"), 0600))
 
 	mockSync := func(root string) (*alsync.Result, error) { return &alsync.Result{}, nil }
@@ -396,7 +396,7 @@ func TestApplyChanges_SyncWarnings(t *testing.T) {
 	initialConfig := `[approvals]
 mode = "none"
 `
-	require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0644))
+	require.NoError(t, os.WriteFile(configPath, []byte(initialConfig), 0600))
 	require.NoError(t, os.WriteFile(envPath, []byte(""), 0600))
 
 	// Return warnings from sync

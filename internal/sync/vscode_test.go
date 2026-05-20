@@ -100,7 +100,7 @@ func TestWriteVSCodeSettings(t *testing.T) {
 		t.Fatalf("WriteVSCodeSettings error: %v", err)
 	}
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
-	data, err := os.ReadFile(settingsPath)
+	data, err := os.ReadFile(settingsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read settings.json: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestWriteVSCodeSettingsAgentSkillsLocationsIdempotent(t *testing.T) {
 	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
 		t.Fatalf("first WriteVSCodeSettings error: %v", err)
 	}
-	first, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json"))
+	first, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read first: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestWriteVSCodeSettingsAgentSkillsLocationsIdempotent(t *testing.T) {
 	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
 		t.Fatalf("second WriteVSCodeSettings error: %v", err)
 	}
-	second, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json"))
+	second, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read second: %v", err)
 	}
@@ -219,11 +219,11 @@ func TestWriteVSCodeSettingsPreservesExistingContent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o755); err != nil {
+	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := "{\n  // user setting\n  \"editor.formatOnSave\": true\n}\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 
@@ -239,7 +239,7 @@ func TestWriteVSCodeSettingsPreservesExistingContent(t *testing.T) {
 		t.Fatalf("WriteVSCodeSettings error: %v", err)
 	}
 
-	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json"))
+	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read settings.json: %v", err)
 	}
@@ -269,11 +269,11 @@ func TestWriteVSCodeSettingsReplacesManagedBlock(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o755); err != nil {
+	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := "{\n  // >>> agent-layer\n  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n  // and .agent-layer/commands.allow, then re-run `al sync`.\n  //\n  \"chat.tools.terminal.autoApprove\": {\n    \"/^old(\\\\b.*)?$/\": true\n  },\n  // <<< agent-layer\n  \"editor.tabSize\": 2\n}\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 
@@ -289,7 +289,7 @@ func TestWriteVSCodeSettingsReplacesManagedBlock(t *testing.T) {
 		t.Fatalf("WriteVSCodeSettings error: %v", err)
 	}
 
-	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json"))
+	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read settings.json: %v", err)
 	}
@@ -313,11 +313,11 @@ func TestWriteVSCodeSettingsNoTrailingCommaWhenManagedBlockIsLast(t *testing.T) 
 	t.Parallel()
 	root := t.TempDir()
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o755); err != nil {
+	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := "{\n  // >>> agent-layer\n  // Managed by Agent Layer. To customize, edit .agent-layer/config.toml\n  // and .agent-layer/commands.allow, then re-run `al sync`.\n  //\n  \"chat.tools.terminal.autoApprove\": {\n    \"/^old(\\\\b.*)?$/\": true\n  },\n  // <<< agent-layer\n}\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func TestWriteVSCodeSettingsNoTrailingCommaWhenManagedBlockIsLast(t *testing.T) 
 		t.Fatalf("WriteVSCodeSettings error: %v", err)
 	}
 
-	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json"))
+	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read settings.json: %v", err)
 	}
@@ -351,11 +351,11 @@ func TestWriteVSCodeSettingsInsertsManagedBlockWithExistingFields(t *testing.T) 
 	t.Parallel()
 	root := t.TempDir()
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o755); err != nil {
+	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := "{\n  \"files.eol\": \"\\\\n\",\n  \"editor.tabSize\": 2\n}\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 
@@ -371,7 +371,7 @@ func TestWriteVSCodeSettingsInsertsManagedBlockWithExistingFields(t *testing.T) 
 		t.Fatalf("WriteVSCodeSettings error: %v", err)
 	}
 
-	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json"))
+	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read settings.json: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestWriteVSCodeSettingsError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
@@ -408,11 +408,11 @@ func TestWriteVSCodeSettingsInvalidJSONC(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o755); err != nil {
+	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := "{\n  \"editor.tabSize\": 2,\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 
@@ -431,11 +431,11 @@ func TestWriteVSCodeSettingsInvalidJSONCExtraTokensBeforeRoot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o755); err != nil {
+	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := "}\n{\n  \"editor.tabSize\": 2\n}\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 

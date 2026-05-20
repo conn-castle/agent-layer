@@ -168,10 +168,10 @@ func TestShouldOverwrite_MemoryPathPromptsPerFile(t *testing.T) {
 func TestShouldOverwrite_UsesUnifiedOverwritePrompter(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
 		t.Fatalf("mkdir managed dir: %v", err)
 	}
-	if err := os.WriteFile(managedPath, []byte("# local override\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("# local override\n"), 0o600); err != nil {
 		t.Fatalf("write managed file: %v", err)
 	}
 
@@ -343,10 +343,10 @@ func TestResolveUnifiedOverwriteAllDecisions_NoDiffsSkipsPrompt(t *testing.T) {
 func TestResolveUnifiedOverwriteAllDecisions_UnifiedPromptError(t *testing.T) {
 	root := t.TempDir()
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(filepath.Dir(managedPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(managedPath), 0o700); err != nil {
 		t.Fatalf("mkdir managed dir: %v", err)
 	}
-	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o644); err != nil {
+	if err := os.WriteFile(managedPath, []byte("local override\n"), 0o600); err != nil {
 		t.Fatalf("write managed file: %v", err)
 	}
 
@@ -368,10 +368,10 @@ func TestResolveUnifiedOverwriteAllDecisions_UnifiedPromptError(t *testing.T) {
 func TestLookupDiffPreview_FallbackPinUsesUpstreamOwnership(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.1.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.1.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -467,7 +467,7 @@ func TestLookupDiffPreview_NotExistFallback(t *testing.T) {
 func TestLookupDiffPreview_BuildPreviewReadError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, 0o700); err != nil {
 		t.Fatalf("mkdir as file target: %v", err)
 	}
 
@@ -513,7 +513,7 @@ func TestDiffPreviewEntry_OwnershipFallsBackOnNotExist(t *testing.T) {
 func TestDiffPreviewEntry_ClassifyOwnershipError(t *testing.T) {
 	root := t.TempDir()
 	commandsAllowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.MkdirAll(commandsAllowPath, 0o755); err != nil {
+	if err := os.MkdirAll(commandsAllowPath, 0o700); err != nil {
 		t.Fatalf("mkdir commands.allow directory: %v", err)
 	}
 
@@ -658,13 +658,13 @@ func TestIsMemoryPath_NotUnder(t *testing.T) {
 func TestListManagedDiffs_TemplateFileDiffError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create commands.allow as a directory to cause stat error
 	allowPath := filepath.Join(alDir, "commands.allow")
-	if err := os.Mkdir(allowPath, 0o755); err != nil {
+	if err := os.Mkdir(allowPath, 0o700); err != nil {
 		t.Fatalf("mkdir allow: %v", err)
 	}
 
@@ -678,13 +678,13 @@ func TestListManagedDiffs_TemplateFileDiffError(t *testing.T) {
 func TestListMemoryDiffs_Success(t *testing.T) {
 	root := t.TempDir()
 	memoryDir := filepath.Join(root, "docs", "agent-layer")
-	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
+	if err := os.MkdirAll(memoryDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Write a file that differs from template
 	issuesPath := filepath.Join(memoryDir, "ISSUES.md")
-	if err := os.WriteFile(issuesPath, []byte("# Custom issues"), 0o644); err != nil {
+	if err := os.WriteFile(issuesPath, []byte("# Custom issues"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -715,7 +715,7 @@ func TestListMemoryDiffs_TemplateWalkError(t *testing.T) {
 func TestAppendTemplateDirDiffs_StatError(t *testing.T) {
 	root := t.TempDir()
 	instrDir := filepath.Join(root, ".agent-layer", "instructions")
-	if err := os.MkdirAll(instrDir, 0o755); err != nil {
+	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -724,7 +724,7 @@ func TestAppendTemplateDirDiffs_StatError(t *testing.T) {
 
 	// Create instruction file as directory to trigger error path in matchTemplate
 	instrFile := filepath.Join(instrDir, "00_rules.md")
-	if err := os.Mkdir(instrFile, 0o755); err != nil {
+	if err := os.Mkdir(instrFile, 0o700); err != nil {
 		t.Fatalf("mkdir instruction: %v", err)
 	}
 
@@ -745,13 +745,13 @@ func TestTemplateFileMatches_ReadFileError(t *testing.T) {
 	}
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	// Create gitignore.block as a directory to cause read error
 	blockPath := filepath.Join(alDir, "gitignore.block")
-	if err := os.Mkdir(blockPath, 0o755); err != nil {
+	if err := os.Mkdir(blockPath, 0o700); err != nil {
 		t.Fatalf("mkdir block: %v", err)
 	}
 
@@ -766,12 +766,12 @@ func TestTemplateFileMatches_ReadFileError(t *testing.T) {
 func TestTemplateFileMatches_ReadTemplateError(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.Mkdir(alDir, 0o755); err != nil {
+	if err := os.Mkdir(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
 	blockPath := filepath.Join(alDir, "gitignore.block")
-	if err := os.WriteFile(blockPath, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(blockPath, []byte("content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 

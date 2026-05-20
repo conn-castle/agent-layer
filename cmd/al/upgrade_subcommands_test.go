@@ -44,7 +44,7 @@ func TestUpgradeCmd_HelpShowsApplyFlagsWithoutForce(t *testing.T) {
 
 func TestUpgradeRollbackCmd_RequiresSnapshotID(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func TestUpgradeRollbackCmd_RequiresSnapshotID(t *testing.T) {
 
 func TestUpgradeRollbackCmd_InvokesInstallRollback(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -110,7 +110,7 @@ func TestUpgradeRollbackCmd_InvokesInstallRollback(t *testing.T) {
 
 func TestUpgradeRollbackCmd_PropagatesInstallErrors(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -137,7 +137,7 @@ func TestUpgradeRollbackCmd_PropagatesInstallErrors(t *testing.T) {
 
 func TestUpgradeRollbackCmd_ListNoSnapshots(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -160,16 +160,16 @@ func TestUpgradeRollbackCmd_ListNoSnapshots(t *testing.T) {
 
 func TestUpgradeRollbackCmd_ListPrintsSnapshots(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
 	snapshotDir := filepath.Join(root, ".agent-layer", "state", "upgrade-snapshots")
-	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+	if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshots: %v", err)
 	}
 	snapshotJSON := fmt.Sprintf(`{"schema_version":1,"snapshot_id":"snapshot-123","created_at_utc":"%s","status":"applied","entries":[]}`, time.Now().UTC().Format(time.RFC3339))
-	if err := os.WriteFile(filepath.Join(snapshotDir, "snapshot-123.json"), []byte(snapshotJSON), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(snapshotDir, "snapshot-123.json"), []byte(snapshotJSON), 0o600); err != nil {
 		t.Fatalf("write snapshot: %v", err)
 	}
 
@@ -260,7 +260,7 @@ func TestUpgradePrefetchCmd_DevBuildRequiresVersion(t *testing.T) {
 
 func TestUpgradeRepairGitignoreBlockCmd_InvokesRepair(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 

@@ -133,13 +133,13 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")
 		toPath := filepath.Join(root, ".agent-layer", "new.md")
-		if err := os.MkdirAll(filepath.Dir(fromPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fromPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(fromPath, []byte("same\n"), 0o644); err != nil {
+		if err := os.WriteFile(fromPath, []byte("same\n"), 0o600); err != nil {
 			t.Fatalf("write from: %v", err)
 		}
-		if err := os.WriteFile(toPath, []byte("same\n"), 0o644); err != nil {
+		if err := os.WriteFile(toPath, []byte("same\n"), 0o600); err != nil {
 			t.Fatalf("write to: %v", err)
 		}
 		inst := &installer{root: root, sys: RealSystem{}}
@@ -159,13 +159,13 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")
 		toPath := filepath.Join(root, ".agent-layer", "new.md")
-		if err := os.MkdirAll(filepath.Dir(fromPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fromPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(fromPath, []byte("source\n"), 0o644); err != nil {
+		if err := os.WriteFile(fromPath, []byte("source\n"), 0o600); err != nil {
 			t.Fatalf("write from: %v", err)
 		}
-		if err := os.WriteFile(toPath, []byte("target\n"), 0o644); err != nil {
+		if err := os.WriteFile(toPath, []byte("target\n"), 0o600); err != nil {
 			t.Fatalf("write to: %v", err)
 		}
 		inst := &installer{root: root, sys: RealSystem{}}
@@ -178,13 +178,13 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "slash-commands")
 		toPath := filepath.Join(root, ".agent-layer", "skills")
-		if err := os.MkdirAll(fromPath, 0o755); err != nil {
+		if err := os.MkdirAll(fromPath, 0o700); err != nil {
 			t.Fatalf("mkdir from: %v", err)
 		}
-		if err := os.MkdirAll(toPath, 0o755); err != nil {
+		if err := os.MkdirAll(toPath, 0o700); err != nil {
 			t.Fatalf("mkdir to: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(fromPath, "custom.md"), []byte("custom\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(fromPath, "custom.md"), []byte("custom\n"), 0o600); err != nil {
 			t.Fatalf("write source file: %v", err)
 		}
 		inst := &installer{root: root, sys: RealSystem{}}
@@ -206,10 +206,10 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 	t.Run("destination stat failure", func(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")
-		if err := os.MkdirAll(filepath.Dir(fromPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fromPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(fromPath, []byte("source\n"), 0o644); err != nil {
+		if err := os.WriteFile(fromPath, []byte("source\n"), 0o600); err != nil {
 			t.Fatalf("write from: %v", err)
 		}
 		toPath := filepath.Join(root, ".agent-layer", "new.md")
@@ -225,13 +225,13 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")
 		toPath := filepath.Join(root, ".agent-layer", "new.md")
-		if err := os.MkdirAll(filepath.Dir(fromPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fromPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(fromPath, []byte("same\n"), 0o644); err != nil {
+		if err := os.WriteFile(fromPath, []byte("same\n"), 0o600); err != nil {
 			t.Fatalf("write from: %v", err)
 		}
-		if err := os.WriteFile(toPath, []byte("same\n"), 0o644); err != nil {
+		if err := os.WriteFile(toPath, []byte("same\n"), 0o600); err != nil {
 			t.Fatalf("write to: %v", err)
 		}
 		fault := newFaultSystem(RealSystem{})
@@ -246,13 +246,13 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")
 		toPath := filepath.Join(root, ".agent-layer", "new.md")
-		if err := os.MkdirAll(filepath.Dir(fromPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fromPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(fromPath, []byte("same\n"), 0o644); err != nil {
+		if err := os.WriteFile(fromPath, []byte("same\n"), 0o600); err != nil {
 			t.Fatalf("write from: %v", err)
 		}
-		if err := os.WriteFile(toPath, []byte("same\n"), 0o644); err != nil {
+		if err := os.WriteFile(toPath, []byte("same\n"), 0o600); err != nil {
 			t.Fatalf("write to: %v", err)
 		}
 		fault := newFaultSystem(RealSystem{})
@@ -274,10 +274,10 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")
 		toPath := filepath.Join(root, ".agent-layer", "nested", "new.md")
-		if err := os.MkdirAll(filepath.Dir(fromPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fromPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(fromPath, []byte("source\n"), 0o644); err != nil {
+		if err := os.WriteFile(fromPath, []byte("source\n"), 0o600); err != nil {
 			t.Fatalf("write from: %v", err)
 		}
 		fault := newFaultSystem(RealSystem{})
@@ -298,10 +298,10 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 	t.Run("rename success", func(t *testing.T) {
 		root := t.TempDir()
 		fromPath := filepath.Join(root, ".agent-layer", "old.md")
-		if err := os.MkdirAll(filepath.Dir(fromPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(fromPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(fromPath, []byte("source\n"), 0o644); err != nil {
+		if err := os.WriteFile(fromPath, []byte("source\n"), 0o600); err != nil {
 			t.Fatalf("write from: %v", err)
 		}
 		inst := &installer{root: root, sys: RealSystem{}}
@@ -318,10 +318,10 @@ func TestExecuteRenameMigration_Branches(t *testing.T) {
 func TestExecuteDeleteMigration_Branches(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "stale.md")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("stale\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("stale\n"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -349,7 +349,7 @@ func TestExecuteDeleteMigration_Branches(t *testing.T) {
 		t.Fatalf("expected stat error, got %v", err)
 	}
 
-	if err := os.WriteFile(path, []byte("stale\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("stale\n"), 0o600); err != nil {
 		t.Fatalf("rewrite file: %v", err)
 	}
 	fault = newFaultSystem(RealSystem{})
@@ -600,7 +600,7 @@ func TestReadAndWriteMigrationConfigMap(t *testing.T) {
 	if err := inst.writeMigrationConfigMap(cfgPath, cfg); err != nil {
 		t.Fatalf("writeMigrationConfigMap: %v", err)
 	}
-	data, err := os.ReadFile(cfgPath)
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -707,10 +707,10 @@ func TestMigrationOperationHelpersAndDispatch(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "old.md"), []byte("x\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "old.md"), []byte("x\n"), 0o600); err != nil {
 		t.Fatalf("write old file: %v", err)
 	}
 	writeTestConfigFile(t, root, "[a]\n")
@@ -777,7 +777,7 @@ func TestSourceVersionInferenceFromSnapshotAndResolutionOrder(t *testing.T) {
 		root := t.TempDir()
 		inst := &installer{root: root, sys: RealSystem{}}
 		dir := inst.upgradeSnapshotDirPath()
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 
@@ -829,10 +829,10 @@ func TestSourceVersionInferenceFromSnapshotAndResolutionOrder(t *testing.T) {
 		inst := &installer{root: root, sys: RealSystem{}}
 
 		pinPath := filepath.Join(root, ".agent-layer", "al.version")
-		if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 			t.Fatalf("mkdir pin dir: %v", err)
 		}
-		if err := os.WriteFile(pinPath, []byte("0.6.2\n"), 0o644); err != nil {
+		if err := os.WriteFile(pinPath, []byte("0.6.2\n"), 0o600); err != nil {
 			t.Fatalf("write pin: %v", err)
 		}
 		res := inst.resolveUpgradeMigrationSourceVersion()
@@ -863,11 +863,11 @@ func TestSourceVersionInferenceFromSnapshotAndResolutionOrder(t *testing.T) {
 		}
 
 		baselinePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-		if err := os.WriteFile(baselinePath, []byte(`{"schema_version":1,"baseline_version":"bad","source":"written_by_upgrade","created_at_utc":"`+now+`","updated_at_utc":"`+now+`","files":[{"path":"x","full_hash_normalized":"h"}]}`), 0o644); err != nil {
+		if err := os.WriteFile(baselinePath, []byte(`{"schema_version":1,"baseline_version":"bad","source":"written_by_upgrade","created_at_utc":"`+now+`","updated_at_utc":"`+now+`","files":[{"path":"x","full_hash_normalized":"h"}]}`), 0o600); err != nil {
 			t.Fatalf("write invalid baseline: %v", err)
 		}
 		snapshotDir := inst.upgradeSnapshotDirPath()
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 		snapshot := upgradeSnapshot{
@@ -1065,11 +1065,11 @@ func TestLoadAndValidateUpgradeMigrationManifest_Errors(t *testing.T) {
 func TestMatchesTemplateDocsManifest_UsesDocsPaths(t *testing.T) {
 	root := t.TempDir()
 	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
 		t.Fatalf("mkdir docs path: %v", err)
 	}
 	content := []byte("roadmap content\n")
-	if err := os.WriteFile(docsPath, content, 0o644); err != nil {
+	if err := os.WriteFile(docsPath, content, 0o600); err != nil {
 		t.Fatalf("write docs file: %v", err)
 	}
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -1149,11 +1149,11 @@ func TestInferSourceVersionFromManifestMatch_ReturnsSingleCandidate(t *testing.T
 
 	root := t.TempDir()
 	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
 		t.Fatalf("mkdir docs path: %v", err)
 	}
 	docsContent := []byte("manifest match candidate\n")
-	if err := os.WriteFile(docsPath, docsContent, 0o644); err != nil {
+	if err := os.WriteFile(docsPath, docsContent, 0o600); err != nil {
 		t.Fatalf("write docs file: %v", err)
 	}
 
@@ -1226,10 +1226,10 @@ func TestMigrationWillCoverPath(t *testing.T) {
 
 	// Create a file so rename/delete scenarios have something to stat.
 	existingFile := filepath.Join(root, ".agent-layer", "existing.md")
-	if err := os.MkdirAll(filepath.Dir(existingFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(existingFile), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(existingFile, []byte("content"), 0o644); err != nil {
+	if err := os.WriteFile(existingFile, []byte("content"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -1316,10 +1316,10 @@ func TestRunMigrations_PrepareFailureAndEntryNotFound(t *testing.T) {
 	t.Run("entry not found in index continues", func(t *testing.T) {
 		root := t.TempDir()
 		legacyPath := filepath.Join(root, ".agent-layer", "legacy.md")
-		if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o644); err != nil {
+		if err := os.WriteFile(legacyPath, []byte("legacy\n"), 0o600); err != nil {
 			t.Fatalf("write: %v", err)
 		}
 
@@ -1348,10 +1348,10 @@ func TestRunMigrations_PrepareFailureAndEntryNotFound(t *testing.T) {
 func TestPlanUpgradeMigrations_SnapshotEntryAbsPathError(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 
@@ -1420,7 +1420,7 @@ func TestResolveUpgradeMigrationSourceVersion_BaselineAndSnapshotFallback(t *tes
 		// Create a snapshot with a valid pin entry.
 		inst := &installer{root: root, sys: RealSystem{}}
 		snapshotDir := inst.upgradeSnapshotDirPath()
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 		snapshot := upgradeSnapshot{
@@ -1449,7 +1449,7 @@ func TestResolveUpgradeMigrationSourceVersion_BaselineAndSnapshotFallback(t *tes
 		root := t.TempDir()
 		// Create a corrupted baseline file (not JSON parse error, but a read error).
 		baselinePath := filepath.Join(root, filepath.FromSlash(baselineStateRelPath))
-		if err := os.MkdirAll(filepath.Dir(baselinePath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(baselinePath), 0o700); err != nil {
 			t.Fatalf("mkdir baseline dir: %v", err)
 		}
 		fault := newFaultSystem(RealSystem{})
@@ -1596,7 +1596,7 @@ func TestWriteMigrationConfigMap_MarshalAndWriteErrors(t *testing.T) {
 	t.Run("write error path", func(t *testing.T) {
 		root := t.TempDir()
 		cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
-		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
 		fault := newFaultSystem(RealSystem{})
@@ -1679,11 +1679,11 @@ func TestInferSourceVersionFromManifestMatch_SuccessfulMatch(t *testing.T) {
 
 	root := t.TempDir()
 	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	docsContent := []byte("unique match test content\n")
-	if err := os.WriteFile(docsPath, docsContent, 0o644); err != nil {
+	if err := os.WriteFile(docsPath, docsContent, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -1745,11 +1745,11 @@ func TestInferSourceVersionFromManifestMatch_MultipleMatchesReturnsEmpty(t *test
 
 	root := t.TempDir()
 	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	docsContent := []byte("multi match content\n")
-	if err := os.WriteFile(docsPath, docsContent, 0o644); err != nil {
+	if err := os.WriteFile(docsPath, docsContent, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -1819,11 +1819,11 @@ func TestResolveUpgradeMigrationSourceVersion_ManifestMatchFallback(t *testing.T
 
 	root := t.TempDir()
 	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	docsContent := []byte("manifest fallback content\n")
-	if err := os.WriteFile(docsPath, docsContent, 0o644); err != nil {
+	if err := os.WriteFile(docsPath, docsContent, 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -1904,7 +1904,7 @@ func TestInferSourceVersionFromLatestSnapshot_SkipsBadEntriesAndDecodeErrors(t *
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := inst.upgradeSnapshotDirPath()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
 
@@ -1949,10 +1949,10 @@ func TestInferSourceVersionFromLatestSnapshot_SkipsBadEntriesAndDecodeErrors(t *
 func TestReadMigrationConfigMap_ReadError(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(cfgPath, []byte("a = 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("a = 1\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	fault := newFaultSystem(RealSystem{})
@@ -2020,7 +2020,7 @@ func TestInferSourceVersionFromLatestSnapshot_UnreadableSnapshotSkipped(t *testi
 	root := t.TempDir()
 	inst := &installer{root: root, sys: RealSystem{}}
 	dir := inst.upgradeSnapshotDirPath()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir snapshot dir: %v", err)
 	}
 
@@ -2061,10 +2061,10 @@ func TestInferSourceVersionFromLatestSnapshot_UnreadableSnapshotSkipped(t *testi
 func TestPlanUpgradeMigrations_ConfigSetDefaultWithConfigMigration(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("0.6.0\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 	writeTestConfigFile(t, root, "[clients]\n")
@@ -2203,10 +2203,10 @@ func TestInferSourceVersionFromManifestMatch_MatchError(t *testing.T) {
 
 	root := t.TempDir()
 	docsPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
-	if err := os.MkdirAll(filepath.Dir(docsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(docsPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(docsPath, []byte("content\n"), 0o644); err != nil {
+	if err := os.WriteFile(docsPath, []byte("content\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -2302,10 +2302,10 @@ func TestExecuteDeleteMigration_InvalidPath(t *testing.T) {
 func TestExecuteConfigSetDefaultMigration_ReadError(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
-	if err := os.WriteFile(cfgPath, []byte("[clients]\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("[clients]\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -2320,14 +2320,14 @@ func TestExecuteConfigSetDefaultMigration_ReadError(t *testing.T) {
 func TestWriteMigrationConfigMap_EmptyMapAddsTrailingNewline(t *testing.T) {
 	root := t.TempDir()
 	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
 	inst := &installer{root: root, sys: RealSystem{}}
 	if err := inst.writeMigrationConfigMap(cfgPath, map[string]any{}); err != nil {
 		t.Fatalf("writeMigrationConfigMap: %v", err)
 	}
-	data, err := os.ReadFile(cfgPath)
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config file: %v", err)
 	}
@@ -2392,7 +2392,7 @@ func TestInferSourceVersionFromLatestSnapshot_ListErrorAndReadSkip(t *testing.T)
 	t.Run("list snapshot files error propagates", func(t *testing.T) {
 		root := t.TempDir()
 		snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 
@@ -2408,7 +2408,7 @@ func TestInferSourceVersionFromLatestSnapshot_ListErrorAndReadSkip(t *testing.T)
 		root := t.TempDir()
 		inst := &installer{root: root, sys: RealSystem{}}
 		snapshotDir := inst.upgradeSnapshotDirPath()
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 
@@ -2522,10 +2522,10 @@ func (s *readFailOnNthSystem) WriteFileAtomic(filename string, data []byte, perm
 func writeTestConfigFile(t *testing.T, root string, content string) string {
 	t.Helper()
 	path := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir config dir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 	return path

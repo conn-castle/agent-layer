@@ -87,11 +87,11 @@ func TestRunSyncError(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
-	if err := os.Chmod(root, 0o500); err != nil {
+	if err := os.Chmod(root, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = os.Chmod(root, 0o700)
+		_ = os.Chmod(root, 0o700) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 	})
 
 	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
@@ -109,7 +109,7 @@ func TestRunCreateError(t *testing.T) {
 	writeMinimalRepo(t, root)
 
 	blockPath := filepath.Join(root, ".agent-layer", "tmp")
-	if err := os.WriteFile(blockPath, []byte("block"), 0o644); err != nil {
+	if err := os.WriteFile(blockPath, []byte("block"), 0o600); err != nil {
 		t.Fatalf("write tmp file: %v", err)
 	}
 
@@ -171,7 +171,7 @@ version_update_on_sync = true
 instruction_token_threshold = 50000
 mcp_server_threshold = 5
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -236,11 +236,11 @@ version_update_on_sync = true
 instruction_token_threshold = 1
 mcp_server_threshold = 5
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	largeContent := strings.Repeat("quiet warning ", 50)
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte(largeContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte(largeContent), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 
@@ -306,11 +306,11 @@ version_update_on_sync = true
 instruction_token_threshold = 1
 mcp_server_threshold = 5
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	largeContent := strings.Repeat("quiet warning ", 50)
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte(largeContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte(largeContent), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 
@@ -351,7 +351,7 @@ func writeMinimalRepo(t *testing.T, root string) {
 	paths := config.DefaultPaths(root)
 	dirs := []string{paths.InstructionsDir, paths.SkillsDir}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
@@ -384,17 +384,17 @@ enabled = false
 instruction_token_threshold = 50000
 mcp_server_threshold = 5
 `
-	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 	gitignoreBlock := "# test gitignore content\n"
-	if err := os.WriteFile(filepath.Join(paths.Root, ".agent-layer", "gitignore.block"), []byte(gitignoreBlock), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.Root, ".agent-layer", "gitignore.block"), []byte(gitignoreBlock), 0o600); err != nil {
 		t.Fatalf("write gitignore.block: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	command := `---
@@ -403,16 +403,16 @@ description: test
 
 Do it.`
 	alphaDir := filepath.Join(paths.SkillsDir, "alpha")
-	if err := os.MkdirAll(alphaDir, 0o755); err != nil {
+	if err := os.MkdirAll(alphaDir, 0o700); err != nil {
 		t.Fatalf("mkdir skill dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte(command), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte(command), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "al"), []byte("stub"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "al"), []byte("stub"), 0o755); err != nil { // #nosec G306 -- test writes a fixture whose perm value drives the production code path under test.
 		t.Fatalf("write al stub: %v", err)
 	}
 	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -423,7 +423,7 @@ func writeMinimalRepoWithMode(t *testing.T, root string, mode string) {
 	paths := config.DefaultPaths(root)
 	dirs := []string{paths.InstructionsDir, paths.SkillsDir}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", dir, err)
 		}
 	}
@@ -456,17 +456,17 @@ enabled = false
 instruction_token_threshold = 50000
 mcp_server_threshold = 5
 `, mode)
-	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o644); err != nil {
+	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
-	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.EnvPath, []byte(""), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
 	gitignoreBlock := "# test gitignore content\n"
-	if err := os.WriteFile(filepath.Join(paths.Root, ".agent-layer", "gitignore.block"), []byte(gitignoreBlock), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.Root, ".agent-layer", "gitignore.block"), []byte(gitignoreBlock), 0o600); err != nil {
 		t.Fatalf("write gitignore.block: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(paths.InstructionsDir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write instructions: %v", err)
 	}
 	command := `---
@@ -475,16 +475,16 @@ description: test
 
 Do it.`
 	alphaDir := filepath.Join(paths.SkillsDir, "alpha")
-	if err := os.MkdirAll(alphaDir, 0o755); err != nil {
+	if err := os.MkdirAll(alphaDir, 0o700); err != nil {
 		t.Fatalf("mkdir skill dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte(command), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(alphaDir, "SKILL.md"), []byte(command), 0o600); err != nil {
 		t.Fatalf("write skill: %v", err)
 	}
-	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(paths.CommandsAllow, []byte(""), 0o600); err != nil {
 		t.Fatalf("write commands allow: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "al"), []byte("stub"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "al"), []byte("stub"), 0o755); err != nil { // #nosec G306 -- test writes a fixture whose perm value drives the production code path under test.
 		t.Fatalf("write al stub: %v", err)
 	}
 	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))

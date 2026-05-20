@@ -10,14 +10,14 @@ import (
 
 func TestLoadInstructions(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "10_second.md"), []byte("second"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "10_second.md"), []byte("second"), 0o600); err != nil {
 		t.Fatalf("write second: %v", err)
 	}
 	bomContent := append([]byte{0xEF, 0xBB, 0xBF}, []byte("first")...)
-	if err := os.WriteFile(filepath.Join(dir, "00_first.md"), bomContent, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "00_first.md"), bomContent, 0o600); err != nil {
 		t.Fatalf("write first: %v", err)
 	}
 
@@ -48,7 +48,7 @@ func TestLoadInstructionsMissingDir(t *testing.T) {
 
 func TestLoadInstructionsNoFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	_, err := LoadInstructions(dir)
@@ -62,10 +62,10 @@ func TestLoadInstructionsNoFiles(t *testing.T) {
 
 func TestWalkInstructionFiles(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write base: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("skip"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("skip"), 0o600); err != nil {
 		t.Fatalf("write notes: %v", err)
 	}
 
@@ -84,7 +84,7 @@ func TestWalkInstructionFiles(t *testing.T) {
 
 func TestWalkInstructionFilesError(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "00_rules.md"), []byte("base"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "00_rules.md"), []byte("base"), 0o600); err != nil {
 		t.Fatalf("write base: %v", err)
 	}
 	expected := errors.New("boom")

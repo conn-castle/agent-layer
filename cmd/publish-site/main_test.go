@@ -136,7 +136,7 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := os.WriteFile(versionsPath, payload, 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, payload, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
@@ -144,18 +144,18 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		"0.8.7", "0.8.6", "0.8.5", "0.8.4", "0.8.3", "0.8.2", "0.8.1", "0.8.0", "0.7.0", "0.6.1", "0.6.0",
 	} {
 		docsDir := filepath.Join(repo, "versioned_docs", "version-"+v)
-		if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		if err := os.MkdirAll(docsDir, 0o700); err != nil {
 			t.Fatalf("mkdir docs dir for %s: %v", v, err)
 		}
-		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write docs file for %s: %v", v, err)
 		}
 
 		sidebarsDir := filepath.Join(repo, "versioned_sidebars")
-		if err := os.MkdirAll(sidebarsDir, 0o755); err != nil {
+		if err := os.MkdirAll(sidebarsDir, 0o700); err != nil {
 			t.Fatalf("mkdir sidebars dir: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(sidebarsDir, "version-"+v+"-sidebars.json"), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(sidebarsDir, "version-"+v+"-sidebars.json"), []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write sidebar for %s: %v", v, err)
 		}
 	}
@@ -164,7 +164,7 @@ func TestNormalizeVersionsJSON(t *testing.T) {
 		t.Fatalf("normalize: %v", err)
 	}
 
-	out, err := os.ReadFile(versionsPath)
+	out, err := os.ReadFile(versionsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read versions.json: %v", err)
 	}
@@ -262,24 +262,24 @@ func TestNormalizeVersionsJSON_Idempotent(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, data, 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, data, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
 	for _, v := range []string{"0.8.7", "0.8.3"} {
 		docsDir := filepath.Join(repo, "versioned_docs", "version-"+v)
-		if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		if err := os.MkdirAll(docsDir, 0o700); err != nil {
 			t.Fatalf("mkdir docs dir for %s: %v", v, err)
 		}
-		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(docsDir, "doc.mdx"), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write docs file for %s: %v", v, err)
 		}
 
 		sidebarsDir := filepath.Join(repo, "versioned_sidebars")
-		if err := os.MkdirAll(sidebarsDir, 0o755); err != nil {
+		if err := os.MkdirAll(sidebarsDir, 0o700); err != nil {
 			t.Fatalf("mkdir sidebars dir: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(sidebarsDir, "version-"+v+"-sidebars.json"), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(sidebarsDir, "version-"+v+"-sidebars.json"), []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write sidebar for %s: %v", v, err)
 		}
 	}
@@ -287,7 +287,7 @@ func TestNormalizeVersionsJSON_Idempotent(t *testing.T) {
 	if err := normalizeVersionsJSON(repo); err != nil {
 		t.Fatalf("first normalize: %v", err)
 	}
-	firstOutput, err := os.ReadFile(versionsPath)
+	firstOutput, err := os.ReadFile(versionsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read first versions.json: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestNormalizeVersionsJSON_Idempotent(t *testing.T) {
 	if err := normalizeVersionsJSON(repo); err != nil {
 		t.Fatalf("second normalize: %v", err)
 	}
-	secondOutput, err := os.ReadFile(versionsPath)
+	secondOutput, err := os.ReadFile(versionsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read second versions.json: %v", err)
 	}
@@ -314,10 +314,10 @@ func TestNormalizeVersionsJSON_Idempotent(t *testing.T) {
 func TestPruneDroppedVersionArtifacts_RemoveSidebarError(t *testing.T) {
 	repo := t.TempDir()
 	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.2.3-sidebars.json")
-	if err := os.MkdirAll(sidebarPath, 0o755); err != nil {
+	if err := os.MkdirAll(sidebarPath, 0o700); err != nil {
 		t.Fatalf("mkdir sidebar path as directory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write nested file: %v", err)
 	}
 
@@ -334,20 +334,20 @@ func TestNormalizeVersionsJSON_WritesBeforePrune(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, data, 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, data, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
 	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.0.0")
-	if err := os.MkdirAll(droppedDocs, 0o755); err != nil {
+	if err := os.MkdirAll(droppedDocs, 0o700); err != nil {
 		t.Fatalf("mkdir dropped docs: %v", err)
 	}
 
 	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.0.0-sidebars.json")
-	if err := os.MkdirAll(sidebarPath, 0o755); err != nil {
+	if err := os.MkdirAll(sidebarPath, 0o700); err != nil {
 		t.Fatalf("mkdir sidebar path as directory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write nested sidebar file: %v", err)
 	}
 
@@ -355,7 +355,7 @@ func TestNormalizeVersionsJSON_WritesBeforePrune(t *testing.T) {
 		t.Fatal("expected normalize error when prune fails")
 	}
 
-	out, err := os.ReadFile(versionsPath)
+	out, err := os.ReadFile(versionsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read versions.json: %v", err)
 	}
@@ -372,20 +372,20 @@ func TestNormalizeVersionsJSON_WritesBeforePrune(t *testing.T) {
 func TestNormalizeVersionsJSON_WriteErrorSkipsPrune(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, []byte("[\"1.0.4\",\"1.0.3\",\"1.0.2\",\"1.0.1\",\"1.0.0\"]"), 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, []byte("[\"1.0.4\",\"1.0.3\",\"1.0.2\",\"1.0.1\",\"1.0.0\"]"), 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
 	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.0.0")
-	if err := os.MkdirAll(droppedDocs, 0o755); err != nil {
+	if err := os.MkdirAll(droppedDocs, 0o700); err != nil {
 		t.Fatalf("mkdir dropped docs: %v", err)
 	}
 
 	sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.0.0-sidebars.json")
-	if err := os.MkdirAll(filepath.Dir(sidebarPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sidebarPath), 0o700); err != nil {
 		t.Fatalf("mkdir sidebars dir: %v", err)
 	}
-	if err := os.WriteFile(sidebarPath, []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(sidebarPath, []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write sidebar: %v", err)
 	}
 
@@ -407,18 +407,18 @@ func TestEnsureIdempotentVersion(t *testing.T) {
 	version := "1.2.3"
 
 	versionedDocs := filepath.Join(repo, "versioned_docs", "version-"+version)
-	if err := os.MkdirAll(versionedDocs, 0o755); err != nil {
+	if err := os.MkdirAll(versionedDocs, 0o700); err != nil {
 		t.Fatalf("mkdir versioned_docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(versionedDocs, "doc.mdx"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(versionedDocs, "doc.mdx"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
 
 	versionedSidebars := filepath.Join(repo, "versioned_sidebars")
-	if err := os.MkdirAll(versionedSidebars, 0o755); err != nil {
+	if err := os.MkdirAll(versionedSidebars, 0o700); err != nil {
 		t.Fatalf("mkdir sidebars: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(versionedSidebars, "version-"+version+"-sidebars.json"), []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(versionedSidebars, "version-"+version+"-sidebars.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write sidebar: %v", err)
 	}
 
@@ -427,7 +427,7 @@ func TestEnsureIdempotentVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := os.WriteFile(versionsPath, payload, 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, payload, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
@@ -442,7 +442,7 @@ func TestEnsureIdempotentVersion(t *testing.T) {
 		t.Fatalf("expected versioned sidebar removed")
 	}
 
-	out, err := os.ReadFile(versionsPath)
+	out, err := os.ReadFile(versionsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read versions.json: %v", err)
 	}
@@ -460,10 +460,10 @@ func TestEnsureIdempotentVersion_NoVersionsJSON(t *testing.T) {
 	version := "1.2.3"
 
 	versionedDocs := filepath.Join(repo, "versioned_docs", "version-"+version)
-	if err := os.MkdirAll(versionedDocs, 0o755); err != nil {
+	if err := os.MkdirAll(versionedDocs, 0o700); err != nil {
 		t.Fatalf("mkdir versioned_docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(versionedDocs, "doc.mdx"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(versionedDocs, "doc.mdx"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
 
@@ -480,14 +480,14 @@ func TestCopyTree(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(dst, "old.txt"), []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dst, "old.txt"), []byte("old"), 0o600); err != nil {
 		t.Fatalf("write old: %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(src, "nested"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(src, "nested"), 0o700); err != nil {
 		t.Fatalf("mkdir nested: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(src, "nested", "file.txt"), []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "nested", "file.txt"), []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 
@@ -498,7 +498,7 @@ func TestCopyTree(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dst, "old.txt")); !os.IsNotExist(err) {
 		t.Fatalf("expected old file to be removed")
 	}
-	data, err := os.ReadFile(filepath.Join(dst, "nested", "file.txt"))
+	data, err := os.ReadFile(filepath.Join(dst, "nested", "file.txt")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read copied file: %v", err)
 	}
@@ -513,14 +513,14 @@ func TestValidateRepoBRootErrors(t *testing.T) {
 	}
 
 	repo := t.TempDir()
-	if err := os.MkdirAll(repo, 0o755); err != nil {
+	if err := os.MkdirAll(repo, 0o700); err != nil {
 		t.Fatalf("mkdir repo: %v", err)
 	}
 	if err := validateRepoBRoot(repo); err == nil {
 		t.Fatal("expected error for missing .git")
 	}
 
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o700); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
 	if err := validateRepoBRoot(repo); err == nil {
@@ -528,11 +528,11 @@ func TestValidateRepoBRootErrors(t *testing.T) {
 	}
 
 	for _, name := range []string{"package.json", "docusaurus.config.js", "sidebars.js"} {
-		if err := os.WriteFile(filepath.Join(repo, name), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(repo, "src"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, "src"), 0o700); err != nil {
 		t.Fatalf("mkdir src: %v", err)
 	}
 	if err := validateRepoBRoot(repo); err == nil {
@@ -584,11 +584,11 @@ func TestValidateRepoBRoot_GitAndRequiredPathStatErrors(t *testing.T) {
 
 func TestRepoRoot(t *testing.T) {
 	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
 	nested := filepath.Join(repo, "nested", "dir")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
+	if err := os.MkdirAll(nested, 0o700); err != nil {
 		t.Fatalf("mkdir nested: %v", err)
 	}
 
@@ -623,11 +623,11 @@ func TestRepoRoot(t *testing.T) {
 func TestRepoRoot_GoModStatError(t *testing.T) {
 	repo := t.TempDir()
 	goModPath := filepath.Join(repo, "go.mod")
-	if err := os.WriteFile(goModPath, []byte("module example.com/test"), 0o644); err != nil {
+	if err := os.WriteFile(goModPath, []byte("module example.com/test"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
 	nested := filepath.Join(repo, "nested", "dir")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
+	if err := os.MkdirAll(nested, 0o700); err != nil {
 		t.Fatalf("mkdir nested: %v", err)
 	}
 
@@ -789,16 +789,16 @@ func TestRun_CopyDocsError(t *testing.T) {
 func TestRun_CopyPagesCreateSrcDirError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 	repoB := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o700); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
 	for _, name := range []string{"package.json", "docusaurus.config.js", "sidebars.js"} {
-		if err := os.WriteFile(filepath.Join(repoB, name), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(repoB, name), []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
 	srcPath := filepath.Join(repoB, "src")
-	if err := os.WriteFile(srcPath, []byte("not-a-dir"), 0o644); err != nil {
+	if err := os.WriteFile(srcPath, []byte("not-a-dir"), 0o600); err != nil {
 		t.Fatalf("write src file: %v", err)
 	}
 
@@ -842,7 +842,7 @@ func TestRepoRoot_GetwdError(t *testing.T) {
 
 func TestCopyTree_RemoveAllError(t *testing.T) {
 	src := t.TempDir()
-	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 	if err := copyTree(src, "bad\x00"); err == nil {
@@ -853,10 +853,10 @@ func TestCopyTree_RemoveAllError(t *testing.T) {
 func TestCopyTree_WalkError(t *testing.T) {
 	src := t.TempDir()
 	blocked := filepath.Join(src, "blocked")
-	if err := os.MkdirAll(blocked, 0o755); err != nil {
+	if err := os.MkdirAll(blocked, 0o700); err != nil {
 		t.Fatalf("mkdir blocked: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(blocked, "file.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(blocked, "file.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write blocked file: %v", err)
 	}
 
@@ -895,7 +895,7 @@ func TestCopyTree_RelPathErrorPropagates(t *testing.T) {
 func TestCopyTree_WriteError(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()
-	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "file.txt"), []byte("x"), 0o600); err != nil {
 		t.Fatalf("write src file: %v", err)
 	}
 
@@ -935,7 +935,7 @@ func TestRun_WriteChangelogError(t *testing.T) {
 func TestEnsureIdempotentVersion_ReadError(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.MkdirAll(versionsPath, 0o755); err != nil {
+	if err := os.MkdirAll(versionsPath, 0o700); err != nil {
 		t.Fatalf("mkdir versions.json: %v", err)
 	}
 
@@ -947,7 +947,7 @@ func TestEnsureIdempotentVersion_ReadError(t *testing.T) {
 func TestEnsureIdempotentVersion_WriteError(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, []byte("[\"1.2.3\"]"), 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, []byte("[\"1.2.3\"]"), 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
@@ -969,10 +969,10 @@ func TestEnsureIdempotentVersion_AdditionalErrorBranches(t *testing.T) {
 	t.Run("remove sidebar error", func(t *testing.T) {
 		repo := t.TempDir()
 		sidebarPath := filepath.Join(repo, "versioned_sidebars", "version-1.2.3-sidebars.json")
-		if err := os.MkdirAll(sidebarPath, 0o755); err != nil {
+		if err := os.MkdirAll(sidebarPath, 0o700); err != nil {
 			t.Fatalf("mkdir sidebar path as directory: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(sidebarPath, "keep.txt"), []byte("x"), 0o600); err != nil {
 			t.Fatalf("write nested file: %v", err)
 		}
 		if err := ensureIdempotentVersion(repo, "1.2.3"); err == nil {
@@ -985,7 +985,7 @@ func TestRun_EnsureIdempotentVersionError(t *testing.T) {
 	repoA := setupRepoA(t, repoAOptions{withPages: true, withDocs: true, withChangelog: true})
 	repoB := setupRepoB(t)
 	versionsPath := filepath.Join(repoB, "versions.json")
-	if err := os.WriteFile(versionsPath, []byte("invalid-json"), 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, []byte("invalid-json"), 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
@@ -1093,7 +1093,7 @@ func TestParseNumericIdentifier_EdgeCases(t *testing.T) {
 
 func TestNormalizeVersionsJSON_InvalidJSON(t *testing.T) {
 	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "versions.json"), []byte("not json"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "versions.json"), []byte("not json"), 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 	if err := normalizeVersionsJSON(repo); err == nil {
@@ -1103,7 +1103,7 @@ func TestNormalizeVersionsJSON_InvalidJSON(t *testing.T) {
 
 func TestNormalizeVersionsJSON_ReadError(t *testing.T) {
 	repo := t.TempDir()
-	if err := os.Mkdir(filepath.Join(repo, "versions.json"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(repo, "versions.json"), 0o700); err != nil {
 		t.Fatalf("mkdir versions.json: %v", err)
 	}
 	if err := normalizeVersionsJSON(repo); err == nil {
@@ -1114,7 +1114,7 @@ func TestNormalizeVersionsJSON_ReadError(t *testing.T) {
 func TestNormalizeVersionsJSON_WriteError(t *testing.T) {
 	repo := t.TempDir()
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, []byte("[\"1.0.0\"]"), 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, []byte("[\"1.0.0\"]"), 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 	withWriteFileError(t, versionsPath, os.ErrPermission)
@@ -1130,27 +1130,27 @@ func TestNormalizeVersionsJSON_StableVsPrerelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
 	droppedDocs := filepath.Join(repo, "versioned_docs", "version-1.0.0-rc.1")
-	if err := os.MkdirAll(droppedDocs, 0o755); err != nil {
+	if err := os.MkdirAll(droppedDocs, 0o700); err != nil {
 		t.Fatalf("mkdir prerelease docs dir: %v", err)
 	}
 	sidebarsDir := filepath.Join(repo, "versioned_sidebars")
-	if err := os.MkdirAll(sidebarsDir, 0o755); err != nil {
+	if err := os.MkdirAll(sidebarsDir, 0o700); err != nil {
 		t.Fatalf("mkdir sidebars dir: %v", err)
 	}
 	droppedSidebar := filepath.Join(sidebarsDir, "version-1.0.0-rc.1-sidebars.json")
-	if err := os.WriteFile(droppedSidebar, []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(droppedSidebar, []byte("{}"), 0o600); err != nil {
 		t.Fatalf("write prerelease sidebar: %v", err)
 	}
 
 	if err := normalizeVersionsJSON(repo); err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
-	out, err := os.ReadFile(filepath.Join(repo, "versions.json"))
+	out, err := os.ReadFile(filepath.Join(repo, "versions.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read versions.json: %v", err)
 	}
@@ -1176,7 +1176,7 @@ func TestNormalizeVersionsJSON_PrereleaseOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 	if err := normalizeVersionsJSON(repo); err == nil || !strings.Contains(err.Error(), "no stable releases") {
@@ -1191,7 +1191,7 @@ func TestNormalizeVersionsJSON_InvalidVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "versions.json"), data, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 	if err := normalizeVersionsJSON(repo); err == nil || !strings.Contains(err.Error(), "invalid version") {
@@ -1207,7 +1207,7 @@ func TestNormalizeVersionsJSON_PrereleasePathTraversalRejected(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	versionsPath := filepath.Join(repo, "versions.json")
-	if err := os.WriteFile(versionsPath, data, 0o644); err != nil {
+	if err := os.WriteFile(versionsPath, data, 0o600); err != nil {
 		t.Fatalf("write versions.json: %v", err)
 	}
 
@@ -1215,7 +1215,7 @@ func TestNormalizeVersionsJSON_PrereleasePathTraversalRejected(t *testing.T) {
 		t.Fatalf("expected invalid prerelease error, got %v", err)
 	}
 
-	out, err := os.ReadFile(versionsPath)
+	out, err := os.ReadFile(versionsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read versions.json: %v", err)
 	}
@@ -1232,37 +1232,37 @@ func TestRun(t *testing.T) {
 	repoA := t.TempDir()
 	repoB := t.TempDir()
 
-	if err := os.WriteFile(filepath.Join(repoA, "go.mod"), []byte("module example.com/test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoA, "go.mod"), []byte("module example.com/test"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(repoA, "CHANGELOG.md"), []byte("# Changelog\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoA, "CHANGELOG.md"), []byte("# Changelog\n"), 0o600); err != nil {
 		t.Fatalf("write changelog: %v", err)
 	}
 
 	sitePages := filepath.Join(repoA, "site", "pages")
 	siteDocs := filepath.Join(repoA, "site", "docs")
-	if err := os.MkdirAll(sitePages, 0o755); err != nil {
+	if err := os.MkdirAll(sitePages, 0o700); err != nil {
 		t.Fatalf("mkdir site pages: %v", err)
 	}
-	if err := os.MkdirAll(siteDocs, 0o755); err != nil {
+	if err := os.MkdirAll(siteDocs, 0o700); err != nil {
 		t.Fatalf("mkdir site docs: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(sitePages, "index.mdx"), []byte("# Home"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sitePages, "index.mdx"), []byte("# Home"), 0o600); err != nil {
 		t.Fatalf("write page: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o600); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o700); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
 	for _, name := range []string{"package.json", "docusaurus.config.js", "sidebars.js"} {
-		if err := os.WriteFile(filepath.Join(repoB, name), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(repoB, name), []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(repoB, "src", "pages"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repoB, "src", "pages"), 0o700); err != nil {
 		t.Fatalf("mkdir src/pages: %v", err)
 	}
 
@@ -1386,35 +1386,35 @@ type repoAOptions struct {
 func setupRepoA(t *testing.T, opts repoAOptions) string {
 	t.Helper()
 	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/test"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
 	if opts.withPages {
 		sitePages := filepath.Join(repo, "site", "pages")
-		if err := os.MkdirAll(sitePages, 0o755); err != nil {
+		if err := os.MkdirAll(sitePages, 0o700); err != nil {
 			t.Fatalf("mkdir site pages: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(sitePages, "index.mdx"), []byte("# Home"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(sitePages, "index.mdx"), []byte("# Home"), 0o600); err != nil {
 			t.Fatalf("write page: %v", err)
 		}
 	}
 	if opts.withDocs {
 		siteDocs := filepath.Join(repo, "site", "docs")
-		if err := os.MkdirAll(siteDocs, 0o755); err != nil {
+		if err := os.MkdirAll(siteDocs, 0o700); err != nil {
 			t.Fatalf("mkdir site docs: %v", err)
 		}
-		if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o600); err != nil {
 			t.Fatalf("write doc: %v", err)
 		}
 	}
 	if opts.withChangelog || opts.withChangelogDir {
 		changelog := filepath.Join(repo, "CHANGELOG.md")
 		if opts.withChangelogDir {
-			if err := os.MkdirAll(changelog, 0o755); err != nil {
+			if err := os.MkdirAll(changelog, 0o700); err != nil {
 				t.Fatalf("mkdir changelog: %v", err)
 			}
 		} else {
-			if err := os.WriteFile(changelog, []byte("# Changelog\n"), 0o644); err != nil {
+			if err := os.WriteFile(changelog, []byte("# Changelog\n"), 0o600); err != nil {
 				t.Fatalf("write changelog: %v", err)
 			}
 		}
@@ -1425,15 +1425,15 @@ func setupRepoA(t *testing.T, opts repoAOptions) string {
 func setupRepoB(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o700); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
 	for _, name := range []string{"package.json", "docusaurus.config.js", "sidebars.js"} {
-		if err := os.WriteFile(filepath.Join(repo, name), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte("{}"), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(repo, "src", "pages"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, "src", "pages"), 0o700); err != nil {
 		t.Fatalf("mkdir src/pages: %v", err)
 	}
 	return repo
@@ -1441,7 +1441,7 @@ func setupRepoB(t *testing.T) string {
 
 func requireMkdir(t *testing.T, path string) {
 	t.Helper()
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, 0o700); err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
 	}
 }

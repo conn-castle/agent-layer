@@ -149,7 +149,7 @@ func TestListUpgradeSnapshots_AdditionalCoverageBranches(t *testing.T) {
 	t.Run("list error from snapshot file scan", func(t *testing.T) {
 		root := t.TempDir()
 		snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 		fsys := newFaultSystem(RealSystem{})
@@ -164,12 +164,12 @@ func TestListUpgradeSnapshots_AdditionalCoverageBranches(t *testing.T) {
 	t.Run("skip unreadable snapshot after listing", func(t *testing.T) {
 		root := t.TempDir()
 		snapshotDir := filepath.Join(root, filepath.FromSlash(upgradeSnapshotDirRelPath))
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 		path := filepath.Join(snapshotDir, "snapshot-1.json")
 		data := `{"schema_version":1,"snapshot_id":"snapshot-1","created_at_utc":"2026-01-01T00:00:00Z","status":"applied","entries":[]}`
-		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 			t.Fatalf("write snapshot file: %v", err)
 		}
 
@@ -208,7 +208,7 @@ func TestWriteAndPruneUpgradeSnapshot_ErrorCoverage(t *testing.T) {
 		root := t.TempDir()
 		inst := &installer{root: root, sys: newFaultSystem(RealSystem{})}
 		snapshotDir := inst.upgradeSnapshotDirPath()
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 		fsys := inst.sys.(*faultSystem)
@@ -274,7 +274,7 @@ func TestListUpgradeSnapshotFiles_StatAndWalkErrorCoverage(t *testing.T) {
 	})
 
 	t.Run("walk callback error", func(t *testing.T) {
-		if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		if err := os.MkdirAll(snapshotDir, 0o700); err != nil {
 			t.Fatalf("mkdir snapshot dir: %v", err)
 		}
 		localInst := &installer{root: root, sys: walkCallbackErrSystem{base: RealSystem{}}}

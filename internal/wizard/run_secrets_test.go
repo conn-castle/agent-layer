@@ -38,7 +38,7 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -105,7 +105,7 @@ enabled = false
 [agents.copilot_cli]
 enabled = false
 `
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
 	// Pre-existing secret
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_TAVILY_API_KEY=old-token"), 0600))
 
@@ -182,7 +182,7 @@ func TestRun_SecretFromEnv(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -213,7 +213,7 @@ func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	confirmCalls := 0
@@ -248,7 +248,7 @@ func TestRun_SecretFromEnv_Declined(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	confirmCalls := 0
@@ -289,7 +289,7 @@ func TestRun_SecretInputError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	ui := &MockUI{
@@ -321,7 +321,7 @@ func TestRun_SecretBlank_DisableMCP(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	secretInputCalls := 0
@@ -356,7 +356,7 @@ func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	confirmCalls := 0
@@ -395,7 +395,7 @@ func TestRun_SecretBlank_Retry(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
 	secretInputCalls := 0
@@ -443,7 +443,7 @@ func TestRun_ExistingSecret_OverrideConfirmError(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_TAVILY_API_KEY=existing"), 0600))
 
 	confirmCalls := 0
@@ -478,7 +478,7 @@ func TestRun_SecretInputSkip_DisablesServer(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
 
 	ui := &MockUI{
@@ -517,7 +517,7 @@ func TestRun_SecretInputCancel_StopsWithoutApply(t *testing.T) {
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
 
 	syncCalled := false

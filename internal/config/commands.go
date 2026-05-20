@@ -11,7 +11,7 @@ import (
 
 // LoadCommandsAllow reads .agent-layer/commands.allow into a slice of prefixes.
 func LoadCommandsAllow(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is the caller-resolved .agent-layer/commands.allow location (derived via paths.AgentLayerDir()), not user input.
 	if err != nil {
 		return nil, fmt.Errorf(messages.ConfigMissingCommandsAllowlistFmt, path, err)
 	}

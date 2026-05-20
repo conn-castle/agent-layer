@@ -41,7 +41,7 @@ func TestWriteCodexConfig_MkdirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	// Create .codex as a file to force MkdirAll to fail
-	if err := os.WriteFile(filepath.Join(root, ".codex"), []byte("file"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".codex"), []byte("file"), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

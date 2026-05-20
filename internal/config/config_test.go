@@ -44,7 +44,7 @@ enabled = false
 transport = "stdio"
 command = "tool"
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -141,7 +141,7 @@ args = ["-y", "some-package"]
 headers.Authorization = "Bearer token"
 headers."X-Custom" = "value"
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -199,7 +199,7 @@ env.TOKEN = "secret"
 command = "leftover"
 args = ["--old"]
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -229,7 +229,7 @@ func TestLoadConfigInvalidToml(t *testing.T) {
 [approvals
 mode = "all"
 `
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 

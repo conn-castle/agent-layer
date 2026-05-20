@@ -28,7 +28,7 @@ func TestEnsureGeminiTrustedFolderNewFile(t *testing.T) {
 	}
 
 	path := filepath.Join(home, geminiDir, geminiTrustFile)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read trust file: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestEnsureGeminiTrustedFolderExistingEntries(t *testing.T) {
 
 	// Seed an existing entry.
 	dir := filepath.Join(home, geminiDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := []byte("{\n  \"/other/project\": \"TRUST_FOLDER\"\n}\n")
@@ -72,7 +72,7 @@ func TestEnsureGeminiTrustedFolderExistingEntries(t *testing.T) {
 		t.Fatalf("unexpected warning: %v", w)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, geminiTrustFile))
+	data, err := os.ReadFile(filepath.Join(dir, geminiTrustFile)) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read trust file: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestEnsureGeminiTrustedFolderAlreadyPresent(t *testing.T) {
 	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	root := "/already/trusted"
@@ -145,7 +145,7 @@ func TestEnsureGeminiTrustedFolderEmptyFile(t *testing.T) {
 	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, geminiTrustFile), []byte{}, 0o600); err != nil {
@@ -160,7 +160,7 @@ func TestEnsureGeminiTrustedFolderEmptyFile(t *testing.T) {
 		t.Fatalf("unexpected warning: %v", w)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, geminiTrustFile))
+	data, err := os.ReadFile(filepath.Join(dir, geminiTrustFile)) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestEnsureGeminiTrustedFolderCorruptJSON(t *testing.T) {
 	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	trustPath := filepath.Join(dir, geminiTrustFile)
@@ -195,7 +195,7 @@ func TestEnsureGeminiTrustedFolderCorruptJSON(t *testing.T) {
 	}
 
 	// Verify file was NOT overwritten.
-	data, err := os.ReadFile(trustPath)
+	data, err := os.ReadFile(trustPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestEnsureGeminiTrustedFolderReadError(t *testing.T) {
 	t.Cleanup(func() { UserHomeDir = orig })
 
 	dir := filepath.Join(home, geminiDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 

@@ -150,10 +150,10 @@ func TestUpgradeChangeAt_OutOfRange(t *testing.T) {
 func TestReadCurrentPinVersion_InvalidPinReturnsEmpty(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("invalid\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("invalid\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	pin, err := readCurrentPinVersion(root, RealSystem{})

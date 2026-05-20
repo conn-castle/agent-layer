@@ -17,7 +17,7 @@ func TestWriteFileAtomicCreatesFile(t *testing.T) {
 	err := WriteFileAtomic(path, []byte("hello"), 0644)
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	require.NoError(t, err)
 	assert.Equal(t, "hello", string(data))
 
@@ -36,7 +36,7 @@ func TestWriteFileAtomicOverwritesFile(t *testing.T) {
 	err = WriteFileAtomic(path, []byte("new"), 0600)
 	require.NoError(t, err)
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	require.NoError(t, err)
 	assert.Equal(t, "new", string(data))
 
@@ -55,7 +55,7 @@ func TestWriteFileAtomicFailures(t *testing.T) {
 	t.Run("target is directory", func(t *testing.T) {
 		dir := t.TempDir()
 		target := filepath.Join(dir, "target")
-		require.NoError(t, os.Mkdir(target, 0755))
+		require.NoError(t, os.Mkdir(target, 0700))
 
 		err := WriteFileAtomic(target, []byte("data"), 0644)
 		assert.Error(t, err)
@@ -129,7 +129,7 @@ func TestWriteFileAtomic_ErrorPaths(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, "sync dir fail", err.Error())
 
-		data, readErr := os.ReadFile(path)
+		data, readErr := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 		require.NoError(t, readErr)
 		assert.Equal(t, "data", string(data))
 	})
@@ -152,7 +152,7 @@ func TestWriteFileAtomic_TempFileCleanup(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target")
 	// Create target as directory so rename fails
-	require.NoError(t, os.Mkdir(target, 0755))
+	require.NoError(t, os.Mkdir(target, 0700))
 
 	err := WriteFileAtomic(target, []byte("data"), 0644)
 	assert.Error(t, err)

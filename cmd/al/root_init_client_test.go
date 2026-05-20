@@ -330,7 +330,7 @@ func TestInitCommandInstallRunError(t *testing.T) {
 	// Point to a file instead of directory to cause install.Run to fail
 	root := t.TempDir()
 	blockingFile := filepath.Join(root, ".agent-layer")
-	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write blocking file: %v", err)
 	}
 

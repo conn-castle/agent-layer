@@ -13,11 +13,11 @@ func TestWriteVSCodeSettingsInvalidJSONCExtraTokensAfterRoot(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	vscodeDir := filepath.Join(root, ".vscode")
-	if err := os.MkdirAll(vscodeDir, 0o755); err != nil {
+	if err := os.MkdirAll(vscodeDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	existing := "{\n  \"editor.tabSize\": 2\n}\n}\n"
-	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(vscodeDir, "settings.json"), []byte(existing), 0o600); err != nil {
 		t.Fatalf("write settings.json: %v", err)
 	}
 

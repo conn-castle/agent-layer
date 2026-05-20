@@ -24,10 +24,10 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	oldRoadmap := []byte("# ROADMAP\n\nLegacy header\n\n<!-- PHASES START -->\n")
 	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
 	baselineRoadmapPath := filepath.Join(root, ".agent-layer", "templates", "docs", "ROADMAP.md")
-	if err := os.WriteFile(roadmapPath, oldRoadmap, 0o644); err != nil {
+	if err := os.WriteFile(roadmapPath, oldRoadmap, 0o600); err != nil {
 		t.Fatalf("write roadmap: %v", err)
 	}
-	if err := os.WriteFile(baselineRoadmapPath, oldRoadmap, 0o644); err != nil {
+	if err := os.WriteFile(baselineRoadmapPath, oldRoadmap, 0o600); err != nil {
 		t.Fatalf("write baseline roadmap: %v", err)
 	}
 
@@ -38,7 +38,7 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("read issues template: %v", err)
 	}
 	customIssues := strings.Replace(string(issuesTemplate), "<!-- ENTRIES START -->\n", "<!-- ENTRIES START -->\n\n- issue from repo\n", 1)
-	if err := os.WriteFile(issuesPath, []byte(customIssues), 0o644); err != nil {
+	if err := os.WriteFile(issuesPath, []byte(customIssues), 0o600); err != nil {
 		t.Fatalf("write issues: %v", err)
 	}
 
@@ -52,7 +52,7 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("read template skill: %v", err)
 	}
 	orphanRenamePath := filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")
-	if err := os.WriteFile(orphanRenamePath, planWorkTemplate, 0o644); err != nil {
+	if err := os.WriteFile(orphanRenamePath, planWorkTemplate, 0o600); err != nil {
 		t.Fatalf("write orphan rename path: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestBuildUpgradePlan_UnknownNoBaselineForManagedDiff(t *testing.T) {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
 	allowPath := filepath.Join(root, ".agent-layer", "commands.allow")
-	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o644); err != nil {
+	if err := os.WriteFile(allowPath, []byte("# custom allowlist\n"), 0o600); err != nil {
 		t.Fatalf("write custom allowlist: %v", err)
 	}
 
@@ -234,7 +234,7 @@ func TestBuildUpgradePlan_PinManifestCredibleInference(t *testing.T) {
 	}
 
 	localContent := strings.Join(payload.UpstreamSet, "\n") + "\n"
-	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte(localContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", "commands.allow"), []byte(localContent), 0o600); err != nil {
 		t.Fatalf("write local commands.allow from manifest set: %v", err)
 	}
 
@@ -284,7 +284,7 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 	}
 
 	delete(sys.statErrs, normalizePath(instructionsRoot))
-	if err := os.MkdirAll(instructionsRoot, 0o755); err != nil {
+	if err := os.MkdirAll(instructionsRoot, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
 	}
 	sys.walkErrs[normalizePath(instructionsRoot)] = errors.New("walk failed")
@@ -297,7 +297,7 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 func TestPinVersionDiff_EdgeCases(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 
@@ -310,7 +310,7 @@ func TestPinVersionDiff_EdgeCases(t *testing.T) {
 		t.Fatalf("expected set action for missing file, got %s", diff.Action)
 	}
 
-	if err := os.WriteFile(path, []byte("\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("\n"), 0o600); err != nil {
 		t.Fatalf("write empty pin: %v", err)
 	}
 	diff, err = inst.templates().pinVersionDiff()
@@ -321,7 +321,7 @@ func TestPinVersionDiff_EdgeCases(t *testing.T) {
 		t.Fatalf("expected set action for empty pin, got %s", diff.Action)
 	}
 
-	if err := os.WriteFile(path, []byte("not-semver\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("not-semver\n"), 0o600); err != nil {
 		t.Fatalf("write corrupt pin: %v", err)
 	}
 	diff, err = inst.templates().pinVersionDiff()
@@ -359,10 +359,10 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 		t.Fatalf("read config template: %v", err)
 	}
 	orphanPath := filepath.Join(root, ".agent-layer", "orphan.md")
-	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o700); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
-	if err := os.WriteFile(orphanPath, validTemplateBytes, 0o644); err != nil {
+	if err := os.WriteFile(orphanPath, validTemplateBytes, 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
 
@@ -388,7 +388,7 @@ func TestDetectUpgradeRenames_ErrorAndAmbiguityPaths(t *testing.T) {
 
 	inst.sys = RealSystem{}
 	secondOrphanPath := filepath.Join(root, ".agent-layer", "orphan-2.md")
-	if err := os.WriteFile(secondOrphanPath, validTemplateBytes, 0o644); err != nil {
+	if err := os.WriteFile(secondOrphanPath, validTemplateBytes, 0o600); err != nil {
 		t.Fatalf("write second orphan: %v", err)
 	}
 	renames, additions, orphans, err := detectUpgradeRenames(inst,
@@ -438,10 +438,10 @@ func TestDetectUpgradeRenames_NoCandidates(t *testing.T) {
 func TestPinVersionDiff_RemoveNoneAndReadError(t *testing.T) {
 	root := t.TempDir()
 	pinPath := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(pinPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
-	if err := os.WriteFile(pinPath, []byte("1.2.3\n"), 0o644); err != nil {
+	if err := os.WriteFile(pinPath, []byte("1.2.3\n"), 0o600); err != nil {
 		t.Fatalf("write pin: %v", err)
 	}
 

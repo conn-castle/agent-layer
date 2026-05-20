@@ -32,7 +32,7 @@ func TestWithFileLock_OpenError(t *testing.T) {
 	tmp := t.TempDir()
 	// Create a directory where the file should be
 	path := filepath.Join(tmp, "test.lock")
-	if err := os.Mkdir(path, 0o755); err != nil {
+	if err := os.Mkdir(path, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func TestAcquireFileLock_LockError(t *testing.T) {
 func TestFileLock_Release_UnlockError(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "test.lock")
-	file, err := os.Create(path)
+	file, err := os.Create(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("create lock: %v", err)
 	}

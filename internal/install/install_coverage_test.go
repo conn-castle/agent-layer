@@ -128,11 +128,11 @@ func TestRunWithOverwrite_AppliedSnapshotWriteFailure_Propagates(t *testing.T) {
 
 func TestRunWithOverwrite_RollbackSucceededSnapshotWriteFailure_Propagates(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
 	}
 	unknownPath := filepath.Join(root, ".agent-layer", "custom.txt")
-	if err := os.WriteFile(unknownPath, []byte("custom"), 0o644); err != nil {
+	if err := os.WriteFile(unknownPath, []byte("custom"), 0o600); err != nil {
 		t.Fatalf("write unknown file: %v", err)
 	}
 
@@ -198,12 +198,12 @@ func TestValidatePrompter_MissingOverwriteAllMemory_ReturnsError(t *testing.T) {
 func TestWriteTemplateFiles_AgentOnlyAlwaysOverwriteCalled_AndErrorPropagates(t *testing.T) {
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o755); err != nil {
+	if err := os.MkdirAll(alDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	// Ensure the agent-only file exists and differs so the alwaysOverwrite closure is invoked.
 	gitignorePath := filepath.Join(alDir, ".gitignore")
-	if err := os.WriteFile(gitignorePath, []byte("# custom\n"), 0o644); err != nil {
+	if err := os.WriteFile(gitignorePath, []byte("# custom\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -245,10 +245,10 @@ func TestWriteTemplateFiles_ManagedTemplateReadError_Propagates(t *testing.T) {
 func TestWriteVersionFile_ExistingNormalizedEqualsTarget_ReturnsNil(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("1.0.0\n"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
