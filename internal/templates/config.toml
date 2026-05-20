@@ -53,6 +53,7 @@ enabled = true
 # Overlapping keys override Agent Layer-managed values and trigger a sync warning.
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
+# apps = false              # disable built-in Codex apps (Github, Gmail, etc.) to reduce tool surface
 # multi_agent = true
 # prevent_idle_sleep = true
 

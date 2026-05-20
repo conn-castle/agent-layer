@@ -24,4 +24,6 @@ const (
 	WizardSummaryModelReasoningFmt               = "%s (%s)"
 	WizardSummaryReasoningFmt                    = "reasoning: %s"
 	WizardSummaryClaudeLocalConfigDir            = "\nClaude config isolation: enabled (per-repo settings and caches; auth shared globally — upstream limitation)\n"
+	WizardSummaryCodexAppsDisabled               = "\nCodex built-in apps: disabled (suppresses Github/Gmail/etc. tool surface)\n"
+	WizardSummaryCodexAppsEnabled                = "\nCodex built-in apps: enabled\n"
 )

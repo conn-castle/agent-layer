@@ -56,11 +56,15 @@ Recommended roles:
 1. `Context scout`: maps plan steps to actual files and dependencies.
 2. `Execution gatekeeper`: decides whether the current task batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
 3. `Implementer`: owns a focused subset of the changes.
-4. `Burden-of-proof reviewer`: delegated via the `prune-new-tests` skill — prunes speculative tests added during implementation. Runs with fresh context against the diff.
-5. `Smell-pattern reviewer`: delegated via the `simplify-new-code` skill — undoes agent-side scope creep introduced during implementation. Runs with fresh context against the diff.
+4. `Burden-of-proof reviewer`: delegated to a `prune-new-tests` subagent — prunes speculative tests added during implementation.
+5. `Smell-pattern reviewer`: delegated to a `simplify-new-code` subagent — undoes agent-side scope creep introduced during implementation.
 6. `Verifier`: runs commands and checks behavior against the plan.
 
 For multi-file work, parallelize read-only exploration first, then implement in reviewable batches.
+
+## Continuation rule
+
+Sub-skill returns are intermediate, not terminal. After every delegation, continue to the next numbered phase in the same turn — the sub-skill's closing summary is not implement-plan's closeout. The workflow exits only at the end of Phase 6, a listed human checkpoint, or a sub-skill that halts on its own human checkpoint without applying its changes.
 
 ## Global constraints
 
@@ -138,15 +142,15 @@ If the deviation broadens scope materially, hand it back to the execution gateke
 
 ### Phase 4: Prune speculative tests (Burden-of-proof reviewer)
 
-Run the `prune-new-tests` skill against the uncommitted diff before verification. Tests added during implementation must defend their existence with a concrete production-code mutation that would flip their assertion; ones that cannot are auto-deleted. This phase is mandatory whenever Phase 2 added or modified test files.
+Delegate to a `prune-new-tests` subagent. Mandatory whenever Phase 2 added or modified test files. Returns master report path plus deleted-count / surviving-gap count.
 
-Record the prune-new-tests report path under `## Remaining Follow-up` if it surfaced surviving coverage gaps that warrant a separate `boost-coverage` pass.
+Record the report path under `## Remaining Follow-up` if surviving coverage gaps warrant a separate `boost-coverage` pass.
 
 ### Phase 5: Simplify agent-added code (Smell-pattern reviewer)
 
-Run the `simplify-new-code` skill against the uncommitted diff before verification. The skill scans for agent-side scope creep (speculative flexibility, premature abstractions, dead branches, impossible-case error handling, defensive scaffolding, clever patterns, half-finished work) and auto-applies simplifications while preserving the user-requested behavior. This phase is mandatory whenever Phase 2 produced production-code changes.
+Delegate to a `simplify-new-code` subagent. Mandatory whenever Phase 2 produced production-code changes. Returns master report path plus applied-count / reverted-count.
 
-If simplifications change the diff materially, the verification commands in Phase 6 must run against the post-simplification working tree.
+If simplifications change the diff materially, verification commands in Phase 6 must run against the post-simplification working tree.
 
 ### Phase 6: Verify against the plan (Verifier)
 

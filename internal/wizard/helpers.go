@@ -25,6 +25,13 @@ func buildSummary(c *Choices) string {
 	if c.ClaudeLocalConfigDirTouched && c.ClaudeLocalConfigDir {
 		sb.WriteString(messages.WizardSummaryClaudeLocalConfigDir)
 	}
+	if c.CodexAppsTouched && (!c.EnabledAgentsTouched || c.EnabledAgents[AgentCodex]) {
+		if c.CodexApps {
+			sb.WriteString(messages.WizardSummaryCodexAppsEnabled)
+		} else {
+			sb.WriteString(messages.WizardSummaryCodexAppsDisabled)
+		}
+	}
 
 	var mcp []string
 	for _, s := range c.DefaultMCPServers {

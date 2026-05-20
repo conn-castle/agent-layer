@@ -157,6 +157,52 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 			t.Fatalf("expected confirm error, got %v", err)
 		}
 	})
+
+	t.Run("promptModels codex apps confirm propagates default false", func(t *testing.T) {
+		choices := NewChoices()
+		choices.EnabledAgents[AgentCodex] = true
+		var sawAppsPrompt bool
+		var sawValue bool
+		err := promptModels(&MockUI{
+			SelectFunc: func(string, []string, *string) error { return nil },
+			ConfirmFunc: func(title string, value *bool) error {
+				if title == messages.WizardCodexAppsPrompt {
+					sawAppsPrompt = true
+					sawValue = *value
+				}
+				return nil
+			},
+		}, choices)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !sawAppsPrompt {
+			t.Fatal("expected codex apps prompt to be invoked")
+		}
+		if sawValue {
+			t.Fatal("expected codex apps prompt default to be false")
+		}
+		if !choices.CodexAppsTouched {
+			t.Fatal("expected CodexAppsTouched to be set")
+		}
+	})
+
+	t.Run("promptModels codex apps confirm error", func(t *testing.T) {
+		choices := NewChoices()
+		choices.EnabledAgents[AgentCodex] = true
+		err := promptModels(&MockUI{
+			SelectFunc: func(string, []string, *string) error { return nil },
+			ConfirmFunc: func(title string, _ *bool) error {
+				if title == messages.WizardCodexAppsPrompt {
+					return errors.New("apps confirm failed")
+				}
+				return nil
+			},
+		}, choices)
+		if err == nil || !strings.Contains(err.Error(), "apps confirm failed") {
+			t.Fatalf("expected apps confirm error, got %v", err)
+		}
+	})
 }
 
 func TestConfirmAndApply_ErrorBranches(t *testing.T) {

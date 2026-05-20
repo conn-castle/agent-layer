@@ -368,8 +368,14 @@ func TestInstructionTemplatesDefineQuestionStyle(t *testing.T) {
 	}
 	content := string(data)
 	for _, snippet := range []string{
+		"Response Style",
+		"Write clear, concise responses that give the user enough context to act",
+		"Assume the user has not read the code, command output, or prior implementation details",
+		"State the result first. Add only the context or next action the user needs",
+		"Use bullets when they make the response easier to scan",
+		"Do not introduce acronyms to save words",
 		"Question Style",
-		"clear, concise, and free of unnecessary jargon",
+		"use the response style above",
 		"at least two concrete options",
 		"Pros",
 		"Cons",
@@ -590,9 +596,9 @@ func TestImplementPlanWiresInDiffScopedCleanupSkills(t *testing.T) {
 	content := string(data)
 	for _, snippet := range []string{
 		"### Phase 4: Prune speculative tests",
-		"Run the `prune-new-tests` skill against the uncommitted diff before verification.",
+		"Delegate to a `prune-new-tests` subagent.",
 		"### Phase 5: Simplify agent-added code",
-		"Run the `simplify-new-code` skill against the uncommitted diff before verification.",
+		"Delegate to a `simplify-new-code` subagent.",
 		"### Phase 6: Verify against the plan",
 		"`prune-new-tests` ran when Phase 2 added or modified test files",
 		"`simplify-new-code` ran when Phase 2 produced production-code changes",
@@ -614,11 +620,12 @@ func TestAuditAndFixAddsCleanupPrePass(t *testing.T) {
 	content := string(data)
 	for _, snippet := range []string{
 		"### Phase 0.5: Prune agent-side scope creep before any review round",
-		"**`prune-new-tests`** when the diff contains added test files",
-		"**`simplify-new-code`** when the diff contains added or modified production code",
+		"Delegate each pre-pass to a subagent",
+		"`prune-new-tests` subagent — when the diff added test files or test functions",
+		"`simplify-new-code` subagent — when the diff added or modified production code",
 		"## Pre-pass Cleanup",
-		"`prune-new-tests` (mandatory pre-pass when the diff added test files)",
-		"`simplify-new-code` (mandatory pre-pass when the diff added or modified production code)",
+		"`prune-new-tests` (mandatory pre-pass when the diff added test files; delegated to subagent)",
+		"`simplify-new-code` (mandatory pre-pass when the diff added or modified production code; delegated to subagent)",
 	} {
 		if !strings.Contains(content, snippet) {
 			t.Fatalf("expected %q in audit-and-fix-uncommitted-changes skill", snippet)
