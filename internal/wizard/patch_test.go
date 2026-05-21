@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	toml "github.com/pelletier/go-toml"
+	"github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -516,6 +516,129 @@ func TestPatchConfig_RestoreMissingMCPServer(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, out, fmt.Sprintf(`id = "%s"`, serverID))
+}
+
+// TestPatchConfig_Idempotent asserts that PatchConfig is idempotent across
+// representative choice sets: re-applying the same Choices to its own output
+// must produce byte-equal output. A regression in any code path that mutates
+// based on the *current* document shape (rather than the touched-flag intent)
+// will cause the second pass to diverge from the first.
+func TestPatchConfig_Idempotent(t *testing.T) {
+	defaults, err := loadDefaultMCPServers()
+	require.NoError(t, err)
+	require.NotEmpty(t, defaults)
+
+	mcpToggle := NewChoices()
+	mcpToggle.EnabledMCPServersTouched = true
+	mcpToggle.EnabledMCPServers = map[string]bool{defaults[0].ID: true}
+	mcpToggle.DefaultMCPServers = defaults
+
+	restoreMCP := NewChoices()
+	restoreMCP.RestoreMissingMCPServers = true
+	restoreMCP.MissingDefaultMCPServers = []string{defaults[0].ID}
+	restoreMCP.DefaultMCPServers = defaults
+
+	cases := []struct {
+		name    string
+		content string
+		choices *Choices
+	}{
+		{
+			name:    "approval mode change",
+			content: "[approvals]\nmode = \"none\"\n",
+			choices: func() *Choices {
+				c := NewChoices()
+				c.ApprovalModeTouched = true
+				c.ApprovalMode = "all"
+				return c
+			}(),
+		},
+		{
+			name:    "enable agent",
+			content: "[agents.claude]\nenabled = false\n",
+			choices: func() *Choices {
+				c := NewChoices()
+				c.EnabledAgentsTouched = true
+				c.EnabledAgents = map[string]bool{AgentClaude: true}
+				return c
+			}(),
+		},
+		{
+			name:    "set codex model and reasoning",
+			content: "[agents.codex]\nenabled = true\n",
+			choices: func() *Choices {
+				c := NewChoices()
+				c.CodexModelTouched = true
+				c.CodexModel = "gpt-5"
+				c.CodexReasoningTouched = true
+				c.CodexReasoning = "high"
+				return c
+			}(),
+		},
+		{
+			name:    "codex apps toggle on",
+			content: "[agents.codex]\nenabled = true\n",
+			choices: func() *Choices {
+				c := NewChoices()
+				c.EnabledAgentsTouched = true
+				c.EnabledAgents = map[string]bool{AgentCodex: true}
+				c.CodexAppsTouched = true
+				c.CodexApps = true
+				return c
+			}(),
+		},
+		{
+			name:    "warnings enabled with thresholds",
+			content: "",
+			choices: func() *Choices {
+				c := NewChoices()
+				c.WarningsEnabledTouched = true
+				c.WarningsEnabled = true
+				c.InstructionTokenThreshold = 10000
+				c.MCPServerThreshold = 15
+				c.MCPToolsTotalThreshold = 60
+				c.MCPServerToolsThreshold = 25
+				c.MCPSchemaTokensTotalThreshold = 30000
+				c.MCPSchemaTokensServerThreshold = 20000
+				return c
+			}(),
+		},
+		{
+			name:    "warnings disabled removes section",
+			content: "[warnings]\ninstruction_token_threshold = 5000\n",
+			choices: func() *Choices {
+				c := NewChoices()
+				c.WarningsEnabledTouched = true
+				c.WarningsEnabled = false
+				return c
+			}(),
+		},
+		{
+			name:    "mcp server toggle",
+			content: "[mcp]\n",
+			choices: mcpToggle,
+		},
+		{
+			name:    "restore missing mcp server",
+			content: "[mcp]\n",
+			choices: restoreMCP,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			first, err := PatchConfig(tc.content, tc.choices)
+			require.NoError(t, err, "first pass must succeed")
+
+			second, err := PatchConfig(first, tc.choices)
+			require.NoError(t, err, "second pass must succeed")
+
+			if first != second {
+				t.Fatalf("PatchConfig is not idempotent for %q\n--- first pass ---\n%s\n--- second pass ---\n%s",
+					tc.name, first, second)
+			}
+		})
+	}
 }
 
 func TestParseTomlDocument_EmptyContent(t *testing.T) {
@@ -1147,7 +1270,7 @@ args = [
 	assert.Contains(t, out, `url = "https://api.example.com"`)
 
 	// Verify the output is valid TOML by parsing it.
-	_, parseErr := toml.LoadBytes([]byte(out))
+	parseErr := toml.Unmarshal([]byte(out), &map[string]any{})
 	require.NoError(t, parseErr, "patched output must be valid TOML")
 }
 
@@ -1210,7 +1333,7 @@ headers."X-Tools" = "action_list"
 	assert.Contains(t, out, `command = "npx"`)
 
 	// Verify the output is valid TOML.
-	_, parseErr := toml.LoadBytes([]byte(out))
+	parseErr := toml.Unmarshal([]byte(out), &map[string]any{})
 	require.NoError(t, parseErr, "patched output must be valid TOML")
 }
 
@@ -1241,7 +1364,7 @@ env.PATH = "/usr/bin"
 	assert.Contains(t, out, `transport = "http"`)
 	assert.Contains(t, out, `url = "https://api.example.com"`)
 
-	_, parseErr := toml.LoadBytes([]byte(out))
+	parseErr := toml.Unmarshal([]byte(out), &map[string]any{})
 	require.NoError(t, parseErr, "patched output must be valid TOML")
 }
 

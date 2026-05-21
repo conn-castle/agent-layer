@@ -14,7 +14,7 @@
 //  3. Key positioning: When clearing optional keys (like model=""), we convert them
 //     to commented lines rather than deleting them, preserving the template structure.
 //
-// The go-toml library is still used for syntax validation before processing.
+// The go-toml/v2 library is still used for syntax validation before processing.
 package wizard
 
 import (
@@ -23,9 +23,7 @@ import (
 	"strconv"
 	"strings"
 
-	// toml is used for syntax validation only; actual manipulation uses custom
-	// line-based parsing to preserve comments and formatting.
-	toml "github.com/pelletier/go-toml"
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
@@ -63,7 +61,8 @@ var legacySectionAliases = map[string]string{
 // PatchConfig applies wizard choices to TOML config content.
 // content is the current config; choices holds selections; returns updated content or error.
 func PatchConfig(content string, choices *Choices) (string, error) {
-	if _, err := toml.LoadBytes([]byte(content)); err != nil {
+	var parseCheck map[string]any
+	if err := toml.Unmarshal([]byte(content), &parseCheck); err != nil {
 		return "", fmt.Errorf(messages.WizardParseConfigFailedFmt, err)
 	}
 
@@ -95,7 +94,8 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 	}
 
 	rendered := strings.Join(output, "\n")
-	if _, err := toml.LoadBytes([]byte(rendered)); err != nil {
+	var renderCheck map[string]any
+	if err := toml.Unmarshal([]byte(rendered), &renderCheck); err != nil {
 		return "", fmt.Errorf(messages.WizardRenderConfigFailedFmt, err)
 	}
 

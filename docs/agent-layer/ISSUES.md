@@ -26,9 +26,3 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 ## Open issues
 
 <!-- ENTRIES START -->
-
-- Issue 2026-03-02 color-gating-consistency: Centralize CLI color gating beyond fatih/color built-in detection
-    Priority: Low. Area: CLI output / color handling.
-    Description: `color.YellowString()` gates ANSI output via fatih/color's global `NoColor` flag (terminal detection + `NO_COLOR` env var), but `shouldColorizeDiffOutput()` uses a separate `isTerminal() && !color.NoColor` check for unified-diff rendering with custom `color.New()` objects. The two gating mechanisms are inconsistent — `color.YellowString()` self-gates while diff colors require explicit gating. If Cobra's `io.Writer` is redirected (e.g., `cmd.SetOut()` in tests or embedding), `color.YellowString()` still checks `os.Stdout` for terminal detection, which could emit ANSI codes to non-terminal outputs.
-    Next step: Audit all CLI color usage and evaluate whether a unified color-gating helper (wrapping both `color.YellowString`-style calls and `color.New()`-style calls) is warranted, or whether fatih/color's built-in detection is sufficient for all current surfaces.
-    Notes: Deferred from PR #85 review. Current codebase uses `color.YellowString()` consistently in `doctor.go`, `upgrade.go` summary/readiness/breaking sections. The diff renderer is the only surface with explicit gating via `shouldColorizeDiffOutput()`.
