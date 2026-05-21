@@ -37,6 +37,8 @@ coverage.out
 # These may contain resolved secrets from .agent-layer/.env — keep gitignored.
 /.agent/
 /.agents/
+/.antigravitycli/
+/.agy-cfg/
 /.mcp.json
 /.codex/
 /.copilot/

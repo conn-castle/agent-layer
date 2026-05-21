@@ -188,13 +188,13 @@ func TestCheckAgents(t *testing.T) {
 	}
 
 	if statusMap["Agent enabled: Gemini"] != StatusOK {
-		t.Error("Gemini should be enabled")
+		t.Error("Gemini should be reported enabled with StatusOK")
 	}
-	if statusMap["Agent disabled: Claude"] != StatusWarn {
-		t.Error("Claude should be disabled")
+	if statusMap["Agent disabled: Claude"] != StatusOK {
+		t.Error("disabled agents should report StatusOK (informational, not a problem)")
 	}
-	if statusMap["Agent disabled: Codex"] != StatusWarn {
-		t.Error("Codex should be disabled (nil)")
+	if statusMap["Agent disabled: Codex"] != StatusOK {
+		t.Error("agent with nil enabled flag should report StatusOK")
 	}
 }
 

@@ -25,3 +25,40 @@ Do not duplicate information that belongs in other memory files:
 - Insert all content below `<!-- ENTRIES START -->`.
 
 <!-- ENTRIES START -->
+
+## Secrets
+
+- Codex is the one exception to "never embed secrets in generated configs": it embeds secrets in URLs/env via `bearer_token_env_var`, and shell environment takes precedence over `.agent-layer/.env`. All other clients use placeholder syntax in generated configs.
+
+## VS Code and editor integrations
+
+- The Codex VS Code extension reads `CODEX_HOME` only at process startup. The generated repo-specific launchers exist to set `CODEX_HOME` before launch — there is no in-extension reload path.
+- The Claude VS Code extension shares MCP scope with Claude CLI: both read the same `.mcp.json`/`.claude/settings.json`. Configuring separate MCP server sets for the two surfaces is not possible. `[agents.claude_vscode]` is config-only.
+- `.vscode/settings.json` updates only validate JSONC content inside the managed markers. Invalid JSONC outside the markers is not detected once the markers are present.
+
+## Codex MCP headers
+
+- Codex MCP header projection accepts exactly three placeholder formats: `bearer_token_env_var` for `Authorization: Bearer ${VAR}`, `env_http_headers` for exact `${VAR}` values, and `http_headers` for literal strings. Mixed literal + env placeholder (e.g. `Token ${VAR}`) is rejected and must be restructured.
+
+## Antigravity
+
+- Antigravity supports instructions and skills only — no MCP, no approvals. Skills are projected through shared `.agents/skills/<name>/SKILL.md`. Singular `.agent/skills/` is treated as legacy generated output.
+
+## Pin file recovery
+
+- Empty or non-semver `.agent-layer/al.version` pin files are treated as "no pin" and auto-repaired by `al init`/`al upgrade` without prompts. The user sees a warning, never a hard error. A broken pin file must never make the CLI unusable.
+
+## Upgrade and migration internals
+
+- When source version cannot be resolved during `al upgrade`, source-agnostic migration operations still execute; source-gated operations are skipped with deterministic report entries. Ambiguous repos may need an explicit follow-up if the skip report flags missed transitions.
+- Multi-version upgrades chain migration manifests: all manifests between source (exclusive) and target (inclusive) load in order with per-operation deduplication by ID. When source is unknown, only the target manifest loads (backward compatible). Manifests must have unique operation IDs across the chain or later duplicates are silently skipped.
+- The required-field migration guardrail uses a baseline allowlist for fields that predate manifest enforcement (baseline version `0.8.1`). The allowlist must be maintained when introducing new required fields; stale entries can hide drift if not reviewed.
+
+## Gemini
+
+- `al sync` writes the repo root as `TRUST_FOLDER` to `~/.gemini/trustedFolders.json` when Gemini is enabled. This is the one case where `al sync` writes outside the repo boundary. Failure is non-fatal (warning, not error). Required because Gemini's Trusted Folders feature silently replaces untrusted project settings with `{}`, discarding all MCP servers.
+- Workspace-tier `.gemini/policies/` is NOT auto-loaded by Gemini CLI 0.41.2 without an explicit `policyPaths` setting. The generated `.gemini/settings.json` therefore writes `policyPaths: [".gemini/policies"]`. Gemini CLI < v0.18 (pre-policy-engine) loses auto-allow behavior because `tools.allowed` is no longer emitted.
+
+## E2E test harness
+
+- `scripts/test-e2e/harness.sh` authenticates GitHub API calls with `GITHUB_TOKEN`/`GH_TOKEN` when available (raises the limit from 60 req/hr to 5000 req/hr). CI exports the token to `make ci`. Unauthenticated fallback is preserved for local offline runs.

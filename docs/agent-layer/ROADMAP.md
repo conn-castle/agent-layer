@@ -93,7 +93,45 @@ Incomplete:
 - Migrated embedded template skills to directory format (`skills/<name>/SKILL.md`), updated embed patterns/tests/manifests/migrations, and added the `review-plan` skill with deterministic `*.plan.md` discovery guidance.
 - Aligned public docs (`README.md`, `site/docs/reference.mdx`) with current frontmatter/spec rules and added individual skill-level workflow guidance.
 
-## Phase 16 — Profiles and multi-config
+## Phase 16 — Onboarding and developer experience
+
+### Goal
+- New users can reach initial productivity within five minutes.
+- Getting-started experience is exemplary, with clear guides, examples, and actionable error messages.
+
+### Tasks
+- [ ] quickstart-guide: Create a comprehensive quickstart guide with step-by-step instructions covering install, `al init`, first sync, and launching an agent.
+- [ ] example-repos: Create 2–3 example repository configurations (minimal single-agent, full-featured multi-agent, team/enterprise setup) that users can reference or clone.
+- [ ] wizard-polish: Audit and improve `al init` and `al wizard` flows for first-time users — reduce prompts, improve defaults, add contextual help text.
+- [ ] error-audit: Audit CLI error messages for clarity and actionability. Ensure every error tells the user what went wrong and what to do next.
+- [ ] demo-content: Create demo GIFs or short videos showing key workflows (init, sync, launch, skills) for embedding in documentation and README.
+
+### Task details
+- quickstart-guide
+  Description: Write a quickstart that takes a user from zero (no agent-layer installed) to productive (first agent launched and working) in clear, numbered steps. Cover macOS and Linux. Include what to expect at each step.
+  Acceptance criteria: Quickstart is published on the website and linked from README. A new user can follow it end-to-end without external help.
+- example-repos
+  Description: Create example `.agent-layer/` configurations that demonstrate common setups. Publish as a separate repository or as part of the docs site.
+  Acceptance criteria: At least 2 example configurations exist and are linked from quickstart/docs. Each example includes a README explaining the setup.
+- wizard-polish
+  Description: Identify friction points in `al init` and `al wizard` by walking through them as a first-time user. Reduce unnecessary prompts, improve default selections, and add inline help.
+  Acceptance criteria: First-time `al init` completes in fewer steps with better defaults. Wizard explains what each option does.
+  Progress: 2026-02-24 delivered a scoped wizard slice (Escape back-navigation with first-step exit confirmation, clearer back/cancel guidance on touched prompts, and warning when profile mode is replacing a TOML-corrupt existing config). 2026-05-07 split the MCP catalog out of the install seed (`internal/templates/mcp-catalog.toml`); fresh `al init` now ships zero `[[mcp.servers]]` blocks, and the interactive wizard prunes default-catalog entries the user disables (full prune — including hand-customized blocks). Profile-mode (`al wizard --profile X --yes`) is intentionally exempt from prune. Remaining phase scope still includes broader first-time `al init` flow reduction/default tuning.
+- error-audit
+  Description: Review all user-facing error messages in the CLI. Ensure each one is actionable (not just "error: failed").
+  Acceptance criteria: No error message leaves the user without a next step. Common errors include remediation commands.
+- demo-content
+  Description: Record short demos of key workflows for documentation.
+  Acceptance criteria: At least 3 demos exist (init, sync, launch) and are embedded in docs.
+
+### Exit criteria
+- Quickstart guide exists on the website and covers the full zero-to-productive flow.
+- At least 2 example repository configurations are published and linked.
+- `al init` and `al wizard` flows are audited and improved for first-time users.
+- CLI error messages are actionable across all commands.
+- Key workflows have visual demos in documentation.
+
+## Phase 17 — Profiles and multi-config
 
 ### Goal
 - Users can define named profiles with different instructions, skills, and configuration overrides.
@@ -143,41 +181,3 @@ Incomplete:
 - Profile merge semantics are deterministic, tested, and documented.
 - `al doctor` validates profile structure.
 - Profile system is documented with examples and use-case guidance.
-
-## Phase 17 — Onboarding and developer experience
-
-### Goal
-- New users can reach initial productivity within five minutes.
-- Getting-started experience is exemplary, with clear guides, examples, and actionable error messages.
-
-### Tasks
-- [ ] quickstart-guide: Create a comprehensive quickstart guide with step-by-step instructions covering install, `al init`, first sync, and launching an agent.
-- [ ] example-repos: Create 2–3 example repository configurations (minimal single-agent, full-featured multi-agent, team/enterprise setup) that users can reference or clone.
-- [ ] wizard-polish: Audit and improve `al init` and `al wizard` flows for first-time users — reduce prompts, improve defaults, add contextual help text.
-- [ ] error-audit: Audit CLI error messages for clarity and actionability. Ensure every error tells the user what went wrong and what to do next.
-- [ ] demo-content: Create demo GIFs or short videos showing key workflows (init, sync, launch, skills) for embedding in documentation and README.
-
-### Task details
-- quickstart-guide
-  Description: Write a quickstart that takes a user from zero (no agent-layer installed) to productive (first agent launched and working) in clear, numbered steps. Cover macOS and Linux. Include what to expect at each step.
-  Acceptance criteria: Quickstart is published on the website and linked from README. A new user can follow it end-to-end without external help.
-- example-repos
-  Description: Create example `.agent-layer/` configurations that demonstrate common setups. Publish as a separate repository or as part of the docs site.
-  Acceptance criteria: At least 2 example configurations exist and are linked from quickstart/docs. Each example includes a README explaining the setup.
-- wizard-polish
-  Description: Identify friction points in `al init` and `al wizard` by walking through them as a first-time user. Reduce unnecessary prompts, improve default selections, and add inline help.
-  Acceptance criteria: First-time `al init` completes in fewer steps with better defaults. Wizard explains what each option does.
-  Progress: 2026-02-24 delivered a scoped wizard slice (Escape back-navigation with first-step exit confirmation, clearer back/cancel guidance on touched prompts, and warning when profile mode is replacing a TOML-corrupt existing config). 2026-05-07 split the MCP catalog out of the install seed (`internal/templates/mcp-catalog.toml`); fresh `al init` now ships zero `[[mcp.servers]]` blocks, and the interactive wizard prunes default-catalog entries the user disables (full prune — including hand-customized blocks). Profile-mode (`al wizard --profile X --yes`) is intentionally exempt from prune. Remaining phase scope still includes broader first-time `al init` flow reduction/default tuning.
-- error-audit
-  Description: Review all user-facing error messages in the CLI. Ensure each one is actionable (not just "error: failed").
-  Acceptance criteria: No error message leaves the user without a next step. Common errors include remediation commands.
-- demo-content
-  Description: Record short demos of key workflows for documentation.
-  Acceptance criteria: At least 3 demos exist (init, sync, launch) and are embedded in docs.
-
-### Exit criteria
-- Quickstart guide exists on the website and covers the full zero-to-productive flow.
-- At least 2 example repository configurations are published and linked.
-- `al init` and `al wizard` flows are audited and improved for first-time users.
-- CLI error messages are actionable across all commands.
-- Key workflows have visual demos in documentation.

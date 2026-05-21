@@ -251,7 +251,7 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 			})
 		} else {
 			results = append(results, Result{
-				Status:    StatusWarn,
+				Status:    StatusOK,
 				CheckName: messages.DoctorCheckNameAgents,
 				Message:   fmt.Sprintf(messages.DoctorAgentDisabledFmt, a.Name),
 			})

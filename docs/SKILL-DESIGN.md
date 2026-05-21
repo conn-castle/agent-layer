@@ -3,6 +3,11 @@
 This document is the canonical skill-authoring guide for repo-local skill
 sources such as `.agent-layer/skills/<name>/SKILL.md`.
 
+This guide is the skill-authoring counterpart to `docs/INSTRUCTION-DESIGN.md`,
+which covers instruction-file authoring. The two documents share several
+foundational references (context engineering, instruction density, primacy
+effects) but apply them to different authoring surfaces.
+
 Research and standards in this guide were re-verified on 2026-04-18. The guide
 intentionally separates:
 - specification or product requirements
