@@ -4,7 +4,7 @@
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -18,9 +18,6 @@ enabled = true
 enabled = true
 
 [agents.vscode]
-enabled = true
-
-[agents.antigravity]
 enabled = true
 
 [agents.copilot_cli]
@@ -68,7 +65,7 @@ args = ["-y", "@playwright/mcp@0.0.68"]
 [[mcp.servers]]
 id = "ripgrep"
 enabled = true
-clients = ["gemini", "claude", "codex", "copilot"]
+clients = ["antigravity", "claude", "codex", "copilot"]
 transport = "stdio"
 command = "npx"
 args = ["-y", "mcp-ripgrep@0.4.0"]
@@ -76,7 +73,7 @@ args = ["-y", "mcp-ripgrep@0.4.0"]
 [[mcp.servers]]
 id = "filesystem"
 enabled = true
-clients = ["gemini", "claude", "codex", "copilot"]
+clients = ["antigravity", "claude", "codex", "copilot"]
 transport = "stdio"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]

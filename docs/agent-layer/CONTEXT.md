@@ -42,7 +42,8 @@ Do not duplicate information that belongs in other memory files:
 
 ## Antigravity
 
-- Antigravity supports instructions and skills only — no MCP, no approvals. Skills are projected through shared `.agents/skills/<name>/SKILL.md`. Singular `.agent/skills/` is treated as legacy generated output.
+- Antigravity uses the `agy` binary and is launched with `--gemini_dir=<repo>/.agy` plus `AGY_CLI_DISABLE_AUTO_UPDATE=1` for repo-local containment. Agent Layer writes `.agy/antigravity-cli/settings.json` and `.agy/antigravity-cli/mcp_config.json`.
+- `agy` v1.0.0 migrates `.agy/antigravity-cli/mcp_config.json` into `<gemini_dir>/config/mcp_config.json`, but runtime MCP discovery remains false in the observed probe baseline. Use `al probe antigravity` when checking whether upstream behavior has changed.
 
 ## Pin file recovery
 
@@ -53,11 +54,6 @@ Do not duplicate information that belongs in other memory files:
 - When source version cannot be resolved during `al upgrade`, source-agnostic migration operations still execute; source-gated operations are skipped with deterministic report entries. Ambiguous repos may need an explicit follow-up if the skip report flags missed transitions.
 - Multi-version upgrades chain migration manifests: all manifests between source (exclusive) and target (inclusive) load in order with per-operation deduplication by ID. When source is unknown, only the target manifest loads (backward compatible). Manifests must have unique operation IDs across the chain or later duplicates are silently skipped.
 - The required-field migration guardrail uses a baseline allowlist for fields that predate manifest enforcement (baseline version `0.8.1`). The allowlist must be maintained when introducing new required fields; stale entries can hide drift if not reviewed.
-
-## Gemini
-
-- `al sync` writes the repo root as `TRUST_FOLDER` to `~/.gemini/trustedFolders.json` when Gemini is enabled. This is the one case where `al sync` writes outside the repo boundary. Failure is non-fatal (warning, not error). Required because Gemini's Trusted Folders feature silently replaces untrusted project settings with `{}`, discarding all MCP servers.
-- Workspace-tier `.gemini/policies/` is NOT auto-loaded by Gemini CLI 0.41.2 without an explicit `policyPaths` setting. The generated `.gemini/settings.json` therefore writes `policyPaths: [".gemini/policies"]`. Gemini CLI < v0.18 (pre-policy-engine) loses auto-allow behavior because `tools.allowed` is no longer emitted.
 
 ## E2E test harness
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
-	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/updatewarn"
 )
@@ -31,8 +30,8 @@ func TestRunPipeline(t *testing.T) {
 	}
 
 	passArgs := []string{"--debug", "true"}
-	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, launch, false, passArgs, "v1.0.0")
 	if err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -52,8 +51,8 @@ func TestRunPipeline(t *testing.T) {
 	if strings.Join(gotArgs, ",") != strings.Join(passArgs, ",") {
 		t.Fatalf("expected args %v, got %v", passArgs, gotArgs)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".gemini", "settings.json")); err != nil {
-		t.Fatalf("expected gemini settings: %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".agy", "antigravity-cli", "settings.json")); err != nil {
+		t.Fatalf("expected antigravity settings: %v", err)
 	}
 }
 
@@ -62,7 +61,7 @@ func TestRunDisabled(t *testing.T) {
 	writeMinimalRepo(t, root)
 
 	disabled := false
-	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
+	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
 		return &disabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
@@ -73,8 +72,8 @@ func TestRunDisabled(t *testing.T) {
 }
 
 func TestRunMissingConfig(t *testing.T) {
-	err := Run(context.Background(), t.TempDir(), "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := Run(context.Background(), t.TempDir(), "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
 	}, false, nil, "v1.0.0")
@@ -94,8 +93,8 @@ func TestRunSyncError(t *testing.T) {
 		_ = os.Chmod(root, 0o700) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 	})
 
-	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
 	}, false, nil, "v1.0.0")
@@ -113,8 +112,8 @@ func TestRunCreateError(t *testing.T) {
 		t.Fatalf("write tmp file: %v", err)
 	}
 
-	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
 	}, false, nil, "v1.0.0")
@@ -127,8 +126,8 @@ func TestRunLaunchError(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 
-	err := Run(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := Run(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return fmt.Errorf("launch failed")
 	}, false, nil, "v1.0.0")
@@ -146,7 +145,7 @@ func TestRunWarnsOnUpdateWhenEnabled(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -161,8 +160,6 @@ enabled = false
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 
@@ -188,8 +185,8 @@ mcp_server_threshold = 5
 		return nil
 	}
 
-	err := RunWithStderr(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, launch, false, nil, "v1.0.0", &stderr)
 	if err != nil {
 		t.Fatalf("RunWithStderr error: %v", err)
@@ -211,7 +208,7 @@ func TestRunWithStderr_QuietSuppressesOutput(t *testing.T) {
 [approvals]
 mode = "yolo"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -226,8 +223,6 @@ enabled = false
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 
@@ -257,8 +252,8 @@ mcp_server_threshold = 5
 		return nil
 	}
 
-	err := RunWithStderr(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, launch, true, nil, "v1.0.0", &stderr)
 	if err != nil {
 		t.Fatalf("RunWithStderr error: %v", err)
@@ -280,7 +275,7 @@ func TestRunWithStderr_QuietFromConfigSuppressesOutput(t *testing.T) {
 [approvals]
 mode = "yolo"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -295,8 +290,6 @@ enabled = false
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 
@@ -327,8 +320,8 @@ mcp_server_threshold = 5
 		return nil
 	}
 
-	err := RunWithStderr(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, launch, false, nil, "v1.0.0", &stderr)
 	if err != nil {
 		t.Fatalf("RunWithStderr error: %v", err)
@@ -343,11 +336,6 @@ mcp_server_threshold = 5
 
 func writeMinimalRepo(t *testing.T, root string) {
 	t.Helper()
-	home := t.TempDir()
-	origHome := sync.UserHomeDir
-	sync.UserHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { sync.UserHomeDir = origHome })
-
 	paths := config.DefaultPaths(root)
 	dirs := []string{paths.InstructionsDir, paths.SkillsDir}
 	for _, dir := range dirs {
@@ -360,7 +348,7 @@ func writeMinimalRepo(t *testing.T, root string) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -375,8 +363,6 @@ enabled = false
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 
@@ -432,7 +418,7 @@ func writeMinimalRepoWithMode(t *testing.T, root string, mode string) {
 [approvals]
 mode = %q
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -447,8 +433,6 @@ enabled = false
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 
@@ -495,8 +479,8 @@ func TestRunNoSync_Success(t *testing.T) {
 	writeMinimalRepo(t, root)
 
 	called := false
-	err := RunNoSync(root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := RunNoSync(root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		called = true
 		if runInfo == nil || runInfo.Dir == "" || runInfo.ID == "" {
@@ -517,8 +501,8 @@ func TestRunNoSync_YOLOWarning(t *testing.T) {
 	writeMinimalRepoWithMode(t, root, "yolo")
 
 	var stderr bytes.Buffer
-	err := RunNoSyncWithStderr(root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := RunNoSyncWithStderr(root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
 	}, false, nil, &stderr)
@@ -538,7 +522,7 @@ func TestRunNoSync_Disabled(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
 	disabled := false
-	err := RunNoSync(root, "gemini", func(cfg *config.Config) *bool {
+	err := RunNoSync(root, "antigravity", func(cfg *config.Config) *bool {
 		return &disabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
@@ -554,8 +538,8 @@ func TestRunWithStderr_NilWriter(t *testing.T) {
 	launch := func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		return nil
 	}
-	err := RunWithStderr(context.Background(), root, "gemini", func(cfg *config.Config) *bool {
-		return cfg.Agents.Gemini.Enabled
+	err := RunWithStderr(context.Background(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
 	}, launch, false, nil, "v1.0.0", nil)
 	if err != nil {
 		t.Fatalf("RunWithStderr nil writer: %v", err)

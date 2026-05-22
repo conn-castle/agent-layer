@@ -155,17 +155,15 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 
 	agentConfigs := []agentEnabledConfig{
-		{id: AgentGemini, enabled: cfg.Config.Agents.Gemini.Enabled},
+		{id: AgentAntigravity, enabled: cfg.Config.Agents.Antigravity.Enabled},
 		{id: AgentClaude, enabled: cfg.Config.Agents.Claude.Enabled},
 		{id: AgentClaudeVSCode, enabled: cfg.Config.Agents.ClaudeVSCode.Enabled},
 		{id: AgentCodex, enabled: cfg.Config.Agents.Codex.Enabled},
 		{id: AgentVSCode, enabled: cfg.Config.Agents.VSCode.Enabled},
-		{id: AgentAntigravity, enabled: cfg.Config.Agents.Antigravity.Enabled},
 		{id: AgentCopilotCLI, enabled: cfg.Config.Agents.CopilotCLI.Enabled},
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
-	choices.GeminiModel = cfg.Config.Agents.Gemini.Model
 	choices.ClaudeModel = cfg.Config.Agents.Claude.Model
 	choices.ClaudeReasoning = cfg.Config.Agents.Claude.ReasoningEffort
 	if cfg.Config.Agents.Claude.LocalConfigDir != nil {
@@ -352,17 +350,6 @@ func confirmWizardExitOnFirstStepEscape(ui UI) (bool, error) {
 }
 
 func promptModels(ui UI, choices *Choices) error {
-	if choices.EnabledAgents[AgentGemini] {
-		if hasPreviewModels(GeminiModels()) {
-			if err := ui.Note(messages.WizardPreviewModelWarningTitle, previewModelWarningText()); err != nil {
-				return err
-			}
-		}
-		if err := selectOptionalValue(ui, messages.WizardGeminiModelTitle, GeminiModels(), &choices.GeminiModel); err != nil {
-			return err
-		}
-		choices.GeminiModelTouched = true
-	}
 	if choices.EnabledAgents[AgentClaude] {
 		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, ClaudeModels(), &choices.ClaudeModel); err != nil {
 			return err

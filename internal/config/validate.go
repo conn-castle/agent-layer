@@ -48,11 +48,10 @@ func ClaudeModelSupportsReasoningEffort(model string) bool {
 // .mcp.json with Claude CLI, so "claude" covers both.
 // See Decision p12-unified-vscode-launcher.
 var validClients = map[string]struct{}{
-	"gemini":      {},
+	"antigravity": {},
 	"claude":      {},
 	"vscode":      {},
 	"codex":       {},
-	"antigravity": {},
 	"copilot":     {},
 }
 
@@ -74,8 +73,8 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigApprovalsModeInvalidFmt, path)
 	}
 
-	if c.Agents.Gemini.Enabled == nil {
-		return fmt.Errorf(messages.ConfigGeminiEnabledRequiredFmt, path)
+	if c.Agents.Antigravity.Enabled == nil {
+		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
 	}
 	if c.Agents.Claude.Enabled == nil {
 		return fmt.Errorf(messages.ConfigClaudeEnabledRequiredFmt, path)
@@ -89,16 +88,9 @@ func (c *Config) Validate(path string) error {
 	if c.Agents.VSCode.Enabled == nil {
 		return fmt.Errorf(messages.ConfigVSCodeEnabledRequiredFmt, path)
 	}
-	if c.Agents.Antigravity.Enabled == nil {
-		return fmt.Errorf(messages.ConfigAntigravityEnabledRequiredFmt, path)
-	}
 	if c.Agents.CopilotCLI.Enabled == nil {
 		return fmt.Errorf(messages.ConfigCopilotCLIEnabledRequiredFmt, path)
 	}
-	if strings.TrimSpace(c.Agents.Gemini.ReasoningEffort) != "" {
-		return fmt.Errorf(messages.ConfigGeminiReasoningEffortUnsupportedFmt, path)
-	}
-
 	// Unknown reasoning-effort values are accepted; warnings.CheckPolicy emits a
 	// sync-time warning so new client levels (e.g. xhigh) work before the catalog
 	// catches up. The Opus check below stays a hard error — non-Opus models
@@ -113,7 +105,7 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigCopilotCLIReasoningEffortUnsupportedFmt, path)
 	}
 
-	// Model validation: agent model values (agents.gemini.model, agents.claude.model,
+	// Model validation: agent model values (agents.claude.model,
 	// agents.codex.model, agents.codex.reasoning_effort) are intentionally NOT validated
 	// here. The field catalog (fields.go) defines known options with AllowCustom: true,
 	// meaning arbitrary model strings are accepted. The downstream client is the authority

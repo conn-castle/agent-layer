@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "command(git status)",
+      "command(ls)",
+      "mcp(example/)"
+    ]
+  }
+}

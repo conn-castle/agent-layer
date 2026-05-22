@@ -94,38 +94,6 @@ func TestCheckPolicy_CodexHeaderPolicy(t *testing.T) {
 	require.Equal(t, "srv", results[0].Subject)
 }
 
-func TestCheckPolicy_CapabilityMismatch(t *testing.T) {
-	enabled := true
-	project := &config.ProjectConfig{
-		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
-			Agents: config.AgentsConfig{
-				Antigravity: config.EnableOnlyConfig{Enabled: &enabled},
-				CopilotCLI:  config.AgentConfig{Enabled: &enabled},
-			},
-			MCP: config.MCPConfig{
-				Servers: []config.MCPServer{
-					{
-						ID:        "srv",
-						Enabled:   &enabled,
-						Clients:   []string{"antigravity"},
-						Transport: config.TransportHTTP,
-						URL:       "https://example.com/mcp",
-					},
-				},
-			},
-		},
-	}
-
-	results := CheckPolicy(project)
-	// CopilotCLI is also enabled and supports approval modes, so the
-	// "only antigravity" approval mode warning must NOT fire. Only the
-	// MCP capability mismatch for the antigravity-targeted server fires.
-	require.Len(t, results, 1)
-	require.Equal(t, CodePolicyCapabilityMismatch, results[0].Code)
-	require.Equal(t, "srv", results[0].Subject)
-}
-
 func TestCheckPolicy_YOLOModeNoWarning(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
@@ -409,7 +377,7 @@ func TestCheckPolicy_CodexHeaderSkippedWhenCodexNotTargetedOrDisabled(t *testing
 				Servers: []config.MCPServer{{
 					ID:      "srv",
 					Enabled: testutil.BoolPtr(true),
-					Clients: []string{"gemini"},
+					Clients: []string{"antigravity"},
 					URL:     "https://example.com/mcp",
 					Headers: map[string]string{
 						"Authorization": "Token ${AL_TOKEN}",
@@ -560,7 +528,7 @@ func TestPolicyHelpers(t *testing.T) {
 	require.False(t, isBearerEnvPlaceholder("Token ${AL_TOKEN}"))
 }
 
-func TestDedupePolicyWarningsAndAntigravityEnabled(t *testing.T) {
+func TestDedupePolicyWarnings(t *testing.T) {
 	items := []Warning{
 		{
 			Code:    CodePolicyCapabilityMismatch,
@@ -581,14 +549,4 @@ func TestDedupePolicyWarningsAndAntigravityEnabled(t *testing.T) {
 	out := dedupePolicyWarnings(items)
 	require.Len(t, out, 2)
 	require.Nil(t, dedupePolicyWarnings(nil))
-
-	require.True(t, onlyAntigravityEnabled(config.AgentsConfig{
-		Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
-		CopilotCLI:  config.AgentConfig{Enabled: testutil.BoolPtr(false)},
-	}))
-	require.False(t, onlyAntigravityEnabled(config.AgentsConfig{
-		Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
-		CopilotCLI:  config.AgentConfig{Enabled: testutil.BoolPtr(true)},
-		Codex:       config.CodexConfig{Enabled: testutil.BoolPtr(true)},
-	}))
 }

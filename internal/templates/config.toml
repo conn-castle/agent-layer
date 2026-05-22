@@ -8,11 +8,8 @@
 # yolo skips ALL permission prompts; use only in sandboxed/ephemeral environments
 mode = "all"
 
-[agents.gemini]
-enabled = true
-# model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
-# model = "..."
-# reasoning_effort is not currently supported for Gemini in Agent Layer.
+[agents.antigravity]
+enabled = false
 
 [agents.claude]
 enabled = true
@@ -58,9 +55,6 @@ enabled = true
 # prevent_idle_sleep = true
 
 [agents.vscode]
-enabled = true
-
-[agents.antigravity]
 enabled = true
 
 [agents.copilot_cli]

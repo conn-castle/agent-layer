@@ -39,7 +39,7 @@ If you have not installed `al` yet, start with [/install](/install).
 
 ### Missing client CLI
 
-Agent Layer does not install Gemini, Claude, Codex, Copilot CLI, VS Code, or Antigravity. Install the target client and ensure it is on your `PATH`.
+Agent Layer does not install Antigravity, Claude, Codex, Copilot CLI, or VS Code. Install the target client and ensure it is on your `PATH`.
 
 ### VS Code preflight: `code` command not found
 
@@ -71,7 +71,7 @@ Run [`al init`](./reference#init) in the repo to create `.agent-layer/` and `doc
 
 ### Generated files showing up in git
 
-Generated client outputs are meant to be disposable. If you see generated files like `.agents/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.claude/skills/`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md` showing up in `git status`, it usually means one of:
+Generated client outputs are meant to be disposable. If you see generated files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md` showing up in `git status`, it usually means one of:
 
 - the repo has not been initialized with Agent Layer's managed `.gitignore` block,
 - the ignore rules were customized,
@@ -203,21 +203,25 @@ Tradeoffs (VS Code without launcher, with `local_config_dir` enabled):
 
 If you want the fully managed setup in VS Code with `local_config_dir` enabled, use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CLAUDE_CONFIG_DIR`.
 
-### Gemini trust warning: `trustedFolders.json`
+### Antigravity MCP probe shows runtime discovery disabled
 
-When Gemini is enabled, `al sync` attempts to add the repo path to `~/.gemini/trustedFolders.json` so Gemini CLI can load repo-local `.gemini/settings.json`.
+Agent Layer writes Antigravity MCP config to `.agy/antigravity-cli/mcp_config.json`. `agy` v1.0.0 migrates that file into its internal config directory, but the current observed baseline does not register MCP servers at runtime.
 
-If this write fails, sync still completes and emits a non-fatal warning. Common causes are missing home-directory permissions or a corrupt `trustedFolders.json` file.
+Check your installed `agy` behavior:
 
-Fix:
+```bash
+al probe antigravity
+```
 
-1. In Gemini CLI, trust the workspace via `/permissions`.
-2. Or manually add your repo path to `~/.gemini/trustedFolders.json`.
-3. Re-run `al sync` and verify the warning is gone.
+If `mcp_runtime_discovery` is still false, the generated config exists but Antigravity will not expose those MCP tools yet.
+
+### `al antigravity` fails to launch or `agy` is not found
+
+If `al antigravity` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe antigravity` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
 
 ### Client CLI not found
 
-Install the target client CLI (Gemini, Claude, Codex, Copilot CLI, VS Code, Antigravity) and ensure it is available on your `PATH`.
+Install the target client CLI (Antigravity `agy`, Claude, Codex, Copilot CLI, or VS Code) and ensure it is available on your `PATH`.
 
 ## Pinning and offline mode
 

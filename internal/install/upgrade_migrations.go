@@ -98,6 +98,8 @@ const (
 	upgradeMigrationKindRenameGeneratedArtifact upgradeMigrationOperationKind = "rename_generated_artifact"
 	upgradeMigrationKindDeleteGeneratedArtifact upgradeMigrationOperationKind = "delete_generated_artifact"
 	upgradeMigrationKindConfigRenameKey         upgradeMigrationOperationKind = "config_rename_key"
+	upgradeMigrationKindConfigDeleteKey         upgradeMigrationOperationKind = "config_delete_key"
+	upgradeMigrationKindConfigReplaceString     upgradeMigrationOperationKind = "config_replace_string"
 	upgradeMigrationKindConfigSetDefault        upgradeMigrationOperationKind = "config_set_default"
 	upgradeMigrationKindMigrateSkillsFormat     upgradeMigrationOperationKind = "migrate_skills_format"
 	upgradeMigrationKindAppendToFile            upgradeMigrationOperationKind = "append_to_file"
@@ -239,6 +241,16 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 					}
 				}
 			}
+			if status == UpgradeMigrationStatusPlanned {
+				skip, reason, conditionalErr := inst.shouldSkipConditionalMigration(op, resolution)
+				if conditionalErr != nil {
+					return migrationPlan{}, conditionalErr
+				}
+				if skip {
+					status = UpgradeMigrationStatusNoop
+					skipReason = reason
+				}
+			}
 			entry.Status = status
 			entry.SkipReason = skipReason
 			entries = append(entries, entry)
@@ -274,6 +286,23 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 	plan.rollbackTargets = uniqueNormalizedPaths(rollbackTargets)
 	plan.configMigrations = configMigrations
 	return plan, nil
+}
+
+func (inst *installer) shouldSkipConditionalMigration(op upgradeMigrationOperation, resolution sourceVersionResolution) (bool, string, error) {
+	if op.ID != "a-delete-old-agents-antigravity" || resolution.origin != UpgradeMigrationSourceUnknown {
+		return false, "", nil
+	}
+	data, err := inst.sys.ReadFile(filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath)))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, "legacy agents.gemini table is absent", nil
+		}
+		return false, "", fmt.Errorf(messages.InstallFailedReadFmt, upgradeMigrationConfigPath, err)
+	}
+	if !config.HasLegacyGeminiConfig(data) {
+		return true, "legacy agents.gemini table is absent", nil
+	}
+	return false, "", nil
 }
 
 func (inst *installer) runMigrations() error {
@@ -368,10 +397,16 @@ func (inst *installer) executeUpgradeMigrationOperation(op upgradeMigrationOpera
 	switch op.Kind {
 	case upgradeMigrationKindRenameFile, upgradeMigrationKindRenameGeneratedArtifact:
 		return inst.executeRenameMigration(op.From, op.To)
-	case upgradeMigrationKindDeleteFile, upgradeMigrationKindDeleteGeneratedArtifact:
-		return inst.executeDeleteMigration(op.Path)
+	case upgradeMigrationKindDeleteFile:
+		return inst.executeDeleteMigration(op.Path, false)
+	case upgradeMigrationKindDeleteGeneratedArtifact:
+		return inst.executeDeleteMigration(op.Path, true)
 	case upgradeMigrationKindConfigRenameKey:
 		return inst.executeConfigRenameKeyMigration(op.From, op.To)
+	case upgradeMigrationKindConfigDeleteKey:
+		return inst.executeConfigDeleteKeyMigration(op.Key)
+	case upgradeMigrationKindConfigReplaceString:
+		return inst.executeConfigReplaceStringMigration(op)
 	case upgradeMigrationKindConfigSetDefault:
 		return inst.executeConfigSetDefaultMigration(op)
 	case upgradeMigrationKindMigrateSkillsFormat:
@@ -465,16 +500,58 @@ func (inst *installer) executeRenameMigration(fromRel string, toRel string) (boo
 	return true, nil
 }
 
-func (inst *installer) executeDeleteMigration(relPath string) (bool, error) {
+func (inst *installer) executeDeleteMigration(relPath string, requireGeneratedWatermark bool) (bool, error) {
 	absPath, err := snapshotEntryAbsPath(inst.root, relPath)
 	if err != nil {
 		return false, err
 	}
-	if _, statErr := inst.sys.Stat(absPath); statErr != nil {
-		if errors.Is(statErr, os.ErrNotExist) {
+	info, statErr := inst.sys.Stat(absPath)
+	if statErr != nil {
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, absPath, statErr)
+		}
+		// Stat follows symlinks; a dangling symlink at this path returns
+		// ErrNotExist but the link entity itself still exists. Lstat
+		// through inst.sys so the abstraction stays consistent and test
+		// fault-injection (faultSystem) can exercise the branch
+		// (Round 2 F-A2-1, Round 3 F-3-3).
+		if _, lstatErr := inst.sys.Lstat(absPath); lstatErr != nil {
+			if errors.Is(lstatErr, os.ErrNotExist) {
+				return false, nil
+			}
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, absPath, lstatErr)
+		}
+		// We found a dangling symlink. Watermarked-only deletion cannot
+		// verify the (missing) target's content, so we conservatively
+		// refuse to delete it under the watermark gate (Round 3 F-3-2).
+		// Surface a warning so the user knows there is an unresolved
+		// dangling symlink at this path that the upgrade did not clean
+		// up (Round 4 F-4-3). Non-watermark deletes (delete_file) fall
+		// through and remove the link entity.
+		if requireGeneratedWatermark {
+			if inst.warnWriter != nil {
+				_, _ = fmt.Fprintf(inst.warnWriter, "skipped %s: dangling symlink, watermarked-delete refuses to remove without verifying target content; resolve manually\n", relPath)
+			}
 			return false, nil
 		}
-		return false, fmt.Errorf(messages.InstallFailedStatFmt, absPath, statErr)
+	}
+	// delete_generated_artifact must only remove files Agent Layer itself
+	// generated. Without this check, a user's hand-authored file at the
+	// target path would be silently destroyed (Round 2 F-B2-2).
+	if requireGeneratedWatermark && info != nil {
+		if info.IsDir() {
+			if inst.warnWriter != nil {
+				_, _ = fmt.Fprintf(inst.warnWriter, "skipped %s: generated-artifact deletion refuses to remove directories without explicit generated ownership proof\n", relPath)
+			}
+			return false, nil
+		}
+		data, readErr := inst.sys.ReadFile(absPath)
+		if readErr != nil {
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, absPath, readErr)
+		}
+		if !strings.Contains(string(data), generatedFileMarker) {
+			return false, nil
+		}
 	}
 	if removeErr := inst.sys.RemoveAll(absPath); removeErr != nil {
 		return false, fmt.Errorf("delete migration path %s: %w", relPath, removeErr)
@@ -533,6 +610,56 @@ func (inst *installer) executeConfigRenameKeyMigration(fromKey string, toKey str
 	}
 	if _, removeErr := deleteNestedConfigValue(cfg, fromParts); removeErr != nil {
 		return false, removeErr
+	}
+	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
+		return false, writeErr
+	}
+	return true, nil
+}
+
+func (inst *installer) executeConfigDeleteKeyMigration(key string) (bool, error) {
+	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	parts, err := splitMigrationKeyPath(key)
+	if err != nil {
+		return false, err
+	}
+	removed, err := deleteNestedConfigValue(cfg, parts)
+	if err != nil {
+		return false, err
+	}
+	if !removed {
+		return false, nil
+	}
+	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
+		return false, writeErr
+	}
+	return true, nil
+}
+
+func (inst *installer) executeConfigReplaceStringMigration(op upgradeMigrationOperation) (bool, error) {
+	cfg, cfgPath, exists, err := inst.readMigrationConfigMap()
+	if err != nil {
+		return false, err
+	}
+	if !exists {
+		return false, nil
+	}
+	parts, err := splitMigrationValuePath(op.Key)
+	if err != nil {
+		return false, err
+	}
+	changed, err := replaceStringAtMigrationValuePath(cfg, parts, op.From, op.To)
+	if err != nil {
+		return false, err
+	}
+	if !changed {
+		return false, nil
 	}
 	if writeErr := inst.writeMigrationConfigMap(cfgPath, cfg); writeErr != nil {
 		return false, writeErr
@@ -796,8 +923,180 @@ func splitMigrationKeyPath(raw string) ([]string, error) {
 	return out, nil
 }
 
+type configValuePathSegment struct {
+	name  string
+	array bool
+}
+
+func splitMigrationValuePath(raw string) ([]configValuePathSegment, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, fmt.Errorf("migration config value path is required")
+	}
+	rawParts := strings.Split(trimmed, ".")
+	parts := make([]configValuePathSegment, 0, len(rawParts))
+	for _, rawPart := range rawParts {
+		segment := strings.TrimSpace(rawPart)
+		if segment == "" {
+			return nil, fmt.Errorf("invalid migration config value path %q", raw)
+		}
+		part := configValuePathSegment{name: segment}
+		if strings.HasSuffix(segment, "[]") {
+			part.array = true
+			part.name = strings.TrimSpace(strings.TrimSuffix(segment, "[]"))
+			if part.name == "" {
+				return nil, fmt.Errorf("invalid migration config value path %q", raw)
+			}
+		}
+		parts = append(parts, part)
+	}
+	return parts, nil
+}
+
+func replaceStringAtMigrationValuePath(current map[string]any, parts []configValuePathSegment, from string, to string) (bool, error) {
+	if len(parts) == 0 {
+		return false, fmt.Errorf("migration config value path is required")
+	}
+	part := parts[0]
+	value, ok := current[part.name]
+	if !ok {
+		return false, nil
+	}
+	if part.array {
+		updated, changed, err := replaceStringInMigrationArray(value, parts[1:], from, to, part.name)
+		if err != nil {
+			return false, err
+		}
+		if changed {
+			current[part.name] = updated
+		}
+		return changed, nil
+	}
+	if len(parts) == 1 {
+		valueString, ok := value.(string)
+		if !ok {
+			return false, fmt.Errorf("config value path %s is not a string", part.name)
+		}
+		if valueString != from {
+			return false, nil
+		}
+		current[part.name] = to
+		return true, nil
+	}
+	nested, ok := asStringAnyMap(value)
+	if !ok {
+		return false, fmt.Errorf("config value path %s traverses non-table value", part.name)
+	}
+	return replaceStringAtMigrationValuePath(nested, parts[1:], from, to)
+}
+
+func replaceStringInMigrationArray(value any, rest []configValuePathSegment, from string, to string, pathName string) (any, bool, error) {
+	switch typed := value.(type) {
+	case []any:
+		changed := false
+		if len(rest) == 0 {
+			for idx, item := range typed {
+				itemString, ok := item.(string)
+				if !ok {
+					return nil, false, fmt.Errorf("config value path %s[] contains non-string value", pathName)
+				}
+				if itemString == from {
+					typed[idx] = to
+					changed = true
+				}
+			}
+			// Dedupe only when a replacement happened, otherwise return the
+			// original slice unchanged. Unconditional dedupe was a hidden
+			// side effect that could collapse pre-existing duplicates a user
+			// kept intentionally; the parent caller also writes back only on
+			// changed, so the prior code was effectively no-op-on-no-change
+			// but the behaviour was undocumented and easy to regress.
+			if !changed {
+				return typed, false, nil
+			}
+			return dedupeMigrationStringArray(typed), changed, nil
+		}
+		for _, item := range typed {
+			nested, ok := asStringAnyMap(item)
+			if !ok {
+				return nil, false, fmt.Errorf("config value path %s[] traverses non-table value", pathName)
+			}
+			itemChanged, err := replaceStringAtMigrationValuePath(nested, rest, from, to)
+			if err != nil {
+				return nil, false, err
+			}
+			changed = changed || itemChanged
+		}
+		return typed, changed, nil
+	case []string:
+		if len(rest) != 0 {
+			return nil, false, fmt.Errorf("config value path %s[] traverses string array", pathName)
+		}
+		changed := false
+		for idx, item := range typed {
+			if item == from {
+				typed[idx] = to
+				changed = true
+			}
+		}
+		if !changed {
+			return typed, false, nil
+		}
+		return dedupeStringSlice(typed), changed, nil
+	case []map[string]any:
+		if len(rest) == 0 {
+			return nil, false, fmt.Errorf("config value path %s[] contains table values, not strings", pathName)
+		}
+		changed := false
+		for _, item := range typed {
+			itemChanged, err := replaceStringAtMigrationValuePath(item, rest, from, to)
+			if err != nil {
+				return nil, false, err
+			}
+			changed = changed || itemChanged
+		}
+		return typed, changed, nil
+	default:
+		return nil, false, fmt.Errorf("config value path %s is not an array", pathName)
+	}
+}
+
+func dedupeMigrationStringArray(in []any) []any {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]any, 0, len(in))
+	for _, item := range in {
+		itemString, ok := item.(string)
+		if !ok {
+			out = append(out, item)
+			continue
+		}
+		if _, exists := seen[itemString]; exists {
+			continue
+		}
+		seen[itemString] = struct{}{}
+		out = append(out, itemString)
+	}
+	return out
+}
+
+func dedupeStringSlice(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		if _, exists := seen[item]; exists {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	return out
+}
+
 func isConfigMigrationKind(kind upgradeMigrationOperationKind) bool {
-	return kind == upgradeMigrationKindConfigRenameKey || kind == upgradeMigrationKindConfigSetDefault
+	return kind == upgradeMigrationKindConfigRenameKey ||
+		kind == upgradeMigrationKindConfigDeleteKey ||
+		kind == upgradeMigrationKindConfigReplaceString ||
+		kind == upgradeMigrationKindConfigSetDefault
 }
 
 func migrationCoveredPaths(op upgradeMigrationOperation) []string {
@@ -885,6 +1184,15 @@ func configMigrationFromOperation(op upgradeMigrationOperation) (ConfigKeyMigrat
 	switch op.Kind {
 	case upgradeMigrationKindConfigRenameKey:
 		return ConfigKeyMigration{Key: op.From, From: op.From, To: op.To}, true
+	case upgradeMigrationKindConfigDeleteKey:
+		// Surface deletes in the upgrade preview so users see destructive
+		// config mutations before they run. Without this case the preview
+		// silently omitted `config_delete_key` operations even though they
+		// can drop user-set values (e.g. the 0.10.2 removal of legacy
+		// agents.gemini.{model,reasoning_effort}).
+		return ConfigKeyMigration{Key: op.Key, From: "(existing)", To: "(removed)"}, true
+	case upgradeMigrationKindConfigReplaceString:
+		return ConfigKeyMigration{Key: op.Key, From: op.From, To: op.To}, true
 	case upgradeMigrationKindConfigSetDefault:
 		to := strings.TrimSpace(string(op.Value))
 		if to == "" {
@@ -1293,6 +1601,20 @@ func validateUpgradeMigrationOperation(op upgradeMigrationOperation) error {
 		}
 		if _, err := splitMigrationKeyPath(op.To); err != nil {
 			return fmt.Errorf("migration %s invalid to key: %w", op.ID, err)
+		}
+	case upgradeMigrationKindConfigDeleteKey:
+		if _, err := splitMigrationKeyPath(op.Key); err != nil {
+			return fmt.Errorf("migration %s invalid key: %w", op.ID, err)
+		}
+	case upgradeMigrationKindConfigReplaceString:
+		if _, err := splitMigrationValuePath(op.Key); err != nil {
+			return fmt.Errorf("migration %s invalid key: %w", op.ID, err)
+		}
+		if strings.TrimSpace(op.From) == "" || strings.TrimSpace(op.To) == "" {
+			return fmt.Errorf("migration %s (%s) requires from and to", op.ID, op.Kind)
+		}
+		if op.From == op.To {
+			return fmt.Errorf("migration %s (%s) requires distinct from/to", op.ID, op.Kind)
 		}
 	case upgradeMigrationKindConfigSetDefault:
 		if _, err := splitMigrationKeyPath(op.Key); err != nil {

@@ -51,7 +51,7 @@ Incomplete:
 
 <!-- PHASES START -->
 
-## Archived phases (1–10)
+## Archived phases (1–11)
 - Phase 1 — Define the vNext contract (docs-first): Defined the config-first `.agent-layer/` contract, memory docs, and Go rewrite foundation.
 - Phase 2 — Repository installer + skeleton (single command install): Implemented `al init`, gitignore management, template seeding, and initial release tooling.
 - Phase 3 — Core sync engine (parity with current generators): Implemented config/instruction parsing and deterministic generators for all clients.
@@ -62,13 +62,7 @@ Incomplete:
 - Phase 8 — v0.5.4 Workflows and instructions: Added workflow improvements, temp-report concurrency, BACKLOG rename, memory formatting, and VS Code reauth docs.
 - Phase 9 — MCP defaults + CLI output polish: Added default MCP entries, semantic CLI output, upgrade warning improvements, and instruction/documentation cleanup.
 - Phase 10 — Upgrade Phase 0 stabilization (immediate): Removed unsupported Windows upgrade surfaces, hardened pin management, and published/linked the upgrade contract.
-
-## Phase 11 ✅ — Upgrade lifecycle (explainability, safety, and migration engine)
-- Delivered explainable, plain-language `al upgrade plan` output with line-level diffs, ownership labeling, and readiness checks.
-- Completed upgrade safety/reversibility with automatic snapshots, `al upgrade rollback`, granular apply flags, and CI-safe managed-only apply mode.
-- Implemented release migration manifests with idempotent execution and deterministic migration reporting, including hard removals for breaking upgrade surfaces.
-- Enforced `.agent-layer/.env` namespace policy (`AL_`-only) and removed the legacy install `Force` path to keep one explicit apply/prompt flow.
-- Superseded Backlog 2026-02-03 `b4c5d6e` in this roadmap phase: embedded templates remain the sole supported template source for deterministic upgrades in this release line.
+- Phase 11 — Upgrade lifecycle: Delivered explainable upgrade plans, automatic snapshots/rollback, granular apply flags, migration manifests, and `.env` namespace enforcement.
 
 ## Phase 12 ✅ — High-leverage quick wins
 - Added `approvals.mode = "yolo"` with per-client full-auto projections and single-line sync/launch acknowledgements.
@@ -93,7 +87,13 @@ Incomplete:
 - Migrated embedded template skills to directory format (`skills/<name>/SKILL.md`), updated embed patterns/tests/manifests/migrations, and added the `review-plan` skill with deterministic `*.plan.md` discovery guidance.
 - Aligned public docs (`README.md`, `site/docs/reference.mdx`) with current frontmatter/spec rules and added individual skill-level workflow guidance.
 
-## Phase 16 — Onboarding and developer experience
+## Phase 16 ✅ — Antigravity replacement
+- Replaced Gemini CLI support and the retired Antigravity desktop launcher with a single Antigravity client under `[agents.antigravity]`, including `al antigravity`, repo-local `agy --gemini_dir` launch containment, and generated settings/MCP config. The `al gemini` subcommand was removed entirely in the same release (no deprecation window).
+- Added `al probe antigravity` with a stable JSON contract (`agy_config_dir`, `capabilities`, `evidence`, etc.), parser fixtures for the v1.0.0 baseline, non-zero CLI exit on probe failure, and a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>/` cleaned by `al upgrade --apply-tmp-deletions`.
+- Added the v0.10.2 migration manifest plus `config_delete_key`, `config_replace_string`, and `delete_generated_artifact` (orphan `GEMINI.md`) operations so existing `[agents.gemini]` configs and `mcp.servers[].clients[] = "gemini"` entries move cleanly to Antigravity while stale model/effort keys, retired desktop config, and the orphan instruction shim are removed.
+- Updated doctor, templates, gitignore defaults, e2e coverage, docs, and memory to make Antigravity the supported Google CLI path.
+
+## Phase 17 — Onboarding and developer experience
 
 ### Goal
 - New users can reach initial productivity within five minutes.
@@ -107,22 +107,11 @@ Incomplete:
 - [ ] demo-content: Create demo GIFs or short videos showing key workflows (init, sync, launch, skills) for embedding in documentation and README.
 
 ### Task details
-- quickstart-guide
-  Description: Write a quickstart that takes a user from zero (no agent-layer installed) to productive (first agent launched and working) in clear, numbered steps. Cover macOS and Linux. Include what to expect at each step.
-  Acceptance criteria: Quickstart is published on the website and linked from README. A new user can follow it end-to-end without external help.
-- example-repos
-  Description: Create example `.agent-layer/` configurations that demonstrate common setups. Publish as a separate repository or as part of the docs site.
-  Acceptance criteria: At least 2 example configurations exist and are linked from quickstart/docs. Each example includes a README explaining the setup.
-- wizard-polish
-  Description: Identify friction points in `al init` and `al wizard` by walking through them as a first-time user. Reduce unnecessary prompts, improve default selections, and add inline help.
-  Acceptance criteria: First-time `al init` completes in fewer steps with better defaults. Wizard explains what each option does.
-  Progress: 2026-02-24 delivered a scoped wizard slice (Escape back-navigation with first-step exit confirmation, clearer back/cancel guidance on touched prompts, and warning when profile mode is replacing a TOML-corrupt existing config). 2026-05-07 split the MCP catalog out of the install seed (`internal/templates/mcp-catalog.toml`); fresh `al init` now ships zero `[[mcp.servers]]` blocks, and the interactive wizard prunes default-catalog entries the user disables (full prune — including hand-customized blocks). Profile-mode (`al wizard --profile X --yes`) is intentionally exempt from prune. Remaining phase scope still includes broader first-time `al init` flow reduction/default tuning.
-- error-audit
-  Description: Review all user-facing error messages in the CLI. Ensure each one is actionable (not just "error: failed").
-  Acceptance criteria: No error message leaves the user without a next step. Common errors include remediation commands.
-- demo-content
-  Description: Record short demos of key workflows for documentation.
-  Acceptance criteria: At least 3 demos exist (init, sync, launch) and are embedded in docs.
+- quickstart-guide: Zero-to-productive numbered guide covering install through first agent launch on macOS and Linux; linked from README.
+- example-repos: At least two example `.agent-layer/` setups (minimal + multi-agent) published with READMEs and linked from docs.
+- wizard-polish: Reduce friction in `al init` / `al wizard` (fewer prompts, better defaults, inline help). Progress: incremental improvements through v0.10.2 — wizard slice (Escape/back, cancel guidance, TOML-corrupt warning), MCP catalog split (fresh `al init` ships zero `[[mcp.servers]]`; interactive prune of disabled catalog entries, profile mode exempt), Phase 16 wizard swap (Antigravity replaces Gemini in the agent catalog, fresh-install default flips to disabled, deprecation notice for legacy `[agents.gemini]`).
+- error-audit: Audit every user-facing CLI error so each names a next step.
+- demo-content: Record at least three workflow demos (init / sync / launch) and embed in docs.
 
 ### Exit criteria
 - Quickstart guide exists on the website and covers the full zero-to-productive flow.
@@ -131,7 +120,7 @@ Incomplete:
 - CLI error messages are actionable across all commands.
 - Key workflows have visual demos in documentation.
 
-## Phase 17 — Profiles and multi-config
+## Phase 18 — Profiles and multi-config
 
 ### Goal
 - Users can define named profiles with different instructions, skills, and configuration overrides.
@@ -148,31 +137,10 @@ Incomplete:
 - [ ] profile-docs: Document the profile system, directory structure, merge semantics, and usage patterns.
 
 ### Task details
-- profile-structure
-  Description: Implement the overlay profile model. Directory layout:
-  ```
-  .agent-layer/
-      config.toml              # Base configuration
-      instructions/*.md        # Base instructions
-      skills/                  # Base skills
-      profiles/
-          <name>/
-              config.toml      # Optional: merged with base (profile overrides)
-              instructions/*.md # Optional: appended after base instructions
-              skills/          # Optional: added to base skill set (override by name)
-  ```
-  The base config is always loaded first. If an active profile is set, the profile's files are merged on top. This keeps profiles DRY — they only contain what differs from the base.
-  Acceptance criteria: Profile directories are recognized and loaded when an active profile is set. Base-only operation is unchanged when no profile is active.
-  Notes: This overlay model supports the future "profiles as subagents" direction — each profile defines a complete persona with specialized instructions and skills on top of a shared project base. A profile's config.toml can enable/disable agents, change models, add MCP servers, or adjust approval modes independently of the base.
-- profile-loading
-  Description: Implement merge logic: (1) config.toml — deep merge where profile keys override base keys for matching paths; (2) instructions — profile instruction files are sorted and appended after base instruction files; (3) skills — profile skills are added to the base set, with profile skills taking precedence over base skills of the same name.
-  Acceptance criteria: Merge semantics are deterministic and documented. Tests cover all merge scenarios (override, append, shadow).
-- profile-switching
-  Description: Add a command to select the active profile. Active profile is persisted in `.agent-layer/state/active-profile` (or similar). `al sync` reads this to determine which profile to apply. `al profile` with no arguments shows the current profile. `al profile --list` shows available profiles.
-  Acceptance criteria: Users can switch profiles via CLI. Profile selection persists across commands. Switching triggers a sync reminder or auto-sync.
-- profile-wizard
-  Description: Extend the wizard to support creating a new profile (name, which base settings to override) and switching between profiles.
-  Acceptance criteria: `al wizard` includes a profile creation/management flow.
+- profile-structure: Overlay model under `.agent-layer/profiles/<name>/{config.toml,instructions/*.md,skills/}` — base loaded first, active profile merged on top so profiles stay DRY. Supports the "profile-as-subagent persona" direction.
+- profile-loading: Deterministic merge — config deep-merged, instructions appended after base, skills added with profile overriding base on name collision; tests cover override/append/shadow.
+- profile-switching: `al profile <name>` selects (persists under `.agent-layer/state/`), `al profile` shows current, `al profile --list` enumerates; sync respects the active profile.
+- profile-wizard: Wizard flow to create / select / delete profiles.
 
 ### Exit criteria
 - Users can create named profiles under `.agent-layer/profiles/<name>/`.

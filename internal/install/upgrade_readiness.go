@@ -432,7 +432,7 @@ func detectVSCodeNoSyncStaleness(inst *installer, cfg *config.Config, configPath
 	}
 
 	// .agents/skills/ is generated whenever any shared-skill consumer is enabled
-	// (Codex, Gemini, Antigravity, VS Code, or Copilot CLI). claude_vscode alone
+	// (Codex, Antigravity, VS Code, or Copilot CLI). claude_vscode alone
 	// does not trigger generation, so gate on the canonical shared predicate.
 	if config.SharedAgentSkillsEnabled(cfg.Agents) {
 		skillCount, err := countMarkdownFiles(inst, filepath.Join(inst.root, ".agent-layer", "skills"))
@@ -559,16 +559,16 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 	launcherPaths := launchers.VSCodePaths(inst.root)
 	rules := []disabledAgentArtifactRule{
 		{
-			agent:   "gemini",
-			enabled: cfg.Agents.Gemini.Enabled,
+			agent:   "antigravity",
+			enabled: cfg.Agents.Antigravity.Enabled,
 			files: []disabledArtifactFileSpec{
 				{
-					path:     filepath.Join(inst.root, ".gemini", "settings.json"),
-					evidence: hasAgentLayerMCPSignature,
+					path:     filepath.Join(inst.root, ".agy", "antigravity-cli", "settings.json"),
+					evidence: isJSONObject,
 				},
 				{
-					path:     filepath.Join(inst.root, ".gemini", "policies", "agent-layer.toml"),
-					evidence: hasGeneratedFileMarker,
+					path:     filepath.Join(inst.root, ".agy", "antigravity-cli", "mcp_config.json"),
+					evidence: isJSONObject,
 				},
 			},
 		},

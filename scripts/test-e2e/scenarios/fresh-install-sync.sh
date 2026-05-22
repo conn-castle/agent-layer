@@ -21,8 +21,8 @@ run_scenario_fresh_install_sync() {
     "CLAUDE.md includes instruction blocks"
   assert_file_contains "$repo_dir/AGENTS.md" "GENERATED FILE" \
     "AGENTS.md has managed marker"
-  assert_file_contains "$repo_dir/GEMINI.md" "GENERATED FILE" \
-    "GEMINI.md has managed marker"
+  assert_file_not_exists "$repo_dir/GEMINI.md" \
+    "GEMINI.md is not generated after Gemini removal"
   assert_file_contains "$repo_dir/.github/copilot-instructions.md" "GENERATED FILE" \
     "copilot-instructions.md has managed marker"
   assert_file_contains "$repo_dir/.codex/AGENTS.md" "GENERATED FILE" \

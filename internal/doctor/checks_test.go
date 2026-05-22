@@ -222,7 +222,7 @@ func TestCheckConfig(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -232,8 +232,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `

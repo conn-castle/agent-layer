@@ -12,14 +12,17 @@ import (
 const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: al sync\n-->\n\n"
 
 // WriteInstructionShims generates instruction shims for supported clients.
+// agy (Antigravity), Claude, Codex, Copilot, and other shared-tier clients
+// all read AGENTS.md (per the agentskills.io standard) or their client-
+// specific shim. GEMINI.md is intentionally NOT written: the Gemini CLI was
+// retired in 0.10.2 and agy reads AGENTS.md. The v0.10.2 migration's
+// `f-delete-orphan-gemini-md` op removes any leftover GEMINI.md from
+// pre-0.10.2 repos.
 func WriteInstructionShims(sys System, root string, instructions []config.InstructionFile) error {
 	if err := writeInstructionFile(sys, filepath.Join(root, "AGENTS.md"), instructions); err != nil {
 		return err
 	}
 	if err := writeInstructionFile(sys, filepath.Join(root, "CLAUDE.md"), instructions); err != nil {
-		return err
-	}
-	if err := writeInstructionFile(sys, filepath.Join(root, "GEMINI.md"), instructions); err != nil {
 		return err
 	}
 

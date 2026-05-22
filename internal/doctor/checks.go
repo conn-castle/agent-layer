@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -16,7 +19,19 @@ import (
 var (
 	loadConfigLenientFunc = config.LoadConfigLenient
 	loadEnvFunc           = config.LoadEnv
+	lookPathFunc          = exec.LookPath
+	commandOutputFunc     = func(name string, args ...string) ([]byte, error) {
+		// #nosec G204 -- command name is resolved by doctor checks from a fixed executable lookup.
+		return exec.Command(name, args...).CombinedOutput()
+	}
 )
+
+// agyVersionRE matches the version reported on the `agy <version>` line so
+// unrelated dotted-numeric noise (build timestamps, go runtime version, etc.)
+// in `agy --version` output cannot be silently accepted as the agy version.
+// Accepts the common upstream shapes: `agy 1.0.0`, `agy v1.0.0`, and
+// `agy version 1.0.0`. The first capture group is the bare X.Y.Z triple.
+var agyVersionRE = regexp.MustCompile(`(?m)^agy(?:\s+version)?\s+v?(\d+\.\d+\.\d+)\b`)
 
 // CheckStructure verifies that required and optional project directories are sane.
 func CheckStructure(root string) []Result {
@@ -234,12 +249,11 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 		Name    string
 		Enabled *bool
 	}{
-		{"Gemini", cfg.Config.Agents.Gemini.Enabled},
+		{"Antigravity", cfg.Config.Agents.Antigravity.Enabled},
 		{"Claude", cfg.Config.Agents.Claude.Enabled},
 		{"ClaudeVSCode", cfg.Config.Agents.ClaudeVSCode.Enabled},
 		{"Codex", cfg.Config.Agents.Codex.Enabled},
 		{"VSCode", cfg.Config.Agents.VSCode.Enabled},
-		{"Antigravity", cfg.Config.Agents.Antigravity.Enabled},
 	}
 
 	for _, a := range agents {
@@ -257,7 +271,114 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 			})
 		}
 	}
+	if config.IsAgentEnabled(cfg.Config.Agents.Antigravity.Enabled) {
+		results = append(results, CheckAntigravityBinary()...)
+	}
 	return results
+}
+
+// CheckAntigravityBinary verifies that agy exists and is at least v1.0.0.
+func CheckAntigravityBinary() []Result {
+	path, err := lookPathFunc("agy")
+	if err != nil {
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        messages.DoctorAntigravityNotFound,
+			Recommendation: messages.DoctorAntigravityInstallRecommend,
+		}}
+	}
+	output, err := commandOutputFunc(path, "--version")
+	if err != nil {
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorAntigravityVersionFailedFmt, err),
+			Recommendation: messages.DoctorAntigravityInstallRecommend,
+		}}
+	}
+	versionText := string(output)
+	// Use the capture group so an optional `v` prefix is stripped before
+	// passing the value to compareDoctorSemver (which expects a bare
+	// X.Y.Z triple).
+	var versionValue string
+	if match := agyVersionRE.FindStringSubmatch(versionText); len(match) >= 2 {
+		versionValue = match[1]
+	}
+	if versionValue == "" {
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorAntigravityVersionUnknownFmt, strings.TrimSpace(versionText)),
+			Recommendation: messages.DoctorAntigravityInstallRecommend,
+		}}
+	}
+	cmp, err := compareDoctorSemver(versionValue, "1.0.0")
+	if err != nil {
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorAntigravityVersionUnknownFmt, strings.TrimSpace(versionText)),
+			Recommendation: messages.DoctorAntigravityInstallRecommend,
+		}}
+	}
+	if cmp < 0 {
+		return []Result{{
+			Status:         StatusFail,
+			CheckName:      messages.DoctorCheckNameAgents,
+			Message:        fmt.Sprintf(messages.DoctorAntigravityVersionTooOldFmt, versionValue),
+			Recommendation: messages.DoctorAntigravityInstallRecommend,
+		}}
+	}
+	return []Result{{
+		Status:    StatusOK,
+		CheckName: messages.DoctorCheckNameAgents,
+		Message:   fmt.Sprintf(messages.DoctorAntigravityVersionOKFmt, versionValue),
+	}}
+}
+
+func compareDoctorSemver(a string, b string) (int, error) {
+	av, err := parseDoctorSemver(a)
+	if err != nil {
+		return 0, err
+	}
+	bv, err := parseDoctorSemver(b)
+	if err != nil {
+		return 0, err
+	}
+	if av[0] != bv[0] {
+		return compareDoctorInt(av[0], bv[0]), nil
+	}
+	if av[1] != bv[1] {
+		return compareDoctorInt(av[1], bv[1]), nil
+	}
+	return compareDoctorInt(av[2], bv[2]), nil
+}
+
+func compareDoctorInt(a int, b int) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
+}
+
+func parseDoctorSemver(raw string) ([3]int, error) {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return [3]int{}, fmt.Errorf("invalid semantic version %q", raw)
+	}
+	var parsed [3]int
+	for i, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return [3]int{}, err
+		}
+		parsed[i] = value
+	}
+	return parsed, nil
 }
 
 // CheckFlatFormatSkills scans .agent-layer/skills/ for stale flat-format .md files

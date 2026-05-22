@@ -3,7 +3,6 @@ package sync
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -38,28 +37,15 @@ func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig)
 }
 
 func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) {
-	approvals := projection.BuildApprovals(project.Config, project.CommandsAllow)
-	var allow []string
-
-	if approvals.AllowCommands {
-		for _, cmd := range approvals.Commands {
-			allow = append(allow, fmt.Sprintf("Bash(%s:*)", cmd))
-		}
-	}
-
-	if approvals.AllowMCP {
-		ids := projection.EnabledServerIDs(project.Config.MCP.Servers, "claude")
-		sort.Strings(ids)
-		for _, id := range ids {
-			allow = append(allow, fmt.Sprintf("mcp__%s__*", id))
-		}
-	}
-
 	settings := make(map[string]any)
-	if len(allow) > 0 {
-		settings["permissions"] = map[string]any{
-			"allow": allow,
-		}
+	permissions := buildPermissionsBlock(
+		project.Config,
+		project.CommandsAllow,
+		projection.EnabledServerIDs(project.Config.MCP.Servers, "claude"),
+		claudeRenderer{},
+	)
+	if permissions != nil {
+		settings["permissions"] = permissions
 	}
 	// Write effortLevel to settings.json for persistable values only.
 	// "max" is session-only in Claude Code (passed via --effort CLI flag) and

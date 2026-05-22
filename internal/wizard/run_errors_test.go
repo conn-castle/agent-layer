@@ -82,66 +82,6 @@ func TestRun_MultiSelectError_Agents(t *testing.T) {
 	assert.Contains(t, err.Error(), "multiselect error")
 }
 
-func TestRun_NoteError_PreviewModelWarning(t *testing.T) {
-	root := t.TempDir()
-	setupRepo(t, root)
-	configDir := filepath.Join(root, ".agent-layer")
-	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
-
-	ui := &MockUI{
-		NoteFunc: func(title, body string) error {
-			if title == "Preview Model Warning" {
-				return errors.New("preview note error")
-			}
-			return nil
-		},
-		SelectFunc: func(title string, options []string, current *string) error { return nil },
-		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Agents" {
-				*selected = []string{"gemini"}
-			}
-			return nil
-		},
-	}
-
-	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "preview note error")
-}
-
-func TestRun_SelectError_GeminiModel(t *testing.T) {
-	root := t.TempDir()
-	setupRepo(t, root)
-	configDir := filepath.Join(root, ".agent-layer")
-	validConfig := basicAgentConfig()
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
-
-	callCount := 0
-	ui := &MockUI{
-		NoteFunc: func(title, body string) error { return nil },
-		SelectFunc: func(title string, options []string, current *string) error {
-			if title == "Gemini Model" {
-				return errors.New("gemini model error")
-			}
-			return nil
-		},
-		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Agents" {
-				*selected = []string{"gemini"}
-			}
-			return nil
-		},
-	}
-	_ = callCount
-
-	err := Run(root, ui, func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "gemini model error")
-}
-
 func TestRun_SelectError_ClaudeModel(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)

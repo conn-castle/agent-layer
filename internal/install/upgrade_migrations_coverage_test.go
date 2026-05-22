@@ -326,7 +326,7 @@ func TestExecuteDeleteMigration_Branches(t *testing.T) {
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
-	changed, err := inst.executeDeleteMigration(".agent-layer/stale.md")
+	changed, err := inst.executeDeleteMigration(".agent-layer/stale.md", false)
 	if err != nil {
 		t.Fatalf("executeDeleteMigration: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestExecuteDeleteMigration_Branches(t *testing.T) {
 		t.Fatal("expected delete to apply")
 	}
 
-	changed, err = inst.executeDeleteMigration(".agent-layer/stale.md")
+	changed, err = inst.executeDeleteMigration(".agent-layer/stale.md", false)
 	if err != nil {
 		t.Fatalf("delete missing should be no-op: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestExecuteDeleteMigration_Branches(t *testing.T) {
 	fault := newFaultSystem(RealSystem{})
 	fault.statErrs[normalizePath(path)] = errors.New("stat boom")
 	inst = &installer{root: root, sys: fault}
-	if _, err := inst.executeDeleteMigration(".agent-layer/stale.md"); err == nil || !strings.Contains(err.Error(), "stat boom") {
+	if _, err := inst.executeDeleteMigration(".agent-layer/stale.md", false); err == nil || !strings.Contains(err.Error(), "stat boom") {
 		t.Fatalf("expected stat error, got %v", err)
 	}
 
@@ -355,7 +355,7 @@ func TestExecuteDeleteMigration_Branches(t *testing.T) {
 	fault = newFaultSystem(RealSystem{})
 	fault.removeErrs[normalizePath(path)] = errors.New("remove boom")
 	inst = &installer{root: root, sys: fault}
-	if _, err := inst.executeDeleteMigration(".agent-layer/stale.md"); err == nil || !strings.Contains(err.Error(), "remove boom") {
+	if _, err := inst.executeDeleteMigration(".agent-layer/stale.md", false); err == nil || !strings.Contains(err.Error(), "remove boom") {
 		t.Fatalf("expected remove error, got %v", err)
 	}
 }
@@ -2294,7 +2294,7 @@ func TestDeleteNestedConfigValue_ParentMissing(t *testing.T) {
 
 func TestExecuteDeleteMigration_InvalidPath(t *testing.T) {
 	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
-	if _, err := inst.executeDeleteMigration(""); err == nil {
+	if _, err := inst.executeDeleteMigration("", false); err == nil {
 		t.Fatal("expected invalid path error")
 	}
 }

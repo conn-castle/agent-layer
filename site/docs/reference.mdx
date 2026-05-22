@@ -36,11 +36,8 @@ Never put secrets in `config.toml`. Secrets belong in `.agent-layer/.env`.
 # one of: "all", "mcp", "commands", "none", "yolo"
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
-# model is optional; when omitted, the client uses its default.
-# model = "..."
-# reasoning_effort is not currently supported for Gemini in Agent Layer.
 
 [agents.claude]
 enabled = true
@@ -81,9 +78,6 @@ enabled = true
 # prevent_idle_sleep = true
 
 [agents.vscode]
-enabled = true
-
-[agents.antigravity]
 enabled = true
 
 [agents.copilot_cli]
@@ -138,12 +132,11 @@ Each agent has an `enabled` flag and optional `model` value. Claude supports `re
 
 Supported agents:
 
-- `gemini`
+- `antigravity`
 - `claude`
 - `claude_vscode`
 - `codex`
 - `vscode`
-- `antigravity`
 - `copilot_cli`
 
 ### MCP servers
@@ -156,7 +149,7 @@ Each `[[mcp.servers]]` entry must include:
 
 Optional fields:
 
-- `clients` to restrict which clients receive a server (valid values: `gemini`, `claude`, `vscode`, `codex`, `antigravity`, `copilot`; note that `claude_vscode` uses the `claude` client)
+- `clients` to restrict which clients receive a server (valid values: `antigravity`, `claude`, `vscode`, `codex`, `copilot`; note that `claude_vscode` uses the `claude` client)
 - `http_transport` (`sse` or `streamable`) for HTTP servers
 - `headers` for HTTP auth and metadata
 - `command`, `args`, `env` for stdio servers
@@ -176,7 +169,7 @@ Here is how placeholder projection works for MCP servers:
 | Client | Placeholder syntax in generated config |
 | --- | --- |
 | Claude Code (`.mcp.json`) | `${AL_TOKEN}` |
-| Gemini (`.gemini/settings.json`) | `${AL_TOKEN}` |
+| Antigravity (`.agy/antigravity-cli/mcp_config.json`) | `${AL_TOKEN}` |
 | VS Code (`.vscode/mcp.json`) | `${env:AL_TOKEN}` |
 | Codex (`.codex/config.toml`) | headers become env-var references; URLs/commands/args/env values are resolved because Codex does not support placeholders |
 | Copilot CLI (`.copilot/mcp-config.json`) | `${AL_TOKEN}` (env vars resolved at runtime by the client) |
@@ -323,7 +316,8 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
-| `al <client>` | Sync and launch a client (gemini/claude/codex/copilot/vscode/antigravity). |
+| `al <client>` | Sync and launch a client (antigravity/claude/codex/copilot/vscode). |
+| `al probe antigravity` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
 | `al --version` | Print the installed Agent Layer version. |
@@ -575,12 +569,12 @@ description: Run a code quality audit.
 Common outputs include:
 
 - `.agents/skills/`
-- `.gemini/settings.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
 - `.codex/` (generated config and rules)
 - `.copilot/mcp-config.json`
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `.github/copilot-instructions.md`
-- `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
+- `AGENTS.md`, `CLAUDE.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
 These files are derived outputs and safe to delete. Running `al sync` will recreate them.
@@ -593,12 +587,11 @@ These files are derived outputs and safe to delete. Running `al sync` will recre
 
 `al <client>` syncs before launch by default. Supported clients:
 
-- `al gemini`
+- `al antigravity`
 - `al claude`
 - `al codex`
 - `al copilot`
 - `al vscode`
-- `al antigravity`
 
 These commands read `.agent-layer/`, regenerate client outputs, and then launch the selected client.
 

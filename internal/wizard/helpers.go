@@ -225,8 +225,6 @@ func agentSummaryLines(c *Choices) []string {
 // agent identifies the agent; c holds wizard choices; returns summary text.
 func agentModelSummary(agent string, c *Choices) string {
 	switch agent {
-	case AgentGemini:
-		return c.GeminiModel
 	case AgentClaude:
 		return claudeModelSummary(c)
 	case AgentCodex:

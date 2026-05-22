@@ -79,12 +79,32 @@ func ParseConfig(data []byte, source string) (*Config, error) {
 		return nil, fmt.Errorf(messages.ConfigInvalidConfigFmt, source, err)
 	}
 	if err := decodeStrict(data); err != nil {
+		if HasLegacyGeminiConfig(data) {
+			return nil, fmt.Errorf("%w: "+messages.ConfigLegacyGeminiUnsupportedFmt+" "+messages.ConfigValidationGuidance, ErrConfigValidation, source)
+		}
 		return nil, fmt.Errorf("%w: "+messages.ConfigUnrecognizedKeysFmt+" "+messages.ConfigValidationGuidance, ErrConfigValidation, source, err)
 	}
 	if err := cfg.Validate(source); err != nil {
 		return nil, fmt.Errorf("%w: %w "+messages.ConfigValidationGuidance, ErrConfigValidation, err)
 	}
 	return &cfg, nil
+}
+
+// HasLegacyGeminiConfig reports whether `data` contains a legacy `[agents.gemini]`
+// table or any subkey under it. Parses the raw TOML map so whitespace, tabs,
+// comments, and TOML inline-table forms are all handled correctly — the previous
+// space-strip substring scan missed tab-indented and comment-style configs.
+func HasLegacyGeminiConfig(data []byte) bool {
+	var raw map[string]any
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	agents, ok := raw["agents"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = agents["gemini"]
+	return ok
 }
 
 // decodeStrict re-decodes the TOML data with strict unknown-field rejection.
@@ -129,6 +149,17 @@ func applyLegacyConfigAliases(data []byte, cfg *Config) {
 		if cfg.Agents.ClaudeVSCode.Enabled == nil {
 			if val, ok := legacy["enabled"].(bool); ok {
 				cfg.Agents.ClaudeVSCode.Enabled = &val
+			}
+		}
+	}
+	// Legacy: [agents.gemini] → [agents.antigravity]
+	// (v0.10.2 migration config_rename_key b-rename-agents-gemini-enabled).
+	// Repair tools must see the user's intended enablement state on
+	// pre-migration repos so doctor's CheckAntigravityBinary gate fires.
+	if legacy, ok := agents["gemini"].(map[string]any); ok {
+		if cfg.Agents.Antigravity.Enabled == nil {
+			if val, ok := legacy["enabled"].(bool); ok {
+				cfg.Agents.Antigravity.Enabled = &val
 			}
 		}
 	}

@@ -3,6 +3,20 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- Antigravity support via `al antigravity`, backed by `agy --gemini_dir=<repo>/.agy` and repo-local settings under `.agy/antigravity-cli/`.
+- `al probe antigravity` capability probe reports Antigravity permissions, MCP config migration, and runtime MCP discovery status as JSON.
+- `config_delete_key` and `config_replace_string` upgrade migration operations and a v0.10.2 migration that moves `agents.gemini.enabled` to `agents.antigravity.enabled`, rewrites MCP client lists from `gemini` to `antigravity`, deletes stale Gemini and retired Antigravity desktop config keys, and defaults Antigravity to disabled when no prior Gemini setting exists.
+- `make al-antigravity` developer convenience target.
+
+### Changed
+- Shared skill projection now treats Antigravity as the supported shared-skill consumer in place of Gemini CLI.
+- Fresh `al init` now defaults `[agents.antigravity] enabled = false` (the prior `true` default was scoped to the retired Antigravity desktop launcher). Existing repos keep their migrated value from the v0.10.2 migration; users on the retired desktop launcher will have their pre-existing enable flag replaced by the rename from `agents.gemini.enabled` (or the new default if no Gemini config existed). The v0.10.2 row in `site/docs/upgrades.mdx` documents the replacement behavior.
+
+### Removed
+- Gemini CLI sync/client projection, including generated `.gemini/settings.json`, `.gemini/policies/agent-layer.toml`, the global `~/.gemini/trustedFolders.json` write, and the root `GEMINI.md` instruction shim, has been replaced by Antigravity projection. The v0.10.2 migration cleans up any orphan `GEMINI.md` in existing repos. Historical release notes below remain unchanged.
+- `al gemini` subcommand removed entirely (no deprecation window). Existing scripts must switch to `al antigravity`; invoking `al gemini` now produces cobra's standard "unknown command" error.
+
 ## v0.10.1 - 2026-05-17
 
 Adds diff-scoped cleanup skills (`prune-new-tests`, `simplify-new-code`) and wires fresh-context reviewer subagents into five existing skills to prevent narrative-driven rationalization. Introduces `al init --here` for in-place installs in subdirectories of existing repos, deep-merges Claude `agent_specific` configuration so `permissions.deny` is additive, auto-writes a Codex per-repo trust stanza, and adds a human-gated merge phase to `ship-pr`.

@@ -72,27 +72,6 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 			}
 		}
 
-		if isExplicitClientTargeted(server.Clients, "antigravity") {
-			results = append(results, Warning{
-				Code:     CodePolicyCapabilityMismatch,
-				Subject:  server.ID,
-				Message:  messages.WarningsPolicyAntigravityMCP,
-				Fix:      messages.WarningsPolicyAntigravityMCPFix,
-				Source:   SourceInternal,
-				Severity: SeverityWarning,
-			})
-		}
-	}
-
-	if onlyAntigravityEnabled(project.Config.Agents) && project.Config.Approvals.Mode != config.ApprovalModeNone {
-		results = append(results, Warning{
-			Code:     CodePolicyCapabilityMismatch,
-			Subject:  "approvals.mode",
-			Message:  fmt.Sprintf(messages.WarningsPolicyAntigravityApprovalsFmt, project.Config.Approvals.Mode),
-			Fix:      messages.WarningsPolicyAntigravityApprovalsFix,
-			Source:   SourceInternal,
-			Severity: SeverityWarning,
-		})
 	}
 
 	return dedupePolicyWarnings(results)
@@ -320,16 +299,4 @@ func dedupePolicyWarnings(items []Warning) []Warning {
 		out = append(out, item)
 	}
 	return out
-}
-
-func onlyAntigravityEnabled(agents config.AgentsConfig) bool {
-	if !isEnabled(agents.Antigravity.Enabled) {
-		return false
-	}
-	return !isEnabled(agents.Gemini.Enabled) &&
-		!isEnabled(agents.Claude.Enabled) &&
-		!isEnabled(agents.ClaudeVSCode.Enabled) &&
-		!isEnabled(agents.Codex.Enabled) &&
-		!isEnabled(agents.VSCode.Enabled) &&
-		!isEnabled(agents.CopilotCLI.Enabled)
 }

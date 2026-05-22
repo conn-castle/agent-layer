@@ -18,7 +18,6 @@ const (
 	CodePolicyCapabilityMismatch     = "POLICY_CLIENT_CAPABILITY_MISMATCH"
 	CodePolicyAgentSpecificOverrides = "POLICY_AGENT_SPECIFIC_OVERRIDES"
 	CodePolicyClaudeReasoningUnknown = "POLICY_CLAUDE_REASONING_EFFORT_UNKNOWN"
-	CodeGeminiTrustFolderFailed      = "GEMINI_TRUST_FOLDER_FAILED"
 )
 
 // Source labels where a warning originates.

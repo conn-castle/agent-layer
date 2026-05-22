@@ -32,7 +32,7 @@ Quick start is the shortest path to a working agent. You can always refine confi
 ### Prerequisites
 
 - Install the Agent Layer CLI (`al`)
-- Install the target client (Gemini, Claude, Codex, Copilot CLI, VS Code, Antigravity)
+- Install the target client (Antigravity `agy`, Claude, Codex, Copilot CLI, VS Code)
 
 Agent Layer does not install client CLIs for you. If you already have `al` installed, skip to step 2.
 
@@ -70,10 +70,10 @@ For detailed behavior, see [Init](./reference#init), [Upgrade](./reference#upgra
 ### 3) Launch an agent
 
 ```bash
-al gemini
+al antigravity
 ```
 
-Any client command (gemini/claude/codex/copilot/vscode/antigravity) will:
+Any client command (antigravity/claude/codex/copilot/vscode) will:
 
 1. read `.agent-layer/`
 2. sync client configs
@@ -96,7 +96,7 @@ Everything is plain text and local to the repo, which makes it easy to review ch
 
 MCP servers unlock additional capability. They allow agents to retrieve current information, search your repository efficiently, and integrate with external systems instead of relying only on model training data and prompt context.
 
-`al init` seeds a small library of high-value MCP servers in `.agent-layer/config.toml`, all disabled by default. Two great first picks are:
+`al init` creates an empty `[mcp]` section. Run `al wizard` to choose from the embedded MCP catalog, or add server blocks by hand. Two great first picks are:
 
 - `context7` for up-to-date library docs and examples (requires an API key)
 - `tavily` for web search/research and recency (requires an API key)
@@ -189,12 +189,12 @@ Different clients require different file formats and conventions. Agent Layer ge
 # Instruction shims (generated from .agent-layer/instructions/*.md)
 AGENTS.md
 CLAUDE.md
-GEMINI.md
 .github/copilot-instructions.md
 
 # Client configs and artifacts (generated based on enabled clients)
 .agents/skills/
-.gemini/settings.json
+.agy/antigravity-cli/settings.json
+.agy/antigravity-cli/mcp_config.json
 .claude/settings.json
 .claude/skills/
 .mcp.json
@@ -252,7 +252,7 @@ Do not commit:
 - `.agent-layer/.env` (secrets)
 - `.agent-layer/state/managed-baseline.json` (machine-managed baseline state)
 - `.agent-layer/tmp/` (agent-only artifacts)
-- generated client outputs like `.agents/skills/`, `.gemini/settings.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`
+- generated client outputs like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.github/copilot-instructions.md`, `AGENTS.md`, `CLAUDE.md`
 
 ## CLI command map
 
@@ -272,13 +272,13 @@ If you only remember one pattern: `al <client>` is the “do the right thing” 
 | `al wizard` | Interactive configuration. | [Wizard](./reference#wizard) |
 | `al sync` | Regenerate configs without launching. | [Sync](./reference#sync) |
 | `al doctor` | Validate config and probe MCP servers. | [Doctor](./reference#doctor) |
+| `al probe antigravity` | Report observed Antigravity capabilities. | [CLI guide](./reference#cli-guide) |
 | `al completion` | Print or install shell completions. | [Completion](./reference#completion) |
-| `al gemini` | Sync and launch Gemini. | [Launch a client](./reference#launch-a-client) |
+| `al antigravity` | Sync and launch Antigravity. | [Launch a client](./reference#launch-a-client) |
 | `al claude` | Sync and launch Claude Code. | [Launch a client](./reference#launch-a-client) |
 | `al codex` | Sync and launch Codex. | [Launch a client](./reference#launch-a-client) |
 | `al vscode` | Sync and launch VS Code. | [Launch a client](./reference#launch-a-client) |
 | `al copilot` | Sync and launch Copilot CLI. | [Launch a client](./reference#launch-a-client) |
-| `al antigravity` | Sync and launch Antigravity. | [Launch a client](./reference#launch-a-client) |
 | `al --version` | Print the installed version. | [Help and version](./reference#help-and-version) |
 | `al help` | Show help for a command. | [Help and version](./reference#help-and-version) |
 

@@ -2,9 +2,12 @@ package install
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -521,6 +524,124 @@ func TestExecuteConfigSetDefaultMigration_NoPromptUsesDefault(t *testing.T) {
 	}
 }
 
+func TestExecuteConfigDeleteKeyMigration_DeletesLeaf(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, strings.Join([]string{
+		"[agents.gemini]",
+		"enabled = true",
+		`model = "custom"`,
+	}, "\n"))
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	changed, err := inst.executeConfigDeleteKeyMigration("agents.gemini.model")
+	if err != nil {
+		t.Fatalf("executeConfigDeleteKeyMigration: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	got := string(data)
+	if strings.Contains(got, "model") {
+		t.Fatalf("expected model key deleted, got:\n%s", got)
+	}
+	if !strings.Contains(got, "enabled = true") {
+		t.Fatalf("expected enabled key preserved, got:\n%s", got)
+	}
+}
+
+func TestExecuteConfigDeleteKeyMigration_DeletesTableAndPrunesParents(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, strings.Join([]string{
+		"[agents.gemini]",
+		"enabled = true",
+		`model = "custom"`,
+		"",
+		"[warnings]",
+		"instruction_token_threshold = 10000",
+	}, "\n"))
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	changed, err := inst.executeConfigDeleteKeyMigration("agents.gemini")
+	if err != nil {
+		t.Fatalf("executeConfigDeleteKeyMigration: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected migration to report changed")
+	}
+
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	got := string(data)
+	if strings.Contains(got, "gemini") || strings.Contains(got, "[agents]") {
+		t.Fatalf("expected gemini table and empty agents parent pruned, got:\n%s", got)
+	}
+	if !strings.Contains(got, "[warnings]") {
+		t.Fatalf("expected unrelated table preserved, got:\n%s", got)
+	}
+}
+
+func TestExecuteConfigDeleteKeyMigration_IdempotentWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, "[agents]\n")
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	changed, err := inst.executeConfigDeleteKeyMigration("agents.gemini")
+	if err != nil {
+		t.Fatalf("executeConfigDeleteKeyMigration: %v", err)
+	}
+	if changed {
+		t.Fatal("expected missing key deletion to be a no-op")
+	}
+}
+
+func TestValidateUpgradeMigrationOperation_ConfigDeleteKeyRequiresValidKey(t *testing.T) {
+	err := validateUpgradeMigrationOperation(upgradeMigrationOperation{
+		ID:        "delete-bad-key",
+		Kind:      upgradeMigrationKindConfigDeleteKey,
+		Key:       "agents..gemini",
+		Rationale: "Delete invalid key for test.",
+	})
+	if err == nil {
+		t.Fatal("expected invalid config_delete_key operation to fail validation")
+	}
+	if !strings.Contains(err.Error(), "invalid key") {
+		t.Fatalf("expected invalid-key validation error, got %v", err)
+	}
+}
+
+func TestValidateUpgradeMigrationOperation_ConfigReplaceString(t *testing.T) {
+	validOp := upgradeMigrationOperation{
+		ID:        "replace-client",
+		Kind:      upgradeMigrationKindConfigReplaceString,
+		Key:       "mcp.servers[].clients[]",
+		From:      "gemini",
+		To:        "antigravity",
+		Rationale: "Replace legacy client ID.",
+	}
+	if err := validateUpgradeMigrationOperation(validOp); err != nil {
+		t.Fatalf("expected valid config_replace_string operation, got %v", err)
+	}
+
+	invalidPath := validOp
+	invalidPath.Key = "mcp..clients[]"
+	if err := validateUpgradeMigrationOperation(invalidPath); err == nil || !strings.Contains(err.Error(), "invalid key") {
+		t.Fatalf("expected invalid path error, got %v", err)
+	}
+
+	missingValue := validOp
+	missingValue.From = ""
+	if err := validateUpgradeMigrationOperation(missingValue); err == nil || !strings.Contains(err.Error(), "requires from and to") {
+		t.Fatalf("expected missing from/to error, got %v", err)
+	}
+}
+
 func TestLoadUpgradeMigrationManifest_0_8_1_IsEmpty(t *testing.T) {
 	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.8.1")
 	if err != nil {
@@ -665,6 +786,756 @@ func TestLoadUpgradeMigrationManifest_0_9_0_IncludesMigrateSkillsFormat(t *testi
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_10_2_MigratesGeminiToAntigravity(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.10.2")
+	if err != nil {
+		t.Fatalf("load 0.10.2 manifest: %v", err)
+	}
+	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
+	for _, op := range manifest.Operations {
+		byID[op.ID] = op
+	}
+	// Required ops for the v0.10.2 contract. Adding a patch op to the
+	// manifest later does NOT need to update this list — only assert the
+	// known ones exist, then reject any unknown IDs to catch silent slip-ins.
+	requiredIDs := []string{
+		"a-delete-old-agents-antigravity",
+		"b-rename-agents-gemini-enabled",
+		"c-delete-agents-gemini",
+		"d-set-default-agents-antigravity-enabled",
+		"e-replace-gemini-mcp-client",
+		"f-delete-orphan-gemini-md",
+	}
+	for _, id := range requiredIDs {
+		if _, ok := byID[id]; !ok {
+			t.Fatalf("missing required op %s in 0.10.2 manifest", id)
+		}
+	}
+	requiredSet := make(map[string]struct{}, len(requiredIDs))
+	for _, id := range requiredIDs {
+		requiredSet[id] = struct{}{}
+	}
+	for id := range byID {
+		if _, ok := requiredSet[id]; !ok {
+			t.Fatalf("unknown op %s in 0.10.2 manifest; update requiredIDs and document the new op", id)
+		}
+	}
+
+	oldDeleteOp := byID["a-delete-old-agents-antigravity"]
+	if oldDeleteOp.Kind != upgradeMigrationKindConfigDeleteKey {
+		t.Fatalf("old antigravity delete op kind = %q, want %q", oldDeleteOp.Kind, upgradeMigrationKindConfigDeleteKey)
+	}
+	if oldDeleteOp.Key != "agents.antigravity" {
+		t.Fatalf("old antigravity delete key = %q, want agents.antigravity", oldDeleteOp.Key)
+	}
+
+	renameOp := byID["b-rename-agents-gemini-enabled"]
+	if renameOp.Kind != upgradeMigrationKindConfigRenameKey {
+		t.Fatalf("rename op kind = %q, want %q", renameOp.Kind, upgradeMigrationKindConfigRenameKey)
+	}
+	if renameOp.From != "agents.gemini.enabled" || renameOp.To != "agents.antigravity.enabled" {
+		t.Fatalf("rename op from/to = %q/%q", renameOp.From, renameOp.To)
+	}
+
+	deleteOp := byID["c-delete-agents-gemini"]
+	if deleteOp.Kind != upgradeMigrationKindConfigDeleteKey {
+		t.Fatalf("delete op kind = %q, want %q", deleteOp.Kind, upgradeMigrationKindConfigDeleteKey)
+	}
+	if deleteOp.Key != "agents.gemini" {
+		t.Fatalf("delete op key = %q, want agents.gemini", deleteOp.Key)
+	}
+
+	defaultOp := byID["d-set-default-agents-antigravity-enabled"]
+	if defaultOp.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("default op kind = %q, want %q", defaultOp.Kind, upgradeMigrationKindConfigSetDefault)
+	}
+	if defaultOp.Key != "agents.antigravity.enabled" || string(defaultOp.Value) != "false" {
+		t.Fatalf("default op key/value = %q/%q", defaultOp.Key, string(defaultOp.Value))
+	}
+
+	replaceOp := byID["e-replace-gemini-mcp-client"]
+	if replaceOp.Kind != upgradeMigrationKindConfigReplaceString {
+		t.Fatalf("replace op kind = %q, want %q", replaceOp.Kind, upgradeMigrationKindConfigReplaceString)
+	}
+	if replaceOp.Key != "mcp.servers[].clients[]" || replaceOp.From != "gemini" || replaceOp.To != "antigravity" {
+		t.Fatalf("replace op key/from/to = %q/%q/%q", replaceOp.Key, replaceOp.From, replaceOp.To)
+	}
+
+	orphanOp := byID["f-delete-orphan-gemini-md"]
+	if orphanOp.Kind != upgradeMigrationKindDeleteGeneratedArtifact {
+		t.Fatalf("orphan delete kind = %q, want %q", orphanOp.Kind, upgradeMigrationKindDeleteGeneratedArtifact)
+	}
+	if orphanOp.Path != "GEMINI.md" {
+		t.Fatalf("orphan delete path = %q, want GEMINI.md", orphanOp.Path)
+	}
+
+	// All 0.10.2 ops are source-agnostic so users without a resolvable
+	// source version (no pin / baseline / snapshot / manifest match) still
+	// get the full migration. Re-run safety is provided by al upgrade
+	// bumping the pin to 0.10.2 on success; subsequent runs resolve source
+	// as 0.10.2 and skip the 0.10.2 manifest entirely (Round 3 F-3-1).
+	for _, op := range byID {
+		if !op.SourceAgnostic {
+			t.Fatalf("op %s expected source_agnostic, got false", op.ID)
+		}
+	}
+	if manifest.MinPriorVersion != "0.10.1" {
+		t.Fatalf("min_prior_version = %q, want 0.10.1", manifest.MinPriorVersion)
+	}
+}
+
+func TestMigration_0_10_2_MigratesGeminiConfigToAntigravity(t *testing.T) {
+	tests := []struct {
+		name        string
+		geminiBlock []string
+		clients     string
+		wantEnabled bool
+		wantClients []string
+	}{
+		{
+			name: "enabled true preserved and legacy keys deleted",
+			geminiBlock: []string{
+				"[agents.gemini]",
+				"enabled = true",
+				`model = "gemini-custom"`,
+				`reasoning_effort = "high"`,
+				"",
+			},
+			clients:     `["claude", "gemini", "antigravity"]`,
+			wantEnabled: true,
+			wantClients: []string{"claude", "antigravity"},
+		},
+		{
+			name: "enabled false preserved",
+			geminiBlock: []string{
+				"[agents.gemini]",
+				"enabled = false",
+				"",
+			},
+			clients:     `["claude", "gemini", "antigravity"]`,
+			wantEnabled: false,
+			wantClients: []string{"claude", "antigravity"},
+		},
+		{
+			name:        "missing gemini defaults false",
+			geminiBlock: nil,
+			clients:     `["claude", "antigravity"]`,
+			wantEnabled: false,
+			wantClients: []string{"claude", "antigravity"},
+		},
+		{
+			// F-B-5 case (a): clients=["gemini"] alone — the migration must
+			// rewrite to ["antigravity"], not delete the server.
+			name:        "clients sole-gemini-element becomes antigravity",
+			geminiBlock: nil,
+			clients:     `["gemini"]`,
+			wantEnabled: false,
+			wantClients: []string{"antigravity"},
+		},
+		{
+			// F-B-5 case (b): clients=["gemini","antigravity"] — dedupe
+			// must collapse the duplicate-of-existing-antigravity to a
+			// single entry.
+			name:        "clients dedupes pre-existing antigravity after replace",
+			geminiBlock: nil,
+			clients:     `["gemini", "antigravity"]`,
+			wantEnabled: false,
+			wantClients: []string{"antigravity"},
+		},
+		{
+			// F-B-5 case (c): clients with no gemini — the migration must be
+			// a no-op on the array (not dedupe pre-existing duplicates).
+			name:        "clients without gemini is a no-op",
+			geminiBlock: nil,
+			clients:     `["claude", "claude"]`,
+			wantEnabled: false,
+			wantClients: []string{"claude", "claude"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			cfgPath := writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(tt.geminiBlock, tt.clients))
+			// Write a pre-0.10.2 pin so the source-gated ops (a, see Round 2
+			// F-B2-1) run and clear the legacy desktop `[agents.antigravity]`
+			// block before the rename. This simulates a real `al upgrade`
+			// from 0.10.1 to 0.10.2.
+			writePinForTest(t, root, "0.10.1")
+			var warn bytes.Buffer
+			inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+			if err := inst.prepareUpgradeMigrations(); err != nil {
+				t.Fatalf("prepareUpgradeMigrations: %v", err)
+			}
+			if err := inst.runMigrations(); err != nil {
+				t.Fatalf("runMigrations: %v", err)
+			}
+
+			data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+			if err != nil {
+				t.Fatalf("read migrated config: %v", err)
+			}
+			if strings.Contains(string(data), "gemini") {
+				t.Fatalf("expected Gemini table and keys removed, got:\n%s", string(data))
+			}
+			cfg, err := config.ParseConfig(data, cfgPath)
+			if err != nil {
+				t.Fatalf("strict config parse after migration: %v\n%s", err, string(data))
+			}
+			if len(cfg.MCP.Servers) != 1 {
+				t.Fatalf("expected one MCP server, got %d", len(cfg.MCP.Servers))
+			}
+			// Compare clients as a multiset, not by slice order. The replace
+			// + dedupe contract is "every gemini becomes antigravity, then
+			// duplicates of antigravity collapse" — the resulting slice
+			// order is an implementation detail.
+			assertSameStringMultiset(t, cfg.MCP.Servers[0].Clients, tt.wantClients)
+			if cfg.Agents.Antigravity.Enabled == nil {
+				t.Fatal("expected agents.antigravity.enabled to be set")
+			}
+			if *cfg.Agents.Antigravity.Enabled != tt.wantEnabled {
+				t.Fatalf("agents.antigravity.enabled = %v, want %v", *cfg.Agents.Antigravity.Enabled, tt.wantEnabled)
+			}
+
+			// Idempotency: bump the pin to 0.10.2 (as a real successful
+			// upgrade would) and re-run. Every op must be a no-op or
+			// source-gated skip, and the user's enable value must survive
+			// unchanged (F-B2-1 regression guard).
+			writePinForTest(t, root, "0.10.2")
+			inst2 := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+			if err := inst2.prepareUpgradeMigrations(); err != nil {
+				t.Fatalf("prepareUpgradeMigrations (rerun): %v", err)
+			}
+			if err := inst2.runMigrations(); err != nil {
+				t.Fatalf("runMigrations (rerun): %v", err)
+			}
+			// The enable value must survive the rerun unchanged.
+			rerunData, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+			if err != nil {
+				t.Fatalf("re-read migrated config: %v", err)
+			}
+			rerunCfg, err := config.ParseConfig(rerunData, cfgPath)
+			if err != nil {
+				t.Fatalf("strict parse after rerun: %v\n%s", err, string(rerunData))
+			}
+			if rerunCfg.Agents.Antigravity.Enabled == nil || *rerunCfg.Agents.Antigravity.Enabled != tt.wantEnabled {
+				t.Fatalf("rerun regressed Antigravity.Enabled: want %v, got %v", tt.wantEnabled, rerunCfg.Agents.Antigravity.Enabled)
+			}
+			for _, id := range []string{
+				"b-rename-agents-gemini-enabled",
+				"c-delete-agents-gemini",
+				"e-replace-gemini-mcp-client",
+			} {
+				if entry, ok := migrationReportEntryByID(inst2.migrationReport.Entries, id); ok {
+					if entry.Status != UpgradeMigrationStatusNoop {
+						t.Fatalf("rerun: expected %s to be no-op, got status=%q", id, entry.Status)
+					}
+				}
+			}
+		})
+	}
+}
+
+func assertSameStringMultiset(t *testing.T, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Fatalf("clients length = %d, want %d (got=%#v want=%#v)", len(got), len(want), got, want)
+	}
+	gotSorted := append([]string(nil), got...)
+	wantSorted := append([]string(nil), want...)
+	sort.Strings(gotSorted)
+	sort.Strings(wantSorted)
+	if !reflect.DeepEqual(gotSorted, wantSorted) {
+		t.Fatalf("clients (sorted) = %#v, want %#v", gotSorted, wantSorted)
+	}
+}
+
+// TestExecuteConfigReplaceStringMigration directly exercises the
+// config_replace_string executor on a real temp config so the branches
+// missing from the higher-level test (idempotency, no-op key path, wrong
+// leaf type, []any vs []string) are covered. F-C-4 called this out as a
+// ~150-line subsystem with only one indirect integration test today.
+func TestExecuteConfigReplaceStringMigration(t *testing.T) {
+	t.Run("replaces matching elements in []string and dedupes new duplicates", func(t *testing.T) {
+		root := t.TempDir()
+		cfgPath := writeMigrationConfigForTest(t, root, strings.Join([]string{
+			"[approvals]",
+			`mode = "all"`,
+			"",
+			"[[mcp.servers]]",
+			`id = "fs"`,
+			"enabled = true",
+			`transport = "stdio"`,
+			`command = "npx"`,
+			`clients = ["claude", "gemini", "antigravity"]`,
+		}, "\n"))
+		inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(upgradeMigrationOperation{
+			ID:   "test",
+			Kind: upgradeMigrationKindConfigReplaceString,
+			Key:  "mcp.servers[].clients[]",
+			From: "gemini",
+			To:   "antigravity",
+		})
+		if err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		if !changed {
+			t.Fatal("expected changed=true")
+		}
+		data, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		// Lenient-parse and assert the clients slice — strict ParseConfig
+		// requires the full required-field set which is unrelated to what
+		// this unit test is checking.
+		cfg, err := config.ParseConfigLenient(data, cfgPath)
+		if err != nil {
+			t.Fatalf("parse after migration: %v\n%s", err, string(data))
+		}
+		if len(cfg.MCP.Servers) != 1 {
+			t.Fatalf("expected one server, got %d", len(cfg.MCP.Servers))
+		}
+		assertSameStringMultiset(t, cfg.MCP.Servers[0].Clients, []string{"claude", "antigravity"})
+	})
+
+	t.Run("no-op when no element matches from", func(t *testing.T) {
+		root := t.TempDir()
+		cfgPath := writeMigrationConfigForTest(t, root, strings.Join([]string{
+			"[approvals]",
+			`mode = "all"`,
+			"",
+			"[[mcp.servers]]",
+			`id = "fs"`,
+			"enabled = true",
+			`transport = "stdio"`,
+			`command = "npx"`,
+			`clients = ["claude", "claude"]`,
+		}, "\n"))
+		original, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+		if err != nil {
+			t.Fatalf("read original: %v", err)
+		}
+		inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(upgradeMigrationOperation{
+			ID:   "test",
+			Kind: upgradeMigrationKindConfigReplaceString,
+			Key:  "mcp.servers[].clients[]",
+			From: "gemini",
+			To:   "antigravity",
+		})
+		if err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		if changed {
+			t.Fatal("expected changed=false for no-match case")
+		}
+		// The unconditional dedupe bug (pre-fix) collapsed the user's
+		// intentional ["claude","claude"] duplicate. After the fix the
+		// duplicate must survive untouched on the no-match path.
+		current, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+		if err != nil {
+			t.Fatalf("read after: %v", err)
+		}
+		if string(current) != string(original) {
+			t.Fatalf("expected no rewrite on no-match path; got:\n%s\nwant:\n%s", string(current), string(original))
+		}
+	})
+
+	t.Run("idempotent re-run is no-op", func(t *testing.T) {
+		root := t.TempDir()
+		writeMigrationConfigForTest(t, root, strings.Join([]string{
+			"[approvals]",
+			`mode = "all"`,
+			"",
+			"[[mcp.servers]]",
+			`id = "fs"`,
+			"enabled = true",
+			`transport = "stdio"`,
+			`command = "npx"`,
+			`clients = ["antigravity"]`,
+		}, "\n"))
+		inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(upgradeMigrationOperation{
+			ID:   "test",
+			Kind: upgradeMigrationKindConfigReplaceString,
+			Key:  "mcp.servers[].clients[]",
+			From: "gemini",
+			To:   "antigravity",
+		})
+		if err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		if changed {
+			t.Fatal("expected no-op on already-migrated config")
+		}
+	})
+}
+
+// TestMigration_0_10_2_UnknownSourceUpgradePath covers the F-3-1 regression
+// path: a user upgrading from 0.10.1 → 0.10.2 with no resolvable source
+// (no pin / baseline / snapshot) must still complete the migration even
+// when the legacy `[agents.antigravity]` desktop block + `[agents.gemini]`
+// block coexist. Op `a` being source-agnostic clears the desktop block
+// before op `b` renames into the same key.
+func TestMigration_0_10_2_UnknownSourceUpgradePath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	geminiBlock := []string{"[agents.gemini]", "enabled = true", ""}
+	cfgPath := writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
+		geminiBlock,
+		`["claude", "gemini", "antigravity"]`,
+	))
+	// Deliberately no pin / baseline written: source resolution must fall
+	// through to "unknown" so source-agnostic ops carry the migration.
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations (unknown source): %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations (unknown source) must succeed even with legacy [agents.antigravity] present: %v", err)
+	}
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatalf("read migrated config: %v", err)
+	}
+	// Explicit assertion (F-4-4): strict ParseConfig below already rejects
+	// surviving [agents.gemini], but pinning the absence directly makes a
+	// future schema-relaxation that silently re-admits the table impossible
+	// to land without flipping this test red.
+	if strings.Contains(string(data), "[agents.gemini]") {
+		t.Fatalf("expected [agents.gemini] table to be removed by migration; got:\n%s", string(data))
+	}
+	cfg, err := config.ParseConfig(data, cfgPath)
+	if err != nil {
+		t.Fatalf("strict parse after unknown-source migration: %v\n%s", err, string(data))
+	}
+	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
+		t.Fatalf("expected agents.antigravity.enabled = true after unknown-source migration, got %v", cfg.Agents.Antigravity.Enabled)
+	}
+}
+
+func TestMigration_0_10_2_UnknownSourceKeepsCurrentAntigravity(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, strings.Join([]string{
+		"[approvals]",
+		`mode = "all"`,
+		"",
+		"[agents.claude]",
+		"enabled = false",
+		"",
+		"[agents.claude_vscode]",
+		"enabled = false",
+		"",
+		"[agents.codex]",
+		"enabled = false",
+		"",
+		"[agents.vscode]",
+		"enabled = false",
+		"",
+		"[agents.antigravity]",
+		"enabled = true",
+		"",
+		"[agents.copilot_cli]",
+		"enabled = false",
+		"",
+		"[[mcp.servers]]",
+		`id = "example"`,
+		"enabled = true",
+		`transport = "stdio"`,
+		`command = "npx"`,
+		`clients = ["antigravity"]`,
+	}, "\n"))
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn, prompter: PromptFuncs{}}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatalf("read migrated config: %v", err)
+	}
+	cfg, err := config.ParseConfig(data, cfgPath)
+	if err != nil {
+		t.Fatalf("strict parse after migration: %v\n%s", err, string(data))
+	}
+	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
+		t.Fatalf("expected current agents.antigravity.enabled = true to survive unknown-source migration, got %v", cfg.Agents.Antigravity.Enabled)
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "a-delete-old-agents-antigravity"); !ok || entry.Status != UpgradeMigrationStatusNoop {
+		t.Fatalf("expected old antigravity delete to be no-op without legacy Gemini, got %#v ok=%v", entry, ok)
+	}
+}
+
+func TestUpgradeTransactionRunsMigrationsBeforePinBump(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.10.1"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+	legacyConfig := antigravityMigrationConfigWithClients(
+		[]string{"[agents.gemini]", "enabled = true", ""},
+		`["gemini"]`,
+	)
+	if err := os.WriteFile(cfgPath, []byte(legacyConfig), 0o600); err != nil {
+		t.Fatalf("seed legacy config: %v", err)
+	}
+
+	sys := &recordWriteSystem{base: RealSystem{}}
+	if err := Run(root, Options{System: sys, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.10.2"}); err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+
+	configWriteIndex := sys.firstWriteIndex(cfgPath)
+	pinWriteIndex := sys.firstWriteIndex(filepath.Join(root, ".agent-layer", "al.version"))
+	if configWriteIndex == -1 {
+		t.Fatalf("expected config migration write, writes = %#v", sys.writes)
+	}
+	if pinWriteIndex == -1 {
+		t.Fatalf("expected pin write, writes = %#v", sys.writes)
+	}
+	if configWriteIndex > pinWriteIndex {
+		t.Fatalf("expected migrations to write config before pin bump, writes = %#v", sys.writes)
+	}
+}
+
+// TestDeleteGeneratedArtifact_PreservesHandAuthoredFile pins F-B2-2: the
+// `delete_generated_artifact` migration must only delete files Agent Layer
+// itself produced (carrying the `GENERATED FILE` watermark). A user's
+// hand-authored file at the same path must survive `al upgrade`.
+func TestDeleteGeneratedArtifact_PreservesHandAuthoredFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	handAuthored := filepath.Join(root, "GEMINI.md")
+	if err := os.WriteFile(handAuthored, []byte("# my Gemini notes\nNot generated, do not delete.\n"), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}}
+	changed, err := inst.executeDeleteMigration("GEMINI.md", true)
+	if err != nil {
+		t.Fatalf("execute delete: %v", err)
+	}
+	if changed {
+		t.Fatal("expected no deletion for hand-authored file lacking the GENERATED FILE marker")
+	}
+	if _, err := os.Stat(handAuthored); err != nil {
+		t.Fatalf("hand-authored file must survive: %v", err)
+	}
+}
+
+// TestDeleteGeneratedArtifact_PreservesDirectory pins that watermarked artifact
+// deletion never recursively removes a directory without explicit generated
+// ownership proof.
+func TestDeleteGeneratedArtifact_PreservesDirectory(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dirPath := filepath.Join(root, "GEMINI.md")
+	if err := os.MkdirAll(dirPath, 0o700); err != nil {
+		t.Fatalf("seed dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dirPath, "notes.md"), []byte("user notes\n"), 0o600); err != nil {
+		t.Fatalf("seed nested file: %v", err)
+	}
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn}
+	changed, err := inst.executeDeleteMigration("GEMINI.md", true)
+	if err != nil {
+		t.Fatalf("execute delete: %v", err)
+	}
+	if changed {
+		t.Fatal("expected no deletion for directory lacking explicit generated ownership proof")
+	}
+	if _, err := os.Stat(filepath.Join(dirPath, "notes.md")); err != nil {
+		t.Fatalf("directory contents must survive: %v", err)
+	}
+	if !strings.Contains(warn.String(), "refuses to remove directories") {
+		t.Fatalf("expected directory-preservation warning, got %q", warn.String())
+	}
+}
+
+// TestDeleteGeneratedArtifact_DeletesWatermarkedFile is the positive case:
+// when the watermark is present, the file is deleted (this is the normal
+// orphan-cleanup path).
+func TestDeleteGeneratedArtifact_DeletesWatermarkedFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	generated := filepath.Join(root, "GEMINI.md")
+	if err := os.WriteFile(generated, []byte("<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n-->\n\nbody\n"), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}}
+	changed, err := inst.executeDeleteMigration("GEMINI.md", true)
+	if err != nil {
+		t.Fatalf("execute delete: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected watermarked file to be deleted")
+	}
+	if _, err := os.Stat(generated); !os.IsNotExist(err) {
+		t.Fatalf("expected file removed, stat err = %v", err)
+	}
+}
+
+// TestConfigMigrationFromOperation_SurfacesAllConfigKinds locks in F-A-1:
+// every config-kind migration operation must produce a ConfigKeyMigration so
+// the upgrade preview tells the user what the migration will change. Before
+// this test, config_delete_key was silently omitted from the preview even
+// though deletes are the most destructive config mutation.
+func TestConfigMigrationFromOperation_SurfacesAllConfigKinds(t *testing.T) {
+	cases := []struct {
+		name    string
+		op      upgradeMigrationOperation
+		wantKey string
+		wantTo  string
+	}{
+		{
+			name:    "delete_key surfaces with (existing)→(removed)",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindConfigDeleteKey, Key: "agents.gemini"},
+			wantKey: "agents.gemini",
+			wantTo:  "(removed)",
+		},
+		{
+			name:    "rename_key surfaces from→to",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindConfigRenameKey, From: "agents.gemini.enabled", To: "agents.antigravity.enabled"},
+			wantKey: "agents.gemini.enabled",
+			wantTo:  "agents.antigravity.enabled",
+		},
+		{
+			name:    "replace_string surfaces from→to",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindConfigReplaceString, Key: "mcp.servers[].clients[]", From: "gemini", To: "antigravity"},
+			wantKey: "mcp.servers[].clients[]",
+			wantTo:  "antigravity",
+		},
+		{
+			name:    "set_default surfaces (unset)→value",
+			op:      upgradeMigrationOperation{Kind: upgradeMigrationKindConfigSetDefault, Key: "agents.antigravity.enabled", Value: json.RawMessage(`false`)},
+			wantKey: "agents.antigravity.enabled",
+			wantTo:  "false",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := configMigrationFromOperation(tc.op)
+			if !ok {
+				t.Fatalf("expected configMigrationFromOperation to surface %s", tc.op.Kind)
+			}
+			if got.Key != tc.wantKey {
+				t.Fatalf("key = %q, want %q", got.Key, tc.wantKey)
+			}
+			if got.To != tc.wantTo {
+				t.Fatalf("to = %q, want %q", got.To, tc.wantTo)
+			}
+		})
+	}
+}
+
+// antigravityMigrationConfigWithClients builds a complete 0.10.2-compatible
+// config fixture with a pluggable `[agents.gemini]` block and `clients` array
+// so the table-driven migration tests can vary just those two surfaces.
+func antigravityMigrationConfigWithClients(geminiBlock []string, clients string) string {
+	lines := []string{
+		"[approvals]",
+		`mode = "all"`,
+		"",
+	}
+	lines = append(lines, geminiBlock...)
+	lines = append(lines,
+		"[agents.claude]",
+		"enabled = false",
+		"",
+		"[agents.claude_vscode]",
+		"enabled = false",
+		"",
+		"[agents.codex]",
+		"enabled = false",
+		"",
+		"[agents.vscode]",
+		"enabled = false",
+		"",
+		"[agents.antigravity]",
+		"enabled = false",
+		"",
+		"[agents.copilot_cli]",
+		"enabled = false",
+		"",
+		"[[mcp.servers]]",
+		`id = "filesystem"`,
+		"enabled = true",
+		`transport = "stdio"`,
+		`command = "npx"`,
+		`clients = `+clients,
+	)
+	return strings.Join(lines, "\n")
+}
+
+type recordWriteSystem struct {
+	base   System
+	writes []string
+}
+
+func (r *recordWriteSystem) Lstat(name string) (os.FileInfo, error) {
+	return r.base.Lstat(name)
+}
+
+func (r *recordWriteSystem) Stat(name string) (os.FileInfo, error) {
+	return r.base.Stat(name)
+}
+
+func (r *recordWriteSystem) ReadFile(name string) ([]byte, error) {
+	return r.base.ReadFile(name)
+}
+
+func (r *recordWriteSystem) Readlink(name string) (string, error) {
+	return r.base.Readlink(name)
+}
+
+func (r *recordWriteSystem) LookupEnv(key string) (string, bool) {
+	return r.base.LookupEnv(key)
+}
+
+func (r *recordWriteSystem) MkdirAll(path string, perm os.FileMode) error {
+	return r.base.MkdirAll(path, perm)
+}
+
+func (r *recordWriteSystem) RemoveAll(path string) error {
+	return r.base.RemoveAll(path)
+}
+
+func (r *recordWriteSystem) Rename(oldpath string, newpath string) error {
+	return r.base.Rename(oldpath, newpath)
+}
+
+func (r *recordWriteSystem) Symlink(oldname string, newname string) error {
+	return r.base.Symlink(oldname, newname)
+}
+
+func (r *recordWriteSystem) WalkDir(root string, fn fs.WalkDirFunc) error {
+	return r.base.WalkDir(root, fn)
+}
+
+func (r *recordWriteSystem) WriteFileAtomic(filename string, data []byte, perm os.FileMode) error {
+	r.writes = append(r.writes, filepath.Clean(filename))
+	return r.base.WriteFileAtomic(filename, data, perm)
+}
+
+func (r *recordWriteSystem) firstWriteIndex(filename string) int {
+	clean := filepath.Clean(filename)
+	for idx, write := range r.writes {
+		if write == clean {
+			return idx
+		}
+	}
+	return -1
+}
+
 func TestMigration_0_9_0_RenamesSlashCommandsAndMigratesFlatSkills(t *testing.T) {
 	root := t.TempDir()
 	legacyDir := filepath.Join(root, ".agent-layer", "slash-commands")
@@ -762,7 +1633,7 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 		"[approvals]",
 		`mode = "all"`,
 		"",
-		"[agents.gemini]",
+		"[agents.antigravity]",
 		"enabled = false",
 		"",
 		"[agents.claude]",
@@ -775,9 +1646,6 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 		"enabled = false",
 		"",
 		"[agents.vscode]",
-		"enabled = false",
-		"",
-		"[agents.antigravity]",
 		"enabled = false",
 		"",
 		"[agents.copilot_cli]",
@@ -827,6 +1695,30 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 	}
 	if cfg.Agents.ClaudeVSCode.Enabled == nil || !*cfg.Agents.ClaudeVSCode.Enabled {
 		t.Fatal("expected agents.claude_vscode.enabled = true after migration")
+	}
+}
+
+func writeMigrationConfigForTest(t *testing.T, root string, content string) string {
+	t.Helper()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	cfgPath := filepath.Join(configDir, "config.toml")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return cfgPath
+}
+
+func writePinForTest(t *testing.T, root string, version string) {
+	t.Helper()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
+		t.Fatalf("mkdir pin dir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte(version+"\n"), 0o600); err != nil {
+		t.Fatalf("write pin: %v", err)
 	}
 }
 

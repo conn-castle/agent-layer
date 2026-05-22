@@ -7,7 +7,6 @@
 # Agent Layer-generated instruction shims
 /AGENTS.md
 /CLAUDE.md
-/GEMINI.md
 /.github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts
@@ -18,6 +17,12 @@
 /.codex/
 /.copilot/
 /.gemini/
+
+# Antigravity workspace marker (auto-created by agy; symlinks store per-user paths)
+/.antigravitycli/
+
+# Antigravity repo-local data dir (al sync regenerates managed files)
+/.agy/
 /.claude/
 /.claude-config/
 /.vscode/mcp.json

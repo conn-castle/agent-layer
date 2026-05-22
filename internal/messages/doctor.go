@@ -34,8 +34,14 @@ const (
 	DoctorSecretFoundEnvFileFmt     = "Secret found in .agent-layer/.env: %s"
 	DoctorNoRequiredSecrets         = "No required secrets found in configuration."
 
-	DoctorAgentEnabledFmt  = "Agent enabled: %s"
-	DoctorAgentDisabledFmt = "Agent disabled: %s"
+	DoctorAgentEnabledFmt              = "Agent enabled: %s"
+	DoctorAgentDisabledFmt             = "Agent disabled: %s"
+	DoctorAntigravityNotFound          = "Antigravity binary not found: agy"
+	DoctorAntigravityInstallRecommend  = "Install Antigravity (https://antigravity.google) and ensure `agy` (>= 1.0.0) is on PATH; run `al probe antigravity` to verify."
+	DoctorAntigravityVersionFailedFmt  = "Failed to read Antigravity version: %v"
+	DoctorAntigravityVersionUnknownFmt = "Could not parse Antigravity version from %q"
+	DoctorAntigravityVersionTooOldFmt  = "Antigravity version %s is below required 1.0.0"
+	DoctorAntigravityVersionOKFmt      = "Antigravity version OK: %s"
 
 	DoctorSkillsValidatedFmt       = "Skills validated successfully (%d checked)"
 	DoctorSkillsNoneConfigured     = "No skills configured for validation."

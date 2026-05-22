@@ -14,7 +14,7 @@ func TestResolveMCPServers(t *testing.T) {
 		{
 			ID:        "http",
 			Enabled:   &enabled,
-			Clients:   []string{"gemini"},
+			Clients:   []string{"antigravity"},
 			Transport: "http",
 			URL:       "https://example.com?token=${TOKEN}",
 			Headers: map[string]string{
@@ -24,7 +24,7 @@ func TestResolveMCPServers(t *testing.T) {
 		{
 			ID:        "stdio",
 			Enabled:   &enabled,
-			Clients:   []string{"gemini"},
+			Clients:   []string{"antigravity"},
 			Transport: "stdio",
 			Command:   "tool",
 			Args:      []string{"--token", "${TOKEN}"},
@@ -35,7 +35,7 @@ func TestResolveMCPServers(t *testing.T) {
 	}
 	env := map[string]string{"TOKEN": "abc123"}
 
-	resolved, err := ResolveMCPServers(servers, env, "gemini", nil)
+	resolved, err := ResolveMCPServers(servers, env, "antigravity", nil)
 	if err != nil {
 		t.Fatalf("resolve mcp servers: %v", err)
 	}
@@ -65,12 +65,12 @@ func TestResolveMCPServersMissingEnv(t *testing.T) {
 		{
 			ID:        "http",
 			Enabled:   &enabled,
-			Clients:   []string{"gemini"},
+			Clients:   []string{"antigravity"},
 			Transport: "http",
 			URL:       "https://example.com?token=${TOKEN}",
 		},
 	}
-	_, err := ResolveMCPServers(servers, map[string]string{}, "gemini", nil)
+	_, err := ResolveMCPServers(servers, map[string]string{}, "antigravity", nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -82,13 +82,13 @@ func TestResolveMCPServersStdioArgMissingEnv(t *testing.T) {
 		{
 			ID:        "stdio",
 			Enabled:   &enabled,
-			Clients:   []string{"gemini"},
+			Clients:   []string{"antigravity"},
 			Transport: "stdio",
 			Command:   "tool",
 			Args:      []string{"${TOKEN}"},
 		},
 	}
-	_, err := ResolveMCPServers(servers, map[string]string{}, "gemini", nil)
+	_, err := ResolveMCPServers(servers, map[string]string{}, "antigravity", nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -98,11 +98,11 @@ func TestEnabledServerIDs(t *testing.T) {
 	enabled := true
 	disabled := false
 	servers := []config.MCPServer{
-		{ID: "b", Enabled: &enabled, Clients: []string{"gemini"}},
-		{ID: "a", Enabled: &enabled, Clients: []string{"gemini"}},
-		{ID: "c", Enabled: &disabled, Clients: []string{"gemini"}},
+		{ID: "b", Enabled: &enabled, Clients: []string{"antigravity"}},
+		{ID: "a", Enabled: &enabled, Clients: []string{"antigravity"}},
+		{ID: "c", Enabled: &disabled, Clients: []string{"antigravity"}},
 	}
-	ids := EnabledServerIDs(servers, "gemini")
+	ids := EnabledServerIDs(servers, "antigravity")
 	if len(ids) != 2 || ids[0] != "a" || ids[1] != "b" {
 		t.Fatalf("unexpected ids: %v", ids)
 	}
@@ -115,7 +115,7 @@ func TestResolveMCPServersExpandsRepoRootArg(t *testing.T) {
 		{
 			ID:        "fs",
 			Enabled:   &enabled,
-			Clients:   []string{"gemini"},
+			Clients:   []string{"antigravity"},
 			Transport: "stdio",
 			Command:   "tool",
 			Args:      []string{"${" + config.BuiltinRepoRootEnvVar + "}/../data"},
@@ -123,7 +123,7 @@ func TestResolveMCPServersExpandsRepoRootArg(t *testing.T) {
 	}
 	env := map[string]string{config.BuiltinRepoRootEnvVar: repoRoot}
 
-	resolved, err := ResolveMCPServers(servers, env, "gemini", nil)
+	resolved, err := ResolveMCPServers(servers, env, "antigravity", nil)
 	if err != nil {
 		t.Fatalf("resolve mcp servers: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestResolveMCPServersPathExpansionFailsWithoutRepoRoot(t *testing.T) {
 		{
 			ID:        "fs",
 			Enabled:   &enabled,
-			Clients:   []string{"gemini"},
+			Clients:   []string{"antigravity"},
 			Transport: "stdio",
 			Command:   "tool",
 			// Args reference AL_REPO_ROOT but env doesn't provide it
@@ -152,7 +152,7 @@ func TestResolveMCPServersPathExpansionFailsWithoutRepoRoot(t *testing.T) {
 	// Empty env - no AL_REPO_ROOT
 	env := map[string]string{}
 
-	_, err := ResolveMCPServers(servers, env, "gemini", nil)
+	_, err := ResolveMCPServers(servers, env, "antigravity", nil)
 	if err == nil {
 		t.Fatal("expected error when AL_REPO_ROOT is missing for path expansion")
 	}

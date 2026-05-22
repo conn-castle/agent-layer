@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "example": {
+      "serverUrl": "https://mcp.example.com?token=${AL_EXAMPLE_TOKEN}",
+      "headers": {
+        "Authorization": "Bearer ${AL_EXAMPLE_TOKEN}"
+      }
+    }
+  }
+}

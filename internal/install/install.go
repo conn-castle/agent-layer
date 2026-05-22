@@ -183,8 +183,8 @@ type transactionStep struct {
 
 func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
 	steps := []transactionStep{
-		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
+		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "writeTemplateFiles", run: inst.templates().writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
 		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
 		{name: "updateGitignore", run: inst.updateGitignore, rollbackTargets: inst.updateGitignoreTargetPaths},

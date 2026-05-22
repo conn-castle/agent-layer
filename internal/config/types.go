@@ -24,19 +24,18 @@ type ApprovalsConfig struct {
 
 // AgentsConfig holds per-client enablement and model selection.
 type AgentsConfig struct {
-	Gemini       AgentConfig      `toml:"gemini"`
+	Antigravity  EnableOnlyConfig `toml:"antigravity"`
 	Claude       ClaudeConfig     `toml:"claude"`
 	ClaudeVSCode EnableOnlyConfig `toml:"claude_vscode"`
 	Codex        CodexConfig      `toml:"codex"`
 	VSCode       EnableOnlyConfig `toml:"vscode"`
-	Antigravity  EnableOnlyConfig `toml:"antigravity"`
 	CopilotCLI   AgentConfig      `toml:"copilot_cli"`
 }
 
 // AgentConfig is for agents that support enablement and model selection.
 // ReasoningEffort is present so the TOML decoder accepts the key without
 // raising an unknown-key error; the validator then provides a specific
-// error message for agents that do not support reasoning effort (e.g. Gemini).
+// error message for agents that do not support reasoning effort.
 type AgentConfig struct {
 	Enabled         *bool  `toml:"enabled"`
 	Model           string `toml:"model"`
@@ -107,7 +106,6 @@ func IsAgentEnabled(p *bool) bool {
 // both read from it.
 func SharedAgentSkillsEnabled(agents AgentsConfig) bool {
 	return IsAgentEnabled(agents.Codex.Enabled) ||
-		IsAgentEnabled(agents.Gemini.Enabled) ||
 		IsAgentEnabled(agents.Antigravity.Enabled) ||
 		IsAgentEnabled(agents.VSCode.Enabled) ||
 		IsAgentEnabled(agents.CopilotCLI.Enabled)

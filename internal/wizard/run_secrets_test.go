@@ -23,7 +23,7 @@ func TestRun_WithSecrets(t *testing.T) {
 	// Config with no MCP servers, so 'tavily' is missing default
 	initialConfig := `[approvals]
 mode = "all"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -32,8 +32,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false
@@ -90,7 +88,7 @@ func TestRun_SecretsExisting(t *testing.T) {
 
 	initialConfig := `[approvals]
 mode = "all"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -99,8 +97,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false

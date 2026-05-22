@@ -29,34 +29,34 @@ func TestLookupField_UnknownKey(t *testing.T) {
 }
 
 func TestLookupField_BoolField(t *testing.T) {
-	f, ok := LookupField("agents.gemini.enabled")
+	f, ok := LookupField("agents.antigravity.enabled")
 	if !ok {
-		t.Fatal("expected agents.gemini.enabled to be in catalog")
+		t.Fatal("expected agents.antigravity.enabled to be in catalog")
 	}
 	if f.Type != FieldBool {
 		t.Errorf("expected FieldBool, got %s", f.Type)
 	}
 	if !f.Required {
-		t.Error("expected agents.gemini.enabled to be required")
+		t.Error("expected agents.antigravity.enabled to be required")
 	}
 }
 
 func TestLookupField_EnumWithCustom(t *testing.T) {
-	f, ok := LookupField("agents.gemini.model")
+	f, ok := LookupField("agents.claude.model")
 	if !ok {
-		t.Fatal("expected agents.gemini.model to be in catalog")
+		t.Fatal("expected agents.claude.model to be in catalog")
 	}
 	if f.Type != FieldEnum {
 		t.Errorf("expected FieldEnum, got %s", f.Type)
 	}
 	if f.Required {
-		t.Error("expected agents.gemini.model to not be required")
+		t.Error("expected agents.claude.model to not be required")
 	}
 	if !f.AllowCustom {
-		t.Error("expected agents.gemini.model to allow custom values")
+		t.Error("expected agents.claude.model to allow custom values")
 	}
 	if len(f.Options) == 0 {
-		t.Error("expected agents.gemini.model to have options")
+		t.Error("expected agents.claude.model to have options")
 	}
 }
 
@@ -108,7 +108,7 @@ func TestFieldOptionValues_UnknownKey(t *testing.T) {
 }
 
 func TestFieldOptionValues_BoolField(t *testing.T) {
-	values := FieldOptionValues("agents.gemini.enabled")
+	values := FieldOptionValues("agents.antigravity.enabled")
 	if values != nil {
 		t.Errorf("expected nil for bool field with no options, got %v", values)
 	}
@@ -130,19 +130,6 @@ func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.claude.reasoning_effort")
 	want := []string{"low", "medium", "high", "xhigh", "max"}
-	if len(values) != len(want) {
-		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
-	}
-	for i, expected := range want {
-		if values[i] != expected {
-			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
-		}
-	}
-}
-
-func TestFieldOptionValues_GeminiModelCatalog(t *testing.T) {
-	values := FieldOptionValues("agents.gemini.model")
-	want := []string{"auto", "auto-gemini-3.1", "gemini-3.1-pro-preview", "gemini-3.1-flash", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}

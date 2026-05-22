@@ -13,6 +13,7 @@ func newAntigravityCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                messages.AntigravityUse,
 		Short:              messages.AntigravityShort,
+		Long:               messages.AntigravityLong,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
@@ -23,11 +24,15 @@ func newAntigravityCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return clients.Run(cmd.Context(), root, "antigravity", func(cfg *config.Config) *bool {
-				return cfg.Agents.Antigravity.Enabled
-			}, antigravity.Launch, quiet, passArgs, Version)
+			return runAntigravity(cmd, root, quiet, passArgs)
 		},
 	}
 
 	return cmd
+}
+
+func runAntigravity(cmd *cobra.Command, root string, quiet bool, passArgs []string) error {
+	return clients.Run(cmd.Context(), root, "antigravity", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
+	}, antigravity.Launch, quiet, passArgs, Version)
 }

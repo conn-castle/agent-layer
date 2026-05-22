@@ -3,9 +3,9 @@ package config
 import "testing"
 
 func TestAppliesToClient(t *testing.T) {
-	server := MCPServer{Clients: []string{"gemini", "codex"}}
-	if !server.AppliesToClient("gemini") {
-		t.Fatalf("expected gemini to apply")
+	server := MCPServer{Clients: []string{"antigravity", "codex"}}
+	if !server.AppliesToClient("antigravity") {
+		t.Fatalf("expected antigravity to apply")
 	}
 	if server.AppliesToClient("vscode") {
 		t.Fatalf("expected vscode not to apply")

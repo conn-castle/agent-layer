@@ -166,9 +166,17 @@ log="$log_dir/${binary}.log"
     echo "ARG_\${i}=\${arg}"
     i=\$((i + 1))
   done
-  env | grep -E '^(AL_|CLAUDE_)' | sort || true
+  env | grep -E '^(AL_|CLAUDE_|AGY_)' | sort || true
   echo "---END---"
 } >> "\$log"
+
+if [[ "\${1:-}" == "--version" ]]; then
+  if [[ "$binary" == "agy" ]]; then
+    echo "agy 1.0.0"
+  else
+    echo "1.0.0"
+  fi
+fi
 
 exit $exit_code
 MOCK_EOF
@@ -663,7 +671,6 @@ assert_al_version_content() {
 _SYNC_OUTPUT_PATHS=(
   "CLAUDE.md"
   "AGENTS.md"
-  "GEMINI.md"
   ".github/copilot-instructions.md"
   ".codex/AGENTS.md"
   ".claude/settings.json"
@@ -680,7 +687,7 @@ assert_generated_artifacts() {
   # Verify managed markers in instruction shims (all use the same header)
   assert_file_contains "$dir/CLAUDE.md" "GENERATED FILE" "CLAUDE.md has managed marker"
   assert_file_contains "$dir/AGENTS.md" "GENERATED FILE" "AGENTS.md has managed marker"
-  assert_file_contains "$dir/GEMINI.md" "GENERATED FILE" "GEMINI.md has managed marker"
+  assert_file_not_exists "$dir/GEMINI.md" "GEMINI.md is not generated after Gemini removal"
   assert_file_contains "$dir/.github/copilot-instructions.md" "GENERATED FILE" \
     "copilot-instructions.md has managed marker"
   assert_file_contains "$dir/.codex/AGENTS.md" "GENERATED FILE" \

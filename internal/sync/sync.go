@@ -96,11 +96,13 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		steps = append(steps, func() error { return CleanCopilotOutputs(sys, root) })
 	}
 
-	if config.IsAgentEnabled(agents.Gemini.Enabled) {
+	if config.IsAgentEnabled(agents.Antigravity.Enabled) {
 		steps = append(steps,
-			func() error { return WriteGeminiSettings(sys, root, project) },
-			func() error { return WriteGeminiPolicies(sys, root, project) },
+			func() error { return WriteAntigravitySettings(sys, root, project) },
+			func() error { return WriteAntigravityMCPConfig(sys, root, project) },
 		)
+	} else {
+		steps = append(steps, func() error { return CleanAntigravityOutputs(sys, root) })
 	}
 
 	// Claude files (.mcp.json, .claude/settings.json, .claude/skills/) fire when claude OR claude_vscode enabled.
@@ -124,17 +126,9 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 		return nil, err
 	}
 
-	// Non-fatal post-steps that produce warnings on failure.
-	var postWarnings []warnings.Warning
-	if config.IsAgentEnabled(agents.Gemini.Enabled) {
-		if w := EnsureGeminiTrustedFolder(sys, root); w != nil {
-			postWarnings = append(postWarnings, *w)
-		}
-	}
-
 	// Collect warnings after successful sync, including post-step warnings
 	// so that all warnings pass through noise control.
-	rawWarnings, err := collectWarnings(project, postWarnings)
+	rawWarnings, err := collectWarnings(project, nil)
 	if err != nil {
 		return nil, err
 	}

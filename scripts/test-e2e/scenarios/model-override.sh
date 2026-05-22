@@ -16,7 +16,7 @@ run_scenario_model_override() {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -30,9 +30,6 @@ enabled = true
 enabled = true
 
 [agents.vscode]
-enabled = true
-
-[agents.antigravity]
 enabled = true
 
 [agents.copilot_cli]

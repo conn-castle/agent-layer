@@ -8,7 +8,7 @@ TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
 GO_CACHE ?= $(ROOT_DIR)/.cache/go-build
 GO_MOD_CACHE ?= $(ROOT_DIR)/.cache/go-mod
 
-GO_FILES_FIND_CMD := find . -type f -name '*.go' -not -path './.tools/*' -not -path './.cache/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './.gemini/*' -not -path './.agents/*' -not -path './tmp/*'
+GO_FILES_FIND_CMD := find . -type f -name '*.go' -not -path './.tools/*' -not -path './.cache/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './.gemini/*' -not -path './.agy/*' -not -path './.antigravitycli/*' -not -path './.agents/*' -not -path './tmp/*'
 
 COVERAGE_THRESHOLD ?= 95.0
 
@@ -218,9 +218,9 @@ al-claude: ## Run al claude against this repo using current source
 al-codex: ## Run al codex against this repo using current source
 	@$(AL_RUN) codex
 
-.PHONY: al-gemini
-al-gemini: ## Run al gemini against this repo using current source
-	@$(AL_RUN) gemini
+.PHONY: al-antigravity
+al-antigravity: ## Run al antigravity against this repo using current source
+	@$(AL_RUN) antigravity
 
 .PHONY: al-copilot
 al-copilot: ## Run al copilot against this repo using current source

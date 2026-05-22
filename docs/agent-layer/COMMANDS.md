@@ -192,12 +192,20 @@ make al-upgrade   # al upgrade
 make al-doctor    # al doctor
 make al-claude    # al claude
 make al-codex     # al codex
-make al-gemini    # al gemini
+make al-antigravity # al antigravity
 make al-copilot   # al copilot
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
 Notes: Convenience wrappers for `go run ./cmd/al <subcommand>` against this repo's own `.agent-layer/` config. Useful when developing al locally and you want to dogfood your changes without `go install`.
+
+- Run the Antigravity capability probe
+```bash
+go run ./cmd/al probe antigravity
+```
+Run from: repo root
+Prerequisites: Antigravity (`agy`) installed on PATH
+Notes: Prints JSON describing the current `agy` permissions and MCP behavior observed in a repo-local probe workspace.
 
 ### CI
 

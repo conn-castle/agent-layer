@@ -3,9 +3,8 @@
 !.claude/**
 !.codex/
 !.codex/**
-!.gemini/
-!.gemini/**
+!.agy/
+!.agy/**
 !.mcp.json
 !AGENTS.md
 !CLAUDE.md
-!GEMINI.md

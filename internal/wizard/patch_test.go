@@ -65,23 +65,23 @@ mode = "mcp"
 id = "custom"
 enabled = true
 
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 `
 	out, err := PatchConfig(content, NewChoices())
 	require.NoError(t, err)
 
 	idxApprovals := strings.Index(out, "[approvals]")
-	idxGemini := strings.Index(out, "[agents.gemini]")
+	idxAntigravity := strings.Index(out, "[agents.antigravity]")
 	idxMCP := strings.Index(out, "[mcp]")
 	idxWarnings := strings.Index(out, "[warnings]")
 
 	require.NotEqual(t, -1, idxApprovals)
-	require.NotEqual(t, -1, idxGemini)
+	require.NotEqual(t, -1, idxAntigravity)
 	require.NotEqual(t, -1, idxMCP)
 	require.NotEqual(t, -1, idxWarnings)
 
-	assert.Less(t, idxApprovals, idxGemini)
+	assert.Less(t, idxApprovals, idxAntigravity)
 	assert.Less(t, idxMCP, idxWarnings)
 }
 
@@ -111,7 +111,7 @@ func TestOrderedWizardSections_UsesPreferredOrderWithTemplateFallback(t *testing
 	templateOrder := []string{
 		"warnings",
 		"mcp",
-		"agents.gemini",
+		"agents.antigravity",
 		"approvals",
 		"custom.section",
 		"agents.codex",
@@ -119,7 +119,7 @@ func TestOrderedWizardSections_UsesPreferredOrderWithTemplateFallback(t *testing
 	got := orderedWizardSections(templateOrder)
 	want := []string{
 		"approvals",
-		"agents.gemini",
+		"agents.antigravity",
 		"agents.codex",
 		"mcp",
 		"warnings",
@@ -187,13 +187,13 @@ enabled = true
 
 func TestPatchConfig_OptionalModelCleared(t *testing.T) {
 	content := `
-[agents.gemini]
+[agents.claude]
 enabled = true
 model = "custom"
 `
 	choices := NewChoices()
-	choices.GeminiModelTouched = true
-	choices.GeminiModel = ""
+	choices.ClaudeModelTouched = true
+	choices.ClaudeModel = ""
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
@@ -239,22 +239,22 @@ func TestPatchConfig_InlineCommentsOnTemplateKeys(t *testing.T) {
 	// When a key exists in the template, the template formatting takes precedence.
 	// This test verifies the value is updated correctly regardless of inline comment handling.
 	content := `
-[agents.gemini]
+[agents.antigravity]
 enabled = true # user comment
 `
 	choices := NewChoices()
 	choices.EnabledAgentsTouched = true
-	choices.EnabledAgents = map[string]bool{"gemini": false}
+	choices.EnabledAgents = map[string]bool{"antigravity": false}
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
 	// Value should be updated
 	lines := strings.Split(out, "\n")
-	foundGemini := false
+	foundAntigravity := false
 	for i, line := range lines {
-		if strings.Contains(line, "[agents.gemini]") {
-			foundGemini = true
+		if strings.Contains(line, "[agents.antigravity]") {
+			foundAntigravity = true
 			for j := i + 1; j < len(lines) && j < i+5; j++ {
 				if strings.Contains(lines[j], "enabled") && !strings.HasPrefix(strings.TrimSpace(lines[j]), "#") {
 					assert.Contains(t, lines[j], "enabled = false", "enabled should be false")
@@ -264,7 +264,7 @@ enabled = true # user comment
 			break
 		}
 	}
-	assert.True(t, foundGemini, "should find gemini section")
+	assert.True(t, foundAntigravity, "should find antigravity section")
 }
 
 func TestPatchConfig_InlineCommentsOnCustomKeys(t *testing.T) {
@@ -1007,8 +1007,8 @@ func TestParseKeyValueWithState_EdgeCases(t *testing.T) {
 
 func TestSetCommentedKeyLine_CommentsExistingLineWhenTemplateMissing(t *testing.T) {
 	block := &tomlBlock{
-		name:  "agents.gemini",
-		lines: []string{"[agents.gemini]", `model = "custom"`},
+		name:  "agents.antigravity",
+		lines: []string{"[agents.antigravity]", `model = "custom"`},
 	}
 	setCommentedKeyLine(block, nil, "model", "enabled")
 	assert.Contains(t, strings.Join(block.lines, "\n"), "# model =")

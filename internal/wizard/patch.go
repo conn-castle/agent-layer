@@ -43,12 +43,11 @@ type tomlDocument struct {
 
 var preferredWizardSectionOrder = []string{
 	"approvals",
-	"agents.gemini",
+	"agents.antigravity",
 	"agents.claude",
 	"agents.claude_vscode",
 	"agents.codex",
 	"agents.vscode",
-	"agents.antigravity",
 	"agents.copilot_cli",
 	"mcp",
 	"warnings",
@@ -212,12 +211,9 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.ApprovalModeTouched {
 			setKeyValue(block, templateBlock, "mode", formatTomlValue(choices.ApprovalMode), "")
 		}
-	case "agents.gemini":
+	case "agents.antigravity":
 		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentGemini]), "")
-		}
-		if choices.GeminiModelTouched {
-			setOptionalKeyValue(block, templateBlock, "model", choices.GeminiModel, "enabled")
+			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentAntigravity]), "")
 		}
 	case "agents.claude":
 		if choices.EnabledAgentsTouched {
@@ -253,10 +249,6 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 	case "agents.vscode":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentVSCode]), "")
-		}
-	case "agents.antigravity":
-		if choices.EnabledAgentsTouched {
-			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentAntigravity]), "")
 		}
 	case "agents.copilot_cli":
 		if choices.EnabledAgentsTouched {

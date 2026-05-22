@@ -21,8 +21,6 @@ const (
 	ConfigFailedReadCommandsAllowlistFmt = "failed to read commands allowlist %s: %w"
 
 	ConfigApprovalsModeInvalidFmt                  = "%s: approvals.mode must be one of all, mcp, commands, none, yolo"
-	ConfigGeminiEnabledRequiredFmt                 = "%s: agents.gemini.enabled is required"
-	ConfigGeminiReasoningEffortUnsupportedFmt      = "%s: agents.gemini.reasoning_effort is not supported in this release"
 	ConfigClaudeEnabledRequiredFmt                 = "%s: agents.claude.enabled is required"
 	ConfigClaudeVSCodeEnabledRequiredFmt           = "%s: agents.claude_vscode.enabled is required"
 	ConfigCodexEnabledRequiredFmt                  = "%s: agents.codex.enabled is required"
@@ -41,6 +39,7 @@ const (
 	ConfigMcpServerTransportInvalidFmt             = "%s: mcp.servers[%d].transport must be http or stdio"
 	ConfigMcpServerClientInvalidFmt                = "%s: mcp.servers[%d].clients contains invalid client %q"
 	ConfigUnrecognizedKeysFmt                      = "%s: unrecognized config keys: %w"
+	ConfigLegacyGeminiUnsupportedFmt               = "%s: agents.gemini is no longer supported; run 'al upgrade' to migrate to agents.antigravity (renames agents.gemini.enabled, drops legacy gemini.model/reasoning_effort keys, and rewrites mcp.servers[].clients gemini→antigravity)"
 	ConfigWarningNoiseModeInvalidFmt               = "%s: warnings.noise_mode %q is invalid (allowed: default, reduce, quiet)"
 	ConfigWarningThresholdInvalidFmt               = "%s: %s must be greater than zero"
 

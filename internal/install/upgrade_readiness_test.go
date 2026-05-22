@@ -162,29 +162,27 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	updated := strings.Replace(string(cfg), "[agents.gemini]\nenabled = true", "[agents.gemini]\nenabled = false", 1)
-	if updated == string(cfg) {
-		t.Fatal("failed to disable gemini in test config")
+	updated := string(cfg)
+	if strings.Contains(updated, "[agents.antigravity]\nenabled = true") {
+		updated = strings.Replace(updated, "[agents.antigravity]\nenabled = true", "[agents.antigravity]\nenabled = false", 1)
+	} else if !strings.Contains(updated, "[agents.antigravity]\nenabled = false") {
+		t.Fatal("seeded config is missing agents.antigravity.enabled")
 	}
 	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
-	geminiPath := filepath.Join(root, ".gemini", "settings.json")
-	if err := os.MkdirAll(filepath.Dir(geminiPath), 0o700); err != nil {
-		t.Fatalf("mkdir gemini dir: %v", err)
+	settingsPath := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir antigravity dir: %v", err)
 	}
-	generatedGemini := "{\n  \"_generatedBy\": \"agent-layer\",\n  \"mcpServers\": {\n    \"example\": {\n      \"url\": \"https://mcp.example.com\"\n    }\n  }\n}\n"
-	if err := os.WriteFile(geminiPath, []byte(generatedGemini), 0o600); err != nil {
-		t.Fatalf("write gemini settings: %v", err)
+	if err := os.WriteFile(settingsPath, []byte("{\"permissions\":{\"allow\":[\"command(git)\"]}}\n"), 0o600); err != nil {
+		t.Fatalf("write antigravity settings: %v", err)
 	}
 
-	geminiPolicyPath := filepath.Join(root, ".gemini", "policies", "agent-layer.toml")
-	if err := os.MkdirAll(filepath.Dir(geminiPolicyPath), 0o700); err != nil {
-		t.Fatalf("mkdir gemini policies dir: %v", err)
-	}
-	if err := os.WriteFile(geminiPolicyPath, []byte("# GENERATED FILE\n"), 0o600); err != nil {
-		t.Fatalf("write gemini policy: %v", err)
+	mcpPath := filepath.Join(root, ".agy", "antigravity-cli", "mcp_config.json")
+	if err := os.WriteFile(mcpPath, []byte("{\"mcpServers\":{}}\n"), 0o600); err != nil {
+		t.Fatalf("write antigravity MCP config: %v", err)
 	}
 
 	inst := &installer{root: root, sys: RealSystem{}}
@@ -198,8 +196,8 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 	}
 	joined := strings.Join(check.Details, "\n")
 	for _, expected := range []string{
-		".gemini/settings.json",
-		".gemini/policies/agent-layer.toml",
+		".agy/antigravity-cli/settings.json",
+		".agy/antigravity-cli/mcp_config.json",
 	} {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("expected disabled artifact detail %q, got %q", expected, joined)
@@ -375,7 +373,7 @@ func TestBuildUpgradeReadinessChecks_MissingRequiredConfigFields(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -383,8 +381,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `

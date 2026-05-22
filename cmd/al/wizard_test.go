@@ -86,15 +86,13 @@ func TestWizardCommandProfileModeNonInteractive(t *testing.T) {
 	profilePath := root + "/profile.toml"
 	if err := os.WriteFile(profilePath, []byte(`[approvals]
 mode = "all"
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
 [agents.codex]
 enabled = true
 [agents.vscode]
-enabled = true
-[agents.antigravity]
 enabled = true
 [agents.copilot_cli]
 enabled = true

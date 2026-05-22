@@ -7,17 +7,11 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
-	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 func writeTestRepo(t *testing.T, root string) {
 	t.Helper()
-	home := t.TempDir()
-	origHome := alsync.UserHomeDir
-	alsync.UserHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { alsync.UserHomeDir = origHome })
-
 	paths := config.DefaultPaths(root)
 	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
@@ -33,7 +27,7 @@ func writeTestRepo(t *testing.T, root string) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -48,8 +42,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = true
 [agents.copilot_cli]
 enabled = true
 `
@@ -96,11 +88,6 @@ func writeTestRepoInvalidConfig(t *testing.T, root string) {
 
 func writeTestRepoWithWarnings(t *testing.T, root string) {
 	t.Helper()
-	home := t.TempDir()
-	origHome := alsync.UserHomeDir
-	alsync.UserHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { alsync.UserHomeDir = origHome })
-
 	paths := config.DefaultPaths(root)
 	if err := os.MkdirAll(paths.InstructionsDir, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
@@ -117,7 +104,7 @@ func writeTestRepoWithWarnings(t *testing.T, root string) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -132,8 +119,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = true
 [agents.copilot_cli]
 enabled = true
 
@@ -172,9 +157,28 @@ func writeGitignoreBlock(t *testing.T, root string) {
 func writeDoctorTestRepo(t *testing.T, root string) {
 	t.Helper()
 	writeTestRepo(t, root)
+	writeDoctorAgyStub(t)
 }
 
 func writeDoctorTestRepoWithWarnings(t *testing.T, root string) {
 	t.Helper()
 	writeTestRepoWithWarnings(t, root)
+	writeDoctorAgyStub(t)
+}
+
+func writeDoctorAgyStub(t *testing.T) {
+	t.Helper()
+	binDir := t.TempDir()
+	path := filepath.Join(binDir, "agy")
+	content := `#!/usr/bin/env sh
+if [ "$1" = "--version" ]; then
+  printf 'agy 1.0.0\n'
+  exit 0
+fi
+exit 0
+`
+	if err := os.WriteFile(path, []byte(content), 0o700); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for doctor subprocess checks.
+		t.Fatalf("write agy stub: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

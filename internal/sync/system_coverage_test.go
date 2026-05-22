@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"errors"
 	"os"
 	"testing"
 )
@@ -11,22 +10,6 @@ func TestRealSystem_LookPath_NotFound(t *testing.T) {
 	_, err := sys.LookPath("this-binary-should-not-exist-abc123xyz")
 	if err == nil {
 		t.Fatal("expected error for non-existent binary")
-	}
-}
-
-func TestTrustReadError_Unwrap(t *testing.T) {
-	inner := errors.New("inner error")
-	e := &trustReadError{err: inner}
-
-	if e.Error() != "inner error" {
-		t.Fatalf("Error() = %q, want 'inner error'", e.Error())
-	}
-	if !errors.Is(e, inner) {
-		t.Fatal("expected Unwrap to return inner error")
-	}
-	unwrapped := e.Unwrap()
-	if unwrapped != inner {
-		t.Fatalf("Unwrap() = %v, want %v", unwrapped, inner)
 	}
 }
 

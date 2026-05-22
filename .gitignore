@@ -15,9 +15,8 @@ coverage.out
 .tools/
 .cache/
 
-
 # >>> agent-layer
-# Template hash: eba5a7d70a56b2e731ca1775b7e3342ccad3c13d550fae87f8cb966e230718d7
+# Template hash: 40e4d77df661e151efc12f8247e480ba241e3e04d9f56cc795b107d3259c76d2
 # Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block
 # and re-run `al sync` to apply changes.
 
@@ -30,19 +29,22 @@ coverage.out
 # Agent Layer-generated instruction shims
 /AGENTS.md
 /CLAUDE.md
-/GEMINI.md
 /.github/copilot-instructions.md
 
 # Agent Layer-generated client configs + artifacts
 # These may contain resolved secrets from .agent-layer/.env — keep gitignored.
 /.agent/
 /.agents/
-/.antigravitycli/
-/.agy-cfg/
 /.mcp.json
 /.codex/
 /.copilot/
 /.gemini/
+
+# Antigravity workspace marker (auto-created by agy; symlinks store per-user paths)
+/.antigravitycli/
+
+# Antigravity repo-local data dir (al sync regenerates managed files)
+/.agy/
 /.claude/
 /.claude-config/
 /.vscode/mcp.json

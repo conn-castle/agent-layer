@@ -10,7 +10,7 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 
 | Client | Repo-local config (recommended) | Also supported (user/global) | Header mechanism |
 |---|---|---|---|
-| Gemini CLI | `.gemini/settings.json` | `~/.gemini/settings.json` | `headers` object on the server entry |
+| Antigravity | `.agy/antigravity-cli/mcp_config.json` | `<gemini_dir>/config/mcp_config.json` after `agy` migration | `headers` object on the server entry |
 | Claude Code | `.mcp.json` | `~/.claude.json` | `headers` object on the server entry (`type: "http"`) |
 | VS Code (Copilot Chat) | `.vscode/mcp.json` | user settings `mcp.json` | `headers` object (supports `${input:...}` indirection) |
 | Codex CLI (+ IDE extension) | `.codex/config.toml` (trusted projects) | `~/.codex/config.toml` | `bearer_token_env_var`, `env_http_headers`, `http_headers` |
@@ -18,16 +18,16 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 
 ## Client details
 
-### 1) Gemini CLI
+### 1) Antigravity
 
-**File (repo-local):** `.gemini/settings.json`
+**File (repo-local):** `.agy/antigravity-cli/mcp_config.json`
 
 **SSE HTTP server with headers (default `http_transport = "sse"`):**
 ```json
 {
   "mcpServers": {
     "my-server": {
-      "url": "https://api.example.com/mcp",
+      "serverUrl": "https://api.example.com/mcp",
       "headers": {
         "Authorization": "Bearer ${MY_API_TOKEN}",
         "X-Custom-Header": "Value"
@@ -39,9 +39,9 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 
 Notes:
 
-* Gemini CLI settings files support environment variable references inside string values (e.g., `${MY_API_TOKEN}`), so you can keep secrets out of the file by referencing env vars.
-* Agent Layer emits `url` for SSE transport and `httpUrl` for streamable HTTP transport (`http_transport = "streamable"`).
-* If your goal is to reduce tool count from a “huge” server, Gemini also supports `includeTools` / `excludeTools` on the server entry (client-side tool filtering).
+* Antigravity config files support environment variable references inside string values (e.g., `${MY_API_TOKEN}`), so you can keep secrets out of the file by referencing env vars.
+* Agent Layer emits `serverUrl` for HTTP MCP servers.
+* `agy` v1.0.0 migrates this repo-local file into `<gemini_dir>/config/mcp_config.json`, but runtime MCP server registration has not been observed yet. Use `al probe antigravity` to check the current capability matrix.
 
 ### 2) Claude Code
 
@@ -122,7 +122,7 @@ Notes:
 
 Notes:
 
-* Copilot CLI supports environment variable placeholders inside `mcp-config.json` (e.g., `${AL_MY_API_TOKEN}`), matching the same `${VAR}` syntax used by Gemini and Claude.
+* Copilot CLI supports environment variable placeholders inside `mcp-config.json` (e.g., `${AL_MY_API_TOKEN}`), matching the same `${VAR}` syntax used by Antigravity and Claude.
 * Agent Layer preserves raw `${VAR}` references in the generated file — secrets are never resolved into the config.
 * The `tools` field is always set to `["*"]` (all tools enabled) because Copilot CLI does not support per-tool filtering.
 
@@ -207,7 +207,7 @@ Env vars may still be resolved at runtime for:
 
 Each writer receives `ResolvedMCPServer` structs with placeholders already in the target syntax:
 
-* **Gemini CLI**: emit `headers` map with the raw string (preserve `${VAR}`).
+* **Antigravity**: emit `headers` map with the raw string (preserve `${VAR}`).
 * **Claude Code**: emit `headers` map with the raw string (preserve `${VAR}` / `${VAR:-default}`).
 * **Copilot CLI**: emit `headers` map with the raw string (preserve `${VAR}`).
 * **VS Code**: emit `headers` map using `${env:VAR}` placeholders (does not auto-generate an `inputs` block; see section 3 Notes).
