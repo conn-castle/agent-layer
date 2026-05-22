@@ -217,7 +217,7 @@ If `mcp_runtime_discovery` is still false, the generated config exists but Antig
 
 ### `al antigravity` fails to launch or `agy` is not found
 
-If `al antigravity` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe antigravity` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
+If `al antigravity` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe antigravity` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>-<suffix>/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
 
 ### Client CLI not found
 

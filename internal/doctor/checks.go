@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -21,10 +23,29 @@ var (
 	loadEnvFunc           = config.LoadEnv
 	lookPathFunc          = exec.LookPath
 	commandOutputFunc     = func(name string, args ...string) ([]byte, error) {
-		// #nosec G204 -- command name is resolved by doctor checks from a fixed executable lookup.
-		return exec.Command(name, args...).CombinedOutput()
+		return commandOutputWithTimeout(antigravityVersionTimeout, name, args...)
 	}
 )
+
+const antigravityVersionTimeout = 5 * time.Second
+const antigravityVersionWaitDelay = 100 * time.Millisecond
+
+func commandOutputWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// #nosec G204 -- command name is resolved by doctor checks from a fixed executable lookup.
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.WaitDelay = antigravityVersionWaitDelay
+	output, err := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return output, fmt.Errorf("command timed out after %s: %w", timeout, context.DeadlineExceeded)
+	}
+	if errors.Is(err, exec.ErrWaitDelay) {
+		return output, fmt.Errorf("command output wait timed out after %s: %w", antigravityVersionWaitDelay, err)
+	}
+	return output, err
+}
 
 // agyVersionRE matches the version reported on the `agy <version>` line so
 // unrelated dotted-numeric noise (build timestamps, go runtime version, etc.)

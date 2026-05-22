@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestParseCapabilities(t *testing.T) {
@@ -179,6 +180,33 @@ func TestLatestLogText(t *testing.T) {
 	}
 	if path != newPath || text != "new" {
 		t.Fatalf("expected latest log %s with text new, got %s %q", newPath, path, text)
+	}
+}
+
+func TestCreateProbeDirAvoidsSecondLevelCollisions(t *testing.T) {
+	root := t.TempDir()
+	probedAt := time.Date(2026, 5, 22, 3, 46, 18, 0, time.UTC)
+
+	first, err := createProbeDir(root, probedAt)
+	if err != nil {
+		t.Fatalf("create first probe dir: %v", err)
+	}
+	second, err := createProbeDir(root, probedAt)
+	if err != nil {
+		t.Fatalf("create second probe dir: %v", err)
+	}
+
+	if first == second {
+		t.Fatalf("expected unique probe dirs, got %s twice", first)
+	}
+	for _, path := range []string{first, second} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat probe dir %s: %v", path, err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("expected probe path to be a directory: %s", path)
+		}
 	}
 }
 

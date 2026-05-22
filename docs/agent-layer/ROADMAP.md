@@ -89,7 +89,7 @@ Incomplete:
 
 ## Phase 16 ✅ — Antigravity replacement
 - Replaced Gemini CLI support and the retired Antigravity desktop launcher with a single Antigravity client under `[agents.antigravity]`, including `al antigravity`, repo-local `agy --gemini_dir` launch containment, and generated settings/MCP config. The `al gemini` subcommand was removed entirely in the same release (no deprecation window).
-- Added `al probe antigravity` with a stable JSON contract (`agy_config_dir`, `capabilities`, `evidence`, etc.), parser fixtures for the v1.0.0 baseline, non-zero CLI exit on probe failure, and a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>/` cleaned by `al upgrade --apply-tmp-deletions`.
+- Added `al probe antigravity` with a stable JSON contract (`agy_config_dir`, `capabilities`, `evidence`, etc.), parser fixtures for the v1.0.0 baseline, non-zero CLI exit on probe failure, and a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>-<suffix>/` cleaned by `al upgrade --apply-tmp-deletions`.
 - Added the v0.10.2 migration manifest plus `config_delete_key`, `config_replace_string`, and `delete_generated_artifact` (orphan `GEMINI.md`) operations so existing `[agents.gemini]` configs and `mcp.servers[].clients[] = "gemini"` entries move cleanly to Antigravity while stale model/effort keys, retired desktop config, and the orphan instruction shim are removed.
 - Updated doctor, templates, gitignore defaults, e2e coverage, docs, and memory to make Antigravity the supported Google CLI path.
 

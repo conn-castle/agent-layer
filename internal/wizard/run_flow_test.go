@@ -85,7 +85,8 @@ enabled = false
 	// have passed even if `enabled = true` appeared in another block, since
 	// proximity to `[agents.antigravity]` was not verified.
 	cfgPath := filepath.Join(configDir, "config.toml")
-	data, _ := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	data, readErr := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	require.NoError(t, readErr)
 	assert.Contains(t, string(data), `mode = "all"`)
 	parsed, err := config.ParseConfig(data, cfgPath)
 	require.NoError(t, err)

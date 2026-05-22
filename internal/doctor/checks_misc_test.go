@@ -1,11 +1,14 @@
 package doctor
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -206,6 +209,54 @@ func TestCheckAgents(t *testing.T) {
 	if statusMap["Antigravity version OK: 1.0.0"] != StatusOK {
 		t.Error("enabled Antigravity should check agy version")
 	}
+}
+
+func TestCommandOutputWithTimeoutStopsHungCommand(t *testing.T) {
+	t.Run("deadline exceeded", func(t *testing.T) {
+		scriptPath := filepath.Join(t.TempDir(), "hang.sh")
+		script := "#!/bin/sh\nsleep 5\n"
+		if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(scriptPath, 0o700); err != nil { // #nosec G302 -- test needs an executable shell stub for subprocess timeout coverage.
+			t.Fatal(err)
+		}
+
+		startedAt := time.Now()
+		_, err := commandOutputWithTimeout(20*time.Millisecond, scriptPath)
+		if err == nil {
+			t.Fatal("expected timeout error from hung command")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected classified deadline error, got: %v", err)
+		}
+		if elapsed := time.Since(startedAt); elapsed > time.Second {
+			t.Fatalf("command timeout took too long: %s", elapsed)
+		}
+	})
+
+	t.Run("orphaned output pipe", func(t *testing.T) {
+		scriptPath := filepath.Join(t.TempDir(), "pipe.sh")
+		script := "#!/bin/sh\necho started\nsleep 5 &\n"
+		if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(scriptPath, 0o700); err != nil { // #nosec G302 -- test needs an executable shell stub for subprocess timeout coverage.
+			t.Fatal(err)
+		}
+
+		startedAt := time.Now()
+		_, err := commandOutputWithTimeout(200*time.Millisecond, scriptPath)
+		if err == nil {
+			t.Fatal("expected timeout error from inherited output pipe")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected classified deadline error, got: %v", err)
+		}
+		if elapsed := time.Since(startedAt); elapsed > time.Second {
+			t.Fatalf("command wait delay took too long: %s", elapsed)
+		}
+	})
 }
 
 func TestCheckAntigravityBinary(t *testing.T) {

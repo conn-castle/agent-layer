@@ -37,9 +37,9 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 	}
 
 	probedAt := time.Now().UTC()
-	probeDir := filepath.Join(absTmpRoot, "probe-antigravity-"+probedAt.Format("20060102T150405Z"))
-	if err := os.MkdirAll(probeDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create antigravity probe dir %s: %w", probeDir, err)
+	probeDir, err := createProbeDir(absTmpRoot, probedAt)
+	if err != nil {
+		return nil, fmt.Errorf("create antigravity probe dir in %s: %w", absTmpRoot, err)
 	}
 	// seedProbeWorkspace joins paths from absTmpRoot, which is guaranteed
 	// absolute above; the legacy `IsAbs(geminiDir)` guard was dead code
@@ -105,6 +105,10 @@ func Probe(ctx context.Context, tmpRoot string) (*Result, error) {
 
 	result.Capabilities, result.Evidence = ParseCapabilities(logText, stdout.String())
 	return result, nil
+}
+
+func createProbeDir(absTmpRoot string, probedAt time.Time) (string, error) {
+	return os.MkdirTemp(absTmpRoot, "probe-antigravity-"+probedAt.Format("20060102T150405Z")+"-")
 }
 
 func seedProbeWorkspace(probeDir string) (string, string, string, error) {

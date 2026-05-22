@@ -155,7 +155,7 @@ const (
 	ProbeLong                      = "Run a client capability probe and emit JSON. Probes confirm what a client actually does at runtime (permissions, MCP, instruction/skill visibility) so Agent Layer can detect upstream behavior drift."
 	ProbeAntigravityUse            = "antigravity"
 	ProbeAntigravityShort          = "Probe Antigravity capabilities"
-	ProbeAntigravityLong           = "Run `agy` against a sealed probe workspace under .agent-layer/tmp/probe-antigravity-<ts>/ and report observed capabilities as JSON.\n\nThe command requires `agy` on PATH and a 45s hard timeout (exit code 124 on timeout). On success the JSON is written to stdout; on agy exiting non-zero or returning an unreadable log the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts (workspace/, agycfg/, stdout.txt, stderr.txt) persist under .agent-layer/tmp/ and can be pruned by `al upgrade --apply-tmp-deletions`."
+	ProbeAntigravityLong           = "Run `agy` against a sealed probe workspace under .agent-layer/tmp/probe-antigravity-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `agy` on PATH and a 45s hard timeout (exit code 124 on timeout). On success the JSON is written to stdout; on agy exiting non-zero or returning an unreadable log the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts (workspace/, agycfg/, stdout.txt, stderr.txt) persist under .agent-layer/tmp/ and can be pruned by `al upgrade --apply-tmp-deletions`."
 	ProbeAntigravityNonZeroExitFmt = "antigravity probe reported a non-zero result (exit code %d): %s"
 
 	CopilotUse   = "copilot"

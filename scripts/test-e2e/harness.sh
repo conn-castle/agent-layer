@@ -176,6 +176,7 @@ if [[ "\${1:-}" == "--version" ]]; then
   else
     echo "1.0.0"
   fi
+  exit 0
 fi
 
 exit $exit_code
