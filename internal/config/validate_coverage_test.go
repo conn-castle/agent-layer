@@ -10,7 +10,7 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 	valid := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  AntigravityConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
@@ -90,7 +90,7 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 	baseConfig := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  AntigravityConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},

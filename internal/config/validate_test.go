@@ -10,7 +10,7 @@ func TestValidateConfigErrors(t *testing.T) {
 	valid := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  AntigravityConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
@@ -161,7 +161,7 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeYOLO},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  AntigravityConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
@@ -179,7 +179,7 @@ func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  AntigravityConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "high"},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
@@ -197,7 +197,7 @@ func TestValidateClaudeReasoningEffortMaxWithNonOpusModelRejected(t *testing.T) 
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  AntigravityConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "sonnet", ReasoningEffort: "max"},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
@@ -215,7 +215,7 @@ func TestValidateClaudeReasoningEffortMaxWithOpusModel(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
+			Antigravity:  AntigravityConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "max"},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
@@ -233,7 +233,7 @@ func TestValidateWarningsThresholds(t *testing.T) {
 	base := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  AntigravityConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
@@ -317,7 +317,7 @@ func TestValidateWarningsNoiseModeQuiet(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  AntigravityConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
@@ -336,7 +336,7 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 	base := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
+			Antigravity:  AntigravityConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},

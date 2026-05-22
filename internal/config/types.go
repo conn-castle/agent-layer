@@ -24,12 +24,12 @@ type ApprovalsConfig struct {
 
 // AgentsConfig holds per-client enablement and model selection.
 type AgentsConfig struct {
-	Antigravity  EnableOnlyConfig `toml:"antigravity"`
-	Claude       ClaudeConfig     `toml:"claude"`
-	ClaudeVSCode EnableOnlyConfig `toml:"claude_vscode"`
-	Codex        CodexConfig      `toml:"codex"`
-	VSCode       EnableOnlyConfig `toml:"vscode"`
-	CopilotCLI   AgentConfig      `toml:"copilot_cli"`
+	Antigravity  AntigravityConfig `toml:"antigravity"`
+	Claude       ClaudeConfig      `toml:"claude"`
+	ClaudeVSCode EnableOnlyConfig  `toml:"claude_vscode"`
+	Codex        CodexConfig       `toml:"codex"`
+	VSCode       EnableOnlyConfig  `toml:"vscode"`
+	CopilotCLI   AgentConfig       `toml:"copilot_cli"`
 }
 
 // AgentConfig is for agents that support enablement and model selection.
@@ -54,6 +54,14 @@ type ClaudeConfig struct {
 // EnableOnlyConfig is for agents that support enablement but not model selection.
 type EnableOnlyConfig struct {
 	Enabled *bool `toml:"enabled"`
+}
+
+// AntigravityConfig is for the Antigravity (`agy`) client, which supports
+// enablement and agent-specific settings passthrough but not model/effort
+// (the agy CLI does not accept those flags).
+type AntigravityConfig struct {
+	Enabled       *bool          `toml:"enabled"`
+	AgentSpecific map[string]any `toml:"agent_specific"`
 }
 
 // CodexConfig extends AgentConfig with Codex-specific settings.

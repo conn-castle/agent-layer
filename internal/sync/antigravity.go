@@ -13,10 +13,6 @@ import (
 
 const antigravityClientID = "antigravity"
 
-type antigravitySettings struct {
-	Permissions map[string]any `json:"permissions,omitempty"`
-}
-
 type antigravityMCPConfig struct {
 	Servers OrderedMap[antigravityMCPServer] `json:"mcpServers"`
 }
@@ -61,15 +57,19 @@ func WriteAntigravitySettings(sys System, root string, project *config.ProjectCo
 	return nil
 }
 
-func buildAntigravitySettings(project *config.ProjectConfig) *antigravitySettings {
-	return &antigravitySettings{
-		Permissions: buildPermissionsBlock(
-			project.Config,
-			project.CommandsAllow,
-			projection.EnabledServerIDs(project.Config.MCP.Servers, antigravityClientID),
-			antigravityRenderer{},
-		),
+func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
+	settings := make(map[string]any)
+	permissions := buildPermissionsBlock(
+		project.Config,
+		project.CommandsAllow,
+		projection.EnabledServerIDs(project.Config.MCP.Servers, antigravityClientID),
+		antigravityRenderer{},
+	)
+	if permissions != nil {
+		settings["permissions"] = permissions
 	}
+	mergeAgentSpecificSettings(settings, project.Config.Agents.Antigravity.AgentSpecific)
+	return settings
 }
 
 // WriteAntigravityMCPConfig generates .agy/antigravity-cli/mcp_config.json.

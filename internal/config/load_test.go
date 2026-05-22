@@ -674,6 +674,10 @@ func TestParseConfig_AllowsCustomAgentConfig(t *testing.T) {
 mode = "all"
 [agents.antigravity]
 enabled = true
+[agents.antigravity.agent_specific]
+permissions.deny = ["command(rm:*)"]
+[agents.antigravity.agent_specific.features]
+example_feature = true
 [agents.claude]
 enabled = true
 [agents.claude.agent_specific]
@@ -688,10 +692,24 @@ features.prevent_idle_sleep = true
 enabled = true
 [agents.copilot_cli]
 enabled = true
-`
-	_, err := ParseConfig([]byte(data), "test")
+	`
+	cfg, err := ParseConfig([]byte(data), "test")
 	if err != nil {
 		t.Fatalf("expected agent-specific config to parse, got: %v", err)
+	}
+	features, ok := cfg.Agents.Antigravity.AgentSpecific["features"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected antigravity agent-specific features map, got %#v", cfg.Agents.Antigravity.AgentSpecific["features"])
+	}
+	if value, ok := features["example_feature"].(bool); !ok || !value {
+		t.Fatalf("expected antigravity features.example_feature=true, got %#v", features["example_feature"])
+	}
+	permissions, ok := cfg.Agents.Antigravity.AgentSpecific["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected antigravity agent-specific permissions map, got %#v", cfg.Agents.Antigravity.AgentSpecific["permissions"])
+	}
+	if !stringSliceValueContains(permissions["deny"], "command(rm:*)") {
+		t.Fatalf("expected antigravity permissions.deny to include command(rm:*), got %#v", permissions["deny"])
 	}
 }
 

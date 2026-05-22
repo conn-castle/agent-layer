@@ -38,7 +38,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		return fmt.Errorf(messages.ClientsAntigravityMkdirFailedFmt, geminiDir, err)
 	}
 
-	args := append([]string{"--gemini_dir=" + geminiDir}, passArgs...)
+	args := []string{"--gemini_dir=" + geminiDir}
+	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {
+		args = append(args, "--dangerously-skip-permissions")
+	}
+	args = append(args, passArgs...)
 	env = clients.SetEnv(env, disableAutoUpdateEnv, "1")
 
 	// #nosec G204 -- agyPath is resolved from lookPathFunc, the launcher's only entrypoint.

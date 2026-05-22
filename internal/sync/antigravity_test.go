@@ -24,10 +24,59 @@ func TestBuildAntigravitySettingsPermissions(t *testing.T) {
 	}
 
 	settings := buildAntigravitySettings(project)
-	allow := settings.Permissions["allow"].([]string)
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map, got %#v", settings["permissions"])
+	}
+	allow := permissions["allow"].([]string)
 	want := []string{"command(git status)", "mcp(alpha/)", "mcp(zeta/)"}
 	if strings.Join(allow, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("allow = %#v, want %#v", allow, want)
+	}
+}
+
+func TestBuildAntigravitySettingsAgentSpecificMerges(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
+			Agents: config.AgentsConfig{
+				Antigravity: config.AntigravityConfig{
+					Enabled: &enabled,
+					AgentSpecific: map[string]any{
+						"features": map[string]any{
+							"example_feature": true,
+						},
+						"permissions": map[string]any{
+							"deny": []string{"command(rm -rf /)"},
+						},
+					},
+				},
+			},
+		},
+		CommandsAllow: []string{"git status"},
+	}
+
+	settings := buildAntigravitySettings(project)
+	features, ok := settings["features"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected features map from agent_specific, got %#v", settings["features"])
+	}
+	if value, ok := features["example_feature"].(bool); !ok || !value {
+		t.Fatalf("expected features.example_feature=true, got %v", features["example_feature"])
+	}
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map, got %#v", settings["permissions"])
+	}
+	// Managed allow must survive when agent_specific only touches deny.
+	if allow, ok := permissions["allow"].([]string); !ok || len(allow) == 0 {
+		t.Fatalf("expected managed permissions.allow to survive deep merge, got %#v", permissions["allow"])
+	}
+	deny, ok := permissions["deny"].([]string)
+	if !ok || len(deny) != 1 || deny[0] != "command(rm -rf /)" {
+		t.Fatalf("expected agent_specific permissions.deny, got %#v", permissions["deny"])
 	}
 }
 

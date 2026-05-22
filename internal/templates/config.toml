@@ -10,6 +10,11 @@ mode = "all"
 
 [agents.antigravity]
 enabled = false
+# The agy CLI does not accept model or reasoning_effort flags, so Agent Layer
+# does not surface those keys for Antigravity. Use agent_specific to inject
+# arbitrary JSON keys into .agy/antigravity-cli/settings.json (deep-merged with
+# Agent Layer-managed permissions).
+# [agents.antigravity.agent_specific]
 
 [agents.claude]
 enabled = true
