@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,8 @@ import (
 )
 
 const (
-	probePrompt = "List the contents of any AGENTS.md you see, then summarize what skills you have access to (just names). End by stating each MCP server name you can see."
+	probePrompt          = "List the contents of any AGENTS.md you see, then summarize what skills you have access to (just names). End by stating each MCP server name you can see."
+	maxProbeLogTailBytes = 1024 * 1024
 )
 
 // Probe runs a contained Antigravity capability probe under tmpRoot.
@@ -280,9 +282,28 @@ func latestLogText(logDir string) (string, string, error) {
 		return candidates[i].modTime.After(candidates[j].modTime)
 	})
 	path := candidates[0].path
-	data, err := os.ReadFile(path) // #nosec G304 -- path is selected from the probe-owned log directory.
+	data, err := readProbeLogTail(path)
 	if err != nil {
 		return "", "", fmt.Errorf("read antigravity probe log %s: %w", path, err)
 	}
 	return path, string(data), nil
+}
+
+func readProbeLogTail(path string) ([]byte, error) {
+	file, err := os.Open(path) // #nosec G304 -- path is selected from the probe-owned log directory.
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxProbeLogTailBytes {
+		if _, err := file.Seek(info.Size()-maxProbeLogTailBytes, io.SeekStart); err != nil {
+			return nil, err
+		}
+	}
+	return io.ReadAll(io.LimitReader(file, maxProbeLogTailBytes))
 }

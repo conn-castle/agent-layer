@@ -183,6 +183,57 @@ func TestWriteAntigravityMCPConfigUpdatesMigratedSymlinkTarget(t *testing.T) {
 	}
 }
 
+func TestWriteAntigravityMCPConfigUsesSystemForMigratedSymlink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	legacyPath := filepath.Join(root, ".agy", "antigravity-cli", "mcp_config.json")
+	migratedPath := filepath.Join(root, ".agy", "config", "mcp_config.json")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(migratedPath), 0o700); err != nil {
+		t.Fatalf("mkdir migrated dir: %v", err)
+	}
+	if err := os.WriteFile(migratedPath, []byte(`{"mcpServers":{"old":{}}}`), 0o600); err != nil {
+		t.Fatalf("seed migrated config: %v", err)
+	}
+	if err := os.Symlink(filepath.Join("..", "config", "mcp_config.json"), legacyPath); err != nil {
+		t.Fatalf("seed migrated symlink: %v", err)
+	}
+	var usedLstat bool
+	var usedReadlink bool
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		LstatFunc: func(name string) (os.FileInfo, error) {
+			if name == legacyPath {
+				usedLstat = true
+			}
+			return RealSystem{}.Lstat(name)
+		},
+		ReadlinkFunc: func(name string) (string, error) {
+			if name == legacyPath {
+				usedReadlink = true
+			}
+			return RealSystem{}.Readlink(name)
+		},
+	}
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{Servers: []config.MCPServer{
+				{ID: "updated", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://updated.example", Clients: []string{antigravityClientID}},
+			}},
+		},
+	}
+
+	if err := WriteAntigravityMCPConfig(sys, root, project); err != nil {
+		t.Fatalf("WriteAntigravityMCPConfig error: %v", err)
+	}
+	if !usedLstat || !usedReadlink {
+		t.Fatalf("expected System Lstat and Readlink for migrated symlink, got Lstat=%v Readlink=%v", usedLstat, usedReadlink)
+	}
+}
+
 func TestWriteAntigravityMCPConfigRejectsEscapedMigratedSymlinkParent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

@@ -1,8 +1,10 @@
 package antigravity
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -180,6 +182,38 @@ func TestLatestLogText(t *testing.T) {
 	}
 	if path != newPath || text != "new" {
 		t.Fatalf("expected latest log %s with text new, got %s %q", newPath, path, text)
+	}
+}
+
+func TestLatestLogTextBoundsLargeLogToTail(t *testing.T) {
+	root := t.TempDir()
+	logDir := filepath.Join(root, "log")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		t.Fatalf("mkdir log dir: %v", err)
+	}
+	path := filepath.Join(logDir, "cli.log")
+	head := bytes.Repeat([]byte("h"), maxProbeLogTailBytes+32)
+	tail := []byte("TAIL_MARKER")
+	if err := os.WriteFile(path, append(head, tail...), 0o600); err != nil {
+		t.Fatalf("write large log: %v", err)
+	}
+
+	_, text, err := latestLogText(logDir)
+	if err != nil {
+		t.Fatalf("latestLogText: %v", err)
+	}
+	if len(text) != maxProbeLogTailBytes {
+		t.Fatalf("expected bounded log text length %d, got %d", maxProbeLogTailBytes, len(text))
+	}
+	if !strings.HasSuffix(text, string(tail)) {
+		t.Fatalf("expected bounded log text to preserve tail marker")
+	}
+}
+
+func TestReadProbeLogTailMissingFile(t *testing.T) {
+	_, err := readProbeLogTail(filepath.Join(t.TempDir(), "missing.log"))
+	if err == nil {
+		t.Fatal("expected missing log read to fail")
 	}
 }
 

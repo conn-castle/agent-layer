@@ -84,7 +84,7 @@ func WriteAntigravityMCPConfig(sys System, root string, project *config.ProjectC
 	}
 	data = append(data, '\n')
 
-	path, err := antigravityMCPConfigWritePath(root)
+	path, err := antigravityMCPConfigWritePath(sys, root)
 	if err != nil {
 		return err
 	}
@@ -100,13 +100,13 @@ func WriteAntigravityMCPConfig(sys System, root string, project *config.ProjectC
 	return nil
 }
 
-func antigravityMCPConfigWritePath(root string) (string, error) {
+func antigravityMCPConfigWritePath(sys System, root string) (string, error) {
 	legacyPath := filepath.Join(root, ".agy", "antigravity-cli", "mcp_config.json")
 	migratedPath := filepath.Join(root, ".agy", "config", "mcp_config.json")
 
-	info, err := os.Lstat(legacyPath)
+	info, err := sys.Lstat(legacyPath)
 	if err == nil && info.Mode()&os.ModeSymlink != 0 {
-		target, readErr := os.Readlink(legacyPath)
+		target, readErr := sys.Readlink(legacyPath)
 		if readErr != nil {
 			return "", fmt.Errorf("read Antigravity MCP config symlink %s: %w", legacyPath, readErr)
 		}
