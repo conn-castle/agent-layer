@@ -11,7 +11,7 @@ import (
 )
 
 func TestEnsureEnabled(t *testing.T) {
-	name := "gemini"
+	name := "antigravity"
 	if err := EnsureEnabled(name, nil); err == nil {
 		t.Fatalf("expected error for nil enabled")
 	}
@@ -45,7 +45,7 @@ func TestRunWithProjectError(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Gemini: config.AgentConfig{Enabled: testutil.BoolPtr(true)},
+				Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
 			},
 		},
 		Instructions: []config.InstructionFile{{Name: "00_base.md", Content: "base"}},
@@ -88,6 +88,80 @@ func TestCollectWarningsInstructionsError(t *testing.T) {
 	if _, err := collectWarnings(project, nil); err == nil {
 		t.Fatal("expected collectWarnings to fail when AGENTS.md cannot be read as a file")
 	}
+}
+
+// TestRunWithProject_AppliesWarningNoiseControl pins F-C-6: the noise-control
+// pipeline (warnings.ApplyNoiseControl) must run inside RunWithProject for
+// every successful sync. Without this test, a refactor that removes the call
+// would silently regress quiet/reduce behavior for every client. Uses the
+// invalid-noise-mode path because it adds a deterministic warning that does
+// not require coercing other check sites.
+func TestRunWithProject_AppliesWarningNoiseControl(t *testing.T) {
+	t.Parallel()
+
+	setupFixture := func(t *testing.T) (string, *config.ProjectConfig) {
+		t.Helper()
+		fixtureRoot := filepath.Join("testdata", "fixture-repo")
+		root := t.TempDir()
+		if err := copyFixtureRepo(fixtureRoot, root); err != nil {
+			t.Fatalf("copy fixture: %v", err)
+		}
+		envPath := filepath.Join(root, ".agent-layer", ".env")
+		if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
+			t.Fatalf("write env: %v", err)
+		}
+		project, err := config.LoadProjectConfig(root)
+		if err != nil {
+			t.Fatalf("load project: %v", err)
+		}
+		return root, project
+	}
+
+	t.Run("invalid mode surfaces critical warning under default", func(t *testing.T) {
+		root, project := setupFixture(t)
+		// Invalid mode passed to ApplyNoiseControl falls through to the
+		// "unknown" branch which appends a critical WARNING_NOISE_MODE_INVALID
+		// to the filtered output. If ApplyNoiseControl is not wired in
+		// RunWithProject, this warning never appears in result.Warnings.
+		project.Config.Warnings.NoiseMode = "invalid-mode-xyz"
+		result, err := RunWithProject(RealSystem{}, root, project)
+		if err != nil {
+			t.Fatalf("RunWithProject: %v", err)
+		}
+		foundCritical := false
+		for _, w := range result.Warnings {
+			if w.Code == "WARNING_NOISE_MODE_INVALID" {
+				foundCritical = true
+				break
+			}
+		}
+		if !foundCritical {
+			t.Fatalf("expected ApplyNoiseControl to inject WARNING_NOISE_MODE_INVALID; got Warnings=%+v AllWarnings=%+v", result.Warnings, result.AllWarnings)
+		}
+	})
+
+	t.Run("quiet mode filters a deterministically-generated warning", func(t *testing.T) {
+		root, project := setupFixture(t)
+		// Force at least one collected warning by setting the instruction-token
+		// threshold to 1 — the fixture instructions are guaranteed to be
+		// larger than that, so CheckInstructions emits a warning. With this
+		// warning present, the test can distinguish "ApplyNoiseControl is
+		// wired" (Warnings empty under quiet mode) from "fixture produced no
+		// warnings" (which would have masked a missing wiring fix).
+		threshold := 1
+		project.Config.Warnings.InstructionTokenThreshold = &threshold
+		project.Config.Warnings.NoiseMode = "quiet"
+		result, err := RunWithProject(RealSystem{}, root, project)
+		if err != nil {
+			t.Fatalf("RunWithProject: %v", err)
+		}
+		if len(result.AllWarnings) == 0 {
+			t.Fatal("test setup error: expected the instruction-threshold warning to be raised in AllWarnings")
+		}
+		if len(result.Warnings) != 0 {
+			t.Fatalf("expected quiet mode to suppress all warnings, got: %+v", result.Warnings)
+		}
+	})
 }
 
 func TestUpdateGitignoreValidationError(t *testing.T) {

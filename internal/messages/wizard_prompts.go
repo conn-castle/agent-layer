@@ -9,8 +9,6 @@ const (
 	WizardInstallComplete                     = "Installation complete. Continuing the wizard..."
 	WizardApprovalModeTitle                   = "Approval Mode"
 	WizardEnableAgentsTitle                   = "Enable Agents"
-	WizardPreviewModelWarningTitle            = "Preview Model Warning"
-	WizardGeminiModelTitle                    = "Gemini Model"
 	WizardClaudeModelTitle                    = "Claude Model"
 	WizardClaudeReasoningEffortTitle          = "Claude Reasoning Effort"
 	WizardClaudeLocalConfigDirPrompt          = "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)"

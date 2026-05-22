@@ -48,13 +48,11 @@ func TestAgentHelpers(t *testing.T) {
 
 func TestAgentModelSummary(t *testing.T) {
 	c := &Choices{
-		GeminiModel:    "gemini-pro",
 		ClaudeModel:    "claude-3",
 		CodexModel:     "codex-max",
 		CodexReasoning: "high",
 	}
 
-	assert.Equal(t, "gemini-pro", agentModelSummary(AgentGemini, c))
 	assert.Equal(t, "claude-3", agentModelSummary(AgentClaude, c))
 	assert.Equal(t, "codex-max (high)", agentModelSummary(AgentCodex, c))
 	assert.Equal(t, "", agentModelSummary(AgentVSCode, c))
@@ -116,7 +114,7 @@ func TestSelectOptionalValue_Custom(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro-preview"}, &value)
+	err := selectOptionalValue(ui, "Test Model", []string{"test-preview"}, &value)
 	assert.NoError(t, err)
 	assert.Equal(t, "custom-model", value)
 }
@@ -134,7 +132,7 @@ func TestSelectOptionalValue_CustomBlank(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
+	err := selectOptionalValue(ui, "Test Model", []string{"test-model"}, &value)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "custom value required")
 }
@@ -152,7 +150,7 @@ func TestSelectOptionalValue_CustomPrefill(t *testing.T) {
 	}
 
 	value := "custom-model"
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
+	err := selectOptionalValue(ui, "Test Model", []string{"test-model"}, &value)
 	assert.NoError(t, err)
 	assert.Equal(t, "custom-model", value)
 }
@@ -161,15 +159,15 @@ func TestSelectOptionalValue_ValueInOptions(t *testing.T) {
 	ui := &MockUI{
 		SelectFunc: func(title string, options []string, current *string) error {
 			// Current should be the predefined value from options
-			assert.Equal(t, "gemini-3.1-pro", *current)
+			assert.Equal(t, "test-model", *current)
 			return nil
 		},
 	}
 
-	value := "gemini-3.1-pro"
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
+	value := "test-model"
+	err := selectOptionalValue(ui, "Test Model", []string{"test-model"}, &value)
 	assert.NoError(t, err)
-	assert.Equal(t, "gemini-3.1-pro", value)
+	assert.Equal(t, "test-model", value)
 }
 
 func TestSelectOptionalValue_SelectError(t *testing.T) {
@@ -180,7 +178,7 @@ func TestSelectOptionalValue_SelectError(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
+	err := selectOptionalValue(ui, "Test Model", []string{"test-model"}, &value)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "select error")
 }
@@ -197,7 +195,7 @@ func TestSelectOptionalValue_InputError(t *testing.T) {
 	}
 
 	value := ""
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro"}, &value)
+	err := selectOptionalValue(ui, "Test Model", []string{"test-model"}, &value)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "input error")
 }
@@ -211,7 +209,7 @@ func TestSelectOptionalValue_LeaveBlank(t *testing.T) {
 	}
 
 	value := "some-value"
-	err := selectOptionalValue(ui, "Gemini Model", []string{"gemini-3.1-pro-preview"}, &value)
+	err := selectOptionalValue(ui, "Test Model", []string{"test-preview"}, &value)
 	assert.NoError(t, err)
 	assert.Equal(t, "", value)
 }
@@ -305,7 +303,7 @@ func TestBuildSummary(t *testing.T) {
 	t.Run("with MCP servers enabled", func(t *testing.T) {
 		c := NewChoices()
 		c.ApprovalMode = "all"
-		c.EnabledAgents["gemini"] = true
+		c.EnabledAgents["antigravity"] = true
 		c.DefaultMCPServers = []DefaultMCPServer{{ID: "github"}, {ID: "tavily"}}
 		c.EnabledMCPServers["github"] = true
 

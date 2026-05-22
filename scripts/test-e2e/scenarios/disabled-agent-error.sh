@@ -15,7 +15,7 @@ run_scenario_disabled_agent_error() {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -30,9 +30,6 @@ enabled = false
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = true
-
 [agents.copilot_cli]
 enabled = true
 PROFILE
@@ -42,12 +39,12 @@ PROFILE
 
   # Verify exact agent enable/disable states in config
   local config="$repo_dir/.agent-layer/config.toml"
-  local claude_section codex_section gemini_section
+  local claude_section codex_section antigravity_section
 
   # Extract each agent section (up to the next section header)
   claude_section=$(sed -n '/^\[agents\.claude\]$/,/^\[/p' "$config" | head -5)
   codex_section=$(sed -n '/^\[agents\.codex\]$/,/^\[/p' "$config" | head -5)
-  gemini_section=$(sed -n '/^\[agents\.gemini\]$/,/^\[/p' "$config" | head -5)
+  antigravity_section=$(sed -n '/^\[agents\.antigravity\]$/,/^\[/p' "$config" | head -5)
 
   if echo "$claude_section" | grep -qF 'enabled = false'; then
     pass "config.toml [agents.claude] has enabled = false"
@@ -61,10 +58,10 @@ PROFILE
     fail "config.toml [agents.codex] should have enabled = false"
   fi
 
-  if echo "$gemini_section" | grep -qF 'enabled = true'; then
-    pass "config.toml [agents.gemini] has enabled = true"
+  if echo "$antigravity_section" | grep -qF 'enabled = true'; then
+    pass "config.toml [agents.antigravity] has enabled = true"
   else
-    fail "config.toml [agents.gemini] should have enabled = true"
+    fail "config.toml [agents.antigravity] should have enabled = true"
   fi
 
   install_mock_claude "$repo_dir"
@@ -106,17 +103,17 @@ PROFILE
   assert_mock_agent_not_called "$MOCK_AGENT_LOG" \
     "mock codex was not called (agent is disabled)"
 
-  # al gemini should work (it's enabled)
-  install_mock_agent "$repo_dir" "gemini"
+  # al antigravity should work (it's enabled)
+  install_mock_agent "$repo_dir" "agy"
 
-  local gemini_output gemini_rc=0
-  gemini_output=$(cd "$repo_dir" && al gemini 2>&1) || gemini_rc=$?
-  if [[ $gemini_rc -eq 0 ]]; then
-    pass "al gemini works when enabled (claude is disabled)"
+  local agy_output agy_rc=0
+  agy_output=$(cd "$repo_dir" && al antigravity 2>&1) || agy_rc=$?
+  if [[ $agy_rc -eq 0 ]]; then
+    pass "al antigravity works when enabled (claude is disabled)"
   else
-    fail "al gemini should work when enabled (exit code: $gemini_rc)"
+    fail "al antigravity should work when enabled (exit code: $agy_rc)"
     echo "  output (first 5 lines):"
-    echo "$gemini_output" | head -5 | sed 's/^/    /'
+    echo "$agy_output" | head -5 | sed 's/^/    /'
   fi
 
   assert_mock_agent_called "$MOCK_AGENT_LOG"

@@ -22,7 +22,7 @@ func TestRun_HappyPath(t *testing.T) {
 
 	initialConfig := `[approvals]
 mode = "none"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -31,8 +31,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false
@@ -54,7 +52,7 @@ enabled = false
 		},
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
 			if title == "Enable Agents" {
-				*selected = []string{"gemini"}
+				*selected = []string{"antigravity"}
 			}
 			if title == "Enable Default MCP Servers" {
 				*selected = []string{}
@@ -82,11 +80,18 @@ enabled = false
 	require.NoError(t, err)
 	assert.True(t, syncCalled)
 
-	// Verify config updated
-	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	// Reparse the produced config and assert the enablement is attached to
+	// the antigravity block (F-C-17). The previous substring assertion would
+	// have passed even if `enabled = true` appeared in another block, since
+	// proximity to `[agents.antigravity]` was not verified.
+	cfgPath := filepath.Join(configDir, "config.toml")
+	data, readErr := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	require.NoError(t, readErr)
 	assert.Contains(t, string(data), `mode = "all"`)
-	assert.Contains(t, string(data), `[agents.gemini]`)
-	assert.Contains(t, string(data), `enabled = true`)
+	parsed, err := config.ParseConfig(data, cfgPath)
+	require.NoError(t, err)
+	require.NotNil(t, parsed.Agents.Antigravity.Enabled, "antigravity enabled must be set")
+	assert.True(t, *parsed.Agents.Antigravity.Enabled, "antigravity must be enabled")
 }
 
 func TestRun_SlimSeedDoesNotPromptToRestoreMissingCatalogDefaults(t *testing.T) {
@@ -96,7 +101,7 @@ func TestRun_SlimSeedDoesNotPromptToRestoreMissingCatalogDefaults(t *testing.T) 
 
 	initialConfig := `[approvals]
 mode = "none"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -105,8 +110,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false
@@ -147,7 +150,7 @@ func TestRun_ApplyCancel(t *testing.T) {
 
 	validConfig := `[approvals]
 mode = "none"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -156,8 +159,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false
@@ -195,7 +196,7 @@ func TestRun_SyncError(t *testing.T) {
 
 	validConfig := `[approvals]
 mode = "none"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -204,8 +205,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false
@@ -241,7 +240,7 @@ func TestRun_RestoreDefaults(t *testing.T) {
 	// A slim seed with zero default blocks is expected and covered separately.
 	initialConfig := `[approvals]
 mode = "all"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -250,8 +249,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false
@@ -305,7 +302,7 @@ func TestRun_ClaudeLocalConfigDir(t *testing.T) {
 
 	initialConfig := `[approvals]
 mode = "all"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = true
@@ -315,8 +312,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false
@@ -370,7 +365,7 @@ func TestRun_ClaudeVSCodeOnlyLocalConfigDir(t *testing.T) {
 
 	initialConfig := `[approvals]
 mode = "all"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -380,8 +375,6 @@ enabled = true
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false

@@ -15,7 +15,7 @@ func TestLoadConfigValid(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -32,8 +32,6 @@ reasoning_effort = "high"
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 
@@ -55,8 +53,8 @@ command = "tool"
 	if cfg.Approvals.Mode != ApprovalModeAll {
 		t.Fatalf("unexpected approvals mode: %s", cfg.Approvals.Mode)
 	}
-	if cfg.Agents.Gemini.Enabled == nil || !*cfg.Agents.Gemini.Enabled {
-		t.Fatalf("expected gemini enabled")
+	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
+		t.Fatalf("expected antigravity enabled")
 	}
 }
 
@@ -111,7 +109,7 @@ func TestLoadConfigStdioWithDottedHeaders(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -126,8 +124,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 
@@ -169,7 +165,7 @@ func TestLoadConfigHTTPWithDottedEnv(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -184,8 +180,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 

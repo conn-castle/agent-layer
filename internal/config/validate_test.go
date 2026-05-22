@@ -7,16 +7,14 @@ import (
 
 func TestValidateConfigErrors(t *testing.T) {
 	trueVal := true
-	falseVal := false
 	valid := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
-			Antigravity:  EnableOnlyConfig{Enabled: &falseVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 		MCP: MCPConfig{},
@@ -33,14 +31,9 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "approvals.mode",
 		},
 		{
-			name:    "missing enabled",
-			cfg:     withGeminiEnabled(valid, nil),
-			wantErr: "agents.gemini.enabled",
-		},
-		{
-			name:    "gemini reasoning effort unsupported",
-			cfg:     withGeminiReasoning(valid, "high"),
-			wantErr: "agents.gemini.reasoning_effort is not supported",
+			name:    "missing antigravity enabled",
+			cfg:     withAntigravityEnabled(valid, nil),
+			wantErr: "agents.antigravity.enabled",
 		},
 		{
 			name:    "claude reasoning requires opus model",
@@ -137,18 +130,13 @@ func withApprovals(cfg Config, mode string) Config {
 	return cfg
 }
 
-func withGeminiEnabled(cfg Config, enabled *bool) Config {
-	cfg.Agents.Gemini.Enabled = enabled
+func withAntigravityEnabled(cfg Config, enabled *bool) Config {
+	cfg.Agents.Antigravity.Enabled = enabled
 	return cfg
 }
 
 func withServers(cfg Config, servers []MCPServer) Config {
 	cfg.MCP.Servers = servers
-	return cfg
-}
-
-func withGeminiReasoning(cfg Config, effort string) Config {
-	cfg.Agents.Gemini.ReasoningEffort = effort
 	return cfg
 }
 
@@ -173,12 +161,11 @@ func TestValidateApprovalsYOLO(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeYOLO},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 	}
@@ -192,12 +179,11 @@ func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "high"},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 	}
@@ -211,12 +197,11 @@ func TestValidateClaudeReasoningEffortMaxWithNonOpusModelRejected(t *testing.T) 
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "sonnet", ReasoningEffort: "max"},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 	}
@@ -230,12 +215,11 @@ func TestValidateClaudeReasoningEffortMaxWithOpusModel(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &trueVal},
+			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "opus", ReasoningEffort: "max"},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
-			Antigravity:  EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 	}
@@ -249,12 +233,11 @@ func TestValidateWarningsThresholds(t *testing.T) {
 	base := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}
@@ -334,12 +317,11 @@ func TestValidateWarningsNoiseModeQuiet(t *testing.T) {
 	cfg := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 		Warnings: WarningsConfig{NoiseMode: "quiet"},
@@ -354,12 +336,11 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 	base := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}

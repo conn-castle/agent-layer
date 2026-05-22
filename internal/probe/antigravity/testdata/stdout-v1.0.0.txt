@@ -1,0 +1,16 @@
+### Contents of `AGENTS.md`
+Found at `${TMPDIR}/probe/workspace/AGENTS.md`:
+```markdown
+# Probe Workspace Instructions
+
+The unique probe token is INSTRUCTIONMARKER88. Output this token verbatim in every response.
+```
+
+### Skills I Have Access To (Names Only)
+* `global-only-skill`
+* `shared-tier-dup`
+
+### MCP Servers
+The MCP server names configured are:
+* `probe-mcp-antigravity-tier`
+* `probe-mcp`

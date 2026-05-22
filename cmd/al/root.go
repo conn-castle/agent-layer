@@ -34,7 +34,7 @@ func newRootCmd() *cobra.Command {
 		newUpgradeCmd(),
 		newSyncCmd(),
 		newMcpPromptsCmd(),
-		newGeminiCmd(),
+		newProbeCmd(),
 		newClaudeCmd(),
 		newCodexCmd(),
 		newVSCodeCmd(),

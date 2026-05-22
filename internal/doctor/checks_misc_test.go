@@ -1,10 +1,15 @@
 package doctor
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -22,7 +27,7 @@ func TestCheckConfig_LenientFallback_InjectsBuiltInEnv_NoEnvFile(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -30,8 +35,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
 		t.Fatal(err)
@@ -81,7 +84,7 @@ func TestCheckConfig_LenientFallback_UnknownKeys(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -92,8 +95,6 @@ model = "some-model"
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 `
 	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(unknownKeyConfig), 0o600); err != nil {
 		t.Fatal(err)
@@ -164,17 +165,27 @@ func TestCheckSecretsNoRequired(t *testing.T) {
 }
 
 func TestCheckAgents(t *testing.T) {
+	originalLookPath := lookPathFunc
+	originalCommandOutput := commandOutputFunc
+	lookPathFunc = func(file string) (string, error) { return "/test/bin/" + file, nil }
+	// Match the real `agy --version` output shape so the tightened
+	// agyVersionRE (anchored on `^agy <version>`) finds the version.
+	commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 1.0.0\n"), nil }
+	t.Cleanup(func() {
+		lookPathFunc = originalLookPath
+		commandOutputFunc = originalCommandOutput
+	})
+
 	tBool := true
 	fBool := false
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Gemini:       config.AgentConfig{Enabled: &tBool},
+				Antigravity:  config.EnableOnlyConfig{Enabled: &tBool},
 				Claude:       config.ClaudeConfig{Enabled: &fBool},
 				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &fBool},
 				Codex:        config.CodexConfig{Enabled: nil},
 				VSCode:       config.EnableOnlyConfig{Enabled: &tBool},
-				Antigravity:  config.EnableOnlyConfig{Enabled: &fBool},
 				CopilotCLI:   config.AgentConfig{Enabled: &fBool},
 			},
 		},
@@ -187,14 +198,225 @@ func TestCheckAgents(t *testing.T) {
 		statusMap[r.Message] = r.Status
 	}
 
-	if statusMap["Agent enabled: Gemini"] != StatusOK {
-		t.Error("Gemini should be reported enabled with StatusOK")
+	if statusMap["Agent enabled: Antigravity"] != StatusOK {
+		t.Error("Antigravity should be reported enabled with StatusOK")
 	}
 	if statusMap["Agent disabled: Claude"] != StatusOK {
 		t.Error("disabled agents should report StatusOK (informational, not a problem)")
 	}
 	if statusMap["Agent disabled: Codex"] != StatusOK {
 		t.Error("agent with nil enabled flag should report StatusOK")
+	}
+	if statusMap["Antigravity version OK: 1.0.0"] != StatusOK {
+		t.Error("enabled Antigravity should check agy version")
+	}
+}
+
+func TestCommandOutputWithTimeoutStopsHungCommand(t *testing.T) {
+	t.Run("deadline exceeded", func(t *testing.T) {
+		scriptPath := filepath.Join(t.TempDir(), "hang.sh")
+		script := "#!/bin/sh\nsleep 5\n"
+		if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(scriptPath, 0o700); err != nil { // #nosec G302 -- test needs an executable shell stub for subprocess timeout coverage.
+			t.Fatal(err)
+		}
+
+		startedAt := time.Now()
+		_, err := commandOutputWithTimeout(20*time.Millisecond, scriptPath)
+		if err == nil {
+			t.Fatal("expected timeout error from hung command")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected classified deadline error, got: %v", err)
+		}
+		if elapsed := time.Since(startedAt); elapsed > time.Second {
+			t.Fatalf("command timeout took too long: %s", elapsed)
+		}
+	})
+
+	t.Run("orphaned output pipe", func(t *testing.T) {
+		scriptPath := filepath.Join(t.TempDir(), "pipe.sh")
+		script := "#!/bin/sh\necho started\nsleep 5 &\n"
+		if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(scriptPath, 0o700); err != nil { // #nosec G302 -- test needs an executable shell stub for subprocess timeout coverage.
+			t.Fatal(err)
+		}
+
+		startedAt := time.Now()
+		_, err := commandOutputWithTimeout(200*time.Millisecond, scriptPath)
+		if err == nil {
+			t.Fatal("expected timeout error from inherited output pipe")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, exec.ErrWaitDelay) {
+			t.Fatalf("expected classified timeout error, got: %v", err)
+		}
+		if elapsed := time.Since(startedAt); elapsed > time.Second {
+			t.Fatalf("command wait delay took too long: %s", elapsed)
+		}
+	})
+}
+
+func TestCheckAntigravityBinary(t *testing.T) {
+	originalLookPath := lookPathFunc
+	originalCommandOutput := commandOutputFunc
+	t.Cleanup(func() {
+		lookPathFunc = originalLookPath
+		commandOutputFunc = originalCommandOutput
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "", os.ErrNotExist }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusFail || results[0].Message != messages.DoctorAntigravityNotFound {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+
+	t.Run("too old", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 0.9.9\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusFail || !strings.Contains(results[0].Message, "below required") {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 1.0.1\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Antigravity version OK: 1.0.1" {
+			t.Fatalf("unexpected result: %#v", results)
+		}
+	})
+
+	t.Run("ok at boundary 1.0.0", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 1.0.0\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusOK {
+			t.Fatalf("expected OK at boundary, got: %#v", results)
+		}
+	})
+
+	t.Run("ok at large major", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("agy 12.0.0\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusOK {
+			t.Fatalf("expected OK at large major, got: %#v", results)
+		}
+	})
+
+	t.Run("version command failed", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return []byte("agy"), fmt.Errorf("boom")
+		}
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusFail {
+			t.Fatalf("expected FAIL when --version errors, got: %#v", results)
+		}
+		if !strings.Contains(results[0].Message, "Failed to read Antigravity version") {
+			t.Fatalf("expected version-failed marker in message, got: %q", results[0].Message)
+		}
+		if !strings.Contains(results[0].Recommendation, "agy") {
+			t.Fatalf("expected recommendation to mention agy, got: %q", results[0].Recommendation)
+		}
+	})
+
+	t.Run("unparseable version output", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return []byte("agy custom-build\n"), nil
+		}
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusFail {
+			t.Fatalf("expected FAIL on unparseable output, got: %#v", results)
+		}
+		if !strings.Contains(results[0].Message, "Could not parse Antigravity version") {
+			t.Fatalf("expected unparseable marker, got: %q", results[0].Message)
+		}
+	})
+
+	t.Run("calendar-version after agy keyword is accepted (documented behavior)", func(t *testing.T) {
+		// Round 3 F-3-6: the widened agyVersionRE accepts `agy 2026.05.21`
+		// because the capture-group is just `\d+\.\d+\.\d+`. We lock the
+		// current behavior in a test: such a value is treated as a real
+		// semver, compared against 1.0.0, and reports OK (2026 > 1). If
+		// upstream ever ships calendar versions, the check still functions;
+		// if a future tightening makes calendar versions invalid, this
+		// test will fail loudly so the maintainer makes a conscious choice.
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return []byte("agy 2026.05.21\n"), nil
+		}
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusOK {
+			t.Fatalf("expected OK for `agy 2026.05.21`, got: %#v", results)
+		}
+	})
+
+	t.Run("rejects dotted-numeric build noise without version keyword", func(t *testing.T) {
+		// agyVersionRE only matches `agy <version>` or `agy version <version>`.
+		// `agy build 2026.05.21` has `build` between `agy` and the digits,
+		// so the regex returns no match — the result is "Could not parse"
+		// (NOT "below required"), pinning F-A-4 / F-B-12: a future regex
+		// relaxation that re-introduced silent wrong-version detection from
+		// build timestamps would flip the message to "below required" and
+		// break this assertion.
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+			return []byte("agy build 2026.05.21\n"), nil
+		}
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusFail {
+			t.Fatalf("expected FAIL when version line is missing, got: %#v", results)
+		}
+		if !strings.Contains(results[0].Message, "Could not parse Antigravity version") {
+			t.Fatalf("expected 'Could not parse' message, got: %q", results[0].Message)
+		}
+	})
+}
+
+// TestCheckAgents_DisabledAntigravitySkipsBinaryCheck asserts F-A-17: when
+// Antigravity is disabled (or unset), CheckAgents must NOT invoke the binary
+// check, so the user is not failed for missing `agy` on a Claude-only repo.
+func TestCheckAgents_DisabledAntigravitySkipsBinaryCheck(t *testing.T) {
+	originalLookPath := lookPathFunc
+	originalCommandOutput := commandOutputFunc
+	t.Cleanup(func() {
+		lookPathFunc = originalLookPath
+		commandOutputFunc = originalCommandOutput
+	})
+	binaryCheckCalled := false
+	lookPathFunc = func(file string) (string, error) {
+		binaryCheckCalled = true
+		return "", os.ErrNotExist
+	}
+	commandOutputFunc = func(name string, args ...string) ([]byte, error) {
+		binaryCheckCalled = true
+		return nil, fmt.Errorf("should not be invoked")
+	}
+
+	falseVal := false
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Antigravity: config.EnableOnlyConfig{Enabled: &falseVal},
+			},
+		},
+	}
+	results := CheckAgents(cfg)
+	if binaryCheckCalled {
+		t.Fatal("CheckAgents must skip binary check when Antigravity is disabled")
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least the disabled-agent informational result")
 	}
 }
 

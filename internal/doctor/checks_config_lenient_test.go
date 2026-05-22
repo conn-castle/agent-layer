@@ -23,7 +23,7 @@ func TestCheckConfig_LenientFallback(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -31,8 +31,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -105,7 +103,7 @@ func TestCheckConfig_LenientFallback_UnknownKeysGuidance(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -117,8 +115,6 @@ enabled = false
 enabled = true
 model = "vscode-model-not-supported"
 reasoning_effort = "nope"
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -196,7 +192,7 @@ func TestCheckConfig_LenientFallback_UnknownKeysGuidance_SuggestsRename(t *testi
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -207,8 +203,6 @@ model = "legacy-key-not-supported"
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -258,7 +252,7 @@ func TestCheckConfig_LenientFallback_LoadsSkillsForDoctor(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -266,8 +260,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -332,7 +324,7 @@ func TestCheckConfig_LenientFallback_MissingSkillsDir_DoesNotAddSkillsFailure(t 
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -340,8 +332,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -380,7 +370,7 @@ func TestCheckConfig_LenientFallback_SkillsPathIsFile_ReportsLoadFailure(t *test
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -388,8 +378,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -434,7 +422,7 @@ func TestCheckConfig_LenientFallback_InvalidSkillFile_ReportsLoadFailure(t *test
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -442,8 +430,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -504,7 +490,7 @@ func TestCheckConfig_LenientFallback_InjectsBuiltInEnv(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -512,8 +498,6 @@ enabled = true
 enabled = false
 [agents.vscode]
 enabled = true
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `

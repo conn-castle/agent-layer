@@ -11,7 +11,7 @@ If you run more than one client, Agent Layer prevents drift and gives you a sing
 ## Does Agent Layer align with the skills standard?
 Yes. Skill parsing and validation align with the [agentskills.io specification](https://agentskills.io/specification), including canonical directory `SKILL.md` naming with a compatibility fallback for lowercase `skill.md`.
 
-## Does Agent Layer install Claude/Codex/Gemini/Copilot CLI/VS Code?
+## Does Agent Layer install Claude/Codex/Antigravity/Copilot CLI/VS Code?
 No. Install client CLIs separately and ensure they are on your `PATH`.
 
 ## What do I edit vs what gets generated?
@@ -19,8 +19,8 @@ You edit `.agent-layer/`. Agent Layer generates client-specific outputs in each 
 
 Rule of thumb: generated files include:
 
-- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
-- Agent config: `.mcp.json`, `.gemini/settings.json`, `.claude/settings.json`, `.copilot/mcp-config.json`
+- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`
+- Agent config: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.copilot/mcp-config.json`
 - Shared skills: `.agents/skills/`
 - Claude skills: `.claude/skills/`
 - Codex config and rules: `.codex/`

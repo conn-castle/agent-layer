@@ -312,7 +312,7 @@ func TestRun_Catalog_PrunesDisabledDefaultEndToEnd(t *testing.T) {
 	// will then leave it unchecked, which triggers prune-on-disable.
 	initialConfig := `[approvals]
 mode = "none"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -321,8 +321,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false

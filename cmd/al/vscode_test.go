@@ -38,7 +38,7 @@ func TestRunVSCodeNoSyncDisabled(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -53,8 +53,6 @@ enabled = true
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = true
 [agents.copilot_cli]
 enabled = true
 `
@@ -80,7 +78,7 @@ func TestRunVSCodeNoSyncEnabledViaClaudeVSCode(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -95,8 +93,6 @@ enabled = true
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = true
 [agents.copilot_cli]
 enabled = true
 `

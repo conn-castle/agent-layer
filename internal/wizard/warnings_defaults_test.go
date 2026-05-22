@@ -38,7 +38,7 @@ func TestLoadWarningDefaultsIncomplete(t *testing.T) {
 		return []byte(`[approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -53,8 +53,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = true
 [agents.copilot_cli]
 enabled = true
 

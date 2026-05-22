@@ -19,13 +19,16 @@ const requiredFieldMigrationBaselineVersion = "0.8.1"
 // requiredFieldMigrationBaselineAllowlist contains required fields that predate
 // migration-manifest coverage. Any required field not in this allowlist must be
 // covered by at least one config_set_default migration operation.
+//
+// Note: agents.antigravity.enabled is intentionally NOT in this allowlist
+// post-0.10.2 — the v0.10.2 migration's `d-set-default-agents-antigravity-enabled`
+// op explicitly covers it, so the guardrail can enforce coverage if a future
+// manifest ever removes that set-default.
 var requiredFieldMigrationBaselineAllowlist = map[string]struct{}{
-	"approvals.mode":             {},
-	"agents.gemini.enabled":      {},
-	"agents.claude.enabled":      {},
-	"agents.codex.enabled":       {},
-	"agents.vscode.enabled":      {},
-	"agents.antigravity.enabled": {},
+	"approvals.mode":        {},
+	"agents.claude.enabled": {},
+	"agents.codex.enabled":  {},
+	"agents.vscode.enabled": {},
 }
 
 type migrationManifestForGuardrail struct {

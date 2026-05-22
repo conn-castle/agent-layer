@@ -22,7 +22,7 @@ Comparison:
 | --- | --- |
 | duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
 | inconsistent approvals and command policies | consistent approvals and allowlists |
-| MCP servers added in one client and forgotten in another | generated MCP config for every supported client |
+| MCP servers added in one client and forgotten in another | generated MCP config for supported MCP clients |
 | shared global credentials across repos | per-repo credential isolation for Codex; per-repo settings and caches isolation for Claude |
 | no single place to review or audit changes | audit in version control |
 
@@ -36,20 +36,19 @@ MCP = Model Context Protocol (tool/data servers).
 
 | Client | Instructions | Skills | MCP servers | Approved commands |
 |---|---:|---:|---:|---:|
-| Gemini CLI | ✅ | ✅ | ✅ | ✅ |
+| Antigravity | ✅ | ✅ | ❌* | ✅** |
 | Claude Code CLI | ✅ | ✅ | ✅ | ✅ |
-| Claude Code VS Code Extension | ✅ | ✅ | ✅ | ✅ |
 | VS Code / Copilot Chat | ✅ | ✅ | ✅ | ✅ |
 | Codex CLI | ✅ | ✅ | ✅ | ✅ |
-| Codex VS Code extension | ✅ | ✅ | ✅ | ✅ |
 | Copilot CLI | ✅ | ✅ | ✅ | ✅ |
-| Antigravity | ✅ | ✅ | ❌ | ❌ |
 
 Notes:
-- Codex, Gemini, VS Code/Copilot, Copilot CLI, and Antigravity consume shared skills from `.agents/skills/<name>/SKILL.md`.
+- Codex, Antigravity, VS Code/Copilot, and Copilot CLI consume shared skills from `.agents/skills/<name>/SKILL.md`.
 - Claude Code consumes skills from `.claude/skills/<name>/SKILL.md`.
+- Claude Code and Codex VS Code extension support is handled through `al vscode`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
-- Antigravity does not support MCP servers because it only reads from the home directory and does not load repo-local MCP configs.
+- *Antigravity MCP config is written to `.agy/antigravity-cli/mcp_config.json` using the supported `serverUrl` shape. `agy` v1.0.0 migrates that file to `<gemini_dir>/config/mcp_config.json`, but runtime MCP registration has not been observed yet. Run `al probe antigravity` to see the current capability matrix.
+- **Antigravity approved commands are written to `.agy/antigravity-cli/settings.json` as a `permissions.allow` list (Agent Layer projects allow patterns only — Antigravity's own `permissions.deny` enforcement, if any, is reported by `al probe antigravity` and is not produced by sync).
 
 ---
 
@@ -89,7 +88,7 @@ al init
 Then run an agent:
 
 ```bash
-al gemini
+al antigravity
 ```
 
 Optional health check:
@@ -104,7 +103,7 @@ Notes:
 - By default `al init` first walks up for an ancestor `.agent-layer/`, then for an ancestor `.git`. To install a separate Agent Layer in a subfolder of an existing repo (for example a sub-project that needs its own `.agent-layer/`), pass `al init --here` to target the current directory.
 - `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories.
 - `al upgrade` automatically creates a managed-file snapshot and rolls changes back if an upgrade step fails. Snapshots are written under `.agent-layer/state/upgrade-snapshots/`.
-- Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Gemini CLI, Claude Code CLI, Codex, Copilot CLI, VS Code, etc.).
+- Agent Layer does not install clients. Install the target client CLI and ensure it is on your `PATH` (Antigravity `agy`, Claude Code CLI, Codex, Copilot CLI, VS Code, etc.).
 
 ---
 
@@ -122,7 +121,7 @@ If a server fails to start with “No such file or directory,” verify the `com
 
 `al doctor` connects to each enabled MCP server and lists tools. It waits up to **30 seconds per server** before warning about connectivity, and prints a short progress indicator while checks run.
 When config validation fails due to unrecognized keys, `al doctor` reports the detected key paths, schema hints (allowed keys where applicable), and repair options (`al upgrade`, `al wizard`, or manual edits).
-When agents are enabled, it verifies generated client configs (for example `.mcp.json`, `.gemini/settings.json`) are in sync; run `al sync` if they are missing or stale.
+When agents are enabled, it verifies generated client configs (for example `.mcp.json`, `.agy/antigravity-cli/settings.json`) are in sync; run `al sync` if they are missing or stale.
 
 ---
 
@@ -220,7 +219,7 @@ Compatibility guarantee:
 Run `al wizard` any time to interactively configure the most important settings:
 
 - **Approvals Mode** (all, mcp, commands, none, yolo)
-- **Agent Enablement** (Gemini, Claude, Codex, VS Code, Antigravity, Copilot CLI)
+- **Agent Enablement** (Antigravity, Claude, Codex, VS Code, Copilot CLI)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
@@ -281,8 +280,8 @@ Common memory files include:
 ### Generated client files (gitignored by default)
 Generated outputs are written into the repo in client-specific formats (examples):
 
-- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
-- MCP + client configs: `.mcp.json`, `.gemini/settings.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`
+- Instruction shims: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`
+- MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`
 - Shared skills: `.agents/skills/`
 - Claude skills: `.claude/skills/`
 - VS Code integration: `.vscode/mcp.json` and an Agent Layer-managed block in `.vscode/settings.json`
@@ -304,11 +303,8 @@ Example:
 # one of: "all", "mcp", "commands", "none", "yolo"
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
-# model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
-# model = "..."
-# reasoning_effort is not currently supported for Gemini in Agent Layer.
 
 [agents.claude]
 enabled = true
@@ -344,9 +340,6 @@ enabled = true
 # prevent_idle_sleep = true
 
 [agents.vscode]
-enabled = true
-
-[agents.antigravity]
 enabled = true
 
 [agents.copilot_cli]
@@ -445,7 +438,7 @@ These modes control whether the agent is allowed to run shell commands and/or MC
 - `mcp`: auto-approve **only** MCP tool calls; shell commands still require approval (or are restricted)
 - `commands`: auto-approve **only** shell commands; MCP tool calls still require approval
 - `none`: approve **nothing** automatically
-- `yolo`: skip **all** permission prompts (sends `--dangerously-skip-permissions` to Claude, `--approval-mode=yolo` to Gemini, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `--yolo` to Copilot CLI, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
+- `yolo`: skip **all** permission prompts where the client supports it (sends `--dangerously-skip-permissions` to Claude, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `--yolo` to Copilot CLI, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
 
 Client notes:
 - Some clients do not support all approval types; Agent Layer generates the closest supported behavior per client.
@@ -558,12 +551,11 @@ Workflows echo the artifact path in the chat output. There are no path overrides
 Common usage:
 
 ```bash
-al gemini
+al antigravity
 al claude
 al codex
 al copilot
 al vscode
-al antigravity
 ```
 
 ### Passing flags to clients
@@ -588,6 +580,7 @@ Other commands:
 - `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`; use `al upgrade rollback --list` to discover available IDs)
 - `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
+- `al probe antigravity` — run the Antigravity capability probe and print JSON
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`)
 - `al completion` — generate shell completion scripts (bash/zsh/fish, macOS/Linux only)
@@ -607,7 +600,7 @@ Typical behavior:
 - `al completion <shell> --install` writes the completion file to the standard user location
 
 This enables:
-- `al <TAB>` to complete supported subcommands (gemini/claude/codex/copilot/vscode/antigravity/sync/…)
+- `al <TAB>` to complete supported subcommands (antigravity/claude/codex/copilot/vscode/sync/…)
 
 Notes:
 - Zsh may require adding the install directory to `$fpath` before `compinit` (the command prints a snippet when needed).
@@ -619,7 +612,7 @@ Notes:
 
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
-- generated client config files/directories (for example `.agents/`, `.gemini/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, and `.github/copilot-instructions.md`)
+- generated client config files/directories (for example `.agents/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, and `.github/copilot-instructions.md`)
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 

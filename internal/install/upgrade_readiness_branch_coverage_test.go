@@ -49,7 +49,7 @@ func TestBuildUpgradeReadinessChecks_ErrorPropagationBranches(t *testing.T) {
 		root := t.TempDir()
 		configText := `[approvals]
 mode = "none"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -58,8 +58,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false

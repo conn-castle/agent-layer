@@ -11,9 +11,6 @@ type Choices struct {
 	EnabledAgentsTouched bool
 
 	// Models
-	GeminiModel        string
-	GeminiModelTouched bool
-
 	ClaudeModel        string
 	ClaudeModelTouched bool
 

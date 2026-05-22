@@ -13,16 +13,10 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/dispatch"
-	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
 func TestInitAndSyncCommands(t *testing.T) {
-	home := t.TempDir()
-	origHome := alsync.UserHomeDir
-	alsync.UserHomeDir = func() (string, error) { return home, nil }
-	t.Cleanup(func() { alsync.UserHomeDir = origHome })
-
 	root := t.TempDir()
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newInitCmd()
@@ -182,11 +176,10 @@ func TestClientCommandsMissingConfig(t *testing.T) {
 	root := t.TempDir()
 	testutil.WithWorkingDir(t, root, func() {
 		commands := []*cobra.Command{
-			newGeminiCmd(),
+			newAntigravityCmd(),
 			newClaudeCmd(),
 			newCodexCmd(),
 			newVSCodeCmd(),
-			newAntigravityCmd(),
 		}
 		for _, cmd := range commands {
 			cmd.SetContext(context.Background())
@@ -204,22 +197,20 @@ func TestClientCommandsSuccess(t *testing.T) {
 	t.Setenv(config.BuiltinRepoRootEnvVar, "")
 
 	binDir := t.TempDir()
-	testutil.WriteStub(t, binDir, "gemini")
+	testutil.WriteStub(t, binDir, "agy")
 	testutil.WriteStub(t, binDir, "claude")
 	testutil.WriteStub(t, binDir, "codex")
 	testutil.WriteStub(t, binDir, "code")
-	testutil.WriteStub(t, binDir, "antigravity")
 	testutil.WriteStub(t, binDir, "al")
 
 	t.Setenv("PATH", binDir)
 
 	testutil.WithWorkingDir(t, root, func() {
 		commands := []*cobra.Command{
-			newGeminiCmd(),
+			newAntigravityCmd(),
 			newClaudeCmd(),
 			newCodexCmd(),
 			newVSCodeCmd(),
-			newAntigravityCmd(),
 		}
 		for _, cmd := range commands {
 			if err := cmd.RunE(cmd, nil); err != nil {
@@ -311,11 +302,10 @@ func TestCommandsGetwdError(t *testing.T) {
 	commands := []*cobra.Command{
 		newInitCmd(),
 		newSyncCmd(),
-		newGeminiCmd(),
+		newAntigravityCmd(),
 		newClaudeCmd(),
 		newCodexCmd(),
 		newVSCodeCmd(),
-		newAntigravityCmd(),
 		newDoctorCmd(),
 	}
 	for _, cmd := range commands {

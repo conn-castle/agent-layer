@@ -13,15 +13,16 @@ run_scenario_doctor_smoke() {
   # Enable both agents so doctor validates their checks.
   local config_path="$repo_dir/.agent-layer/config.toml"
   local config_tmp="$repo_dir/.agent-layer/config.toml.tmp"
-  assert_file_contains "$config_path" "[agents.gemini]" \
-    "config has [agents.gemini] section"
+  assert_file_contains "$config_path" "[agents.antigravity]" \
+    "config has [agents.antigravity] section"
   assert_file_contains "$config_path" "[agents.claude]" \
     "config has [agents.claude] section"
   sed \
-    -e '/^\[agents\.gemini\]/,/^\[/ s/^enabled = .*/enabled = true/' \
+    -e '/^\[agents\.antigravity\]/,/^\[/ s/^enabled = .*/enabled = true/' \
     -e '/^\[agents\.claude\]/,/^\[/ s/^enabled = .*/enabled = true/' \
     "$config_path" > "$config_tmp"
   mv "$config_tmp" "$config_path"
+  install_mock_agent "$repo_dir" "agy"
 
   # Doctor validates MCP server secrets from .agent-layer/.env.
   # Default init has no MCP servers enabled, so this is technically unnecessary

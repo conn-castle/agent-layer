@@ -52,12 +52,11 @@ Some teams keep `.agent-layer/` local while experimenting; others commit it so e
 When you run `al sync` or `al <client>`, Agent Layer generates client-specific config files and launchers, such as:
 
 - `.agents/skills/`
-- `.gemini/settings.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
 - `.codex/` (generated config and rules)
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `AGENTS.md`
 - `CLAUDE.md`
-- `GEMINI.md`
 - `.github/copilot-instructions.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
@@ -73,7 +72,7 @@ Agent Layer avoids that by forcing everything through a single canonical input. 
 
 ### Anti-patterns to avoid
 
-- Editing generated files under `.agents/skills/`, `.gemini/`, `.claude/`, `.codex/`, `.copilot/`, or `.mcp.json`
+- Editing generated files under `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.codex/`, `.copilot/`, or `.mcp.json`
 - Editing Agent Layer-managed files under `.vscode/` (`mcp.json` and the managed block in `settings.json`)
 - Copying instructions manually between clients
 - Maintaining separate MCP configs for each agent
@@ -156,7 +155,7 @@ mode = "all" # one of: all, mcp, commands, none, yolo
 | `mcp` | prompt/deny | auto-approve | |
 | `commands` | auto-approve | prompt/deny | |
 | `none` | prompt/deny | prompt/deny | |
-| `yolo` | auto-approve | auto-approve | skips all permission prompts (Claude `--dangerously-skip-permissions`, Gemini `--approval-mode=yolo`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI `--yolo`, VS Code `chat.tools.global.autoApprove`) |
+| `yolo` | auto-approve | auto-approve | skips all permission prompts where supported (Claude `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live`, Copilot CLI `--yolo`, VS Code `chat.tools.global.autoApprove`) |
 
 The default template sets `mode = "all"`. Change it to match your team's security posture.
 
@@ -212,15 +211,15 @@ Two high-leverage examples:
 - **Context7**: gives agents access to current library documentation and code examples, which reduces “reasonable sounding” but incorrect API usage. It shines when you are integrating SDKs or frameworks that change quickly.
 - **Tavily**: provides web search/research so agents can answer “what is the latest” or “what changed recently” questions with real sources instead of guessing from training data.
 
-### Why the template includes a default MCP library
+### Why the wizard includes a default MCP library
 
-`al init` seeds `.agent-layer/config.toml` with a small set of MCP servers (all `enabled = false` by default). They are included because they cover the most common high-value agent workflows across repos: up-to-date docs, web research, fast code search, controlled filesystem access, and source fetching/browser automation.
+`al init` creates an empty `[mcp]` section. `al wizard` includes a small catalog of MCP servers that you can add when needed. They are included because they cover the most common high-value agent workflows across repos: up-to-date docs, web research, fast code search, controlled filesystem access, and source fetching/browser automation.
 
 You do not need all of them. Most repos get the best results by enabling a small, intentional set and expanding only when a real use case shows up.
 
 They are disabled by default because some require sign-ups and secrets, and because tool access is a real capability decision. Enable the minimum set that gives you leverage.
 
-**Seeded servers (disabled by default)**
+**Catalog servers**
 
 - `context7` - current library docs and examples; requires `AL_CONTEXT7_API_KEY` (sign up) and `npx`.
 - `tavily` - web search/research for recency; requires `AL_TAVILY_API_KEY` (sign up).
@@ -287,7 +286,7 @@ See [Environment variables](./reference#environment-variables) for how `.env` is
 
 ### Client targeting
 
-Use `clients = ["gemini", "claude", "codex", "vscode", "antigravity", "copilot"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
+Use `clients = ["antigravity", "claude", "codex", "vscode", "copilot"]` to restrict a server to specific clients. If you omit `clients`, the server is projected to all supported clients.
 
 ### Built-in path placeholder
 

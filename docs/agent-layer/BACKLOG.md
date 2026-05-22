@@ -52,11 +52,11 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: Rules 6–8 appear verbatim (or as direct derivatives) in at least one audit/cleanup skill and in coding conventions; agents flag violations during code review.
     Notes: Source: @shawmakesmagic 8-subagent cleanup prompt (x.com/shawmakesmagic/status/2044269097647779990). Nick flagged these as strongly aligned with his existing values but underrepresented in current firmware.
 
-- Backlog 2026-04-18 cross-provider-hook-matrix: Audit hook support across Claude Code, Codex, and Gemini CLI
+- Backlog 2026-04-18 cross-provider-hook-matrix: Audit hook support across Claude Code, Codex, and Antigravity
     Priority: Medium. Area: providers / hooks
-    Description: Claude Code has 8 documented hook types (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Notification, Stop, SubagentStop, PreCompact). Determine what equivalent hook systems exist in Codex and Gemini CLI — specifically session-start, pre/post-tool, and stop hooks — and identify gaps or provider-specific capabilities worth exploiting. Produce a cross-provider hook compatibility matrix in agent-layer docs.
-    Acceptance criteria: Matrix doc exists in agent-layer docs listing each Claude hook type with Codex and Gemini CLI equivalents (or "not supported"); firmware improvements that use hooks (e.g., auto-load git context at session start, post-tool formatting) are annotated as cross-provider or Claude-only.
-    Notes: Source: The Code newsletter review session, 2026-04-18. Current hook implementations in agent-layer assume Claude-specific hook names; gaps block parity improvements for Codex and Gemini.
+    Description: Claude Code has 8 documented hook types (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Notification, Stop, SubagentStop, PreCompact). Determine what equivalent hook systems exist in Codex and Antigravity — specifically session-start, pre/post-tool, and stop hooks — and identify gaps or provider-specific capabilities worth exploiting. Produce a cross-provider hook compatibility matrix in agent-layer docs.
+    Acceptance criteria: Matrix doc exists in agent-layer docs listing each Claude hook type with Codex and Antigravity equivalents (or "not supported"); firmware improvements that use hooks (e.g., auto-load git context at session start, post-tool formatting) are annotated as cross-provider or Claude-only.
+    Notes: Source: The Code newsletter review session, 2026-04-18. Current hook implementations in agent-layer assume Claude-specific hook names; gaps block parity improvements for Codex and Antigravity.
 
 - Backlog 2026-04-18 dynamic-context-injection: Audit skills for `!` dynamic context injection opportunities
     Priority: Medium. Area: skills
@@ -90,7 +90,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 - Backlog 2026-03-23 disable-client-memory-config: Agent-specific config option to disable client memory systems
     Priority: Medium. Area: config / sync
-    Description: Add an agent-specific config option (e.g., `disable_client_memory = true`) in config.toml that causes `al sync` to inject the appropriate memory-disable setting into each agent's generated config (e.g., `autoMemoryEnabled=false` for Claude, `save_memory` tool blocked for Gemini, etc.). Centralizes memory disable logic in config.toml rather than requiring users to know each client's specific setting name.
+    Description: Add an agent-specific config option (e.g., `disable_client_memory = true`) in config.toml that causes `al sync` to inject the appropriate memory-disable setting into each agent's generated config (e.g., `autoMemoryEnabled=false` for Claude, equivalent memory controls for Antigravity if available, etc.). Centralizes memory disable logic in config.toml rather than requiring users to know each client's specific setting name.
     Acceptance criteria: A per-agent config.toml flag exists; `al sync` translates it to the correct client-specific setting for each supported agent; documented in README or CONTEXT.md.
     Notes: Source: claude-assistant project discovered the need while disabling memory across all agents. Each client has a different mechanism — the mapping must be maintained as new clients are added.
 
@@ -98,7 +98,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Priority: Medium. Area: skills
     Description: Now that skill sync copies subdirectories (scripts/, references/, assets/) to all clients, audit existing template skills to identify where adding scripts, reference docs, or asset files would improve skill effectiveness (e.g., validation scripts, detailed reference guides, config templates).
     Acceptance criteria: Each template skill has been reviewed; skills that benefit from subdirectories have them added; a decision is recorded on which skills are body-only vs resource-enhanced.
-    Notes: Enabled by the native skill sync change (2026-03-21) that replaced MCP prompt delivery.
+    Notes: Re-evaluate against current code (post-Phase 16). Antigravity now consumes the shared `.agents/skills/` tier, so resource-enhanced skills also surface there.
 
 - Backlog 2026-03-17 reassess-memory-pruning: Observe strengthened memory-pruning approach
     Priority: Low. Area: instructions / memory
@@ -116,7 +116,7 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Priority: Low. Area: skills / validator
     Description: Add a soft warning (not a hard error) when a skill file contains lines exceeding a character threshold (e.g., ~1000 chars). Protects against silent truncation by tools that impose per-line limits (Claude Code's Read tool truncates at 2000 chars) regardless of how skills are loaded at runtime.
     Acceptance criteria: `al doctor` emits a warning for skill files with lines over the threshold; no hard error; threshold is configurable or clearly documented.
-    Notes: This is a DX/tooling concern, not an LLM performance concern — tokenization ignores line breaks. The current MCP-based loading path is unaffected, but future delivery mechanisms may not use MCP.
+    Notes: This is a DX/tooling concern, not an LLM performance concern — tokenization ignores line breaks. The current native skill sync path is unaffected, but future delivery mechanisms may impose different line-length limits.
 
 - Backlog 2026-03-06 audit-security-skill: Add a security audit skill
     Priority: Medium. Area: skills
@@ -148,50 +148,14 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
     Acceptance criteria: E2E agents use tools like Playwright to actively "break things," turning failures into new tests; results are delivered as complete PRs with code and tests.
     Notes: Must distinguish between test types; requires full product access for E2E agents to explore and find edge cases.
 
-- Backlog 2026-01-25 a1b2c3d: Add interaction monitoring for prompt self-improvement
-    Priority: Low. Area: agent intelligence
-    Description: Add interaction monitoring to agent system instructions to self-improve all prompts, rules, and workflows based on usage patterns.
-    Acceptance criteria: Monitoring captures interaction patterns and produces actionable suggestions for prompt improvements.
-    Notes: Requires careful design to avoid privacy concerns and ensure suggestions are high-quality.
-
 - Backlog 2026-01-25 c3d4e5f: Auto-merge client-side edits back to agent-layer sources
     Priority: Medium. Area: config synchronization
     Description: Auto-merge client-side approvals or MCP server edits back into agent-layer sources.
     Acceptance criteria: Changes made in client configs are detected and merged back to source files.
     Notes: Needs conflict resolution strategy and user confirmation for ambiguous merges.
 
-- Backlog 2026-01-25 d4e5f6a: Add task queueing system for chained operations
-    Priority: Low. Area: workflow automation
-    Description: Add a queueing system to chain tasks without interrupting the current task.
-    Acceptance criteria: Users can queue multiple tasks that execute sequentially without manual intervention between them.
-    Notes: Consider how to handle failures mid-queue and queue persistence across sessions.
-
-- Backlog 2026-01-25 f6a7b8c: Build multi-agent chat tool
-    Priority: Low. Area: agent collaboration
-    Description: Build a multi-agent chat interface where different agents can exchange messages and collaborate on tasks.
-    Acceptance criteria: Agents can exchange messages and collaborate on tasks through a shared interface.
-    Notes: Experimental feature; needs clear use cases and safety boundaries.
-
-- Backlog 2026-01-25 a7b8c9d: Build unified documentation repository with MCP access
-    Priority: Low. Area: knowledge management
-    Description: Build a unified documentation repository with Model Context Protocol tool access for shared notes.
-    Acceptance criteria: A central repository exists that agents can read/write through MCP tools.
-    Notes: Consider access control, versioning, and conflict resolution.
-
-- Backlog 2026-01-25 b8c9d0e: Add indexed chat history for searchable context
-    Priority: Low. Area: knowledge management
-    Description: Add indexed chat history in the unified documentation repository for searchable context.
-    Acceptance criteria: Past conversations are indexed and searchable to provide relevant context to agents.
-    Notes: Depends on unified documentation repository being implemented first.
-
-- Backlog 2026-01-25 c9d0e1f: Persist conversation history in model-specific folders
-    Priority: Low. Area: session management
-    Description: Persist conversation history in model-specific local folders (e.g., `.agent-layer/gemini/`, `.agent-layer/openai/`).
-    Acceptance criteria: Conversation history is saved locally per model and can be restored across sessions.
-    Notes: Consider storage format, retention policy, and privacy implications.
-
-- Backlog 2026-01-25 1a2b3c4: Evaluate unified shell/command MCP for centralized allowlisting
-    Priority: Low. Area: MCP / security
-    Description: Evaluate using a generic shell/command MCP server to enforce a unified allowlist for shell commands across all agents, rather than relying on agent-specific implementations.
-    Acceptance criteria: Feasibility study and prototype of a unified shell MCP with granular allowlisting.
-    Notes: Deep backlog item. Consider only after high-priority improvements are complete. Goal is centralized control.
+- Backlog 2026-01-25 deep-cluster: Aspirational ideas (low priority, kept as searchable headlines)
+    Priority: Low. Area: research / aspirational
+    Description: One-line headlines preserved from 2026-01-25 brainstorming (original short-slugs kept for searchability): interaction monitoring (a1b2c3d); task queue for chained ops (d4e5f6a); multi-agent chat tool (f6a7b8c); unified docs repository with MCP access (a7b8c9d); indexed/searchable chat history (b8c9d0e); per-provider conversation persistence (c9d0e1f); unified shell/command MCP for centralized allowlisting (1a2b3c4).
+    Acceptance criteria: Each headline either promoted to its own 5-line entry and scheduled into ROADMAP.md, or explicitly retired with rationale in DECISIONS.md.
+    Notes: Expand any single item back into its own 5-line entry only when promotion to ROADMAP looks likely.

@@ -21,7 +21,7 @@ func setupRepo(t *testing.T, root string) {
 func basicAgentConfig() string {
 	return `[approvals]
 mode = "none"
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 [agents.claude]
 enabled = false
@@ -30,8 +30,6 @@ enabled = false
 [agents.codex]
 enabled = false
 [agents.vscode]
-enabled = false
-[agents.antigravity]
 enabled = false
 [agents.copilot_cli]
 enabled = false

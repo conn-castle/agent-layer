@@ -4,24 +4,22 @@ import "github.com/conn-castle/agent-layer/internal/config"
 
 // AgentID constants matching config keys
 const (
-	AgentGemini       = "gemini"
+	AgentAntigravity  = "antigravity"
 	AgentClaude       = "claude"
 	AgentClaudeVSCode = "claude_vscode"
 	AgentCodex        = "codex"
 	AgentVSCode       = "vscode"
-	AgentAntigravity  = "antigravity"
 	AgentCopilotCLI   = "copilot_cli"
 )
 
 // supportedAgentKeys returns the config field keys for agent enablement in UI order.
 func supportedAgentKeys() []string {
 	return []string{
-		"agents.gemini.enabled",
+		"agents.antigravity.enabled",
 		"agents.claude.enabled",
 		"agents.claude_vscode.enabled",
 		"agents.codex.enabled",
 		"agents.vscode.enabled",
-		"agents.antigravity.enabled",
 		"agents.copilot_cli.enabled",
 	}
 }
@@ -43,7 +41,7 @@ func SupportedAgents() []string {
 	return agents
 }
 
-// extractAgentID extracts the agent ID from a key like "agents.gemini.enabled".
+// extractAgentID extracts the agent ID from a key like "agents.codex.enabled".
 func extractAgentID(key string) string {
 	// "agents." = 7 chars, ".enabled" = 8 chars
 	return key[7 : len(key)-8]
@@ -57,11 +55,6 @@ func ApprovalModeFieldOptions() []config.FieldOption {
 		panic("wizard: approvals.mode field not in config catalog")
 	}
 	return f.Options
-}
-
-// GeminiModels returns supported Gemini model values from the config field catalog.
-func GeminiModels() []string {
-	return config.FieldOptionValues("agents.gemini.model")
 }
 
 // ClaudeModels returns supported Claude model values from the config field catalog.

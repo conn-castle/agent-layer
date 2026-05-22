@@ -1,0 +1,5 @@
+I0521 11:49:40.319808 89717 migrate.go:40] Migration marker ${TMPDIR}/probe/agycfg/config/.migrated does not exist. Attempting migration from AppDataDir ${TMPDIR}/probe/agycfg/antigravity-cli.
+I0521 11:49:40.321524 89717 migrate.go:121] Migrating file ${TMPDIR}/probe/agycfg/antigravity-cli/mcp_config.json to ${TMPDIR}/probe/agycfg/config/mcp_config.json
+I0521 11:49:40.322004 89717 migrate.go:140] Created symlink from ${TMPDIR}/probe/agycfg/antigravity-cli/mcp_config.json to ${TMPDIR}/probe/agycfg/config/mcp_config.json
+I0521 11:49:40.350079 89717 cli_setting_manager.go:65] CLI settings initialized: permissions=&{Allow:[command(echo PROBEALLOWMARKER) mcp(probe-mcp/)] Deny:[command(rm -rf)] Ask:[]}, toolPermission=request-review
+I0521 11:49:42.092385 89717 discovery.go:335] mcp server probe-mcp registered

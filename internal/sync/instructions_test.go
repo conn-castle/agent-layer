@@ -35,13 +35,18 @@ func TestWriteInstructionShims(t *testing.T) {
 	paths := []string{
 		filepath.Join(root, "AGENTS.md"),
 		filepath.Join(root, "CLAUDE.md"),
-		filepath.Join(root, "GEMINI.md"),
 		filepath.Join(root, ".github", "copilot-instructions.md"),
 	}
 	for _, path := range paths {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}
+	}
+	// GEMINI.md must NOT be generated post-0.10.2 — the Gemini CLI is
+	// retired and agy reads AGENTS.md. The v0.10.2 migration cleans up
+	// any stale GEMINI.md from earlier installs.
+	if _, err := os.Stat(filepath.Join(root, "GEMINI.md")); err == nil {
+		t.Fatal("GEMINI.md must not be generated post-Gemini removal")
 	}
 }
 
@@ -100,12 +105,6 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 			name: "claude write fails",
 			setup: func(root string) error {
 				return os.Mkdir(filepath.Join(root, "CLAUDE.md"), 0o700)
-			},
-		},
-		{
-			name: "gemini write fails",
-			setup: func(root string) error {
-				return os.Mkdir(filepath.Join(root, "GEMINI.md"), 0o700)
 			},
 		},
 		{

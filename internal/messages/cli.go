@@ -130,9 +130,13 @@ const (
 	WizardCleanupBackupsPathFmt  = "  - %s\n"
 	WizardCleanupBackupsNone     = "No wizard backup files found."
 
-	// GeminiUse is the gemini command name.
-	GeminiUse   = "gemini"
-	GeminiShort = "Sync and launch Gemini CLI"
+	AntigravityUse                         = "antigravity"
+	AntigravityShort                       = "Sync and launch Antigravity"
+	AntigravityLong                        = "Sync project state for the Antigravity client (writes .agy/antigravity-cli/settings.json and mcp_config.json) and launch `agy --gemini_dir=<repo>/.agy`.\n\nThe launcher sets AGY_CLI_DISABLE_AUTO_UPDATE=1 so the pinned agy binary is not silently upgraded under Agent Layer. Requires `agy` (>= 1.0.0) on PATH. Run `al probe antigravity` to verify the install."
+	ClientsAntigravityMkdirFailedFmt       = "failed to create Antigravity config dir %s: %w"
+	ClientsAntigravityRelativeGeminiDirFmt = "antigravity requires an absolute --gemini_dir path; got %s"
+	ClientsAntigravityRelativeRootFmt      = "antigravity requires an absolute project root; got %s"
+	ClientsAntigravityBinaryNotFoundFmt    = "antigravity launcher requires `agy` on PATH: %w (install Antigravity from https://antigravity.google and ensure `agy` is on PATH)"
 
 	ClaudeUse   = "claude"
 	ClaudeShort = "Sync and launch Claude Code CLI"
@@ -146,14 +150,17 @@ const (
 	NoSyncInvalidFmt = "invalid value for --no-sync: %q"
 	QuietInvalidFmt  = "invalid value for --quiet: %q"
 
-	AntigravityUse   = "antigravity"
-	AntigravityShort = "Sync and launch Antigravity"
+	ProbeUse                       = "probe"
+	ProbeShort                     = "Run client capability probes"
+	ProbeLong                      = "Run a client capability probe and emit JSON. Probes confirm what a client actually does at runtime (permissions, MCP, instruction/skill visibility) so Agent Layer can detect upstream behavior drift."
+	ProbeAntigravityUse            = "antigravity"
+	ProbeAntigravityShort          = "Probe Antigravity capabilities"
+	ProbeAntigravityLong           = "Run `agy` against a sealed probe workspace under .agent-layer/tmp/probe-antigravity-<ts>-<suffix>/ and report observed capabilities as JSON.\n\nThe command requires `agy` on PATH and a 45s hard timeout (exit code 124 on timeout). On success the JSON is written to stdout; on agy exiting non-zero or returning an unreadable log the JSON is still written but the CLI exits non-zero so scripts can detect failure. Probe artifacts (workspace/, agycfg/, stdout.txt, stderr.txt) persist under .agent-layer/tmp/ and can be pruned by `al upgrade --apply-tmp-deletions`."
+	ProbeAntigravityNonZeroExitFmt = "antigravity probe reported a non-zero result (exit code %d): %s"
 
 	CopilotUse   = "copilot"
 	CopilotShort = "Sync and launch GitHub Copilot CLI"
 
-	// ClientsGeminiExitErrorFmt formats gemini exit errors.
-	ClientsGeminiExitErrorFmt            = "gemini exited with error: %w"
 	ClientsClaudeExitErrorFmt            = "claude exited with error: %w"
 	ClientsCodexExitErrorFmt             = "codex exited with error: %w"
 	ClientsAntigravityExitErrorFmt       = "antigravity exited with error: %w"

@@ -10,12 +10,11 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 	valid := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}
@@ -31,9 +30,9 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 			errContains: "approvals.mode must be one of",
 		},
 		{
-			name:        "missing gemini enabled",
-			modify:      func(c *Config) { c.Agents.Gemini.Enabled = nil },
-			errContains: "agents.gemini.enabled is required",
+			name:        "missing antigravity enabled",
+			modify:      func(c *Config) { c.Agents.Antigravity.Enabled = nil },
+			errContains: "agents.antigravity.enabled is required",
 		},
 		{
 			name:        "missing claude enabled",
@@ -54,11 +53,6 @@ func TestValidate_TopLevelErrors(t *testing.T) {
 			name:        "missing vscode enabled",
 			modify:      func(c *Config) { c.Agents.VSCode.Enabled = nil },
 			errContains: "agents.vscode.enabled is required",
-		},
-		{
-			name:        "missing antigravity enabled",
-			modify:      func(c *Config) { c.Agents.Antigravity.Enabled = nil },
-			errContains: "agents.antigravity.enabled is required",
 		},
 		{
 			name: "missing mcp id",
@@ -96,12 +90,11 @@ func TestValidate_MCPServerErrors(t *testing.T) {
 	baseConfig := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
-			Gemini:       AgentConfig{Enabled: &enabled},
+			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			Claude:       ClaudeConfig{Enabled: &enabled},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &enabled},
 			Codex:        CodexConfig{Enabled: &enabled},
 			VSCode:       EnableOnlyConfig{Enabled: &enabled},
-			Antigravity:  EnableOnlyConfig{Enabled: &enabled},
 			CopilotCLI:   AgentConfig{Enabled: &enabled},
 		},
 	}

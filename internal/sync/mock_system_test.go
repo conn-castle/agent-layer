@@ -9,6 +9,8 @@ type MockSystem struct {
 	Fallback            System
 	LookPathFunc        func(file string) (string, error)
 	StatFunc            func(name string) (os.FileInfo, error)
+	LstatFunc           func(name string) (os.FileInfo, error)
+	ReadlinkFunc        func(name string) (string, error)
 	MkdirAllFunc        func(path string, perm os.FileMode) error
 	WriteFileAtomicFunc func(filename string, data []byte, perm os.FileMode) error
 	MarshalIndentFunc   func(v any, prefix, indent string) ([]byte, error)
@@ -36,6 +38,26 @@ func (m *MockSystem) Stat(name string) (os.FileInfo, error) {
 		return m.Fallback.Stat(name)
 	}
 	return nil, os.ErrNotExist
+}
+
+func (m *MockSystem) Lstat(name string) (os.FileInfo, error) {
+	if m.LstatFunc != nil {
+		return m.LstatFunc(name)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Lstat(name)
+	}
+	return nil, os.ErrNotExist
+}
+
+func (m *MockSystem) Readlink(name string) (string, error) {
+	if m.ReadlinkFunc != nil {
+		return m.ReadlinkFunc(name)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Readlink(name)
+	}
+	return "", os.ErrNotExist
 }
 
 func (m *MockSystem) MkdirAll(path string, perm os.FileMode) error {

@@ -12,6 +12,8 @@ import (
 type System interface {
 	LookPath(file string) (string, error)
 	Stat(name string) (os.FileInfo, error)
+	Lstat(name string) (os.FileInfo, error)
+	Readlink(name string) (string, error)
 	MkdirAll(path string, perm os.FileMode) error
 	WriteFileAtomic(filename string, data []byte, perm os.FileMode) error
 	MarshalIndent(v any, prefix, indent string) ([]byte, error)
@@ -32,6 +34,16 @@ func (RealSystem) LookPath(file string) (string, error) {
 // Stat returns a FileInfo describing the named file.
 func (RealSystem) Stat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
+}
+
+// Lstat returns a FileInfo describing the named file without following symlinks.
+func (RealSystem) Lstat(name string) (os.FileInfo, error) {
+	return os.Lstat(name)
+}
+
+// Readlink returns the destination of a symbolic link.
+func (RealSystem) Readlink(name string) (string, error) {
+	return os.Readlink(name)
 }
 
 // MkdirAll creates a directory named path, along with any necessary parents.

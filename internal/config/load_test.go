@@ -25,7 +25,7 @@ func TestLoadProjectConfig(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -40,8 +40,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -112,7 +110,7 @@ func TestLoadProjectConfigMissingEnv(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -127,8 +125,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -170,7 +166,7 @@ func TestLoadProjectConfigMissingInstructions(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -185,8 +181,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -225,7 +219,7 @@ func TestLoadProjectConfigMissingSkills(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -240,8 +234,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -278,7 +270,7 @@ func TestLoadProjectConfigMissingCommandsAllow(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -293,8 +285,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -410,7 +400,7 @@ func TestParseConfigLenient_ValidTOMLMissingRequiredFields(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 
 [agents.claude]
@@ -422,8 +412,6 @@ enabled = true
 [agents.vscode]
 enabled = true
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -460,7 +448,7 @@ func TestLoadConfigLenient(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 `
 	if err := os.WriteFile(path, []byte(toml), 0o600); err != nil {
@@ -482,7 +470,7 @@ func TestParseConfigLenient_LegacyClaudeVSCodeAlias(t *testing.T) {
 [approvals]
 mode = "all"
 
-[agents.gemini]
+[agents.antigravity]
 enabled = false
 
 [agents.claude]
@@ -497,8 +485,6 @@ enabled = false
 [agents.vscode]
 enabled = false
 
-[agents.antigravity]
-enabled = false
 [agents.copilot_cli]
 enabled = false
 `
@@ -569,7 +555,7 @@ func TestParseConfig_RejectsUnknownKeys(t *testing.T) {
 	data := `
 [approvals]
 mode = "all"
-[agents.gemini]
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -579,8 +565,6 @@ model = "some-model"
 [agents.codex]
 enabled = true
 [agents.vscode]
-enabled = true
-[agents.antigravity]
 enabled = true
 [agents.copilot_cli]
 enabled = true
@@ -602,11 +586,93 @@ enabled = true
 	}
 }
 
-func TestParseConfig_AllowsCustomAgentConfig(t *testing.T) {
+func TestParseConfig_LegacyGeminiPointsToUpgrade(t *testing.T) {
 	data := `
 [approvals]
 mode = "all"
 [agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.claude_vscode]
+enabled = true
+[agents.codex]
+enabled = true
+[agents.vscode]
+enabled = true
+[agents.copilot_cli]
+enabled = true
+`
+	_, err := ParseConfig([]byte(data), "test")
+	if err == nil {
+		t.Fatal("expected error for legacy agents.gemini")
+	}
+	// Assert the legacy-Gemini specific marker, not just "al upgrade" guidance
+	// (the generic ConfigValidationGuidance message also contains "al wizard"
+	// and could mention agents.antigravity via suggestRename, masking a
+	// regression that removes the legacy-Gemini detection path).
+	if !strings.Contains(err.Error(), "agents.gemini is no longer supported") {
+		t.Fatalf("expected legacy-Gemini specific marker in error, got: %v", err)
+	}
+	if !errors.Is(err, ErrConfigValidation) {
+		t.Fatalf("legacy Gemini error should match ErrConfigValidation, got: %v", err)
+	}
+}
+
+func TestHasLegacyGeminiConfig_TabIndentedHeader(t *testing.T) {
+	// Tab-indented TOML headers are valid; the previous space-strip helper
+	// missed them and skipped the legacy-Gemini diagnostic. The map-based
+	// helper relies on the TOML parser, which handles tabs natively.
+	data := []byte("\t[agents.gemini]\n\tenabled = true\n")
+	if !HasLegacyGeminiConfig(data) {
+		t.Fatal("expected HasLegacyGeminiConfig to detect tab-indented [agents.gemini]")
+	}
+}
+
+func TestHasLegacyGeminiConfig_CommentLineDoesNotFalsePositive(t *testing.T) {
+	// A comment line mentioning [agents.gemini] is not a real table — the
+	// substring-based helper used to false-positive here.
+	data := []byte("# legacy: [agents.gemini] removed in 0.10.2\n[agents.antigravity]\nenabled = true\n")
+	if HasLegacyGeminiConfig(data) {
+		t.Fatal("expected comment mentioning [agents.gemini] to not be detected as a real table")
+	}
+}
+
+func TestParseConfigLenient_AliasesLegacyGeminiEnabled(t *testing.T) {
+	// Repair tools (wizard, doctor) need to see the user's intended
+	// Antigravity enablement on a pre-migration repo so CheckAntigravityBinary
+	// gates correctly. Without the alias, lenient parse would treat
+	// Antigravity as unset and skip the binary check.
+	data := []byte(`
+[approvals]
+mode = "all"
+[agents.gemini]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.claude_vscode]
+enabled = true
+[agents.codex]
+enabled = true
+[agents.vscode]
+enabled = true
+[agents.copilot_cli]
+enabled = false
+`)
+	cfg, err := ParseConfigLenient(data, "test")
+	if err != nil {
+		t.Fatalf("ParseConfigLenient: %v", err)
+	}
+	if !IsAgentEnabled(cfg.Agents.Antigravity.Enabled) {
+		t.Fatal("expected Antigravity.Enabled to be aliased from agents.gemini.enabled")
+	}
+}
+
+func TestParseConfig_AllowsCustomAgentConfig(t *testing.T) {
+	data := `
+[approvals]
+mode = "all"
+[agents.antigravity]
 enabled = true
 [agents.claude]
 enabled = true
@@ -619,8 +685,6 @@ enabled = true
 [agents.codex.agent_specific]
 features.prevent_idle_sleep = true
 [agents.vscode]
-enabled = true
-[agents.antigravity]
 enabled = true
 [agents.copilot_cli]
 enabled = true

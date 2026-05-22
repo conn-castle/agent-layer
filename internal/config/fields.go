@@ -46,21 +46,7 @@ var fields = []FieldDef{
 			{Value: ApprovalModeYOLO, Description: messages.WizardApprovalYOLODescription},
 		},
 	},
-	{Key: "agents.gemini.enabled", Type: FieldBool, Required: true},
-	{
-		Key:         "agents.gemini.model",
-		Type:        FieldEnum,
-		AllowCustom: true,
-		Options: []FieldOption{
-			{Value: "auto"},
-			{Value: "auto-gemini-3.1"},
-			{Value: "gemini-3.1-pro-preview"},
-			{Value: "gemini-3.1-flash"},
-			{Value: "gemini-3.1-flash-lite"},
-			{Value: "gemini-2.5-pro"},
-			{Value: "gemini-2.5-flash"},
-		},
-	},
+	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.claude.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         "agents.claude.model",
@@ -115,7 +101,6 @@ var fields = []FieldDef{
 		},
 	},
 	{Key: "agents.vscode.enabled", Type: FieldBool, Required: true},
-	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.copilot_cli.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         "agents.copilot_cli.model",
