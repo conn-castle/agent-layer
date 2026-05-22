@@ -316,8 +316,8 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al upgrade repair-gitignore-block` | Restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block. |
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
-| `al <client>` | Sync and launch a client (antigravity/claude/codex/copilot/vscode). |
-| `al probe antigravity` | Run the Antigravity capability probe and print JSON. |
+| `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
+| `al probe agy` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
 | `al --version` | Print the installed Agent Layer version. |
@@ -587,7 +587,7 @@ These files are derived outputs and safe to delete. Running `al sync` will recre
 
 `al <client>` syncs before launch by default. Supported clients:
 
-- `al antigravity`
+- `al agy`
 - `al claude`
 - `al codex`
 - `al copilot`

@@ -47,8 +47,8 @@ Notes:
 - Claude Code consumes skills from `.claude/skills/<name>/SKILL.md`.
 - Claude Code and Codex VS Code extension support is handled through `al vscode`.
 - Auto-approval capabilities vary by client; `approvals.mode` is applied on a best-effort basis.
-- *Antigravity MCP config is written to `.agy/antigravity-cli/mcp_config.json` using the supported `serverUrl` shape. `agy` v1.0.0 migrates that file to `<gemini_dir>/config/mcp_config.json`, but runtime MCP registration has not been observed yet. Run `al probe antigravity` to see the current capability matrix.
-- **Antigravity approved commands are written to `.agy/antigravity-cli/settings.json` as a `permissions.allow` list (Agent Layer projects allow patterns only — Antigravity's own `permissions.deny` enforcement, if any, is reported by `al probe antigravity` and is not produced by sync).
+- *Antigravity MCP config is written to `.agy/antigravity-cli/mcp_config.json` using the supported `serverUrl` shape. `agy` v1.0.0 migrates that file to `<gemini_dir>/config/mcp_config.json`, but runtime MCP registration has not been observed yet. Run `al probe agy` to see the current capability matrix.
+- **Antigravity approved commands are written to `.agy/antigravity-cli/settings.json` as a `permissions.allow` list (Agent Layer projects allow patterns only — Antigravity's own `permissions.deny` enforcement, if any, is reported by `al probe agy` and is not produced by sync).
 
 ---
 
@@ -88,7 +88,7 @@ al init
 Then run an agent:
 
 ```bash
-al antigravity
+al agy
 ```
 
 Optional health check:
@@ -551,7 +551,7 @@ Workflows echo the artifact path in the chat output. There are no path overrides
 Common usage:
 
 ```bash
-al antigravity
+al agy
 al claude
 al codex
 al copilot
@@ -580,7 +580,7 @@ Other commands:
 - `al upgrade rollback <snapshot-id>` — restore an applied upgrade snapshot (snapshot IDs are JSON filenames in `.agent-layer/state/upgrade-snapshots/`; use `al upgrade rollback --list` to discover available IDs)
 - `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
-- `al probe antigravity` — run the Antigravity capability probe and print JSON
+- `al probe agy` — run the Antigravity capability probe and print JSON
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`)
 - `al completion` — generate shell completion scripts (bash/zsh/fish, macOS/Linux only)

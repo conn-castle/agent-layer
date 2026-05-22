@@ -41,7 +41,7 @@ Notes:
 
 * Antigravity config files support environment variable references inside string values (e.g., `${MY_API_TOKEN}`), so you can keep secrets out of the file by referencing env vars.
 * Agent Layer emits `serverUrl` for HTTP MCP servers.
-* `agy` v1.0.0 migrates this repo-local file into `<gemini_dir>/config/mcp_config.json`, but runtime MCP server registration has not been observed yet. Use `al probe antigravity` to check the current capability matrix.
+* `agy` v1.0.0 migrates this repo-local file into `<gemini_dir>/config/mcp_config.json`, but runtime MCP server registration has not been observed yet. Use `al probe agy` to check the current capability matrix.
 
 ### 2) Claude Code
 

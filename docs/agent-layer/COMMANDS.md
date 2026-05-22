@@ -192,7 +192,7 @@ make al-upgrade   # al upgrade
 make al-doctor    # al doctor
 make al-claude    # al claude
 make al-codex     # al codex
-make al-antigravity # al antigravity
+make al-agy       # al agy
 make al-copilot   # al copilot
 ```
 Run from: repo root
@@ -201,7 +201,7 @@ Notes: Convenience wrappers for `go run ./cmd/al <subcommand>` against this repo
 
 - Run the Antigravity capability probe
 ```bash
-go run ./cmd/al probe antigravity
+go run ./cmd/al probe agy
 ```
 Run from: repo root
 Prerequisites: Antigravity (`agy`) installed on PATH

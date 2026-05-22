@@ -138,19 +138,19 @@ func TestProbeAntigravityCommandSurfacesNonZeroExit(t *testing.T) {
 }
 
 // TestProbeCommandWiresAntigravitySubcommand asserts the subcommand is
-// actually attached (not just that the word "antigravity" appears in help
-// text). A help-substring test would still pass if AddCommand were removed
-// — the parent Short already contains "Antigravity".
+// actually attached (not just that the word "agy" appears in help text). A
+// help-substring test would still pass if AddCommand were removed — the
+// parent Short already contains "Antigravity".
 func TestProbeCommandWiresAntigravitySubcommand(t *testing.T) {
 	cmd := newProbeCmd()
 	found := false
 	for _, sub := range cmd.Commands() {
-		if sub.Name() == "antigravity" {
+		if sub.Name() == "agy" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatal("expected probe command to register an antigravity subcommand")
+		t.Fatal("expected probe command to register an agy subcommand")
 	}
 }

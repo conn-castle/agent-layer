@@ -59,14 +59,14 @@ go run ./cmd/al init
 go run ./cmd/al sync
 
 # Launch a client (always runs sync first)
-go run ./cmd/al antigravity
+go run ./cmd/al agy
 ```
 
 Optional: build a local dev binary from the current source (no global install):
 ```bash
 go build -o ./tmp/al ./cmd/al
 ./tmp/al init
-./tmp/al antigravity
+./tmp/al agy
 ```
 
 ### Run against a scratch repo (recommended for install/sync testing)
@@ -74,7 +74,7 @@ go build -o ./tmp/al ./cmd/al
 mkdir -p tmp/dev-repo
 cd tmp/dev-repo
 go run ../../cmd/al init
-go run ../../cmd/al antigravity
+go run ../../cmd/al agy
 ```
 
 Notes:

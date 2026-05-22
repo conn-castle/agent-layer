@@ -28,6 +28,24 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-05-22 codex-app-server-stability: Revisit Codex App Server when it becomes stable
+    Priority: Medium. Area: providers / codex
+    Description: Track OpenAI Codex CLI releases and documentation for when `codex app-server` is no longer experimental, then reassess whether Agent Dispatch should switch Codex from `codex exec` final-answer output to App Server's streamed `item/agentMessage/delta` protocol.
+    Acceptance criteria: A future review confirms Codex App Server stability status from official docs/local help and records whether Agent Dispatch should migrate to it.
+    Notes: Current dispatch design uses stable `codex exec` despite final-answer-only assistant output because the true streaming App Server path is still experimental.
+
+- Backlog 2026-05-22 agent-cli-compatibility-tests: Comprehensive automated compatibility testing for agent CLIs
+    Priority: High. Area: testing / providers
+    Description: Build a comprehensive, automated compatibility test suite that exercises each supported agent CLI (Claude Code, Codex, Antigravity, and any future providers) against the concrete assumptions Agent Layer makes — config file formats and paths, settings/hook schemas, skill discovery layout, memory file locations, MCP server registration, command/flag surface, exit codes, stdout/stderr conventions, and session/launcher behavior. The suite should run against pinned and latest CLI versions on a schedule (CI matrix) so that when a new release breaks an Agent Layer assumption, the failure is detected and attributed to a specific CLI version before users hit it. Build on the existing `al probe agy` pattern (stable JSON contract, forensic workspace, non-zero exit on failure) by generalizing it to `al probe claude` and `al probe codex`, then drive the CI matrix off probe output diffed against pinned baselines.
+    Acceptance criteria: A dedicated compatibility test suite exists and runs in CI against at least Claude Code, Codex, and Antigravity; each supported assumption (config paths, schema fields, command surface, sync/launch behavior) is covered by an explicit test; the suite runs against both a pinned baseline and the latest released version of each CLI on a recurring schedule; failures report which CLI, which version, and which Agent Layer assumption broke.
+    Notes: Should be cheap to extend when a new provider lands. Consider version-matrix CI (e.g., GitHub Actions matrix over CLI versions) and snapshotting expected config/output shapes. Coordinate with ROADMAP for scheduling — this is foundational reliability work, not a user-visible feature, but it directly protects user-visible features from silent breakage. The Antigravity probe (see COMMANDS.md "Run the Antigravity capability probe") is the established precedent — extend it rather than invent a parallel mechanism. Part of this work is factoring the probe pattern into a shared primitive other providers can adopt.
+
+- Backlog 2026-05-22 refresh-marketing-readme: Refresh README and marketing copy for current features
+    Priority: Medium. Area: docs / marketing
+    Description: Update the repository README and public marketing page copy to sell the major features shipped since the older v0.6-era messaging, including newer launcher, skills, upgrade, wizard, sync, and Antigravity capabilities.
+    Acceptance criteria: README and marketing page accurately present the current product value, name the strongest current features, and no longer read like the v0.6-era feature set.
+    Notes: Identify the current marketing-page source during planning; likely includes the sibling website repo.
+
 - Backlog 2026-05-07 mcp-catalog-docs-sibling-repo: Rewrite sibling-repo MCP-catalog docs after seed split
     Priority: Medium. Area: docs / agent-layer-web
     Description: After the wizard-catalog split landed (Decision 2026-05-07 mcp-catalog-seed-split), two pages in the sibling `agent-layer-web` repo are factually wrong: `docs/concepts.mdx:218` "Seeded servers (disabled by default)" list still implies the install seed ships six pre-disabled blocks, and `docs/getting-started.mdx:99` "`al init` seeds a small library of high-value MCP servers" sentence is no longer true. Rewrite both to describe the wizard-catalog model. Optionally, author a new canonical config-reference page that the slim seed's `[mcp]` URL (`https://agent-layer.dev/docs/reference#mcp-servers`) eventually points at as a dedicated page rather than a section anchor.

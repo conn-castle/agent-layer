@@ -210,14 +210,14 @@ Agent Layer writes Antigravity MCP config to `.agy/antigravity-cli/mcp_config.js
 Check your installed `agy` behavior:
 
 ```bash
-al probe antigravity
+al probe agy
 ```
 
 If `mcp_runtime_discovery` is still false, the generated config exists but Antigravity will not expose those MCP tools yet.
 
-### `al antigravity` fails to launch or `agy` is not found
+### `al agy` fails to launch or `agy` is not found
 
-If `al antigravity` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe antigravity` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>-<suffix>/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
+If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe agy` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>-<suffix>/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
 
 ### Client CLI not found
 

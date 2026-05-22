@@ -37,7 +37,7 @@ const (
 	DoctorAgentEnabledFmt              = "Agent enabled: %s"
 	DoctorAgentDisabledFmt             = "Agent disabled: %s"
 	DoctorAntigravityNotFound          = "Antigravity binary not found: agy"
-	DoctorAntigravityInstallRecommend  = "Install Antigravity (https://antigravity.google) and ensure `agy` (>= 1.0.0) is on PATH; run `al probe antigravity` to verify."
+	DoctorAntigravityInstallRecommend  = "Install Antigravity (https://antigravity.google) and ensure `agy` (>= 1.0.0) is on PATH; run `al probe agy` to verify."
 	DoctorAntigravityVersionFailedFmt  = "Failed to read Antigravity version: %v"
 	DoctorAntigravityVersionUnknownFmt = "Could not parse Antigravity version from %q"
 	DoctorAntigravityVersionTooOldFmt  = "Antigravity version %s is below required 1.0.0"

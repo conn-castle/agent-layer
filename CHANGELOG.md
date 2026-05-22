@@ -4,10 +4,10 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
-- Antigravity support via `al antigravity`, backed by `agy --gemini_dir=<repo>/.agy` and repo-local settings under `.agy/antigravity-cli/`.
-- `al probe antigravity` capability probe reports Antigravity permissions, MCP config migration, and runtime MCP discovery status as JSON.
+- Antigravity support via `al agy`, backed by `agy --gemini_dir=<repo>/.agy` and repo-local settings under `.agy/antigravity-cli/`.
+- `al probe agy` capability probe reports Antigravity permissions, MCP config migration, and runtime MCP discovery status as JSON.
 - `config_delete_key` and `config_replace_string` upgrade migration operations and a v0.10.2 migration that moves `agents.gemini.enabled` to `agents.antigravity.enabled`, rewrites MCP client lists from `gemini` to `antigravity`, deletes stale Gemini and retired Antigravity desktop config keys, and defaults Antigravity to disabled when no prior Gemini setting exists.
-- `make al-antigravity` developer convenience target.
+- `make al-agy` developer convenience target.
 
 ### Changed
 - Shared skill projection now treats Antigravity as the supported shared-skill consumer in place of Gemini CLI.
@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Removed
 - Gemini CLI sync/client projection, including generated `.gemini/settings.json`, `.gemini/policies/agent-layer.toml`, the global `~/.gemini/trustedFolders.json` write, and the root `GEMINI.md` instruction shim, has been replaced by Antigravity projection. The v0.10.2 migration cleans up any orphan `GEMINI.md` in existing repos. Historical release notes below remain unchanged.
-- `al gemini` subcommand removed entirely (no deprecation window). Existing scripts must switch to `al antigravity`; invoking `al gemini` now produces cobra's standard "unknown command" error.
+- `al gemini` subcommand removed entirely (no deprecation window). Existing scripts must switch to `al agy`; invoking `al gemini` now produces cobra's standard "unknown command" error.
 
 ## v0.10.1 - 2026-05-17
 

@@ -218,9 +218,9 @@ al-claude: ## Run al claude against this repo using current source
 al-codex: ## Run al codex against this repo using current source
 	@$(AL_RUN) codex
 
-.PHONY: al-antigravity
-al-antigravity: ## Run al antigravity against this repo using current source
-	@$(AL_RUN) antigravity
+.PHONY: al-agy
+al-agy: ## Run al agy against this repo using current source
+	@$(AL_RUN) agy
 
 .PHONY: al-copilot
 al-copilot: ## Run al copilot against this repo using current source
