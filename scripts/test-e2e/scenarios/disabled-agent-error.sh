@@ -103,15 +103,15 @@ PROFILE
   assert_mock_agent_not_called "$MOCK_AGENT_LOG" \
     "mock codex was not called (agent is disabled)"
 
-  # al antigravity should work (it's enabled)
+  # al agy should work (it's enabled)
   install_mock_agent "$repo_dir" "agy"
 
   local agy_output agy_rc=0
-  agy_output=$(cd "$repo_dir" && al antigravity 2>&1) || agy_rc=$?
+  agy_output=$(cd "$repo_dir" && al agy 2>&1) || agy_rc=$?
   if [[ $agy_rc -eq 0 ]]; then
-    pass "al antigravity works when enabled (claude is disabled)"
+    pass "al agy works when enabled (claude is disabled)"
   else
-    fail "al antigravity should work when enabled (exit code: $agy_rc)"
+    fail "al agy should work when enabled (exit code: $agy_rc)"
     echo "  output (first 5 lines):"
     echo "$agy_output" | head -5 | sed 's/^/    /'
   fi

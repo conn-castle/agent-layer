@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scenario 064: Antigravity launch — verifies al antigravity calls agy
+# Scenario 064: Antigravity launch — verifies al agy calls agy
 # with expected containment args and environment.
 
 run_scenario_antigravity_launch() {
@@ -40,11 +40,11 @@ PROFILE
   install_mock_agent "$repo_dir" "agy"
 
   local output rc=0
-  output=$(cd "$repo_dir" && al antigravity 2>&1) || rc=$?
+  output=$(cd "$repo_dir" && al agy 2>&1) || rc=$?
   if [[ $rc -eq 0 ]]; then
-    pass "al antigravity launches agy"
+    pass "al agy launches agy"
   else
-    fail "al antigravity launch (exit code: $rc)"
+    fail "al agy launch (exit code: $rc)"
     echo "  output (first 5 lines):"
     echo "$output" | head -5 | sed 's/^/    /'
   fi
