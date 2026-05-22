@@ -125,7 +125,7 @@ func antigravityMCPConfigWritePath(sys System, root string) (string, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return "", fmt.Errorf(messages.InstallFailedStatFmt, legacyPath, err)
 	}
-	if migratedInfo, statErr := os.Stat(migratedPath); statErr == nil && !migratedInfo.IsDir() {
+	if migratedInfo, statErr := sys.Stat(migratedPath); statErr == nil && !migratedInfo.IsDir() {
 		if err := ensureAntigravityPathRealParentContained(root, migratedPath); err != nil {
 			return "", err
 		}

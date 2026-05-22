@@ -234,6 +234,43 @@ func TestWriteAntigravityMCPConfigUsesSystemForMigratedSymlink(t *testing.T) {
 	}
 }
 
+func TestWriteAntigravityMCPConfigUsesSystemForMigratedPathStat(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	migratedPath := filepath.Join(root, ".agy", "config", "mcp_config.json")
+	if err := os.MkdirAll(filepath.Dir(migratedPath), 0o700); err != nil {
+		t.Fatalf("mkdir migrated dir: %v", err)
+	}
+	if err := os.WriteFile(migratedPath, []byte(`{"mcpServers":{"old":{}}}`), 0o600); err != nil {
+		t.Fatalf("seed migrated config: %v", err)
+	}
+	var usedMigratedStat bool
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		StatFunc: func(name string) (os.FileInfo, error) {
+			if name == migratedPath {
+				usedMigratedStat = true
+			}
+			return RealSystem{}.Stat(name)
+		},
+	}
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{Servers: []config.MCPServer{
+				{ID: "updated", Enabled: &enabled, Transport: config.TransportHTTP, URL: "https://updated.example", Clients: []string{antigravityClientID}},
+			}},
+		},
+	}
+
+	if err := WriteAntigravityMCPConfig(sys, root, project); err != nil {
+		t.Fatalf("WriteAntigravityMCPConfig error: %v", err)
+	}
+	if !usedMigratedStat {
+		t.Fatal("expected System Stat for migrated Antigravity MCP config path")
+	}
+}
+
 func TestWriteAntigravityMCPConfigRejectsEscapedMigratedSymlinkParent(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
