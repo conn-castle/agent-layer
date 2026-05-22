@@ -1307,6 +1307,251 @@ func TestUpgradeTransactionRunsMigrationsBeforePinBump(t *testing.T) {
 	}
 }
 
+func TestRun_DevUpgradeRunsLatestMigrationsWithoutWritingPin(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
+		[]string{"[agents.gemini]", "enabled = true", ""},
+		`["gemini"]`,
+	))
+
+	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter()}); err != nil {
+		t.Fatalf("dev upgrade: %v", err)
+	}
+
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatalf("read migrated config: %v", err)
+	}
+	if strings.Contains(string(data), "gemini") {
+		t.Fatalf("expected dev upgrade to apply latest Gemini migration, got:\n%s", string(data))
+	}
+	cfg, err := config.ParseConfig(data, cfgPath)
+	if err != nil {
+		t.Fatalf("strict parse after dev upgrade migration: %v\n%s", err, string(data))
+	}
+	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
+		t.Fatalf("expected agents.antigravity.enabled = true after dev upgrade, got %v", cfg.Agents.Antigravity.Enabled)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, ".agent-layer", "al.version")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("dev upgrade should not write al.version, statErr=%v", statErr)
+	}
+}
+
+func TestPlanUpgradeMigrations_UnpinnedMCPGeminiClientTriggersLatestManifest(t *testing.T) {
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
+		nil,
+		`["gemini"]`,
+	))
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.7.0": `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "replace-gemini-client",
+      "kind": "config_replace_string",
+      "rationale": "Replace legacy Gemini MCP client name",
+      "source_agnostic": true,
+      "key": "mcp.servers[].clients[]",
+      "from": "gemini",
+      "to": "antigravity"
+    }
+  ]
+}`,
+	})
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if plan.report.TargetVersion != "0.7.0" {
+		t.Fatalf("target version = %q, want 0.7.0", plan.report.TargetVersion)
+	}
+	if plan.report.SourceVersionOrigin != UpgradeMigrationSourceUnknown {
+		t.Fatalf("source origin = %q, want unknown", plan.report.SourceVersionOrigin)
+	}
+	if len(plan.executable) != 1 || plan.executable[0].ID != "replace-gemini-client" {
+		t.Fatalf("executable migrations = %#v, want replace-gemini-client", plan.executable)
+	}
+}
+
+func TestPlanUpgradeMigrations_UnpinnedNoLegacyTriggerSkipsManifest(t *testing.T) {
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
+		nil,
+		`["antigravity"]`,
+	))
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.7.0": `{
+  "schema_version": 1,
+  "target_version": "0.7.0",
+  "min_prior_version": "0.6.0",
+  "operations": [
+    {
+      "id": "would-run-if-triggered",
+      "kind": "delete_file",
+      "rationale": "Should not run without source evidence or legacy config",
+      "source_agnostic": true,
+      "path": "legacy.txt"
+    }
+  ]
+}`,
+	})
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if plan.report.TargetVersion != "" {
+		t.Fatalf("target version = %q, want empty", plan.report.TargetVersion)
+	}
+	if len(plan.report.Entries) != 0 || len(plan.executable) != 0 {
+		t.Fatalf("expected no migration entries or executable ops, got entries=%#v executable=%#v", plan.report.Entries, plan.executable)
+	}
+}
+
+func TestPlanUpgradeMigrations_UnpinnedTriggerReadError(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeMigrationConfigForTest(t, root, "[agents]\n")
+	fault := newFaultSystem(RealSystem{})
+	fault.readErrs[normalizePath(configPath)] = errors.New("config read boom")
+
+	inst := &installer{root: root, sys: fault}
+	_, err := inst.planUpgradeMigrations()
+	if err == nil || !strings.Contains(err.Error(), "config read boom") {
+		t.Fatalf("expected config read error, got %v", err)
+	}
+}
+
+func TestUpgradeMigrationTargetVersion_UnpinnedKnownSourceWithoutManifests(t *testing.T) {
+	withMigrationManifestChainOverride(t, map[string]string{})
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+
+	got, err := inst.upgradeMigrationTargetVersion(sourceVersionResolution{
+		version: "0.6.0",
+		origin:  UpgradeMigrationSourcePin,
+	})
+	if err != nil {
+		t.Fatalf("upgradeMigrationTargetVersion: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("target version = %q, want empty when no manifests exist", got)
+	}
+}
+
+func TestUpgradeMigrationTargetVersion_ExplicitPinBypassesTriggerRead(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeMigrationConfigForTest(t, root, "[agents]\n")
+	fault := newFaultSystem(RealSystem{})
+	fault.readErrs[normalizePath(configPath)] = errors.New("config read boom")
+	inst := &installer{root: root, pinVersion: "0.7.0", sys: fault}
+
+	got, err := inst.upgradeMigrationTargetVersion(sourceVersionResolution{origin: UpgradeMigrationSourceUnknown})
+	if err != nil {
+		t.Fatalf("upgradeMigrationTargetVersion: %v", err)
+	}
+	if got != "0.7.0" {
+		t.Fatalf("target version = %q, want 0.7.0", got)
+	}
+}
+
+func TestHasLegacyGeminiMCPClient(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{
+			name: "legacy client present",
+			data: "[[mcp.servers]]\nclients = [\"gemini\"]\n",
+			want: true,
+		},
+		{
+			name: "legacy client absent",
+			data: "[[mcp.servers]]\nclients = [\"antigravity\"]\n",
+			want: false,
+		},
+		{
+			name: "invalid toml",
+			data: "clients = [\n",
+			want: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasLegacyGeminiMCPClient([]byte(tc.data)); got != tc.want {
+				t.Fatalf("hasLegacyGeminiMCPClient = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReplaceStringInMigrationArray_StringSliceDedupe(t *testing.T) {
+	t.Run("replacement dedupes only new duplicates", func(t *testing.T) {
+		updated, changed, err := replaceStringInMigrationArray(
+			[]string{"claude", "gemini", "antigravity", "gemini"},
+			nil,
+			"gemini",
+			"antigravity",
+			"clients",
+		)
+		if err != nil {
+			t.Fatalf("replaceStringInMigrationArray: %v", err)
+		}
+		if !changed {
+			t.Fatal("expected changed=true")
+		}
+		got, ok := updated.([]string)
+		if !ok {
+			t.Fatalf("updated value type = %T, want []string", updated)
+		}
+		if want := []string{"claude", "antigravity"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("updated clients = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("no match preserves pre-existing duplicates", func(t *testing.T) {
+		updated, changed, err := replaceStringInMigrationArray(
+			[]string{"claude", "claude"},
+			nil,
+			"gemini",
+			"antigravity",
+			"clients",
+		)
+		if err != nil {
+			t.Fatalf("replaceStringInMigrationArray: %v", err)
+		}
+		if changed {
+			t.Fatal("expected changed=false")
+		}
+		got, ok := updated.([]string)
+		if !ok {
+			t.Fatalf("updated value type = %T, want []string", updated)
+		}
+		if want := []string{"claude", "claude"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("updated clients = %#v, want %#v", got, want)
+		}
+	})
+
+	t.Run("string arrays cannot be traversed", func(t *testing.T) {
+		_, _, err := replaceStringInMigrationArray(
+			[]string{"gemini"},
+			[]configValuePathSegment{{name: "nested"}},
+			"gemini",
+			"antigravity",
+			"clients",
+		)
+		if err == nil || !strings.Contains(err.Error(), "traverses string array") {
+			t.Fatalf("expected traversal error, got %v", err)
+		}
+	})
+}
+
 // TestDeleteGeneratedArtifact_PreservesHandAuthoredFile pins F-B2-2: the
 // `delete_generated_artifact` migration must only delete files Agent Layer
 // itself produced (carrying the `GENERATED FILE` watermark). A user's

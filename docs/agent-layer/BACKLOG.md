@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-05-22 antigravity-slash-skill-verification: Re-verify Antigravity slash skill dispatch syntax
+    Priority: Medium. Area: providers / antigravity
+    Description: Re-check that `agy --print "/skill-name"` still invokes projected skills when Antigravity changes its CLI or skill behavior, especially on minor version bumps.
+    Acceptance criteria: Compatibility/probe coverage catches a broken Antigravity slash-skill invocation contract before Agent Dispatch relies on it in a release.
+    Notes: Official Antigravity docs say skills can be mentioned by name but do not currently guarantee slash syntax as a CLI contract.
+
 - Backlog 2026-05-22 codex-app-server-stability: Revisit Codex App Server when it becomes stable
     Priority: Medium. Area: providers / codex
     Description: Track OpenAI Codex CLI releases and documentation for when `codex app-server` is no longer experimental, then reassess whether Agent Dispatch should switch Codex from `codex exec` final-answer output to App Server's streamed `item/agentMessage/delta` protocol.

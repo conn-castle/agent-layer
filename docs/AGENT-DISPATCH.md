@@ -21,7 +21,7 @@ For longer prompts, pass the prompt on standard input:
 cat prompt.md | al dispatch --agent claude
 ```
 
-Use `--model` and `--reasoning-effort` for per-run overrides when a task needs a specific model behavior:
+Use `--model` and `--reasoning-effort` for per-run overrides when the selected target supports that override:
 
 ```bash
 al dispatch --agent codex --model <model-name> --reasoning-effort high "Review this plan artifact set."
@@ -39,9 +39,17 @@ Verified target behavior:
 
 `--agent` selects the target CLI/runtime. Supported values are `codex`, `claude`, `antigravity`, and `random`. If `--agent` is omitted, Agent Layer must know the calling agent. If the caller is unknown, dispatch fails and asks for `--agent`.
 
-`--model` and `--reasoning-effort` are optional. If omitted, dispatch uses the same Agent Layer and client defaults that normal `al <agent>` launches use. Custom model strings are accepted for targets whose Agent Layer config accepts custom model values; unsupported override flags fail clearly instead of being ignored.
+`--model` and `--reasoning-effort` are optional. If omitted, dispatch uses the same Agent Layer and client defaults that normal `al <agent>` launches use. Override support is target-specific and reported by `al dispatch options`; unsupported override fields fail before launch with exit `64`. Antigravity currently supports neither `--model` nor `--reasoning-effort` through Agent Layer.
 
-`al dispatch options` lists available dispatch targets, dispatch capability, random-selection eligibility, configured model and reasoning values, known suggestions from Agent Layer's field catalog, whether custom values are accepted, detected caller, and the current random pool. Use `--json` for structured output.
+For targets whose Agent Layer field catalog accepts custom values, out-of-catalog values are passed to the target CLI verbatim. If the target rejects the value, dispatch exits `70` and preserves the target's error text on standard error.
+
+`al dispatch options` lists available dispatch targets, dispatch capability, random-selection eligibility, configured model and reasoning values, known suggestions from Agent Layer's field catalog, whether custom values are accepted, detected caller, and the current random pool.
+
+Use `al dispatch options --json` for structured output. The JSON shape is stable in v1: existing fields keep their meaning, and future versions may add fields. The top-level object contains:
+
+- `caller`: whether the caller is known, the caller agent when known, and the source of that value
+- `random`: the current random-selection pool, whether caller exclusion is active, and whether the pool is empty
+- `targets`: one entry per target, including enablement, install status, dispatch capability, random eligibility, streaming capability, model metadata, reasoning-effort metadata, and unavailable reasons
 
 ## Generated Instructions
 
@@ -49,7 +57,7 @@ Agent Layer generated instructions describe `al dispatch` so agents can discover
 
 ## Skills
 
-Dispatch uses the current project's canonical Agent Layer skill source, `.agent-layer/skills/`. Caller-side skill availability is irrelevant; `--agent codex --skill review-plan` validates `review-plan` against Agent Layer's source skills and the selected target's skill support before launch.
+Dispatch uses the current project's canonical Agent Layer skill source, `.agent-layer/skills/`. Agent Layer projects those source skills into each target's native skill location during normal sync/launch preparation. Caller-side skill availability is irrelevant; `--agent codex --skill review-plan` validates `review-plan` against Agent Layer's source skills and the selected target's skill support before launch.
 
 Use `--skill` to request a skill by its portable Agent Layer name:
 
@@ -112,14 +120,31 @@ default_agent = "random"
 
 For reproducible scripts and continuous integration, pass a concrete `--agent` or set `agents.<caller>.dispatch.default_agent` to a concrete target. `random` is intended for conversational second-opinion use, not deterministic automation.
 
+Fresh single-target installs should also use a concrete target. If the only dispatch-capable target is the known caller, the built-in `random` default excludes that caller and fails with no eligible target instead of silently dispatching back to the same agent.
+
 ## Resolution Rules
 
-1. If `agent` or `--agent` is provided, dispatch uses that value.
+1. If `--agent` is provided, dispatch uses that value.
 2. If the provided value is `random`, dispatch chooses randomly from enabled dispatch-capable agents. If the caller is known, the caller is excluded.
-3. If `agent` is omitted and the caller is known, dispatch uses `agents.<caller>.dispatch.default_agent`, defaulting to `random`.
-4. If `agent` is omitted and the caller is unknown, dispatch fails.
+3. If `--agent` is omitted and the caller is known, dispatch uses `agents.<caller>.dispatch.default_agent`, defaulting to `random`.
+4. If `--agent` is omitted and the caller is unknown, dispatch fails.
 5. Explicit same-agent dispatch is allowed. If the caller is `claude` and `--agent claude` is provided, dispatch treats that as intentional.
 6. If random selection has no eligible targets after exclusions, dispatch fails clearly instead of falling back to the caller.
+
+## Exit Status
+
+Dispatch uses stable wrapper-owned exit categories:
+
+- `0`: the selected target completed successfully
+- `64`: usage or target-resolution failure, including missing prompt/skill, unknown target, unknown caller with omitted `--agent`, or unsupported override field for the selected target
+- `65`: Agent Layer configuration or state failure, including missing source skill, stale/missing target skill projection, malformed config, or disabled target
+- `69`: target unavailable, including missing target binary, unusable target CLI detected before launch, or no eligible target in the random-selection pool
+- `70`: target or adapter failure, including target subprocess non-zero exit, target rejection of a custom override value, changed structured stream shape, unreadable target output, or internal dispatch error
+- `75`: nested dispatch blocked by `AL_DISPATCH_ACTIVE=1`
+- `130`: interrupted by `SIGINT`
+- `143`: terminated by `SIGTERM`
+
+Target-agent exit codes are not propagated directly. If a target exits non-zero, dispatch exits `70` and writes the target exit code to standard error.
 
 ## Scope
 
@@ -141,5 +166,7 @@ It is not a multi-agent chat UI, shared workspace, queueing system, or long-live
 Dispatch should preserve the target agent's normal Agent Layer behavior, including generated instructions, skills, approvals, sandbox settings, and client-specific configuration. This means dispatch can grant the target agent the capabilities configured for that target even when the caller is more restricted; `al dispatch` is not a permission-containment boundary.
 
 Headless target runs must be launched with non-interactive target CLI modes. Dispatch cannot answer approval prompts on behalf of the caller; the selected target must be configured with the approvals and sandbox settings needed for the intended work.
+
+For final-answer-only targets such as Codex v1, callers should expect progress on standard error while the answer text remains unavailable until the target run completes. While a target turn is in progress, dispatch emits a compact progress line to standard error at least every 60 seconds as a liveness signal. This is not a timeout; it is a steady heartbeat callers can rely on for monitoring.
 
 Dispatch forwards cancellation signals to the target process and waits for it to exit before returning.

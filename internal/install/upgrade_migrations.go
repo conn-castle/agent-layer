@@ -164,18 +164,23 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 		},
 		coveredPaths: make(map[string]struct{}),
 	}
-	if strings.TrimSpace(inst.pinVersion) == "" {
+	resolution := inst.resolveUpgradeMigrationSourceVersion()
+
+	targetVersion, err := inst.upgradeMigrationTargetVersion(resolution)
+	if err != nil {
+		return migrationPlan{}, err
+	}
+	if targetVersion == "" {
 		return plan, nil
 	}
 
 	// Always load and validate the target manifest first. This ensures a
 	// missing target manifest fails loudly regardless of source resolution.
-	targetManifest, targetManifestPath, err := loadUpgradeMigrationManifestByVersion(inst.pinVersion)
+	targetManifest, targetManifestPath, err := loadUpgradeMigrationManifestByVersion(targetVersion)
 	if err != nil {
 		return migrationPlan{}, err
 	}
 
-	resolution := inst.resolveUpgradeMigrationSourceVersion()
 	plan.report.SourceVersion = resolution.version
 	plan.report.SourceVersionOrigin = resolution.origin
 	plan.report.SourceResolutionNotes = dedupSortedStrings(resolution.notes)
@@ -185,14 +190,14 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 	sourceKnown := resolution.origin != UpgradeMigrationSourceUnknown
 	var manifests []chainedManifest
 	if sourceKnown {
-		chain, chainErr := collectMigrationChain(resolution.version, inst.pinVersion)
+		chain, chainErr := collectMigrationChain(resolution.version, targetVersion)
 		if chainErr != nil {
 			return migrationPlan{}, chainErr
 		}
 		if len(chain) == 0 {
 			// No manifests in range (source == target). Target was already
 			// validated above; nothing to migrate.
-			plan.report.TargetVersion = inst.pinVersion
+			plan.report.TargetVersion = targetVersion
 			return plan, nil
 		}
 		manifests = chain
@@ -286,6 +291,58 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 	plan.rollbackTargets = uniqueNormalizedPaths(rollbackTargets)
 	plan.configMigrations = configMigrations
 	return plan, nil
+}
+
+// upgradeMigrationTargetVersion returns the migration manifest target for the
+// current upgrade. Release builds use the explicit pin. Unpinned dev upgrades
+// use the newest embedded manifest only when source evidence or known legacy
+// config proves there is migration work to do, keeping user-owned config files
+// untouched during ordinary overwrite runs.
+func (inst *installer) upgradeMigrationTargetVersion(resolution sourceVersionResolution) (string, error) {
+	if strings.TrimSpace(inst.pinVersion) != "" {
+		return inst.pinVersion, nil
+	}
+	if resolution.origin == UpgradeMigrationSourceUnknown {
+		triggered, err := inst.hasUnpinnedMigrationTrigger()
+		if err != nil {
+			return "", err
+		}
+		if !triggered {
+			return "", nil
+		}
+	}
+	versions, err := listMigrationManifestVersions()
+	if err != nil {
+		return "", err
+	}
+	if len(versions) == 0 {
+		return "", nil
+	}
+	return versions[len(versions)-1], nil
+}
+
+func (inst *installer) hasUnpinnedMigrationTrigger() (bool, error) {
+	data, err := inst.sys.ReadFile(filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath)))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf(messages.InstallFailedReadFmt, upgradeMigrationConfigPath, err)
+	}
+	return config.HasLegacyGeminiConfig(data) || hasLegacyGeminiMCPClient(data), nil
+}
+
+func hasLegacyGeminiMCPClient(data []byte) bool {
+	var cfg map[string]any
+	if err := tomlv2.Unmarshal(data, &cfg); err != nil {
+		return false
+	}
+	parts, err := splitMigrationValuePath("mcp.servers[].clients[]")
+	if err != nil {
+		return false
+	}
+	changed, err := replaceStringAtMigrationValuePath(cfg, parts, "gemini", "antigravity")
+	return err == nil && changed
 }
 
 func (inst *installer) shouldSkipConditionalMigration(op upgradeMigrationOperation, resolution sourceVersionResolution) (bool, string, error) {
