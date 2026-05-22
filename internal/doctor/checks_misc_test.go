@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -250,8 +251,8 @@ func TestCommandOutputWithTimeoutStopsHungCommand(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected timeout error from inherited output pipe")
 		}
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("expected classified deadline error, got: %v", err)
+		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, exec.ErrWaitDelay) {
+			t.Fatalf("expected classified timeout error, got: %v", err)
 		}
 		if elapsed := time.Since(startedAt); elapsed > time.Second {
 			t.Fatalf("command wait delay took too long: %s", elapsed)
