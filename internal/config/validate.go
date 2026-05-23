@@ -67,6 +67,14 @@ var validWarningNoiseModes = map[string]struct{}{
 	"quiet":   {},
 }
 
+var validDispatchDefaultAgents = map[string]struct{}{
+	"":            {},
+	"random":      {},
+	"codex":       {},
+	"claude":      {},
+	"antigravity": {},
+}
+
 // Validate ensures the config is complete and consistent.
 func (c *Config) Validate(path string) error {
 	if !isValidApprovalMode(c.Approvals.Mode) {
@@ -90,6 +98,15 @@ func (c *Config) Validate(path string) error {
 	}
 	if c.Agents.CopilotCLI.Enabled == nil {
 		return fmt.Errorf(messages.ConfigCopilotCLIEnabledRequiredFmt, path)
+	}
+	if err := validateDispatchDefault(path, "agents.antigravity.dispatch.default_agent", c.Agents.Antigravity.Dispatch.DefaultAgent); err != nil {
+		return err
+	}
+	if err := validateDispatchDefault(path, "agents.claude.dispatch.default_agent", c.Agents.Claude.Dispatch.DefaultAgent); err != nil {
+		return err
+	}
+	if err := validateDispatchDefault(path, "agents.codex.dispatch.default_agent", c.Agents.Codex.Dispatch.DefaultAgent); err != nil {
+		return err
 	}
 	// Unknown reasoning-effort values are accepted; warnings.CheckPolicy emits a
 	// sync-time warning so new client levels (e.g. xhigh) work before the catalog
@@ -164,6 +181,14 @@ func (c *Config) Validate(path string) error {
 		return err
 	}
 
+	return nil
+}
+
+func validateDispatchDefault(path string, key string, value string) error {
+	normalized := strings.TrimSpace(value)
+	if _, ok := validDispatchDefaultAgents[normalized]; !ok {
+		return fmt.Errorf(messages.ConfigDispatchDefaultAgentInvalidFmt, path, key, value)
+	}
 	return nil
 }
 

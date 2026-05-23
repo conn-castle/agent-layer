@@ -153,6 +153,28 @@ func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
 	}
 }
 
+func TestFieldOptionValues_DispatchDefaultAgentCatalog(t *testing.T) {
+	keys := []string{
+		"agents.antigravity.dispatch.default_agent",
+		"agents.claude.dispatch.default_agent",
+		"agents.codex.dispatch.default_agent",
+	}
+	want := []string{"random", "codex", "claude", "antigravity"}
+	for _, key := range keys {
+		t.Run(key, func(t *testing.T) {
+			values := FieldOptionValues(key)
+			if len(values) != len(want) {
+				t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+			}
+			for i, expected := range want {
+				if values[i] != expected {
+					t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+				}
+			}
+		})
+	}
+}
+
 func TestFieldOptionValues_CopilotCliModelCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.copilot_cli.model")
 	want := []string{"claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro"}

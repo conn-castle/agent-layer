@@ -3,7 +3,7 @@ name: ship-pr
 description: >-
   Run completed local work through PR delivery: audit changes, verify locally,
   commit, push, open PR, monitor CI, handle review comments, and finish green.
-  After exact approval (`I approve merging PR #<N>`), merge the PR and clean up
+  After approval, merge the PR and clean up
   its source branch. Use `fix-ci` for failing PR checks.
 ---
 
@@ -152,13 +152,13 @@ Do not trust the sub-skill output alone — re-fetch the PR state and validate.
    - every comment has a reply that passes the Phase 7 audit
    - all changes are committed and pushed
 2. Summarize the PR lifecycle outcome.
-3. Tell the user the exact phrase required to authorize merge (Phase 9). For example: `Reply "I approve merging PR #<N>" to merge this PR and delete the source branch.`
+3. Tell the user the exact PR number and ask them to authorize the merge (Phase 9).
 
 ### Phase 9: Merge — only on explicit human authorization
 
 This phase does not run automatically. After Phase 8 the skill stops and waits.
 
-**Authorization trigger.** The agent may merge the PR only when the user replies with the exact phrase `I approve merging PR #<N>` (case-insensitive), where `<N>` is the exact PR number for this run. No other wording — "approved", "looks good", "merge it", "ship it", a thumbs-up, etc. — counts as authorization. If the user uses a similar but non-matching phrase, ask them to issue the exact phrase rather than inferring intent. If the PR number in the user's message does not match the PR for this run, refuse the merge and tell the user which PR number the skill is operating on. Authorization is single-use and scoped to the PR number it names.
+**Authorization trigger.** The agent may merge the PR only when the user explicitly approves the request. Authorization is single-use and scoped to the PR requested it names.
 
 **Merge steps (after authorization):**
 
@@ -189,7 +189,7 @@ This phase does not run automatically. After Phase 8 the skill stops and waits.
 - Do not end with CI failing.
 - Do not force-push or rewrite history unless explicitly instructed.
 - Do not create duplicate PRs.
-- Do not merge the PR unless the user issues the exact authorization phrase `I approve merging PR #<N>` with a number that matches this run's PR.
+- Do not merge the PR unless the user explicitly approves your request to do so.
 - Never delete the repository's default branch.
 
 ## Definition of done
@@ -198,7 +198,7 @@ This phase does not run automatically. After Phase 8 the skill stops and waits.
 - The repo-defined local check lane passed before the first push/PR, and CI-fix commits were not pushed without a local reproducer and passing post-fix local verification.
 - `address-pr-comments` reached its definition of done, and Phase 7 independently verified that result by re-fetching the PR state.
 - The skill did not force-push, did not create a duplicate PR, and did not end with CI failing.
-- The skill ends after Phase 8 with the PR open and green unless the user issues the exact authorization phrase `I approve merging PR #<N>`; in that case the PR is merged with an explicit, unambiguous GitHub merge method and the source branch is deleted both locally and remotely.
+- The skill ends after Phase 8 with the PR open and green unless the user explicitly approves your request to do so; in that case the PR is merged with an explicit, unambiguous GitHub merge method and the source branch is deleted both locally and remotely.
 
 ## Final handoff
 
@@ -208,5 +208,5 @@ After the run:
 3. For any CI fixes, summarize the `fix-ci` local-reproducer evidence.
 4. State whether all comments passed the Phase 7 audit or if any require further human attention.
 5. If any comments were re-addressed during the audit, list them and explain what was corrected.
-6. State the exact phrase required to authorize merge: `I approve merging PR #<N>` with this PR's number. If the user has not issued it, do not merge.
+6. Request user authorization to merge, explicitly stating this PR's number. If the user has not issued approval, do not merge.
 7. If a merge was performed, report the merge outcome and confirm both local and remote branch deletion succeeded.

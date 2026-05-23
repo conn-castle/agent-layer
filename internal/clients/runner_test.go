@@ -48,6 +48,9 @@ func TestRunPipeline(t *testing.T) {
 	if value, ok := GetEnv(gotEnv, "AL_RUN_ID"); !ok || value == "" {
 		t.Fatalf("expected AL_RUN_ID to be set")
 	}
+	if value, ok := GetEnv(gotEnv, EnvDispatchCallerAgent); !ok || value != "antigravity" {
+		t.Fatalf("expected %s=antigravity, got %q ok=%v", EnvDispatchCallerAgent, value, ok)
+	}
 	if strings.Join(gotArgs, ",") != strings.Join(passArgs, ",") {
 		t.Fatalf("expected args %v, got %v", passArgs, gotArgs)
 	}
@@ -543,5 +546,23 @@ func TestRunWithStderr_NilWriter(t *testing.T) {
 	}, launch, false, nil, "v1.0.0", nil)
 	if err != nil {
 		t.Fatalf("RunWithStderr nil writer: %v", err)
+	}
+}
+
+func TestRunNoSyncUnsupportedLaunchStripsCallerMarker(t *testing.T) {
+	root := t.TempDir()
+	writeMinimalRepo(t, root)
+	t.Setenv(EnvDispatchCallerAgent, "claude")
+
+	err := RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
+		return cfg.Agents.Antigravity.Enabled
+	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
+		if got, ok := GetEnv(env, EnvDispatchCallerAgent); ok {
+			t.Fatalf("expected unsupported launch to strip %s, got %q", EnvDispatchCallerAgent, got)
+		}
+		return nil
+	}, false, nil)
+	if err != nil {
+		t.Fatalf("RunNoSync: %v", err)
 	}
 }

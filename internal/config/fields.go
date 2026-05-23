@@ -47,6 +47,11 @@ var fields = []FieldDef{
 		},
 	},
 	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
+	{
+		Key:     "agents.antigravity.dispatch.default_agent",
+		Type:    FieldEnum,
+		Options: dispatchDefaultAgentOptions(),
+	},
 	{Key: "agents.claude.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         "agents.claude.model",
@@ -74,6 +79,11 @@ var fields = []FieldDef{
 			{Value: "max"},
 		},
 	},
+	{
+		Key:     "agents.claude.dispatch.default_agent",
+		Type:    FieldEnum,
+		Options: dispatchDefaultAgentOptions(),
+	},
 	{Key: "agents.claude_vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.codex.enabled", Type: FieldBool, Required: true},
 	{
@@ -100,6 +110,11 @@ var fields = []FieldDef{
 			{Value: "xhigh"},
 		},
 	},
+	{
+		Key:     "agents.codex.dispatch.default_agent",
+		Type:    FieldEnum,
+		Options: dispatchDefaultAgentOptions(),
+	},
 	{Key: "agents.vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.copilot_cli.enabled", Type: FieldBool, Required: true},
 	{
@@ -115,6 +130,15 @@ var fields = []FieldDef{
 			{Value: "gemini-3-pro"},
 		},
 	},
+}
+
+func dispatchDefaultAgentOptions() []FieldOption {
+	return []FieldOption{
+		{Value: "random"},
+		{Value: "codex"},
+		{Value: "claude"},
+		{Value: "antigravity"},
+	}
 }
 
 // fieldIndex provides O(1) lookup by key.

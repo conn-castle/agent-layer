@@ -38,6 +38,9 @@ mode = "all"
 
 [agents.antigravity]
 enabled = true
+# Optional default when Antigravity calls `al dispatch` without --agent.
+# [agents.antigravity.dispatch]
+# default_agent = "random" # random | codex | claude | antigravity
 
 [agents.claude]
 enabled = true
@@ -57,6 +60,9 @@ enabled = true
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
+# Optional default when Claude calls `al dispatch` without --agent.
+# [agents.claude.dispatch]
+# default_agent = "random" # random | codex | claude | antigravity
 # [agents.claude.agent_specific]
 
 [agents.claude_vscode]
@@ -71,6 +77,9 @@ enabled = true
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
 # These are appended to .codex/config.toml and can override top-level managed keys.
 # Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
+# Optional default when Codex calls `al dispatch` without --agent.
+# [agents.codex.dispatch]
+# default_agent = "random" # random | codex | claude | antigravity
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (Github, Gmail, etc.) to reduce tool surface
@@ -317,6 +326,8 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al wizard` | Interactive configuration plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`). |
 | `al sync` | Regenerate client configs without launching a client. |
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
+| `al dispatch` | Run a supported headless target (`codex`, `claude`, `antigravity`, or `random`) from an Agent Layer-launched caller. |
+| `al dispatch options --json` | Print the stable Agent Dispatch target/options contract for scripts. |
 | `al probe agy` | Run the Antigravity capability probe and print JSON. |
 | `al doctor` | Validate configuration and probe enabled MCP servers. |
 | `al completion` | Print or install shell completions (bash/zsh/fish). |
@@ -610,6 +621,29 @@ Examples:
 al claude -- --help
 al vscode --no-sync -- --reuse-window
 ```
+
+### Dispatch
+
+`al dispatch` lets an Agent Layer-launched caller run one supported headless target for a focused text task:
+
+```bash
+al dispatch --agent codex "Review this plan."
+al dispatch --agent random --skill review-plan "Review this plan."
+cat prompt.md | al dispatch --agent claude
+```
+
+Supported target values are `codex`, `claude`, `antigravity`, and `random`. When `--agent` is omitted, Agent Layer uses the env-only caller marker (`AL_DISPATCH_CALLER_AGENT`) and the caller's optional `agents.<caller>.dispatch.default_agent`, defaulting to `random`. Dispatch writes target answer text to stdout and status/errors to stderr, blocks nested calls with `AL_DISPATCH_ACTIVE=1`, and uses the selected target's generated config and permissions. See `docs/AGENT-DISPATCH.md` in the repository for the full v1 contract.
+
+**Exit codes**
+
+- `0` — dispatch completed successfully
+- `64` — usage or resolution failure (missing prompt and skill, unknown target, unknown caller with omitted `--agent`, unsupported override field for the selected target)
+- `65` — configuration or state failure (missing source skill, stale/missing target skill projection, malformed config, disabled target)
+- `69` — target unavailable (missing target binary, unauthenticated/unusable target CLI, no eligible target in the random-selection pool)
+- `70` — target or adapter failure (target subprocess non-zero exit, target rejection of a custom override value, changed structured stream shape, unreadable target output, internal dispatch error)
+- `75` — nested dispatch blocked (`AL_DISPATCH_ACTIVE=1` already set)
+- `130` — interrupted by `SIGINT`
+- `143` — terminated by `SIGTERM`
 
 ### Doctor
 

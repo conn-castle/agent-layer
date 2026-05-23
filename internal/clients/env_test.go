@@ -139,3 +139,63 @@ func TestBuildEnvStripsShimActive(t *testing.T) {
 		t.Fatalf("expected OTHER to remain, got %v", value)
 	}
 }
+
+// TestBuildEnvStripsDispatchActive exercises F8: a leaked
+// AL_DISPATCH_ACTIVE in the parent shell must not survive a normal launch.
+// Dispatch sets the marker explicitly on dispatched children, but a normal
+// `al claude` launched from a shell that exported the marker should run
+// the child without it.
+func TestBuildEnvStripsDispatchActive(t *testing.T) {
+	base := []string{"PATH=/bin", EnvDispatchActive + "=1", "OTHER=data"}
+	env := BuildEnv(base, nil, nil)
+
+	if _, ok := GetEnv(env, EnvDispatchActive); ok {
+		t.Fatalf("expected %s to be stripped from environment", EnvDispatchActive)
+	}
+	if value, ok := GetEnv(env, "PATH"); !ok || value != "/bin" {
+		t.Fatalf("expected PATH to remain, got %v", value)
+	}
+	if value, ok := GetEnv(env, "OTHER"); !ok || value != "data" {
+		t.Fatalf("expected OTHER to remain, got %v", value)
+	}
+}
+
+// TestBuildEnvForAgentStripsDispatchActive verifies that the normal
+// agent-launch helper also drops the dispatch-active marker (since it
+// composes BuildEnv).
+func TestBuildEnvForAgentStripsDispatchActive(t *testing.T) {
+	base := []string{"PATH=/bin", EnvDispatchActive + "=1"}
+	env := BuildEnvForAgent(base, nil, nil, "claude")
+
+	if _, ok := GetEnv(env, EnvDispatchActive); ok {
+		t.Fatalf("expected %s to be stripped from BuildEnvForAgent output", EnvDispatchActive)
+	}
+}
+
+func TestBuildEnvForAgentSetsSupportedCallerMarkers(t *testing.T) {
+	tests := map[string]string{
+		"antigravity": "antigravity",
+		"claude":      "claude",
+		"codex":       "codex",
+	}
+	for agent, want := range tests {
+		t.Run(agent, func(t *testing.T) {
+			env := BuildEnvForAgent([]string{"PATH=/bin"}, nil, nil, agent)
+			if got, ok := GetEnv(env, EnvDispatchCallerAgent); !ok || got != want {
+				t.Fatalf("expected %s=%s, got %q ok=%v", EnvDispatchCallerAgent, want, got, ok)
+			}
+		})
+	}
+}
+
+func TestBuildEnvForAgentStripsUnsupportedCallerMarkers(t *testing.T) {
+	tests := []string{"", "vscode", "claude_vscode", "copilot"}
+	for _, agent := range tests {
+		t.Run(agent, func(t *testing.T) {
+			env := BuildEnvForAgent([]string{"PATH=/bin", EnvDispatchCallerAgent + "=claude"}, nil, nil, agent)
+			if got, ok := GetEnv(env, EnvDispatchCallerAgent); ok {
+				t.Fatalf("expected %s to be stripped for %q, got %q", EnvDispatchCallerAgent, agent, got)
+			}
+		})
+	}
+}

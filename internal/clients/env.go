@@ -8,13 +8,23 @@ import (
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
+const (
+	// EnvDispatchCallerAgent identifies the Agent Layer-launched caller for Agent Dispatch.
+	EnvDispatchCallerAgent = "AL_DISPATCH_CALLER_AGENT"
+	// EnvDispatchActive blocks nested Agent Dispatch calls inside dispatched children.
+	EnvDispatchActive = "AL_DISPATCH_ACTIVE"
+)
+
 // BuildEnv merges base env with project env and run metadata.
-// It strips AL_SHIM_ACTIVE from the environment because child processes
-// are new execution contexts that should be free to dispatch independently.
-// The dispatch guard is only meaningful for the exec replacement chain,
-// not for spawned subprocesses.
+// It strips AL_SHIM_ACTIVE because child processes are new execution
+// contexts that should be free to dispatch independently; the dispatch
+// guard is only meaningful for the exec replacement chain. It also strips
+// AL_DISPATCH_ACTIVE so a leaked marker from the parent shell does not
+// poison normal (non-dispatch) launches; the dispatch flow re-sets the
+// marker explicitly on the dispatched child.
 func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []string {
 	env := UnsetEnv(base, dispatch.EnvShimActive)
+	env = UnsetEnv(env, EnvDispatchActive)
 	env = mergeEnvFillMissing(env, projectEnv)
 	if runInfo != nil {
 		env = mergeEnv(env, map[string]string{
@@ -23,6 +33,19 @@ func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []
 		})
 	}
 	return env
+}
+
+// BuildEnvForAgent extends BuildEnv with caller metadata for dispatch-aware
+// normal launches. Only headless agents supported as dispatch callers receive
+// AL_DISPATCH_CALLER_AGENT; all launch paths strip any inherited marker first.
+func BuildEnvForAgent(base []string, projectEnv map[string]string, runInfo *run.Info, agentName string) []string {
+	env := UnsetEnv(BuildEnv(base, projectEnv, runInfo), EnvDispatchCallerAgent)
+	switch agentName {
+	case "antigravity", "claude", "codex":
+		return SetEnv(env, EnvDispatchCallerAgent, agentName)
+	default:
+		return env
+	}
 }
 
 // GetEnv returns the value for the key from an env slice.
