@@ -14,6 +14,9 @@ enabled = false
 # does not surface those keys for Antigravity. Use agent_specific to inject
 # arbitrary JSON keys into .agy/antigravity-cli/settings.json (deep-merged with
 # Agent Layer-managed permissions).
+# Optional default target when `al dispatch` is invoked from Antigravity without --agent.
+# [agents.antigravity.dispatch]
+# default_agent = "random" # random | codex | claude | antigravity
 # [agents.antigravity.agent_specific]
 
 [agents.claude]
@@ -38,6 +41,9 @@ enabled = true
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
 # Disable Claude Code's structured clarification-question tool for this project.
 agent_specific.permissions.deny = ["AskUserQuestion"]
+# Optional default target when `al dispatch` is invoked from Claude without --agent.
+# [agents.claude.dispatch]
+# default_agent = "random" # random | codex | claude | antigravity
 # [agents.claude.agent_specific]
 
 [agents.claude_vscode]
@@ -53,6 +59,9 @@ enabled = true
 # These are appended to .codex/config.toml and can override top-level managed keys.
 # Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
 # Overlapping keys override Agent Layer-managed values and trigger a sync warning.
+# Optional default target when `al dispatch` is invoked from Codex without --agent.
+# [agents.codex.dispatch]
+# default_agent = "random" # random | codex | claude | antigravity
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (Github, Gmail, etc.) to reduce tool surface

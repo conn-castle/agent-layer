@@ -35,6 +35,7 @@ func newRootCmd() *cobra.Command {
 		newSyncCmd(),
 		newMcpPromptsCmd(),
 		newProbeCmd(),
+		newDispatchCmd(),
 		newClaudeCmd(),
 		newCodexCmd(),
 		newVSCodeCmd(),

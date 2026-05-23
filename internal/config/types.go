@@ -32,6 +32,11 @@ type AgentsConfig struct {
 	CopilotCLI   AgentConfig       `toml:"copilot_cli"`
 }
 
+// DispatchConfig controls Agent Dispatch defaults for a caller agent.
+type DispatchConfig struct {
+	DefaultAgent string `toml:"default_agent"`
+}
+
 // AgentConfig is for agents that support enablement and model selection.
 // ReasoningEffort is present so the TOML decoder accepts the key without
 // raising an unknown-key error; the validator then provides a specific
@@ -47,6 +52,7 @@ type ClaudeConfig struct {
 	Enabled         *bool          `toml:"enabled"`
 	Model           string         `toml:"model"`
 	ReasoningEffort string         `toml:"reasoning_effort"`
+	Dispatch        DispatchConfig `toml:"dispatch"`
 	LocalConfigDir  *bool          `toml:"local_config_dir"`
 	AgentSpecific   map[string]any `toml:"agent_specific"`
 }
@@ -61,6 +67,7 @@ type EnableOnlyConfig struct {
 // (the agy CLI does not accept those flags).
 type AntigravityConfig struct {
 	Enabled       *bool          `toml:"enabled"`
+	Dispatch      DispatchConfig `toml:"dispatch"`
 	AgentSpecific map[string]any `toml:"agent_specific"`
 }
 
@@ -69,6 +76,7 @@ type CodexConfig struct {
 	Enabled         *bool          `toml:"enabled"`
 	Model           string         `toml:"model"`
 	ReasoningEffort string         `toml:"reasoning_effort"`
+	Dispatch        DispatchConfig `toml:"dispatch"`
 	AgentSpecific   map[string]any `toml:"agent_specific"`
 }
 

@@ -505,6 +505,23 @@ Skills are synced natively to Agent Skills directories with full subdirectory su
 
 ---
 
+## Agent Dispatch
+
+`al dispatch` lets an Agent Layer-launched agent run another supported headless target (`codex`, `claude`, or `antigravity`) for a focused text task.
+
+Examples:
+
+```bash
+al dispatch --agent codex "Review this plan."
+al dispatch --agent random --skill review-plan "Review this plan."
+cat prompt.md | al dispatch --agent claude
+al dispatch options --json
+```
+
+Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It supports depth 1 through `AL_DISPATCH_ACTIVE=1`; a dispatched child cannot call `al dispatch` again. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
+
+---
+
 ## VS Code (Codex + Claude extensions)
 
 `al vscode` is the single command for launching VS Code with both Codex and Claude extension support. It is enabled when either `[agents.vscode]` or `[agents.claude_vscode]` is set to `enabled = true` in `config.toml`.
@@ -586,6 +603,7 @@ Other commands:
 - `al upgrade repair-gitignore-block` — restore `.agent-layer/gitignore.block` from templates and reapply the root `.gitignore` managed block
 - `al sync` — regenerate configs without launching a client
 - `al probe agy` — run the Antigravity capability probe and print JSON
+- `al dispatch` — run a supported headless target through Agent Dispatch (see the [Agent Dispatch](#agent-dispatch) section)
 - `al doctor` — check common setup issues and warn about available updates
 - `al wizard` — interactive setup wizard plus profile mode (`--profile`) and backup cleanup (`--cleanup-backups`)
 - `al completion` — generate shell completion scripts (bash/zsh/fish, macOS/Linux only)

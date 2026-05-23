@@ -282,7 +282,8 @@ func TestShipPRSkillRequiresExplicitMergeAuthorizationAndSafeCleanup(t *testing.
 	content := string(data)
 	for _, snippet := range []string{
 		"Sub-skill returns are intermediate, not terminal.",
-		"I approve merging PR #<N>",
+		"Request user authorization to merge",
+		"Do not merge the PR unless the user explicitly approves",
 		"Do not pass `--admin`.",
 		"viewerDefaultMergeMethod",
 		"stop and ask the user to choose one of the allowed methods",

@@ -51,6 +51,8 @@ Use `al dispatch options --json` for structured output. The JSON shape is stable
 - `random`: the current random-selection pool, whether caller exclusion is active, and whether the pool is empty
 - `targets`: one entry per target, including enablement, install status, dispatch capability, random eligibility, streaming capability, model metadata, reasoning-effort metadata, and unavailable reasons
 
+The `unavailable_reasons` field draws from a fixed v1 vocabulary: `disabled`, `binary_not_found`, `unauthenticated`, `unsupported_for_dispatch`, and `configuration_error`. v1 currently emits only `disabled` and `binary_not_found`; the additional values `unauthenticated`, `unsupported_for_dispatch`, and `configuration_error` are reserved per spec for future detection paths and may begin appearing in subsequent v1 revisions without breaking the JSON contract.
+
 ## Generated Instructions
 
 Agent Layer generated instructions describe `al dispatch` so agents can discover and use the command during normal tool execution. Agents can run `al dispatch options` when they need to inspect the currently available targets, models, reasoning efforts, caller detection, or random-selection behavior.
@@ -129,7 +131,8 @@ Fresh single-target installs should also use a concrete target. If the only disp
 3. If `--agent` is omitted and the caller is known, dispatch uses `agents.<caller>.dispatch.default_agent`, defaulting to `random`.
 4. If `--agent` is omitted and the caller is unknown, dispatch fails.
 5. Explicit same-agent dispatch is allowed. If the caller is `claude` and `--agent claude` is provided, dispatch treats that as intentional.
-6. If random selection has no eligible targets after exclusions, dispatch fails clearly instead of falling back to the caller.
+6. The selected target is surfaced: the CLI writes it to standard error when the target was selected implicitly (from the caller's configured default) or randomly. The literal forms are `Dispatch target: <agent> (from agents.<caller>.dispatch.default_agent)` for implicit selection and `Dispatch target: <agent> (random selection)` for random selection. Quiet mode (`--quiet` or `warnings.noise_mode = "quiet"`) suppresses this notice along with other informational output.
+7. If random selection has no eligible targets after exclusions, dispatch fails clearly instead of falling back to the caller.
 
 ## Exit Status
 
@@ -138,7 +141,7 @@ Dispatch uses stable wrapper-owned exit categories:
 - `0`: the selected target completed successfully
 - `64`: usage or target-resolution failure, including missing prompt/skill, unknown target, unknown caller with omitted `--agent`, or unsupported override field for the selected target
 - `65`: Agent Layer configuration or state failure, including missing source skill, stale/missing target skill projection, malformed config, or disabled target
-- `69`: target unavailable, including missing target binary, unusable target CLI detected before launch, or no eligible target in the random-selection pool
+- `69`: target unavailable, including missing target binary, unauthenticated/unusable target CLI detected before launch, or no eligible target in the random-selection pool
 - `70`: target or adapter failure, including target subprocess non-zero exit, target rejection of a custom override value, changed structured stream shape, unreadable target output, or internal dispatch error
 - `75`: nested dispatch blocked by `AL_DISPATCH_ACTIVE=1`
 - `130`: interrupted by `SIGINT`
@@ -153,7 +156,7 @@ Agent Dispatch is intentionally text-first:
 - prompt input is plain text from an argument or standard input
 - prompt text is optional when a skill is provided
 - output is streamed human-readable text where the target's official headless interface supports it
-- no persistent run artifacts are created by default
+- dispatch creates a per-run temporary directory at `.agent-layer/tmp/runs/<id>` (`0o700`) consistent with normal `al claude`/`al codex`/`al agy` launches; no other persistent artifacts (prompt files, output logs, run manifests) are written by default
 - the target run uses the current repository's Agent Layer configuration
 - dispatch does not target other repositories or machines
 - supported target agents are Codex, Claude, and Antigravity
@@ -167,6 +170,6 @@ Dispatch should preserve the target agent's normal Agent Layer behavior, includi
 
 Headless target runs must be launched with non-interactive target CLI modes. Dispatch cannot answer approval prompts on behalf of the caller; the selected target must be configured with the approvals and sandbox settings needed for the intended work.
 
-For final-answer-only targets such as Codex v1, callers should expect progress on standard error while the answer text remains unavailable until the target run completes. While a target turn is in progress, dispatch emits a compact progress line to standard error at least every 60 seconds as a liveness signal. This is not a timeout; it is a steady heartbeat callers can rely on for monitoring.
+For final-answer-only targets such as Codex v1, callers should expect sparse stderr output while the answer text remains unavailable until the target run completes. Dispatch forwards target stream events as compact stderr lines when they arrive and stays silent otherwise; it does not synthesize heartbeats. Genuine target silence is reported as silence — dispatch cannot distinguish a long inference from a frozen subprocess.
 
 Dispatch forwards cancellation signals to the target process and waits for it to exit before returning.

@@ -26,3 +26,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 ## Open issues
 
 <!-- ENTRIES START -->
+
+- Issue 2026-05-23 dispatch-antigravity-argv-arg-max: Antigravity dispatch passes prompt on argv; very large prompts hit OS ARG_MAX
+    Priority: Medium. Area: providers/antigravity
+    Description: `internal/agentdispatch/adapters.go` `runAntigravity` passes the prompt as a single argv element after `--print`. The OS `execve(2)` cap (~128KB Linux, ~256KB macOS) means a multi-hundred-KB prompt fails at exec time with an opaque "argument list too long" error mapped to dispatch exit 70.
+    Next step: Revisit when Antigravity's `agy --print` exposes a stdin or prompt-file path; until then, surface an explicit pre-flight length check with a typed `ExitUsage` error explaining the antigravity-specific limit.
+    Notes: Claude and Codex are unaffected (both receive the prompt on stdin). Upstream `agy --help` on 2026-05-22 shows no stdin/prompt-file path; deferred pending upstream CLI support.

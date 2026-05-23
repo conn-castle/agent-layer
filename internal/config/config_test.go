@@ -17,9 +17,13 @@ mode = "all"
 
 [agents.antigravity]
 enabled = true
+[agents.antigravity.dispatch]
+default_agent = "claude"
 
 [agents.claude]
 enabled = true
+[agents.claude.dispatch]
+default_agent = "random"
 
 [agents.claude_vscode]
 enabled = true
@@ -28,6 +32,8 @@ enabled = true
 enabled = true
 model = "gpt-5.3-codex"
 reasoning_effort = "high"
+[agents.codex.dispatch]
+default_agent = "antigravity"
 
 [agents.vscode]
 enabled = true
@@ -55,6 +61,15 @@ command = "tool"
 	}
 	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
 		t.Fatalf("expected antigravity enabled")
+	}
+	if cfg.Agents.Antigravity.Dispatch.DefaultAgent != "claude" {
+		t.Fatalf("unexpected antigravity dispatch default: %q", cfg.Agents.Antigravity.Dispatch.DefaultAgent)
+	}
+	if cfg.Agents.Claude.Dispatch.DefaultAgent != "random" {
+		t.Fatalf("unexpected claude dispatch default: %q", cfg.Agents.Claude.Dispatch.DefaultAgent)
+	}
+	if cfg.Agents.Codex.Dispatch.DefaultAgent != "antigravity" {
+		t.Fatalf("unexpected codex dispatch default: %q", cfg.Agents.Codex.Dispatch.DefaultAgent)
 	}
 }
 

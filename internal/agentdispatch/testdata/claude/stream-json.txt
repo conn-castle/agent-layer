@@ -1,0 +1,2 @@
+{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"Hello "}}}
+{"type":"stream_event","event":{"delta":{"type":"text_delta","text":"from Claude."}}}

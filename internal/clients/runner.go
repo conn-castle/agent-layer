@@ -48,7 +48,7 @@ func RunNoSyncWithStderr(root string, name string, enabled EnabledSelector, laun
 		_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 	}
 
-	return launchWithRunInfo(root, project, launch, args)
+	return launchWithRunInfo(root, name, project, launch, args)
 }
 
 // RunWithStderr is like Run but allows specifying a custom stderr writer for testing.
@@ -80,7 +80,7 @@ func RunWithStderr(ctx context.Context, root string, name string, enabled Enable
 		_, _ = fmt.Fprintln(stderr, messages.WarningsPolicyYOLOAck)
 	}
 
-	return launchWithRunInfo(root, project, launch, args)
+	return launchWithRunInfo(root, name, project, launch, args)
 }
 
 // loadProject loads the project config and verifies the client is enabled.
@@ -96,13 +96,13 @@ func loadProject(root string, name string, enabled EnabledSelector) (*config.Pro
 }
 
 // launchWithRunInfo prepares the run info and environment before launching.
-func launchWithRunInfo(root string, project *config.ProjectConfig, launch LaunchFunc, args []string) error {
+func launchWithRunInfo(root string, name string, project *config.ProjectConfig, launch LaunchFunc, args []string) error {
 	runInfo, err := run.Create(root)
 	if err != nil {
 		return err
 	}
 
-	env := BuildEnv(os.Environ(), project.Env, runInfo)
+	env := BuildEnvForAgent(os.Environ(), project.Env, runInfo, name)
 
 	return launch(project, runInfo, env, args)
 }
