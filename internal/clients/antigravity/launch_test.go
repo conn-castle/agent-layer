@@ -52,6 +52,46 @@ func TestLaunchAntigravity(t *testing.T) {
 	if !strings.Contains(log, "AGY_CLI_DISABLE_AUTO_UPDATE=1") {
 		t.Fatalf("expected auto-update env disable in log, got:\n%s", log)
 	}
+	// Regression guard: default approvals mode must NOT pass
+	// --dangerously-skip-permissions to agy. Only Approvals.Mode == YOLO
+	// should opt the user out of permission prompts.
+	if strings.Contains(log, "--dangerously-skip-permissions") {
+		t.Fatalf("did not expect --dangerously-skip-permissions for default approvals, got:\n%s", log)
+	}
+}
+
+func TestLaunchAntigravityYOLO(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	writeLoggingStub(t, binDir, "agy", 0)
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeYOLO},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("AGY_CLI_DISABLE_AUTO_UPDATE", "")
+	env := os.Environ()
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, []string{"--debug"}); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	logData, err := os.ReadFile(filepath.Join(binDir, "agy.log")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read agy log: %v", err)
+	}
+	log := string(logData)
+	if !strings.Contains(log, "--dangerously-skip-permissions") {
+		t.Fatalf("expected --dangerously-skip-permissions arg when Approvals.Mode=yolo, got:\n%s", log)
+	}
+	// passArgs must still be forwarded after the YOLO flag so user-supplied
+	// args are preserved.
+	if !strings.Contains(log, "--debug") {
+		t.Fatalf("expected pass-through arg in log, got:\n%s", log)
+	}
 }
 
 func TestLaunchAntigravityError(t *testing.T) {

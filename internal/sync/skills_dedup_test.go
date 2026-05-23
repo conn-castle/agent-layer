@@ -176,7 +176,7 @@ func writeGitignoreBlockForSkillsDedupTest(t *testing.T, root string) {
 func agentsForSkillsTest(enabled ...string) config.AgentsConfig {
 	falseVal := false
 	agents := config.AgentsConfig{
-		Antigravity:  config.EnableOnlyConfig{Enabled: &falseVal},
+		Antigravity:  config.AntigravityConfig{Enabled: &falseVal},
 		Claude:       config.ClaudeConfig{Enabled: &falseVal},
 		ClaudeVSCode: config.EnableOnlyConfig{Enabled: &falseVal},
 		Codex:        config.CodexConfig{Enabled: &falseVal},

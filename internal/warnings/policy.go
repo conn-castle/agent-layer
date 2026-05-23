@@ -37,6 +37,9 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 	if agentSpecificWarning := claudeAgentSpecificOverrideWarning(project.Config.Agents.Claude.AgentSpecific); agentSpecificWarning != nil {
 		results = append(results, *agentSpecificWarning)
 	}
+	if agentSpecificWarning := antigravityAgentSpecificOverrideWarning(project.Config.Agents.Antigravity.AgentSpecific); agentSpecificWarning != nil {
+		results = append(results, *agentSpecificWarning)
+	}
 	if w := claudeReasoningEffortUnknownWarning(project.Config.Agents.Claude.ReasoningEffort); w != nil {
 		results = append(results, *w)
 	}
@@ -171,6 +174,37 @@ func claudeAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {
 		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, "claude"),
 		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
 		Details:  []string{fmt.Sprintf("overridden keys: %s", strings.Join(keys, ", "))},
+		Source:   SourceInternal,
+		Severity: SeverityWarning,
+	}
+}
+
+// antigravityAgentSpecificOverrideWarning mirrors the Claude variant because
+// .agy/antigravity-cli/settings.json shares Claude's permissions shape: the
+// managed `permissions.allow` collides if the user supplies their own, while
+// `permissions.deny` is additive.
+func antigravityAgentSpecificOverrideWarning(agentSpecific map[string]any) *Warning {
+	if len(agentSpecific) == 0 {
+		return nil
+	}
+	overriddenKey := ""
+	if permissions, ok := agentSpecific["permissions"]; ok {
+		permissionsMap, mapOK := permissions.(map[string]any)
+		if !mapOK {
+			overriddenKey = "permissions"
+		} else if _, ok := permissionsMap["allow"]; ok {
+			overriddenKey = "permissions.allow"
+		}
+	}
+	if overriddenKey == "" {
+		return nil
+	}
+	return &Warning{
+		Code:     CodePolicyAgentSpecificOverrides,
+		Subject:  "agents.antigravity.agent_specific",
+		Message:  fmt.Sprintf(messages.WarningsPolicyAgentSpecificOverridesFmt, "antigravity"),
+		Fix:      messages.WarningsPolicyAgentSpecificOverridesFix,
+		Details:  []string{fmt.Sprintf("overridden keys: %s", overriddenKey)},
 		Source:   SourceInternal,
 		Severity: SeverityWarning,
 	}

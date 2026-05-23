@@ -45,7 +45,7 @@ func TestRunWithProjectError(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Antigravity: config.EnableOnlyConfig{Enabled: testutil.BoolPtr(true)},
+				Antigravity: config.AntigravityConfig{Enabled: testutil.BoolPtr(true)},
 			},
 		},
 		Instructions: []config.InstructionFile{{Name: "00_base.md", Content: "base"}},

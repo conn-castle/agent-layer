@@ -82,7 +82,7 @@ func TestRunWithWriter_LenientFallbackOnBrokenConfig(t *testing.T) {
 		return &config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
-				Antigravity: config.EnableOnlyConfig{Enabled: &trueVal},
+				Antigravity: config.AntigravityConfig{Enabled: &trueVal},
 				Claude:      config.ClaudeConfig{Enabled: &trueVal},
 				Codex:       config.CodexConfig{Enabled: &trueVal},
 				VSCode:      config.EnableOnlyConfig{Enabled: &trueVal},
@@ -159,7 +159,7 @@ func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {
 		return &config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
 			Agents: config.AgentsConfig{
-				Antigravity: config.EnableOnlyConfig{Enabled: &trueVal},
+				Antigravity: config.AntigravityConfig{Enabled: &trueVal},
 				Claude:      config.ClaudeConfig{Enabled: &trueVal},
 				Codex:       config.CodexConfig{Enabled: &trueVal},
 				VSCode:      config.EnableOnlyConfig{Enabled: &trueVal},

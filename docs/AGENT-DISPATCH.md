@@ -47,7 +47,7 @@ For targets whose Agent Layer field catalog accepts custom values, out-of-catalo
 
 Use `al dispatch options --json` for structured output. The JSON shape is stable in v1: existing fields keep their meaning, and future versions may add fields. The top-level object contains:
 
-- `caller`: whether the caller is known, the caller agent when known, and the source of that value
+- `caller`: whether the caller is known and the caller agent when known
 - `random`: the current random-selection pool, whether caller exclusion is active, and whether the pool is empty
 - `targets`: one entry per target, including enablement, install status, dispatch capability, random eligibility, streaming capability, model metadata, reasoning-effort metadata, and unavailable reasons
 

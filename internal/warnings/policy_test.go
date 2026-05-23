@@ -233,6 +233,66 @@ func TestCheckPolicy_ClaudeAgentSpecificPermissionsAllowWarns(t *testing.T) {
 	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[0].Details)
 }
 
+func TestCheckPolicy_AntigravityAgentSpecificPermissionsAllowWarns(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Antigravity: config.AntigravityConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"allow": []string{"command(rm:*)"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, "agents.antigravity.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: permissions.allow"}, results[0].Details)
+}
+
+func TestCheckPolicy_AntigravityAgentSpecificPermissionsDenyDoesNotWarn(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Antigravity: config.AntigravityConfig{
+					AgentSpecific: map[string]any{
+						"permissions": map[string]any{
+							"deny": []string{"command(rm:*)"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	require.Nil(t, CheckPolicy(project))
+}
+
+func TestCheckPolicy_AntigravityAgentSpecificPermissionsNonMapWarns(t *testing.T) {
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Antigravity: config.AntigravityConfig{
+					AgentSpecific: map[string]any{
+						"permissions": []string{"command(rm:*)"},
+					},
+				},
+			},
+		},
+	}
+
+	results := CheckPolicy(project)
+	require.Len(t, results, 1)
+	require.Equal(t, CodePolicyAgentSpecificOverrides, results[0].Code)
+	require.Equal(t, "agents.antigravity.agent_specific", results[0].Subject)
+	require.Equal(t, []string{"overridden keys: permissions"}, results[0].Details)
+}
+
 func TestCheckPolicy_ClaudeAgentSpecificMixedPermissionsWarnsOnlyForAllow(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{

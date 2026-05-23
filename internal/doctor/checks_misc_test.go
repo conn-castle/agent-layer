@@ -181,7 +181,7 @@ func TestCheckAgents(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Antigravity:  config.EnableOnlyConfig{Enabled: &tBool},
+				Antigravity:  config.AntigravityConfig{Enabled: &tBool},
 				Claude:       config.ClaudeConfig{Enabled: &fBool},
 				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &fBool},
 				Codex:        config.CodexConfig{Enabled: nil},
@@ -407,7 +407,7 @@ func TestCheckAgents_DisabledAntigravitySkipsBinaryCheck(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Antigravity: config.EnableOnlyConfig{Enabled: &falseVal},
+				Antigravity: config.AntigravityConfig{Enabled: &falseVal},
 			},
 		},
 	}
