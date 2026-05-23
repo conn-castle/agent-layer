@@ -59,6 +59,7 @@ func newDispatchOptionsCmd() *cobra.Command {
 		Use:          messages.DispatchOptionsUse,
 		Short:        messages.DispatchOptionsShort,
 		SilenceUsage: true,
+		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

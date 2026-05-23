@@ -554,8 +554,14 @@ func TestRunNoSyncUnsupportedLaunchStripsCallerMarker(t *testing.T) {
 	writeMinimalRepo(t, root)
 	t.Setenv(EnvDispatchCallerAgent, "claude")
 
+	// The test exercises caller-marker stripping for an unsupported launch
+	// target, so we want the enabled-selector to unconditionally report
+	// enabled regardless of which agent config field is populated. Using
+	// the antigravity field would only work by coincidence and could hide
+	// regressions in vscode-specific enablement wiring.
+	enabled := true
 	err := RunNoSync(root, "vscode", func(cfg *config.Config) *bool {
-		return cfg.Agents.Antigravity.Enabled
+		return &enabled
 	}, func(project *config.ProjectConfig, runInfo *run.Info, env []string, args []string) error {
 		if got, ok := GetEnv(env, EnvDispatchCallerAgent); ok {
 			t.Fatalf("expected unsupported launch to strip %s, got %q", EnvDispatchCallerAgent, got)

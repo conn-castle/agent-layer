@@ -75,11 +75,26 @@ func chooseRandomTarget(cfg config.Config, caller string, callerKnown bool, look
 	if err != nil {
 		return "", wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, err), err)
 	}
-	if _, ok := lookupTarget(selected); !ok {
-		err := fmt.Errorf("random chooser returned invalid target %q", selected)
-		return "", wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, err), err)
+	normalized := normalizeAgent(selected)
+	if _, ok := lookupTarget(normalized); !ok {
+		invalidErr := fmt.Errorf("random chooser returned invalid target %q", selected)
+		return "", wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, invalidErr), invalidErr)
 	}
-	return selected, nil
+	// A custom chooser must stay inside the pool the resolver computed so
+	// it can't bypass caller-exclusion or availability constraints by
+	// returning some other registered target name.
+	inPool := false
+	for _, candidate := range pool {
+		if candidate == normalized {
+			inPool = true
+			break
+		}
+	}
+	if !inPool {
+		ineligibleErr := fmt.Errorf("random chooser returned target %q which is not in the eligible pool", selected)
+		return "", wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchInternalErrorFmt, ineligibleErr), ineligibleErr)
+	}
+	return normalized, nil
 }
 
 func defaultRandomChooser(pool []string) (string, error) {

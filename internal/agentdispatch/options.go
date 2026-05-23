@@ -82,6 +82,10 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 	response := &OptionsResponse{
 		Caller: CallerInfo{Known: callerKnown, Agent: caller},
 	}
+	// Initialize Pool to an empty slice (not nil) so JSON consumers always
+	// see `"pool": []` instead of `"pool": null` when no targets are
+	// eligible. The documented JSON shape promises an array.
+	response.Random.Pool = []string{}
 	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, lookPath)
 	for _, target := range response.Targets {
 		if target.RandomEligible {

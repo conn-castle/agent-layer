@@ -11,6 +11,11 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+// MaxStdinPromptBytes caps stdin reads when resolving the dispatch prompt so
+// a runaway producer cannot exhaust process memory. 10 MiB is well above any
+// realistic agent prompt and below typical container memory budgets.
+const MaxStdinPromptBytes = 10 * 1024 * 1024
+
 // ResolvePrompt returns the caller prompt. Positional args win over piped stdin.
 func ResolvePrompt(args []string, stdin io.Reader, readStdin bool) (string, error) {
 	if len(args) > 0 {
@@ -19,7 +24,7 @@ func ResolvePrompt(args []string, stdin io.Reader, readStdin bool) (string, erro
 	if !readStdin || stdin == nil {
 		return "", nil
 	}
-	data, err := io.ReadAll(stdin)
+	data, err := io.ReadAll(io.LimitReader(stdin, MaxStdinPromptBytes))
 	if err != nil {
 		return "", wrapExitError(ExitUsage, "read dispatch prompt from stdin", err)
 	}
@@ -63,17 +68,22 @@ func projectHasSkill(project *config.ProjectConfig, skill string) bool {
 }
 
 func validateSkillProjection(root string, target targetMeta, skill string) error {
-	if strings.TrimSpace(skill) == "" {
+	// Trim before path construction so a templated `--skill " foo "` does
+	// not produce a path like ".claude/skills/ foo /SKILL.md" that fails a
+	// projection lookup the caller never intended. BuildChildPrompt already
+	// trims before its own validation; mirror that here for consistency.
+	normalized := strings.TrimSpace(skill)
+	if normalized == "" {
 		return nil
 	}
-	path := skillProjectionPath(root, target, skill)
+	path := skillProjectionPath(root, target, normalized)
 	// Use Lstat so a symlink does not silently route the projection check
 	// elsewhere on disk. Agent Layer sync writes regular files; anything
 	// else (symlink, directory, device, ...) means the projection tree has
 	// been tampered with or corrupted and dispatch must refuse.
 	info, err := os.Lstat(path)
 	if err != nil {
-		return exitError(ExitConfig, fmt.Sprintf(messages.DispatchMissingSkillProjectionFmt, skill, target.Name, path))
+		return exitError(ExitConfig, fmt.Sprintf(messages.DispatchMissingSkillProjectionFmt, normalized, target.Name, path))
 	}
 	if !info.Mode().IsRegular() {
 		return exitError(ExitConfig, fmt.Sprintf(messages.DispatchSkillProjectionNotRegularFmt, path, info.Mode().String()))

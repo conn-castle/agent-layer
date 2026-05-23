@@ -163,6 +163,16 @@ func TestChooseRandomTargetErrorBranches(t *testing.T) {
 
 	_, err = chooseRandomTarget(cfg, "", false, alwaysFound, chooseOnly("invalid"))
 	_ = requireDispatchExitCode(t, err, ExitTargetFailure)
+
+	// A chooser may not return a registered target that isn't in the pool
+	// the resolver computed; doing so would bypass caller-exclusion and
+	// availability constraints.
+	multi := dispatchCoverageConfig(AgentCodex, AgentClaude)
+	_, err = chooseRandomTarget(multi, AgentCodex, true, alwaysFound, chooseOnly(AgentCodex))
+	exitErr = requireDispatchExitCode(t, err, ExitTargetFailure)
+	if !strings.Contains(exitErr.Error(), "not in the eligible pool") {
+		t.Fatalf("expected not-in-pool error, got %q", exitErr.Error())
+	}
 }
 
 func TestConfigureTargetEnvironment(t *testing.T) {
@@ -324,6 +334,60 @@ func TestRunAntigravityUsesYoloFlag(t *testing.T) {
 	assertFileContains(t, logPath, "ARG_1=--dangerously-skip-permissions")
 	assertFileContains(t, logPath, "ARG_2=--print-timeout")
 	assertFileContains(t, logPath, "ARG_4=--print")
+}
+
+// TestRunAntigravityRejectsOversizePrompt covers the pre-flight length
+// check: an Antigravity prompt larger than AntigravityPromptMaxBytes
+// must fail with ExitUsage before exec instead of surfacing as an opaque
+// `argument list too long` from the OS.
+func TestRunAntigravityRejectsOversizePrompt(t *testing.T) {
+	root := t.TempDir()
+	prompt := bytes.Repeat([]byte("a"), AntigravityPromptMaxBytes+1)
+	err := runAntigravity(
+		targetMeta{Name: AgentAntigravity, Binary: "/nonexistent-agy"},
+		&config.ProjectConfig{Root: root},
+		nil,
+		prompt,
+		RunOptions{Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}},
+		defaultCommandFactory,
+	)
+	exitErr := requireDispatchExitCode(t, err, ExitUsage)
+	if !strings.Contains(exitErr.Error(), "antigravity prompt is") {
+		t.Fatalf("expected oversize-prompt message, got %q", exitErr.Error())
+	}
+}
+
+// TestBuildOptionsEmptyPoolIsArrayNotNull pins the stable JSON shape:
+// `random.pool` must serialize as `[]` (not `null`) even when no targets
+// are eligible. Consumers rely on the field being an array unconditionally.
+func TestBuildOptionsEmptyPoolIsArrayNotNull(t *testing.T) {
+	// Use a repo with all targets enabled by default, but a LookPath that
+	// reports no binaries on PATH so no target is dispatch_capable and the
+	// random pool is empty.
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	resp, err := BuildOptions(OptionsRequest{
+		Root: root,
+		Env:  []string{},
+		LookPath: func(string) (string, error) {
+			return "", errors.New("nothing on PATH")
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildOptions: %v", err)
+	}
+	if resp.Random.Pool == nil {
+		t.Fatalf("Random.Pool is nil; expected empty slice so JSON renders []")
+	}
+	if len(resp.Random.Pool) != 0 {
+		t.Fatalf("Random.Pool = %v; expected empty", resp.Random.Pool)
+	}
+	raw, err := json.Marshal(resp.Random)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"pool":[]`) {
+		t.Fatalf("expected pool to serialize as [], got %s", raw)
+	}
 }
 
 func TestDecodeStructuredOutputAlternateShapes(t *testing.T) {

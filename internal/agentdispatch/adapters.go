@@ -1,6 +1,7 @@
 package agentdispatch
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,14 @@ import (
 )
 
 const agyDisableAutoUpdateEnv = "AGY_CLI_DISABLE_AUTO_UPDATE"
+
+// AntigravityPromptMaxBytes caps the prompt size for the Antigravity adapter.
+// agy --print accepts the prompt only as an argv element (no stdin/file path
+// exists today), which is subject to the OS ARG_MAX limit (~128 KB Linux /
+// ~256 KB macOS). 100 KB is well below both caps and leaves headroom for the
+// other argv elements; oversize prompts fail fast with ExitUsage rather than
+// surfacing as an opaque execve failure.
+const AntigravityPromptMaxBytes = 100 * 1024
 
 // AntigravityPrintTimeout is the print-mode timeout used for dispatch. The
 // value and required space-separated flag form come from the 2026-05-22 local
@@ -71,7 +80,7 @@ func runClaude(target targetMeta, project *config.ProjectConfig, env []string, p
 	cmd := factory(target.Binary, args...)
 	cmd.Dir = project.Root
 	cmd.Env = env
-	cmd.Stdin = strings.NewReader(string(prompt))
+	cmd.Stdin = bytes.NewReader(prompt)
 	return runStructuredCommand(cmd, AgentClaude, opts.Stdout, opts.Stderr, decodeClaudeStream)
 }
 
@@ -88,11 +97,17 @@ func runCodex(target targetMeta, project *config.ProjectConfig, env []string, pr
 	cmd := factory(target.Binary, args...)
 	cmd.Dir = project.Root
 	cmd.Env = env
-	cmd.Stdin = strings.NewReader(string(prompt))
+	cmd.Stdin = bytes.NewReader(prompt)
 	return runStructuredCommand(cmd, AgentCodex, opts.Stdout, opts.Stderr, decodeCodexStream)
 }
 
 func runAntigravity(target targetMeta, project *config.ProjectConfig, env []string, prompt []byte, opts RunOptions, factory CommandFactory) error {
+	// Antigravity has no stdin/file path for the prompt today, so the prompt
+	// becomes a single argv element. Reject oversize prompts here so callers
+	// get a clear error instead of an opaque execve `argument list too long`.
+	if len(prompt) > AntigravityPromptMaxBytes {
+		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchAntigravityPromptTooLargeFmt, len(prompt), AntigravityPromptMaxBytes))
+	}
 	geminiDir := filepath.Join(project.Root, ".agy")
 	args := []string{"--gemini_dir=" + geminiDir}
 	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
@@ -204,6 +219,16 @@ func runStructuredCommand(cmd *exec.Cmd, target string, stdout io.Writer, stderr
 	// exit, so EOF on the pipes is guaranteed and these reads will return
 	// without help from Wait. Drain both readers first, then reap the child.
 	decodeErr := <-decodeDone
+	if decodeErr != nil {
+		// The decoder returned early (e.g. malformed JSON or a downstream
+		// write error) and is no longer reading outPipe. A child that
+		// keeps producing stdout would block on a full pipe and prevent
+		// cmd.Wait from ever returning. Drain the rest of stdout into the
+		// void so the child can finish and the wait can complete; if the
+		// child hangs producing more output forever, the user's SIGINT
+		// still flows through installSignalForwarder above.
+		_, _ = io.Copy(io.Discard, outPipe)
+	}
 	<-copyDone
 	waitErr := cmd.Wait()
 	if sig := caughtSig(); sig != nil {

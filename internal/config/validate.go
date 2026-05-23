@@ -67,14 +67,6 @@ var validWarningNoiseModes = map[string]struct{}{
 	"quiet":   {},
 }
 
-var validDispatchDefaultAgents = map[string]struct{}{
-	"":            {},
-	"random":      {},
-	"codex":       {},
-	"claude":      {},
-	"antigravity": {},
-}
-
 // Validate ensures the config is complete and consistent.
 func (c *Config) Validate(path string) error {
 	if !isValidApprovalMode(c.Approvals.Mode) {
@@ -186,10 +178,19 @@ func (c *Config) Validate(path string) error {
 
 func validateDispatchDefault(path string, key string, value string) error {
 	normalized := strings.TrimSpace(value)
-	if _, ok := validDispatchDefaultAgents[normalized]; !ok {
-		return fmt.Errorf(messages.ConfigDispatchDefaultAgentInvalidFmt, path, key, value)
+	// Empty/unset is allowed — the registry falls back to "random".
+	if normalized == "" {
+		return nil
 	}
-	return nil
+	// Source of truth: the field catalog in fields.go. Looking it up here
+	// avoids drift between the wizard's allowed options and the runtime
+	// validator, which used to be a duplicate map.
+	for _, opt := range dispatchDefaultAgentOptions() {
+		if normalized == opt.Value {
+			return nil
+		}
+	}
+	return fmt.Errorf(messages.ConfigDispatchDefaultAgentInvalidFmt, path, key, value)
 }
 
 // validateWarnings validates optional warning thresholds.

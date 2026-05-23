@@ -107,9 +107,14 @@ func TestValidateSkillProjectionRejectsSymlink(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(projection), 0o700); err != nil {
 		t.Fatalf("mkdir projection dir: %v", err)
 	}
-	// Point the projection at /etc/hostname (something that exists on every
-	// POSIX system). Lstat must see the symlink mode and refuse.
-	if err := os.Symlink("/etc/hostname", projection); err != nil {
+	// Point the projection at a real regular file we own so the test is
+	// portable (no reliance on system files like /etc/hostname). Lstat
+	// must still see the symlink mode and refuse to follow it.
+	targetFile := filepath.Join(root, "symlink-target.txt")
+	if err := os.WriteFile(targetFile, []byte("ok"), 0o600); err != nil {
+		t.Fatalf("write symlink target: %v", err)
+	}
+	if err := os.Symlink(targetFile, projection); err != nil {
 		t.Fatalf("create symlink: %v", err)
 	}
 	err := validateSkillProjection(root, target, skill)
