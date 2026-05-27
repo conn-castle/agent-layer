@@ -505,7 +505,11 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 		}
 	}
 
-	catalogChars := skillCatalogMetadataChars(skills)
+	catalogChars := 0
+	for _, skill := range skills {
+		catalogChars += utf8.RuneCountInString(strings.TrimSpace(skill.Name))
+		catalogChars += utf8.RuneCountInString(strings.TrimSpace(skill.Description))
+	}
 	if catalogChars > maxSkillCatalogMetadataChars {
 		results = append(results, Result{
 			Status:         StatusWarn,
@@ -523,15 +527,6 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 		CheckName: messages.DoctorCheckNameSkills,
 		Message:   fmt.Sprintf(messages.DoctorSkillsValidatedFmt, len(skills)),
 	}}
-}
-
-func skillCatalogMetadataChars(skills []config.Skill) int {
-	total := 0
-	for _, skill := range skills {
-		total += utf8.RuneCountInString(strings.TrimSpace(skill.Name))
-		total += utf8.RuneCountInString(strings.TrimSpace(skill.Description))
-	}
-	return total
 }
 
 func relPathForDoctor(root string, path string) string {

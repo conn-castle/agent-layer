@@ -388,7 +388,7 @@ env = { MY_TOKEN = "${AL_MY_TOKEN}" }
 version_update_on_sync = true
 # Warning output noise control: "default" keeps all warnings, "reduce" hides suppressible non-critical warnings,
 # "quiet" suppresses agent-layer informational output (warnings, update checks, dispatch banners). Configured
-# quiet does not hide `al doctor` output; pass `--quiet` to a doctor run to suppress warning-only notifications.
+# quiet does not hide `al doctor` output; use `al --quiet doctor` to suppress warning-only doctor output.
 noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15

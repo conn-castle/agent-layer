@@ -147,7 +147,7 @@ func newDoctorCmd() *cobra.Command {
 				warningList = warnings.ApplyNoiseControl(warningList, noiseMode)
 			}
 
-			if len(warningList) > 0 {
+			if len(warningList) > 0 && !quiet {
 				for _, w := range warningList {
 					_, _ = fmt.Fprintln(out, w.String())
 					_, _ = fmt.Fprintln(out) // Spacer
