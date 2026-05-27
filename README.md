@@ -107,6 +107,14 @@ Notes:
 
 ---
 
+## Best practice guides
+
+- [Skill Design](https://agent-layer.dev/skill-design) (canonical source: `docs/SKILL-DESIGN.md`)
+- [CLI Skill Design](https://agent-layer.dev/cli-skill-design) (canonical source: `docs/CLI-SKILL-DESIGN.md`)
+- [Instruction Design](https://agent-layer.dev/instruction-design) (canonical source: `docs/INSTRUCTION-DESIGN.md`)
+
+---
+
 ## MCP server requirements (external tools)
 
 Some MCP servers require a specific runtime or launcher to be installed locally. Agent Layer does not install these dependencies; it only runs the command you configure.

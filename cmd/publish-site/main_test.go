@@ -507,6 +507,151 @@ func TestCopyTree(t *testing.T) {
 	}
 }
 
+func TestGenerateGuidePage_UsesFullCanonicalBodyAndHeader(t *testing.T) {
+	repo := t.TempDir()
+	sourceRel := filepath.Join("docs", "GUIDE.md")
+	headerRel := filepath.Join("site", "best-practices", "guide.header.mdx")
+	pagesDir := filepath.Join(repo, "out")
+	if err := os.MkdirAll(pagesDir, 0o700); err != nil {
+		t.Fatalf("mkdir generated pages dir: %v", err)
+	}
+
+	writeFile(t, filepath.Join(repo, sourceRel), `# Canonical Guide Title
+
+This canonical preface is part of the public guide.
+
+## First Section
+
+Body text.
+
+`+"```markdown"+`
+## Not a Real Heading
+`+"```"+`
+
+## Use Live `+"`--help`"+` as the Command Reference
+
+| Metric | Value |
+| --- | --- |
+| Budget | <5,000 tokens |
+| Placeholder | `+"`<cli>`"+` |
+
+More text.
+`)
+	writeFile(t, filepath.Join(repo, headerRel), `---
+title: Public Guide
+description: Public description.
+keywords:
+  - agent skills
+image: /img/branding/logo.svg
+---
+
+# Public Guide
+
+Public intro.
+`)
+
+	spec := guidePageSpec{
+		sourceRelPath: sourceRel,
+		headerRelPath: headerRel,
+		outputName:    "guide.mdx",
+	}
+	if err := generateGuidePage(repo, pagesDir, spec); err != nil {
+		t.Fatalf("generateGuidePage: %v", err)
+	}
+
+	out, err := os.ReadFile(filepath.Join(pagesDir, "guide.mdx")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read generated page: %v", err)
+	}
+	got := string(out)
+	for _, want := range []string{
+		"---\ntitle: Public Guide",
+		"# Public Guide",
+		"This canonical preface is part of the public guide.",
+		"## In This Guide",
+		"- [First Section](#first-section)",
+		"- [Use Live `--help` as the Command Reference](#use-live---help-as-the-command-reference)",
+		"| Budget | &lt;5,000 tokens |",
+		"| Placeholder | `<cli>` |",
+		"```markdown\n## Not a Real Heading\n```",
+		"Generated from the canonical source: [docs/GUIDE.md]",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected generated page to contain %q:\n%s", want, got)
+		}
+	}
+	introIndex := strings.Index(got, "This canonical preface is part of the public guide.")
+	tocIndex := strings.Index(got, "## In This Guide")
+	firstSectionIndex := strings.Index(got, "## First Section")
+	if introIndex < 0 || tocIndex < 0 || firstSectionIndex < 0 || introIndex > tocIndex || tocIndex > firstSectionIndex {
+		t.Fatalf("expected canonical intro, guide table of contents, then first section:\n%s", got)
+	}
+	for _, unwanted := range []string{
+		"# Canonical Guide Title",
+		"- [Not a Real Heading]",
+	} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("generated page contains unwanted content %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+func TestGenerateGuidePage_NoLevelTwoHeadingsFails(t *testing.T) {
+	repo := t.TempDir()
+	sourceRel := filepath.Join("docs", "GUIDE.md")
+	headerRel := filepath.Join("site", "best-practices", "guide.header.mdx")
+
+	writeFile(t, filepath.Join(repo, sourceRel), "# Guide\n\nIntro only.\n")
+	writeFile(t, filepath.Join(repo, headerRel), "# Public Guide\n")
+
+	err := generateGuidePage(repo, filepath.Join(repo, "out"), guidePageSpec{
+		sourceRelPath: sourceRel,
+		headerRelPath: headerRel,
+		outputName:    "guide.mdx",
+	})
+	if err == nil || !strings.Contains(err.Error(), "no level-2 headings found in guide body") {
+		t.Fatalf("expected missing level-2 heading error, got %v", err)
+	}
+}
+
+func TestPublishPages_StagesPagesAndGeneratesGuides(t *testing.T) {
+	repoA := t.TempDir()
+	repoB := setupRepoB(t)
+	sitePages := filepath.Join(repoA, "site", "pages")
+	if err := os.MkdirAll(sitePages, 0o700); err != nil {
+		t.Fatalf("mkdir site pages: %v", err)
+	}
+	writeFile(t, filepath.Join(sitePages, "index.mdx"), "# Home\n")
+	writeFile(t, filepath.Join(sitePages, "skill-design.mdx"), "stale manual copy\n")
+
+	writeTestGuideInputs(t, repoA)
+
+	err := publishPages(repoA, repoB)
+	if err != nil {
+		t.Fatalf("publishPages: %v", err)
+	}
+
+	indexOut, err := os.ReadFile(filepath.Join(repoB, "src", "pages", "index.mdx")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read copied index: %v", err)
+	}
+	if string(indexOut) != "# Home\n" {
+		t.Fatalf("unexpected copied index: %q", string(indexOut))
+	}
+
+	guideOut, err := os.ReadFile(filepath.Join(repoB, "src", "pages", "skill-design.mdx")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read generated guide: %v", err)
+	}
+	got := string(guideOut)
+	if !strings.Contains(got, "## Test Guide") {
+		t.Fatalf("expected generated body, got:\n%s", got)
+	}
+	if strings.Contains(got, "stale manual copy") {
+		t.Fatalf("expected generated page to replace stale manual copy:\n%s", got)
+	}
+}
+
 func TestValidateRepoBRootErrors(t *testing.T) {
 	if err := validateRepoBRoot(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("expected error for missing repo")
@@ -1253,6 +1398,7 @@ func TestRun(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(siteDocs, "reference.mdx"), []byte("reference"), 0o600); err != nil {
 		t.Fatalf("write doc: %v", err)
 	}
+	writeTestGuideInputs(t, repoA)
 
 	if err := os.MkdirAll(filepath.Join(repoB, ".git"), 0o700); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
@@ -1407,6 +1553,9 @@ func setupRepoA(t *testing.T, opts repoAOptions) string {
 			t.Fatalf("write doc: %v", err)
 		}
 	}
+	if opts.withPages && opts.withDocs {
+		writeTestGuideInputs(t, repo)
+	}
 	if opts.withChangelog || opts.withChangelogDir {
 		changelog := filepath.Join(repo, "CHANGELOG.md")
 		if opts.withChangelogDir {
@@ -1420,6 +1569,14 @@ func setupRepoA(t *testing.T, opts repoAOptions) string {
 		}
 	}
 	return repo
+}
+
+func writeTestGuideInputs(t *testing.T, repo string) {
+	t.Helper()
+	for _, spec := range defaultGuidePageSpecs {
+		writeFile(t, filepath.Join(repo, spec.sourceRelPath), "# Source Guide\n\nCanonical intro.\n\n## Test Guide\n\nGenerated body.\n")
+		writeFile(t, filepath.Join(repo, spec.headerRelPath), "# Test Guide\n\nPublic intro.\n")
+	}
 }
 
 func setupRepoB(t *testing.T) string {
@@ -1437,6 +1594,16 @@ func setupRepoB(t *testing.T) string {
 		t.Fatalf("mkdir src/pages: %v", err)
 	}
 	return repo
+}
+
+func writeFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 func requireMkdir(t *testing.T, path string) {

@@ -37,7 +37,7 @@ The canonical inputs live in `.agent-layer/`:
 
 - `config.toml` for structured configuration
 - `instructions/` for agent rules and guidance
-- `skills/` for repeatable workflows
+- `skills/` for repeatable workflows (see [Skill Design](/skill-design))
 - `commands.allow` for approved shell command prefixes
 - `.env` for secrets
 
@@ -228,7 +228,7 @@ They are disabled by default because some require sign-ups and secrets, and beca
 - `fetch` - fetch a URL and return its contents; requires `uvx` (from `uv`). Useful alongside search when you want the agent to read the primary source.
 - `playwright` - browser automation (logins, complex pages, UI flows); requires `npx` and downloads browser dependencies. High leverage for web-focused repos, unnecessary overhead for many others.
 
-GitHub can still be configured as an optional custom HTTP MCP server when your workflow needs PR/issue/actions tooling.
+GitHub can still be configured as an optional custom HTTP MCP server when your workflow needs PR/issue/actions tooling. If you are deciding between an MCP wrapper and an installed command-line tool, use [CLI Skill Design](/cli-skill-design) to choose the smaller, lower-drift interface.
 
 ### Where servers are defined
 
@@ -299,7 +299,7 @@ For the full checklist, see [Doctor](./reference#doctor).
 
 ### Skill sync
 
-Skills are synced natively to Agent Skills directories with full subdirectory support (`scripts/`, `references/`, `assets/`). Shared-skill clients use `.agents/skills/`; Claude uses `.claude/skills/`. No MCP server is involved.
+Skills are synced natively to Agent Skills directories with full subdirectory support (`scripts/`, `references/`, `assets/`). Shared-skill clients use `.agents/skills/`; Claude uses `.claude/skills/`. No MCP server is involved. For authoring guidance, use [Skill Design](/skill-design) and [CLI Skill Design](/cli-skill-design).
 
 ### Common pitfalls
 

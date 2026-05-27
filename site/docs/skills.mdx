@@ -41,7 +41,7 @@ You do not pay the context cost of every skill on every request.
 
 ### Skill structure
 
-The recommended section order is informed by research on how language models process instructions (primacy and recency effects). Critical rules go early; guardrails go at the end. For the full research basis, see [Skill Design Guide](/skill-design).
+The recommended section order is informed by research on how language models process instructions (primacy and recency effects). Critical rules go early; guardrails go at the end. For the full research basis, see [Skill Design Guide](/skill-design). For skills that route agents to installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design).
 
 1. **Opening contract** — one sentence stating what the skill does
 2. **Defaults** — what happens with no inputs
@@ -192,7 +192,7 @@ Follow the [skill structure](#skill-structure) outlined above. Keep the body foc
 
 Run `al sync` to project the new skill into all enabled clients.
 
-For the complete research-backed authoring guide — including empirical studies on instruction-following, context length effects, and constraint composition — see [Skill Design Guide](/skill-design).
+For the complete research-backed authoring guide — including empirical studies on instruction-following, context length effects, and constraint composition — see [Skill Design Guide](/skill-design). For command-line tool workflows, use [CLI Skill Design Guide](/cli-skill-design) so live `--help` stays the source of truth for syntax.
 
 ## Design philosophy
 

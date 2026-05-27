@@ -163,6 +163,8 @@ Optional fields:
 - `headers` for HTTP auth and metadata
 - `command`, `args`, `env` for stdio servers
 
+When a local command already has a useful help surface, compare MCP against a CLI skill before adding a server. The [CLI Skill Design Guide](/cli-skill-design) explains when MCP is the right interface and when live `--help` is the better source of truth.
+
 #### Secrets, placeholders, and client projection
 
 Agent Layer is designed to keep secrets out of your canonical config and out of any files you might commit:
@@ -543,7 +545,7 @@ Think of sync as a build step. You can run it any time you want to refresh gener
 
 **Skill format**
 
-Skill sources align with the [agentskills.io specification](https://agentskills.io/specification), with explicit backward-compatibility behavior documented below.
+Skill sources align with the [agentskills.io specification](https://agentskills.io/specification), with explicit backward-compatibility behavior documented below. For authoring guidance, use the [Skill Design Guide](/skill-design); for installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design).
 
 `.agent-layer/skills/` uses directory format:
 

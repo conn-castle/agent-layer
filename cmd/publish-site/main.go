@@ -3,8 +3,9 @@
 // This tool is run from Repo A (conn-castle/agent-layer) during the release
 // workflow on tag pushes `v*` (starting at the first website-capable release).
 //
-// It copies content from Repo A `site/` into Repo B, snapshots the docs version
-// via Docusaurus versioning, and normalizes `versions.json` ordering.
+// It copies content from Repo A `site/` into Repo B, generates public guide
+// pages from canonical Repo A docs, snapshots the docs version via Docusaurus
+// versioning, and normalizes `versions.json` ordering.
 package main
 
 import (
@@ -20,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 func main() {
@@ -83,12 +85,7 @@ func run() error {
 	}
 
 	// Publish unversioned pages by replacing Repo B src/pages.
-	dstPages := filepath.Join(repoB, "src", "pages")
-	if err := os.MkdirAll(filepath.Join(repoB, "src"), 0o755); err != nil { // #nosec G301 -- publish tool runs in the developer's own checkout; the src/ tree it mirrors must be world-readable so the static site build (Next.js) can read it.
-		return fmt.Errorf("failed to create src dir: %w", err)
-	}
-	fmt.Printf("Copying %s -> %s\n", sitePages, dstPages)
-	if err := copyTree(sitePages, dstPages); err != nil {
+	if err := publishPages(repoA, repoB); err != nil {
 		return fmt.Errorf("failed to copy pages: %w", err)
 	}
 
@@ -180,6 +177,32 @@ const (
 	retainRecentMinorLines   = 4
 )
 
+// guidePageSpec maps a canonical Markdown guide and public header snippet to a
+// generated Docusaurus page filename.
+type guidePageSpec struct {
+	sourceRelPath string
+	headerRelPath string
+	outputName    string
+}
+
+var defaultGuidePageSpecs = []guidePageSpec{
+	{
+		sourceRelPath: filepath.Join("docs", "SKILL-DESIGN.md"),
+		headerRelPath: filepath.Join("site", "best-practices", "skill-design.header.mdx"),
+		outputName:    "skill-design.mdx",
+	},
+	{
+		sourceRelPath: filepath.Join("docs", "CLI-SKILL-DESIGN.md"),
+		headerRelPath: filepath.Join("site", "best-practices", "cli-skill-design.header.mdx"),
+		outputName:    "cli-skill-design.mdx",
+	},
+	{
+		sourceRelPath: filepath.Join("docs", "INSTRUCTION-DESIGN.md"),
+		headerRelPath: filepath.Join("site", "best-practices", "instruction-design.header.mdx"),
+		outputName:    "instruction-design.mdx",
+	},
+}
+
 func validateTagFormat(tag string) error {
 	if !tagRegexp.MatchString(tag) {
 		return fmt.Errorf("invalid tag format: %s (expected vX.Y.Z)", tag)
@@ -229,6 +252,268 @@ func validateRepoBRoot(repoB string) error {
 	}
 
 	return nil
+}
+
+// publishPages stages unversioned pages, overlays generated guide pages, and
+// replaces Repo B's src/pages tree with the staged output.
+func publishPages(repoA, repoB string) error {
+	sitePages := filepath.Join(repoA, "site", "pages")
+	stagedPages, err := os.MkdirTemp("", "agent-layer-site-pages-*")
+	if err != nil {
+		return fmt.Errorf("failed to create page staging dir: %w", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(stagedPages)
+	}()
+
+	if err := copyTree(sitePages, stagedPages); err != nil {
+		return fmt.Errorf("failed to stage pages: %w", err)
+	}
+	for _, spec := range defaultGuidePageSpecs {
+		if err := generateGuidePage(repoA, stagedPages, spec); err != nil {
+			return fmt.Errorf("failed to generate guide pages: %w", err)
+		}
+	}
+
+	dstPages := filepath.Join(repoB, "src", "pages")
+	if err := os.MkdirAll(filepath.Join(repoB, "src"), 0o755); err != nil { // #nosec G301 -- publish tool runs in the developer's own checkout; the src/ tree it mirrors must be world-readable for Docusaurus builds.
+		return fmt.Errorf("failed to create src dir: %w", err)
+	}
+	fmt.Printf("Copying staged pages %s -> %s\n", stagedPages, dstPages)
+	if err := copyTree(stagedPages, dstPages); err != nil {
+		return fmt.Errorf("failed to copy staged pages: %w", err)
+	}
+	return nil
+}
+
+// generateGuidePage combines a public header snippet with extracted canonical
+// guide content and writes a Docusaurus page.
+func generateGuidePage(repoRoot, pagesDir string, spec guidePageSpec) error {
+	headerPath := filepath.Join(repoRoot, spec.headerRelPath)
+	headerData, err := osReadFileFunc(headerPath)
+	if err != nil {
+		return fmt.Errorf("read guide header %s: %w", spec.headerRelPath, err)
+	}
+
+	body, err := extractGuideBody(repoRoot, spec.sourceRelPath)
+	if err != nil {
+		return err
+	}
+
+	toc, err := buildGuideTableOfContents(body)
+	if err != nil {
+		return fmt.Errorf("%s: %w", spec.sourceRelPath, err)
+	}
+	intro, sections := splitGuideIntroAndSections(body)
+
+	sourceRelPath := filepath.ToSlash(spec.sourceRelPath)
+	sourceNote := fmt.Sprintf(
+		"---\n\n_Generated from the canonical source: [%s](https://github.com/conn-castle/agent-layer/blob/main/%s)._\n",
+		sourceRelPath,
+		sourceRelPath,
+	)
+	pageParts := []string{strings.TrimRight(string(headerData), "\r\n")}
+	if intro != "" {
+		pageParts = append(pageParts, intro)
+	}
+	pageParts = append(pageParts, toc, strings.TrimRight(sections, "\r\n"), sourceNote)
+	page := strings.Join(pageParts, "\n\n")
+
+	outputPath := filepath.Join(pagesDir, spec.outputName)
+	if err := osWriteFileFunc(outputPath, []byte(page), 0o644); err != nil { // #nosec G306 -- generated website source pages must be readable by Docusaurus/static-site tooling.
+		return fmt.Errorf("write generated guide page %s: %w", spec.outputName, err)
+	}
+	return nil
+}
+
+// extractGuideBody returns the canonical guide content with a leading top-level
+// heading removed when present.
+func extractGuideBody(repoRoot, sourceRelPath string) (string, error) {
+	sourcePath := filepath.Join(repoRoot, sourceRelPath)
+	data, err := osReadFileFunc(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("read guide source %s: %w", sourceRelPath, err)
+	}
+
+	source := strings.ReplaceAll(string(data), "\r\n", "\n")
+	body := source
+	body = stripLeadingTopLevelHeading(body)
+	body = strings.TrimLeft(body, "\n")
+	body = escapeMDXText(body)
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("guide source %s has no content", sourceRelPath)
+	}
+	return body, nil
+}
+
+// stripLeadingTopLevelHeading removes one leading H1 so generated pages keep the
+// public header snippet as their only visible H1.
+func stripLeadingTopLevelHeading(body string) string {
+	lines := strings.Split(body, "\n")
+	lineIndex := 0
+	for lineIndex < len(lines) && strings.TrimSpace(lines[lineIndex]) == "" {
+		lineIndex++
+	}
+	if lineIndex >= len(lines) || !strings.HasPrefix(strings.TrimSpace(lines[lineIndex]), "# ") {
+		return body
+	}
+
+	lines = append(lines[:lineIndex], lines[lineIndex+1:]...)
+	if lineIndex < len(lines) && strings.TrimSpace(lines[lineIndex]) == "" {
+		lines = append(lines[:lineIndex], lines[lineIndex+1:]...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func splitGuideIntroAndSections(body string) (string, string) {
+	lines := strings.Split(body, "\n")
+	inFence := false
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || !strings.HasPrefix(trimmed, "## ") {
+			continue
+		}
+
+		intro := strings.TrimRight(strings.Join(lines[:i], "\n"), "\r\n")
+		sections := strings.TrimLeft(strings.Join(lines[i:], "\n"), "\n")
+		return intro, sections
+	}
+
+	return strings.TrimRight(body, "\r\n"), ""
+}
+
+// escapeMDXText keeps canonical Markdown readable while preventing generated
+// MDX from treating plain-text angle brackets as JSX tags.
+func escapeMDXText(body string) string {
+	lines := strings.Split(body, "\n")
+	inFence := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		lines[i] = escapeMDXTextLine(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func escapeMDXTextLine(line string) string {
+	if !strings.Contains(line, "<") {
+		return line
+	}
+
+	var builder strings.Builder
+	inCodeSpan := false
+	for _, r := range line {
+		if r == '`' {
+			inCodeSpan = !inCodeSpan
+			builder.WriteRune(r)
+			continue
+		}
+		if r == '<' && !inCodeSpan {
+			builder.WriteString("&lt;")
+			continue
+		}
+		builder.WriteRune(r)
+	}
+	return builder.String()
+}
+
+// guideHeading stores the display text and anchor slug for a guide section.
+type guideHeading struct {
+	text string
+	slug string
+}
+
+// buildGuideTableOfContents creates the generated "In This Guide" list from
+// real level-2 headings in the extracted body.
+func buildGuideTableOfContents(body string) (string, error) {
+	headings := collectLevelTwoHeadings(body)
+	if len(headings) == 0 {
+		return "", fmt.Errorf("no level-2 headings found in guide body")
+	}
+
+	var builder strings.Builder
+	builder.WriteString("## In This Guide\n\n")
+	for _, heading := range headings {
+		builder.WriteString("- [")
+		builder.WriteString(heading.text)
+		builder.WriteString("](#")
+		builder.WriteString(heading.slug)
+		builder.WriteString(")\n")
+	}
+	return strings.TrimRight(builder.String(), "\n"), nil
+}
+
+// collectLevelTwoHeadings finds Markdown H2 headings while ignoring fenced code
+// blocks that may contain example headings.
+func collectLevelTwoHeadings(body string) []guideHeading {
+	var headings []guideHeading
+	inFence := false
+
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+
+		if !strings.HasPrefix(trimmed, "## ") {
+			continue
+		}
+		text := strings.TrimSpace(strings.TrimPrefix(trimmed, "## "))
+		text = strings.TrimSpace(strings.TrimRight(text, "#"))
+		if text == "" {
+			continue
+		}
+		slug := slugifyHeading(text)
+		if slug == "" {
+			continue
+		}
+		headings = append(headings, guideHeading{text: text, slug: slug})
+	}
+
+	return headings
+}
+
+// slugifyHeading creates lowercase hyphenated anchors for the heading shapes
+// used by the canonical guides.
+func slugifyHeading(text string) string {
+	text = strings.ReplaceAll(text, "`", "")
+	lower := strings.ToLower(text)
+
+	var builder strings.Builder
+	lastWasSeparator := false
+	for _, r := range lower {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			builder.WriteRune(r)
+			lastWasSeparator = false
+			continue
+		}
+		if r == '-' {
+			builder.WriteByte('-')
+			lastWasSeparator = true
+			continue
+		}
+		if builder.Len() == 0 || lastWasSeparator {
+			continue
+		}
+		builder.WriteByte('-')
+		lastWasSeparator = true
+	}
+	return strings.Trim(builder.String(), "-")
 }
 
 func copyTree(src, dst string) error {
