@@ -121,7 +121,7 @@ Authoring guidance:
 | Weak | Why it fails | Stronger |
 | --- | --- | --- |
 | `Helps with documents` | No domain, no trigger, no negative | `Create, edit, and analyze .docx files. Use for tracked changes, comments, formatting, or text extraction. Do not use for PDFs or plain text.` |
-| `API helper` | Fires on anything API-shaped | `Use when writing code that calls the Gemini API. Covers authentication, request construction, and streaming responses.` |
+| `API helper` | Fires on anything API-shaped | `Use when writing code that calls an external model API. Covers authentication, request construction, and streaming responses.` |
 | `Fix code quality` | Overlaps with every quality skill | `Assess code complexity, remove dead code, simplify complex functions. Scoped to uncommitted changes when they exist, otherwise full codebase. Use audit-tests for test suite health; use boost-coverage to add missing tests.` |
 | `Review things` | Router cannot disambiguate review-scope vs review-plan | `Review explicit files, directories, diffs, or uncommitted changes and produce a findings report. Use review-plan instead when the target is a plan/task/context artifact set.` |
 
@@ -646,7 +646,7 @@ Before considering a skill done, verify that:
 | Critical rule buried late in the file | Later instructions are easier to drop | Primacy effect peaks at 150-200 instructions [ref 12]; middle-position drop of ~20pp [ref 11] | Move invariant rules near the top |
 | Laundry list of edge cases in `SKILL.md` | Bloats context and dilutes core instructions | Reasoning degrades "at much shorter input lengths than technical maximum" [ref 10] | Keep only canonical cases in the main file |
 | Interactive script | Hangs or fails in autonomous runs | Scripts must avoid interactive prompts [ref 2] | Make scripts fully flag-driven with `--help` |
-| Core behavior hidden in companion files | Breaks on clients that only load `SKILL.md` | Agent-layer serves only `SKILL.md` body | Keep the main workflow understandable in `SKILL.md` |
+| Core behavior hidden in companion files | Breaks portability for clients that only load `SKILL.md` | Some clients may only load `SKILL.md`; portability improves when core flow is self-contained | Keep the main workflow understandable in `SKILL.md` |
 | Shared base-skill wrapper hierarchy | Creates fragile abstractions and drift | Rule of Three [ref 14, 15]; prefer duplication until N=3 | Accept structural duplication until reuse is clearly real |
 | Untestable definition of done | Hard to evaluate or regress | Eval-driven improvement requires automatable checks [ref 7] | Add explicit artifacts, commands, or rubric outputs |
 | Blanket permission expansion in the skill body | Conflicts with least-privilege policy | Skills are privileged instructions [ref 3]; context is trusted by default [ref 9] | Ask for approval at named high-impact steps |
