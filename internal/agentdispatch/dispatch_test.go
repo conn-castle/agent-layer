@@ -109,7 +109,7 @@ func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
 	if stdout.String() != "codex ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "`al dispatch` target: codex (random selection)") {
+	if !strings.Contains(stderr.String(), "Dispatch target: codex (random selection)") {
 		t.Fatalf("expected random target notice, got %q", stderr.String())
 	}
 	assertFileContains(t, logPath, clients.EnvDispatchActive+"=1")
