@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/agentdispatch"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
@@ -46,10 +47,42 @@ func TestDispatchCommandMapsExitError(t *testing.T) {
 		if stdout.String() != "" {
 			t.Fatalf("expected empty stdout, got %q", stdout.String())
 		}
-		if !strings.Contains(stderr.String(), "dispatch requires prompt text") {
+		if !strings.Contains(stderr.String(), "`al dispatch` requires prompt text") {
 			t.Fatalf("unexpected stderr: %q", stderr.String())
 		}
 	})
+}
+
+// TestDispatchHelpWiresLongMessage guards the wiring contract: cobra's --help
+// output must include the DispatchLong constant. The full prose of the long
+// message lives in messages.DispatchLong and is not asserted here per
+// docs/agent-layer/CONTEXT.md "Test policy".
+func TestDispatchHelpWiresLongMessage(t *testing.T) {
+	cmd := newDispatchCmd()
+	cmd.SetArgs([]string{"--help"})
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("help error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), messages.DispatchLong) {
+		t.Fatalf("expected DispatchLong to appear in --help output")
+	}
+}
+
+// TestDispatchOptionsHelpWiresLongMessage guards the same wiring contract for
+// the `al dispatch options` subcommand.
+func TestDispatchOptionsHelpWiresLongMessage(t *testing.T) {
+	cmd := newDispatchCmd()
+	cmd.SetArgs([]string{"options", "--help"})
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("help error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), messages.DispatchOptionsLong) {
+		t.Fatalf("expected DispatchOptionsLong to appear in options --help output")
+	}
 }
 
 func TestDispatchOptionsJSONInvalidConfigNoStdout(t *testing.T) {

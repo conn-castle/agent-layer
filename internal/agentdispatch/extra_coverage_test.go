@@ -332,7 +332,7 @@ func TestWaitWithSignalForwardsSIGTERM(t *testing.T) {
 func TestResolveTargetRejectsBogusAgent(t *testing.T) {
 	_, err := resolveTarget(config.Config{}, RunOptions{Agent: "not-an-agent"}, "", false)
 	exitErr := requireDispatchExitCode(t, err, ExitUsage)
-	if !strings.Contains(exitErr.Error(), "unknown dispatch target") {
+	if !strings.Contains(exitErr.Error(), "unknown `al dispatch` target") {
 		t.Fatalf("expected unknown-target message, got %q", exitErr.Error())
 	}
 }
@@ -636,7 +636,7 @@ func TestRunSurfacesSyncFailure(t *testing.T) {
 		LookPath:   mockLookPath(binDir),
 	})
 	exitErr := requireDispatchExitCode(t, err, ExitConfig)
-	if !strings.Contains(exitErr.Error(), "dispatch sync failed") {
+	if !strings.Contains(exitErr.Error(), "`al dispatch` sync failed") {
 		t.Fatalf("expected sync-failed message, got %q", exitErr.Error())
 	}
 }
@@ -681,7 +681,7 @@ func TestRunSurfacesSkillProjectionMismatch(t *testing.T) {
 // TestRunSurfacesRunCreateFailure covers dispatch.go:94 — when
 // run.Create fails (because .agent-layer/tmp/runs is a regular file, not
 // a directory), dispatch must surface ExitTargetFailure with the
-// documented "dispatch run setup failed" message.
+// documented "`al dispatch` run setup failed" message.
 func TestRunSurfacesRunCreateFailure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("blocking-file collision behavior differs on Windows")
@@ -706,7 +706,7 @@ func TestRunSurfacesRunCreateFailure(t *testing.T) {
 		LookPath:   mockLookPath(binDir),
 	})
 	exitErr := requireDispatchExitCode(t, err, ExitTargetFailure)
-	if !strings.Contains(exitErr.Error(), "dispatch run setup failed") {
+	if !strings.Contains(exitErr.Error(), "`al dispatch` run setup failed") {
 		t.Fatalf("expected run-setup-failed message, got %q", exitErr.Error())
 	}
 }

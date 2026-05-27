@@ -36,7 +36,7 @@ func TestWriteOptionsRendersTextAndJSON(t *testing.T) {
 	}
 	gotText := text.String()
 	for _, want := range []string{
-		"Agent Dispatch options",
+		"al dispatch options",
 		"caller: unknown",
 		"random pool: (none)",
 		"- codex enabled=true installed=false dispatch_capable=false",

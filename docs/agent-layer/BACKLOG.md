@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-05-26 shipped-skill-update-channel: Keep bundled skills current
+    Priority: High. Area: skills / templates
+    Description: Define a repeatable way to track, review, and refresh Tavily and other third-party or bundled skills shipped with Agent Layer.
+    Acceptance criteria: Agent Layer has an update workflow that detects upstream skill changes, preserves local policy edits, and verifies refreshed skills before release.
+    Notes: Include license/notice preservation, routing quality, and repo-specific guardrails in the refresh process.
+
 - Backlog 2026-05-22 antigravity-slash-skill-verification: Re-verify Antigravity slash skill dispatch syntax
     Priority: Medium. Area: providers / antigravity
     Description: Re-check that `agy --print "/skill-name"` still invokes projected skills when Antigravity changes its CLI or skill behavior, especially on minor version bumps.

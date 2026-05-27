@@ -8,6 +8,9 @@ which covers instruction-file authoring. The two documents share several
 foundational references (context engineering, instruction density, primacy
 effects) but apply them to different authoring surfaces.
 
+For skills that route agents to installed command line tools, use
+`docs/CLI-SKILL-DESIGN.md` as a CLI-specific supplement to this guide.
+
 Research and standards in this guide were re-verified on 2026-04-18. The guide
 intentionally separates:
 - specification or product requirements

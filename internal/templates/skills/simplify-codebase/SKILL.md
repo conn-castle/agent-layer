@@ -1,243 +1,176 @@
 ---
 name: simplify-codebase
 description: >-
-  Codebase-wide complexity reduction: remove dead code, simplify overly complex
-  functions, and split files with mixed responsibilities across explicit paths
-  or the whole repo. Use `simplify-new-code` instead when the target is the
-  current uncommitted diff.
+  Codebase-wide simplification for removing real internal complexity: dead
+  code, obsolete options, needless indirection, duplicate workflows, and
+  misplaced module boundaries across explicit paths or the whole repo. Use
+  `simplify-new-code` instead when the target is only the current uncommitted
+  diff.
 ---
 
 # simplify-codebase
 
-This is a complexity-reduction workflow, not a redesign workflow.
-Default behavior is:
-- assess complexity using measurable signals, then apply judgment
-- keep changes behavior-preserving
-- verify with repo-defined checks before stopping
+Simplify by removing concepts, not polishing syntax. A successful run leaves
+fewer moving parts for future readers while preserving user-facing behavior and
+external APIs.
 
-## Philosophy
+## Defaults and inputs
 
-Complexity metrics (cyclomatic complexity, function length, nesting depth, file
-size) are diagnostic signals, not pass/fail gates. A 1000-line file with one
-clear responsibility may be the right solution. A 30-line function with deeply
-nested conditionals may not be.
+- Default scope: repository source tree, excluding generated files, vendor
+  directories, and build artifacts.
+- Accepted inputs: explicit paths/filters, dead-code on/off, assessment-only.
+- Do not operate only on the current diff; that is `simplify-new-code`.
+- Required report: `.agent-layer/tmp/simplify-codebase.<run-id>.report.md`.
+  Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` and create it with `touch`.
 
-The question is always: **would simplification actually improve this code for a
-reader and maintainer?** Use the metrics to find candidates, then decide with
-judgment informed by:
-- the language and its idioms
-- the domain and its inherent complexity
-- whether the code mixes unrelated responsibilities
-- whether a reader can hold the logic in their head
-- whether the current structure makes bugs easy to introduce or hide
+## Useful-change bar
 
-Do not simplify code that is already clear. Do not add complexity in the name
-of reducing a metric.
+Apply edits only when a candidate satisfies both:
 
-## Scope default
+1. It removes a named concept: dead file/symbol, config key, option, parameter,
+   branch, mode, wrapper, adapter, facade, single-implementation abstraction,
+   duplicated workflow across three or more sites, or incoherent module
+   boundary.
+2. It has a material maintenance payoff: high-traffic area, recurring confusion,
+   known defect source, stale docs/test churn, smaller API surface, or several
+   related removals that form one coherent simplification.
 
-- Default scope is the full codebase (the repository source tree, excluding
-  generated files, vendor directories, and build artifacts).
-- The user can narrow scope with explicit paths, directories, or file-type
-  filters.
-- Use `simplify-new-code` instead when the target is the current uncommitted
-  diff — that skill is the diff-scoped sibling. This skill never operates on
-  the diff alone.
+Report-only when the best candidate is local cleanup, one isolated helper
+deletion, style rename, branch inversion, equivalent translation (`if` chain to
+map, switch to regex, loop to recursion, etc.), or a tiny deletion with no
+recurring burden. Do not create a small "something changed" diff.
 
-Focus effort on the worst offenders rather than exhaustively rewriting
-everything. Identify, prioritize, and fix the highest-value simplifications
-first.
+## Hard constraints
 
-## Defaults
-
-- Default file-size target for splits is a judgment call, not a fixed number.
-  Consider the language, the file's role, and whether the current size hurts
-  navigability or understanding.
-- Attempt dead-code removal first with trustworthy existing tooling; otherwise
-  decide whether a credible tool proposal or agent-led evidence is the better
-  fit.
-- Prefer no-op on speculative simplification over risky "improvements."
-
-## Inputs
-
-Accept any combination of:
-- explicit paths or directories
-- file-type filters
-- whether to attempt dead-code removal
-- a maximum number of file splits
-- whether to run in assessment-only mode (report without fixing)
-
-## Required artifact
-
-Write the report to:
-- `.agent-layer/tmp/simplify-codebase.<run-id>.report.md`
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
-
-## Multi-agent pattern
-
-Recommended roles:
-1. `Repo scout`: finds commands, target files, and verification lanes.
-2. `Complexity analyst`: measures and identifies simplification candidates.
-3. `Dead-code analyst`: identifies safe removals with evidence.
-4. `Simplifier`: performs function-level and local simplifications.
-5. `Splitter`: plans and performs safe file splits.
-6. `Verifier`: runs the fastest credible checks.
-
-## Global constraints
-
-- Never change behavior, public contracts, or intended control flow.
-- Do not install new tooling without a credible proposal and human approval.
-- Do not broaden scope with opportunistic refactors.
-- Keep file splits logical and substantial rather than exploding files into
-  fragments.
-- Do not simplify code just because a metric is high; simplify when the
-  complexity genuinely hurts readability, maintainability, or correctness risk.
+- Preserve user-facing behavior, observable output, data shape, and stable
+  external APIs.
+- Internal contracts may change when all callers, tests, docs, and references
+  are updated in the same pass.
+- Do not install tools without approval.
+- Local cleanups may accompany a larger simplification; they are never the
+  reason for the change.
 
 ## Human checkpoints
 
-- Required: ask when "dead code" evidence is ambiguous or external references
-  cannot be ruled out.
-- Required: ask when no credible verification path exists for a non-trivial change.
-- Required: ask when a simplification would change the public API surface or
-  require callers to adapt.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
-- Stay autonomous for clear simplifications and straightforward verification.
+Ask before:
 
-## Simplification workflow
+- removing dead code when reflection, registration, string dispatch, or
+  external references make liveness evidence mixed
+- a non-trivial change with no credible verification path
+- a significant refactor across many files or subsystems
+- changing an external API or documented stable contract
+- architecture, ownership, data-shape, migration, or scope alternatives with
+  real tradeoffs
+- deleting a test that may protect subtle behavior
 
-### Phase 0: Preflight (Repo scout)
+## Workflow
 
-1. Confirm baseline with `git status --porcelain` and `git diff --stat`.
-2. Read `COMMANDS.md` before selecting verification commands.
-3. Determine the actual target scope: the full codebase by default, or the
-   explicit paths/file-type filters the user supplied. Do not implicitly
-   narrow to uncommitted changes — that is `simplify-new-code`'s job.
-4. Identify the language(s) and any available complexity tooling in the project.
+### 0. Preflight
 
-### Phase 1: Assess complexity (Complexity analyst)
+- Run `git status --porcelain` and `git diff --stat`.
+- Read `COMMANDS.md` before selecting checks.
+- Identify scope, languages, public/external API surface, and available
+  dead-code or complexity tooling.
+- Check `git log -30 --format='%h %s%n%b'` for recent simplification/refactor
+  work. Avoid repeatedly revisiting the same subtree if another area offers a
+  larger concept removal.
+- Create the report file.
 
-Gather complexity signals across the target scope:
-- cyclomatic complexity per function (when tooling is available or estimable)
-- function length and nesting depth
-- file size and responsibility count
-- number of parameters, return paths, and branch density
-- any language-specific complexity indicators
+### 1. Find candidates
 
-For each signal, identify candidates that stand out relative to their peers in
-the codebase — not against an arbitrary threshold.
+Inspect enough of the scope to find the strongest simplification, not the
+easiest edit. Unless the user gave a tiny strict scope, record at least three
+candidates before choosing. If the initial area only yields local cleanups,
+expand once to adjacent owner modules before deciding report-only.
 
-**Large file review (mandatory):** Identify every file in the target scope that
-is notably large relative to its peers or the project norm. For each large
-file, make an explicit decision:
-- **keep:** the file has one clear responsibility and splitting would fragment
-  understanding — state why
-- **split:** the file mixes unrelated responsibilities or has clear structural
-  boundaries that would improve navigability — plan the split
+Lead with:
 
-Record every large-file decision in the report, including files you decide to
-keep. The goal is evidence that each large file was reviewed, not that every
-large file was split.
+- trusted dead-code tooling or reference searches for internal unreachable code
+- always-one-value options, flags, parameters, and branches
+- wrappers, adapters, facades, factories, or registries with fixed consumers
+- duplicated workflows or configuration across three or more sites
+- large files, or small files whose split/merge no longer matches
+  responsibility
 
-Produce a prioritized list of simplification candidates, ordered by the
-expected value of simplifying (how much clarity the change would add vs. the
-risk and effort involved).
+For large files, record a keep/split/merge verdict. `Keep` is valid when one
+responsibility is clear and splitting would fragment understanding.
 
-### Phase 2: Remove clearly dead code (Dead-code analyst)
+For each candidate, record:
 
-Remove only when at least one of these is true:
-- trusted dead-code tooling marks it unreachable
-- local repo search shows no live references and the symbol is clearly private
-- the code is obviously unused scaffolding in the current scope
+- current complexity and whether it is inherent or code-created
+- exact concept removed
+- intended simpler shape
+- maintenance payoff
+- risk and verification path
+- apply vs report-only verdict
 
-If evidence is mixed, escalate instead of guessing.
+If no dead code is removed, record the symbols, files, or areas inspected under
+`Dead Code Evidence`.
 
-When tooling is not available or not appropriate, use the strongest manual
-evidence available:
-- repo-wide reference search
-- private symbol boundaries
-- registration/reflection checks
-- test coverage and entrypoint reachability
-- roadmap or issue context showing the code path is obsolete
+If all candidates fail the useful-change bar, write the report and stop.
 
-### Phase 3: Simplify flagged functions and code (Simplifier)
+### 2. Apply one coherent simplification
 
-For each candidate from Phase 1, apply the simplification that best fits:
-- reduce nesting by inverting conditions or using early returns
-- extract a meaningful helper when a block has a clear single responsibility
-  that the parent function should not own
-- replace complex conditional chains with clearer structure
-- flatten obvious local indirection
-- clarify misleading names without semantic change
-- remove stale comments that no longer describe the code
-- tighten boundary validation when it is already implied by existing behavior
+Implement the largest credible candidate or one coherent candidate set. Prefer:
+
+- deleting dead internal code with evidence
+- removing obsolete parameters, options, modes, or branches and updating every
+  call site
+- collapsing single-use or single-implementation indirection
+- merging premature file splits or splitting genuinely mixed responsibilities
+- unifying duplicate logic only when every original site shrinks and semantics
+  stay visible
 
 Do not:
-- extract helpers for one-time operations just to shorten a function
-- rename things for style preference alone
-- add abstraction layers that increase the total amount of code to understand
-- break apart a function that reads clearly as a linear sequence
 
-### Phase 4: Split oversized files (Splitter)
+- extract helpers just to shorten code
+- rewrite clear linear code
+- translate one structure to equivalent weight
+- hide complexity behind a new abstraction
+- leave compatibility shims for internal callers unless an external contract
+  requires them
 
-For files marked **split** in Phase 1:
-- split by responsibility, not by arbitrary line count
-- ensure the result remains easy to navigate and understand
-- keep splits logical and substantial — two cohesive files, not ten fragments
-- update imports and references in the same pass
+### 3. Verify
 
-Do not split when:
-- the file has one clear responsibility regardless of length
-- the resulting layout would be harder to understand than the current one
-- the split would create circular dependencies or awkward coupling
+Run the fastest credible repo-defined checks. Re-assess the changed area and
+confirm the named concept disappeared rather than moved. If verification fails,
+fix the underlying issue or revert the simplification.
 
-### Phase 5: Verify and re-assess (Verifier)
+### 4. Report
 
-1. Run the fastest credible repo-defined checks.
-2. Re-assess the target scope to confirm complexity was reduced where intended.
-3. Stop and report if verification fails or no credible verification exists.
-
-## Required report structure
-
-Write `.agent-layer/tmp/simplify-codebase.<run-id>.report.md` with:
+Write the report with:
 
 1. `# Simplification Summary`
 2. `## Scope`
-3. `## Complexity Assessment`
-   - key metrics gathered
-   - candidates identified and their ranking rationale
+3. `## Candidate Assessment`
 4. `## Large File Decisions`
-   - every large file reviewed, with verdict (keep/split) and reasoning
-5. `## Dead Code Removed`
-6. `## Simplifications Applied`
-7. `## File Splits`
-8. `## Verification`
+5. `## Changes Applied`
+6. `## Dead Code Evidence`
+7. `## Verification`
+8. `## Useful-Change Verdict`
 9. `## Deferred Opportunities`
 
 ## Guardrails
 
-- Do not use simplification as cover for feature work or architecture changes.
-- Do not rewrite stable code just because it looks old or a metric is high.
-- Do not split files when the new layout is harder to understand than the old
-  one.
-- Do not delete code whose liveness depends on reflection, registration, or
-  external contracts unless the evidence is explicit.
-- Do not simplify code that is already clear just to improve a number.
-- Do not add abstraction to reduce line count.
+- Do not use simplification as cover for feature work, bug fixes, or architecture
+  expansion.
+- Do not rewrite stable code because it looks old or scores high.
+- Do not split when the new layout reads worse; do not merge when the result has
+  multiple unrelated concerns.
+- Do not undertake ambitious simplification when verification is weak; do not
+  avoid it when verification is credible.
 
 ## Definition of done
 
-- The report exists at `.agent-layer/tmp/simplify-codebase.<run-id>.report.md` with every required section (`Summary`, `Scope`, `Complexity Assessment`, `Large File Decisions`, `Dead Code Removed`, `Simplifications Applied`, `File Splits`, `Verification`, `Deferred Opportunities`).
-- Every large file in scope has an explicit `keep` or `split` verdict with reasoning in `Large File Decisions` — none silently omitted.
-- Every applied change is behavior-preserving, no public contract changed without an approved checkpoint, and the fastest credible repo-defined checks ran with observed output cited in `Verification`.
-- Any "dead" code removal either has trusted-tooling evidence or the manual evidence is recorded in the report.
+- Report exists at the required path and names the scope, candidates, and
+  useful-change verdict.
+- Applied edits remove at least one named concept and update all callers, tests,
+  docs, and references.
+- User-facing behavior and external APIs are unchanged unless approved.
+- Verification commands ran with observed results recorded in the report.
 
 ## Final handoff
 
-After writing the report:
-1. Echo the report path.
-2. Summarize: complexity candidates found, dead code removed, simplifications
-   applied, and file splits performed.
-3. Call out large-file decisions, verification commands run, and any
-   simplification opportunities deliberately deferred.
+State first: `applied` or `report-only`, and why. Then give the report path,
+concepts removed, files restructured or deleted, verification commands, and
+deferred opportunities.
