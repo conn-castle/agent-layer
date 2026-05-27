@@ -350,6 +350,74 @@ instruction_token_threshold = 1
 	}
 }
 
+func TestDoctorCommand_QuietFlagSuppressesWarningNotifications(t *testing.T) {
+	root := t.TempDir()
+	writeDoctorTestRepoWithWarnings(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "2.0.0", Outdated: true}, nil)
+
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "alpha")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	skillContent := `---
+description: test
+---
+Body.
+`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillContent), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	var out bytes.Buffer
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newRootCmd()
+		cmd.SetOut(&out)
+		cmd.SetArgs([]string{"--quiet", "doctor"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("doctor --quiet failed: %v\noutput:\n%s", err, out.String())
+		}
+	})
+
+	output := out.String()
+	if strings.Contains(output, "[WARN]") {
+		t.Fatalf("expected --quiet to suppress warning results, got:\n%s", output)
+	}
+	if strings.Contains(output, "WARNING INSTRUCTIONS_TOO_LARGE") {
+		t.Fatalf("expected --quiet to suppress warning-system output, got:\n%s", output)
+	}
+	if strings.Contains(output, messages.DoctorWarningSystemHeader) {
+		t.Fatalf("expected --quiet to suppress warning-system header, got:\n%s", output)
+	}
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
+func TestDoctorCommand_QuietFlagPreservesFailures(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoInvalidConfig(t, root)
+	calls := stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+
+	var out bytes.Buffer
+	var execErr error
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newRootCmd()
+		cmd.SetOut(&out)
+		cmd.SetArgs([]string{"--quiet", "doctor"})
+		execErr = cmd.Execute()
+	})
+
+	if execErr == nil {
+		t.Fatalf("expected --quiet doctor to return non-nil error on FAIL; output:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), messages.DoctorStatusFailLabel) {
+		t.Fatalf("expected --quiet to preserve %q in output, got:\n%s", messages.DoctorStatusFailLabel, out.String())
+	}
+	if *calls == 0 {
+		t.Fatal("expected update check to run")
+	}
+}
+
 func TestDoctorCommand_InstructionsError(t *testing.T) {
 	root := t.TempDir()
 	writeDoctorTestRepo(t, root)

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -29,6 +30,8 @@ var (
 
 const antigravityVersionTimeout = 5 * time.Second
 const antigravityVersionWaitDelay = 100 * time.Millisecond
+
+const maxSkillCatalogMetadataChars = 10000
 
 func commandOutputWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -502,6 +505,16 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 		}
 	}
 
+	catalogChars := skillCatalogMetadataChars(skills)
+	if catalogChars > maxSkillCatalogMetadataChars {
+		results = append(results, Result{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameSkills,
+			Message:        fmt.Sprintf(messages.DoctorSkillCatalogTooLargeFmt, maxSkillCatalogMetadataChars, catalogChars, len(skills)),
+			Recommendation: messages.DoctorSkillValidationRecommend,
+		})
+	}
+
 	if len(results) > 0 {
 		return results
 	}
@@ -510,6 +523,15 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 		CheckName: messages.DoctorCheckNameSkills,
 		Message:   fmt.Sprintf(messages.DoctorSkillsValidatedFmt, len(skills)),
 	}}
+}
+
+func skillCatalogMetadataChars(skills []config.Skill) int {
+	total := 0
+	for _, skill := range skills {
+		total += utf8.RuneCountInString(strings.TrimSpace(skill.Name))
+		total += utf8.RuneCountInString(strings.TrimSpace(skill.Description))
+	}
+	return total
 }
 
 func relPathForDoctor(root string, path string) string {

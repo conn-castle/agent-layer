@@ -86,7 +86,8 @@ enabled = true
 version_update_on_sync = true
 # warning noise mode: default | reduce | quiet
 # quiet suppresses agent-layer informational output (warnings, update checks, dispatch banners),
-# but does not affect `al doctor` (doctor always prints warnings).
+# but configured quiet does not affect `al doctor`; pass `--quiet` to a doctor run
+# to suppress warning-only doctor output.
 noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
