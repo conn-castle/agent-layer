@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -29,6 +30,8 @@ var (
 
 const antigravityVersionTimeout = 5 * time.Second
 const antigravityVersionWaitDelay = 100 * time.Millisecond
+
+const maxSkillCatalogMetadataChars = 10000
 
 func commandOutputWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -500,6 +503,20 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 				Recommendation: messages.DoctorSkillValidationRecommend,
 			})
 		}
+	}
+
+	catalogChars := 0
+	for _, skill := range skills {
+		catalogChars += utf8.RuneCountInString(strings.TrimSpace(skill.Name))
+		catalogChars += utf8.RuneCountInString(strings.TrimSpace(skill.Description))
+	}
+	if catalogChars > maxSkillCatalogMetadataChars {
+		results = append(results, Result{
+			Status:         StatusWarn,
+			CheckName:      messages.DoctorCheckNameSkills,
+			Message:        fmt.Sprintf(messages.DoctorSkillCatalogTooLargeFmt, maxSkillCatalogMetadataChars, catalogChars, len(skills)),
+			Recommendation: messages.DoctorSkillValidationRecommend,
+		})
 	}
 
 	if len(results) > 0 {

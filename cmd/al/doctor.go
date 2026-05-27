@@ -31,6 +31,7 @@ func newDoctorCmd() *cobra.Command {
 		Short: messages.DoctorShort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := cmd.OutOrStdout()
+			quiet, _ := cmd.Flags().GetBool("quiet")
 			root, err := resolveRepoRoot()
 			if err != nil {
 				return err
@@ -94,6 +95,9 @@ func newDoctorCmd() *cobra.Command {
 
 			hasFail := false
 			for _, r := range allResults {
+				if quiet && r.Status == doctor.StatusWarn {
+					continue
+				}
 				printResult(out, r)
 				if r.Status == doctor.StatusFail {
 					hasFail = true
@@ -104,7 +108,9 @@ func newDoctorCmd() *cobra.Command {
 			// Only run if basic config loaded successfully, otherwise we might crash or be useless.
 			var warningList []warnings.Warning
 			if cfg != nil {
-				_, _ = fmt.Fprintln(out, messages.DoctorWarningSystemHeader)
+				if !quiet {
+					_, _ = fmt.Fprintln(out, messages.DoctorWarningSystemHeader)
+				}
 
 				// Instructions check
 				instWarnings, err := checkInstructions(root, cfg.Config.Warnings.InstructionTokenThreshold)
@@ -117,7 +123,11 @@ func newDoctorCmd() *cobra.Command {
 
 				// MCP check (Doctor runs discovery)
 				enabledServerIDs := enabledMCPServerIDs(cfg.Config.MCP.Servers)
-				reportProgress, stopProgress := startMCPDiscoveryReporter(enabledServerIDs, out)
+				progressOut := out
+				if quiet {
+					progressOut = io.Discard
+				}
+				reportProgress, stopProgress := startMCPDiscoveryReporter(enabledServerIDs, progressOut)
 				mcpWarnings, err := checkMCPServers(cmd.Context(), cfg, nil, reportProgress)
 				stopProgress()
 				if err != nil {
@@ -129,13 +139,15 @@ func newDoctorCmd() *cobra.Command {
 
 				warningList = append(warningList, checkPolicy(cfg)...)
 				noiseMode := cfg.Config.Warnings.NoiseMode
-				if strings.EqualFold(strings.TrimSpace(noiseMode), warnings.NoiseModeQuiet) {
+				if quiet {
+					noiseMode = warnings.NoiseModeQuiet
+				} else if strings.EqualFold(strings.TrimSpace(noiseMode), warnings.NoiseModeQuiet) {
 					noiseMode = warnings.NoiseModeDefault
 				}
 				warningList = warnings.ApplyNoiseControl(warningList, noiseMode)
 			}
 
-			if len(warningList) > 0 {
+			if len(warningList) > 0 && !quiet {
 				for _, w := range warningList {
 					_, _ = fmt.Fprintln(out, w.String())
 					_, _ = fmt.Fprintln(out) // Spacer

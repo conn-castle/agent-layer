@@ -63,7 +63,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Tradeoffs: Disabled by default means no isolation unless configured. Claude Code stores auth in the OS credential store regardless of `CLAUDE_CONFIG_DIR` (upstream limitation), so `local_config_dir` currently isolates settings and caches but not auth.
 
 - Decision 2026-02-24 quiet-supersedes-p7a: Warnings verbosity policy (`reduce`, `quiet`, and `--quiet`)
-    Decision: `warnings.noise_mode` supports `reduce` and `quiet`, and `--quiet`/`-q` provides command-line suppression. `reduce` suppresses only non-critical suppressible warnings; `quiet` suppresses all warnings (including critical) except `al doctor`, which always prints warnings.
+    Decision: `warnings.noise_mode` supports `reduce` and `quiet`, and `--quiet`/`-q` provides command-line suppression. `reduce` suppresses only non-critical suppressible warnings. Configured `quiet` suppresses warnings, update checks, and dispatch banners for normal runs, while `al doctor` still prints warnings by default; an explicit `al --quiet doctor` suppresses warning-only doctor output while preserving failure output.
     Reason: Users need one coherent verbosity model that serves both safer daily use (`reduce`) and zero-noise scripted flows (`quiet`/`--quiet`).
     Tradeoffs: Quiet mode can hide high-risk warnings by design, and older pinned binaries may ignore quiet behavior until upgraded.
 

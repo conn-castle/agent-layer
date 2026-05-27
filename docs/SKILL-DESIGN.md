@@ -54,6 +54,8 @@ explicitly labeled as a local heuristic.
   into `scripts/`, `references/`, and `assets`.
 - At the catalog level, each skill adds roughly 50-100 tokens (name +
   description only) [ref 1]. Full instructions load only on activation.
+- `al doctor` warns when all skill names plus descriptions exceed a 10,000
+  Unicode-character budget.
 - `al doctor` warns when a skill source exceeds 500 lines.
 - Treat 500 lines as a warning threshold, not a design target.
 

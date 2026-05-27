@@ -387,8 +387,8 @@ env = { MY_TOKEN = "${AL_MY_TOKEN}" }
 # Warn when a newer Agent Layer version is available during sync runs.
 version_update_on_sync = true
 # Warning output noise control: "default" keeps all warnings, "reduce" hides suppressible non-critical warnings,
-# "quiet" suppresses agent-layer informational output (warnings, update checks, dispatch banners). `al doctor`
-# always prints warnings regardless of this setting.
+# "quiet" suppresses agent-layer informational output (warnings, update checks, dispatch banners). Configured
+# quiet does not hide `al doctor` output; use `al --quiet doctor` to suppress warning-only doctor output.
 noise_mode = "default"
 instruction_token_threshold = 10000
 mcp_server_threshold = 15
@@ -439,7 +439,7 @@ Omit `http_transport` to default to `sse`.
 Warning thresholds are optional. When a threshold is omitted, its warning is disabled. Values must be positive integers (zero/negative are rejected by config validation). `al sync` uses `instruction_token_threshold` and, when `version_update_on_sync = true`, warns if a newer Agent Layer release is available. `al doctor` evaluates all configured MCP warning thresholds.
 
 Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
-Set `noise_mode = "default"` to keep all warnings (recommended), `noise_mode = "reduce"` to hide only suppressible non-critical warnings, or `noise_mode = "quiet"` to suppress agent-layer informational output. Errors still print, client output is unaffected, and `al doctor` always prints warnings regardless of noise mode.
+Set `noise_mode = "default"` to keep all warnings (recommended), `noise_mode = "reduce"` to hide only suppressible non-critical warnings, or `noise_mode = "quiet"` to suppress agent-layer informational output. Errors still print, client output is unaffected, and `al doctor` prints warnings by default regardless of noise mode. For one-off doctor runs, `al --quiet doctor` suppresses warning-only doctor output while still showing failures.
 
 Use `al <client> --quiet` (or `-q`) for one-off quiet runs; the flag always wins over config.
 
@@ -492,7 +492,8 @@ Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/
 - `name` validation (`al doctor`):
   - NFKC-normalized and compared against the canonical source name (filename stem or directory name) using normalization-aware matching
   - Maximum 64 Unicode characters, lowercase letters/digits/hyphens only, and no leading/trailing/consecutive hyphens
-- Length limits (`al doctor`): `description` max 1024 Unicode characters; `compatibility` max 500 Unicode characters.
+- Length warnings (`al doctor`): `description` max 1024 Unicode characters per skill; `compatibility` max 500 Unicode characters.
+- Catalog warning (`al doctor`): all skill names plus descriptions should stay at or below 10,000 Unicode characters.
 - Size recommendation (`al doctor`): warns when a skill source exceeds 500 lines.
 - Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
 - Missing or empty `description` is a load/sync error (fail-loud); it is not warning-only.

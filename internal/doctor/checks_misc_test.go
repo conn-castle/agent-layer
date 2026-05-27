@@ -10,9 +10,11 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/skillvalidator"
 )
 
 func TestCheckConfig_LenientFallback_InjectsBuiltInEnv_NoEnvFile(t *testing.T) {
@@ -503,6 +505,174 @@ Body.
 		}
 		if result.CheckName != messages.DoctorCheckNameSkills {
 			t.Fatalf("check name = %q, want %q", result.CheckName, messages.DoctorCheckNameSkills)
+		}
+	}
+}
+
+func TestCheckSkills_DescriptionTooLongWarns(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	if err := os.MkdirAll(filepath.Join(skillsDir, "alpha"), 0o700); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	skillPath := filepath.Join(skillsDir, "alpha", "SKILL.md")
+	description := strings.Repeat("a", skillvalidator.MaxDescriptionLength+1)
+	content := `---
+name: alpha
+description: ` + description + `
+---
+Body.
+`
+	if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	cfg := &config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: "alpha", Description: description, SourcePath: skillPath},
+		},
+	}
+	results := CheckSkills(cfg)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusWarn {
+		t.Fatalf("status = %s, want %s (%#v)", results[0].Status, StatusWarn, results[0])
+	}
+	if !strings.Contains(results[0].Message, "description") || !strings.Contains(results[0].Message, "exceeds") {
+		t.Fatalf("unexpected message: %q", results[0].Message)
+	}
+}
+
+func TestCheckSkills_CatalogMetadataTooLargeWarns(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	description := strings.Repeat("a", 910)
+	skills := make([]config.Skill, 0, 11)
+	for i := 0; i < 11; i++ {
+		name := fmt.Sprintf("skill-%02d", i)
+		skillDir := filepath.Join(skillsDir, name)
+		if err := os.MkdirAll(skillDir, 0o700); err != nil {
+			t.Fatalf("mkdir skill %s: %v", name, err)
+		}
+		skillPath := filepath.Join(skillDir, "SKILL.md")
+		content := fmt.Sprintf(`---
+name: %s
+description: %s
+---
+Body.
+`, name, description)
+		if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
+			t.Fatalf("write skill %s: %v", name, err)
+		}
+		skills = append(skills, config.Skill{Name: name, Description: description, SourcePath: skillPath})
+	}
+
+	results := CheckSkills(&config.ProjectConfig{Root: root, Skills: skills})
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d: %#v", len(results), results)
+	}
+	if results[0].Status != StatusWarn {
+		t.Fatalf("status = %s, want %s (%#v)", results[0].Status, StatusWarn, results[0])
+	}
+	if !strings.Contains(results[0].Message, "Skill catalog metadata exceeds") {
+		t.Fatalf("unexpected message: %q", results[0].Message)
+	}
+}
+
+// writeCatalogBoundarySkills writes ten directory-format skills whose names
+// ("alpha0".."alpha9", 6 chars each) and per-skill description lengths add
+// up to a precise catalog metadata character count. descLengths must have
+// length 10. Returns the config.Skill slice the caller can pass to
+// CheckSkills along with a *config.ProjectConfig{Root: root, ...}.
+func writeCatalogBoundarySkills(t *testing.T, root string, descLengths [10]int) []config.Skill {
+	t.Helper()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills")
+	skills := make([]config.Skill, 0, 10)
+	for i := 0; i < 10; i++ {
+		name := fmt.Sprintf("alpha%d", i)
+		description := strings.Repeat("a", descLengths[i])
+		skillDir := filepath.Join(skillsDir, name)
+		if err := os.MkdirAll(skillDir, 0o700); err != nil {
+			t.Fatalf("mkdir skill %s: %v", name, err)
+		}
+		skillPath := filepath.Join(skillDir, "SKILL.md")
+		content := fmt.Sprintf(`---
+name: %s
+description: %s
+---
+Body.
+`, name, description)
+		if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
+			t.Fatalf("write skill %s: %v", name, err)
+		}
+		skills = append(skills, config.Skill{Name: name, Description: description, SourcePath: skillPath})
+	}
+	return skills
+}
+
+func TestCheckSkills_CatalogMetadataAtBoundaryNoWarn(t *testing.T) {
+	root := t.TempDir()
+	// 10 skills * (6-char name + 994-char description) = 10,000 chars exactly.
+	descLengths := [10]int{994, 994, 994, 994, 994, 994, 994, 994, 994, 994}
+	skills := writeCatalogBoundarySkills(t, root, descLengths)
+
+	results := CheckSkills(&config.ProjectConfig{Root: root, Skills: skills})
+	for _, result := range results {
+		if strings.Contains(result.Message, "Skill catalog metadata exceeds") {
+			t.Fatalf("expected no catalog-size warning at boundary, got: %#v", result)
+		}
+	}
+}
+
+func TestCheckSkills_CatalogMetadataOneOverBoundaryWarns(t *testing.T) {
+	root := t.TempDir()
+	// 9 skills * (6 + 994) + 1 skill * (6 + 995) = 9,000 + 1,001 = 10,001 chars.
+	descLengths := [10]int{995, 994, 994, 994, 994, 994, 994, 994, 994, 994}
+	skills := writeCatalogBoundarySkills(t, root, descLengths)
+
+	results := CheckSkills(&config.ProjectConfig{Root: root, Skills: skills})
+	var catalogWarns []Result
+	for _, result := range results {
+		if strings.Contains(result.Message, "Skill catalog metadata exceeds") {
+			catalogWarns = append(catalogWarns, result)
+		}
+	}
+	if len(catalogWarns) != 1 {
+		t.Fatalf("expected exactly 1 catalog-size warn at boundary+1, got %d: %#v", len(catalogWarns), results)
+	}
+	if catalogWarns[0].Status != StatusWarn {
+		t.Fatalf("status = %s, want %s (%#v)", catalogWarns[0].Status, StatusWarn, catalogWarns[0])
+	}
+}
+
+// TestCheckSkills_CatalogMetadataMultibyteRuneBoundary locks the rune-count
+// semantics of catalog metadata sizing. A description of 9,995 `界` runes plus
+// a 5-rune name sums to exactly 10,000 runes (no warn) but 29,990 bytes (would
+// warn if `len()` were used instead of `utf8.RuneCountInString`).
+func TestCheckSkills_CatalogMetadataMultibyteRuneBoundary(t *testing.T) {
+	root := t.TempDir()
+	skillsDir := filepath.Join(root, ".agent-layer", "skills", "alpha")
+	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	name := "alpha"
+	description := strings.Repeat("界", maxSkillCatalogMetadataChars-utf8.RuneCountInString(name))
+	skillPath := filepath.Join(skillsDir, "SKILL.md")
+	content := fmt.Sprintf("---\nname: %s\ndescription: %s\n---\nBody.\n", name, description)
+	if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	results := CheckSkills(&config.ProjectConfig{
+		Root: root,
+		Skills: []config.Skill{
+			{Name: name, Description: description, SourcePath: skillPath},
+		},
+	})
+	for _, result := range results {
+		if strings.Contains(result.Message, "Skill catalog metadata exceeds") {
+			t.Fatalf("expected no catalog-size warning at multibyte-rune boundary, got: %#v", result)
 		}
 	}
 }
