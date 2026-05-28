@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/conn-castle/agent-layer/internal/install"
 )
 
 // catalogSkillExistsOnDisk reports whether a CLI catalog skill directory is
@@ -124,5 +126,5 @@ func hasAnyManagedStandardInstructionFile(root string) bool {
 }
 
 func isUserOwnedStandardInstructionFile(name string) bool {
-	return name == "04_conventions.md"
+	return install.IsUserOwnedInstructionFile(name)
 }

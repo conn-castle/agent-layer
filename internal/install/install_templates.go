@@ -25,9 +25,9 @@ var userOwnedInstructionFiles = map[string]struct{}{
 	"04_conventions.md": {},
 }
 
-// isUserOwnedInstructionFile returns true when path's basename is in the
+// IsUserOwnedInstructionFile returns true when path's basename is in the
 // user-owned instruction file set.
-func isUserOwnedInstructionFile(path string) bool {
+func IsUserOwnedInstructionFile(path string) bool {
 	_, ok := userOwnedInstructionFiles[filepath.Base(path)]
 	return ok
 }
@@ -192,7 +192,7 @@ func (inst templateManager) anyExistingManagedInstructionFile(dir templateDir) (
 		return false, err
 	}
 	for _, entry := range entries {
-		if isUserOwnedInstructionFile(entry.destPath) {
+		if IsUserOwnedInstructionFile(entry.destPath) {
 			continue
 		}
 		if _, statErr := inst.sys.Stat(entry.destPath); statErr == nil {
@@ -373,7 +373,7 @@ func (inst templateManager) appendTemplateDirDiffs(diffs map[string]struct{}, di
 	sys := inst.sys
 	for _, entry := range entries {
 		// User-owned instruction files are never reported as managed diffs.
-		if isUserOwnedInstructionFile(entry.destPath) {
+		if IsUserOwnedInstructionFile(entry.destPath) {
 			continue
 		}
 		relPath := normalizeRelPath(inst.relativePath(entry.destPath))
@@ -489,7 +489,7 @@ func (inst templateManager) writeTemplateDirCached(dir templateDir) error {
 	sys := inst.sys
 	for _, entry := range entries {
 		// User-owned instruction files: seed only; never overwrite.
-		if isUserOwnedInstructionFile(entry.destPath) {
+		if IsUserOwnedInstructionFile(entry.destPath) {
 			if err := writeTemplateIfMissing(sys, entry.destPath, entry.templatePath, entry.perm); err != nil {
 				return err
 			}
