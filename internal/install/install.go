@@ -37,6 +37,13 @@ type Options struct {
 	PinVersion   string
 	DiffMaxLines int
 	System       System
+	// MinimalLayout skips the bundled instructions, memory templates, and skills
+	// during a fresh `al init`. Only an empty placeholder `00_instructions.md`
+	// is seeded under `.agent-layer/instructions/`. The wizard sets this when the
+	// user answers "no" to the Q1 (workflow bundle) prompt during a fresh install.
+	// MinimalLayout has no effect when Overwrite is true; existing-repo prunes
+	// happen through the wizard's apply path, not the installer.
+	MinimalLayout bool
 }
 
 type installer struct {
@@ -46,6 +53,7 @@ type installer struct {
 	overwriteAllDecided       bool
 	overwriteMemoryAll        bool
 	overwriteMemoryAllDecided bool
+	minimalLayout             bool
 	prompter                  Prompter
 	warnWriter                io.Writer
 	diffs                     []string
@@ -109,12 +117,13 @@ func Run(root string, opts Options) error {
 		warnWriter = os.Stderr
 	}
 	inst := &installer{
-		root:         root,
-		overwrite:    overwrite,
-		prompter:     opts.Prompter,
-		warnWriter:   warnWriter,
-		diffMaxLines: normalizeDiffMaxLines(opts.DiffMaxLines),
-		sys:          sys,
+		root:          root,
+		overwrite:     overwrite,
+		minimalLayout: opts.MinimalLayout && !overwrite,
+		prompter:      opts.Prompter,
+		warnWriter:    warnWriter,
+		diffMaxLines:  normalizeDiffMaxLines(opts.DiffMaxLines),
+		sys:           sys,
 	}
 	if strings.TrimSpace(opts.PinVersion) != "" {
 		normalized, err := version.Normalize(opts.PinVersion)
@@ -382,10 +391,51 @@ func (inst *installer) writeVersionFile() error {
 }
 
 func (inst templateManager) writeTemplateDirs() error {
-	for _, dir := range inst.allTemplateDirs() {
+	minimal, err := inst.minimalLayoutOnDisk()
+	if err != nil {
+		return err
+	}
+	if minimal {
+		if err := inst.writeMinimalLayoutPlaceholder(); err != nil {
+			return err
+		}
+	}
+	dirs, err := inst.activeAllTemplateDirs()
+	if err != nil {
+		return err
+	}
+	for _, dir := range dirs {
 		if err := inst.writeTemplateDirCached(dir); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// MinimalLayoutPlaceholderFile is the zero-byte instruction file seeded when
+// MinimalLayout is enabled. Naming it `00_instructions.md` (rather than
+// `00_rules.md`) signals that the file is a wizard-opt-out placeholder; a later
+// wizard rerun with Q1=yes re-seeds the standard files alongside it.
+const MinimalLayoutPlaceholderFile = "00_instructions.md"
+
+// writeMinimalLayoutPlaceholder seeds .agent-layer/instructions/00_instructions.md
+// as a literal zero-byte file when no instruction file is present, and skips the
+// rest of the template directories. `LoadInstructionsFS` (internal/config/load_fs.go)
+// requires at least one .md file in the directory but does not require any
+// particular basename or content; the generated CLAUDE.md/AGENTS.md shim emits
+// empty BEGIN/END markers, which downstream agents tolerate.
+func (inst templateManager) writeMinimalLayoutPlaceholder() error {
+	path := filepath.Join(inst.root, ".agent-layer", "instructions", MinimalLayoutPlaceholderFile)
+	if _, err := inst.sys.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	if err := inst.sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf(messages.InstallFailedCreateDirForFmt, path, err)
+	}
+	if err := inst.sys.WriteFileAtomic(path, nil, 0o644); err != nil {
+		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}
 	return nil
 }

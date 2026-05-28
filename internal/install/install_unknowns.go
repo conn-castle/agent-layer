@@ -357,7 +357,14 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	if err := addTemplatePaths("instructions", filepath.Join(root, ".agent-layer", "instructions")); err != nil {
 		return nil, err
 	}
+	add(filepath.Join(root, ".agent-layer", "instructions", MinimalLayoutPlaceholderFile))
 	if err := addTemplatePaths("skills", filepath.Join(root, ".agent-layer", "skills")); err != nil {
+		return nil, err
+	}
+	// Catalog skills (wizard-managed) materialize at .agent-layer/skills/<id>/ when
+	// selected; treating them as known here keeps them off the unknowns list after
+	// the embedded restructure moved them out of the bundled skills/ tree.
+	if err := addTemplatePaths("skills-catalog", filepath.Join(root, ".agent-layer", "skills")); err != nil {
 		return nil, err
 	}
 	if err := addTemplatePaths("docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs")); err != nil {

@@ -143,6 +143,67 @@ enabled = false
 	assert.NotContains(t, string(data), "[[mcp.servers]]")
 }
 
+func TestRun_CLISkillCatalogSelectionCopiesAndRemovesSkill(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+
+	validConfig := `[approvals]
+mode = "none"
+[agents.antigravity]
+enabled = false
+[agents.claude]
+enabled = false
+[agents.claude_vscode]
+enabled = false
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = false
+[agents.copilot_cli]
+enabled = false
+[mcp]
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600))
+
+	runWithCLISkills := func(selectedSkills []string) {
+		ui := &MockUI{
+			NoteFunc:   func(title, body string) error { return nil },
+			SelectFunc: func(title string, options []string, current *string) error { return nil },
+			MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+				switch title {
+				case messages.WizardEnableAgentsTitle:
+					*selected = []string{}
+				case messages.WizardEnableCLISkillsTitle:
+					*selected = selectedSkills
+				case messages.WizardEnableDefaultMCPServersTitle:
+					*selected = []string{}
+				}
+				return nil
+			},
+			ConfirmFunc: func(title string, value *bool) error {
+				if title == messages.WizardApplyChangesPrompt {
+					*value = true
+				}
+				return nil
+			},
+		}
+		err := Run(root, ui, func(string) (*alsync.Result, error) { return &alsync.Result{}, nil }, "")
+		require.NoError(t, err)
+	}
+
+	skillPath := filepath.Join(root, ".agent-layer", "skills", "tavily-web", "SKILL.md")
+	runWithCLISkills([]string{"Tavily web search"})
+	info, err := os.Stat(skillPath)
+	require.NoError(t, err)
+	assert.Greater(t, info.Size(), int64(0))
+
+	runWithCLISkills([]string{})
+	_, err = os.Stat(skillPath)
+	assert.True(t, os.IsNotExist(err), "deselecting the catalog skill removes the installed directory")
+}
+
 func TestRun_ApplyCancel(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)

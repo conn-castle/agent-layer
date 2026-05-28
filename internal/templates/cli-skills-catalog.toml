@@ -1,0 +1,27 @@
+# Internal CLI skill catalog used by `al wizard`.
+# This file is embedded in the al binary and never written to a user repo.
+# The wizard reads this catalog to populate its CLI skill multiselect.
+# Each entry's directory lives under internal/templates/skills-catalog/<id>/.
+# To enable a catalog skill, the wizard copies the matching directory into
+# `.agent-layer/skills/<id>/`. To disable, the wizard removes that directory.
+
+[[cli_skills]]
+id = "tavily-web"
+name = "Tavily web search"
+binary = "tvly"
+
+[[cli_skills]]
+id = "playwright-cli"
+name = "Playwright browser automation"
+binary = "playwright-cli"
+
+[[cli_skills]]
+id = "find-docs"
+name = "Context7 docs lookup"
+# find-docs invokes `npx ctx7`; the closest deterministic presence check is `npx`.
+binary = "npx"
+
+[[cli_skills]]
+id = "agent-dispatch"
+name = "Agent dispatch"
+# agent-dispatch has no external CLI requirement; no binary key.

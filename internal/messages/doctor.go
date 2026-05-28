@@ -84,4 +84,11 @@ const (
 	DoctorResultLineFmt        = "%s %-10s %s\n"
 	DoctorRecommendationPrefix = "       💡 "
 	DoctorRecommendationIndent = "         "
+
+	DoctorCheckNameCLISkills             = "CLISkills"
+	DoctorCLISkillCatalogLoadFailedFmt   = "Failed to load CLI skill catalog: %v"
+	DoctorCLISkillCatalogLoadRecommend   = "Reinstall Agent Layer; the embedded CLI skill catalog could not be read."
+	DoctorCLISkillBinaryMissingFmt       = "CLI skill %s is installed but its binary %q is not on PATH"
+	DoctorCLISkillBinaryMissingRecommend = "Install %q (see https://agent-layer.dev/best-practices/cli-skill-design) or run `al wizard` to remove the skill."
+	DoctorCLISkillBinaryOKFmt            = "CLI skill %s found %q on PATH"
 )

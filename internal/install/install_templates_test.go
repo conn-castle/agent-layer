@@ -1221,13 +1221,13 @@ func TestWriteSectionAwareTemplateFile_OverwriteBranches(t *testing.T) {
 }
 
 func TestIsUserOwnedInstructionFile(t *testing.T) {
-	if !isUserOwnedInstructionFile("/some/path/04_conventions.md") {
+	if !IsUserOwnedInstructionFile("/some/path/04_conventions.md") {
 		t.Fatal("expected 04_conventions.md to be user-owned")
 	}
-	if isUserOwnedInstructionFile("/some/path/01_base.md") {
+	if IsUserOwnedInstructionFile("/some/path/01_base.md") {
 		t.Fatal("expected 01_base.md NOT to be user-owned")
 	}
-	if isUserOwnedInstructionFile("/some/path/other.md") {
+	if IsUserOwnedInstructionFile("/some/path/other.md") {
 		t.Fatal("expected other.md NOT to be user-owned")
 	}
 }
