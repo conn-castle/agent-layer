@@ -19,6 +19,7 @@ import (
 
 var (
 	loadDefaultMCPServersFunc = loadDefaultMCPServers
+	loadCLISkillCatalogFunc   = loadCLISkillCatalog
 	loadWarningDefaultsFunc   = loadWarningDefaults
 	loadProjectConfigFunc     = config.LoadProjectConfig
 	loadConfigLenientFunc     = config.LoadConfigLenient
@@ -32,6 +33,13 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	return RunWithWriter(root, ui, runSync, pinVersion, os.Stdout)
 }
 
+// freshInstallResult captures decisions taken during the inline fresh-install
+// confirm sequence. It is nil for existing-repo runs; non-nil only when the
+// wizard performed a fresh install during this run.
+type freshInstallResult struct {
+	enableAgentLayer bool
+}
+
 // RunWithWriter starts the interactive wizard and writes user-facing output to out.
 // pinVersion is written to .agent-layer/al.version when install is needed.
 func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
@@ -41,7 +49,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	envPath := filepath.Join(root, ".agent-layer", ".env")
 
-	proceed, err := ensureWizardConfig(root, configPath, ui, pinVersion, out)
+	proceed, freshInstall, err := ensureWizardConfig(root, configPath, ui, pinVersion, out)
 	if err != nil {
 		if errors.Is(err, errWizardBack) || errors.Is(err, errWizardCancelled) {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
@@ -77,7 +85,14 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		return err
 	}
 
-	if err := promptWizardFlow(root, ui, cfg, choices); err != nil {
+	skipEnableLayer := false
+	if freshInstall != nil {
+		choices.EnableAgentLayer = freshInstall.enableAgentLayer
+		choices.EnableAgentLayerTouched = true
+		skipEnableLayer = true
+	}
+
+	if err := promptWizardFlow(root, ui, cfg, choices, skipEnableLayer); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 			return nil
@@ -96,37 +111,50 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 	return nil
 }
 
-func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, error) {
+func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, *freshInstallResult, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		agentLayerPath := filepath.Join(root, ".agent-layer")
 		if info, agentLayerErr := os.Stat(agentLayerPath); agentLayerErr == nil {
 			if !info.IsDir() {
-				return false, fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
+				return false, nil, fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
 			}
-			return false, fmt.Errorf(messages.WizardPartialInstallUpgradeRequired)
+			return false, nil, fmt.Errorf(messages.WizardPartialInstallUpgradeRequired)
 		} else if !os.IsNotExist(agentLayerErr) {
-			return false, agentLayerErr
+			return false, nil, agentLayerErr
 		}
 
 		confirm := true
 		if err := ui.Confirm(messages.WizardInstallPrompt, &confirm); err != nil {
-			return false, err
+			return false, nil, err
 		}
 		if !confirm {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
-			return false, nil
+			return false, nil, nil
 		}
 
-		if err := install.Run(root, install.Options{Overwrite: false, PinVersion: pinVersion, System: install.RealSystem{}}); err != nil {
-			return false, fmt.Errorf(messages.WizardInstallFailedFmt, err)
+		// Q1 inline: ask the workflow-bundle question before any files land on
+		// disk so the rewrite preview doesn't list every standard file as
+		// "removed" on the first wizard run. Q1's answer drives MinimalLayout.
+		enableAgentLayer := true
+		if err := ui.Confirm(messages.WizardEnableAgentLayerInstallPrompt, &enableAgentLayer); err != nil {
+			return false, nil, err
+		}
+
+		if err := install.Run(root, install.Options{
+			Overwrite:     false,
+			PinVersion:    pinVersion,
+			System:        install.RealSystem{},
+			MinimalLayout: !enableAgentLayer,
+		}); err != nil {
+			return false, nil, fmt.Errorf(messages.WizardInstallFailedFmt, err)
 		}
 		_, _ = fmt.Fprintln(out, messages.WizardInstallComplete)
-		return true, nil
+		return true, &freshInstallResult{enableAgentLayer: enableAgentLayer}, nil
 	} else if err != nil {
-		return false, err
+		return false, nil, err
 	}
 
-	return true, nil
+	return true, nil, nil
 }
 
 func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
@@ -137,6 +165,16 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		return nil, fmt.Errorf(messages.WizardLoadDefaultMCPServersFailedFmt, err)
 	}
 	choices.DefaultMCPServers = defaultServers
+
+	cliSkills, err := loadCLISkillCatalogFunc()
+	if err != nil {
+		return nil, err
+	}
+	choices.CLISkillsCatalog = cliSkills
+	choices.EnableAgentLayer = detectAgentLayerEnabledFromDisk(cfg.Root)
+	for _, entry := range cliSkills {
+		choices.EnabledCLISkills[entry.ID] = catalogSkillExistsOnDisk(cfg.Root, entry.ID)
+	}
 
 	warningDefaults, err := loadWarningDefaultsFunc()
 	if err != nil {
@@ -238,12 +276,19 @@ const (
 	wizardFlowStepApproval wizardFlowStep = iota
 	wizardFlowStepAgents
 	wizardFlowStepModels
+	wizardFlowStepEnableLayer
+	wizardFlowStepCLISkills
 	wizardFlowStepMCPDefaults
 	wizardFlowStepSecrets
 	wizardFlowStepWarnings
 )
 
-func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Choices) error {
+// promptWizardFlow drives the step-by-step prompt loop. skipEnableLayerStep is
+// true when the fresh-install inline confirm already answered Q1; in that case
+// the EnableLayer step is skipped in both forward and back directions so the
+// user cannot reach a state where their install decision is contradicted
+// silently.
+func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Choices, skipEnableLayerStep bool) error {
 	step := wizardFlowStepApproval
 	for {
 		snapshot := choices.Clone()
@@ -256,6 +301,10 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 			err = promptEnabledAgents(ui, choices)
 		case wizardFlowStepModels:
 			err = promptModels(ui, choices)
+		case wizardFlowStepEnableLayer:
+			err = promptEnableAgentLayer(ui, choices)
+		case wizardFlowStepCLISkills:
+			err = promptCLISkills(ui, choices)
 		case wizardFlowStepMCPDefaults:
 			err = promptDefaultMCPServers(ui, cfg, choices)
 		case wizardFlowStepSecrets:
@@ -271,6 +320,9 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 				return nil
 			}
 			step++
+			if skipEnableLayerStep && step == wizardFlowStepEnableLayer {
+				step++
+			}
 			continue
 		}
 
@@ -294,7 +346,51 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 		}
 
 		step--
+		if skipEnableLayerStep && step == wizardFlowStepEnableLayer {
+			step--
+		}
 	}
+}
+
+// promptEnableAgentLayer asks the user whether the workflow bundle (instructions,
+// memory templates, and ~24 bundled workflow skills) should stay enabled. The
+// answer drives a previewed bundle prune on apply when the user opts out.
+func promptEnableAgentLayer(ui UI, choices *Choices) error {
+	enabled := choices.EnableAgentLayer
+	if err := ui.Confirm(messages.WizardEnableAgentLayerPrompt, &enabled); err != nil {
+		return err
+	}
+	choices.EnableAgentLayer = enabled
+	choices.EnableAgentLayerTouched = true
+	return nil
+}
+
+// promptCLISkills presents the CLI skills catalog multiselect. Each row label
+// is the catalog entry's user-facing Name, while EnabledCLISkills keys use the
+// catalog id. The mapping between names and ids is rebuilt from the catalog so
+// renaming a label in the TOML does not corrupt the selection.
+func promptCLISkills(ui UI, choices *Choices) error {
+	catalog := choices.CLISkillsCatalog
+	labels := make([]string, 0, len(catalog))
+	labelToID := make(map[string]string, len(catalog))
+	enabledLabels := make([]string, 0, len(catalog))
+	for _, entry := range catalog {
+		labels = append(labels, entry.Name)
+		labelToID[entry.Name] = entry.ID
+		if choices.EnabledCLISkills[entry.ID] {
+			enabledLabels = append(enabledLabels, entry.Name)
+		}
+	}
+	if err := ui.MultiSelect(messages.WizardEnableCLISkillsTitle, labels, &enabledLabels); err != nil {
+		return err
+	}
+	for _, entry := range catalog {
+		choices.EnabledCLISkills[entry.ID] = false
+	}
+	for _, label := range enabledLabels {
+		choices.EnabledCLISkills[labelToID[label]] = true
+	}
+	return nil
 }
 
 func promptApprovalMode(ui UI, choices *Choices) error {
@@ -443,6 +539,17 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 	rewritePreview, err := buildRewritePreview(configPath, envPath, choices)
 	if err != nil {
 		return err
+	}
+	skillsChangeSet, err := computeSkillsChangeSet(root, choices)
+	if err != nil {
+		return err
+	}
+	if skillsPreview := buildSkillsPreview(skillsChangeSet); skillsPreview != "" {
+		if rewritePreview == "" || strings.HasPrefix(rewritePreview, "No rewrites needed") {
+			rewritePreview = skillsPreview
+		} else {
+			rewritePreview = rewritePreview + "\n\n" + skillsPreview
+		}
 	}
 	if err := ui.Note(messages.WizardRewritePreviewTitle, rewritePreview); err != nil {
 		return err

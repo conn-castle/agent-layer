@@ -32,6 +32,22 @@ type Choices struct {
 	CopilotCLIModel        string
 	CopilotCLIModelTouched bool
 
+	// Agent Layer workflow bundle (Q1).
+	// EnableAgentLayer is true when the bundled workflow skills, instruction files,
+	// memory templates, and live memory files should be present. When false on an
+	// existing repo, apply prunes bundled files while preserving custom skills and
+	// edited live memory files. On a fresh install, false drives a minimal layout
+	// (placeholder instruction file only).
+	EnableAgentLayer        bool
+	EnableAgentLayerTouched bool
+
+	// Catalog CLI skills (Q2).
+	// EnabledCLISkills is keyed by catalog entry id. Apply copies the matching
+	// embedded skill directory into `.agent-layer/skills/<id>/` for ids set true
+	// and removes the on-disk directory for ids set false.
+	EnabledCLISkills map[string]bool
+	CLISkillsCatalog []CLISkillCatalogEntry
+
 	// MCP
 	EnabledMCPServers        map[string]bool
 	EnabledMCPServersTouched bool
@@ -58,6 +74,7 @@ type Choices struct {
 func NewChoices() *Choices {
 	return &Choices{
 		EnabledAgents:      make(map[string]bool),
+		EnabledCLISkills:   make(map[string]bool),
 		EnabledMCPServers:  make(map[string]bool),
 		DisabledMCPServers: make(map[string]bool),
 		Secrets:            make(map[string]string),
@@ -71,12 +88,23 @@ func (c *Choices) Clone() *Choices {
 	}
 	clone := *c
 	clone.EnabledAgents = cloneBoolMap(c.EnabledAgents)
+	clone.EnabledCLISkills = cloneBoolMap(c.EnabledCLISkills)
 	clone.EnabledMCPServers = cloneBoolMap(c.EnabledMCPServers)
 	clone.DisabledMCPServers = cloneBoolMap(c.DisabledMCPServers)
 	clone.Secrets = cloneStringMap(c.Secrets)
 	clone.MissingDefaultMCPServers = cloneStringSlice(c.MissingDefaultMCPServers)
 	clone.DefaultMCPServers = cloneDefaultMCPServers(c.DefaultMCPServers)
+	clone.CLISkillsCatalog = cloneCLISkillCatalog(c.CLISkillsCatalog)
 	return &clone
+}
+
+func cloneCLISkillCatalog(in []CLISkillCatalogEntry) []CLISkillCatalogEntry {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]CLISkillCatalogEntry, len(in))
+	copy(out, in)
+	return out
 }
 
 func cloneBoolMap(in map[string]bool) map[string]bool {

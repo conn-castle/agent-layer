@@ -92,14 +92,188 @@ func (inst templateManager) memoryTemplateDirs() []templateDir {
 	}
 }
 
-// allTemplateDirs returns managed and memory template directories.
-func (inst templateManager) allTemplateDirs() []templateDir {
-	managed := inst.managedTemplateDirs()
-	memory := inst.memoryTemplateDirs()
+// activeManagedTemplateDirs returns .agent-layer template dirs that should
+// participate in install, upgrade, diff, and baseline operations for the current
+// on-disk layout.
+func (inst templateManager) activeManagedTemplateDirs() ([]templateDir, error) {
+	dirs := []templateDir{}
+	minimal, err := inst.minimalLayoutOnDisk()
+	if err != nil {
+		return nil, err
+	}
+	if !minimal {
+		dirs = append(dirs, inst.managedTemplateDirs()...)
+	}
+	catalogDirs, err := inst.installedCatalogSkillTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	dirs = append(dirs, catalogDirs...)
+	return dirs, nil
+}
+
+// activeMemoryTemplateDirs returns memory template dirs that should participate
+// in install, upgrade, diff, and baseline operations for the current on-disk
+// layout.
+func (inst templateManager) activeMemoryTemplateDirs() ([]templateDir, error) {
+	minimal, err := inst.minimalLayoutOnDisk()
+	if err != nil {
+		return nil, err
+	}
+	if minimal {
+		return nil, nil
+	}
+	return inst.memoryTemplateDirs(), nil
+}
+
+// activeAllTemplateDirs returns all template dirs that should participate in
+// install, upgrade, diff, and baseline operations for the current on-disk layout.
+func (inst templateManager) activeAllTemplateDirs() ([]templateDir, error) {
+	managed, err := inst.activeManagedTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	memory, err := inst.activeMemoryTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
 	dirs := make([]templateDir, 0, len(managed)+len(memory))
 	dirs = append(dirs, managed...)
 	dirs = append(dirs, memory...)
-	return dirs
+	return dirs, nil
+}
+
+// minimalLayoutOnDisk reports whether the repository is in the workflow-bundle
+// opt-out layout: the placeholder exists and no standard workflow bundle files
+// exist.
+func (inst templateManager) minimalLayoutOnDisk() (bool, error) {
+	if inst.minimalLayout {
+		return true, nil
+	}
+	placeholder := filepath.Join(inst.root, ".agent-layer", "instructions", MinimalLayoutPlaceholderFile)
+	info, err := inst.sys.Stat(placeholder)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf(messages.InstallFailedStatFmt, placeholder, err)
+	}
+	if info.IsDir() {
+		return false, nil
+	}
+	// Live memory files under docs/agent-layer may be preserved user data from a
+	// workflow-bundle opt-out, so only managed .agent-layer template dirs can
+	// disqualify the minimal layout marker.
+	for _, dir := range inst.managedTemplateDirs() {
+		var found bool
+		var foundErr error
+		if dir.templateRoot == "instructions" {
+			found, foundErr = inst.anyTemplateMatchingDirFile(dir)
+		} else {
+			found, foundErr = inst.anyExistingTemplateDirFile(dir)
+		}
+		if foundErr != nil {
+			return false, foundErr
+		}
+		if found {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// anyExistingTemplateDirFile reports whether any embedded file for dir already
+// exists at its destination.
+func (inst templateManager) anyExistingTemplateDirFile(dir templateDir) (bool, error) {
+	entries, err := inst.templateDirEntries(dir)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if _, statErr := inst.sys.Stat(entry.destPath); statErr == nil {
+			return true, nil
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, entry.destPath, statErr)
+		}
+	}
+	return false, nil
+}
+
+// anyTemplateMatchingDirFile reports whether any embedded file for dir exists
+// at its destination and still matches the embedded template exactly.
+func (inst templateManager) anyTemplateMatchingDirFile(dir templateDir) (bool, error) {
+	entries, err := inst.templateDirEntries(dir)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		info, statErr := inst.sys.Stat(entry.destPath)
+		if statErr != nil {
+			if errors.Is(statErr, os.ErrNotExist) {
+				continue
+			}
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, entry.destPath, statErr)
+		}
+		matches, matchErr := inst.matchTemplate(inst.sys, entry.destPath, entry.templatePath, info)
+		if matchErr != nil {
+			return false, matchErr
+		}
+		if matches {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// installedCatalogSkillTemplateDirs returns catalog template dirs only for
+// catalog skills already materialized under .agent-layer/skills/.
+func (inst templateManager) installedCatalogSkillTemplateDirs() ([]templateDir, error) {
+	ids := make(map[string]struct{})
+	if err := templates.Walk("skills-catalog", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel := strings.TrimPrefix(path, "skills-catalog/")
+		if rel == path {
+			return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
+		}
+		parts := strings.SplitN(rel, "/", 2)
+		if len(parts) != 2 || parts[0] == "" {
+			return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
+		}
+		ids[parts[0]] = struct{}{}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	sortedIDs := make([]string, 0, len(ids))
+	for id := range ids {
+		sortedIDs = append(sortedIDs, id)
+	}
+	sort.Strings(sortedIDs)
+	out := make([]templateDir, 0, len(sortedIDs))
+	for _, id := range sortedIDs {
+		destRoot := filepath.Join(inst.root, ".agent-layer", "skills", id)
+		info, err := inst.sys.Stat(destRoot)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf(messages.InstallFailedStatFmt, destRoot, err)
+		}
+		if !info.IsDir() {
+			continue
+		}
+		out = append(out, templateDir{
+			templateRoot: "skills-catalog/" + id,
+			destRoot:     destRoot,
+		})
+	}
+	return out, nil
 }
 
 // listManagedDiffs returns relative paths for managed files that differ from templates.
@@ -117,7 +291,11 @@ func (inst templateManager) listManagedLabeledDiffs() ([]LabeledPath, error) {
 	if err := inst.appendTemplateFileDiffs(diffs, inst.managedTemplateFiles()); err != nil {
 		return nil, err
 	}
-	for _, dir := range inst.managedTemplateDirs() {
+	dirs, err := inst.activeManagedTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range dirs {
 		if err := inst.appendTemplateDirDiffs(diffs, dir); err != nil {
 			return nil, err
 		}
@@ -152,7 +330,11 @@ func labeledDiffPaths(labeled []LabeledPath) []string {
 // listMemoryLabeledDiffs returns memory diffs with ownership labels.
 func (inst templateManager) listMemoryLabeledDiffs() ([]LabeledPath, error) {
 	diffs := make(map[string]struct{})
-	for _, dir := range inst.memoryTemplateDirs() {
+	dirs, err := inst.activeMemoryTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	for _, dir := range dirs {
 		if err := inst.appendTemplateDirDiffs(diffs, dir); err != nil {
 			return nil, err
 		}
@@ -267,11 +449,19 @@ func (inst templateManager) buildLabeledDiffs(paths []string, templatePathByRel 
 }
 
 func (inst templateManager) managedTemplatePathByRel() (map[string]string, error) {
-	return inst.templatePathByRel(inst.managedTemplateDirs(), true)
+	dirs, err := inst.activeManagedTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	return inst.templatePathByRel(dirs, true)
 }
 
 func (inst templateManager) memoryTemplatePathByRel() (map[string]string, error) {
-	return inst.templatePathByRel(inst.memoryTemplateDirs(), false)
+	dirs, err := inst.activeMemoryTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	return inst.templatePathByRel(dirs, false)
 }
 
 func (inst templateManager) templatePathByRel(dirs []templateDir, includeManagedFiles bool) (map[string]string, error) {

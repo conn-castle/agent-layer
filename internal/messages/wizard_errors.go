@@ -27,4 +27,5 @@ const (
 	WizardRenderConfigFailedFmt              = "render config: %w"
 	WizardFormatConfigFailedFmt              = "format config: %w"
 	WizardTOMLUnterminatedMultiline          = "unterminated multiline string in TOML output"
+	WizardApplySkillsFailedFmt               = "failed to apply skill changes: %w"
 )

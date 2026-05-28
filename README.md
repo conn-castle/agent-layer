@@ -229,6 +229,8 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **Approvals Mode** (all, mcp, commands, none, yolo)
 - **Agent Enablement** (Antigravity, Claude, Codex, VS Code, Copilot CLI)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
+- **Workflow bundle** (yes/no — bundles ~24 workflow skills, instruction files, and memory templates; answering "no" on a fresh install or `al init --minimal-layout` seeds only a placeholder instruction file)
+- **CLI skills** (opt-in catalog: `tavily-web`, `playwright-cli`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
 

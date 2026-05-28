@@ -42,4 +42,17 @@ const (
 	WizardLeaveBlankOption                    = "Leave blank (use client default)"
 	WizardCustomOption                        = "Custom..."
 	WizardCustomPromptFmt                     = "Custom %s"
+
+	// WizardEnableAgentLayerInstallPrompt prompts during the fresh-install confirm
+	// sequence for whether to install the Agent Layer workflow bundle (instructions,
+	// memory templates, and the ~24 bundled workflow skills). The opt-out result
+	// produces a minimal layout with only a placeholder 00_instructions.md.
+	WizardEnableAgentLayerInstallPrompt = "Enable Agent Layer workflow bundle? (bundles ~24 workflow skills, instruction files, and memory templates)" +
+		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
+	// WizardEnableAgentLayerPrompt asks the same question mid-flow during a wizard
+	// rerun on an existing repo. A "no" answer prunes the bundle from .agent-layer/.
+	WizardEnableAgentLayerPrompt = "Keep Agent Layer workflow bundle enabled? (bundles ~24 workflow skills, instruction files, and memory templates)" +
+		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
+	// WizardEnableCLISkillsTitle labels the catalog multiselect screen.
+	WizardEnableCLISkillsTitle = "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)"
 )

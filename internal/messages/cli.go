@@ -28,9 +28,10 @@ const (
 	InitAlreadyInitializedAncestorFmt = "agent layer is already initialized in an ancestor directory (%s); run 'al upgrade' there to upgrade or repair templates, or re-run as `al init --here` to install a separate agent-layer in %s"
 	InitRunWizardPrompt               = "Run the setup wizard now? (recommended)"
 
-	InitFlagNoWizard = "Skip prompting to run the setup wizard after init"
-	InitFlagVersion  = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
-	InitFlagHere     = "Install in the current directory without walking up to an ancestor .agent-layer/ or .git"
+	InitFlagNoWizard      = "Skip prompting to run the setup wizard after init"
+	InitFlagVersion       = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
+	InitFlagHere          = "Install in the current directory without walking up to an ancestor .agent-layer/ or .git"
+	InitFlagMinimalLayout = "Seed only a placeholder instruction file (no bundled instructions, memory templates, or skills); equivalent to answering 'no' to the wizard's workflow-bundle prompt"
 
 	UpgradeUse                            = "upgrade"
 	UpgradeShort                          = "Apply template-managed updates and update the repo pin"

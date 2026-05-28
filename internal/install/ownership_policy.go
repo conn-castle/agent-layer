@@ -12,6 +12,7 @@ const (
 	ownershipPolicyMemoryEntries = "memory_entries_v1"
 	ownershipPolicyMemoryRoadmap = "memory_roadmap_v1"
 	ownershipPolicyAllowlist     = "allowlist_lines_v1"
+	ownershipPolicyCatalogSkills = "catalog_skills_v1"
 
 	ownershipMarkerEntriesStart = "<!-- ENTRIES START -->"
 	ownershipMarkerPhasesStart  = "<!-- PHASES START -->"
@@ -19,6 +20,17 @@ const (
 	commandsAllowRelPath = ".agent-layer/commands.allow"
 	pinVersionRelPath    = ".agent-layer/al.version"
 )
+
+// catalogSkillRelPathPrefixes lists the .agent-layer/skills/<id>/ prefixes that
+// are managed by the wizard's CLI-skill catalog. Paths under these prefixes are
+// classified under ownershipPolicyCatalogSkills so the unknowns scan does not
+// flag them in existing repos after the skills-catalog restructure.
+var catalogSkillRelPathPrefixes = []string{
+	".agent-layer/skills/tavily-web/",
+	".agent-layer/skills/playwright-cli/",
+	".agent-layer/skills/find-docs/",
+	".agent-layer/skills/agent-dispatch/",
+}
 
 const (
 	ownershipReasonBaselineMissing             = "baseline_missing"
@@ -83,6 +95,11 @@ func ownershipPolicyForPath(relPath string) string {
 	if _, ok := memoryEntriesPaths[relPath]; ok {
 		return ownershipPolicyMemoryEntries
 	}
+	for _, prefix := range catalogSkillRelPathPrefixes {
+		if strings.HasPrefix(relPath, prefix) {
+			return ownershipPolicyCatalogSkills
+		}
+	}
 	return ""
 }
 
@@ -111,6 +128,9 @@ func buildOwnershipComparable(relPath string, content []byte) (ownershipComparab
 		set, setHash := parseAllowlistSet(normalizedContent)
 		out.AllowSet = set
 		out.AllowHash = setHash
+	case ownershipPolicyCatalogSkills:
+		// Catalog skills are wizard-managed and have no merge payload; the
+		// full-content hash already populated in `out` is sufficient.
 	}
 
 	return out, nil
@@ -148,6 +168,10 @@ func ownershipPolicyPayload(comp ownershipComparable) (json.RawMessage, error) {
 			return nil, err
 		}
 		return data, nil
+	case ownershipPolicyCatalogSkills:
+		// Catalog skills carry no payload; the manifest entry's full hash is the
+		// only check needed (the wizard fully owns add/remove decisions).
+		return nil, nil
 	default:
 		return nil, nil
 	}
@@ -159,6 +183,8 @@ func comparableKey(comp ownershipComparable) string {
 		return comp.ManagedHash
 	case ownershipPolicyAllowlist:
 		return comp.AllowHash
+	case ownershipPolicyCatalogSkills:
+		return comp.FullHash
 	default:
 		return comp.FullHash
 	}
@@ -188,6 +214,9 @@ func comparableFromManifestEntry(entry manifestFileEntry) (ownershipComparable, 
 		}
 		comp.AllowHash = payload.UpstreamSetHash
 		comp.AllowSet = append([]string(nil), payload.UpstreamSet...)
+	case ownershipPolicyCatalogSkills:
+		// No payload — the full hash already captured above is the only
+		// comparison key for catalog skill files.
 	default:
 		return ownershipComparable{}, fmt.Errorf("unknown ownership policy_id %q", entry.PolicyID)
 	}

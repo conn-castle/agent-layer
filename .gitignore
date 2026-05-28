@@ -8,8 +8,9 @@ tmp/
 coverage.out
 .DS_Store
 
-# Compiled binary
+# Compiled binaries
 /al
+/gentemplatemanifest
 
 # GoLang tools and cache
 .tools/

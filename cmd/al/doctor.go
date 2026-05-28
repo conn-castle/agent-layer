@@ -91,6 +91,9 @@ func newDoctorCmd() *cobra.Command {
 
 				// 6. Check Skills
 				allResults = append(allResults, doctor.CheckSkills(cfg)...)
+
+				// 7. Check CLI Skills (catalog-installed skills' binaries on PATH).
+				allResults = append(allResults, doctor.CheckCLISkills(cfg)...)
 			}
 
 			hasFail := false

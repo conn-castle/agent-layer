@@ -24,10 +24,21 @@ const (
 	policyMemoryEntries = "memory_entries_v1"
 	policyMemoryRoadmap = "memory_roadmap_v1"
 	policyAllowlist     = "allowlist_lines_v1"
+	policyCatalogSkills = "catalog_skills_v1"
 
 	markerEntriesStart = "<!-- ENTRIES START -->"
 	markerPhasesStart  = "<!-- PHASES START -->"
 )
+
+// catalogSkillPathPrefixes mirrors the prefixes used in
+// internal/install/ownership_policy.go so the manifest classifier matches the
+// runtime classifier for catalog-managed skill files.
+var catalogSkillPathPrefixes = []string{
+	".agent-layer/skills/tavily-web/",
+	".agent-layer/skills/playwright-cli/",
+	".agent-layer/skills/find-docs/",
+	".agent-layer/skills/agent-dispatch/",
+}
 
 type manifestFileEntry struct {
 	Path               string          `json:"path"`
@@ -136,7 +147,7 @@ func collectTemplateSources(root string) ([]templateSource, error) {
 			dests:        templateDestPaths(name),
 		})
 	}
-	dirs := []string{"instructions", "skills", "docs/agent-layer"}
+	dirs := []string{"instructions", "skills", "skills-catalog", "docs/agent-layer"}
 	for _, dir := range dirs {
 		absDir := filepath.Join(root, templateRoot, dir)
 		if _, err := os.Stat(absDir); err != nil {
@@ -228,6 +239,12 @@ func templateDestPaths(templatePath string) []string {
 	case strings.HasPrefix(templatePath, "skills/"):
 		suffix := strings.TrimPrefix(templatePath, "skills/")
 		return []string{filepath.ToSlash(filepath.Join(".agent-layer/skills", suffix))}
+	case strings.HasPrefix(templatePath, "skills-catalog/"):
+		// Catalog skills materialize at .agent-layer/skills/<id>/... when the
+		// wizard installs them; mirror the destination so manifest paths match
+		// the runtime classifier.
+		suffix := strings.TrimPrefix(templatePath, "skills-catalog/")
+		return []string{filepath.ToSlash(filepath.Join(".agent-layer/skills", suffix))}
 	case strings.HasPrefix(templatePath, "docs/agent-layer/"):
 		suffix := strings.TrimPrefix(templatePath, "docs/agent-layer/")
 		return []string{
@@ -247,9 +264,13 @@ func ownershipPolicyForPath(relPath string) string {
 		return policyMemoryRoadmap
 	case "docs/agent-layer/ISSUES.md", "docs/agent-layer/BACKLOG.md", "docs/agent-layer/DECISIONS.md", "docs/agent-layer/COMMANDS.md", "docs/agent-layer/CONTEXT.md":
 		return policyMemoryEntries
-	default:
-		return ""
 	}
+	for _, prefix := range catalogSkillPathPrefixes {
+		if strings.HasPrefix(relPath, prefix) {
+			return policyCatalogSkills
+		}
+	}
+	return ""
 }
 
 func ownershipPolicyPayload(policyID string, content []byte) (json.RawMessage, error) {
@@ -283,6 +304,9 @@ func ownershipPolicyPayload(policyID string, content []byte) (json.RawMessage, e
 			return nil, err
 		}
 		return data, nil
+	case policyCatalogSkills:
+		// Catalog skills are wizard-managed and need no payload.
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("unknown policy %q", policyID)
 	}

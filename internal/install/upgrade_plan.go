@@ -282,7 +282,10 @@ func (inst templateManager) currentTemplateEntries() ([]templatedPath, error) {
 		})
 	}
 
-	allDirs := inst.allTemplateDirs()
+	allDirs, err := inst.activeAllTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
 	for _, dir := range allDirs {
 		dirEntries, err := inst.templateDirEntries(dir)
 		if err != nil {
@@ -308,11 +311,13 @@ func (inst templateManager) templateOrphans(templateEntries []templatedPath) ([]
 		templatePaths[entry.relPath] = struct{}{}
 	}
 
-	managedRoots := []string{
-		filepath.Join(inst.root, ".agent-layer", "instructions"),
-		filepath.Join(inst.root, ".agent-layer", "skills"),
-		filepath.Join(inst.root, ".agent-layer", "templates", "docs"),
-		filepath.Join(inst.root, "docs", "agent-layer"),
+	dirs, err := inst.activeAllTemplateDirs()
+	if err != nil {
+		return nil, err
+	}
+	managedRoots := make([]string, 0, len(dirs))
+	for _, dir := range dirs {
+		managedRoots = append(managedRoots, dir.destRoot)
 	}
 	orphanSet := make(map[string]struct{})
 	for _, root := range managedRoots {

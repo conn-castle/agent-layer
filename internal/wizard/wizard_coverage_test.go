@@ -63,7 +63,7 @@ func TestRunWithWriter_AdditionalBranches(t *testing.T) {
 
 func TestEnsureWizardConfig_StatErrorBranch(t *testing.T) {
 	ui := &MockUI{}
-	_, err := ensureWizardConfig(t.TempDir(), "bad\x00config.toml", ui, "", io.Discard)
+	_, _, err := ensureWizardConfig(t.TempDir(), "bad\x00config.toml", ui, "", io.Discard)
 	if err == nil {
 		t.Fatal("expected stat error for invalid config path")
 	}
@@ -107,7 +107,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 				return errors.New("confirm failed")
 			},
 		}
-		err := promptWizardFlow(t.TempDir(), ui, cfg, choices)
+		err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
 		if err == nil || !strings.Contains(err.Error(), "confirm failed") {
 			t.Fatalf("expected confirm error, got %v", err)
 		}
