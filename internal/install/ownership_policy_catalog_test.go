@@ -1,9 +1,14 @@
 package install
 
 import (
+	"sort"
 	"testing"
 
+	toml "github.com/pelletier/go-toml/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 func TestOwnershipPolicyForPath_CatalogSkills(t *testing.T) {
@@ -57,5 +62,31 @@ func TestOwnershipPolicyForPath_CatalogSkills(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			assert.Equal(t, c.want, ownershipPolicyForPath(c.path))
 		})
+	}
+}
+
+func TestCatalogSkillRelPathPrefixesMatchEmbeddedCatalog(t *testing.T) {
+	data, err := templates.Read("cli-skills-catalog.toml")
+	require.NoError(t, err)
+	var catalog struct {
+		CLISkills []struct {
+			ID string `toml:"id"`
+		} `toml:"cli_skills"`
+	}
+	require.NoError(t, toml.Unmarshal(data, &catalog))
+	require.NotEmpty(t, catalog.CLISkills)
+
+	want := make([]string, 0, len(catalog.CLISkills))
+	for _, entry := range catalog.CLISkills {
+		require.NotEmpty(t, entry.ID)
+		want = append(want, ".agent-layer/skills/"+entry.ID+"/")
+	}
+	got := append([]string(nil), catalogSkillRelPathPrefixes...)
+	sort.Strings(want)
+	sort.Strings(got)
+
+	assert.Equal(t, want, got)
+	for _, prefix := range got {
+		assert.Equal(t, ownershipPolicyCatalogSkills, ownershipPolicyForPath(prefix+"SKILL.md"))
 	}
 }

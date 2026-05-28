@@ -102,6 +102,26 @@ func TestBuildUpgradePlan_MinimalLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
 	assert.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/instructions/"+MinimalLayoutPlaceholderFile))
 }
 
+func TestBuildUpgradePlan_EditedManagedInstructionExitsMinimalLayout(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, Run(root, Options{
+		Overwrite:     false,
+		MinimalLayout: true,
+		System:        RealSystem{},
+		PinVersion:    "1.2.3",
+	}))
+	rulesPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
+	require.NoError(t, os.WriteFile(rulesPath, []byte("custom rules"), 0o600))
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	require.NoError(t, err)
+
+	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/00_rules.md"))
+	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_base.md"))
+	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/review-scope/SKILL.md"))
+	assert.NotNil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/instructions/"+MinimalLayoutPlaceholderFile))
+}
+
 func TestBuildUpgradePlan_InstalledCatalogSkillIsUpgradeManaged(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))

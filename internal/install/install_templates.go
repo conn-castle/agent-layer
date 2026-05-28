@@ -168,7 +168,7 @@ func (inst templateManager) minimalLayoutOnDisk() (bool, error) {
 		var found bool
 		var foundErr error
 		if dir.templateRoot == "instructions" {
-			found, foundErr = inst.anyTemplateMatchingDirFile(dir)
+			found, foundErr = inst.anyExistingManagedInstructionFile(dir)
 		} else {
 			found, foundErr = inst.anyExistingTemplateDirFile(dir)
 		}
@@ -180,6 +180,28 @@ func (inst templateManager) minimalLayoutOnDisk() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// anyExistingManagedInstructionFile reports whether a managed instruction file
+// exists at its destination. User-owned instruction seed files are ignored so a
+// minimal-layout repo can keep local conventions without re-entering the managed
+// workflow-bundle layout.
+func (inst templateManager) anyExistingManagedInstructionFile(dir templateDir) (bool, error) {
+	entries, err := inst.templateDirEntries(dir)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if isUserOwnedInstructionFile(entry.destPath) {
+			continue
+		}
+		if _, statErr := inst.sys.Stat(entry.destPath); statErr == nil {
+			return true, nil
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return false, fmt.Errorf(messages.InstallFailedStatFmt, entry.destPath, statErr)
+		}
+	}
+	return false, nil
 }
 
 // anyExistingTemplateDirFile reports whether any embedded file for dir already
@@ -194,32 +216,6 @@ func (inst templateManager) anyExistingTemplateDirFile(dir templateDir) (bool, e
 			return true, nil
 		} else if !errors.Is(statErr, os.ErrNotExist) {
 			return false, fmt.Errorf(messages.InstallFailedStatFmt, entry.destPath, statErr)
-		}
-	}
-	return false, nil
-}
-
-// anyTemplateMatchingDirFile reports whether any embedded file for dir exists
-// at its destination and still matches the embedded template exactly.
-func (inst templateManager) anyTemplateMatchingDirFile(dir templateDir) (bool, error) {
-	entries, err := inst.templateDirEntries(dir)
-	if err != nil {
-		return false, err
-	}
-	for _, entry := range entries {
-		info, statErr := inst.sys.Stat(entry.destPath)
-		if statErr != nil {
-			if errors.Is(statErr, os.ErrNotExist) {
-				continue
-			}
-			return false, fmt.Errorf(messages.InstallFailedStatFmt, entry.destPath, statErr)
-		}
-		matches, matchErr := inst.matchTemplate(inst.sys, entry.destPath, entry.templatePath, info)
-		if matchErr != nil {
-			return false, matchErr
-		}
-		if matches {
-			return true, nil
 		}
 	}
 	return false, nil

@@ -11,9 +11,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/version"
 )
@@ -30,15 +33,7 @@ const (
 	markerPhasesStart  = "<!-- PHASES START -->"
 )
 
-// catalogSkillPathPrefixes mirrors the prefixes used in
-// internal/install/ownership_policy.go so the manifest classifier matches the
-// runtime classifier for catalog-managed skill files.
-var catalogSkillPathPrefixes = []string{
-	".agent-layer/skills/tavily-web/",
-	".agent-layer/skills/playwright-cli/",
-	".agent-layer/skills/find-docs/",
-	".agent-layer/skills/agent-dispatch/",
-}
+var catalogSkillIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 type manifestFileEntry struct {
 	Path               string          `json:"path"`
@@ -96,7 +91,11 @@ func main() {
 	if err != nil {
 		fatalf("collect template sources: %v", err)
 	}
-	entries, err := buildManifestEntries(sources)
+	catalogPrefixes, err := catalogSkillPathPrefixes(root)
+	if err != nil {
+		fatalf("load CLI skills catalog prefixes: %v", err)
+	}
+	entries, err := buildManifestEntries(sources, catalogPrefixes)
 	if err != nil {
 		fatalf("build manifest entries: %v", err)
 	}
@@ -191,7 +190,7 @@ func collectTemplateSources(root string) ([]templateSource, error) {
 	return sources, nil
 }
 
-func buildManifestEntries(sources []templateSource) ([]manifestFileEntry, error) {
+func buildManifestEntries(sources []templateSource, catalogSkillPrefixes []string) ([]manifestFileEntry, error) {
 	entries := make([]manifestFileEntry, 0, len(sources)*2)
 	seen := make(map[string]struct{}, len(sources)*2)
 	for _, source := range sources {
@@ -202,7 +201,7 @@ func buildManifestEntries(sources []templateSource) ([]manifestFileEntry, error)
 				return nil, fmt.Errorf("duplicate destination path %s", destPath)
 			}
 			seen[destPath] = struct{}{}
-			policyID := ownershipPolicyForPath(destPath)
+			policyID := ownershipPolicyForPath(destPath, catalogSkillPrefixes)
 			payload, err := ownershipPolicyPayload(policyID, source.content)
 			if err != nil {
 				return nil, fmt.Errorf("build policy payload for %s: %w", destPath, err)
@@ -256,7 +255,40 @@ func templateDestPaths(templatePath string) []string {
 	}
 }
 
-func ownershipPolicyForPath(relPath string) string {
+func catalogSkillPathPrefixes(root string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(root, "internal", "templates", "cli-skills-catalog.toml"))
+	if err != nil {
+		return nil, err
+	}
+	var catalog struct {
+		CLISkills []struct {
+			ID string `toml:"id"`
+		} `toml:"cli_skills"`
+	}
+	if err := toml.Unmarshal(data, &catalog); err != nil {
+		return nil, err
+	}
+	if len(catalog.CLISkills) == 0 {
+		return nil, fmt.Errorf("CLI skills catalog contains no entries")
+	}
+	seen := make(map[string]struct{}, len(catalog.CLISkills))
+	out := make([]string, 0, len(catalog.CLISkills))
+	for idx, entry := range catalog.CLISkills {
+		id := strings.TrimSpace(entry.ID)
+		if !catalogSkillIDPattern.MatchString(id) {
+			return nil, fmt.Errorf("CLI skills catalog entry %d has invalid id %q", idx, entry.ID)
+		}
+		if _, ok := seen[id]; ok {
+			return nil, fmt.Errorf("CLI skills catalog entry %d duplicates id %q", idx, id)
+		}
+		seen[id] = struct{}{}
+		out = append(out, ".agent-layer/skills/"+id+"/")
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func ownershipPolicyForPath(relPath string, catalogSkillPrefixes []string) string {
 	switch relPath {
 	case ".agent-layer/commands.allow":
 		return policyAllowlist
@@ -265,7 +297,7 @@ func ownershipPolicyForPath(relPath string) string {
 	case "docs/agent-layer/ISSUES.md", "docs/agent-layer/BACKLOG.md", "docs/agent-layer/DECISIONS.md", "docs/agent-layer/COMMANDS.md", "docs/agent-layer/CONTEXT.md":
 		return policyMemoryEntries
 	}
-	for _, prefix := range catalogSkillPathPrefixes {
+	for _, prefix := range catalogSkillPrefixes {
 		if strings.HasPrefix(relPath, prefix) {
 			return policyCatalogSkills
 		}

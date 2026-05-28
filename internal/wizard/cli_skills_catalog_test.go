@@ -111,3 +111,18 @@ func TestLoadCLISkillCatalog_DuplicateID(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicates id")
 }
+
+func TestLoadCLISkillCatalog_DuplicateName(t *testing.T) {
+	original := templates.ReadFunc
+	templates.ReadFunc = func(path string) ([]byte, error) {
+		if path == cliSkillsCatalogTemplatePath {
+			return []byte("[[cli_skills]]\nid = \"find-docs\"\nname = \"Find Docs\"\n\n[[cli_skills]]\nid = \"tavily-web\"\nname = \" Find Docs \"\n"), nil
+		}
+		return original(path)
+	}
+	t.Cleanup(func() { templates.ReadFunc = original })
+
+	_, err := loadCLISkillCatalog()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicates name")
+}

@@ -48,6 +48,7 @@ func loadCLISkillCatalog() ([]CLISkillCatalogEntry, error) {
 		return nil, fmt.Errorf(messages.WizardCatalogNoCLISkills)
 	}
 	seen := make(map[string]struct{}, len(doc.CLISkills))
+	seenNames := make(map[string]struct{}, len(doc.CLISkills))
 	for idx, entry := range doc.CLISkills {
 		if entry.ID == "" {
 			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryMissingIDFmt, idx)
@@ -59,9 +60,14 @@ func loadCLISkillCatalog() ([]CLISkillCatalogEntry, error) {
 			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryDuplicateIDFmt, idx, entry.ID)
 		}
 		seen[entry.ID] = struct{}{}
-		if strings.TrimSpace(entry.Name) == "" {
+		name := strings.TrimSpace(entry.Name)
+		if name == "" {
 			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryMissingNameFmt, entry.ID)
 		}
+		if _, ok := seenNames[name]; ok {
+			return nil, fmt.Errorf(messages.WizardCLISkillCatalogEntryDuplicateNameFmt, idx, name)
+		}
+		seenNames[name] = struct{}{}
 	}
 	return doc.CLISkills, nil
 }

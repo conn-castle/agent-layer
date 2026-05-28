@@ -42,6 +42,35 @@ func TestHasNonCatalogWorkflowSkillHandlesMalformedSkillsDir(t *testing.T) {
 	})
 }
 
+func TestAgentLayerDiskEvidenceTreatsStatErrorsAsPresent(t *testing.T) {
+	t.Run("live memory stat error", func(t *testing.T) {
+		root := t.TempDir()
+		blocker := filepath.Join(root, "docs", "agent-layer")
+		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
+		require.NoError(t, os.WriteFile(blocker, []byte("file blocks memory dir"), 0o600))
+
+		assert.True(t, hasAnyMemoryFile(root))
+	})
+
+	t.Run("template memory stat error", func(t *testing.T) {
+		root := t.TempDir()
+		blocker := filepath.Join(root, ".agent-layer", "templates", "docs")
+		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
+		require.NoError(t, os.WriteFile(blocker, []byte("file blocks template memory dir"), 0o600))
+
+		assert.True(t, hasAnyTemplateMemoryFile(root))
+	})
+
+	t.Run("standard instruction stat error", func(t *testing.T) {
+		root := t.TempDir()
+		blocker := filepath.Join(root, ".agent-layer", "instructions")
+		require.NoError(t, os.MkdirAll(filepath.Dir(blocker), 0o750))
+		require.NoError(t, os.WriteFile(blocker, []byte("file blocks instruction dir"), 0o600))
+
+		assert.True(t, hasAnyStandardInstructionFile(root))
+	})
+}
+
 func TestDetectAgentLayerEnabledFromDisk(t *testing.T) {
 	t.Run("returns false on empty layout", func(t *testing.T) {
 		root := t.TempDir()
@@ -109,13 +138,31 @@ func TestDetectAgentLayerEnabledFromDisk(t *testing.T) {
 		assert.False(t, detectAgentLayerEnabledFromDisk(root))
 	})
 
-	t.Run("returns true when minimal placeholder exists with template instruction", func(t *testing.T) {
+	t.Run("returns false when minimal placeholder exists with template user-owned instruction", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_instructions.md"), nil, 0o600))
+		conventionsTemplate, err := templates.Read("instructions/04_conventions.md")
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md"), conventionsTemplate, 0o600))
+		assert.False(t, detectAgentLayerEnabledFromDisk(root))
+	})
+
+	t.Run("returns true when minimal placeholder exists with managed instruction", func(t *testing.T) {
 		root := t.TempDir()
 		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_instructions.md"), nil, 0o600))
 		rulesTemplate, err := templates.Read("instructions/00_rules.md")
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), rulesTemplate, 0o600))
+		assert.True(t, detectAgentLayerEnabledFromDisk(root))
+	})
+
+	t.Run("returns true when minimal placeholder exists with edited managed instruction", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "instructions"), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_instructions.md"), nil, 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"), []byte("custom rules"), 0o600))
 		assert.True(t, detectAgentLayerEnabledFromDisk(root))
 	})
 

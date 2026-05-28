@@ -27,6 +27,9 @@ const cliSkillsCatalogTemplateRoot = "skills-catalog"
 type skillsChangeSet struct {
 	// catalogSkillsToAdd holds catalog ids that are selected but missing on disk.
 	catalogSkillsToAdd []string
+	// catalogSkillsToRepair holds selected catalog ids whose directory exists but
+	// one or more embedded files are missing.
+	catalogSkillsToRepair []string
 	// catalogSkillsToRemove holds catalog ids that are deselected but exist on disk.
 	catalogSkillsToRemove []string
 	// workflowSkillsToRemove holds non-catalog skill directory names to remove
@@ -88,9 +91,22 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	for _, entry := range choices.CLISkillsCatalog {
 		exists := catalogSkillExistsOnDisk(root, entry.ID)
 		selected := choices.EnabledCLISkills[entry.ID]
+		missingFiles := false
+		if selected && exists {
+			var err error
+			missingFiles, err = templateDirHasMissingFiles(
+				cliSkillsCatalogTemplateRoot+"/"+entry.ID,
+				filepath.Join(root, ".agent-layer", "skills", entry.ID),
+			)
+			if err != nil {
+				return skillsChangeSet{}, err
+			}
+		}
 		switch {
 		case selected && !exists:
 			out.catalogSkillsToAdd = append(out.catalogSkillsToAdd, entry.ID)
+		case selected && missingFiles:
+			out.catalogSkillsToRepair = append(out.catalogSkillsToRepair, entry.ID)
 		case !selected && exists:
 			out.catalogSkillsToRemove = append(out.catalogSkillsToRemove, entry.ID)
 		}
@@ -142,6 +158,7 @@ func computeSkillsChangeSet(root string, choices *Choices) (skillsChangeSet, err
 	}
 
 	sort.Strings(out.catalogSkillsToAdd)
+	sort.Strings(out.catalogSkillsToRepair)
 	sort.Strings(out.catalogSkillsToRemove)
 	sort.Strings(out.workflowSkillsToRemove)
 	sort.Strings(out.workflowSkillsToAdd)
@@ -161,6 +178,11 @@ func applySkillsChanges(root string, changes skillsChangeSet) error {
 	for _, id := range changes.catalogSkillsToAdd {
 		if err := copyCatalogSkillToDisk(root, id); err != nil {
 			return fmt.Errorf("add catalog skill %s: %w", id, err)
+		}
+	}
+	for _, id := range changes.catalogSkillsToRepair {
+		if err := copyCatalogSkillMissingFiles(root, id); err != nil {
+			return fmt.Errorf("repair catalog skill %s: %w", id, err)
 		}
 	}
 	for _, id := range changes.catalogSkillsToRemove {
@@ -265,9 +287,28 @@ func copyCatalogSkillToDisk(root string, id string) error {
 	return nil
 }
 
+// copyCatalogSkillMissingFiles copies only absent embedded files for id into
+// .agent-layer/skills/<id>/, preserving any existing catalog skill files.
+func copyCatalogSkillMissingFiles(root string, id string) error {
+	if !isSafeCLISkillCatalogID(id) {
+		return fmt.Errorf("invalid catalog skill id %q", id)
+	}
+	return copyTemplateDirMissingWithMode(
+		cliSkillsCatalogTemplateRoot+"/"+id,
+		filepath.Join(root, ".agent-layer", "skills", id),
+		0o600,
+	)
+}
+
 // copyTemplateDirMissing copies missing files from an embedded template
 // directory to destRoot without overwriting existing files.
 func copyTemplateDirMissing(templateRoot string, destRoot string) error {
+	return copyTemplateDirMissingWithMode(templateRoot, destRoot, 0o644)
+}
+
+// copyTemplateDirMissingWithMode copies missing embedded files using fileMode
+// for any newly created destination file.
+func copyTemplateDirMissingWithMode(templateRoot string, destRoot string, fileMode fs.FileMode) error {
 	wroteOrSkipped := false
 	err := templates.Walk(templateRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -294,7 +335,7 @@ func copyTemplateDirMissing(templateRoot string, destRoot string) error {
 		if mkErr := os.MkdirAll(filepath.Dir(destPath), 0o750); mkErr != nil {
 			return mkErr
 		}
-		if writeErr := fsutil.WriteFileAtomic(destPath, data, 0o644); writeErr != nil {
+		if writeErr := fsutil.WriteFileAtomic(destPath, data, fileMode); writeErr != nil {
 			return writeErr
 		}
 		wroteOrSkipped = true
@@ -521,6 +562,9 @@ func buildSkillsPreview(changes skillsChangeSet) string {
 	var lines []string
 	for _, id := range changes.catalogSkillsToAdd {
 		lines = append(lines, fmt.Sprintf("  + .agent-layer/skills/%s/", id))
+	}
+	for _, id := range changes.catalogSkillsToRepair {
+		lines = append(lines, fmt.Sprintf("  + .agent-layer/skills/%s/  (missing catalog skill files)", id))
 	}
 	for _, id := range changes.catalogSkillsToRemove {
 		lines = append(lines, fmt.Sprintf("  - .agent-layer/skills/%s/", id))

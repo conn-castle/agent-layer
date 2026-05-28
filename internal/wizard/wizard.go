@@ -94,15 +94,19 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 	if err := promptWizardFlow(root, ui, cfg, choices, skipEnableLayer); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
-			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			if freshInstall == nil {
+				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			}
 			return nil
 		}
 		return err
 	}
 
-	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out); err != nil {
+	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, freshInstall == nil); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
-			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			if freshInstall == nil {
+				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+			}
 			return nil
 		}
 		return err
@@ -530,7 +534,7 @@ func promptDefaultMCPServers(ui UI, cfg *config.ProjectConfig, choices *Choices)
 	return nil
 }
 
-func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer) error {
+func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, runSync syncer, out io.Writer, printExitWithoutChanges bool) error {
 	summary := buildSummary(choices)
 	confirmApply := true
 	if err := ui.Note(messages.WizardSummaryTitle, summary); err != nil {
@@ -558,7 +562,9 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 		return err
 	}
 	if !confirmApply {
-		_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+		if printExitWithoutChanges {
+			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
+		}
 		return nil
 	}
 

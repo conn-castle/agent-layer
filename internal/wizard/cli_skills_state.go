@@ -1,12 +1,9 @@
 package wizard
 
 import (
-	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
-
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // catalogSkillExistsOnDisk reports whether a CLI catalog skill directory is
@@ -46,7 +43,7 @@ func detectAgentLayerEnabledFromDisk(root string) bool {
 		return true
 	}
 	if instructionPlaceholderExists(root) {
-		return hasAnyTemplateMatchingStandardInstructionFile(root)
+		return hasAnyManagedStandardInstructionFile(root)
 	}
 	if hasAnyStandardInstructionFile(root) {
 		return true
@@ -86,7 +83,7 @@ func hasNonCatalogWorkflowSkill(root string) bool {
 func hasAnyMemoryFile(root string) bool {
 	for _, name := range memoryFileBasenames {
 		path := filepath.Join(root, "docs", "agent-layer", name)
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			return true
 		}
 	}
@@ -96,7 +93,7 @@ func hasAnyMemoryFile(root string) bool {
 func hasAnyTemplateMemoryFile(root string) bool {
 	for _, name := range memoryFileBasenames {
 		path := filepath.Join(root, ".agent-layer", "templates", "docs", name)
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			return true
 		}
 	}
@@ -106,30 +103,26 @@ func hasAnyTemplateMemoryFile(root string) bool {
 func hasAnyStandardInstructionFile(root string) bool {
 	for _, name := range standardInstructionBasenames {
 		path := filepath.Join(root, ".agent-layer", "instructions", name)
-		if _, err := os.Stat(path); err == nil {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			return true
 		}
 	}
 	return false
 }
 
-func hasAnyTemplateMatchingStandardInstructionFile(root string) bool {
+func hasAnyManagedStandardInstructionFile(root string) bool {
 	for _, name := range standardInstructionBasenames {
-		path := filepath.Join(root, ".agent-layer", "instructions", name)
-		data, err := os.ReadFile(path) // #nosec G304 -- path is root/.agent-layer/instructions/<standard instruction file>, where the basename comes from standardInstructionBasenames.
-		if errors.Is(err, os.ErrNotExist) {
+		if isUserOwnedStandardInstructionFile(name) {
 			continue
 		}
-		if err != nil {
-			return true
-		}
-		template, err := templates.Read(filepath.ToSlash(filepath.Join("instructions", name)))
-		if err != nil {
-			return true
-		}
-		if bytes.Equal(data, template) {
+		path := filepath.Join(root, ".agent-layer", "instructions", name)
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			return true
 		}
 	}
 	return false
+}
+
+func isUserOwnedStandardInstructionFile(name string) bool {
+	return name == "04_conventions.md"
 }

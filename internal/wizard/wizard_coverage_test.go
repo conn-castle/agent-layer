@@ -215,6 +215,7 @@ func TestConfirmAndApply_ErrorBranches(t *testing.T) {
 			NewChoices(),
 			func(string) (*alsync.Result, error) { return &alsync.Result{}, nil },
 			io.Discard,
+			true,
 		)
 		if err == nil {
 			t.Fatal("expected rewrite preview error")
@@ -247,6 +248,7 @@ func TestConfirmAndApply_ErrorBranches(t *testing.T) {
 			NewChoices(),
 			func(string) (*alsync.Result, error) { return &alsync.Result{}, nil },
 			io.Discard,
+			true,
 		)
 		if err == nil || !strings.Contains(err.Error(), "note failed") {
 			t.Fatalf("expected rewrite-note error, got %v", err)
