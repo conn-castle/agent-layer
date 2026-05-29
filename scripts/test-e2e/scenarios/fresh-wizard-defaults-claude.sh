@@ -41,10 +41,6 @@ run_scenario_fresh_wizard_defaults_claude() {
     ".mcp.json has no fetch after defaults wizard"
   assert_file_not_contains "$repo_dir/.mcp.json" '"playwright"' \
     ".mcp.json has no playwright after defaults wizard"
-  assert_file_not_contains "$repo_dir/.mcp.json" '"ripgrep"' \
-    ".mcp.json has no ripgrep after defaults wizard"
-  assert_file_not_contains "$repo_dir/.mcp.json" '"filesystem"' \
-    ".mcp.json has no filesystem after defaults wizard"
 
   # settings.json should have no external MCP permissions
   assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
@@ -57,10 +53,6 @@ run_scenario_fresh_wizard_defaults_claude() {
     "settings.json has no fetch permission after defaults wizard"
   assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__playwright__" \
     "settings.json has no playwright permission after defaults wizard"
-  assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__ripgrep__" \
-    "settings.json has no ripgrep permission after defaults wizard"
-  assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__filesystem__" \
-    "settings.json has no filesystem permission after defaults wizard"
 
   install_mock_claude "$repo_dir"
 

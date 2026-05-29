@@ -41,27 +41,3 @@ command = "npx"
 args = ["-y", "@playwright/mcp@0.0.68"]
 # Opt in to floating updates:
 # args = ["-y", "@playwright/mcp@latest"]
-
-[[mcp.servers]]
-# Ripgrep fast repo search (requires Node/npx).
-id = "ripgrep"
-enabled = false
-clients = ["antigravity", "claude", "codex", "copilot"]
-transport = "stdio"
-command = "npx"
-args = ["-y", "mcp-ripgrep@0.4.0"]
-# Opt in to floating updates:
-# args = ["-y", "mcp-ripgrep@latest"]
-
-[[mcp.servers]]
-# Filesystem access scoped to this repo (requires Node/npx).
-id = "filesystem"
-enabled = false
-clients = ["antigravity", "claude", "codex", "copilot"]
-transport = "stdio"
-command = "npx"
-# Restrict access to the current repo; paths may be absolute or relative.
-# Use ${AL_REPO_ROOT} (or ~/...) to expand to an absolute path when run.
-args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
-# Opt in to floating updates:
-# args = ["-y", "@modelcontextprotocol/server-filesystem@latest", "${AL_REPO_ROOT}"]

@@ -54,7 +54,7 @@ enabled = false
 			if title == "Enable Agents" {
 				*selected = []string{"antigravity"}
 			}
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{}
 			}
 			return nil
@@ -337,7 +337,7 @@ command = "npx"
 			// Toggle fetch on so the restored block is actually emitted.
 			// (Under wizard-catalog semantics, defaults left disabled in the multiselect
 			// are pruned from the rendered config even when restore-missing was confirmed.)
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"fetch"}
 			}
 			return nil
@@ -394,7 +394,7 @@ enabled = false
 			if title == "Enable Agents" {
 				*selected = []string{"claude"}
 			}
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{}
 			}
 			return nil
@@ -457,7 +457,7 @@ enabled = false
 			if title == "Enable Agents" {
 				*selected = []string{"claude_vscode"}
 			}
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{}
 			}
 			return nil

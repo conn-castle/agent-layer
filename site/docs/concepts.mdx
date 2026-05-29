@@ -213,7 +213,7 @@ Two high-leverage examples:
 
 ### Why the wizard includes a default MCP library
 
-`al init` creates an empty `[mcp]` section. `al wizard` includes a small catalog of MCP servers that you can add when needed. They are included because they cover the most common high-value agent workflows across repos: up-to-date docs, web research, fast code search, controlled filesystem access, and source fetching/browser automation.
+`al init` creates an empty `[mcp]` section. `al wizard` includes a small catalog of MCP servers that you can add when needed. They are included because they cover the most common high-value agent workflows across repos: up-to-date docs, web research, source fetching, and browser automation.
 
 You do not need all of them. Most repos get the best results by enabling a small, intentional set and expanding only when a real use case shows up.
 
@@ -223,8 +223,6 @@ They are disabled by default because some require sign-ups and secrets, and beca
 
 - `context7` - current library docs and examples; requires `AL_CONTEXT7_API_KEY` (sign up) and `npx`.
 - `tavily` - web search/research for recency; requires `AL_TAVILY_API_KEY` (sign up).
-- `ripgrep` - fast repo search; requires `npx`. Included because “find the right file/identifier” is one of the most common agent tasks.
-- `filesystem` - controlled file access (restricted to the current repo root in the template); requires `npx`. Included because it lets clients that rely on MCP tooling inspect the repo safely.
 - `fetch` - fetch a URL and return its contents; requires `uvx` (from `uv`). Useful alongside search when you want the agent to read the primary source.
 - `playwright` - browser automation (logins, complex pages, UI flows); requires `npx` and downloads browser dependencies. High leverage for web-focused repos, unnecessary overhead for many others.
 

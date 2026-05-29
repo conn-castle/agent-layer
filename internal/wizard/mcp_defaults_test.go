@@ -17,8 +17,7 @@ func TestMissingDefaultMCPServers(t *testing.T) {
 		{ID: "context7"},
 		{ID: "tavily"},
 		{ID: "fetch"},
-		{ID: "ripgrep"},
-		{ID: "filesystem"},
+		{ID: "playwright"},
 	}
 	servers := []config.MCPServer{
 		{ID: "tavily"},
@@ -27,7 +26,7 @@ func TestMissingDefaultMCPServers(t *testing.T) {
 
 	missing := missingDefaultMCPServers(defaults, servers)
 
-	assert.Equal(t, []string{"context7", "fetch", "ripgrep", "filesystem"}, missing)
+	assert.Equal(t, []string{"context7", "fetch", "playwright"}, missing)
 }
 
 func TestLoadDefaultMCPServers(t *testing.T) {
@@ -40,10 +39,14 @@ func TestLoadDefaultMCPServers(t *testing.T) {
 	for _, s := range defaults {
 		ids[s.ID] = true
 	}
+	assert.True(t, ids["context7"])
 	assert.True(t, ids["tavily"])
 	assert.True(t, ids["fetch"])
-	assert.True(t, ids["ripgrep"])
-	assert.True(t, ids["filesystem"])
+	assert.True(t, ids["playwright"])
+	// ripgrep and filesystem were removed from the catalog: ordinary CLI-backed
+	// tools belong in CLI command-based skills, not MCP servers.
+	assert.False(t, ids["ripgrep"])
+	assert.False(t, ids["filesystem"])
 }
 
 func TestMissingDefaultMCPServers_EmptyID(t *testing.T) {

@@ -46,7 +46,7 @@ enabled = false
 			if title == "Enable Agents" {
 				*selected = []string{}
 			}
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -111,7 +111,7 @@ enabled = false
 			NoteFunc:   func(title, body string) error { return nil },
 			SelectFunc: func(title string, options []string, current *string) error { return nil },
 			MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-				if title == "Enable Default MCP Servers" {
+				if title == messages.WizardEnableDefaultMCPServersTitle {
 					*selected = []string{"tavily"}
 				}
 				return nil
@@ -142,7 +142,7 @@ enabled = false
 			NoteFunc:   func(title, body string) error { return nil },
 			SelectFunc: func(title string, options []string, current *string) error { return nil },
 			MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-				if title == "Enable Default MCP Servers" {
+				if title == messages.WizardEnableDefaultMCPServersTitle {
 					*selected = []string{"tavily"}
 				}
 				return nil
@@ -185,7 +185,7 @@ func TestRun_SecretFromEnv(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -217,7 +217,7 @@ func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -252,7 +252,7 @@ func TestRun_SecretFromEnv_Declined(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -292,7 +292,7 @@ func TestRun_SecretInputError(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -325,7 +325,7 @@ func TestRun_SecretBlank_DisableMCP(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -360,7 +360,7 @@ func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -400,7 +400,7 @@ func TestRun_SecretBlank_Retry(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -447,7 +447,7 @@ func TestRun_ExistingSecret_OverrideConfirmError(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -481,7 +481,7 @@ func TestRun_SecretInputSkip_DisablesServer(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil
@@ -521,7 +521,7 @@ func TestRun_SecretInputCancel_StopsWithoutApply(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"tavily"}
 			}
 			return nil

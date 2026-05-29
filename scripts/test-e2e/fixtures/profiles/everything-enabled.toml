@@ -62,22 +62,6 @@ transport = "stdio"
 command = "npx"
 args = ["-y", "@playwright/mcp@0.0.68"]
 
-[[mcp.servers]]
-id = "ripgrep"
-enabled = true
-clients = ["antigravity", "claude", "codex", "copilot"]
-transport = "stdio"
-command = "npx"
-args = ["-y", "mcp-ripgrep@0.4.0"]
-
-[[mcp.servers]]
-id = "filesystem"
-enabled = true
-clients = ["antigravity", "claude", "codex", "copilot"]
-transport = "stdio"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem@2026.1.14", "${AL_REPO_ROOT}"]
-
 [warnings]
 version_update_on_sync = true
 noise_mode = "default"

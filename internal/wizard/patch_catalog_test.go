@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -345,7 +346,7 @@ env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
 			// Leave nothing selected — context7 was on, user toggles it off.
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{}
 			}
 			return nil

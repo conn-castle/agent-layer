@@ -46,7 +46,7 @@ ENVEOF
 
   assert_generated_artifacts "$repo_dir"
 
-  # Verify ALL 7 MCP servers are in .mcp.json
+  # Verify ALL 5 MCP servers are in .mcp.json
   assert_file_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has context7 server"
   assert_file_contains "$repo_dir/.mcp.json" '"github"' \
@@ -57,24 +57,16 @@ ENVEOF
     ".mcp.json has fetch server"
   assert_file_contains "$repo_dir/.mcp.json" '"playwright"' \
     ".mcp.json has playwright server"
-  assert_file_contains "$repo_dir/.mcp.json" '"ripgrep"' \
-    ".mcp.json has ripgrep server"
-  assert_file_contains "$repo_dir/.mcp.json" '"filesystem"' \
-    ".mcp.json has filesystem server"
 
-  # Verify settings.json has MCP permissions for ALL servers (7 total)
+  # Verify settings.json has MCP permissions for ALL servers (5 total)
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
     "settings.json has context7 MCP permission"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__fetch__" \
     "settings.json has fetch MCP permission"
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__filesystem__" \
-    "settings.json has filesystem MCP permission"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__github__" \
     "settings.json has github MCP permission"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__playwright__" \
     "settings.json has playwright MCP permission"
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__ripgrep__" \
-    "settings.json has ripgrep MCP permission"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__tavily__" \
     "settings.json has tavily MCP permission"
 
