@@ -17,7 +17,6 @@ const (
 	WizardCodexAppsPrompt                     = "Enable Codex built-in apps (Github, Gmail, etc.)? They add extra tools to every session."
 	WizardCopilotCLIModelTitle                = "Copilot CLI Model"
 	WizardMissingDefaultMCPServersPromptFmt   = "Default MCP server entries are missing from config.toml: %s. Restore them before continuing?"
-	WizardEnableDefaultMCPServersTitle        = "Enable Default MCP Servers"
 	WizardSecretAlreadySetPromptFmt           = "Secret %s is already set. Overwrite?"
 	WizardEnvSecretFoundPromptFmt             = "Found %s in your environment. Write it to .agent-layer/.env?"
 	WizardSecretInputPromptFmt                = "Enter %s (leave blank to skip)"
@@ -55,4 +54,10 @@ const (
 		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
 	// WizardEnableCLISkillsTitle labels the catalog multiselect screen.
 	WizardEnableCLISkillsTitle = "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)"
+	// WizardEnableDefaultMCPServersTitle labels the MCP server multiselect screen.
+	// The warning steers users toward CLI command-based skills for ordinary
+	// CLI-backed tools, where MCP servers add tool-schema overhead and config drift.
+	WizardEnableDefaultMCPServersTitle = "Enable Default MCP Servers" +
+		"\n  MCP servers are not the recommended default for ordinary CLI-backed tools; prefer CLI command-based skills." +
+		"\n  See https://agent-layer.dev/cli-skill-design. Do not enable both an MCP server and a CLI skill for the same tool (for example, Tavily)."
 )

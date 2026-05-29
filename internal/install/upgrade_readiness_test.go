@@ -13,7 +13,7 @@ import (
 // injectMCPCatalogIntoSeed appends the wizard MCP catalog blocks into a seeded
 // .agent-layer/config.toml. The slim install seed deliberately ships zero
 // [[mcp.servers]] blocks; readiness tests that need to mutate specific server
-// blocks (context7, ripgrep, filesystem, etc.) call this helper after Run() to
+// blocks (context7, playwright, etc.) call this helper after Run() to
 // recreate the legacy "all defaults present, disabled" shape they were written for.
 func injectMCPCatalogIntoSeed(t *testing.T, root string) {
 	t.Helper()
@@ -124,13 +124,13 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	updated := strings.Replace(string(cfg), "id = \"ripgrep\"\nenabled = false", "id = \"ripgrep\"\nenabled = true", 1)
+	updated := strings.Replace(string(cfg), "id = \"playwright\"\nenabled = false", "id = \"playwright\"\nenabled = true", 1)
 	if updated == string(cfg) {
-		t.Fatal("failed to enable ripgrep server in test config")
+		t.Fatal("failed to enable playwright server in test config")
 	}
-	updated = strings.Replace(updated, "mcp-ripgrep@0.4.0", "mcp-ripgrep@latest", 1)
-	if !strings.Contains(updated, "mcp-ripgrep@latest") {
-		t.Fatal("failed to set floating ripgrep dependency in test config")
+	updated = strings.Replace(updated, "@playwright/mcp@0.0.68", "@playwright/mcp@latest", 1)
+	if !strings.Contains(updated, "@playwright/mcp@latest") {
+		t.Fatal("failed to set floating playwright dependency in test config")
 	}
 	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -146,7 +146,7 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 		t.Fatalf("expected %s check", readinessCheckFloatingDependencies)
 	}
 	joined := strings.Join(check.Details, "\n")
-	if !strings.Contains(joined, "mcp-ripgrep@latest") {
+	if !strings.Contains(joined, "@playwright/mcp@latest") {
 		t.Fatalf("expected floating dependency detail, got %q", joined)
 	}
 }
@@ -328,21 +328,23 @@ func TestBuildUpgradeReadinessChecks_PathExpansionAnomalies(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
-	injectMCPCatalogIntoSeed(t, root)
 
+	// The slim seed ships no MCP servers, so append a hand-authored stdio server
+	// whose ${AL_REPO_ROOT}-relative path points at a directory that does not
+	// exist. This exercises the path-expansion anomaly check without depending on
+	// any catalog server (the filesystem server was removed from the catalog).
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
 	cfg, err := os.ReadFile(configPath) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	updated := strings.Replace(string(cfg), "id = \"filesystem\"\nenabled = false", "id = \"filesystem\"\nenabled = true", 1)
-	if updated == string(cfg) {
-		t.Fatal("failed to enable filesystem in test config")
-	}
-	updated = strings.Replace(updated, "${AL_REPO_ROOT}\"]", "${AL_REPO_ROOT}/missing-readiness-dir\"]", 1)
-	if !strings.Contains(updated, "missing-readiness-dir") {
-		t.Fatal("failed to update filesystem path in test config")
-	}
+	serverBlock := "\n[[mcp.servers]]\n" +
+		"id = \"repo-fs\"\n" +
+		"enabled = true\n" +
+		"transport = \"stdio\"\n" +
+		"command = \"npx\"\n" +
+		"args = [\"-y\", \"@modelcontextprotocol/server-filesystem@2026.1.14\", \"${AL_REPO_ROOT}/missing-readiness-dir\"]\n"
+	updated := strings.TrimRight(string(cfg), "\n") + "\n" + serverBlock
 	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

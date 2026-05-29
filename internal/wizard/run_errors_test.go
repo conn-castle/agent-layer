@@ -251,7 +251,7 @@ func TestRun_MultiSelectError_MCPServers(t *testing.T) {
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			if title == "Enable Default MCP Servers" {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
 				return errors.New("mcp multiselect error")
 			}
 			return nil

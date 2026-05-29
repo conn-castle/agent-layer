@@ -52,7 +52,7 @@ ENVEOF
   assert_output_contains "$wizard_output" "Wizard completed" \
     "wizard output says completed after upgrade"
 
-  # Verify all MCP servers landed in .mcp.json
+  # Verify all MCP servers landed in .mcp.json (5 external)
   assert_file_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has context7 after upgrade+wizard"
   assert_file_contains "$repo_dir/.mcp.json" '"github"' \
@@ -63,24 +63,16 @@ ENVEOF
     ".mcp.json has fetch after upgrade+wizard"
   assert_file_contains "$repo_dir/.mcp.json" '"playwright"' \
     ".mcp.json has playwright after upgrade+wizard"
-  assert_file_contains "$repo_dir/.mcp.json" '"ripgrep"' \
-    ".mcp.json has ripgrep after upgrade+wizard"
-  assert_file_contains "$repo_dir/.mcp.json" '"filesystem"' \
-    ".mcp.json has filesystem after upgrade+wizard"
 
-  # Verify settings.json has MCP permissions for ALL servers (7 total)
+  # Verify settings.json has MCP permissions for ALL servers (5 total)
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
     "settings.json has context7 permission after upgrade+wizard"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__fetch__" \
     "settings.json has fetch permission after upgrade+wizard"
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__filesystem__" \
-    "settings.json has filesystem permission after upgrade+wizard"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__github__" \
     "settings.json has github permission after upgrade+wizard"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__playwright__" \
     "settings.json has playwright permission after upgrade+wizard"
-  assert_file_contains "$repo_dir/.claude/settings.json" "mcp__ripgrep__" \
-    "settings.json has ripgrep permission after upgrade+wizard"
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__tavily__" \
     "settings.json has tavily permission after upgrade+wizard"
 

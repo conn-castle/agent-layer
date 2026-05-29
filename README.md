@@ -366,7 +366,7 @@ enabled = true
 [mcp]
 # Secrets belong in .agent-layer/.env (never in config.toml).
 # MCP servers here are the *external tool servers* that get projected into client configs.
-# A fresh `al init` ships no servers; run `al wizard` to pick from a curated catalog (context7, tavily, fetch, playwright, ripgrep, filesystem) or hand-author your own block as shown below.
+# A fresh `al init` ships no servers; run `al wizard` to pick from a curated catalog (context7, tavily, fetch, playwright) or hand-author your own block as shown below.
 
 [[mcp.servers]]
 id = "example-api"
@@ -419,13 +419,15 @@ command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "${AL_REPO_ROOT}/."]
 ```
 
-#### Default MCP server client exclusions
+#### Restricting a server to specific clients
 
-Some default MCP servers exclude VS Code via the `clients` field:
+Use the optional `clients` field on an `[[mcp.servers]]` entry to control which clients receive a server. If you omit `clients`, the server is projected to all supported clients.
 
-- **ripgrep** and **filesystem**: Excluded from VS Code because VS Code/Copilot Chat has native file search and access capabilities. Adding these servers would duplicate functionality and increase context window usage.
+```toml
+clients = ["antigravity", "claude", "codex", "copilot"]  # omit "vscode" to skip VS Code
+```
 
-You can override these exclusions by editing `clients` in your `config.toml`.
+This is useful when a client already covers the capability natively — for example, excluding VS Code/Copilot Chat for a file-search or filesystem server, where an MCP server would only duplicate built-in functionality and increase context window usage.
 
 #### HTTP transport (`http_transport`)
 
