@@ -32,6 +32,34 @@ func injectMCPCatalogIntoSeed(t *testing.T, root string) {
 	}
 }
 
+// playwrightCatalogPackage extracts the pinned Playwright package token from
+// the injected MCP catalog config used by readiness tests.
+func playwrightCatalogPackage(t *testing.T, catalogConfig string) string {
+	t.Helper()
+	const prefix = "@playwright/mcp@"
+	start := strings.Index(catalogConfig, prefix)
+	if start < 0 {
+		t.Fatalf("catalog config is missing %s package token", prefix)
+	}
+	token := catalogConfig[start:]
+	end := strings.Index(token, "\"")
+	if end < 0 {
+		t.Fatalf("catalog config has unterminated %s package token", prefix)
+	}
+	return token[:end]
+}
+
+// floatingPackageToken rewrites a pinned package token to its latest-version
+// form while preserving the package name.
+func floatingPackageToken(t *testing.T, packageToken string) string {
+	t.Helper()
+	versionStart := strings.LastIndex(packageToken, "@")
+	if versionStart <= 0 || versionStart == len(packageToken)-1 {
+		t.Fatalf("package token %q does not include a pinned version", packageToken)
+	}
+	return packageToken[:versionStart+1] + "latest"
+}
+
 func TestBuildUpgradeReadinessChecks_UnrecognizedConfigKeys(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
@@ -128,8 +156,10 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 	if updated == string(cfg) {
 		t.Fatal("failed to enable playwright server in test config")
 	}
-	updated = strings.Replace(updated, "@playwright/mcp@0.0.68", "@playwright/mcp@latest", 1)
-	if !strings.Contains(updated, "@playwright/mcp@latest") {
+	playwrightPackage := playwrightCatalogPackage(t, string(cfg))
+	floatingPlaywrightPackage := floatingPackageToken(t, playwrightPackage)
+	updated = strings.Replace(updated, playwrightPackage, floatingPlaywrightPackage, 1)
+	if !strings.Contains(updated, floatingPlaywrightPackage) {
 		t.Fatal("failed to set floating playwright dependency in test config")
 	}
 	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
@@ -146,7 +176,7 @@ func TestBuildUpgradeReadinessChecks_FloatingDependenciesEnabledOnly(t *testing.
 		t.Fatalf("expected %s check", readinessCheckFloatingDependencies)
 	}
 	joined := strings.Join(check.Details, "\n")
-	if !strings.Contains(joined, "@playwright/mcp@latest") {
+	if !strings.Contains(joined, floatingPlaywrightPackage) {
 		t.Fatalf("expected floating dependency detail, got %q", joined)
 	}
 }
