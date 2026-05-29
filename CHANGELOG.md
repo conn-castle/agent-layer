@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 - `make al-agy` developer convenience target.
 
 ### Changed
+- The recurring `agent-layer update available` warning (shown on `al sync` and `al <client>` runs) now tells users how to turn it off: set `version_update_on_sync = false` under `[warnings]` in `.agent-layer/config.toml`. The default stays on, and `al doctor`'s update check is unaffected.
+- Shipped agent instructions (`01_base.md`) now: direct agents to add real logging/instrumentation to the code to gather evidence on repeated failures instead of guessing; tell agents to zealously preserve context by delegating context-heavy work to subagents; and explicitly encourage scratch scripts and temporary files under `.agent-layer/tmp` for debugging.
 - Shared skill projection now treats Antigravity as the supported shared-skill consumer in place of Gemini CLI.
 - Fresh `al init` now defaults `[agents.antigravity] enabled = false` (the prior `true` default was scoped to the retired Antigravity desktop launcher). Existing repos keep their migrated value from the v0.10.2 migration; users on the retired desktop launcher will have their pre-existing enable flag replaced by the rename from `agents.gemini.enabled` (or the new default if no Gemini config existed). The v0.10.2 row in `site/docs/upgrades.mdx` documents the replacement behavior.
 

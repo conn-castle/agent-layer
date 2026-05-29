@@ -95,9 +95,14 @@ const (
 	InitValidateReleaseVersionStatusFmt   = "validate requested release v%s: unexpected status %s"
 	InitReleaseVersionNotFoundFmt         = "requested release v%s not found; check available versions at %s"
 
-	UpdateUpgradeBlock         = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  2) Upgrade this repo:\n     al upgrade plan\n     al upgrade"
-	UpdateSafetyBlock          = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade` is the recommended default path.\n  - Non-interactive managed-only apply: `al upgrade --yes --apply-managed-updates`.\n  - Include memory updates/deletions only when explicitly selected with apply flags.\n  - Keep secrets only in `.agent-layer/.env` (AL_* keys) or process environment; do not commit generated files with resolved secrets."
-	InitWarnUpdateAvailableFmt = "Warning: agent-layer update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n"
+	UpdateUpgradeBlock = "Upgrade:\n  1) Update the CLI:\n     Homebrew: brew upgrade conn-castle/tap/agent-layer\n     macOS/Linux: curl -fsSL https://github.com/conn-castle/agent-layer/releases/latest/download/al-install.sh | bash\n  2) Upgrade this repo:\n     al upgrade plan\n     al upgrade"
+	UpdateSafetyBlock  = "Safety:\n  - Back up local changes before upgrading.\n  - `al upgrade` is the recommended default path.\n  - Non-interactive managed-only apply: `al upgrade --yes --apply-managed-updates`.\n  - Include memory updates/deletions only when explicitly selected with apply flags.\n  - Keep secrets only in `.agent-layer/.env` (AL_* keys) or process environment; do not commit generated files with resolved secrets."
+	// UpdateSilenceBlock tells users how to permanently turn off the recurring update warning.
+	// It is intentionally appended only to InitWarnUpdateAvailableFmt (the warning shown on
+	// `al sync` and `al <client>` runs) and not to the shared blocks, because `al doctor`
+	// always checks for updates regardless of version_update_on_sync.
+	UpdateSilenceBlock         = "Silence:\n  - To stop this warning, set `version_update_on_sync = false` under `[warnings]` in `.agent-layer/config.toml`."
+	InitWarnUpdateAvailableFmt = "Warning: agent-layer update available: %s (current %s)\n\n" + UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock + "\n\n" + UpdateSilenceBlock + "\n"
 
 	// CompletionUse is the completion command usage.
 	CompletionUse                 = "completion [bash|zsh|fish]"

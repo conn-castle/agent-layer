@@ -62,3 +62,8 @@ Do not duplicate information that belongs in other memory files:
 ## Test policy
 
 - Do not write tests that assert specific wording, language, headings, or prose contracts in skill and instruction templates. Those checks are tautological and brittle. Tests may verify Agent Layer mechanics such as parsing, validation, sync/projection, resource copying, file existence/absence, and generated artifacts.
+
+## Root resolution in cmd/al tests
+
+- Root resolution (`internal/root` `FindAgentLayerRoot`/`FindRepoRoot`) walks upward from the working dir and stops only at a `.agent-layer/` or the filesystem root — there is no intermediate ceiling. `cmd/al` tests run from `t.TempDir()` (under the OS temp dir) and assume no ancestor holds a `.agent-layer`.
+- A stray `.agent-layer` above the temp dir — e.g. `/tmp/.agent-layer` left by running `al init`/`al wizard`/`make al-*` while `cd`'d into `/tmp` — makes resolution escape the test sandbox. Symptoms: `cmd/al` tests fail with `got "/tmp"` or `already initialized in an ancestor directory (/tmp)`. Fix: `rm -rf /tmp/.agent-layer`, and don't run `al init` from `/tmp`. CI runners are clean, so this is a local-only gotcha.

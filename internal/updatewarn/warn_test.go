@@ -75,6 +75,21 @@ func TestWarnIfOutdated_ErrorDevAndOutdated(t *testing.T) {
 	}
 }
 
+func TestWarnIfOutdated_OutdatedTellsUserHowToSilence(t *testing.T) {
+	orig := CheckForUpdate
+	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
+		return update.CheckResult{Outdated: true, Current: "1.0.0", Latest: "2.0.0"}, nil
+	}
+	t.Cleanup(func() { CheckForUpdate = orig })
+
+	var stderr bytes.Buffer
+	WarnIfOutdated(context.Background(), "v1.0.0", &stderr)
+	out := stderr.String()
+	if !strings.Contains(out, "version_update_on_sync = false") {
+		t.Fatalf("expected the warning to tell the user how to silence it, got %q", out)
+	}
+}
+
 func TestWarnIfOutdated_RateLimitProducesNoOutput(t *testing.T) {
 	orig := CheckForUpdate
 	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
