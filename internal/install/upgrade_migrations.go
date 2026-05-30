@@ -429,6 +429,13 @@ func writeUpgradeMigrationReport(out io.Writer, report UpgradeMigrationReport) e
 		ew.printf("  - source note: %s\n", note)
 	}
 	for _, entry := range report.Entries {
+		// No-op migrations made no repository change and are internal bookkeeping
+		// only. Surfacing them is noise, so they are never shown to the user.
+		// Applied and skipped_* rows are still reported (skipped_* may require
+		// manual follow-up).
+		if entry.Status == UpgradeMigrationStatusNoop {
+			continue
+		}
 		ew.printf("  - [%s] %s (%s): %s\n", entry.Status, entry.ID, entry.Kind, entry.Rationale)
 		if entry.SkipReason != "" {
 			ew.printf("    reason: %s\n", entry.SkipReason)

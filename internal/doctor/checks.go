@@ -31,7 +31,28 @@ var (
 const antigravityVersionTimeout = 5 * time.Second
 const antigravityVersionWaitDelay = 100 * time.Millisecond
 
-const maxSkillCatalogMetadataChars = 10000
+// MaxSkillCatalogMetadataChars is the recommended character budget for combined skill
+// names and descriptions (the catalog metadata loaded into the agent on every run).
+const MaxSkillCatalogMetadataChars = 10000
+
+// SkillCatalogMetadata returns the concatenated skill names and descriptions and their
+// combined Unicode rune count. It is the single source for catalog-metadata sizing, used
+// by both CheckSkills (for the over-budget warning) and the doctor size summary. The
+// returned text lets callers estimate a token count without re-deriving the char count.
+func SkillCatalogMetadata(cfg *config.ProjectConfig) (text string, chars int) {
+	if cfg == nil {
+		return "", 0
+	}
+	var sb strings.Builder
+	for _, skill := range cfg.Skills {
+		name := strings.TrimSpace(skill.Name)
+		desc := strings.TrimSpace(skill.Description)
+		sb.WriteString(name)
+		sb.WriteString(desc)
+		chars += utf8.RuneCountInString(name) + utf8.RuneCountInString(desc)
+	}
+	return sb.String(), chars
+}
 
 func commandOutputWithTimeout(timeout time.Duration, name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -50,12 +71,34 @@ func commandOutputWithTimeout(timeout time.Duration, name string, args ...string
 	return output, err
 }
 
-// agyVersionRE matches the version reported on the `agy <version>` line so
+// agyVersionRE matches the version reported on an `agy <version>` line so
 // unrelated dotted-numeric noise (build timestamps, go runtime version, etc.)
-// in `agy --version` output cannot be silently accepted as the agy version.
-// Accepts the common upstream shapes: `agy 1.0.0`, `agy v1.0.0`, and
-// `agy version 1.0.0`. The first capture group is the bare X.Y.Z triple.
+// in multi-line `agy --version` output cannot be silently accepted as the agy
+// version. Accepts the prefixed upstream shapes: `agy 1.0.0`, `agy v1.0.0`,
+// and `agy version 1.0.0`. The first capture group is the bare X.Y.Z triple.
 var agyVersionRE = regexp.MustCompile(`(?m)^agy(?:\s+version)?\s+v?(\d+\.\d+\.\d+)\b`)
+
+// bareAgyVersionRE matches output whose entire (trimmed) content is nothing
+// but a version triple, e.g. the literal `1.0.2` that `agy --version` prints
+// as of Antigravity 1.0.x. Anchoring to the whole trimmed output (rather than
+// any line) keeps a stray dotted-numeric line inside noisier multi-line output
+// from being mistaken for the version. The first capture group is the bare
+// X.Y.Z triple.
+var bareAgyVersionRE = regexp.MustCompile(`^v?(\d+\.\d+\.\d+)$`)
+
+// parseAgyVersion extracts the bare X.Y.Z version from `agy --version` output.
+// It accepts both the bare form the current CLI prints (`1.0.2`) and the
+// `agy`-prefixed line shape, returning "" when neither yields a confident
+// match so the caller can surface an explicit "could not parse" failure.
+func parseAgyVersion(output string) string {
+	if match := bareAgyVersionRE.FindStringSubmatch(strings.TrimSpace(output)); len(match) >= 2 {
+		return match[1]
+	}
+	if match := agyVersionRE.FindStringSubmatch(output); len(match) >= 2 {
+		return match[1]
+	}
+	return ""
+}
 
 // CheckStructure verifies that required and optional project directories are sane.
 func CheckStructure(root string) []Result {
@@ -322,13 +365,10 @@ func CheckAntigravityBinary() []Result {
 		}}
 	}
 	versionText := string(output)
-	// Use the capture group so an optional `v` prefix is stripped before
-	// passing the value to compareDoctorSemver (which expects a bare
-	// X.Y.Z triple).
-	var versionValue string
-	if match := agyVersionRE.FindStringSubmatch(versionText); len(match) >= 2 {
-		versionValue = match[1]
-	}
+	// parseAgyVersion strips any optional `v` prefix and accepts both the bare
+	// (`1.0.2`) and `agy`-prefixed output shapes before the value is passed to
+	// compareDoctorSemver (which expects a bare X.Y.Z triple).
+	versionValue := parseAgyVersion(versionText)
 	if versionValue == "" {
 		return []Result{{
 			Status:         StatusFail,
@@ -505,16 +545,12 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 		}
 	}
 
-	catalogChars := 0
-	for _, skill := range skills {
-		catalogChars += utf8.RuneCountInString(strings.TrimSpace(skill.Name))
-		catalogChars += utf8.RuneCountInString(strings.TrimSpace(skill.Description))
-	}
-	if catalogChars > maxSkillCatalogMetadataChars {
+	_, catalogChars := SkillCatalogMetadata(cfg)
+	if catalogChars > MaxSkillCatalogMetadataChars {
 		results = append(results, Result{
 			Status:         StatusWarn,
 			CheckName:      messages.DoctorCheckNameSkills,
-			Message:        fmt.Sprintf(messages.DoctorSkillCatalogTooLargeFmt, maxSkillCatalogMetadataChars, catalogChars, len(skills)),
+			Message:        fmt.Sprintf(messages.DoctorSkillCatalogTooLargeFmt, MaxSkillCatalogMetadataChars, catalogChars, len(skills)),
 			Recommendation: messages.DoctorSkillValidationRecommend,
 		})
 	}

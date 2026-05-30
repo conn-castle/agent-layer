@@ -333,33 +333,6 @@ func TestBuildSummary(t *testing.T) {
 		assert.Contains(t, summary, "(none)")
 	})
 
-	t.Run("with restored MCP servers", func(t *testing.T) {
-		c := NewChoices()
-		c.ApprovalMode = "all"
-		c.DefaultMCPServers = []DefaultMCPServer{{ID: "github"}}
-		c.EnabledMCPServers["github"] = true
-		c.RestoreMissingMCPServers = true
-		c.MissingDefaultMCPServers = []string{"context7"}
-
-		summary := buildSummary(c)
-		assert.Contains(t, summary, "Restored Default MCP Servers:")
-		assert.Contains(t, summary, "- context7")
-	})
-
-	t.Run("omits restored MCP servers pruned by multiselect", func(t *testing.T) {
-		c := NewChoices()
-		c.ApprovalMode = "all"
-		c.DefaultMCPServers = []DefaultMCPServer{{ID: "context7"}}
-		c.RestoreMissingMCPServers = true
-		c.MissingDefaultMCPServers = []string{"context7"}
-		c.EnabledMCPServersTouched = true
-		c.EnabledMCPServers["context7"] = false
-
-		summary := buildSummary(c)
-		assert.NotContains(t, summary, "Restored Default MCP Servers:")
-		assert.NotContains(t, summary, "- context7")
-	})
-
 	t.Run("with secrets to update", func(t *testing.T) {
 		c := NewChoices()
 		c.ApprovalMode = "all"

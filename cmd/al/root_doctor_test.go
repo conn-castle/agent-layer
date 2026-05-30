@@ -78,8 +78,8 @@ func TestDoctorCommand_MissingOptionalDocsDirDoesNotFail(t *testing.T) {
 		checkPolicy = origPolicy
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, nil
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, nil
 	}
 	checkPolicy = func(*config.ProjectConfig) []warnings.Warning { return nil }
 
@@ -116,8 +116,8 @@ func TestDoctorCommand_UpdateSkippedNoNetwork(t *testing.T) {
 		checkMCPServers = origMCP
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, nil
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, nil
 	}
 
 	t.Setenv(dispatch.EnvNoNetwork, "1")
@@ -144,8 +144,8 @@ func TestDoctorCommand_UpdateCheckError(t *testing.T) {
 		checkMCPServers = origMCP
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, nil
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, nil
 	}
 
 	testutil.WithWorkingDir(t, root, func() {
@@ -171,8 +171,8 @@ func TestDoctorCommand_UpdateCheckRateLimitedIsMinimized(t *testing.T) {
 		checkMCPServers = origMCP
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, nil
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, nil
 	}
 
 	origStdout := os.Stdout
@@ -227,8 +227,8 @@ func TestDoctorCommand_UpdateCheckDevBuild(t *testing.T) {
 		checkMCPServers = origMCP
 	})
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, nil
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, nil
 	}
 
 	testutil.WithWorkingDir(t, root, func() {
@@ -259,9 +259,9 @@ func TestDoctorCommand_ConfigErrorSkipsWarningSystem(t *testing.T) {
 		calledInstructions = true
 		return nil, nil
 	}
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
 		calledMCP = true
-		return nil, nil
+		return nil, warnings.MCPSummary{}, nil
 	}
 
 	testutil.WithWorkingDir(t, root, func() {
@@ -433,8 +433,8 @@ func TestDoctorCommand_InstructionsError(t *testing.T) {
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) {
 		return nil, errors.New("instructions failed")
 	}
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, nil
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, nil
 	}
 
 	testutil.WithWorkingDir(t, root, func() {
@@ -464,8 +464,8 @@ func TestDoctorCommand_MCPError(t *testing.T) {
 	checkInstructions = func(string, *int) ([]warnings.Warning, error) {
 		return nil, nil
 	}
-	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, error) {
-		return nil, errors.New("mcp failed")
+	checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+		return nil, warnings.MCPSummary{}, errors.New("mcp failed")
 	}
 
 	testutil.WithWorkingDir(t, root, func() {
@@ -573,5 +573,144 @@ func TestStartMCPDiscoveryReporterZero(t *testing.T) {
 	expected := fmt.Sprintf(messages.DoctorMCPCheckStartFmt, 0) + messages.DoctorMCPCheckDone + "\n"
 	if output.String() != expected {
 		t.Fatalf("unexpected output: got %q, want %q", output.String(), expected)
+	}
+}
+
+func TestRenderSizeSummary(t *testing.T) {
+	intp := func(v int) *int { return &v }
+
+	t.Run("values against thresholds", func(t *testing.T) {
+		var out bytes.Buffer
+		w := config.WarningsConfig{
+			InstructionTokenThreshold:     intp(10000),
+			MCPServerThreshold:            intp(15),
+			MCPToolsTotalThreshold:        intp(60),
+			MCPSchemaTokensTotalThreshold: intp(30000),
+		}
+		mcp := warnings.MCPSummary{Available: true, EnabledServers: 4, ReachableServers: 4, TotalTools: 38, TotalSchemaTokens: 18400}
+		renderSizeSummary(&out, w, 3240, "AGENTS.md", nil, 7450, 1820, mcp)
+		s := out.String()
+		for _, want := range []string{
+			"📊 Context size summary",
+			"Instructions (AGENTS.md): 3240 / 10000 tokens",
+			"Skills: ~1820 tokens (catalog metadata 7450 / 10000 chars)",
+			"MCP servers enabled: 4 / 15",
+			"MCP tools (total): 38 / 60",
+			"MCP tool schemas (total): 18400 / 30000 tokens",
+		} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("expected %q in summary, got:\n%s", want, s)
+			}
+		}
+		if strings.Contains(s, "no limit set") {
+			t.Fatalf("did not expect no-limit text, got:\n%s", s)
+		}
+		if strings.Contains(s, "unreachable") {
+			t.Fatalf("did not expect partial note when all reachable, got:\n%s", s)
+		}
+	})
+
+	t.Run("nil thresholds show no limit set", func(t *testing.T) {
+		var out bytes.Buffer
+		mcp := warnings.MCPSummary{Available: true, EnabledServers: 2, ReachableServers: 2, TotalTools: 5, TotalSchemaTokens: 1000}
+		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 50, 12, mcp)
+		s := out.String()
+		for _, want := range []string{
+			"Instructions (AGENTS.md): 100 tokens (no limit set)",
+			"MCP servers enabled: 2 (no limit set)",
+			"MCP tools (total): 5 (no limit set)",
+			"MCP tool schemas (total): 1000 tokens (no limit set)",
+		} {
+			if !strings.Contains(s, want) {
+				t.Fatalf("expected %q, got:\n%s", want, s)
+			}
+		}
+	})
+
+	t.Run("instruction measure error is surfaced", func(t *testing.T) {
+		var out bytes.Buffer
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "", errors.New("boom"), 0, 0, warnings.MCPSummary{Available: true})
+		if !strings.Contains(out.String(), "Instructions: size unavailable (boom)") {
+			t.Fatalf("expected instruction error surfaced, got:\n%s", out.String())
+		}
+	})
+
+	t.Run("mcp unavailable hides totals", func(t *testing.T) {
+		var out bytes.Buffer
+		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 0, 0, warnings.MCPSummary{Available: false})
+		s := out.String()
+		if !strings.Contains(s, "MCP servers: size unavailable") {
+			t.Fatalf("expected mcp unavailable, got:\n%s", s)
+		}
+		if strings.Contains(s, "MCP servers enabled:") {
+			t.Fatalf("did not expect enabled-servers line when unavailable, got:\n%s", s)
+		}
+	})
+
+	t.Run("partial note when some servers unreachable", func(t *testing.T) {
+		var out bytes.Buffer
+		mcp := warnings.MCPSummary{Available: true, EnabledServers: 3, ReachableServers: 1, TotalTools: 2, TotalSchemaTokens: 500}
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "AGENTS.md", nil, 0, 0, mcp)
+		if !strings.Contains(out.String(), "2 of 3 enabled MCP server(s) unreachable") {
+			t.Fatalf("expected partial note, got:\n%s", out.String())
+		}
+	})
+}
+
+func TestDoctorCommand_SizeSummaryAlwaysPrinted(t *testing.T) {
+	for _, quiet := range []bool{false, true} {
+		name := "default"
+		if quiet {
+			name = "quiet"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeDoctorTestRepo(t, root)
+			stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+
+			origInstructions := checkInstructions
+			origMeasure := measureInstructions
+			origMCP := checkMCPServers
+			origPolicy := checkPolicy
+			t.Cleanup(func() {
+				checkInstructions = origInstructions
+				measureInstructions = origMeasure
+				checkMCPServers = origMCP
+				checkPolicy = origPolicy
+			})
+			checkInstructions = func(string, *int) ([]warnings.Warning, error) { return nil, nil }
+			measureInstructions = func(string) (int, string, error) { return 1234, "AGENTS.md", nil }
+			checkMCPServers = func(context.Context, *config.ProjectConfig, warnings.Connector, warnings.MCPDiscoveryStatusFunc) ([]warnings.Warning, warnings.MCPSummary, error) {
+				return nil, warnings.MCPSummary{Available: true, EnabledServers: 3, ReachableServers: 3, TotalTools: 7, TotalSchemaTokens: 4200}, nil
+			}
+			checkPolicy = func(*config.ProjectConfig) []warnings.Warning { return nil }
+
+			var out bytes.Buffer
+			testutil.WithWorkingDir(t, root, func() {
+				cmd := newRootCmd()
+				cmd.SetOut(&out)
+				if quiet {
+					cmd.SetArgs([]string{"--quiet", "doctor"})
+				} else {
+					cmd.SetArgs([]string{"doctor"})
+				}
+				if err := cmd.Execute(); err != nil {
+					t.Fatalf("doctor command failed (quiet=%v): %v\noutput:\n%s", quiet, err, out.String())
+				}
+			})
+
+			s := out.String()
+			for _, want := range []string{
+				messages.DoctorSizeSummaryHeader,
+				"Instructions (AGENTS.md): 1234",
+				"MCP servers enabled: 3",
+				"MCP tools (total): 7",
+				"MCP tool schemas (total): 4200",
+			} {
+				if !strings.Contains(s, want) {
+					t.Fatalf("expected %q in doctor output (quiet=%v), got:\n%s", want, quiet, s)
+				}
+			}
+		})
 	}
 }

@@ -96,7 +96,6 @@ func TestInitializeChoices_AdditionalBranches(t *testing.T) {
 
 func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 	t.Run("promptWizardFlow first-step confirm error", func(t *testing.T) {
-		cfg := &config.ProjectConfig{Config: config.Config{}}
 		choices := NewChoices()
 		choices.ApprovalMode = config.ApprovalModeAll
 		ui := &MockUI{
@@ -107,7 +106,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 				return errors.New("confirm failed")
 			},
 		}
-		err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+		err := promptWizardFlow(t.TempDir(), ui, choices, false)
 		if err == nil || !strings.Contains(err.Error(), "confirm failed") {
 			t.Fatalf("expected confirm error, got %v", err)
 		}

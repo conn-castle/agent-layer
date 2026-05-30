@@ -83,6 +83,112 @@ func TestWriteUpgradeMigrationReport_CoversFieldsAndWriterErrors(t *testing.T) {
 	}
 }
 
+func TestWriteUpgradeMigrationReport_HidesNoopRows(t *testing.T) {
+	report := UpgradeMigrationReport{
+		TargetVersion:         "0.10.2",
+		SourceVersion:         "0.9.0",
+		SourceVersionOrigin:   UpgradeMigrationSourceSnapshot,
+		SourceResolutionNotes: []string{"managed baseline version invalid"},
+		Entries: []UpgradeMigrationEntry{
+			{
+				ID:        "applied-one",
+				Kind:      string(upgradeMigrationKindConfigSetDefault),
+				Rationale: "set a default",
+				Status:    UpgradeMigrationStatusApplied,
+				Key:       "agents.antigravity.enabled",
+			},
+			{
+				ID:        "noop-one",
+				Kind:      string(upgradeMigrationKindRenameFile),
+				Rationale: "reorder rules first",
+				Status:    UpgradeMigrationStatusNoop,
+				From:      ".agent-layer/instructions/02_rules.md",
+				To:        ".agent-layer/instructions/00_rules.md",
+			},
+			{
+				ID:         "skip-one",
+				Kind:       string(upgradeMigrationKindDeleteFile),
+				Rationale:  "remove deprecated skill",
+				Status:     UpgradeMigrationStatusSkippedSourceTooOld,
+				SkipReason: "source too old",
+				Path:       ".agent-layer/skills/find-issues",
+			},
+		},
+	}
+
+	var out bytes.Buffer
+	if err := writeUpgradeMigrationReport(&out, report); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	got := out.String()
+
+	// Header, versions, and diagnostic notes are still shown.
+	if !containsAll(got,
+		"Migration report:",
+		"target version: 0.10.2",
+		"source version: 0.9.0 (upgrade_snapshot)",
+		"source note: managed baseline version invalid",
+		"[applied] applied-one",
+		"[skipped_source_too_old] skip-one",
+		"reason: source too old",
+	) {
+		t.Fatalf("expected applied/skipped rows and header, got:\n%s", got)
+	}
+
+	// No-op rows must never reach the user: neither the status line nor its
+	// detail fields.
+	for _, forbidden := range []string{
+		"no_op",
+		"noop-one",
+		"reorder rules first",
+		"02_rules.md",
+		"00_rules.md",
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("no-op row leaked %q into report:\n%s", forbidden, got)
+		}
+	}
+}
+
+func TestWriteUpgradeMigrationReport_AllNoopKeepsHeaderOnly(t *testing.T) {
+	report := UpgradeMigrationReport{
+		TargetVersion:         "0.10.2",
+		SourceVersion:         "0.9.0",
+		SourceVersionOrigin:   UpgradeMigrationSourceSnapshot,
+		SourceResolutionNotes: []string{"managed baseline version invalid"},
+		Entries: []UpgradeMigrationEntry{
+			{
+				ID:        "noop-one",
+				Kind:      string(upgradeMigrationKindRenameFile),
+				Rationale: "reorder rules first",
+				Status:    UpgradeMigrationStatusNoop,
+				From:      ".agent-layer/instructions/02_rules.md",
+				To:        ".agent-layer/instructions/00_rules.md",
+			},
+		},
+	}
+
+	var out bytes.Buffer
+	if err := writeUpgradeMigrationReport(&out, report); err != nil {
+		t.Fatalf("write report: %v", err)
+	}
+	got := out.String()
+
+	// When every entry is a no-op, the header, target/source versions, and source
+	// note are still shown (they carry diagnostic value) but no migration rows appear.
+	if !containsAll(got,
+		"Migration report:",
+		"target version: 0.10.2",
+		"source version: 0.9.0 (upgrade_snapshot)",
+		"source note: managed baseline version invalid",
+	) {
+		t.Fatalf("expected header, versions, and source note, got:\n%s", got)
+	}
+	if strings.Contains(got, "[no_op]") || strings.Contains(got, "noop-one") {
+		t.Fatalf("no-op row leaked into all-noop report:\n%s", got)
+	}
+}
+
 func TestExecuteRenameMigration_Branches(t *testing.T) {
 	t.Run("same path no-op", func(t *testing.T) {
 		inst := &installer{root: t.TempDir(), sys: RealSystem{}}

@@ -131,6 +131,16 @@ If a server fails to start with “No such file or directory,” verify the `com
 When config validation fails due to unrecognized keys, `al doctor` reports the detected key paths, schema hints (allowed keys where applicable), and repair options (`al upgrade`, `al wizard`, or manual edits).
 When agents are enabled, it verifies generated client configs (for example `.mcp.json`, `.agy/antigravity-cli/settings.json`) are in sync; run `al sync` if they are missing or stale.
 
+### Doctor size summary
+
+`al doctor` always prints a **context size summary** after the checks, even when every value is under its threshold and even with `noise_mode = "quiet"` or `al --quiet doctor` (it is informational, not a warning):
+
+- **Instructions** — estimated tokens of the combined instruction payload, shown against `instruction_token_threshold`.
+- **Skills** — an estimated token count for the skill catalog metadata, alongside its character budget (`<chars> / 10000 chars`); the limit stays character-based to match the skills warning.
+- **MCP servers** — totals only: enabled servers, total tools, and total tool-schema tokens, each against its configured threshold.
+
+A metric whose threshold is omitted shows `(no limit set)` rather than a default. If MCP servers can't be resolved the line reports the size as unavailable; if some servers are unreachable, a note states that the tool and schema totals exclude them.
+
 ---
 
 ## FAQ
@@ -325,7 +335,7 @@ enabled = true
 enabled = true
 # model is optional; when omitted, Agent Layer does not pass a model flag and the client uses its default.
 # model = "..."
-# reasoning_effort is optional for Opus models only.
+# reasoning_effort is optional; Claude Code applies it where the active model supports it.
 # reasoning_effort = "medium" # low | medium | high | xhigh | max (custom values pass through with a warning)
 # Note: "max" is session-only (passed via --effort CLI flag) and is not written to .claude/settings.json.
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
@@ -443,7 +453,7 @@ Omit `http_transport` to default to `sse`.
 Warning thresholds are optional. When a threshold is omitted, its warning is disabled. Values must be positive integers (zero/negative are rejected by config validation). `al sync` uses `instruction_token_threshold` and, when `version_update_on_sync = true`, warns if a newer Agent Layer release is available. `al doctor` evaluates all configured MCP warning thresholds.
 
 Set `version_update_on_sync = true` to opt in to update warnings during `al sync` and `al <client>`; omit it or set it to `false` to keep update warnings limited to `al init`, `al doctor`, and `al wizard`.
-Set `noise_mode = "default"` to keep all warnings (recommended), `noise_mode = "reduce"` to hide only suppressible non-critical warnings, or `noise_mode = "quiet"` to suppress agent-layer informational output. Errors still print, client output is unaffected, and `al doctor` prints warnings by default regardless of noise mode. For one-off doctor runs, `al --quiet doctor` suppresses warning-only doctor output while still showing failures.
+Set `noise_mode = "default"` to keep all warnings (recommended), `noise_mode = "reduce"` to hide only suppressible non-critical warnings, or `noise_mode = "quiet"` to suppress agent-layer informational output. Errors still print, client output is unaffected, and `al doctor` prints warnings by default regardless of noise mode. For one-off doctor runs, `al --quiet doctor` suppresses warning-only doctor output while still showing failures. The `al doctor` size summary is informational and always prints, regardless of noise mode or `--quiet`.
 
 Use `al <client> --quiet` (or `-q`) for one-off quiet runs; the flag always wins over config.
 

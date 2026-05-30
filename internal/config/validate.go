@@ -27,22 +27,6 @@ func isValidApprovalMode(mode string) bool {
 	return false
 }
 
-// ClaudeModelSupportsReasoningEffort reports whether the given Claude model
-// string identifies an Opus variant that supports reasoning effort.
-// Matches "opus", "opusplan", "claude-opus-4-6", etc., but not "corpus".
-func ClaudeModelSupportsReasoningEffort(model string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(model))
-	if normalized == "" || normalized == "default" {
-		return false
-	}
-	// Match model strings that start with "opus" (e.g., "opus", "opusplan") or
-	// contain "opus" after a delimiter (e.g., "claude-opus-4-6").
-	if strings.HasPrefix(normalized, "opus") {
-		return true
-	}
-	return strings.Contains(normalized, "-opus") || strings.Contains(normalized, "_opus")
-}
-
 // validClients lists clients that can appear in mcp.servers[].clients.
 // "claude_vscode" is intentionally absent — the Claude VS Code extension shares
 // .mcp.json with Claude CLI, so "claude" covers both.
@@ -100,26 +84,19 @@ func (c *Config) Validate(path string) error {
 	if err := validateDispatchDefault(path, "agents.codex.dispatch.default_agent", c.Agents.Codex.Dispatch.DefaultAgent); err != nil {
 		return err
 	}
-	// Unknown reasoning-effort values are accepted; warnings.CheckPolicy emits a
-	// sync-time warning so new client levels (e.g. xhigh) work before the catalog
-	// catches up. The Opus check below stays a hard error — non-Opus models
-	// reject reasoning_effort outright.
-	if strings.TrimSpace(c.Agents.Claude.ReasoningEffort) != "" {
-		if !ClaudeModelSupportsReasoningEffort(c.Agents.Claude.Model) {
-			return fmt.Errorf(messages.ConfigClaudeReasoningEffortModelUnsupportedFmt, path, c.Agents.Claude.Model)
-		}
-	}
-
 	if strings.TrimSpace(c.Agents.CopilotCLI.ReasoningEffort) != "" {
 		return fmt.Errorf(messages.ConfigCopilotCLIReasoningEffortUnsupportedFmt, path)
 	}
 
-	// Model validation: agent model values (agents.claude.model,
-	// agents.codex.model, agents.codex.reasoning_effort) are intentionally NOT validated
-	// here. The field catalog (fields.go) defines known options with AllowCustom: true,
-	// meaning arbitrary model strings are accepted. The downstream client is the authority
-	// on valid model names. See Decision config-field-catalog. Claude reasoning effort is
-	// validated separately above because only a subset of models support it.
+	// Model and reasoning-effort validation: agent model values (agents.claude.model,
+	// agents.codex.model) and reasoning-effort values (agents.claude.reasoning_effort,
+	// agents.codex.reasoning_effort) are intentionally NOT validated here. The field
+	// catalog (fields.go) defines known options with AllowCustom: true, meaning arbitrary
+	// strings are accepted. The downstream client is the authority on which model and
+	// effort combinations are valid — Claude Code applies reasoning effort where the active
+	// model supports it and ignores it otherwise. See Decision config-field-catalog.
+	// (Copilot CLI is the lone exception above: it exposes no reasoning-effort control at
+	// all, so a value there is rejected outright.)
 
 	seenServerIDs := make(map[string]int, len(c.MCP.Servers))
 	for i, server := range c.MCP.Servers {

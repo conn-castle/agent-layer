@@ -206,6 +206,10 @@ AL_RUN := GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al
 al-upgrade: ## Upgrade this repo's .agent-layer using current source
 	@$(AL_RUN) upgrade
 
+.PHONY: al-wizard
+al-wizard: ## Run al wizard against this repo using current source
+	@$(AL_RUN) wizard
+
 .PHONY: al-doctor
 al-doctor: ## Run al doctor against this repo using current source
 	@$(AL_RUN) doctor

@@ -52,9 +52,18 @@ type Choices struct {
 	EnabledMCPServers        map[string]bool
 	EnabledMCPServersTouched bool
 	DisabledMCPServers       map[string]bool
-	MissingDefaultMCPServers []string
-	RestoreMissingMCPServers bool
 	DefaultMCPServers        []DefaultMCPServer
+
+	// Custom (non-catalog) MCP servers found in config.toml.
+	// CustomMCPServers holds their ids in config order; the wizard surfaces them
+	// for keep/disable separately from catalog defaults. CustomMCPServersEnabled
+	// records the per-id decision: true keeps the server enabled, false sets
+	// enabled = false while preserving the entry (a custom server has no catalog
+	// template to restore from, so it is never deleted). CustomMCPServersTouched
+	// is true once the user has answered the custom-server step.
+	CustomMCPServers        []string
+	CustomMCPServersEnabled map[string]bool
+	CustomMCPServersTouched bool
 
 	// Secrets (Env vars)
 	Secrets map[string]string
@@ -73,11 +82,12 @@ type Choices struct {
 // NewChoices returns a Choices struct initialized with defaults.
 func NewChoices() *Choices {
 	return &Choices{
-		EnabledAgents:      make(map[string]bool),
-		EnabledCLISkills:   make(map[string]bool),
-		EnabledMCPServers:  make(map[string]bool),
-		DisabledMCPServers: make(map[string]bool),
-		Secrets:            make(map[string]string),
+		EnabledAgents:           make(map[string]bool),
+		EnabledCLISkills:        make(map[string]bool),
+		EnabledMCPServers:       make(map[string]bool),
+		DisabledMCPServers:      make(map[string]bool),
+		CustomMCPServersEnabled: make(map[string]bool),
+		Secrets:                 make(map[string]string),
 	}
 }
 
@@ -92,8 +102,9 @@ func (c *Choices) Clone() *Choices {
 	clone.EnabledMCPServers = cloneBoolMap(c.EnabledMCPServers)
 	clone.DisabledMCPServers = cloneBoolMap(c.DisabledMCPServers)
 	clone.Secrets = cloneStringMap(c.Secrets)
-	clone.MissingDefaultMCPServers = cloneStringSlice(c.MissingDefaultMCPServers)
 	clone.DefaultMCPServers = cloneDefaultMCPServers(c.DefaultMCPServers)
+	clone.CustomMCPServers = cloneStringSlice(c.CustomMCPServers)
+	clone.CustomMCPServersEnabled = cloneBoolMap(c.CustomMCPServersEnabled)
 	clone.CLISkillsCatalog = cloneCLISkillCatalog(c.CLISkillsCatalog)
 	return &clone
 }

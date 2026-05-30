@@ -13,10 +13,29 @@ import (
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
+// MCPSummary holds aggregate MCP discovery measurements for reporting (e.g. the doctor
+// size summary). It is produced by the same single discovery pass that emits warnings.
+type MCPSummary struct {
+	// Available is false when enabled servers could not be resolved at all (in which case
+	// the remaining counts are meaningless and should not be reported).
+	Available bool
+	// EnabledServers is the count of enabled, resolvable servers.
+	EnabledServers int
+	// ReachableServers is the count of servers discovery succeeded for. When it is less
+	// than EnabledServers, the tool/schema totals exclude the unreachable servers.
+	ReachableServers int
+	// TotalTools is the number of tools discovered across reachable servers.
+	TotalTools int
+	// TotalSchemaTokens is the estimated tool-schema token count across reachable servers.
+	TotalSchemaTokens int
+}
+
 // CheckMCPServers performs discovery on enabled MCP servers and checks against warning thresholds.
 // cfg supplies the configured thresholds; nil thresholds disable the corresponding warnings.
 // statusFn is an optional callback invoked with discovery events; it is safe to pass nil.
-func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector Connector, statusFn MCPDiscoveryStatusFunc) ([]Warning, error) {
+// It returns the emitted warnings plus an MCPSummary of the aggregate measurements from the
+// same discovery pass (summary.Available is false when servers could not be resolved).
+func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector Connector, statusFn MCPDiscoveryStatusFunc) ([]Warning, MCPSummary, error) {
 	if connector == nil {
 		connector = &RealConnector{}
 	}
@@ -36,7 +55,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			Fix:      messages.WarningsResolveConfigFix,
 			Source:   SourceInternal,
 			Severity: SeverityCritical,
-		}}, nil
+		}}, MCPSummary{}, nil
 	}
 
 	var warnings []Warning
@@ -66,6 +85,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 	// 3. Process results
 	var totalTools int
 	var totalSchemaTokens int
+	var reachableServers int
 	toolNames := make(map[string][]string) // name -> serverIDs
 
 	for _, res := range results {
@@ -84,6 +104,7 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 			})
 			continue
 		}
+		reachableServers++
 
 		// Check: MCP_SERVER_TOO_MANY_TOOLS
 		if thresholds.MCPServerToolsThreshold != nil && len(res.Tools) > *thresholds.MCPServerToolsThreshold {
@@ -185,7 +206,15 @@ func CheckMCPServers(ctx context.Context, cfg *config.ProjectConfig, connector C
 		})
 	}
 
-	return warnings, nil
+	summary := MCPSummary{
+		Available:         true,
+		EnabledServers:    len(enabledServers),
+		ReachableServers:  reachableServers,
+		TotalTools:        totalTools,
+		TotalSchemaTokens: totalSchemaTokens,
+	}
+
+	return warnings, summary, nil
 }
 
 // ToolDef represents a discovered tool from an MCP server.

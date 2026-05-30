@@ -134,8 +134,8 @@ To add a convention that existing users should see:
    ```
    - `path`: the file to append to (relative to repo root).
    - `value`: JSON-encoded string content to append.
-   - `from`: duplicate-detection match string. If this string is already present in the file, the migration is a no-op.
-3. During `al upgrade`, the migration appends the content to the end of the file and reports it in the upgrade output.
+   - `from`: duplicate-detection match string. If this string is already present in the file, the migration is a no-op (no-op migrations are not shown in the upgrade output).
+3. During `al upgrade`, the migration appends the content to the end of the file and reports it in the upgrade output when it actually applies.
 4. The user can keep, edit, or remove the convention after upgrade.
 
 ### Future enhancement

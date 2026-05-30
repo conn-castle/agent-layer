@@ -314,6 +314,52 @@ func TestCheckAntigravityBinary(t *testing.T) {
 		}
 	})
 
+	t.Run("ok with bare version output", func(t *testing.T) {
+		// Antigravity 1.0.x's `agy --version` prints just the bare triple
+		// (e.g. `1.0.2`) with no `agy` prefix. The parser must accept it
+		// rather than reporting "could not parse".
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("1.0.2\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Antigravity version OK: 1.0.2" {
+			t.Fatalf("expected OK for bare `1.0.2`, got: %#v", results)
+		}
+	})
+
+	t.Run("ok with bare v-prefixed version output", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("v1.0.2\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusOK || results[0].Message != "Antigravity version OK: 1.0.2" {
+			t.Fatalf("expected OK for bare `v1.0.2`, got: %#v", results)
+		}
+	})
+
+	t.Run("too old with bare version output", func(t *testing.T) {
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("0.9.9\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusFail || !strings.Contains(results[0].Message, "below required") {
+			t.Fatalf("expected FAIL below required for bare `0.9.9`, got: %#v", results)
+		}
+	})
+
+	t.Run("rejects bare dotted-numeric build noise with trailing content", func(t *testing.T) {
+		// The bare-version path only accepts output whose ENTIRE trimmed
+		// content is a version triple. A line like `1.0.2 (build 99)` carries
+		// trailing content, so it must NOT be silently accepted — it falls
+		// through to "could not parse".
+		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
+		commandOutputFunc = func(name string, args ...string) ([]byte, error) { return []byte("1.0.2 (build 99)\n"), nil }
+		results := CheckAntigravityBinary()
+		if len(results) != 1 || results[0].Status != StatusFail {
+			t.Fatalf("expected FAIL on bare version with trailing content, got: %#v", results)
+		}
+		if !strings.Contains(results[0].Message, "Could not parse Antigravity version") {
+			t.Fatalf("expected 'Could not parse' message, got: %q", results[0].Message)
+		}
+	})
+
 	t.Run("version command failed", func(t *testing.T) {
 		lookPathFunc = func(file string) (string, error) { return "/test/bin/agy", nil }
 		commandOutputFunc = func(name string, args ...string) ([]byte, error) {
@@ -650,6 +696,34 @@ func TestCheckSkills_CatalogMetadataOneOverBoundaryWarns(t *testing.T) {
 // semantics of catalog metadata sizing. A description of 9,995 `界` runes plus
 // a 5-rune name sums to exactly 10,000 runes (no warn) but 29,990 bytes (would
 // warn if `len()` were used instead of `utf8.RuneCountInString`).
+func TestSkillCatalogMetadata_SumsTrimmedRunesAndConcatenatesText(t *testing.T) {
+	cfg := &config.ProjectConfig{
+		Skills: []config.Skill{
+			{Name: "  alpha ", Description: " first "},
+			{Name: "界", Description: "二"},
+		},
+	}
+
+	text, chars := SkillCatalogMetadata(cfg)
+	// Trimmed runes: "alpha"(5)+"first"(5)+"界"(1)+"二"(1) = 12.
+	if chars != 12 {
+		t.Fatalf("expected 12 chars, got %d", chars)
+	}
+	if text != "alphafirst界二" {
+		t.Fatalf("unexpected concatenated text: %q", text)
+	}
+	if chars != utf8.RuneCountInString(text) {
+		t.Fatalf("char count %d does not match rune count of text %d", chars, utf8.RuneCountInString(text))
+	}
+}
+
+func TestSkillCatalogMetadata_NilConfig(t *testing.T) {
+	text, chars := SkillCatalogMetadata(nil)
+	if text != "" || chars != 0 {
+		t.Fatalf("expected empty metadata for nil config, got text=%q chars=%d", text, chars)
+	}
+}
+
 func TestCheckSkills_CatalogMetadataMultibyteRuneBoundary(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills", "alpha")
@@ -657,7 +731,7 @@ func TestCheckSkills_CatalogMetadataMultibyteRuneBoundary(t *testing.T) {
 		t.Fatalf("mkdir skill: %v", err)
 	}
 	name := "alpha"
-	description := strings.Repeat("界", maxSkillCatalogMetadataChars-utf8.RuneCountInString(name))
+	description := strings.Repeat("界", MaxSkillCatalogMetadataChars-utf8.RuneCountInString(name))
 	skillPath := filepath.Join(skillsDir, "SKILL.md")
 	content := fmt.Sprintf("---\nname: %s\ndescription: %s\n---\nBody.\n", name, description)
 	if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {

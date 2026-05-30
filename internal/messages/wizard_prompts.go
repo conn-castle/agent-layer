@@ -16,7 +16,6 @@ const (
 	WizardCodexReasoningEffortTitle           = "Codex Reasoning Effort"
 	WizardCodexAppsPrompt                     = "Enable Codex built-in apps (Github, Gmail, etc.)? They add extra tools to every session."
 	WizardCopilotCLIModelTitle                = "Copilot CLI Model"
-	WizardMissingDefaultMCPServersPromptFmt   = "Default MCP server entries are missing from config.toml: %s. Restore them before continuing?"
 	WizardSecretAlreadySetPromptFmt           = "Secret %s is already set. Overwrite?"
 	WizardEnvSecretFoundPromptFmt             = "Found %s in your environment. Write it to .agent-layer/.env?"
 	WizardSecretInputPromptFmt                = "Enter %s (leave blank to skip)"
@@ -59,5 +58,12 @@ const (
 	// CLI-backed tools, where MCP servers add tool-schema overhead and config drift.
 	WizardEnableDefaultMCPServersTitle = "Enable Default MCP Servers" +
 		"\n  MCP servers are not the recommended default for ordinary CLI-backed tools; prefer CLI command-based skills." +
-		"\n  See https://agent-layer.dev/cli-skill-design. Do not enable both an MCP server and a CLI skill for the same tool (for example, Tavily)."
+		"\n  See https://agent-layer.dev/cli-skill-design. Do not enable both an MCP server and a CLI skill for the same tool (for example, Tavily)." +
+		"\n  Unselected defaults already in config.toml are set enabled = false (the entry is kept, not deleted); missing defaults are added only when selected."
+	// WizardKeepCustomMCPServersTitle labels the multiselect for MCP servers found
+	// in config.toml that are not part of Agent Layer's default catalog. Selected
+	// servers stay enabled; unselected servers are set to enabled = false. The
+	// entry is preserved in config.toml either way — disabling never deletes it.
+	WizardKeepCustomMCPServersTitle = "Keep custom MCP servers (not part of Agent Layer's defaults)" +
+		"\n  Selected = keep enabled. Unselected = set enabled = false (the entry stays in config.toml; it is not deleted)."
 )

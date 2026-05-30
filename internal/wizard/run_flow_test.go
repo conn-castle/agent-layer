@@ -292,13 +292,14 @@ enabled = false
 	assert.Contains(t, err.Error(), "sync failed")
 }
 
-func TestRun_RestoreDefaults(t *testing.T) {
+func TestRun_AddMissingDefaultViaMultiSelect(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 
-	// A partial legacy default set still triggers the restore-missing prompt.
-	// A slim seed with zero default blocks is expected and covered separately.
+	// context7 exists but is disabled; the other defaults (including fetch) are
+	// absent. The wizard no longer shows a blocking "restore missing defaults?"
+	// prompt — missing defaults are simply unselected options the user can opt into.
 	initialConfig := `[approvals]
 mode = "all"
 [agents.antigravity]
@@ -326,7 +327,7 @@ command = "npx"
 	restorePromptShown := false
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
-			if strings.Contains(title, "Default MCP server entries are missing") {
+			if strings.Contains(title, "missing from config.toml") {
 				restorePromptShown = true
 			}
 			*value = true
@@ -334,9 +335,8 @@ command = "npx"
 		},
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
 		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
-			// Toggle fetch on so the restored block is actually emitted.
-			// (Under wizard-catalog semantics, defaults left disabled in the multiselect
-			// are pruned from the rendered config even when restore-missing was confirmed.)
+			// Select the absent default "fetch" (added from catalog) and leave
+			// context7 unselected (kept, disabled in place — never deleted).
 			if title == messages.WizardEnableDefaultMCPServersTitle {
 				*selected = []string{"fetch"}
 			}
@@ -349,11 +349,15 @@ command = "npx"
 
 	err := Run(root, ui, mockSync, "")
 	require.NoError(t, err)
-	assert.True(t, restorePromptShown, "partial legacy default set should prompt to restore missing defaults")
+	assert.False(t, restorePromptShown, "wizard must not show a blocking restore-missing-defaults prompt")
 
-	// Verify restored block for the toggled-on default appears in config.
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	// Selected missing default is added from the catalog and enabled.
 	assert.Contains(t, string(data), `id = "fetch"`)
+	assert.True(t, mcpServerEnabled(t, string(data), "fetch"))
+	// Existing unselected default is kept (not deleted) and disabled in place.
+	assert.Contains(t, string(data), `id = "context7"`)
+	assert.False(t, mcpServerEnabled(t, string(data), "context7"))
 }
 
 func TestRun_ClaudeLocalConfigDir(t *testing.T) {

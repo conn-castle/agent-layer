@@ -58,14 +58,8 @@ enabled = false
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			// "Default MCP server entries are missing..." -> Yes
-			if title == messages.WizardApplyChangesPrompt {
-				*value = true
-			}
-			// Confirm restore?
-			// The prompt is formatted: fmt.Sprintf("Default MCP server entries are missing from config.toml: %s. Restore them before selection?", ...)
-			// We can check contains
-			*value = true // Default yes for restore and apply
+			// Confirm every prompt (apply, warnings, etc.).
+			*value = true
 			return nil
 		},
 	}
@@ -501,10 +495,18 @@ func TestRun_SecretInputSkip_DisablesServer(t *testing.T) {
 
 	configData, err := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	require.NoError(t, err)
-	// Skip-secret sets EnabledMCPServers[tavily] = false, which prunes the block
-	// from the rendered config under wizard-catalog semantics. The user can re-enable
-	// it later by re-running the wizard and supplying the secret.
+	// tavily is an absent default that the user selected, but skipping its required
+	// secret sets EnabledMCPServers[tavily] = false. A disabled *missing* default is
+	// never added, so no tavily block is written. The user can re-enable it later by
+	// re-running the wizard and supplying the secret.
 	assert.NotContains(t, string(configData), `id = "tavily"`)
+
+	// The skipped secret must not leak into .env: neither the key nor the "skip"
+	// sentinel should be persisted.
+	envData, err := os.ReadFile(filepath.Join(configDir, ".env"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(envData), "AL_TAVILY_API_KEY")
+	assert.NotContains(t, string(envData), "skip")
 }
 
 func TestRun_SecretInputCancel_StopsWithoutApply(t *testing.T) {

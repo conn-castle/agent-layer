@@ -36,11 +36,6 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.antigravity.enabled",
 		},
 		{
-			name:    "claude reasoning requires opus model",
-			cfg:     withClaudeReasoning(valid, "sonnet", "high"),
-			wantErr: "requires an Opus model",
-		},
-		{
 			name: "missing server id",
 			cfg: withServers(valid, []MCPServer{
 				{Enabled: &trueVal, Transport: "http", URL: "https://example.com"},
@@ -155,12 +150,6 @@ func withServers(cfg Config, servers []MCPServer) Config {
 	return cfg
 }
 
-func withClaudeReasoning(cfg Config, model string, effort string) Config {
-	cfg.Agents.Claude.Model = model
-	cfg.Agents.Claude.ReasoningEffort = effort
-	return cfg
-}
-
 func withCopilotCLIEnabled(cfg Config, enabled *bool) Config {
 	cfg.Agents.CopilotCLI.Enabled = enabled
 	return cfg
@@ -222,21 +211,41 @@ func TestValidateClaudeReasoningEffortWithOpusModel(t *testing.T) {
 	}
 }
 
-func TestValidateClaudeReasoningEffortMaxWithNonOpusModelRejected(t *testing.T) {
+func TestValidateClaudeReasoningEffortWithoutOpusModelAllowed(t *testing.T) {
+	// Agent Layer no longer gates reasoning_effort on the model: an empty model
+	// and non-Opus models (sonnet, haiku) all validate. Claude Code is the
+	// authority on which model/effort combinations apply. This guards against
+	// re-introducing the old Opus-only hard error.
 	trueVal := true
-	cfg := Config{
+	base := Config{
 		Approvals: ApprovalsConfig{Mode: ApprovalModeAll},
 		Agents: AgentsConfig{
 			Antigravity:  AntigravityConfig{Enabled: &trueVal},
-			Claude:       ClaudeConfig{Enabled: &trueVal, Model: "sonnet", ReasoningEffort: "max"},
+			Claude:       ClaudeConfig{Enabled: &trueVal},
 			ClaudeVSCode: EnableOnlyConfig{Enabled: &trueVal},
 			Codex:        CodexConfig{Enabled: &trueVal},
 			VSCode:       EnableOnlyConfig{Enabled: &trueVal},
 			CopilotCLI:   AgentConfig{Enabled: &trueVal},
 		},
 	}
-	if err := cfg.Validate("config.toml"); err == nil || !strings.Contains(err.Error(), "requires an Opus model") {
-		t.Fatalf("expected opus model error for max effort with sonnet, got %v", err)
+	cases := []struct {
+		name   string
+		model  string
+		effort string
+	}{
+		{"empty model", "", "high"},
+		{"sonnet model", "sonnet", "max"},
+		{"haiku model", "haiku", "low"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base
+			cfg.Agents.Claude.Model = tc.model
+			cfg.Agents.Claude.ReasoningEffort = tc.effort
+			if err := cfg.Validate("config.toml"); err != nil {
+				t.Fatalf("expected reasoning_effort %q with model %q to be valid, got %v", tc.effort, tc.model, err)
+			}
+		})
 	}
 }
 
@@ -432,34 +441,4 @@ func TestValidateSanitizesTransportIncompatibleFields(t *testing.T) {
 			t.Errorf("expected url to be preserved, got %q", srv.URL)
 		}
 	})
-}
-
-func TestClaudeModelSupportsReasoningEffort(t *testing.T) {
-	cases := []struct {
-		model string
-		want  bool
-	}{
-		{"opus", true},
-		{"Opus", true},
-		{" opus ", true},
-		{"opusplan", true},
-		{"claude-opus-4-6", true},
-		{"claude_opus_4_6", true},
-		{"my-opus-variant", true},
-		{"", false},
-		{"default", false},
-		{"Default", false},
-		{"sonnet", false},
-		{"haiku", false},
-		{"corpus", false},
-		{"gpt-5", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.model, func(t *testing.T) {
-			got := ClaudeModelSupportsReasoningEffort(tc.model)
-			if got != tc.want {
-				t.Errorf("ClaudeModelSupportsReasoningEffort(%q) = %v, want %v", tc.model, got, tc.want)
-			}
-		})
-	}
 }
