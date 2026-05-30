@@ -28,20 +28,10 @@ func TestPatchConfig_Errors(t *testing.T) {
 		assert.Contains(t, err.Error(), "default MCP servers are required")
 	})
 
-	t.Run("no default servers for restore", func(t *testing.T) {
-		choices := &Choices{
-			RestoreMissingMCPServers: true,
-			DefaultMCPServers:        []DefaultMCPServer{},
-		}
-		_, err := PatchConfig("[mcp]", choices)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "default MCP servers are required")
-	})
-
-	t.Run("restore missing server without template block", func(t *testing.T) {
+	t.Run("missing default server selected without template block", func(t *testing.T) {
 		choices := NewChoices()
-		choices.RestoreMissingMCPServers = true
-		choices.MissingDefaultMCPServers = []string{"does-not-exist"}
+		choices.EnabledMCPServersTouched = true
+		choices.EnabledMCPServers = map[string]bool{"does-not-exist": true}
 		choices.DefaultMCPServers = []DefaultMCPServer{{ID: "does-not-exist"}}
 
 		_, err := PatchConfig("", choices)
@@ -498,26 +488,6 @@ func TestPatchConfig_EnableWarnings(t *testing.T) {
 	assert.Contains(t, out, "mcp_schema_tokens_server_threshold = 20000")
 }
 
-func TestPatchConfig_RestoreMissingMCPServer(t *testing.T) {
-	defaults, err := loadDefaultMCPServers()
-	require.NoError(t, err)
-	require.Greater(t, len(defaults), 0)
-
-	serverID := defaults[0].ID
-
-	content := `[mcp]`
-
-	choices := NewChoices()
-	choices.RestoreMissingMCPServers = true
-	choices.MissingDefaultMCPServers = []string{serverID}
-	choices.DefaultMCPServers = defaults
-
-	out, err := PatchConfig(content, choices)
-	require.NoError(t, err)
-
-	assert.Contains(t, out, fmt.Sprintf(`id = "%s"`, serverID))
-}
-
 // TestPatchConfig_Idempotent asserts that PatchConfig is idempotent across
 // representative choice sets: re-applying the same Choices to its own output
 // must produce byte-equal output. A regression in any code path that mutates
@@ -533,10 +503,12 @@ func TestPatchConfig_Idempotent(t *testing.T) {
 	mcpToggle.EnabledMCPServers = map[string]bool{defaults[0].ID: true}
 	mcpToggle.DefaultMCPServers = defaults
 
-	restoreMCP := NewChoices()
-	restoreMCP.RestoreMissingMCPServers = true
-	restoreMCP.MissingDefaultMCPServers = []string{defaults[0].ID}
-	restoreMCP.DefaultMCPServers = defaults
+	// A default the user disabled keeps its block with enabled = false; re-applying
+	// must not drift (no prune, no re-enable).
+	mcpDisable := NewChoices()
+	mcpDisable.EnabledMCPServersTouched = true
+	mcpDisable.EnabledMCPServers = map[string]bool{defaults[0].ID: false}
+	mcpDisable.DefaultMCPServers = defaults
 
 	cases := []struct {
 		name    string
@@ -619,9 +591,9 @@ func TestPatchConfig_Idempotent(t *testing.T) {
 			choices: mcpToggle,
 		},
 		{
-			name:    "restore missing mcp server",
-			content: "[mcp]\n",
-			choices: restoreMCP,
+			name:    "mcp server disable-in-place",
+			content: fmt.Sprintf("[mcp]\n\n[[mcp.servers]]\nid = %q\nenabled = true\ntransport = \"stdio\"\ncommand = \"npx\"\n", defaults[0].ID),
+			choices: mcpDisable,
 		},
 	}
 

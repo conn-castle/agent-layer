@@ -71,41 +71,27 @@ func loadCatalogDocument() (tomlDocument, error) {
 	return parseTomlDocument(string(data)), nil
 }
 
-// missingDefaultMCPServers returns default MCP server IDs absent from the current config.
-// defaults is the list of default servers; servers is the current config server list.
-func missingDefaultMCPServers(defaults []DefaultMCPServer, servers []config.MCPServer) []string {
-	existing := make(map[string]bool, len(servers))
+// customMCPServers returns config MCP servers whose id is not a catalog default,
+// preserving config order. These are user-defined servers the wizard surfaces for
+// keep/disable; unlike catalog defaults they have no template to restore from, so
+// disabling them sets enabled = false rather than deleting the entry. Servers with
+// an empty id are skipped because they cannot be addressed by id in the prompt.
+func customMCPServers(defaults []DefaultMCPServer, servers []config.MCPServer) []config.MCPServer {
+	defaultSet := make(map[string]struct{}, len(defaults))
+	for _, def := range defaults {
+		if def.ID != "" {
+			defaultSet[def.ID] = struct{}{}
+		}
+	}
+	var custom []config.MCPServer
 	for _, srv := range servers {
 		if srv.ID == "" {
 			continue
 		}
-		existing[srv.ID] = true
-	}
-
-	var missing []string
-	for _, def := range defaults {
-		if !existing[def.ID] {
-			missing = append(missing, def.ID)
-		}
-	}
-	return missing
-}
-
-// hasAnyDefaultMCPServer reports whether the current config already contains at least
-// one catalog-backed default MCP server. A slim seed with zero defaults is expected
-// and should not be treated as a legacy "missing defaults" repair case.
-func hasAnyDefaultMCPServer(defaults []DefaultMCPServer, servers []config.MCPServer) bool {
-	defaultSet := make(map[string]struct{}, len(defaults))
-	for _, def := range defaults {
-		if def.ID == "" {
+		if _, isDefault := defaultSet[srv.ID]; isDefault {
 			continue
 		}
-		defaultSet[def.ID] = struct{}{}
+		custom = append(custom, srv)
 	}
-	for _, srv := range servers {
-		if _, ok := defaultSet[srv.ID]; ok {
-			return true
-		}
-	}
-	return false
+	return custom
 }

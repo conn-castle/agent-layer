@@ -25,7 +25,7 @@ func TestCheckMCPServers_NilConnector_AssignsRealConnector_NoEnabledServers(t *t
 		Env: map[string]string{},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, nil, nil)
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 }
@@ -64,7 +64,7 @@ func TestCheckMCPServers_SchemaBloatServer_SortsAndTruncatesDetails(t *testing.T
 		},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 
 	var bloat Warning

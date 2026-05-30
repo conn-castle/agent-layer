@@ -83,7 +83,7 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 		return "", err
 	}
 
-	if (choices.EnabledMCPServersTouched || choices.RestoreMissingMCPServers) && len(choices.DefaultMCPServers) == 0 {
+	if choices.EnabledMCPServersTouched && len(choices.DefaultMCPServers) == 0 {
 		return "", fmt.Errorf(messages.WizardDefaultMCPServersRequired)
 	}
 
@@ -282,11 +282,13 @@ var httpIncompatibleKeys = []string{"command", "args", "env"}
 
 // buildMCPServerBlocks returns ordered MCP server blocks using catalog order for defaults.
 // currentDoc supplies existing blocks; catalogDoc provides default-shaped catalog blocks;
-// choices controls restore, prune-on-disable, and enabled toggles.
+// choices controls enabled toggles and which missing defaults to insert.
 //
-// Prune-on-disable: when choices.EnabledMCPServersTouched is true and choices.EnabledMCPServers[id]
-// is false for a default-catalog id, the block is skipped (regardless of whether the user had
-// hand-customized it). User-defined non-catalog blocks always pass through unchanged.
+// Disable-in-place: when choices.EnabledMCPServersTouched is true and choices.EnabledMCPServers[id]
+// is false for a default-catalog id that already exists in config, the block is kept with
+// enabled = false rather than deleted. A default that is absent from config is inserted from the
+// catalog only when the user selected (enabled) it; an unselected missing default stays absent.
+// User-defined non-catalog blocks follow the same never-delete rule (see the trailing loop).
 func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choices *Choices) ([]tomlBlock, error) {
 	currentBlocks := parseMCPBlocks(currentDoc.arrays["mcp.servers"])
 	catalogBlocks := parseMCPBlocks(catalogDoc.arrays["mcp.servers"])
@@ -311,47 +313,33 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 		defaultSet[id] = struct{}{}
 	}
 
-	missingDefaults := make(map[string]struct{}, len(choices.MissingDefaultMCPServers))
-	for _, id := range choices.MissingDefaultMCPServers {
-		missingDefaults[id] = struct{}{}
-	}
-
 	var ordered []tomlBlock
 	for _, id := range defaultIDs {
 		if choices.EnabledMCPServersTouched {
-			// Prune-on-disable: user expressed an opinion on MCP servers and disabled
-			// this default-catalog id. Skip regardless of any current customization;
-			// the wizard's diff preview surfaces the removal before write.
-			if !choices.EnabledMCPServers[id] {
-				continue
-			}
-			// Enable: prefer the current block if present, otherwise insert from catalog.
 			block, ok := currentByID[id]
 			if !ok {
+				// Missing default: insert from the catalog only when the user
+				// selected (enabled) it. An unselected missing default stays
+				// absent — the wizard never adds an entry the user did not ask for.
+				if !choices.EnabledMCPServers[id] {
+					continue
+				}
 				tpl, exists := catalogByID[id]
 				if !exists {
 					return nil, fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
 				}
 				block = tpl
 			}
+			// Existing default: keep the block and set enabled to the user's choice.
+			// Disabling sets enabled = false rather than deleting the entry.
 			tb := updateMCPEnabled(block, catalogByID[id], choices, id)
 			sanitizeMCPServerBlock(&tb)
 			ordered = append(ordered, tb)
 			continue
 		}
-		// MCP step not touched: preserve existing state, or restore from catalog when requested.
+		// MCP step not touched: preserve existing state unchanged.
 		if block, ok := currentByID[id]; ok {
 			tb := updateMCPEnabled(block, catalogByID[id], choices, id)
-			sanitizeMCPServerBlock(&tb)
-			ordered = append(ordered, tb)
-			continue
-		}
-		if choices.RestoreMissingMCPServers && containsKey(missingDefaults, id) {
-			tpl, exists := catalogByID[id]
-			if !exists {
-				return nil, fmt.Errorf(messages.WizardMissingDefaultMCPServerTemplateFmt, id)
-			}
-			tb := updateMCPEnabled(tpl, tpl, choices, id)
 			sanitizeMCPServerBlock(&tb)
 			ordered = append(ordered, tb)
 		}
@@ -364,6 +352,13 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 			}
 		}
 		tb := tomlBlock{name: "mcp.servers", lines: cloneLines(block.lines)}
+		// Honor the custom-server keep/disable decision. Unlike catalog defaults,
+		// a custom server has no template to restore from, so disabling sets
+		// enabled = false rather than pruning the block. Untouched configs pass
+		// through unchanged, preserving the original enabled state.
+		if choices.CustomMCPServersTouched && block.id != "" {
+			setKeyValue(&tb, nil, "enabled", formatTomlValue(choices.CustomMCPServersEnabled[block.id]), "id")
+		}
 		sanitizeMCPServerBlock(&tb)
 		ordered = append(ordered, tb)
 	}
@@ -1265,10 +1260,4 @@ func extraArrayBlocks(arrays map[string][]*tomlBlock) []*tomlBlock {
 		return extra[i].name < extra[j].name
 	})
 	return extra
-}
-
-// containsKey reports whether the key is present in the set.
-func containsKey(values map[string]struct{}, key string) bool {
-	_, ok := values[key]
-	return ok
 }

@@ -46,10 +46,10 @@ func TestPatchConfig_Catalog_EnableInsertsBlockFromCatalog(t *testing.T) {
 	assert.Contains(t, out, "enabled = true")
 }
 
-// TestPatchConfig_Catalog_PruneOnDisable covers the prune-on-disable case:
-// existing enabled=false block + EnabledMCPServersTouched + EnabledMCPServers[id] = false
-// should remove the block entirely.
-func TestPatchConfig_Catalog_PruneOnDisable(t *testing.T) {
+// TestPatchConfig_Catalog_DisableInPlace covers the disable-in-place case:
+// existing block + EnabledMCPServersTouched + EnabledMCPServers[id] = false keeps
+// the block with enabled = false rather than deleting it.
+func TestPatchConfig_Catalog_DisableInPlace(t *testing.T) {
 	defaults := catalogTestDefaults(t)
 	id := defaults[0].ID
 
@@ -57,7 +57,7 @@ func TestPatchConfig_Catalog_PruneOnDisable(t *testing.T) {
 
 [[mcp.servers]]
 id = "%s"
-enabled = false
+enabled = true
 transport = "stdio"
 command = "npx"
 `, id)
@@ -68,13 +68,14 @@ command = "npx"
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
-	assert.NotContains(t, out, fmt.Sprintf(`id = "%s"`, id))
+	assert.Contains(t, out, fmt.Sprintf(`id = "%s"`, id))
+	assert.False(t, mcpServerEnabled(t, out, id), "disabled default must be kept with enabled = false")
 }
 
-// TestPatchConfig_Catalog_PruneCustomizedDefault locks in the user-direction
-// "full prune" behavior: even hand-customized default-catalog blocks are
-// removed when the user disables them in the wizard.
-func TestPatchConfig_Catalog_PruneCustomizedDefault(t *testing.T) {
+// TestPatchConfig_Catalog_DisableKeepsCustomizedDefault locks in disable-in-place
+// for hand-customized default-catalog blocks: disabling preserves the block and
+// its customization, only flipping enabled to false.
+func TestPatchConfig_Catalog_DisableKeepsCustomizedDefault(t *testing.T) {
 	defaults := catalogTestDefaults(t)
 	id := "context7"
 
@@ -95,9 +96,10 @@ env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
-	assert.NotContains(t, out, fmt.Sprintf(`id = "%s"`, id))
-	assert.NotContains(t, out, "/opt/custom/context7")
-	assert.NotContains(t, out, "--enterprise")
+	assert.Contains(t, out, fmt.Sprintf(`id = "%s"`, id))
+	assert.Contains(t, out, "/opt/custom/context7")
+	assert.Contains(t, out, "--enterprise")
+	assert.False(t, mcpServerEnabled(t, out, id), "disabled customized default must keep enabled = false")
 }
 
 // TestPatchConfig_Catalog_PreservesCustomServerThroughEnableDisable confirms
@@ -144,29 +146,12 @@ args = ["--something"]
 
 		out, err := PatchConfig(content, choices)
 		require.NoError(t, err)
-		assert.NotContains(t, out, fmt.Sprintf(`id = "%s"`, contextID))
+		// Disabling a default keeps its block (enabled = false), not deletes it.
+		assert.Contains(t, out, fmt.Sprintf(`id = "%s"`, contextID))
+		assert.False(t, mcpServerEnabled(t, out, contextID))
 		assert.Contains(t, out, `id = "my-custom-server"`)
 		assert.Contains(t, out, `command = "my-custom-cli"`)
 	})
-}
-
-// TestPatchConfig_Catalog_RestoreMissingReadsCatalog covers the restore-missing
-// flow under the new catalog source: the inserted block must come from
-// mcp-catalog.toml, not the install seed (which has no entries).
-func TestPatchConfig_Catalog_RestoreMissingReadsCatalog(t *testing.T) {
-	defaults := catalogTestDefaults(t)
-	id := defaults[0].ID
-
-	content := `[mcp]
-`
-	choices := NewChoices()
-	choices.DefaultMCPServers = defaults
-	choices.RestoreMissingMCPServers = true
-	choices.MissingDefaultMCPServers = []string{id}
-
-	out, err := PatchConfig(content, choices)
-	require.NoError(t, err)
-	assert.Contains(t, out, fmt.Sprintf(`id = "%s"`, id))
 }
 
 // TestPatchConfig_Catalog_TouchedFalsePreservesAll covers the no-op branch:
@@ -230,7 +215,7 @@ func TestLoadDefaultMCPServers_UnparseableCatalogErrors(t *testing.T) {
 
 // TestPatchConfig_Catalog_DuplicateIDLegacyState covers lenient legacy state:
 // a config that contains two [[mcp.servers]] blocks with the same default-catalog
-// id must round-trip through prune cleanly.
+// id must collapse to exactly one block on both enable and disable.
 func TestPatchConfig_Catalog_DuplicateIDLegacyState(t *testing.T) {
 	defaults := catalogTestDefaults(t)
 	id := "context7"
@@ -250,7 +235,7 @@ transport = "stdio"
 command = "/usr/local/bin/context7-alt"
 `, id)
 
-	t.Run("disable removes all duplicates", func(t *testing.T) {
+	t.Run("disable collapses duplicates to one disabled block", func(t *testing.T) {
 		choices := NewChoices()
 		choices.DefaultMCPServers = defaults
 		choices.EnabledMCPServersTouched = true
@@ -258,8 +243,9 @@ command = "/usr/local/bin/context7-alt"
 
 		out, err := PatchConfig(content, choices)
 		require.NoError(t, err)
-		assert.NotContains(t, out, fmt.Sprintf(`id = "%s"`, id))
-		assert.NotContains(t, out, "context7-alt")
+		count := strings.Count(out, fmt.Sprintf(`id = "%s"`, id))
+		assert.Equal(t, 1, count, "duplicates must collapse to exactly one block")
+		assert.False(t, mcpServerEnabled(t, out, id), "kept block must be disabled")
 	})
 
 	t.Run("enable keeps exactly one block", func(t *testing.T) {
@@ -275,10 +261,10 @@ command = "/usr/local/bin/context7-alt"
 	})
 }
 
-// TestPatchConfig_Catalog_MalformedDefaultBlockPrunesCleanly covers a default
-// block missing the transport field. Prune-on-disable must still remove it
-// without errors.
-func TestPatchConfig_Catalog_MalformedDefaultBlockPrunesCleanly(t *testing.T) {
+// TestPatchConfig_Catalog_MalformedDefaultBlockDisablesCleanly covers a default
+// block missing the transport field. Disable-in-place must keep it with
+// enabled = false without errors.
+func TestPatchConfig_Catalog_MalformedDefaultBlockDisablesCleanly(t *testing.T) {
 	defaults := catalogTestDefaults(t)
 	id := "context7"
 
@@ -286,7 +272,7 @@ func TestPatchConfig_Catalog_MalformedDefaultBlockPrunesCleanly(t *testing.T) {
 
 [[mcp.servers]]
 id = "%s"
-enabled = false
+enabled = true
 command = "npx"
 `, id)
 	choices := NewChoices()
@@ -296,21 +282,22 @@ command = "npx"
 
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
-	assert.NotContains(t, out, fmt.Sprintf(`id = "%s"`, id))
+	assert.Contains(t, out, fmt.Sprintf(`id = "%s"`, id))
+	assert.False(t, mcpServerEnabled(t, out, id))
 }
 
-// TestRun_Catalog_PrunesDisabledDefaultEndToEnd is the interactive-flow
-// regression test: drive the full Run flow with a MockUI that toggles one
-// default-catalog server off, then assert the rendered config has zero
-// [[mcp.servers]] entries. This is the only path that exercises prune-on-disable
-// end-to-end (profile-mode bypasses it).
-func TestRun_Catalog_PrunesDisabledDefaultEndToEnd(t *testing.T) {
+// TestRun_Catalog_DisablesDefaultEndToEnd is the interactive-flow regression
+// test: drive the full Run flow with a MockUI that toggles one default-catalog
+// server off, then assert the rendered config keeps the [[mcp.servers]] entry
+// with enabled = false. This is the only path that exercises disable-in-place
+// end-to-end (profile-mode bypasses the MCP step).
+func TestRun_Catalog_DisablesDefaultEndToEnd(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
 
 	// Start from a config with context7 enabled — the wizard's MultiSelect mock
-	// will then leave it unchecked, which triggers prune-on-disable.
+	// will then leave it unchecked, which disables it in place.
 	initialConfig := `[approvals]
 mode = "none"
 [agents.antigravity]
@@ -361,7 +348,8 @@ env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 
 	data, readErr := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	require.NoError(t, readErr)
-	assert.NotContains(t, string(data), "[[mcp.servers]]",
-		"interactive wizard run that disables a default-catalog server should prune the block")
-	assert.NotContains(t, string(data), `id = "context7"`)
+	assert.Contains(t, string(data), `id = "context7"`,
+		"interactive wizard run that disables a default-catalog server should keep the block")
+	assert.False(t, mcpServerEnabled(t, string(data), "context7"),
+		"disabled default-catalog server should be kept with enabled = false")
 }

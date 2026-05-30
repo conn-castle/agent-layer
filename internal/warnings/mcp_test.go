@@ -78,9 +78,44 @@ func TestCheckMCPServers(t *testing.T) {
 		},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+	warnings, summary, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
+
+	assert.True(t, summary.Available)
+	assert.Equal(t, 2, summary.EnabledServers)
+	assert.Equal(t, 2, summary.ReachableServers)
+	assert.Equal(t, 2, summary.TotalTools)
+	assert.Equal(t, 200, summary.TotalSchemaTokens)
+}
+
+func TestCheckMCPServers_SummaryExcludesUnreachableServers(t *testing.T) {
+	enabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "s1", Enabled: &enabled, Transport: "stdio", Command: "echo"},
+					{ID: "s2", Enabled: &enabled, Transport: "stdio", Command: "echo"},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+	mock := &MockConnector{
+		Results: map[string]DiscoveryResult{
+			"s1": {ServerID: "s1", Tools: []ToolDef{{Name: "tool1"}}, SchemaTokens: 100},
+			"s2": {ServerID: "s2", Error: fmt.Errorf("connection refused")},
+		},
+	}
+
+	_, summary, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+	require.NoError(t, err)
+	assert.True(t, summary.Available)
+	assert.Equal(t, 2, summary.EnabledServers)
+	assert.Equal(t, 1, summary.ReachableServers)
+	assert.Equal(t, 1, summary.TotalTools)
+	assert.Equal(t, 100, summary.TotalSchemaTokens)
 }
 
 func TestCheckMCPServers_Warnings(t *testing.T) {
@@ -139,7 +174,7 @@ func TestCheckMCPServers_Warnings(t *testing.T) {
 		mock.Results[id] = DiscoveryResult{ServerID: id}
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 
 	// We expect multiple warnings.
@@ -214,7 +249,7 @@ func TestCheckMCPServers_ToolNameCollisionWarningsDeterministicOrder(t *testing.
 	}
 
 	for range 25 {
-		warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+		warnings, _, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 		require.NoError(t, err)
 		require.Len(t, warnings, 2)
 
@@ -261,7 +296,7 @@ func TestCheckMCPServers_ThresholdsDisabled(t *testing.T) {
 		},
 	}
 
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 
 	codes := make(map[string]bool)
@@ -291,7 +326,7 @@ func TestCheckMCPServers_ResolveServerError(t *testing.T) {
 	}
 
 	mock := &MockConnector{Results: map[string]DiscoveryResult{}}
-	warnings, err := CheckMCPServers(context.Background(), cfg, mock, nil)
+	warnings, _, err := CheckMCPServers(context.Background(), cfg, mock, nil)
 	require.NoError(t, err)
 	require.Len(t, warnings, 1)
 	assert.Equal(t, CodeMCPServerUnreachable, warnings[0].Code)

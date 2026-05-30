@@ -53,8 +53,7 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.NoError(t, err)
 	require.Equal(t, 2, approvalCalls, "expected to revisit approval step after back from agents")
 	require.Equal(t, 2, agentCalls)
@@ -85,8 +84,7 @@ func TestPromptWizardFlow_FirstStepEscapeCancelsWhenConfirmed(t *testing.T) {
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.ErrorIs(t, err, errWizardCancelled)
 	require.Equal(t, 1, exitConfirmCalls)
 }
@@ -129,14 +127,13 @@ func TestPromptWizardFlow_FirstStepEscapeContinuesWhenDeclined(t *testing.T) {
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.NoError(t, err)
 	require.Equal(t, 2, approvalCalls)
 	require.Equal(t, 1, exitConfirmCalls)
 }
 
-func TestPromptWizardFlow_ClaudeReasoningSkippedForNonOpusModel(t *testing.T) {
+func TestPromptWizardFlow_ClaudeReasoningPromptedForNonOpusModel(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll
 
@@ -176,14 +173,12 @@ func TestPromptWizardFlow_ClaudeReasoningSkippedForNonOpusModel(t *testing.T) {
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.NoError(t, err)
-	require.Equal(t, 0, claudeReasoningCalls, "reasoning effort prompt should be skipped for non-opus model")
-	require.Equal(t, "", choices.ClaudeReasoning)
+	require.Equal(t, 1, claudeReasoningCalls, "reasoning effort prompt should be shown regardless of model")
 }
 
-func TestPromptWizardFlow_ClaudeReasoningClearedWhenSwitchingFromOpus(t *testing.T) {
+func TestPromptWizardFlow_ClaudeReasoningPreservedWhenSwitchingToNonOpusModel(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll
 	choices.ClaudeReasoning = "high" // existing value from previous wizard run
@@ -198,6 +193,8 @@ func TestPromptWizardFlow_ClaudeReasoningClearedWhenSwitchingFromOpus(t *testing
 				*current = allLabel
 			case messages.WizardClaudeModelTitle:
 				*current = "sonnet" // switching away from opus
+				// Reasoning prompt is left unhandled so selectOptionalValue keeps
+				// the existing "high" value: the wizard must not clear it.
 			}
 			return nil
 		},
@@ -221,11 +218,10 @@ func TestPromptWizardFlow_ClaudeReasoningClearedWhenSwitchingFromOpus(t *testing
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.NoError(t, err)
-	require.Equal(t, "", choices.ClaudeReasoning, "reasoning should be cleared when switching to non-opus model")
-	require.True(t, choices.ClaudeReasoningTouched, "reasoning touched flag should be set after clearing")
+	require.Equal(t, "high", choices.ClaudeReasoning, "reasoning should be preserved when switching to a non-opus model")
+	require.True(t, choices.ClaudeReasoningTouched, "reasoning touched flag should be set after the prompt")
 }
 
 func TestPromptWizardFlow_ClaudeReasoningPromptedForOpusModel(t *testing.T) {
@@ -269,8 +265,7 @@ func TestPromptWizardFlow_ClaudeReasoningPromptedForOpusModel(t *testing.T) {
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.NoError(t, err)
 	require.Equal(t, 1, claudeReasoningCalls, "reasoning effort prompt should be shown for opus model")
 }
@@ -320,8 +315,7 @@ func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T)
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.NoError(t, err)
 	require.Equal(t, 2, agentCalls, "expected back from models to revisit agent selection")
 	require.Equal(t, "", choices.CodexModel)
@@ -397,8 +391,7 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.NoError(t, err)
 	require.Equal(t, 2, agentCalls, "expected back navigation to revisit agent selection")
 	require.Equal(t, 1, secondModelCalls, "expected second model step to go back to agent selection")
@@ -428,8 +421,7 @@ func TestPromptWizardFlow_CtrlCExitsImmediatelyWithoutConfirmation(t *testing.T)
 		},
 	}
 
-	cfg := &config.ProjectConfig{Config: config.Config{}}
-	err := promptWizardFlow(t.TempDir(), ui, cfg, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
 	require.ErrorIs(t, err, errWizardCancelled)
 	require.Equal(t, 0, exitConfirmCalls, "Ctrl+C should exit immediately without asking for confirmation")
 }

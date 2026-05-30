@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	checkInstructions = warnings.CheckInstructions
-	checkMCPServers   = warnings.CheckMCPServers
-	checkPolicy       = warnings.CheckPolicy
+	checkInstructions   = warnings.CheckInstructions
+	measureInstructions = warnings.MeasureInstructions
+	checkMCPServers     = warnings.CheckMCPServers
+	checkPolicy         = warnings.CheckPolicy
 )
 
 func newDoctorCmd() *cobra.Command {
@@ -109,7 +110,13 @@ func newDoctorCmd() *cobra.Command {
 
 			// 9. Run Warning System (Instructions + MCP)
 			// Only run if basic config loaded successfully, otherwise we might crash or be useless.
-			var warningList []warnings.Warning
+			var (
+				warningList []warnings.Warning
+				instTokens  int
+				instSubject string
+				instErr     error
+				mcpSummary  warnings.MCPSummary
+			)
 			if cfg != nil {
 				if !quiet {
 					_, _ = fmt.Fprintln(out, messages.DoctorWarningSystemHeader)
@@ -123,6 +130,9 @@ func newDoctorCmd() *cobra.Command {
 				} else {
 					warningList = append(warningList, instWarnings...)
 				}
+				// Measure instructions for the size summary (independent of the threshold check
+				// above, which is skipped entirely when the threshold is disabled).
+				instTokens, instSubject, instErr = measureInstructions(root)
 
 				// MCP check (Doctor runs discovery)
 				enabledServerIDs := enabledMCPServerIDs(cfg.Config.MCP.Servers)
@@ -131,12 +141,13 @@ func newDoctorCmd() *cobra.Command {
 					progressOut = io.Discard
 				}
 				reportProgress, stopProgress := startMCPDiscoveryReporter(enabledServerIDs, progressOut)
-				mcpWarnings, err := checkMCPServers(cmd.Context(), cfg, nil, reportProgress)
+				mcpWarnings, summary, err := checkMCPServers(cmd.Context(), cfg, nil, reportProgress)
 				stopProgress()
 				if err != nil {
 					_, _ = fmt.Fprintln(out, color.RedString(messages.DoctorMCPCheckFailedFmt, err))
 					hasFail = true
 				} else {
+					mcpSummary = summary
 					warningList = append(warningList, mcpWarnings...)
 				}
 
@@ -157,6 +168,14 @@ func newDoctorCmd() *cobra.Command {
 				}
 				hasFail = true // Warnings cause exit 1 per spec
 				_, _ = fmt.Fprintln(out)
+			}
+
+			// Size summary: always printed when config loaded, even with --quiet or a quiet
+			// noise mode. It is informational, not a warning, so its visibility is independent
+			// of warning suppression.
+			if cfg != nil {
+				skillText, skillChars := doctor.SkillCatalogMetadata(cfg)
+				renderSizeSummary(out, cfg.Config.Warnings, instTokens, instSubject, instErr, skillChars, warnings.EstimateTokens(skillText), mcpSummary)
 			}
 
 			if hasFail {
@@ -201,6 +220,53 @@ func printRecommendation(out io.Writer, recommendation string) {
 			continue
 		}
 		_, _ = fmt.Fprintf(out, "%s%s\n", messages.DoctorRecommendationIndent, line)
+	}
+}
+
+// renderSizeSummary prints the informational context-size summary: estimated instruction
+// tokens, skill catalog metadata size, and MCP totals, each shown against its configured
+// threshold. A nil threshold renders as "(no limit set)" rather than assuming a default.
+// The skill line reports an estimated token count for parity with the other metrics while
+// its budget stays the character-based limit that the skills warning enforces.
+func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, instSubject string, instErr error, skillChars, skillTokens int, mcp warnings.MCPSummary) {
+	_, _ = fmt.Fprintln(out, messages.DoctorSizeSummaryHeader)
+
+	switch {
+	case instErr != nil:
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeInstructionsUnavailableFmt, instErr)
+	case w.InstructionTokenThreshold != nil:
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeInstructionsFmt, instSubject, instTokens, *w.InstructionTokenThreshold)
+	default:
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeInstructionsNoLimitFmt, instSubject, instTokens)
+	}
+
+	_, _ = fmt.Fprintf(out, messages.DoctorSizeSkillsFmt, skillTokens, skillChars, doctor.MaxSkillCatalogMetadataChars)
+
+	if !mcp.Available {
+		_, _ = fmt.Fprintln(out, messages.DoctorSizeMCPUnavailable)
+		return
+	}
+
+	if w.MCPServerThreshold != nil {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPServersFmt, mcp.EnabledServers, *w.MCPServerThreshold)
+	} else {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPServersNoLimitFmt, mcp.EnabledServers)
+	}
+
+	if w.MCPToolsTotalThreshold != nil {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPToolsFmt, mcp.TotalTools, *w.MCPToolsTotalThreshold)
+	} else {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPToolsNoLimitFmt, mcp.TotalTools)
+	}
+
+	if w.MCPSchemaTokensTotalThreshold != nil {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaFmt, mcp.TotalSchemaTokens, *w.MCPSchemaTokensTotalThreshold)
+	} else {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaNoLimitFmt, mcp.TotalSchemaTokens)
+	}
+
+	if mcp.ReachableServers < mcp.EnabledServers {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPPartialFmt, mcp.EnabledServers-mcp.ReachableServers, mcp.EnabledServers)
 	}
 }
 

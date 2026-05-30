@@ -92,7 +92,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		skipEnableLayer = true
 	}
 
-	if err := promptWizardFlow(root, ui, cfg, choices, skipEnableLayer); err != nil {
+	if err := promptWizardFlow(root, ui, choices, skipEnableLayer); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
 			if freshInstall == nil {
 				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
@@ -222,6 +222,11 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		}
 	}
 
+	for _, srv := range customMCPServers(choices.DefaultMCPServers, cfg.Config.MCP.Servers) {
+		choices.CustomMCPServers = append(choices.CustomMCPServers, srv.ID)
+		choices.CustomMCPServersEnabled[srv.ID] = config.IsAgentEnabled(srv.Enabled)
+	}
+
 	choices.WarningsEnabled = cfg.Config.Warnings.InstructionTokenThreshold != nil ||
 		cfg.Config.Warnings.MCPServerThreshold != nil ||
 		cfg.Config.Warnings.MCPToolsTotalThreshold != nil ||
@@ -283,6 +288,7 @@ const (
 	wizardFlowStepEnableLayer
 	wizardFlowStepCLISkills
 	wizardFlowStepMCPDefaults
+	wizardFlowStepCustomMCP
 	wizardFlowStepSecrets
 	wizardFlowStepWarnings
 )
@@ -292,7 +298,12 @@ const (
 // the EnableLayer step is skipped in both forward and back directions so the
 // user cannot reach a state where their install decision is contradicted
 // silently.
-func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Choices, skipEnableLayerStep bool) error {
+func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep bool) error {
+	// The custom-MCP step has nothing to ask when config.toml has no non-catalog
+	// servers. CustomMCPServers is set before the flow and never mutated by it, so
+	// skip the step in both directions to avoid trapping back-navigation on a
+	// no-op screen (the same pattern as skipEnableLayerStep).
+	skipCustomMCPStep := len(choices.CustomMCPServers) == 0
 	step := wizardFlowStepApproval
 	for {
 		snapshot := choices.Clone()
@@ -310,7 +321,9 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 		case wizardFlowStepCLISkills:
 			err = promptCLISkills(ui, choices)
 		case wizardFlowStepMCPDefaults:
-			err = promptDefaultMCPServers(ui, cfg, choices)
+			err = promptDefaultMCPServers(ui, choices)
+		case wizardFlowStepCustomMCP:
+			err = promptCustomMCPServers(ui, choices)
 		case wizardFlowStepSecrets:
 			err = promptSecrets(root, ui, choices)
 		case wizardFlowStepWarnings:
@@ -325,6 +338,9 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 			}
 			step++
 			if skipEnableLayerStep && step == wizardFlowStepEnableLayer {
+				step++
+			}
+			if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
 				step++
 			}
 			continue
@@ -350,6 +366,9 @@ func promptWizardFlow(root string, ui UI, cfg *config.ProjectConfig, choices *Ch
 		}
 
 		step--
+		if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
+			step--
+		}
 		if skipEnableLayerStep && step == wizardFlowStepEnableLayer {
 			step--
 		}
@@ -455,16 +474,13 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.ClaudeModelTouched = true
-		if config.ClaudeModelSupportsReasoningEffort(choices.ClaudeModel) {
-			if err := selectOptionalValue(ui, messages.WizardClaudeReasoningEffortTitle, ClaudeReasoningEfforts(), &choices.ClaudeReasoning); err != nil {
-				return err
-			}
-			choices.ClaudeReasoningTouched = true
-		} else if choices.ClaudeReasoning != "" {
-			// Clear reasoning effort when the selected model does not support it.
-			choices.ClaudeReasoning = ""
-			choices.ClaudeReasoningTouched = true
+		// Reasoning effort is offered regardless of model. Claude Code is the
+		// authority on which model/effort combinations apply, so the wizard does
+		// not gate or clear the choice based on the selected model.
+		if err := selectOptionalValue(ui, messages.WizardClaudeReasoningEffortTitle, ClaudeReasoningEfforts(), &choices.ClaudeReasoning); err != nil {
+			return err
 		}
+		choices.ClaudeReasoningTouched = true
 	}
 	if choices.EnabledAgents[AgentClaude] || choices.EnabledAgents[AgentClaudeVSCode] {
 		claudeLocalConfigDir := choices.ClaudeLocalConfigDir
@@ -502,16 +518,7 @@ func promptModels(ui UI, choices *Choices) error {
 	return nil
 }
 
-func promptDefaultMCPServers(ui UI, cfg *config.ProjectConfig, choices *Choices) error {
-	missingDefaults := missingDefaultMCPServers(choices.DefaultMCPServers, cfg.Config.MCP.Servers)
-	if len(missingDefaults) > 0 && hasAnyDefaultMCPServer(choices.DefaultMCPServers, cfg.Config.MCP.Servers) {
-		choices.MissingDefaultMCPServers = missingDefaults
-		restore := true
-		if err := ui.Confirm(fmt.Sprintf(messages.WizardMissingDefaultMCPServersPromptFmt, strings.Join(missingDefaults, ", ")), &restore); err != nil {
-			return err
-		}
-		choices.RestoreMissingMCPServers = restore
-	}
+func promptDefaultMCPServers(ui UI, choices *Choices) error {
 	defaultServerIDs := make([]string, 0, len(choices.DefaultMCPServers))
 	enabledDefaultServers := make([]string, 0, len(choices.DefaultMCPServers))
 	for _, server := range choices.DefaultMCPServers {
@@ -531,6 +538,32 @@ func promptDefaultMCPServers(ui UI, cfg *config.ProjectConfig, choices *Choices)
 		choices.EnabledMCPServers[id] = true
 	}
 	choices.EnabledMCPServersTouched = true
+	return nil
+}
+
+// promptCustomMCPServers asks whether to keep or disable the MCP servers in
+// config.toml that are not catalog defaults. Selected servers stay enabled;
+// unselected servers are set to enabled = false with their definition preserved
+// (a custom server has no catalog template to restore from, so it is never
+// deleted). The caller (promptWizardFlow) skips this step when there are no
+// custom servers, so CustomMCPServers is non-empty here.
+func promptCustomMCPServers(ui UI, choices *Choices) error {
+	keptServers := make([]string, 0, len(choices.CustomMCPServers))
+	for _, id := range choices.CustomMCPServers {
+		if choices.CustomMCPServersEnabled[id] {
+			keptServers = append(keptServers, id)
+		}
+	}
+	if err := ui.MultiSelect(messages.WizardKeepCustomMCPServersTitle, choices.CustomMCPServers, &keptServers); err != nil {
+		return err
+	}
+	for _, id := range choices.CustomMCPServers {
+		choices.CustomMCPServersEnabled[id] = false
+	}
+	for _, id := range keptServers {
+		choices.CustomMCPServersEnabled[id] = true
+	}
+	choices.CustomMCPServersTouched = true
 	return nil
 }
 

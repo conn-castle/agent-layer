@@ -71,6 +71,30 @@ func TestCheckInstructions_Fallback(t *testing.T) {
 	assert.Equal(t, ".agent-layer/instructions/*", warnings[0].Subject)
 }
 
+func TestMeasureInstructions_ReportsTokensAndSubject(t *testing.T) {
+	tmpDir := t.TempDir()
+	content := make([]byte, 3000)
+	for i := range content {
+		content[i] = 'a'
+	}
+	err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), content, 0600)
+	require.NoError(t, err)
+
+	tokens, subject, err := MeasureInstructions(tmpDir)
+	require.NoError(t, err)
+	assert.Equal(t, "AGENTS.md", subject)
+	assert.Equal(t, EstimateTokens(string(content)), tokens)
+	assert.Positive(t, tokens)
+}
+
+func TestMeasureInstructions_NoFilesReturnsZero(t *testing.T) {
+	tmpDir := t.TempDir()
+	tokens, subject, err := MeasureInstructions(tmpDir)
+	require.NoError(t, err)
+	assert.Equal(t, 0, tokens)
+	assert.Equal(t, ".agent-layer/instructions/*", subject)
+}
+
 func TestCheckInstructions_Disabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	largeContent := make([]byte, 20000)

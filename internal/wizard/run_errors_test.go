@@ -122,10 +122,9 @@ func TestRun_SelectError_ClaudeReasoning(t *testing.T) {
 	ui := &MockUI{
 		NoteFunc: func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error {
-			switch title {
-			case messages.WizardClaudeModelTitle:
-				*current = "opus" // must select opus to trigger reasoning prompt
-			case messages.WizardClaudeReasoningEffortTitle:
+			// The reasoning-effort prompt is shown regardless of model, so no
+			// model selection is needed to reach it.
+			if title == messages.WizardClaudeReasoningEffortTitle {
 				return errors.New("claude reasoning error")
 			}
 			return nil

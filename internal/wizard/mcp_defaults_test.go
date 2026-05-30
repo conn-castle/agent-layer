@@ -7,27 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
-
-func TestMissingDefaultMCPServers(t *testing.T) {
-	defaults := []DefaultMCPServer{
-		{ID: "tavily"},
-		{ID: "context7"},
-		{ID: "tavily"},
-		{ID: "fetch"},
-		{ID: "playwright"},
-	}
-	servers := []config.MCPServer{
-		{ID: "tavily"},
-		{ID: "tavily"},
-	}
-
-	missing := missingDefaultMCPServers(defaults, servers)
-
-	assert.Equal(t, []string{"context7", "fetch", "playwright"}, missing)
-}
 
 func TestLoadDefaultMCPServers(t *testing.T) {
 	defaults, err := loadDefaultMCPServers()
@@ -47,38 +28,6 @@ func TestLoadDefaultMCPServers(t *testing.T) {
 	// tools belong in CLI command-based skills, not MCP servers.
 	assert.False(t, ids["ripgrep"])
 	assert.False(t, ids["filesystem"])
-}
-
-func TestMissingDefaultMCPServers_EmptyID(t *testing.T) {
-	defaults := []DefaultMCPServer{
-		{ID: "github"},
-	}
-	// Server with empty ID should be skipped
-	servers := []config.MCPServer{
-		{ID: ""},
-		{ID: "github"},
-	}
-
-	missing := missingDefaultMCPServers(defaults, servers)
-	assert.Empty(t, missing)
-}
-
-func TestHasAnyDefaultMCPServer(t *testing.T) {
-	defaults := []DefaultMCPServer{{ID: "context7"}, {ID: "tavily"}}
-
-	t.Run("false for slim seed with no servers", func(t *testing.T) {
-		assert.False(t, hasAnyDefaultMCPServer(defaults, nil))
-	})
-
-	t.Run("false for custom-only servers", func(t *testing.T) {
-		servers := []config.MCPServer{{ID: "custom"}}
-		assert.False(t, hasAnyDefaultMCPServer(defaults, servers))
-	})
-
-	t.Run("true when any catalog default exists", func(t *testing.T) {
-		servers := []config.MCPServer{{ID: "custom"}, {ID: "context7"}}
-		assert.True(t, hasAnyDefaultMCPServer(defaults, servers))
-	})
 }
 
 func TestLoadDefaultMCPServersReadError(t *testing.T) {

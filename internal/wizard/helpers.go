@@ -51,14 +51,6 @@ func buildSummary(c *Choices) string {
 		sb.WriteString(messages.WizardSummaryNone)
 	}
 
-	restoredMCP := restoredMCPServers(c)
-	if len(restoredMCP) > 0 {
-		sb.WriteString(messages.WizardSummaryRestoredMCPServersHeader)
-		for _, m := range restoredMCP {
-			fmt.Fprintf(&sb, messages.WizardSummaryListItemFmt, m)
-		}
-	}
-
 	disabledMCP := disabledMCPServers(c)
 	sb.WriteString(messages.WizardSummaryDisabledMCPServersHeader)
 	switch {
@@ -70,6 +62,14 @@ func buildSummary(c *Choices) string {
 		}
 	default:
 		sb.WriteString(messages.WizardSummaryNone)
+	}
+
+	disabledCustomMCP := disabledCustomMCPServers(c)
+	if len(disabledCustomMCP) > 0 {
+		sb.WriteString(messages.WizardSummaryDisabledCustomMCPServersHeader)
+		for _, m := range disabledCustomMCP {
+			fmt.Fprintf(&sb, messages.WizardSummaryListItemFmt, m)
+		}
 	}
 
 	sb.WriteString(messages.WizardSummarySecretsHeader)
@@ -280,18 +280,19 @@ func disabledMCPServers(c *Choices) []string {
 	return ids
 }
 
-// restoredMCPServers returns IDs of default servers being restored to config.toml.
-// c is the current wizard choices; returns nil when no restoration is requested.
-func restoredMCPServers(c *Choices) []string {
-	if !c.RestoreMissingMCPServers || len(c.MissingDefaultMCPServers) == 0 {
+// disabledCustomMCPServers returns IDs of custom (non-catalog) servers the user
+// chose to disable in the wizard, in config order. Disabling sets enabled = false
+// and preserves the entry. Returns nil when the custom-server step was untouched
+// or no custom servers were disabled.
+func disabledCustomMCPServers(c *Choices) []string {
+	if !c.CustomMCPServersTouched {
 		return nil
 	}
-	ids := make([]string, 0, len(c.MissingDefaultMCPServers))
-	for _, id := range c.MissingDefaultMCPServers {
-		if c.EnabledMCPServersTouched && !c.EnabledMCPServers[id] {
-			continue
+	var ids []string
+	for _, id := range c.CustomMCPServers {
+		if !c.CustomMCPServersEnabled[id] {
+			ids = append(ids, id)
 		}
-		ids = append(ids, id)
 	}
 	return ids
 }

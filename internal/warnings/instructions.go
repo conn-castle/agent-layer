@@ -10,6 +10,18 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+// MeasureInstructions returns the estimated token count of the combined instruction
+// payload along with the source subject (e.g. "AGENTS.md" or ".agent-layer/instructions/*").
+// It is the single source for instruction sizing used by both CheckInstructions and the
+// doctor size summary. It returns an error only if the payload cannot be read.
+func MeasureInstructions(rootDir string) (int, string, error) {
+	content, subject, err := getInstructionPayload(rootDir)
+	if err != nil {
+		return 0, "", err
+	}
+	return EstimateTokens(content), subject, nil
+}
+
 // CheckInstructions checks if the combined instruction payload exceeds the threshold.
 // rootDir is the project root directory; threshold is the max token count (nil disables warnings).
 // It returns any warnings and an error if the payload cannot be read.
@@ -17,12 +29,11 @@ func CheckInstructions(rootDir string, threshold *int) ([]Warning, error) {
 	if threshold == nil {
 		return nil, nil
 	}
-	content, subject, err := getInstructionPayload(rootDir)
+	tokens, subject, err := MeasureInstructions(rootDir)
 	if err != nil {
 		return nil, err
 	}
 
-	tokens := EstimateTokens(content)
 	if tokens > *threshold {
 		return []Warning{{
 			Code:              CodeInstructionsTooLarge,

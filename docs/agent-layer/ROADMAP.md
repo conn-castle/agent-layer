@@ -109,7 +109,7 @@ Incomplete:
 ### Task details
 - quickstart-guide: Zero-to-productive numbered guide covering install through first agent launch on macOS and Linux; linked from README.
 - example-repos: At least two example `.agent-layer/` setups (minimal + multi-agent) published with READMEs and linked from docs.
-- wizard-polish: Reduce friction in `al init` / `al wizard` (fewer prompts, better defaults, inline help). Progress: incremental improvements through v0.10.2 — wizard slice (Escape/back, cancel guidance, TOML-corrupt warning), MCP catalog split (fresh `al init` ships zero `[[mcp.servers]]`; interactive prune of disabled catalog entries, profile mode exempt), Phase 16 wizard swap (Antigravity replaces Gemini in the agent catalog, fresh-install default flips to disabled, deprecation notice for legacy `[agents.gemini]`).
+- wizard-polish: Reduce friction in `al init` / `al wizard` (fewer prompts, better defaults, inline help). Progress: incremental improvements through v0.10.2 — wizard slice (Escape/back, cancel guidance, TOML-corrupt warning), MCP catalog split (fresh `al init` ships zero `[[mcp.servers]]`; wizard disables servers in place rather than deleting them, surfaces non-catalog customs in a dedicated step, and dropped the restore-missing prompt; profile mode exempt), Phase 16 wizard swap (Antigravity replaces Gemini in the agent catalog, fresh-install default flips to disabled, deprecation notice for legacy `[agents.gemini]`).
 - error-audit: Audit every user-facing CLI error so each names a next step.
 - demo-content: Record at least three workflow demos (init / sync / launch) and embed in docs.
 

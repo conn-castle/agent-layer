@@ -69,6 +69,23 @@ const (
 	DoctorUpdateAvailableRecommend  = UpdateUpgradeBlock + "\n\n" + UpdateSafetyBlock
 	DoctorUpToDateFmt               = "Agent Layer is up to date (%s)"
 
+	// Size summary: informational context-size report. Doctor always prints it (regardless
+	// of noise mode or --quiet) so size visibility never depends on whether warnings show.
+	// Thresholds set to nil render as "(no limit set)" rather than assuming a default.
+	DoctorSizeSummaryHeader              = "\n📊 Context size summary"
+	DoctorSizeInstructionsFmt            = "  - Instructions (%s): %d / %d tokens\n"
+	DoctorSizeInstructionsNoLimitFmt     = "  - Instructions (%s): %d tokens (no limit set)\n"
+	DoctorSizeInstructionsUnavailableFmt = "  - Instructions: size unavailable (%v)\n"
+	DoctorSizeSkillsFmt                  = "  - Skills: ~%d tokens (catalog metadata %d / %d chars)\n"
+	DoctorSizeMCPServersFmt              = "  - MCP servers enabled: %d / %d\n"
+	DoctorSizeMCPServersNoLimitFmt       = "  - MCP servers enabled: %d (no limit set)\n"
+	DoctorSizeMCPToolsFmt                = "  - MCP tools (total): %d / %d\n"
+	DoctorSizeMCPToolsNoLimitFmt         = "  - MCP tools (total): %d (no limit set)\n"
+	DoctorSizeMCPSchemaFmt               = "  - MCP tool schemas (total): %d / %d tokens\n"
+	DoctorSizeMCPSchemaNoLimitFmt        = "  - MCP tool schemas (total): %d tokens (no limit set)\n"
+	DoctorSizeMCPUnavailable             = "  - MCP servers: size unavailable (server discovery failed)"
+	DoctorSizeMCPPartialFmt              = "  - Note: %d of %d enabled MCP server(s) unreachable; tool and schema totals exclude them.\n"
+
 	DoctorWarningSystemHeader        = "\n🔍 Running warning checks..."
 	DoctorMCPCheckStartFmt           = "⏳ Checking MCP servers (%d enabled)"
 	DoctorMCPCheckDone               = " done"
