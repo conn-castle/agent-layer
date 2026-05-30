@@ -355,9 +355,13 @@ func buildMCPServerBlocks(currentDoc tomlDocument, catalogDoc tomlDocument, choi
 		// Honor the custom-server keep/disable decision. Unlike catalog defaults,
 		// a custom server has no template to restore from, so disabling sets
 		// enabled = false rather than pruning the block. Untouched configs pass
-		// through unchanged, preserving the original enabled state.
+		// through unchanged, preserving the original enabled state. A block with no
+		// recorded decision (absent from the map) is also left as-is rather than
+		// forced to false, so we never impose a decision the user did not make.
 		if choices.CustomMCPServersTouched && block.id != "" {
-			setKeyValue(&tb, nil, "enabled", formatTomlValue(choices.CustomMCPServersEnabled[block.id]), "id")
+			if enabled, ok := choices.CustomMCPServersEnabled[block.id]; ok {
+				setKeyValue(&tb, nil, "enabled", formatTomlValue(enabled), "id")
+			}
 		}
 		sanitizeMCPServerBlock(&tb)
 		ordered = append(ordered, tb)

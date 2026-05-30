@@ -83,6 +83,10 @@ func customMCPServers(defaults []DefaultMCPServer, servers []config.MCPServer) [
 			defaultSet[def.ID] = struct{}{}
 		}
 	}
+	// Wizard recovery loads config leniently (no validation), so a malformed
+	// config.toml may repeat the same id. Collapse duplicates, keeping first-seen
+	// order, so the id-keyed multiselect does not show indistinguishable options.
+	seen := make(map[string]struct{}, len(servers))
 	var custom []config.MCPServer
 	for _, srv := range servers {
 		if srv.ID == "" {
@@ -91,6 +95,10 @@ func customMCPServers(defaults []DefaultMCPServer, servers []config.MCPServer) [
 		if _, isDefault := defaultSet[srv.ID]; isDefault {
 			continue
 		}
+		if _, exists := seen[srv.ID]; exists {
+			continue
+		}
+		seen[srv.ID] = struct{}{}
 		custom = append(custom, srv)
 	}
 	return custom

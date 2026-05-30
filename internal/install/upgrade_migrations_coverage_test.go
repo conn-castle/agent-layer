@@ -174,13 +174,15 @@ func TestWriteUpgradeMigrationReport_AllNoopKeepsHeaderOnly(t *testing.T) {
 	}
 	got := out.String()
 
-	// When every entry is a no-op, the header and source note are still shown
-	// (they carry diagnostic value) but no migration rows appear.
+	// When every entry is a no-op, the header, target/source versions, and source
+	// note are still shown (they carry diagnostic value) but no migration rows appear.
 	if !containsAll(got,
 		"Migration report:",
+		"target version: 0.10.2",
+		"source version: 0.9.0 (upgrade_snapshot)",
 		"source note: managed baseline version invalid",
 	) {
-		t.Fatalf("expected header and source note, got:\n%s", got)
+		t.Fatalf("expected header, versions, and source note, got:\n%s", got)
 	}
 	if strings.Contains(got, "[no_op]") || strings.Contains(got, "noop-one") {
 		t.Fatalf("no-op row leaked into all-noop report:\n%s", got)

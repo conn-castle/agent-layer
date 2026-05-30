@@ -352,8 +352,9 @@ command = "npx"
 	assert.False(t, restorePromptShown, "wizard must not show a blocking restore-missing-defaults prompt")
 
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
-	// Selected missing default is added from the catalog.
+	// Selected missing default is added from the catalog and enabled.
 	assert.Contains(t, string(data), `id = "fetch"`)
+	assert.True(t, mcpServerEnabled(t, string(data), "fetch"))
 	// Existing unselected default is kept (not deleted) and disabled in place.
 	assert.Contains(t, string(data), `id = "context7"`)
 	assert.False(t, mcpServerEnabled(t, string(data), "context7"))

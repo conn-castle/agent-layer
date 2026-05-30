@@ -500,6 +500,13 @@ func TestRun_SecretInputSkip_DisablesServer(t *testing.T) {
 	// never added, so no tavily block is written. The user can re-enable it later by
 	// re-running the wizard and supplying the secret.
 	assert.NotContains(t, string(configData), `id = "tavily"`)
+
+	// The skipped secret must not leak into .env: neither the key nor the "skip"
+	// sentinel should be persisted.
+	envData, err := os.ReadFile(filepath.Join(configDir, ".env"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(envData), "AL_TAVILY_API_KEY")
+	assert.NotContains(t, string(envData), "skip")
 }
 
 func TestRun_SecretInputCancel_StopsWithoutApply(t *testing.T) {

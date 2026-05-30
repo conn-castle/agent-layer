@@ -694,7 +694,9 @@ func TestDoctorCommand_SizeSummaryAlwaysPrinted(t *testing.T) {
 				} else {
 					cmd.SetArgs([]string{"doctor"})
 				}
-				_ = cmd.Execute()
+				if err := cmd.Execute(); err != nil {
+					t.Fatalf("doctor command failed (quiet=%v): %v\noutput:\n%s", quiet, err, out.String())
+				}
 			})
 
 			s := out.String()

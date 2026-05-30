@@ -62,6 +62,24 @@ func TestCustomMCPServers(t *testing.T) {
 		"custom detection must exclude catalog defaults and empty ids while preserving config order")
 }
 
+func TestCustomMCPServers_DeduplicatesIDs(t *testing.T) {
+	defaults := []DefaultMCPServer{{ID: "context7"}}
+	servers := []config.MCPServer{
+		{ID: "my-server"},
+		{ID: "my-server"}, // duplicate id (possible under lenient load) -> collapsed
+		{ID: "another"},
+	}
+
+	custom := customMCPServers(defaults, servers)
+
+	ids := make([]string, 0, len(custom))
+	for _, srv := range custom {
+		ids = append(ids, srv.ID)
+	}
+	assert.Equal(t, []string{"my-server", "another"}, ids,
+		"duplicate custom ids must collapse to first-seen so the id-keyed prompt has no indistinguishable options")
+}
+
 // customServerConfig is a config.toml with one catalog default and one custom
 // (non-catalog) server, used by the patch-level keep/disable tests.
 func customServerConfig(customEnabled bool) string {

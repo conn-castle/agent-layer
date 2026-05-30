@@ -43,6 +43,34 @@ func TestMCPDiscoveryTimeoutDefault(t *testing.T) {
 	}
 }
 
+// TestCheckMCPServers_NoEnabledServers verifies that a config whose servers are
+// all disabled produces an *available* summary with EnabledServers == 0. The
+// unavailable summary (MCPSummary{}) is reserved for genuine resolution failures
+// of an enabled server; "no enabled servers" resolves cleanly. This guards the
+// doctor size summary against reporting "size unavailable" when there is simply
+// nothing to discover.
+func TestCheckMCPServers_NoEnabledServers(t *testing.T) {
+	disabled := false
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "s1", Enabled: &disabled, Transport: "stdio", Command: "echo"},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	warnings, summary, err := CheckMCPServers(context.Background(), cfg, &MockConnector{}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, warnings)
+	assert.True(t, summary.Available, "no enabled servers is not a discovery failure")
+	assert.Equal(t, 0, summary.EnabledServers)
+	assert.Equal(t, 0, summary.TotalTools)
+	assert.Equal(t, 0, summary.TotalSchemaTokens)
+}
+
 func TestCheckMCPServers(t *testing.T) {
 	// Setup config
 	enabled := true
