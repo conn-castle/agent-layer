@@ -98,6 +98,24 @@ func formatNeedsUpgradeRecommendation(configPath string, details []configUnknown
 	return strings.Join(lines, "\n")
 }
 
+// allConfigUnknownKeysNeedUpgrade reports whether every unknown key is a
+// recognized legacy key that an upgrade migration owns.
+func allConfigUnknownKeysNeedUpgrade(details []configUnknownKeyDetail) bool {
+	if len(details) == 0 {
+		return false
+	}
+	for _, detail := range details {
+		if !configUnknownKeyNeedsUpgrade(detail.Path) {
+			return false
+		}
+	}
+	return true
+}
+
+func configUnknownKeyNeedsUpgrade(path string) bool {
+	return path == "agents.gemini" || strings.HasPrefix(path, "agents.gemini.")
+}
+
 // configUnknownKeys returns detected unknown config keys using the current schema.
 func configUnknownKeys(configPath string) ([]configUnknownKeyDetail, error) {
 	data, err := os.ReadFile(filepath.Clean(configPath))

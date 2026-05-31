@@ -197,7 +197,7 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		}
 		if details, detailsErr := configUnknownKeys(configPath); detailsErr == nil && len(details) > 0 {
 			message = fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, summarizeUnknownKeys(details))
-			if errors.Is(err, config.ErrConfigNeedsUpgrade) {
+			if errors.Is(err, config.ErrConfigNeedsUpgrade) && allConfigUnknownKeysNeedUpgrade(details) {
 				recommendation = formatNeedsUpgradeRecommendation(configRelPath, details)
 			} else {
 				recommendation = formatUnknownKeyRecommendation(configRelPath, details)
