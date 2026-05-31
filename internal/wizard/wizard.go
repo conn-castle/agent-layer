@@ -68,6 +68,14 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 			// lenient config fallback would not help; propagate the real error.
 			return fmt.Errorf(messages.WizardLoadConfigFailedFmt, err)
 		}
+		if errors.Is(err, config.ErrConfigNeedsUpgrade) {
+			// The config contains a legacy key that only `al upgrade` can
+			// migrate. The wizard's config patch preserves unknown sections
+			// verbatim, so proceeding would dead-end at sync. Redirect instead
+			// of promising a fix the wizard cannot deliver.
+			_, _ = fmt.Fprintf(out, messages.WizardConfigNeedsUpgradeFmt+"\n", err)
+			return nil
+		}
 		// Config has validation errors (e.g., missing required fields from a
 		// newer version). Fall back to lenient loading so the wizard can still
 		// run and help the user fix the config.
@@ -343,6 +351,9 @@ func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep 
 			if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
 				step++
 			}
+			if step == wizardFlowStepSecrets && !secretsStepHasPrompts(choices) {
+				step++
+			}
 			continue
 		}
 
@@ -366,6 +377,9 @@ func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep 
 		}
 
 		step--
+		if step == wizardFlowStepSecrets && !secretsStepHasPrompts(choices) {
+			step--
+		}
 		if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
 			step--
 		}
@@ -373,6 +387,31 @@ func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep 
 			step--
 		}
 	}
+}
+
+// secretsStepHasPrompts reports whether promptSecrets would render at least one
+// prompt for the current choices. The secrets step is a no-op when no enabled
+// default MCP server has a required-env key still missing from choices.Secrets;
+// in that case it must be skipped in both directions so it does not trap back
+// navigation (the same reason wizardFlowStepEnableLayer and
+// wizardFlowStepCustomMCP are skipped). This must stay in sync with the gating
+// conditions at the top of promptSecrets's loop.
+func secretsStepHasPrompts(choices *Choices) bool {
+	for _, server := range choices.DefaultMCPServers {
+		if !choices.EnabledMCPServers[server.ID] || len(server.RequiredEnv) == 0 {
+			continue
+		}
+		for _, key := range server.RequiredEnv {
+			if key == "" {
+				continue
+			}
+			if existing, ok := choices.Secrets[key]; ok && existing != "" {
+				continue
+			}
+			return true
+		}
+	}
+	return false
 }
 
 // promptEnableAgentLayer asks the user whether the workflow bundle (instructions,

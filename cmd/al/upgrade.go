@@ -79,7 +79,10 @@ func newUpgradeCmd() *cobra.Command {
 			if err := runPostUpgradeSync(cmd.OutOrStdout(), cmd.ErrOrStderr(), root); err != nil {
 				return err
 			}
-			_, writeErr := fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeSuccessful)
+			if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeSuccessful); writeErr != nil {
+				return writeErr
+			}
+			_, writeErr := fmt.Fprintln(cmd.OutOrStdout(), messages.UpgradeReviewSettingsHint)
 			return writeErr
 		},
 	}

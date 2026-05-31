@@ -617,6 +617,11 @@ enabled = true
 	if !errors.Is(err, ErrConfigValidation) {
 		t.Fatalf("legacy Gemini error should match ErrConfigValidation, got: %v", err)
 	}
+	// Must also match ErrConfigNeedsUpgrade so repair tools (the wizard) redirect
+	// to `al upgrade` instead of attempting an in-place fix that dead-ends at sync.
+	if !errors.Is(err, ErrConfigNeedsUpgrade) {
+		t.Fatalf("legacy Gemini error should match ErrConfigNeedsUpgrade, got: %v", err)
+	}
 }
 
 func TestHasLegacyGeminiConfig_TabIndentedHeader(t *testing.T) {

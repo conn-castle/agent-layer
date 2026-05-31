@@ -82,6 +82,7 @@ const (
 	UpgradeSkipDeletionsInfo                        = "Info: skipping unknown file deletions outside .agent-layer/tmp/ (pass --apply-deletions to include them)."
 	UpgradeSkipTmpDeletionsInfo                     = "Info: skipping deletions under .agent-layer/tmp/ (pass --apply-tmp-deletions to include them; this is destructive and may impact ongoing agent work)."
 	UpgradeSuccessful                               = "Upgrade successful."
+	UpgradeReviewSettingsHint                       = "Run `al wizard` to review your settings."
 	UpgradeRunningSync                              = "Running sync..."
 	UpgradeSyncFailedFmt                            = "upgrade applied; sync failed: %w (run `al sync` to retry)"
 

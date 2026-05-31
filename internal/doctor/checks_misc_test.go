@@ -593,7 +593,9 @@ Body.
 func TestCheckSkills_CatalogMetadataTooLargeWarns(t *testing.T) {
 	root := t.TempDir()
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	description := strings.Repeat("a", 910)
+	// 11 skills * (8-char name + 984-char description) = 10,912 chars ≈ 4,002
+	// estimated tokens, over the 4,000-token catalog budget.
+	description := strings.Repeat("a", 984)
 	skills := make([]config.Skill, 0, 11)
 	for i := 0; i < 11; i++ {
 		name := fmt.Sprintf("skill-%02d", i)
@@ -626,29 +628,39 @@ Body.
 	}
 }
 
-// writeCatalogBoundarySkills writes ten directory-format skills whose names
-// ("alpha0".."alpha9", 6 chars each) and per-skill description lengths add
-// up to a precise catalog metadata character count. descLengths must have
-// length 10. Returns the config.Skill slice the caller can pass to
-// CheckSkills along with a *config.ProjectConfig{Root: root, ...}.
-func writeCatalogBoundarySkills(t *testing.T, root string, descLengths [10]int) []config.Skill {
+// writeCatalogSkillsTotalingChars writes directory-format skills whose names
+// (a fixed 6 chars each, "cat000"..) plus descriptions sum to exactly totalChars
+// of ASCII, with each description kept under the 1,024-char per-skill limit so no
+// per-skill findings fire. EstimateTokens of the concatenated catalog depends only
+// on the total ASCII length, so callers can pin the doctor token-budget boundary.
+func writeCatalogSkillsTotalingChars(t *testing.T, root string, totalChars int) []config.Skill {
 	t.Helper()
+	const nameLen = 6    // "cat000"
+	const maxDesc = 1000 // stays under the 1,024 per-skill description limit
+	if totalChars < nameLen {
+		t.Fatalf("totalChars %d too small for one skill", totalChars)
+	}
+	n := (totalChars + (nameLen + maxDesc) - 1) / (nameLen + maxDesc)
+	descTotal := totalChars - nameLen*n
+	if descTotal < 0 {
+		t.Fatalf("totalChars %d too small for %d skill names", totalChars, n)
+	}
+	base, extra := descTotal/n, descTotal%n
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
-	skills := make([]config.Skill, 0, 10)
-	for i := 0; i < 10; i++ {
-		name := fmt.Sprintf("alpha%d", i)
-		description := strings.Repeat("a", descLengths[i])
+	skills := make([]config.Skill, 0, n)
+	for i := 0; i < n; i++ {
+		descLen := base
+		if i < extra {
+			descLen++
+		}
+		name := fmt.Sprintf("cat%03d", i)
+		description := strings.Repeat("a", descLen)
 		skillDir := filepath.Join(skillsDir, name)
 		if err := os.MkdirAll(skillDir, 0o700); err != nil {
 			t.Fatalf("mkdir skill %s: %v", name, err)
 		}
 		skillPath := filepath.Join(skillDir, "SKILL.md")
-		content := fmt.Sprintf(`---
-name: %s
-description: %s
----
-Body.
-`, name, description)
+		content := fmt.Sprintf("---\nname: %s\ndescription: %s\n---\nBody.\n", name, description)
 		if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
 			t.Fatalf("write skill %s: %v", name, err)
 		}
@@ -659,9 +671,9 @@ Body.
 
 func TestCheckSkills_CatalogMetadataAtBoundaryNoWarn(t *testing.T) {
 	root := t.TempDir()
-	// 10 skills * (6-char name + 994-char description) = 10,000 chars exactly.
-	descLengths := [10]int{994, 994, 994, 994, 994, 994, 994, 994, 994, 994}
-	skills := writeCatalogBoundarySkills(t, root, descLengths)
+	// 10,908 catalog chars -> EstimateTokens == 4,000 (ceil(ceil(10908/3)*1.1)),
+	// exactly the budget, so no catalog-size warning fires.
+	skills := writeCatalogSkillsTotalingChars(t, root, 10908)
 
 	results := CheckSkills(&config.ProjectConfig{Root: root, Skills: skills})
 	for _, result := range results {
@@ -673,9 +685,8 @@ func TestCheckSkills_CatalogMetadataAtBoundaryNoWarn(t *testing.T) {
 
 func TestCheckSkills_CatalogMetadataOneOverBoundaryWarns(t *testing.T) {
 	root := t.TempDir()
-	// 9 skills * (6 + 994) + 1 skill * (6 + 995) = 9,000 + 1,001 = 10,001 chars.
-	descLengths := [10]int{995, 994, 994, 994, 994, 994, 994, 994, 994, 994}
-	skills := writeCatalogBoundarySkills(t, root, descLengths)
+	// 10,909 catalog chars -> EstimateTokens == 4,001, one token over the budget.
+	skills := writeCatalogSkillsTotalingChars(t, root, 10909)
 
 	results := CheckSkills(&config.ProjectConfig{Root: root, Skills: skills})
 	var catalogWarns []Result
@@ -692,10 +703,6 @@ func TestCheckSkills_CatalogMetadataOneOverBoundaryWarns(t *testing.T) {
 	}
 }
 
-// TestCheckSkills_CatalogMetadataMultibyteRuneBoundary locks the rune-count
-// semantics of catalog metadata sizing. A description of 9,995 `界` runes plus
-// a 5-rune name sums to exactly 10,000 runes (no warn) but 29,990 bytes (would
-// warn if `len()` were used instead of `utf8.RuneCountInString`).
 func TestSkillCatalogMetadata_SumsTrimmedRunesAndConcatenatesText(t *testing.T) {
 	cfg := &config.ProjectConfig{
 		Skills: []config.Skill{
@@ -721,33 +728,6 @@ func TestSkillCatalogMetadata_NilConfig(t *testing.T) {
 	text, chars := SkillCatalogMetadata(nil)
 	if text != "" || chars != 0 {
 		t.Fatalf("expected empty metadata for nil config, got text=%q chars=%d", text, chars)
-	}
-}
-
-func TestCheckSkills_CatalogMetadataMultibyteRuneBoundary(t *testing.T) {
-	root := t.TempDir()
-	skillsDir := filepath.Join(root, ".agent-layer", "skills", "alpha")
-	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
-		t.Fatalf("mkdir skill: %v", err)
-	}
-	name := "alpha"
-	description := strings.Repeat("界", MaxSkillCatalogMetadataChars-utf8.RuneCountInString(name))
-	skillPath := filepath.Join(skillsDir, "SKILL.md")
-	content := fmt.Sprintf("---\nname: %s\ndescription: %s\n---\nBody.\n", name, description)
-	if err := os.WriteFile(skillPath, []byte(content), 0o600); err != nil {
-		t.Fatalf("write skill: %v", err)
-	}
-
-	results := CheckSkills(&config.ProjectConfig{
-		Root: root,
-		Skills: []config.Skill{
-			{Name: name, Description: description, SourcePath: skillPath},
-		},
-	})
-	for _, result := range results {
-		if strings.Contains(result.Message, "Skill catalog metadata exceeds") {
-			t.Fatalf("expected no catalog-size warning at multibyte-rune boundary, got: %#v", result)
-		}
 	}
 }
 

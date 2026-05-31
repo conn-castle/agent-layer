@@ -400,6 +400,58 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 	require.False(t, choices.CodexAppsTouched)
 }
 
+// TestPromptWizardFlow_BackFromWarningsSkipsNoOpSecretsStep guards against the
+// regression where pressing Esc on the final (warnings) step appeared to do
+// nothing. The secrets step renders no prompt when no enabled MCP server has an
+// unsatisfied required-env key (the common case). Back navigation from warnings
+// lands on secrets, which returns nil (no-op) and is then treated as forward
+// success, bouncing the user straight back to warnings. Going back must instead
+// skip the no-op secrets step and reach the previous visible step (MCP defaults).
+func TestPromptWizardFlow_BackFromWarningsSkipsNoOpSecretsStep(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+	// No CLI skills catalog, no default/custom MCP servers: the secrets step has
+	// nothing to prompt for and must not trap back navigation from warnings.
+
+	allLabel, ok := approvalModeLabelForValue(config.ApprovalModeAll)
+	require.True(t, ok)
+
+	var mcpDefaultsCalls, warningsCalls int
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == messages.WizardApprovalModeTitle {
+				*current = allLabel
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			switch title {
+			case messages.WizardEnableAgentsTitle:
+				*selected = []string{}
+			case messages.WizardEnableDefaultMCPServersTitle:
+				mcpDefaultsCalls++
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardEnableWarningsPrompt {
+				warningsCalls++
+				if warningsCalls == 1 {
+					return errWizardBack
+				}
+				*value = false
+			}
+			return nil
+		},
+	}
+
+	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	require.NoError(t, err)
+	require.Equal(t, 2, warningsCalls, "expected warnings to be revisited after going forward from the previous step")
+	require.Equal(t, 2, mcpDefaultsCalls, "back from warnings should reach the MCP defaults step, not bounce off the no-op secrets step")
+}
+
 func TestPromptWizardFlow_CtrlCExitsImmediatelyWithoutConfirmation(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = config.ApprovalModeAll

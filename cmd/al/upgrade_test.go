@@ -237,6 +237,9 @@ func TestUpgradeCmd_SuccessMessageOnCompletion(t *testing.T) {
 		if !strings.Contains(stdout.String(), messages.UpgradeSuccessful) {
 			t.Fatalf("expected %q in stdout, got %q", messages.UpgradeSuccessful, stdout.String())
 		}
+		if !strings.Contains(stdout.String(), messages.UpgradeReviewSettingsHint) {
+			t.Fatalf("expected %q in stdout, got %q", messages.UpgradeReviewSettingsHint, stdout.String())
+		}
 	})
 }
 

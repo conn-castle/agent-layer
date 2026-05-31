@@ -1,11 +1,11 @@
 ---
 name: simplify-new-code
 description: >-
-  Smell-scan the current uncommitted diff for agent-added scope creep —
-  speculative flexibility, premature abstractions, dead branches, impossible-
-  case error handling, defensive scaffolding, clever patterns, half-finished
-  work — and auto-apply simplifications. Preserves user-requested behavior.
-  Use `simplify-codebase` for full-codebase complexity sweeps.
+  Scan the current uncommitted diff for agent-added scope creep — speculative
+  flexibility, premature abstractions, dead branches, defensive scaffolding,
+  half-finished work — and auto-apply simplifications, preserving
+  user-requested behavior. Use `simplify-codebase` for full-codebase
+  complexity sweeps.
 ---
 
 # simplify-new-code

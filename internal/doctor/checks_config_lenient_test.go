@@ -241,6 +241,66 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback_NeedsUpgradeRecommendsUpgradeOnly(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyConfig := `
+[approvals]
+mode = "all"
+
+[agents.antigravity]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.gemini]
+enabled = true
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(legacyConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	result := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if result.Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", result.Status)
+	}
+	if !strings.Contains(result.Message, "unrecognized config keys: agents.gemini") {
+		t.Fatalf("expected legacy key summary in message, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Recommendation, "Run `al upgrade`") {
+		t.Fatalf("expected upgrade recommendation, got: %s", result.Recommendation)
+	}
+	if strings.Contains(result.Recommendation, "al wizard") {
+		t.Fatalf("must not recommend wizard for migration-only config, got: %s", result.Recommendation)
+	}
+}
+
 func TestCheckConfig_LenientFallback_LoadsSkillsForDoctor(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")
