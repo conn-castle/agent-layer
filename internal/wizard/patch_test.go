@@ -2246,6 +2246,46 @@ features = { multi_agent = true }
 	assert.Contains(t, err.Error(), "inline table syntax")
 }
 
+func TestPatchConfig_CodexBrowserInlineFeaturesWithBrowserKeyOffErrors(t *testing.T) {
+	// Toggle off (not disabling) but the inline table already pins a browser key:
+	// clearing it would require editing the inline table, so surface the limitation
+	// instead of silently leaving the pin in place.
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { browser_use = false, multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = false
+
+	_, err := PatchConfig(content, choices)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "inline table syntax")
+}
+
+func TestPatchConfig_CodexBrowserInlineFeaturesWithoutBrowserKeyOffPreserved(t *testing.T) {
+	// Toggle off and the inline table pins no browser key: nothing to change, so
+	// leave the inline features untouched without erroring.
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+	assert.Contains(t, out, "features = { multi_agent = true }")
+	assert.NotContains(t, out, "browser_use")
+}
+
 func TestPatchConfig_CodexBrowserNotDisabledAddsNoFeaturesSection(t *testing.T) {
 	content := `
 [agents.codex]

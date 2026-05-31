@@ -358,6 +358,17 @@ func TestLoadTemplateConfig(t *testing.T) {
 			t.Fatalf("expected template not to deny AskUserQuestion by default, got %v", permissions["deny"])
 		}
 	}
+	// A default PreToolUse matcher would also block the tool, so assert the
+	// template ships none (the deny check alone would miss a hook-only block).
+	if hooks, ok := cfg.Agents.Claude.AgentSpecific["hooks"].(map[string]any); ok {
+		if pre, ok := hooks["PreToolUse"].([]any); ok {
+			for _, entry := range pre {
+				if m, ok := entry.(map[string]any); ok && m["matcher"] == "AskUserQuestion" {
+					t.Fatalf("expected template not to block AskUserQuestion via PreToolUse hook")
+				}
+			}
+		}
+	}
 }
 
 func stringSliceValueContains(value any, want string) bool {

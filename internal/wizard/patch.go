@@ -1044,7 +1044,11 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 	}
 	if parentBlock, exists := doc.sections[codexAgentSpecificSectionPrefix]; exists {
 		if hasUncommentedKeyLine(parentBlock.lines, "features") {
-			if choices.CodexDisableBrowser {
+			// An inline `features = {...}` table cannot be edited line-by-line.
+			// Surface the limitation whenever a change is required: when disabling
+			// (we would need to set the keys) or when the inline table already pins
+			// a browser key the toggle would otherwise clear. Matches the apps path.
+			if choices.CodexDisableBrowser || inlineFeaturesHasAnyCodexBrowserKey(parentBlock) {
 				return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
 			}
 			return nil
@@ -1065,6 +1069,37 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 	doc.order = append(doc.order, codexAppsFeaturesSection)
 	applyCodexBrowserKeys(block, "", true)
 	return nil
+}
+
+// inlineFeaturesHasAnyCodexBrowserKey reports whether an inline
+// `features = {...}` table in block defines any browser/computer-use key. Used
+// to surface WizardCodexInlineFeaturesUnsupported when the line-based patcher
+// cannot edit those pins inside an inline table. Parallels
+// codexAppsValueFromAgentSpecificBlock.
+func inlineFeaturesHasAnyCodexBrowserKey(block *tomlBlock) bool {
+	if block == nil {
+		return false
+	}
+	var cfg struct {
+		Agents struct {
+			Codex struct {
+				AgentSpecific map[string]any `toml:"agent_specific"`
+			} `toml:"codex"`
+		} `toml:"agents"`
+	}
+	if err := toml.Unmarshal([]byte(strings.Join(block.lines, "\n")), &cfg); err != nil {
+		return false
+	}
+	features, ok := cfg.Agents.Codex.AgentSpecific["features"].(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, key := range codexBrowserFeatureKeys {
+		if _, exists := features[key]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 // applyCodexBrowserKeys sets (when disabling) or comments (when not) each
