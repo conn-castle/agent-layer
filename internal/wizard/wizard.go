@@ -219,9 +219,15 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	if cfg.Config.Agents.Claude.LocalConfigDir != nil {
 		choices.ClaudeLocalConfigDir = *cfg.Config.Agents.Claude.LocalConfigDir
 	}
+	claudeAgentSpecific := cfg.Config.Agents.Claude.AgentSpecific
+	choices.ClaudeDisableIDEReading = readClaudeEnvFalse(claudeAgentSpecific, claudeIDEReadingEnvKey)
+	choices.ClaudeDisableConnectors = readClaudeEnvFalse(claudeAgentSpecific, claudeConnectorsEnvKey)
+	choices.ClaudeDisableMemory = readClaudeAutoMemoryDisabled(claudeAgentSpecific)
+	choices.ClaudeDisableQuestionTool = readClaudeQuestionToolDisabled(claudeAgentSpecific)
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
 	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
+	choices.CodexDisableBrowser = readCodexBrowserDisabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CopilotCLIModel = cfg.Config.Agents.CopilotCLI.Model
 
 	for _, srv := range cfg.Config.MCP.Servers {
@@ -285,6 +291,99 @@ func readCodexAppsValue(agentSpecific map[string]any) (bool, bool) {
 		return false, false
 	}
 	return apps, true
+}
+
+// Agent-specific keys the wizard's Claude disable toggles read and write. They
+// live under .claude/settings.json once synced; the wizard stores them as
+// agent_specific passthrough in config.toml.
+const (
+	claudeIDEReadingEnvKey = "CLAUDE_CODE_AUTO_CONNECT_IDE"
+	claudeConnectorsEnvKey = "ENABLE_CLAUDEAI_MCP_SERVERS"
+	askUserQuestionTool    = "AskUserQuestion"
+)
+
+// readCodexBrowserDisabled reports whether the Codex browser/computer-use
+// features are pinned off (features.browser_use == false). Absence is treated
+// as "not disabled" so the client keeps its native default.
+func readCodexBrowserDisabled(agentSpecific map[string]any) bool {
+	features, ok := agentSpecific["features"].(map[string]any)
+	if !ok {
+		return false
+	}
+	enabled, ok := features["browser_use"].(bool)
+	return ok && !enabled
+}
+
+// readClaudeEnvFalse reports whether agent_specific.env[key] is the string
+// "false" (settings.json env values are JSON strings, not booleans).
+func readClaudeEnvFalse(agentSpecific map[string]any, key string) bool {
+	env, ok := agentSpecific["env"].(map[string]any)
+	if !ok {
+		return false
+	}
+	value, ok := env[key].(string)
+	return ok && value == "false"
+}
+
+// readClaudeAutoMemoryDisabled reports whether agent_specific.autoMemoryEnabled
+// is the boolean false.
+func readClaudeAutoMemoryDisabled(agentSpecific map[string]any) bool {
+	enabled, ok := agentSpecific["autoMemoryEnabled"].(bool)
+	return ok && !enabled
+}
+
+// readClaudeQuestionToolDisabled reports whether the AskUserQuestion tool is
+// blocked, via either permissions.deny or a PreToolUse hook matcher. Either
+// mechanism present means the toggle reads back as on.
+func readClaudeQuestionToolDisabled(agentSpecific map[string]any) bool {
+	if claudePermissionsDenyContains(agentSpecific, askUserQuestionTool) {
+		return true
+	}
+	return claudePreToolUseHookMatches(agentSpecific, askUserQuestionTool)
+}
+
+func claudePermissionsDenyContains(agentSpecific map[string]any, tool string) bool {
+	permissions, ok := agentSpecific["permissions"].(map[string]any)
+	if !ok {
+		return false
+	}
+	return anySliceContainsString(permissions["deny"], tool)
+}
+
+func claudePreToolUseHookMatches(agentSpecific map[string]any, matcher string) bool {
+	hooks, ok := agentSpecific["hooks"].(map[string]any)
+	if !ok {
+		return false
+	}
+	entries, ok := hooks["PreToolUse"].([]any)
+	if !ok {
+		return false
+	}
+	for _, entry := range entries {
+		entryMap, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		if m, ok := entryMap["matcher"].(string); ok && m == matcher {
+			return true
+		}
+	}
+	return false
+}
+
+// anySliceContainsString reports whether value is a string slice (decoded as
+// []any by the TOML reader for agent_specific maps) containing want.
+func anySliceContainsString(value any, want string) bool {
+	values, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	for _, v := range values {
+		if s, ok := v.(string); ok && s == want {
+			return true
+		}
+	}
+	return false
 }
 
 type wizardFlowStep int
@@ -482,6 +581,18 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 	if !choices.EnabledAgents[AgentCodex] {
 		choices.CodexApps = false
 		choices.CodexAppsTouched = false
+		choices.CodexDisableBrowser = false
+		choices.CodexDisableBrowserTouched = false
+	}
+	if !choices.EnabledAgents[AgentClaude] && !choices.EnabledAgents[AgentClaudeVSCode] {
+		choices.ClaudeDisableIDEReading = false
+		choices.ClaudeDisableIDEReadingTouched = false
+		choices.ClaudeDisableMemory = false
+		choices.ClaudeDisableMemoryTouched = false
+		choices.ClaudeDisableConnectors = false
+		choices.ClaudeDisableConnectorsTouched = false
+		choices.ClaudeDisableQuestionTool = false
+		choices.ClaudeDisableQuestionToolTouched = false
 	}
 	return nil
 }
@@ -528,6 +639,22 @@ func promptModels(ui UI, choices *Choices) error {
 		}
 		choices.ClaudeLocalConfigDir = claudeLocalConfigDir
 		choices.ClaudeLocalConfigDirTouched = true
+
+		// Per-feature "disable" toggles (default No keeps Claude Code's native
+		// default). Both Claude and Claude (VS Code) write .claude/settings.json,
+		// so these are offered whenever either is enabled.
+		if err := confirmToggle(ui, messages.WizardClaudeDisableIDEReadingPrompt, &choices.ClaudeDisableIDEReading, &choices.ClaudeDisableIDEReadingTouched); err != nil {
+			return err
+		}
+		if err := confirmToggle(ui, messages.WizardClaudeDisableMemoryPrompt, &choices.ClaudeDisableMemory, &choices.ClaudeDisableMemoryTouched); err != nil {
+			return err
+		}
+		if err := confirmToggle(ui, messages.WizardClaudeDisableConnectorsPrompt, &choices.ClaudeDisableConnectors, &choices.ClaudeDisableConnectorsTouched); err != nil {
+			return err
+		}
+		if err := confirmToggle(ui, messages.WizardClaudeDisableQuestionToolPrompt, &choices.ClaudeDisableQuestionTool, &choices.ClaudeDisableQuestionToolTouched); err != nil {
+			return err
+		}
 	}
 	if choices.EnabledAgents[AgentCodex] {
 		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels(), &choices.CodexModel); err != nil {
@@ -540,12 +667,19 @@ func promptModels(ui UI, choices *Choices) error {
 		}
 		choices.CodexReasoningTouched = true
 
-		codexApps := choices.CodexApps
-		if err := ui.Confirm(messages.WizardCodexAppsPrompt, &codexApps); err != nil {
+		// Apps confirm shares the "Disable …?" phrasing; the confirm variable is
+		// inverted at the prompt boundary while CodexApps keeps enabled-state
+		// storage (true = apps enabled). Default reflects the stored state.
+		disableApps := !choices.CodexApps
+		if err := ui.Confirm(messages.WizardCodexAppsPrompt, &disableApps); err != nil {
 			return err
 		}
-		choices.CodexApps = codexApps
+		choices.CodexApps = !disableApps
 		choices.CodexAppsTouched = true
+
+		if err := confirmToggle(ui, messages.WizardCodexBrowserPrompt, &choices.CodexDisableBrowser, &choices.CodexDisableBrowserTouched); err != nil {
+			return err
+		}
 	}
 	if choices.EnabledAgents[AgentCopilotCLI] {
 		if err := selectOptionalValue(ui, messages.WizardCopilotCLIModelTitle, CopilotCLIModels(), &choices.CopilotCLIModel); err != nil {

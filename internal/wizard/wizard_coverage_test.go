@@ -157,9 +157,10 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("promptModels codex apps confirm propagates default false", func(t *testing.T) {
+	t.Run("promptModels codex apps confirm inverts disable default", func(t *testing.T) {
 		choices := NewChoices()
 		choices.EnabledAgents[AgentCodex] = true
+		choices.CodexApps = true // apps currently enabled
 		var sawAppsPrompt bool
 		var sawValue bool
 		err := promptModels(&MockUI{
@@ -168,6 +169,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 				if title == messages.WizardCodexAppsPrompt {
 					sawAppsPrompt = true
 					sawValue = *value
+					*value = true // user chooses to disable apps
 				}
 				return nil
 			},
@@ -178,8 +180,14 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		if !sawAppsPrompt {
 			t.Fatal("expected codex apps prompt to be invoked")
 		}
+		// The reworded "Disable apps?" prompt offers the inverse of the stored
+		// enabled-state: apps enabled => disable default is false.
 		if sawValue {
-			t.Fatal("expected codex apps prompt default to be false")
+			t.Fatal("expected disable default to be false when apps are enabled")
+		}
+		// Confirming the disable prompt flips CodexApps back to enabled-state false.
+		if choices.CodexApps {
+			t.Fatal("expected CodexApps to be disabled after confirming the disable prompt")
 		}
 		if !choices.CodexAppsTouched {
 			t.Fatal("expected CodexAppsTouched to be set")

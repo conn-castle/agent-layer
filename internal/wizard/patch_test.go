@@ -2170,3 +2170,355 @@ func TestPatchHelpers_EdgeCases(t *testing.T) {
 	assert.Equal(t, []string{"a"}, trimEmptyLines([]string{"", "a", ""}))
 	assert.Equal(t, []string{"a"}, trimTrailingEmptyLines([]string{"a", "", "  "}))
 }
+
+func TestPatchConfig_CodexBrowserDisabledOnFreshConfig(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific.features]")
+	assert.Contains(t, out, "browser_use = false")
+	assert.Contains(t, out, "in_app_browser = false")
+	assert.Contains(t, out, "computer_use = false")
+}
+
+func TestPatchConfig_CodexBrowserDisabledAlongsideApps(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific.features]
+apps = false
+`
+	choices := NewChoices()
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "apps = false")
+	assert.Contains(t, out, "browser_use = false")
+	assert.Contains(t, out, "in_app_browser = false")
+	assert.Contains(t, out, "computer_use = false")
+}
+
+func TestPatchConfig_CodexBrowserAndAppsBothDisabledFreshConfig(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.CodexAppsTouched = true
+	choices.CodexApps = false
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific.features]")
+	assert.Contains(t, out, "apps = false")
+	assert.Contains(t, out, "browser_use = false")
+}
+
+func TestPatchConfig_CodexBrowserInlineFeaturesErrors(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	_, err := PatchConfig(content, choices)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "inline table syntax")
+}
+
+func TestPatchConfig_CodexBrowserNotDisabledAddsNoFeaturesSection(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+	assert.NotContains(t, out, "browser_use")
+}
+
+func TestPatchConfig_CodexBrowserDisabledSkippedWhenCodexDisabled(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentCodex] = false
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "browser_use")
+}
+
+func TestPatchConfig_ClaudeDisableIDEReading(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableIDEReadingTouched = true
+	choices.ClaudeDisableIDEReading = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false"`)
+}
+
+func TestPatchConfig_ClaudeDisableConnectors(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableConnectorsTouched = true
+	choices.ClaudeDisableConnectors = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `agent_specific.env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"`)
+}
+
+func TestPatchConfig_ClaudeDisableMemory(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableMemory = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "agent_specific.autoMemoryEnabled = false")
+}
+
+func TestPatchConfig_ClaudeDisableQuestionToolWritesDenyAndHook(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableQuestionToolTouched = true
+	choices.ClaudeDisableQuestionTool = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `agent_specific.permissions.deny = ["AskUserQuestion"]`)
+	assert.Contains(t, out, "agent_specific.hooks.PreToolUse = [{ matcher = \"AskUserQuestion\"")
+	assert.Contains(t, out, "exit 2")
+}
+
+func TestPatchConfig_ClaudeQuestionToolOffCommentsExistingDeny(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+agent_specific.permissions.deny = ["AskUserQuestion"]
+`
+	choices := NewChoices()
+	choices.ClaudeDisableQuestionToolTouched = true
+	choices.ClaudeDisableQuestionTool = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `# agent_specific.permissions.deny = ["AskUserQuestion"]`)
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "agent_specific.permissions.deny") {
+			t.Fatalf("expected deny line to be commented, got uncommented: %q", line)
+		}
+	}
+}
+
+func TestPatchConfig_ClaudeDisableIDEReadingWritesIntoExpandedEnvSection(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+
+[agents.claude.agent_specific.env]
+SOME_OTHER = "value"
+`
+	choices := NewChoices()
+	choices.ClaudeDisableIDEReadingTouched = true
+	choices.ClaudeDisableIDEReading = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.claude.agent_specific.env]")
+	assert.Contains(t, out, `SOME_OTHER = "value"`)
+	assert.Contains(t, out, `CLAUDE_CODE_AUTO_CONNECT_IDE = "false"`)
+	// The key must land in the expanded section as a bare leaf, not as a dotted
+	// key in [agents.claude] (which would redefine the table — a TOML error).
+	assert.NotContains(t, out, "agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE")
+}
+
+func TestPatchConfig_ClaudeDisableWritesIntoExpandedParentSection(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+
+[agents.claude.agent_specific]
+autoMemoryEnabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableMemory = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.claude.agent_specific]")
+	assert.Contains(t, out, "autoMemoryEnabled = false")
+	assert.NotContains(t, out, "autoMemoryEnabled = true")
+}
+
+func TestPatchConfig_ClaudeDisableTogglesIdempotent(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableIDEReadingTouched = true
+	choices.ClaudeDisableIDEReading = true
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableMemory = true
+	choices.ClaudeDisableQuestionToolTouched = true
+	choices.ClaudeDisableQuestionTool = true
+
+	first, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+	second, err := PatchConfig(first, choices)
+	require.NoError(t, err)
+
+	assert.Equal(t, first, second)
+}
+
+func TestPatchConfig_ClaudeDisableTogglesSkippedWhenClaudeDisabled(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+`
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentClaude] = false
+	choices.EnabledAgents[AgentClaudeVSCode] = false
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableMemory = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "autoMemoryEnabled")
+}
+
+func TestPatchConfig_ClaudeDisableToggleAppliesUnderClaudeVSCodeOnly(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = false
+
+[agents.claude_vscode]
+enabled = true
+`
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentClaudeVSCode] = true
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableMemory = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "agent_specific.autoMemoryEnabled = false")
+}
+
+func TestPatchConfig_ClaudeDisableCreatesClaudeSectionWhenAbsent(t *testing.T) {
+	// No [agents.claude] block at all — the writer's defensive create path.
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableMemory = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.claude]")
+	assert.Contains(t, out, "agent_specific.autoMemoryEnabled = false")
+}
+
+func TestPatchConfig_ClaudeDisableEnvWritesDottedIntoParentSection(t *testing.T) {
+	// [agents.claude.agent_specific] exists but no expanded .env sub-table: the
+	// env key is written as a dotted `env.*` key into the parent section.
+	content := `
+[agents.claude]
+enabled = true
+
+[agents.claude.agent_specific]
+foo = "bar"
+`
+	choices := NewChoices()
+	choices.ClaudeDisableIDEReadingTouched = true
+	choices.ClaudeDisableIDEReading = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.claude.agent_specific]")
+	assert.Contains(t, out, `env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false"`)
+	assert.NotContains(t, out, "agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE")
+}
+
+func TestPatchConfig_CodexBrowserWritesDottedFeaturesIntoParentSection(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features.multi_agent = true
+`
+	choices := NewChoices()
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "features.browser_use = false")
+	assert.Contains(t, out, "features.multi_agent = true")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}

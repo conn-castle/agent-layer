@@ -494,3 +494,79 @@ func stringSliceContains(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestBuildClaudeSettingsDisableTogglesAgentSpecific(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"env": map[string]any{
+							"CLAUDE_CODE_AUTO_CONNECT_IDE": "false",
+							"ENABLE_CLAUDEAI_MCP_SERVERS":  "false",
+						},
+						"autoMemoryEnabled": false,
+						"permissions":       map[string]any{"deny": []any{"AskUserQuestion"}},
+						"hooks": map[string]any{
+							"PreToolUse": []any{
+								map[string]any{"matcher": "AskUserQuestion"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+
+	env, ok := settings["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected env map, got %#v", settings["env"])
+	}
+	if env["CLAUDE_CODE_AUTO_CONNECT_IDE"] != "false" {
+		t.Fatalf("expected CLAUDE_CODE_AUTO_CONNECT_IDE=\"false\", got %#v", env["CLAUDE_CODE_AUTO_CONNECT_IDE"])
+	}
+	if env["ENABLE_CLAUDEAI_MCP_SERVERS"] != "false" {
+		t.Fatalf("expected ENABLE_CLAUDEAI_MCP_SERVERS=\"false\", got %#v", env["ENABLE_CLAUDEAI_MCP_SERVERS"])
+	}
+
+	if memory, ok := settings["autoMemoryEnabled"].(bool); !ok || memory {
+		t.Fatalf("expected autoMemoryEnabled=false, got %#v", settings["autoMemoryEnabled"])
+	}
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected hooks map, got %#v", settings["hooks"])
+	}
+	if _, ok := hooks["PreToolUse"].([]any); !ok {
+		t.Fatalf("expected hooks.PreToolUse slice, got %#v", hooks["PreToolUse"])
+	}
+
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map, got %#v", settings["permissions"])
+	}
+	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
+		t.Fatalf("expected permissions.deny to contain AskUserQuestion, got %#v", permissions["deny"])
+	}
+}
+
+func anyDenyContains(value any, want string) bool {
+	switch values := value.(type) {
+	case []any:
+		for _, v := range values {
+			if s, ok := v.(string); ok && s == want {
+				return true
+			}
+		}
+	case []string:
+		return stringSliceContains(values, want)
+	}
+	return false
+}

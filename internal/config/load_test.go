@@ -350,12 +350,13 @@ func TestLoadTemplateConfig(t *testing.T) {
 	if cfg.Approvals.Mode == "" {
 		t.Fatalf("expected approvals.mode to be present in template config")
 	}
-	permissions, ok := cfg.Agents.Claude.AgentSpecific["permissions"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected template Claude agent-specific permissions map")
-	}
-	if !stringSliceValueContains(permissions["deny"], "AskUserQuestion") {
-		t.Fatalf("expected template to deny AskUserQuestion, got %v", permissions["deny"])
+	// AskUserQuestion is allowed by default now: the shipped template carries no
+	// permissions.deny. The opt-in `al wizard` toggle re-adds the deny plus a
+	// PreToolUse hook when the user chooses to disable the tool.
+	if permissions, ok := cfg.Agents.Claude.AgentSpecific["permissions"].(map[string]any); ok {
+		if stringSliceValueContains(permissions["deny"], "AskUserQuestion") {
+			t.Fatalf("expected template not to deny AskUserQuestion by default, got %v", permissions["deny"])
+		}
 	}
 }
 

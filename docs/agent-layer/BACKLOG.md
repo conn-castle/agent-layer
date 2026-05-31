@@ -120,9 +120,9 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 - Backlog 2026-03-23 disable-client-memory-config: Agent-specific config option to disable client memory systems
     Priority: Medium. Area: config / sync
-    Description: Add an agent-specific config option (e.g., `disable_client_memory = true`) in config.toml that causes `al sync` to inject the appropriate memory-disable setting into each agent's generated config (e.g., `autoMemoryEnabled=false` for Claude, equivalent memory controls for Antigravity if available, etc.). Centralizes memory disable logic in config.toml rather than requiring users to know each client's specific setting name.
-    Acceptance criteria: A per-agent config.toml flag exists; `al sync` translates it to the correct client-specific setting for each supported agent; documented in README or CONTEXT.md.
-    Notes: Source: claude-assistant project discovered the need while disabling memory across all agents. Each client has a different mechanism — the mapping must be maintained as new clients are added.
+    Description: Claude is now covered: the `al wizard` "disable memory" toggle writes `agents.claude.agent_specific.autoMemoryEnabled = false` directly (a simpler mechanism than the originally-proposed translated central flag — see DECISIONS.md). Remaining work is the other clients: surface equivalent memory-disable controls for Antigravity (and any future client with a memory system) so users do not have to know each client's setting name. Codex `memories` is intentionally excluded (experimental and already off by default — pinning it would write a redundant key).
+    Acceptance criteria: For each client with a memory system besides Claude, the wizard (or config) can disable it via the correct client-specific setting; documented in README or CONTEXT.md.
+    Notes: Source: claude-assistant project discovered the need while disabling memory across all agents. Each client has a different mechanism — the mapping must be maintained as new clients are added. The chosen pattern is direct `agent_specific` keys per client, not a single translated flag.
 
 - Backlog 2026-03-21 reassess-skill-resources: Audit template skills for scripts/references/assets opportunities
     Priority: Medium. Area: skills

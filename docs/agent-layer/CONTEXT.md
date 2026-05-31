@@ -40,6 +40,14 @@ Do not duplicate information that belongs in other memory files:
 
 - Codex MCP header projection accepts exactly three placeholder formats: `bearer_token_env_var` for `Authorization: Bearer ${VAR}`, `env_http_headers` for exact `${VAR}` values, and `http_headers` for literal strings. Mixed literal + env placeholder (e.g. `Token ${VAR}`) is rejected and must be restructured.
 
+## Wizard feature-disable toggles → client keys
+
+- The wizard's per-feature "disable" toggles map to these `agent_specific` keys (written only when the user opts in; absence = client default):
+  - Codex (`agents.codex.agent_specific.features`, appended to `.codex/config.toml`): `browser_use`/`in_app_browser`/`computer_use = false` (browser/computer-use), `apps = false` (built-in apps).
+  - Claude (`agents.claude.agent_specific`, deep-merged into `.claude/settings.json`): `env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false"` (IDE open-file reading), `env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"` (claude.ai connectors), `autoMemoryEnabled = false` (auto-memory), and `permissions.deny = ["AskUserQuestion"]` + `hooks.PreToolUse` matcher (AskUserQuestion).
+- Value types: settings.json `env` values are JSON strings, so the wizard writes the quoted string `"false"`; `autoMemoryEnabled` and the Codex `features.*` flags are booleans (`false`). `CLAUDE_CODE_DISABLE_AUTO_MEMORY` is deliberately not used (it takes `1`/`0`, not `false`).
+- The Claude patch writer (`applyClaudeAgentSpecificUpdate`, `internal/wizard/patch.go`) writes dotted `agent_specific.*` keys into `[agents.claude]` unless the user expanded `agent_specific` into explicit sub-tables (`[agents.claude.agent_specific(.env|.permissions|.hooks)]`), in which case it writes the leaf into that section to avoid a TOML duplicate-table error.
+
 ## Antigravity
 
 - Antigravity uses the `agy` binary and is launched with `--gemini_dir=<repo>/.agy` plus `AGY_CLI_DISABLE_AUTO_UPDATE=1` for repo-local containment. Agent Layer writes `.agy/antigravity-cli/settings.json` and `.agy/antigravity-cli/mcp_config.json`.
