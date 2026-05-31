@@ -364,6 +364,28 @@ enabled = true
 	}
 }
 
+func TestConfigUnknownKeyNeedsUpgrade(t *testing.T) {
+	for _, path := range []string{
+		"agents.gemini",
+		"agents.gemini.enabled",
+		`agents.gemini["legacy-key"]`,
+	} {
+		if !configUnknownKeyNeedsUpgrade(path) {
+			t.Fatalf("configUnknownKeyNeedsUpgrade(%q) = false, want true", path)
+		}
+	}
+
+	for _, path := range []string{
+		"agents.gemini_extra",
+		"agents.antigravity",
+		"agents.vscode.model",
+	} {
+		if configUnknownKeyNeedsUpgrade(path) {
+			t.Fatalf("configUnknownKeyNeedsUpgrade(%q) = true, want false", path)
+		}
+	}
+}
+
 func TestCheckConfig_LenientFallback_LoadsSkillsForDoctor(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")

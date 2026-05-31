@@ -113,7 +113,9 @@ func allConfigUnknownKeysNeedUpgrade(details []configUnknownKeyDetail) bool {
 }
 
 func configUnknownKeyNeedsUpgrade(path string) bool {
-	return path == "agents.gemini" || strings.HasPrefix(path, "agents.gemini.")
+	return path == "agents.gemini" ||
+		strings.HasPrefix(path, "agents.gemini.") ||
+		strings.HasPrefix(path, "agents.gemini[")
 }
 
 // configUnknownKeys returns detected unknown config keys using the current schema.
