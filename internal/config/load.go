@@ -20,6 +20,14 @@ import (
 // validation problems from other LoadProjectConfig failure modes.
 var ErrConfigValidation = errors.New("config validation failed")
 
+// ErrConfigNeedsUpgrade is a sentinel wrapped alongside ErrConfigValidation
+// when a config fails validation because it contains a legacy key that only
+// `al upgrade` can migrate (e.g. a removed agent table). Repair tools such as
+// the wizard cannot rewrite these keys in place, so they use
+// errors.Is(err, ErrConfigNeedsUpgrade) to redirect the user to `al upgrade`
+// instead of attempting a fix that would dead-end at sync.
+var ErrConfigNeedsUpgrade = errors.New("config requires migration")
+
 // LoadProjectConfig reads and validates the full Agent Layer config from disk.
 func LoadProjectConfig(root string) (*ProjectConfig, error) {
 	return LoadProjectConfigFS(os.DirFS(root), root)
@@ -80,7 +88,11 @@ func ParseConfig(data []byte, source string) (*Config, error) {
 	}
 	if err := decodeStrict(data); err != nil {
 		if HasLegacyGeminiConfig(data) {
-			return nil, fmt.Errorf("%w: "+messages.ConfigLegacyGeminiUnsupportedFmt+" "+messages.ConfigValidationGuidance, ErrConfigValidation, source)
+			// Wrap ErrConfigNeedsUpgrade so repair tools redirect to `al upgrade`.
+			// The message already embeds the `al upgrade` guidance, so the generic
+			// ConfigValidationGuidance suffix (which suggests `al wizard` can fix
+			// it) is omitted here — the wizard cannot rewrite this legacy key.
+			return nil, fmt.Errorf("%w: %w: "+messages.ConfigLegacyGeminiUnsupportedFmt, ErrConfigValidation, ErrConfigNeedsUpgrade, source)
 		}
 		return nil, fmt.Errorf("%w: "+messages.ConfigUnrecognizedKeysFmt+" "+messages.ConfigValidationGuidance, ErrConfigValidation, source, err)
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/skillvalidator"
+	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
 var (
@@ -31,14 +32,16 @@ var (
 const antigravityVersionTimeout = 5 * time.Second
 const antigravityVersionWaitDelay = 100 * time.Millisecond
 
-// MaxSkillCatalogMetadataChars is the recommended character budget for combined skill
+// MaxSkillCatalogMetadataTokens is the recommended token budget for combined skill
 // names and descriptions (the catalog metadata loaded into the agent on every run).
-const MaxSkillCatalogMetadataChars = 10000
+// Tokens are estimated with warnings.EstimateTokens for parity with the other doctor
+// size metrics (instructions, MCP tool schemas).
+const MaxSkillCatalogMetadataTokens = 4000
 
 // SkillCatalogMetadata returns the concatenated skill names and descriptions and their
-// combined Unicode rune count. It is the single source for catalog-metadata sizing, used
-// by both CheckSkills (for the over-budget warning) and the doctor size summary. The
-// returned text lets callers estimate a token count without re-deriving the char count.
+// combined Unicode rune count. The returned text is the canonical input for estimating
+// catalog-metadata tokens; the rune count is retained for callers and tests that need the
+// raw size.
 func SkillCatalogMetadata(cfg *config.ProjectConfig) (text string, chars int) {
 	if cfg == nil {
 		return "", 0
@@ -189,9 +192,16 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		configRelPath := relPathForDoctor(root, configPath)
 		message := fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, err)
 		recommendation := messages.DoctorConfigLoadLenientRecommend
+		if errors.Is(err, config.ErrConfigNeedsUpgrade) {
+			recommendation = messages.DoctorConfigNeedsUpgradeRecommend
+		}
 		if details, detailsErr := configUnknownKeys(configPath); detailsErr == nil && len(details) > 0 {
 			message = fmt.Sprintf(messages.DoctorConfigLoadFailedFmt, summarizeUnknownKeys(details))
-			recommendation = formatUnknownKeyRecommendation(configRelPath, details)
+			if errors.Is(err, config.ErrConfigNeedsUpgrade) && allConfigUnknownKeysNeedUpgrade(details) {
+				recommendation = formatNeedsUpgradeRecommendation(configRelPath, details)
+			} else {
+				recommendation = formatUnknownKeyRecommendation(configRelPath, details)
+			}
 		}
 		results = append(results, Result{
 			Status:         StatusFail,
@@ -545,12 +555,12 @@ func CheckSkills(cfg *config.ProjectConfig) []Result {
 		}
 	}
 
-	_, catalogChars := SkillCatalogMetadata(cfg)
-	if catalogChars > MaxSkillCatalogMetadataChars {
+	catalogText, _ := SkillCatalogMetadata(cfg)
+	if catalogTokens := warnings.EstimateTokens(catalogText); catalogTokens > MaxSkillCatalogMetadataTokens {
 		results = append(results, Result{
 			Status:         StatusWarn,
 			CheckName:      messages.DoctorCheckNameSkills,
-			Message:        fmt.Sprintf(messages.DoctorSkillCatalogTooLargeFmt, MaxSkillCatalogMetadataChars, catalogChars, len(skills)),
+			Message:        fmt.Sprintf(messages.DoctorSkillCatalogTooLargeFmt, MaxSkillCatalogMetadataTokens, catalogTokens, len(skills)),
 			Recommendation: messages.DoctorSkillValidationRecommend,
 		})
 	}

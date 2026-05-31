@@ -1,6 +1,6 @@
 ---
 name: agent-dispatch
-description: Use al dispatch for focused headless second-agent work through Agent Layer, including another model, tool set, skill, or review perspective. Trigger when the user asks to run al dispatch, use a specific type of subagent or second agent, get a fresh-context review, or invoke a target agent with a skill. Do not use for ordinary shell commands, local test runs, web search, browser automation, or multi-agent orchestration.
+description: Use `al dispatch` for focused headless second-agent work — another model, tool set, skill, or review perspective. Trigger when the user asks to run al dispatch, use a subagent or second agent, get a fresh-context review, or invoke a target agent with a skill. Do not use for ordinary shell commands, local test runs, web search, browser automation, or multi-agent orchestration.
 compatibility: Requires the Agent Layer CLI (`al`) from the project environment and at least one configured target for actual al dispatch runs.
 allowed-tools: Bash(al:*) Bash(cat:*)
 ---

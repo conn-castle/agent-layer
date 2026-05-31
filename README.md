@@ -136,8 +136,9 @@ When agents are enabled, it verifies generated client configs (for example `.mcp
 `al doctor` always prints a **context size summary** after the checks, even when every value is under its threshold and even with `noise_mode = "quiet"` or `al --quiet doctor` (it is informational, not a warning):
 
 - **Instructions** — estimated tokens of the combined instruction payload, shown against `instruction_token_threshold`.
-- **Skills** — an estimated token count for the skill catalog metadata, alongside its character budget (`<chars> / 10000 chars`); the limit stays character-based to match the skills warning.
+- **Skills** — estimated tokens for the skill catalog metadata (all skill names plus descriptions, loaded on every run), shown against a ~4,000-token budget.
 - **MCP servers** — totals only: enabled servers, total tools, and total tool-schema tokens, each against its configured threshold.
+- **Total** — the estimated sum of the always-loaded token costs (instructions + skill catalog + MCP tool schemas); any component that can't be measured is named in an `(excludes …)` note instead of being counted as zero.
 
 A metric whose threshold is omitted shows `(no limit set)` rather than a default. If MCP servers can't be resolved the line reports the size as unavailable; if some servers are unreachable, a note states that the tool and schema totals exclude them.
 
@@ -507,7 +508,7 @@ Agent Layer aligns with the [Agent Skills specification](https://agentskills.io/
   - NFKC-normalized and compared against the canonical source name (filename stem or directory name) using normalization-aware matching
   - Maximum 64 Unicode characters, lowercase letters/digits/hyphens only, and no leading/trailing/consecutive hyphens
 - Length warnings (`al doctor`): `description` max 1024 Unicode characters per skill; `compatibility` max 500 Unicode characters.
-- Catalog warning (`al doctor`): all skill names plus descriptions should stay at or below 10,000 Unicode characters.
+- Catalog warning (`al doctor`): all skill names plus descriptions (the always-loaded catalog metadata) should stay at or below an estimated ~4,000 tokens.
 - Size recommendation (`al doctor`): warns when a skill source exceeds 500 lines.
 - Backward compatibility: skills with missing `name` still load (name derived from path), but `al doctor` warns.
 - Missing or empty `description` is a load/sync error (fail-loud); it is not warning-only.

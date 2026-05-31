@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
 func TestBuildSummaryIncludesDisabledMCPServers(t *testing.T) {
@@ -117,6 +118,52 @@ func TestRunWithWriter_LenientFallbackOnBrokenConfig(t *testing.T) {
 	// Verify that the lenient-loading info message was printed.
 	assert.Contains(t, out.String(), "validation errors")
 	assert.Contains(t, out.String(), "the wizard")
+}
+
+func TestRunWithWriter_RedirectsWhenConfigNeedsUpgrade(t *testing.T) {
+	root := t.TempDir()
+
+	// A real legacy config on disk so the redirect path operates on a plausible file.
+	configDir := root + "/.agent-layer"
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(configDir+"/config.toml", []byte("[agents.gemini]\nenabled = true\n"), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	// Stub the loader to fail with a needs-upgrade validation error, matching
+	// what ParseConfig produces for a legacy [agents.gemini] table.
+	origLoad := loadProjectConfigFunc
+	loadProjectConfigFunc = func(string) (*config.ProjectConfig, error) {
+		return nil, fmt.Errorf("%w: %w: test: agents.gemini is no longer supported; run 'al upgrade' to migrate",
+			config.ErrConfigValidation, config.ErrConfigNeedsUpgrade)
+	}
+	t.Cleanup(func() { loadProjectConfigFunc = origLoad })
+
+	// runSync must never be called: a needs-upgrade config has to redirect before
+	// reaching the apply/sync dead-end that motivated this fix.
+	syncCalled := false
+	runSync := func(string) (*alsync.Result, error) {
+		syncCalled = true
+		return &alsync.Result{}, nil
+	}
+
+	var out bytes.Buffer
+	// errUI errors on any prompt, so reaching the wizard flow would surface a
+	// non-nil error — proving the redirect short-circuits before the flow.
+	err := RunWithWriter(root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
+
+	if err != nil {
+		t.Fatalf("expected clean exit (nil) for needs-upgrade config, got: %v", err)
+	}
+	if syncCalled {
+		t.Fatal("runSync must not be called when the config needs an upgrade")
+	}
+	if strings.Contains(out.String(), "will help you fix") {
+		t.Fatalf("must not promise a wizard fix for a needs-upgrade config, got: %q", out.String())
+	}
+	assert.Contains(t, out.String(), "al upgrade")
 }
 
 func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {

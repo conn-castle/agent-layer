@@ -1,14 +1,13 @@
 ---
 name: find-docs
 description: >-
-  Use `npx ctx7` to retrieve current documentation, API references, and code
-  examples for libraries, frameworks, SDKs, APIs, CLIs, and cloud services
-  when the answer is version-dependent, post-cutoff, deprecation-sensitive,
-  or local sources (README, docs/, installed CLI help) cannot answer it.
-  Trigger for API syntax, configuration, setup, migration, library-specific
-  debugging, or "how do I use <technology>" questions where memory may have
-  drifted from upstream. Do not use for generic web research, local file
-  reading, browser automation, or package installation.
+  Use `npx ctx7` to fetch current documentation, API references, and code
+  examples for libraries, frameworks, and APIs when the answer is
+  version-dependent or post-cutoff, or local sources (README, docs/, CLI
+  help) can't answer it. Trigger for API syntax, configuration, setup,
+  migration, or "how do I use <technology>" questions. Do not use for generic
+  web research, local file reading, browser automation, or package
+  installation.
 compatibility: Requires `npx ctx7` to run successfully and network access. Context7 authentication is strongly recommended for reliable access; failed authentication must be surfaced to the user.
 allowed-tools: Bash(npx:*)
 ---

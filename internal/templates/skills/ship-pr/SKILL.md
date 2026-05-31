@@ -2,9 +2,9 @@
 name: ship-pr
 description: >-
   Run completed local work through PR delivery: audit changes, verify locally,
-  commit, push, open PR, monitor CI, handle review comments, and finish green.
-  After approval, merge the PR and clean up
-  its source branch. Use `fix-ci` for failing PR checks.
+  commit, push, open PR, monitor CI, handle review comments, finish green,
+  then merge after approval and clean up the branch. Use `fix-ci` for failing
+  PR checks.
 ---
 
 # ship-pr

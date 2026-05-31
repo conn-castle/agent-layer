@@ -232,7 +232,7 @@ Set `noise_mode` to control warning verbosity:
 - `reduce`: hide only suppressible non-critical warnings
 - `quiet`: suppress agent-layer informational output (warnings still print in `al doctor`)
 
-`al doctor` also prints a context size summary (instruction tokens, skill catalog metadata size, and MCP totals against their thresholds). It is informational, not a warning, so it always prints — even under `noise_mode = "quiet"` or `al --quiet doctor`. Thresholds left unset show `(no limit set)`.
+`al doctor` also prints a context size summary (instruction tokens, skill catalog-metadata tokens against a ~4,000-token budget, MCP totals against their thresholds, and an estimated total of the always-loaded token costs). It is informational, not a warning, so it always prints — even under `noise_mode = "quiet"` or `al --quiet doctor`. Thresholds left unset show `(no limit set)`.
 
 ### Validation rules
 

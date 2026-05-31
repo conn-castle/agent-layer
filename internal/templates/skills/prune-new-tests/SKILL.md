@@ -2,9 +2,9 @@
 name: prune-new-tests
 description: >-
   Burden-of-proof review of tests added in the current uncommitted diff:
-  auto-delete any newly added test that cannot defend its existence with a
-  concrete production-code mutation that would flip its assertion. Use
-  `audit-tests` for full-suite health; use `boost-coverage` to add tests.
+  auto-delete any new test that can't justify itself with a production-code
+  mutation that would flip its assertion. Use `audit-tests` for full-suite
+  health; use `boost-coverage` to add tests.
 ---
 
 # prune-new-tests

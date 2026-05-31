@@ -241,6 +241,151 @@ enabled = false
 	}
 }
 
+func TestCheckConfig_LenientFallback_NeedsUpgradeRecommendsUpgradeOnly(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyConfig := `
+[approvals]
+mode = "all"
+
+[agents.antigravity]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+[agents.gemini]
+enabled = true
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(legacyConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	result := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if result.Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", result.Status)
+	}
+	if !strings.Contains(result.Message, "unrecognized config keys: agents.gemini") {
+		t.Fatalf("expected legacy key summary in message, got: %s", result.Message)
+	}
+	if !strings.Contains(result.Recommendation, "Run `al upgrade`") {
+		t.Fatalf("expected upgrade recommendation, got: %s", result.Recommendation)
+	}
+	if strings.Contains(result.Recommendation, "al wizard") {
+		t.Fatalf("must not recommend wizard for migration-only config, got: %s", result.Recommendation)
+	}
+}
+
+func TestCheckConfig_LenientFallback_MixedNeedsUpgradeKeepsUnknownKeyGuidance(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	mixedConfig := `
+[approvals]
+mode = "all"
+
+[agents.antigravity]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+model = "not-supported"
+[agents.gemini]
+enabled = true
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(mixedConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	result := requireResultByCheckName(t, results, messages.DoctorCheckNameConfig)
+	if result.Status != StatusFail {
+		t.Fatalf("expected FAIL status, got %s", result.Status)
+	}
+	for _, want := range []string{"agents.gemini", "agents.vscode.model"} {
+		if !strings.Contains(result.Message, want) {
+			t.Fatalf("expected %q in message, got: %s", want, result.Message)
+		}
+	}
+	if !strings.Contains(result.Recommendation, "run `al upgrade`") {
+		t.Fatalf("expected upgrade guidance for legacy key, got: %s", result.Recommendation)
+	}
+	if !strings.Contains(result.Recommendation, "Run `al wizard`") {
+		t.Fatalf("expected wizard guidance for non-migration unknown key, got: %s", result.Recommendation)
+	}
+}
+
+func TestConfigUnknownKeyNeedsUpgrade(t *testing.T) {
+	for _, path := range []string{
+		"agents.gemini",
+		"agents.gemini.enabled",
+		`agents.gemini["legacy-key"]`,
+	} {
+		if !configUnknownKeyNeedsUpgrade(path) {
+			t.Fatalf("configUnknownKeyNeedsUpgrade(%q) = false, want true", path)
+		}
+	}
+
+	for _, path := range []string{
+		"agents.gemini_extra",
+		"agents.antigravity",
+		"agents.vscode.model",
+	} {
+		if configUnknownKeyNeedsUpgrade(path) {
+			t.Fatalf("configUnknownKeyNeedsUpgrade(%q) = true, want false", path)
+		}
+	}
+}
+
 func TestCheckConfig_LenientFallback_LoadsSkillsForDoctor(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")

@@ -1,11 +1,10 @@
 ---
 name: simplify-codebase
 description: >-
-  Codebase-wide simplification for removing real internal complexity: dead
-  code, obsolete options, needless indirection, duplicate workflows, and
-  misplaced module boundaries across explicit paths or the whole repo. Use
-  `simplify-new-code` instead when the target is only the current uncommitted
-  diff.
+  Codebase-wide simplification removing real internal complexity — dead code,
+  obsolete options, needless indirection, duplicate workflows, misplaced
+  boundaries — across given paths or the whole repo. Use `simplify-new-code`
+  instead for only the current uncommitted diff.
 ---
 
 # simplify-codebase

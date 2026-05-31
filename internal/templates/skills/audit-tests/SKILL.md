@@ -1,11 +1,10 @@
 ---
 name: audit-tests
 description: >-
-  Audit the existing test suite for redundancy, quality gaps, and organization
-  across unit, integration, and e2e tiers. Finds duplicate or self-confirming
-  tests, coverage gaps metrics miss, and safe cleanup fixes. Use
-  `prune-new-tests` instead when the target is tests added in the current
-  uncommitted diff.
+  Audit the existing test suite for redundancy, quality gaps, and
+  organization: duplicate or self-confirming tests, coverage gaps metrics
+  miss, and safe cleanup fixes. Use `prune-new-tests` instead when the target
+  is tests added in the current uncommitted diff.
 ---
 
 # audit-tests

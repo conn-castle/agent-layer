@@ -23,10 +23,11 @@ const (
 	DoctorPathNotDirRecommend         = "Ensure the path is a directory, then run `al init` (fresh repo) or `al upgrade` (existing repo)."
 	DoctorDirExistsFmt                = "Directory exists: %s"
 
-	DoctorConfigLoadFailedFmt        = "Failed to load configuration: %v"
-	DoctorConfigLoadRecommend        = "Check .agent-layer/ for missing or malformed files (config.toml, .env, instructions/, skills/, commands.allow)."
-	DoctorConfigLoadLenientRecommend = "Run 'al wizard' to fix or 'al upgrade' to apply missing fields."
-	DoctorConfigLoaded               = "Configuration loaded successfully"
+	DoctorConfigLoadFailedFmt         = "Failed to load configuration: %v"
+	DoctorConfigLoadRecommend         = "Check .agent-layer/ for missing or malformed files (config.toml, .env, instructions/, skills/, commands.allow)."
+	DoctorConfigLoadLenientRecommend  = "Run 'al wizard' to fix or 'al upgrade' to apply missing fields."
+	DoctorConfigNeedsUpgradeRecommend = "Run `al upgrade` to migrate config.toml, then re-run `al doctor`."
+	DoctorConfigLoaded                = "Configuration loaded successfully"
 
 	DoctorMissingSecretFmt          = "Missing secret: %s"
 	DoctorMissingSecretRecommendFmt = "Add %s to .agent-layer/.env or your environment."
@@ -49,7 +50,7 @@ const (
 	DoctorSkillValidationRecommend = "Update skill frontmatter/path conventions in .agent-layer/skills to match agentskills.io recommendations."
 	DoctorSkillValidationFailedFmt = "Failed to validate skill %s: %v"
 	DoctorSkillsLoadFailedFmt      = "Failed to load skills from %s: %v"
-	DoctorSkillCatalogTooLargeFmt  = "Skill catalog metadata exceeds %d characters (%d across %d skills)"
+	DoctorSkillCatalogTooLargeFmt  = "Skill catalog metadata exceeds %d tokens (%d across %d skills)"
 
 	DoctorCheckNameFlatSkills = "FlatSkills"
 
@@ -76,7 +77,7 @@ const (
 	DoctorSizeInstructionsFmt            = "  - Instructions (%s): %d / %d tokens\n"
 	DoctorSizeInstructionsNoLimitFmt     = "  - Instructions (%s): %d tokens (no limit set)\n"
 	DoctorSizeInstructionsUnavailableFmt = "  - Instructions: size unavailable (%v)\n"
-	DoctorSizeSkillsFmt                  = "  - Skills: ~%d tokens (catalog metadata %d / %d chars)\n"
+	DoctorSizeSkillsFmt                  = "  - Skills (always-loaded descriptions): %d / %d tokens\n"
 	DoctorSizeMCPServersFmt              = "  - MCP servers enabled: %d / %d\n"
 	DoctorSizeMCPServersNoLimitFmt       = "  - MCP servers enabled: %d (no limit set)\n"
 	DoctorSizeMCPToolsFmt                = "  - MCP tools (total): %d / %d\n"
@@ -85,6 +86,8 @@ const (
 	DoctorSizeMCPSchemaNoLimitFmt        = "  - MCP tool schemas (total): %d tokens (no limit set)\n"
 	DoctorSizeMCPUnavailable             = "  - MCP servers: size unavailable (server discovery failed)"
 	DoctorSizeMCPPartialFmt              = "  - Note: %d of %d enabled MCP server(s) unreachable; tool and schema totals exclude them.\n"
+	DoctorSizeTotalFmt                   = "  - Total always-loaded (estimated): ~%d tokens\n"
+	DoctorSizeTotalExcludesFmt           = "  - Total always-loaded (estimated): ~%d tokens (excludes %s)\n"
 
 	DoctorWarningSystemHeader        = "\n🔍 Running warning checks..."
 	DoctorMCPCheckStartFmt           = "⏳ Checking MCP servers (%d enabled)"

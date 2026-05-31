@@ -174,8 +174,8 @@ func newDoctorCmd() *cobra.Command {
 			// noise mode. It is informational, not a warning, so its visibility is independent
 			// of warning suppression.
 			if cfg != nil {
-				skillText, skillChars := doctor.SkillCatalogMetadata(cfg)
-				renderSizeSummary(out, cfg.Config.Warnings, instTokens, instSubject, instErr, skillChars, warnings.EstimateTokens(skillText), mcpSummary)
+				skillText, _ := doctor.SkillCatalogMetadata(cfg)
+				renderSizeSummary(out, cfg.Config.Warnings, instTokens, instSubject, instErr, warnings.EstimateTokens(skillText), mcpSummary)
 			}
 
 			if hasFail {
@@ -224,11 +224,13 @@ func printRecommendation(out io.Writer, recommendation string) {
 }
 
 // renderSizeSummary prints the informational context-size summary: estimated instruction
-// tokens, skill catalog metadata size, and MCP totals, each shown against its configured
-// threshold. A nil threshold renders as "(no limit set)" rather than assuming a default.
-// The skill line reports an estimated token count for parity with the other metrics while
-// its budget stays the character-based limit that the skills warning enforces.
-func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, instSubject string, instErr error, skillChars, skillTokens int, mcp warnings.MCPSummary) {
+// tokens, the skill catalog-metadata token estimate, and MCP totals. Configurable metrics
+// show configured thresholds; the skill catalog uses the fixed doctor token budget. A nil
+// threshold renders as "(no limit set)" rather than assuming a default. The final line sums
+// the three token-denominated, always-loaded costs
+// (instructions + skill catalog + MCP tool schemas); any component that is unavailable is
+// named in an "(excludes ...)" note rather than being silently counted as zero.
+func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, instSubject string, instErr error, skillTokens int, mcp warnings.MCPSummary) {
 	_, _ = fmt.Fprintln(out, messages.DoctorSizeSummaryHeader)
 
 	switch {
@@ -240,33 +242,52 @@ func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, i
 		_, _ = fmt.Fprintf(out, messages.DoctorSizeInstructionsNoLimitFmt, instSubject, instTokens)
 	}
 
-	_, _ = fmt.Fprintf(out, messages.DoctorSizeSkillsFmt, skillTokens, skillChars, doctor.MaxSkillCatalogMetadataChars)
+	_, _ = fmt.Fprintf(out, messages.DoctorSizeSkillsFmt, skillTokens, doctor.MaxSkillCatalogMetadataTokens)
 
 	if !mcp.Available {
 		_, _ = fmt.Fprintln(out, messages.DoctorSizeMCPUnavailable)
-		return
-	}
-
-	if w.MCPServerThreshold != nil {
-		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPServersFmt, mcp.EnabledServers, *w.MCPServerThreshold)
 	} else {
-		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPServersNoLimitFmt, mcp.EnabledServers)
+		if w.MCPServerThreshold != nil {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPServersFmt, mcp.EnabledServers, *w.MCPServerThreshold)
+		} else {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPServersNoLimitFmt, mcp.EnabledServers)
+		}
+
+		if w.MCPToolsTotalThreshold != nil {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPToolsFmt, mcp.TotalTools, *w.MCPToolsTotalThreshold)
+		} else {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPToolsNoLimitFmt, mcp.TotalTools)
+		}
+
+		if w.MCPSchemaTokensTotalThreshold != nil {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaFmt, mcp.TotalSchemaTokens, *w.MCPSchemaTokensTotalThreshold)
+		} else {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaNoLimitFmt, mcp.TotalSchemaTokens)
+		}
+
+		if mcp.ReachableServers < mcp.EnabledServers {
+			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPPartialFmt, mcp.EnabledServers-mcp.ReachableServers, mcp.EnabledServers)
+		}
 	}
 
-	if w.MCPToolsTotalThreshold != nil {
-		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPToolsFmt, mcp.TotalTools, *w.MCPToolsTotalThreshold)
+	// Total always-loaded context (estimated): sum of the token-denominated metrics.
+	// Components that could not be measured are excluded and named, never counted as zero.
+	total := skillTokens
+	var excludes []string
+	if instErr != nil {
+		excludes = append(excludes, "instructions")
 	} else {
-		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPToolsNoLimitFmt, mcp.TotalTools)
+		total += instTokens
 	}
-
-	if w.MCPSchemaTokensTotalThreshold != nil {
-		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaFmt, mcp.TotalSchemaTokens, *w.MCPSchemaTokensTotalThreshold)
+	if mcp.Available {
+		total += mcp.TotalSchemaTokens
 	} else {
-		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPSchemaNoLimitFmt, mcp.TotalSchemaTokens)
+		excludes = append(excludes, "MCP tool schemas")
 	}
-
-	if mcp.ReachableServers < mcp.EnabledServers {
-		_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPPartialFmt, mcp.EnabledServers-mcp.ReachableServers, mcp.EnabledServers)
+	if len(excludes) == 0 {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeTotalFmt, total)
+	} else {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeTotalExcludesFmt, total, strings.Join(excludes, ", "))
 	}
 }
 

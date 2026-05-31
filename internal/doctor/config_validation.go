@@ -12,6 +12,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 type configUnknownKeyDetail struct {
@@ -76,6 +77,45 @@ func formatUnknownKeyRecommendation(configPath string, details []configUnknownKe
 		"3) Run `al wizard` to regenerate a valid config.",
 	)
 	return strings.Join(lines, "\n")
+}
+
+// formatNeedsUpgradeRecommendation renders guidance for unknown keys that are
+// known migration inputs. Wizard preserves unknown sections and cannot repair
+// this class, so the recommendation must point only to upgrade.
+func formatNeedsUpgradeRecommendation(configPath string, details []configUnknownKeyDetail) string {
+	if len(details) == 0 {
+		return messages.DoctorConfigNeedsUpgradeRecommend
+	}
+	lines := []string{
+		"These config keys are from an older release and need a migration.",
+		fmt.Sprintf("Run `al upgrade` to migrate %s.", configPath),
+		"",
+		"Detected keys:",
+	}
+	for _, detail := range details {
+		lines = append(lines, fmt.Sprintf("- %s", detail.Path))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// allConfigUnknownKeysNeedUpgrade reports whether every unknown key is a
+// recognized legacy key that an upgrade migration owns.
+func allConfigUnknownKeysNeedUpgrade(details []configUnknownKeyDetail) bool {
+	if len(details) == 0 {
+		return false
+	}
+	for _, detail := range details {
+		if !configUnknownKeyNeedsUpgrade(detail.Path) {
+			return false
+		}
+	}
+	return true
+}
+
+func configUnknownKeyNeedsUpgrade(path string) bool {
+	return path == "agents.gemini" ||
+		strings.HasPrefix(path, "agents.gemini.") ||
+		strings.HasPrefix(path, "agents.gemini[")
 }
 
 // configUnknownKeys returns detected unknown config keys using the current schema.

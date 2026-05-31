@@ -588,15 +588,16 @@ func TestRenderSizeSummary(t *testing.T) {
 			MCPSchemaTokensTotalThreshold: intp(30000),
 		}
 		mcp := warnings.MCPSummary{Available: true, EnabledServers: 4, ReachableServers: 4, TotalTools: 38, TotalSchemaTokens: 18400}
-		renderSizeSummary(&out, w, 3240, "AGENTS.md", nil, 7450, 1820, mcp)
+		renderSizeSummary(&out, w, 3240, "AGENTS.md", nil, 1820, mcp)
 		s := out.String()
 		for _, want := range []string{
 			"📊 Context size summary",
 			"Instructions (AGENTS.md): 3240 / 10000 tokens",
-			"Skills: ~1820 tokens (catalog metadata 7450 / 10000 chars)",
+			"Skills (always-loaded descriptions): 1820 / 4000 tokens",
 			"MCP servers enabled: 4 / 15",
 			"MCP tools (total): 38 / 60",
 			"MCP tool schemas (total): 18400 / 30000 tokens",
+			"Total always-loaded (estimated): ~23460 tokens",
 		} {
 			if !strings.Contains(s, want) {
 				t.Fatalf("expected %q in summary, got:\n%s", want, s)
@@ -613,13 +614,15 @@ func TestRenderSizeSummary(t *testing.T) {
 	t.Run("nil thresholds show no limit set", func(t *testing.T) {
 		var out bytes.Buffer
 		mcp := warnings.MCPSummary{Available: true, EnabledServers: 2, ReachableServers: 2, TotalTools: 5, TotalSchemaTokens: 1000}
-		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 50, 12, mcp)
+		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 12, mcp)
 		s := out.String()
 		for _, want := range []string{
 			"Instructions (AGENTS.md): 100 tokens (no limit set)",
+			"Skills (always-loaded descriptions): 12 / 4000 tokens",
 			"MCP servers enabled: 2 (no limit set)",
 			"MCP tools (total): 5 (no limit set)",
 			"MCP tool schemas (total): 1000 tokens (no limit set)",
+			"Total always-loaded (estimated): ~1112 tokens",
 		} {
 			if !strings.Contains(s, want) {
 				t.Fatalf("expected %q, got:\n%s", want, s)
@@ -629,15 +632,19 @@ func TestRenderSizeSummary(t *testing.T) {
 
 	t.Run("instruction measure error is surfaced", func(t *testing.T) {
 		var out bytes.Buffer
-		renderSizeSummary(&out, config.WarningsConfig{}, 0, "", errors.New("boom"), 0, 0, warnings.MCPSummary{Available: true})
-		if !strings.Contains(out.String(), "Instructions: size unavailable (boom)") {
-			t.Fatalf("expected instruction error surfaced, got:\n%s", out.String())
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "", errors.New("boom"), 0, warnings.MCPSummary{Available: true})
+		s := out.String()
+		if !strings.Contains(s, "Instructions: size unavailable (boom)") {
+			t.Fatalf("expected instruction error surfaced, got:\n%s", s)
+		}
+		if !strings.Contains(s, "Total always-loaded (estimated): ~0 tokens (excludes instructions)") {
+			t.Fatalf("expected total to exclude instructions, got:\n%s", s)
 		}
 	})
 
 	t.Run("mcp unavailable hides totals", func(t *testing.T) {
 		var out bytes.Buffer
-		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 0, 0, warnings.MCPSummary{Available: false})
+		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 0, warnings.MCPSummary{Available: false})
 		s := out.String()
 		if !strings.Contains(s, "MCP servers: size unavailable") {
 			t.Fatalf("expected mcp unavailable, got:\n%s", s)
@@ -645,12 +652,15 @@ func TestRenderSizeSummary(t *testing.T) {
 		if strings.Contains(s, "MCP servers enabled:") {
 			t.Fatalf("did not expect enabled-servers line when unavailable, got:\n%s", s)
 		}
+		if !strings.Contains(s, "Total always-loaded (estimated): ~100 tokens (excludes MCP tool schemas)") {
+			t.Fatalf("expected total to exclude MCP tool schemas and still print, got:\n%s", s)
+		}
 	})
 
 	t.Run("partial note when some servers unreachable", func(t *testing.T) {
 		var out bytes.Buffer
 		mcp := warnings.MCPSummary{Available: true, EnabledServers: 3, ReachableServers: 1, TotalTools: 2, TotalSchemaTokens: 500}
-		renderSizeSummary(&out, config.WarningsConfig{}, 0, "AGENTS.md", nil, 0, 0, mcp)
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "AGENTS.md", nil, 0, mcp)
 		if !strings.Contains(out.String(), "2 of 3 enabled MCP server(s) unreachable") {
 			t.Fatalf("expected partial note, got:\n%s", out.String())
 		}

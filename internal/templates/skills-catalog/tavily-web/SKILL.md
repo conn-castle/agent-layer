@@ -1,7 +1,7 @@
 ---
 name: tavily-web
 description: |
-  Use the Tavily CLI for web search, URL extraction, site URL discovery, and cited research. Trigger when the user needs current web information, asks to search/look up/find/read a webpage, provides URLs to inspect, needs the right page on a known site, or wants a sourced research report. Do not use for browser automation, local docs, or Tavily setup.
+  Use the Tavily CLI for web search, URL extraction, site URL discovery, and cited research. Trigger when the user needs current web information, asks to search or read a webpage, provides URLs to inspect, or wants a sourced research report. Do not use for browser automation, local docs, or Tavily setup.
 compatibility: Requires the Tavily CLI (`tvly`), authentication, and network access.
 allowed-tools: Bash(tvly:*)
 ---
