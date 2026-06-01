@@ -2364,7 +2364,7 @@ enabled = true
 	assert.Contains(t, out, "agent_specific.autoMemoryEnabled = false")
 }
 
-func TestPatchConfig_ClaudeDisableQuestionToolWritesDenyAndHook(t *testing.T) {
+func TestPatchConfig_ClaudeDisableQuestionToolWritesTypedFlag(t *testing.T) {
 	content := `
 [agents.claude]
 enabled = true
@@ -2376,28 +2376,45 @@ enabled = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	assert.Contains(t, out, `agent_specific.permissions.deny = ["AskUserQuestion"]`)
-	assert.Contains(t, out, "agent_specific.hooks.PreToolUse = [{ matcher = \"AskUserQuestion\"")
-	assert.Contains(t, out, "exit 2")
+	// The toggle writes a typed [agents.claude] scalar; sync injects the deny +
+	// PreToolUse hook so the wizard never edits agent_specific arrays.
+	assert.Contains(t, out, "disable_question_tool = true")
+	assert.NotContains(t, out, "agent_specific.permissions.deny")
+	assert.NotContains(t, out, "agent_specific.hooks.PreToolUse")
 }
 
-func TestPatchConfig_ClaudeQuestionToolOffCommentsExistingDeny(t *testing.T) {
+func TestPatchConfig_ClaudeQuestionToolPreservesUserDenyAndHooks(t *testing.T) {
+	// Enabling or disabling the toggle must never touch a user's co-listed
+	// permissions.deny / hooks.PreToolUse entries — that was the clobber bug.
 	content := `
 [agents.claude]
 enabled = true
-agent_specific.permissions.deny = ["AskUserQuestion"]
+disable_question_tool = true
+agent_specific.permissions.deny = ["Bash(rm:*)"]
+agent_specific.hooks.PreToolUse = [{ matcher = "Write" }]
 `
-	choices := NewChoices()
-	choices.ClaudeDisableQuestionToolTouched = true
-	choices.ClaudeDisableQuestionTool = false
+	for _, disable := range []bool{true, false} {
+		choices := NewChoices()
+		choices.ClaudeDisableQuestionToolTouched = true
+		choices.ClaudeDisableQuestionTool = disable
 
-	out, err := PatchConfig(content, choices)
-	require.NoError(t, err)
+		out, err := PatchConfig(content, choices)
+		require.NoError(t, err)
 
-	assert.Contains(t, out, `# agent_specific.permissions.deny = ["AskUserQuestion"]`)
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "agent_specific.permissions.deny") {
-			t.Fatalf("expected deny line to be commented, got uncommented: %q", line)
+		// User arrays survive verbatim and uncommented regardless of toggle state.
+		assert.Contains(t, out, `agent_specific.permissions.deny = ["Bash(rm:*)"]`)
+		assert.Contains(t, out, `agent_specific.hooks.PreToolUse = [{ matcher = "Write" }]`)
+		for _, line := range strings.Split(out, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "# agent_specific.permissions.deny") ||
+				strings.HasPrefix(trimmed, "# agent_specific.hooks.PreToolUse") {
+				t.Fatalf("user agent_specific entry was clobbered (commented): %q", line)
+			}
+		}
+		if disable {
+			assert.Contains(t, out, "disable_question_tool = true")
+		} else {
+			assert.Contains(t, out, "# disable_question_tool")
 		}
 	}
 }

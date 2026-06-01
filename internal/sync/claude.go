@@ -57,5 +57,11 @@ func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) 
 	}
 
 	mergeAgentSpecificSettings(settings, project.Config.Agents.Claude.AgentSpecific)
+
+	// Inject the AskUserQuestion block last so it unions with (rather than is
+	// replaced by) any user-supplied agent_specific deny / PreToolUse entries.
+	if isQuestionToolDisabled(project.Config.Agents.Claude) {
+		injectAskUserQuestionBlock(settings)
+	}
 	return settings, nil
 }

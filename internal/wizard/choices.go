@@ -33,7 +33,7 @@ type Choices struct {
 	ClaudeDisableConnectors        bool // ENABLE_CLAUDEAI_MCP_SERVERS = "false"
 	ClaudeDisableConnectorsTouched bool
 
-	ClaudeDisableQuestionTool        bool // permissions.deny + hooks.PreToolUse block
+	ClaudeDisableQuestionTool        bool // disable_question_tool flag; sync injects deny + PreToolUse hook
 	ClaudeDisableQuestionToolTouched bool
 
 	CodexModel        string

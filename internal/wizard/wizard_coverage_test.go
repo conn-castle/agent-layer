@@ -71,12 +71,14 @@ func TestEnsureWizardConfig_StatErrorBranch(t *testing.T) {
 
 func TestInitializeChoices_AdditionalBranches(t *testing.T) {
 	claudeLocal := true
+	disableQuestion := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{
-					LocalConfigDir: &claudeLocal,
+					LocalConfigDir:      &claudeLocal,
+					DisableQuestionTool: &disableQuestion,
 				},
 			},
 		},
@@ -91,6 +93,11 @@ func TestInitializeChoices_AdditionalBranches(t *testing.T) {
 	}
 	if !choices.ClaudeLocalConfigDir {
 		t.Fatal("expected claude local config dir to be loaded from config")
+	}
+	// The typed disable_question_tool flag must read back so re-running the
+	// wizard defaults the prompt to Yes.
+	if !choices.ClaudeDisableQuestionTool {
+		t.Fatal("expected disable_question_tool to be loaded from config")
 	}
 }
 

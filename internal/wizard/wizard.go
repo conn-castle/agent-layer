@@ -223,7 +223,9 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.ClaudeDisableIDEReading = readClaudeEnvFalse(claudeAgentSpecific, claudeIDEReadingEnvKey)
 	choices.ClaudeDisableConnectors = readClaudeEnvFalse(claudeAgentSpecific, claudeConnectorsEnvKey)
 	choices.ClaudeDisableMemory = readClaudeAutoMemoryDisabled(claudeAgentSpecific)
-	choices.ClaudeDisableQuestionTool = readClaudeQuestionToolDisabled(claudeAgentSpecific)
+	if cfg.Config.Agents.Claude.DisableQuestionTool != nil {
+		choices.ClaudeDisableQuestionTool = *cfg.Config.Agents.Claude.DisableQuestionTool
+	}
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
 	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
@@ -299,7 +301,6 @@ func readCodexAppsValue(agentSpecific map[string]any) (bool, bool) {
 const (
 	claudeIDEReadingEnvKey = "CLAUDE_CODE_AUTO_CONNECT_IDE"
 	claudeConnectorsEnvKey = "ENABLE_CLAUDEAI_MCP_SERVERS"
-	askUserQuestionTool    = "AskUserQuestion"
 )
 
 // readCodexBrowserDisabled reports whether the Codex browser/computer-use
@@ -330,60 +331,6 @@ func readClaudeEnvFalse(agentSpecific map[string]any, key string) bool {
 func readClaudeAutoMemoryDisabled(agentSpecific map[string]any) bool {
 	enabled, ok := agentSpecific["autoMemoryEnabled"].(bool)
 	return ok && !enabled
-}
-
-// readClaudeQuestionToolDisabled reports whether the AskUserQuestion tool is
-// blocked, via either permissions.deny or a PreToolUse hook matcher. Either
-// mechanism present means the toggle reads back as on.
-func readClaudeQuestionToolDisabled(agentSpecific map[string]any) bool {
-	if claudePermissionsDenyContains(agentSpecific, askUserQuestionTool) {
-		return true
-	}
-	return claudePreToolUseHookMatches(agentSpecific, askUserQuestionTool)
-}
-
-func claudePermissionsDenyContains(agentSpecific map[string]any, tool string) bool {
-	permissions, ok := agentSpecific["permissions"].(map[string]any)
-	if !ok {
-		return false
-	}
-	return anySliceContainsString(permissions["deny"], tool)
-}
-
-func claudePreToolUseHookMatches(agentSpecific map[string]any, matcher string) bool {
-	hooks, ok := agentSpecific["hooks"].(map[string]any)
-	if !ok {
-		return false
-	}
-	entries, ok := hooks["PreToolUse"].([]any)
-	if !ok {
-		return false
-	}
-	for _, entry := range entries {
-		entryMap, ok := entry.(map[string]any)
-		if !ok {
-			continue
-		}
-		if m, ok := entryMap["matcher"].(string); ok && m == matcher {
-			return true
-		}
-	}
-	return false
-}
-
-// anySliceContainsString reports whether value is a string slice (decoded as
-// []any by the TOML reader for agent_specific maps) containing want.
-func anySliceContainsString(value any, want string) bool {
-	values, ok := value.([]any)
-	if !ok {
-		return false
-	}
-	for _, v := range values {
-		if s, ok := v.(string); ok && s == want {
-			return true
-		}
-	}
-	return false
 }
 
 type wizardFlowStep int

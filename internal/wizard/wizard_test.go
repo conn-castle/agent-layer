@@ -420,12 +420,15 @@ enabled = true
 		`agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false"`,
 		`agent_specific.env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"`,
 		"agent_specific.autoMemoryEnabled = false",
-		`agent_specific.permissions.deny = ["AskUserQuestion"]`,
-		"agent_specific.hooks.PreToolUse = [{ matcher = \"AskUserQuestion\"",
+		"disable_question_tool = true",
 		"browser_use = false",
 	} {
 		assert.Contains(t, out, want)
 	}
+	// The AskUserQuestion toggle is a typed scalar now; it must not touch the
+	// user's agent_specific permissions/hooks arrays.
+	assert.NotContains(t, out, "agent_specific.permissions.deny")
+	assert.NotContains(t, out, "agent_specific.hooks.PreToolUse")
 }
 
 // TestReadClaudeDisableToggles covers the read-back helpers' detected-disabled
@@ -445,23 +448,6 @@ func TestReadClaudeDisableToggles(t *testing.T) {
 		assert.True(t, readClaudeAutoMemoryDisabled(map[string]any{"autoMemoryEnabled": false}))
 		assert.False(t, readClaudeAutoMemoryDisabled(map[string]any{"autoMemoryEnabled": true}))
 		assert.False(t, readClaudeAutoMemoryDisabled(map[string]any{}))
-	})
-	t.Run("question tool disabled via deny", func(t *testing.T) {
-		// Mixed slice exercises the non-string element skip before the match.
-		as := map[string]any{"permissions": map[string]any{"deny": []any{42, "AskUserQuestion"}}}
-		assert.True(t, readClaudeQuestionToolDisabled(as))
-	})
-	t.Run("question tool disabled via hook", func(t *testing.T) {
-		// A non-map entry precedes the matching entry to exercise the skip.
-		as := map[string]any{"hooks": map[string]any{"PreToolUse": []any{"not-a-map", map[string]any{"matcher": "AskUserQuestion"}}}}
-		assert.True(t, readClaudeQuestionToolDisabled(as))
-	})
-	t.Run("question tool not disabled", func(t *testing.T) {
-		assert.False(t, readClaudeQuestionToolDisabled(map[string]any{"permissions": map[string]any{"deny": []any{"Bash"}}}))
-		// deny present but not a slice, and a hook entry with a non-matching matcher.
-		assert.False(t, readClaudeQuestionToolDisabled(map[string]any{"permissions": map[string]any{"deny": "AskUserQuestion"}}))
-		assert.False(t, readClaudeQuestionToolDisabled(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"matcher": "Other"}}}}))
-		assert.False(t, readClaudeQuestionToolDisabled(map[string]any{}))
 	})
 }
 

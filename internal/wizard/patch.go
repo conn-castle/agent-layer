@@ -236,6 +236,13 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 				setCommentedKeyLine(block, templateBlock, "local_config_dir", "model")
 			}
 		}
+		if choices.ClaudeDisableQuestionToolTouched {
+			if choices.ClaudeDisableQuestionTool {
+				setKeyValue(block, templateBlock, "disable_question_tool", formatTomlValue(true), "local_config_dir")
+			} else {
+				setCommentedKeyLine(block, templateBlock, "disable_question_tool", "local_config_dir")
+			}
+		}
 	case "agents.claude_vscode":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
@@ -1121,13 +1128,9 @@ func applyCodexBrowserKeys(block *tomlBlock, prefix string, disable bool) {
 // agent_specific into explicit sub-tables, in which case the leaf is written
 // into the matching section to avoid a TOML duplicate-table error.
 const (
-	claudeSection                          = "agents.claude"
-	claudeAgentSpecificSection             = "agents.claude.agent_specific"
-	claudeAgentSpecificEnvSection          = "agents.claude.agent_specific.env"
-	claudeAgentSpecificPermissionsSection  = "agents.claude.agent_specific.permissions"
-	claudeAgentSpecificHooksSection        = "agents.claude.agent_specific.hooks"
-	claudeAskUserQuestionDenyLiteral       = `["AskUserQuestion"]`
-	claudeAskUserQuestionPreToolUseLiteral = `[{ matcher = "AskUserQuestion", hooks = [{ type = "command", command = "echo 'BLOCKED: The AskUserQuestion tool is banned.' >&2; exit 2" }] }]`
+	claudeSection                 = "agents.claude"
+	claudeAgentSpecificSection    = "agents.claude.agent_specific"
+	claudeAgentSpecificEnvSection = "agents.claude.agent_specific.env"
 )
 
 // claudeAgentSpecificKey describes one agent_specific value the wizard writes
@@ -1178,29 +1181,18 @@ func applyClaudeAgentSpecificUpdate(doc *tomlDocument, choices *Choices) {
 			value:           formatTomlValue(false),
 		}, choices.ClaudeDisableMemory)
 	}
-	if choices.ClaudeDisableQuestionToolTouched {
-		writeClaudeAgentSpecificKey(doc, claudeAgentSpecificKey{
-			expandedSection: claudeAgentSpecificPermissionsSection,
-			leafKey:         "deny",
-			parentDotted:    "permissions.deny",
-			claudeDotted:    "agent_specific.permissions.deny",
-			value:           claudeAskUserQuestionDenyLiteral,
-		}, choices.ClaudeDisableQuestionTool)
-		writeClaudeAgentSpecificKey(doc, claudeAgentSpecificKey{
-			expandedSection: claudeAgentSpecificHooksSection,
-			leafKey:         "PreToolUse",
-			parentDotted:    "hooks.PreToolUse",
-			claudeDotted:    "agent_specific.hooks.PreToolUse",
-			value:           claudeAskUserQuestionPreToolUseLiteral,
-		}, choices.ClaudeDisableQuestionTool)
-	}
+	// The AskUserQuestion toggle is written as a typed agents.claude
+	// disable_question_tool scalar in applySectionUpdates, not here — sync injects
+	// the deny + PreToolUse hook so user agent_specific entries are never clobbered.
 }
 
+// claudeDisableTogglesTouched gates the agent_specific writes in
+// applyClaudeAgentSpecificUpdate. The AskUserQuestion toggle is intentionally
+// excluded — it writes a typed agents.claude scalar, not an agent_specific key.
 func claudeDisableTogglesTouched(choices *Choices) bool {
 	return choices.ClaudeDisableIDEReadingTouched ||
 		choices.ClaudeDisableMemoryTouched ||
-		choices.ClaudeDisableConnectorsTouched ||
-		choices.ClaudeDisableQuestionToolTouched
+		choices.ClaudeDisableConnectorsTouched
 }
 
 // writeClaudeAgentSpecificKey writes key into the most specific existing target

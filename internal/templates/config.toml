@@ -35,6 +35,11 @@ enabled = true
 # (macOS Keychain service "Claude Code-credentials"; Linux libsecret/gnome-keyring)
 # regardless of this setting (upstream limitation).
 # local_config_dir = false
+# disable_question_tool blocks Claude Code's structured clarification-question (AskUserQuestion) tool.
+# When true, al sync injects permissions.deny + a PreToolUse hook into .claude/settings.json (merged
+# with any agent_specific entries). The hook also enforces the block under YOLO/bypassPermissions,
+# where permissions.deny is skipped. Run `al wizard` to set it.
+# disable_question_tool = true
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
@@ -44,9 +49,6 @@ enabled = true
 # agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false" # stop reading files open in the IDE
 # agent_specific.env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"  # disable claude.ai app connectors
 # agent_specific.autoMemoryEnabled = false                  # disable auto-memory (does not affect CLAUDE.md)
-# Disable Claude Code's structured clarification-question tool (also enforced under YOLO by the hook):
-# agent_specific.permissions.deny = ["AskUserQuestion"]
-# agent_specific.hooks.PreToolUse = [{ matcher = "AskUserQuestion", hooks = [{ type = "command", command = "echo 'BLOCKED: The AskUserQuestion tool is banned.' >&2; exit 2" }] }]
 # Optional default target when `al dispatch` is invoked from Claude without --agent.
 # [agents.claude.dispatch]
 # default_agent = "random" # random | codex | claude | antigravity
