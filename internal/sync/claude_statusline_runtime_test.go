@@ -51,9 +51,40 @@ func runClaudeStatusline(t *testing.T, cwd, stdinJSON string) string {
 	return ansiEscape.ReplaceAllString(stdout.String(), "")
 }
 
+// runGit executes git in a test repository and fails with captured output when
+// the command does not complete successfully.
+func runGit(t *testing.T, cwd string, args ...string) {
+	t.Helper()
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not available")
+	}
+
+	cmd := exec.Command(gitPath, args...) // #nosec G204 -- test-controlled arguments.
+	cmd.Dir = cwd
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("git %s: %v\nstdout: %s\nstderr: %s", strings.Join(args, " "), err, stdout.String(), stderr.String())
+	}
+}
+
 func TestClaudeStatuslineScript_RendersFullPayload(t *testing.T) {
-	// cwd is a non-git temp dir so the git segment is deterministically absent.
 	cwd := t.TempDir()
+	runGit(t, cwd, "init")
+	if err := os.WriteFile(filepath.Join(cwd, "tracked.txt"), []byte("one\ntwo\nthree\n"), 0o600); err != nil {
+		t.Fatalf("write tracked fixture: %v", err)
+	}
+	runGit(t, cwd, "add", "tracked.txt")
+	runGit(t, cwd, "-c", "user.name=Agent Layer", "-c", "user.email=agent-layer@example.invalid", "commit", "-m", "baseline")
+	if err := os.WriteFile(filepath.Join(cwd, "tracked.txt"), []byte("one\nTWO\nthree\nfour\nfive\n"), 0o600); err != nil {
+		t.Fatalf("modify tracked fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cwd, "untracked.txt"), []byte("ignored\nignored\nignored\n"), 0o600); err != nil {
+		t.Fatalf("write untracked fixture: %v", err)
+	}
+
 	input := `{
 		"model": {"display_name": "Opus 4.8"},
 		"workspace": {"current_dir": "` + cwd + `"},
@@ -61,14 +92,19 @@ func TestClaudeStatuslineScript_RendersFullPayload(t *testing.T) {
 		"effort": {"level": "high"},
 		"context_window": {"used_percentage": 43, "context_window_size": 200000, "total_input_tokens": 1000},
 		"rate_limits": {"seven_day": {"used_percentage": 60}},
-		"cost": {"total_cost_usd": 1.5, "total_lines_added": 12, "total_lines_removed": 3},
+		"cost": {"total_cost_usd": 1.5, "total_lines_added": 99, "total_lines_removed": 88},
 		"pr": {"number": 123, "review_state": "approved"}
 	}`
 	out := runClaudeStatusline(t, cwd, input)
 
-	for _, want := range []string{"Opus 4.8", "effort:high", "ctx:43%", "7d:60%", "#sess123", "+12", "-3", "$1.50", "PR#123"} {
+	for _, want := range []string{"Opus 4.8", "effort:high", "ctx:43%", "7d:60%", "#sess123", "+3", "-1", "$1.50", "PR#123"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected output to contain %q, got: %q", want, out)
+		}
+	}
+	for _, absent := range []string{"+99", "-88"} {
+		if strings.Contains(out, absent) {
+			t.Errorf("did not expect JSON line count %q in output, got: %q", absent, out)
 		}
 	}
 }

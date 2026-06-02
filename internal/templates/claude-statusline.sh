@@ -39,8 +39,6 @@ ctx_size=$("$JQ" -r '.context_window.context_window_size // 0' <<<"$input")
 pr_num=$("$JQ" -r '.pr.number // empty' <<<"$input")
 pr_state=$("$JQ" -r '.pr.review_state // "open"' <<<"$input")
 cost_usd=$("$JQ" -r '.cost.total_cost_usd // empty' <<<"$input")
-lines_added=$("$JQ" -r '.cost.total_lines_added // 0' <<<"$input")
-lines_removed=$("$JQ" -r '.cost.total_lines_removed // 0' <<<"$input")
 effort=$("$JQ" -r '.effort.level // ""' <<<"$input")
 
 # ── Model ─────────────────────────────────────────────────────────────────────
@@ -130,8 +128,21 @@ if [ -n "$effort" ]; then
   effort_str="${BLUE}effort:${effort}${RESET}"
 fi
 
-# ── Lines changed + session cost (from JSON .cost) ────────────────────────────
+# ── Lines changed + session cost ──────────────────────────────────────────────
 cost_str=""
+lines_added=0
+lines_removed=0
+if command -v git >/dev/null 2>&1; then
+  # Count tracked staged and unstaged changes against HEAD; untracked files are
+  # intentionally excluded.
+  while IFS=$'\t' read -r added removed _path; do
+    case "$added:$removed" in
+      *-*) continue ;;
+    esac
+    lines_added=$(( lines_added + added ))
+    lines_removed=$(( lines_removed + removed ))
+  done < <(git -C "$cwd" diff --numstat HEAD -- 2>/dev/null)
+fi
 if [ "${lines_added:-0}" -gt 0 ] 2>/dev/null || [ "${lines_removed:-0}" -gt 0 ] 2>/dev/null; then
   cost_str="${GREEN}+${lines_added}${RESET}${DIM}/${RESET}${RED}-${lines_removed}${RESET}"
 fi
