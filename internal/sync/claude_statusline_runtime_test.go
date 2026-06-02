@@ -131,6 +131,36 @@ func TestClaudeStatuslineScript_FallsBackToTokenRatioForContext(t *testing.T) {
 	}
 }
 
+func TestClaudeStatuslineScript_DirectoryRelativeToProjectRoot(t *testing.T) {
+	// cwd genuinely under project_dir renders "<project>/<relative>".
+	cwd := t.TempDir()
+	input := `{
+		"model": {"display_name": "Opus 4.8"},
+		"workspace": {"project_dir": "/home/u/myproj", "current_dir": "/home/u/myproj/src/api"}
+	}`
+	out := runClaudeStatusline(t, cwd, input)
+	if !strings.Contains(out, "myproj/src/api") {
+		t.Errorf("expected relative path myproj/src/api, got: %q", out)
+	}
+}
+
+func TestClaudeStatuslineScript_DirectoryFallsBackWhenNotUnderProjectRoot(t *testing.T) {
+	// cwd NOT under project_dir must fall back to the cwd basename, never
+	// "<project>/<full-cwd>".
+	cwd := t.TempDir()
+	input := `{
+		"model": {"display_name": "Opus 4.8"},
+		"workspace": {"project_dir": "/home/u/myproj", "current_dir": "/var/other/place"}
+	}`
+	out := runClaudeStatusline(t, cwd, input)
+	if !strings.Contains(out, "place") {
+		t.Errorf("expected cwd basename 'place', got: %q", out)
+	}
+	if strings.Contains(out, "myproj/") {
+		t.Errorf("did not expect misleading project-prefixed path, got: %q", out)
+	}
+}
+
 func TestClaudeStatuslineScript_DefaultsContextToZeroWhenNoData(t *testing.T) {
 	// No usage data at all: the segment still renders at 0% rather than hiding.
 	cwd := t.TempDir()

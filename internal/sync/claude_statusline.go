@@ -57,6 +57,13 @@ func WriteClaudeStatusline(sys System, root string, project *config.ProjectConfi
 	if err != nil {
 		return err
 	}
+	// Remove a stale legacy projection (.claude/statusline.sh) left by a prior
+	// version so the rename does not leave two scripts behind when enabled.
+	if legacy := legacyClaudeStatuslinePath(root); legacy != dest {
+		if err := sys.Remove(legacy); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf(messages.SyncRemoveFailedFmt, legacy, err)
+		}
+	}
 	if err := sys.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(dest), err)
 	}

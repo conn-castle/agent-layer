@@ -161,6 +161,33 @@ func TestWriteClaudeStatusline_BothSourcesUsesNewAndLeavesLegacy(t *testing.T) {
 	}
 }
 
+// When enabled, a stale legacy projection (.claude/statusline.sh from before the
+// rename) is removed so the rename never leaves two scripts behind.
+func TestWriteClaudeStatusline_EnabledRemovesStaleLegacyProjection(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeSourceStatusline(t, root, "#!/usr/bin/env bash\necho current\n")
+	claudeDir := filepath.Join(root, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	legacyProjection := filepath.Join(claudeDir, "statusline.sh")
+	if err := os.WriteFile(legacyProjection, []byte("#!/usr/bin/env bash\necho stale legacy\n"), 0o600); err != nil {
+		t.Fatalf("seed legacy projection: %v", err)
+	}
+
+	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(nil)); err != nil {
+		t.Fatalf("WriteClaudeStatusline: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(claudeDir, "claude-statusline.sh")); err != nil {
+		t.Fatalf("new projection should exist: %v", err)
+	}
+	if _, err := os.Stat(legacyProjection); !os.IsNotExist(err) {
+		t.Fatalf("expected stale legacy projection removed, stat err=%v", err)
+	}
+}
+
 // When disabled, a previously generated copy is removed so no stale script lingers.
 func TestWriteClaudeStatusline_DisabledRemovesStaleCopiesAndPreservesSource(t *testing.T) {
 	t.Parallel()

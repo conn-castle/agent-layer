@@ -2,6 +2,11 @@
 # Claude Code status line — agentic coding view
 # Receives JSON on stdin; outputs a single colored line.
 
+# Force a dot decimal separator so printf parses/formats the floats Claude sends
+# (e.g. 43.5, 1.50) regardless of the user's locale (comma-locale shells would
+# otherwise fail with "invalid number").
+export LC_NUMERIC=C
+
 # ── Color codes ───────────────────────────────────────────────────────────────
 RESET='\033[0m'
 BOLD='\033[1m'
@@ -51,9 +56,11 @@ if [ -n "$session_id" ]; then
 fi
 
 # ── Directory: show path relative to project root, or full cwd ───────────────
-if [ -n "$project_dir" ] && [ "$project_dir" != "$cwd" ]; then
-  rel="${cwd#"$project_dir"}"
-  rel="${rel#/}"
+# Only use the relative form when cwd is genuinely under project_dir; otherwise
+# (unrelated paths, symlink/case differences) fall back to the cwd basename so we
+# never render "<project>/<full-cwd>".
+if [ -n "$project_dir" ] && [ "${cwd#"$project_dir"/}" != "$cwd" ]; then
+  rel="${cwd#"$project_dir"/}"
   [ -z "$rel" ] && rel="."
   dir_str="${DIM}${project_dir##*/}${RESET}/${BOLD}${rel}${RESET}"
 else
