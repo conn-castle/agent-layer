@@ -109,6 +109,7 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
+			func() error { return WriteClaudeStatusline(sys, root, project) },
 			func() error { return WriteClaudeSettings(sys, root, project) },
 			func() error { return WriteMCPConfig(sys, root, project) },
 			func() error { return WriteClaudeSkills(sys, root, project.Skills) },

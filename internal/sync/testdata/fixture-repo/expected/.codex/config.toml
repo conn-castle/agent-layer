@@ -1,7 +1,12 @@
 # GENERATED FILE — MAY CONTAIN SECRETS
 # This file is gitignored. Do not commit or share it.
-# Source: .agent-layer/config.toml
+# Sources:
+# - .agent-layer/config.toml
+# - .agent-layer/codex-statusline.toml
 # Regenerate: al sync
+
+[tui]
+status_line = ['model-with-reasoning', 'context-used', 'weekly-limit', 'thread-id', 'git-branch', 'branch-changes', 'pull-request-number', 'current-dir']
 
 [projects."__REPO_ROOT__"]
 trust_level = "trusted"

@@ -5,5 +5,9 @@
       "Bash(ls:*)",
       "mcp__example__*"
     ]
+  },
+  "statusLine": {
+    "command": "bash '__REPO_ROOT__/.claude/claude-statusline.sh'",
+    "type": "command"
   }
 }

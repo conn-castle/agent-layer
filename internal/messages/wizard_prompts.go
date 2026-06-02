@@ -14,12 +14,6 @@ const (
 	WizardClaudeLocalConfigDirPrompt          = "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)"
 	WizardCodexModelTitle                     = "Codex Model"
 	WizardCodexReasoningEffortTitle           = "Codex Reasoning Effort"
-	WizardCodexAppsPrompt                     = "Disable apps (Codex)? Codex's built-in app integrations (Github, Gmail, etc.) add extra tools to every session."
-	WizardCodexBrowserPrompt                  = "Disable browser/computer-use (Codex)? These tools let Codex drive a browser and control the screen."
-	WizardClaudeDisableIDEReadingPrompt       = "Disable IDE open-file reading (Claude)? Claude Code otherwise auto-connects to your IDE and reads files open in the editor."
-	WizardClaudeDisableMemoryPrompt           = "Disable memory (Claude)? Claude Code's auto-memory persists notes across sessions. (This does not affect CLAUDE.md.)"
-	WizardClaudeDisableConnectorsPrompt       = "Disable connectors (Claude)? claude.ai app connectors load only under Claude.ai-subscription auth."
-	WizardClaudeDisableQuestionToolPrompt     = "Disable the AskUserQuestion tool (Claude)? Blocks Claude Code's structured clarification-question tool via permissions.deny and a PreToolUse hook (the hook also enforces it under YOLO)."
 	WizardCopilotCLIModelTitle                = "Copilot CLI Model"
 	WizardSecretAlreadySetPromptFmt           = "Secret %s is already set. Overwrite?"
 	WizardEnvSecretFoundPromptFmt             = "Found %s in your environment. Write it to .agent-layer/.env?"
@@ -71,4 +65,35 @@ const (
 	// entry is preserved in config.toml either way — disabling never deletes it.
 	WizardKeepCustomMCPServersTitle = "Keep custom MCP servers (not part of Agent Layer's defaults)" +
 		"\n  Selected = keep enabled. Unselected = set enabled = false (the entry stays in config.toml; it is not deleted)."
+
+	// Per-feature checkbox labels for the model-step multi-selects. Each label is
+	// the load-bearing option identity: MultiSelect uses the option string as both
+	// label and returned value, and the wizard matches the returned selection on
+	// these exact strings to invert checkbox state back into the disable-sense
+	// Choices fields. Define each label ONCE here and reuse it on both the
+	// option-list and contains-check sides so the identity cannot drift.
+	WizardClaudeFeatureIDEReadingLabel   = "IDE open-file reading"
+	WizardClaudeFeatureMemoryLabel       = "Auto-memory"
+	WizardClaudeFeatureConnectorsLabel   = "claude.ai connectors"
+	WizardClaudeFeatureQuestionToolLabel = "AskUserQuestion tool"
+	WizardCodexFeatureAppsLabel          = "Built-in apps (GitHub, Gmail, etc.)"
+	WizardCodexFeatureBrowserLabel       = "Browser / computer-use"
+
+	// WizardClaudeFeaturesTitle labels the Claude feature multi-select. Checked =
+	// keep the feature enabled (Claude Code's native default); unchecking disables
+	// it. The per-feature explanations live in the title because MultiSelect has no
+	// per-option description field (same multi-line convention as the MCP/CLI-skills
+	// titles above).
+	WizardClaudeFeaturesTitle = "Claude features (checked = keep enabled; uncheck to disable)" +
+		"\n  IDE open-file reading: Claude Code otherwise auto-connects to your IDE and reads files open in the editor." +
+		"\n  Auto-memory: Claude Code's auto-memory persists notes across sessions. (This does not affect CLAUDE.md.)" +
+		"\n  claude.ai connectors: claude.ai app connectors load only under Claude.ai-subscription auth." +
+		"\n  AskUserQuestion tool: Claude Code's structured clarification-question tool; disabling blocks it via permissions.deny and a PreToolUse hook (the hook also enforces it under YOLO)."
+	// WizardCodexFeaturesTitle labels the Codex feature multi-select. Checked =
+	// keep the feature enabled; unchecking disables it. Built-in apps default to
+	// unchecked (Agent Layer disables Codex's app surface by default and always
+	// writes an explicit features.apps).
+	WizardCodexFeaturesTitle = "Codex features (checked = keep enabled; uncheck to disable)" +
+		"\n  Built-in apps (GitHub, Gmail, etc.): Codex's built-in app integrations add extra tools to every session." +
+		"\n  Browser / computer-use: these tools let Codex drive a browser and control the screen."
 )

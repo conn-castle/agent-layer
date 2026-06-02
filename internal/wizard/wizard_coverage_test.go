@@ -164,19 +164,23 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("promptModels codex apps confirm inverts disable default", func(t *testing.T) {
+	t.Run("promptModels codex apps multi-select inverts enabled state", func(t *testing.T) {
 		choices := NewChoices()
 		choices.EnabledAgents[AgentCodex] = true
 		choices.CodexApps = true // apps currently enabled
-		var sawAppsPrompt bool
-		var sawValue bool
+		var appsPreChecked bool
 		err := promptModels(&MockUI{
 			SelectFunc: func(string, []string, *string) error { return nil },
-			ConfirmFunc: func(title string, value *bool) error {
-				if title == messages.WizardCodexAppsPrompt {
-					sawAppsPrompt = true
-					sawValue = *value
-					*value = true // user chooses to disable apps
+			MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+				if title == messages.WizardCodexFeaturesTitle {
+					// Enabled apps must arrive pre-checked.
+					for _, label := range *selected {
+						if label == messages.WizardCodexFeatureAppsLabel {
+							appsPreChecked = true
+						}
+					}
+					// User unchecks apps (drops the label) to disable them.
+					*selected = []string{messages.WizardCodexFeatureBrowserLabel}
 				}
 				return nil
 			},
@@ -184,37 +188,33 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !sawAppsPrompt {
-			t.Fatal("expected codex apps prompt to be invoked")
+		// Apps enabled => the checkbox is pre-selected.
+		if !appsPreChecked {
+			t.Fatal("expected the apps checkbox to be pre-selected when apps are enabled")
 		}
-		// The reworded "Disable apps?" prompt offers the inverse of the stored
-		// enabled-state: apps enabled => disable default is false.
-		if sawValue {
-			t.Fatal("expected disable default to be false when apps are enabled")
-		}
-		// Confirming the disable prompt flips CodexApps back to enabled-state false.
+		// Removing the apps label flips CodexApps to enabled-state false.
 		if choices.CodexApps {
-			t.Fatal("expected CodexApps to be disabled after confirming the disable prompt")
+			t.Fatal("expected CodexApps to be disabled after unchecking the apps label")
 		}
 		if !choices.CodexAppsTouched {
 			t.Fatal("expected CodexAppsTouched to be set")
 		}
 	})
 
-	t.Run("promptModels codex apps confirm error", func(t *testing.T) {
+	t.Run("promptModels codex features multi-select error", func(t *testing.T) {
 		choices := NewChoices()
 		choices.EnabledAgents[AgentCodex] = true
 		err := promptModels(&MockUI{
 			SelectFunc: func(string, []string, *string) error { return nil },
-			ConfirmFunc: func(title string, _ *bool) error {
-				if title == messages.WizardCodexAppsPrompt {
-					return errors.New("apps confirm failed")
+			MultiSelectFunc: func(title string, _ []string, _ *[]string) error {
+				if title == messages.WizardCodexFeaturesTitle {
+					return errors.New("codex features failed")
 				}
 				return nil
 			},
 		}, choices)
-		if err == nil || !strings.Contains(err.Error(), "apps confirm failed") {
-			t.Fatalf("expected apps confirm error, got %v", err)
+		if err == nil || !strings.Contains(err.Error(), "codex features failed") {
+			t.Fatalf("expected codex features error, got %v", err)
 		}
 	})
 }

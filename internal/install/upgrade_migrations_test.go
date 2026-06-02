@@ -1274,6 +1274,32 @@ func TestMigration_0_10_2_UnknownSourceKeepsCurrentAntigravity(t *testing.T) {
 	}
 }
 
+func TestMigration_0_10_2_UnpinnedInferredSourceKeepsCurrentAntigravity(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, strings.Join([]string{
+		"[agents.antigravity]",
+		"enabled = true",
+	}, "\n"))
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	op := upgradeMigrationOperation{
+		ID:   "a-delete-old-agents-antigravity",
+		Kind: upgradeMigrationKindConfigDeleteKey,
+		Key:  "agents.antigravity",
+	}
+	skip, reason, err := inst.shouldSkipConditionalMigration(op, sourceVersionResolution{
+		version: "0.10.1",
+		origin:  UpgradeMigrationSourceManifestMatch,
+	})
+	if err != nil {
+		t.Fatalf("shouldSkipConditionalMigration: %v", err)
+	}
+	if !skip {
+		t.Fatalf("expected unpinned inferred-source migration to keep current agents.antigravity without legacy Gemini; reason=%q", reason)
+	}
+}
+
 func TestUpgradeTransactionRunsMigrationsBeforePinBump(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1332,6 +1358,13 @@ func TestRun_DevUpgradeRunsLatestMigrationsWithoutWritingPin(t *testing.T) {
 	}
 	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
 		t.Fatalf("expected agents.antigravity.enabled = true after dev upgrade, got %v", cfg.Agents.Antigravity.Enabled)
+	}
+	// The 0.11.0 manifest also seeds the opt-out status line defaults.
+	if cfg.Agents.Claude.Statusline == nil || !*cfg.Agents.Claude.Statusline {
+		t.Fatalf("expected agents.claude.statusline = true after dev upgrade, got %v", cfg.Agents.Claude.Statusline)
+	}
+	if cfg.Agents.Codex.Statusline == nil || !*cfg.Agents.Codex.Statusline {
+		t.Fatalf("expected agents.codex.statusline = true after dev upgrade, got %v", cfg.Agents.Codex.Statusline)
 	}
 	if _, statErr := os.Stat(filepath.Join(root, ".agent-layer", "al.version")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("dev upgrade should not write al.version, statErr=%v", statErr)
@@ -1412,6 +1445,43 @@ func TestPlanUpgradeMigrations_UnpinnedNoLegacyTriggerSkipsManifest(t *testing.T
 	}
 	if len(plan.report.Entries) != 0 || len(plan.executable) != 0 {
 		t.Fatalf("expected no migration entries or executable ops, got entries=%#v executable=%#v", plan.report.Entries, plan.executable)
+	}
+}
+
+func TestPlanUpgradeMigrations_UnpinnedMissingSourceAgnosticDefaultTriggersLatestManifest(t *testing.T) {
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
+		nil,
+		`["antigravity"]`,
+	))
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.11.0": `{
+  "schema_version": 1,
+  "target_version": "0.11.0",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "set-claude-statusline",
+      "kind": "config_set_default",
+      "rationale": "Write explicit statusline default before sync",
+      "source_agnostic": true,
+      "key": "agents.claude.statusline",
+      "value": true
+    }
+  ]
+}`,
+	})
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if plan.report.TargetVersion != "0.11.0" {
+		t.Fatalf("target version = %q, want 0.11.0", plan.report.TargetVersion)
+	}
+	if len(plan.executable) != 1 || plan.executable[0].ID != "set-claude-statusline" {
+		t.Fatalf("executable migrations = %#v, want set-claude-statusline", plan.executable)
 	}
 }
 
@@ -2965,11 +3035,22 @@ func TestExecuteAppendToFile_CreatesFileWhenMissing(t *testing.T) {
 		t.Fatalf("read target: %v", err)
 	}
 	// When a template exists for the path, the full template should be seeded
-	// as the base, preventing a partial stub file.
-	if !strings.Contains(string(data), "# Project Conventions") {
-		t.Fatalf("expected template header to be seeded, got:\n%s", string(data))
+	// as the base (preventing a partial stub file), followed by the appended
+	// content. Compare against the live template read at runtime plus the op's
+	// own Value so template edits never make this assertion fragile.
+	templatePath := strings.TrimPrefix(filepath.ToSlash(op.Path), ".agent-layer/")
+	want, tplErr := templates.Read(templatePath)
+	if tplErr != nil {
+		t.Fatalf("read template %q: %v", templatePath, tplErr)
 	}
-	if !strings.Contains(string(data), "# Conventions") {
+	if !bytes.HasPrefix(data, want) {
+		t.Fatalf("expected full template to be seeded as the base prefix, got:\n%s", string(data))
+	}
+	var appended string
+	if err := json.Unmarshal(op.Value, &appended); err != nil {
+		t.Fatalf("decode op.Value: %v", err)
+	}
+	if !bytes.Contains(data, []byte(appended)) {
 		t.Fatalf("expected appended content to be present, got:\n%s", string(data))
 	}
 }
@@ -3028,17 +3109,21 @@ func TestExecuteAppendToFile_SeedsTemplateWhenMatchAlreadyInTemplate(t *testing.
 	if err != nil {
 		t.Fatalf("read target: %v", err)
 	}
-	// Should seed the full template without appending (match already in template).
-	if !strings.Contains(string(data), "# Project Conventions") {
-		t.Fatalf("expected full template header, got:\n%s", string(data))
+	// Should seed the full template verbatim without appending (match already
+	// in template). Compare against the live template read at runtime so edits
+	// to the template content never make this assertion fragile.
+	templatePath := strings.TrimPrefix(filepath.ToSlash(op.Path), ".agent-layer/")
+	want, tplErr := templates.Read(templatePath)
+	if tplErr != nil {
+		t.Fatalf("read template %q: %v", templatePath, tplErr)
 	}
-	if !strings.Contains(string(data), "## Architecture") {
-		t.Fatalf("expected full template body with Architecture section, got:\n%s", string(data))
+	if !bytes.Equal(data, want) {
+		t.Fatalf("expected file to equal the full template verbatim, got:\n%s", string(data))
 	}
-	// Should NOT contain duplicate UTC sections — template already has it.
-	count := strings.Count(string(data), "UTC-only internals")
-	if count != 1 {
-		t.Fatalf("expected exactly 1 occurrence of UTC-only internals, got %d", count)
+	// Idempotency: the match string is already present in the template, so the
+	// op content was not appended; the match must appear exactly once.
+	if count := bytes.Count(data, []byte(op.From)); count != 1 {
+		t.Fatalf("expected exactly 1 occurrence of match %q, got %d", op.From, count)
 	}
 }
 

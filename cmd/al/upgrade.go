@@ -294,7 +294,7 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			if policy.yes {
 				return manifestValue, nil
 			}
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nNew required config key: %s\n  Rationale: %s\n", key, rationale)
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nNew config key: %s\n  Rationale: %s\n", key, rationale)
 			if err != nil {
 				return nil, err
 			}

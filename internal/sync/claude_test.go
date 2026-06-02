@@ -25,7 +25,7 @@ func TestBuildClaudeSettings(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestBuildClaudeSettingsNone(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestBuildClaudeSettingsYOLO(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestBuildClaudeSettingsAgentSpecific(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestBuildClaudeSettingsIncludesReasoningEffort(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestBuildClaudeSettingsMaxEffortExcludedFromSettings(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestBuildClaudeSettingsTrimsReasoningEffort(t *testing.T) {
 			Agents:    config.AgentsConfig{Claude: config.ClaudeConfig{ReasoningEffort: " max "}},
 		},
 	}
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestBuildClaudeSettingsMaxEffortWithAgentSpecificOverride(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestBuildClaudeSettingsAgentSpecificEffortLevelOverride(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestBuildClaudeSettingsAgentSpecificWithApprovals(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestBuildClaudeSettingsAgentSpecificDenyPreservesManagedAllow(t *testing.T)
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestBuildClaudeSettingsAgentSpecificAllowOverridesManagedAllow(t *testing.T
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestBuildClaudeSettingsAgentSpecificMergeDoesNotMutateConfig(t *testing.T) 
 		CommandsAllow: []string{"git status"},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -520,7 +520,7 @@ func TestBuildClaudeSettingsDisableTogglesAgentSpecific(t *testing.T) {
 		},
 	}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -611,7 +611,7 @@ func preToolUseMatcherCount(settings map[string]any, matcher string) int {
 func TestBuildClaudeSettings_InjectsDenyAndHookWhenFlagTrue(t *testing.T) {
 	t.Parallel()
 	disable := true
-	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, nil))
+	settings, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, nil))
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -636,7 +636,7 @@ func TestBuildClaudeSettings_NoInjectionWhenFlagNilOrFalse(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			settings, err := buildClaudeSettings(project)
+			settings, err := buildClaudeSettings("/repo", project)
 			if err != nil {
 				t.Fatalf("buildClaudeSettings error: %v", err)
 			}
@@ -659,7 +659,7 @@ func TestBuildClaudeSettings_InjectionUnionsWithUserDenyAndHooks(t *testing.T) {
 		"permissions": map[string]any{"deny": []any{"Bash(rm:*)"}},
 		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": "Write"}}},
 	}
-	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, agentSpecific))
+	settings, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, agentSpecific))
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -686,7 +686,7 @@ func TestBuildClaudeSettings_InjectionUnionsStringSliceDeny(t *testing.T) {
 	agentSpecific := map[string]any{
 		"permissions": map[string]any{"deny": []string{"Bash(rm:*)"}},
 	}
-	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, agentSpecific))
+	settings, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, agentSpecific))
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -707,7 +707,7 @@ func TestBuildClaudeSettings_InjectionIsIdempotentAgainstUserEntries(t *testing.
 		"permissions": map[string]any{"deny": []any{"AskUserQuestion"}},
 		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": "AskUserQuestion"}}},
 	}
-	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, agentSpecific))
+	settings, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, agentSpecific))
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -725,7 +725,7 @@ func TestBuildClaudeSettings_InjectionUnderYOLOStillEmitsHook(t *testing.T) {
 	disable := true
 	project := claudeWithQuestionToolFlag(&disable, nil)
 	project.Config.Approvals.Mode = config.ApprovalModeYOLO
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}
@@ -747,7 +747,7 @@ func TestBuildClaudeSettings_InjectionPreservesManagedAllow(t *testing.T) {
 	}
 	project.CommandsAllow = []string{"git status"}
 
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings("/repo", project)
 	if err != nil {
 		t.Fatalf("buildClaudeSettings error: %v", err)
 	}

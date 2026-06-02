@@ -485,3 +485,99 @@ enabled = false
 	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
 	assert.Contains(t, string(data), "local_config_dir = true")
 }
+
+// TestPromptModels_FeatureTogglesPreSelectAndRoundTrip proves the checkbox->
+// disable inversion at the prompt boundary: a mixed enabled/disabled config
+// pre-checks exactly the enabled features, and a no-edit re-run (the user leaves
+// the pre-selection untouched) leaves every disable-sense field unchanged. It
+// must fail if the inversion is wrong in either direction.
+func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
+	choices := NewChoices()
+	choices.EnabledAgents[AgentClaude] = true
+	choices.EnabledAgents[AgentCodex] = true
+
+	// Mixed starting state: IDE reading and connectors disabled (so unchecked);
+	// memory and AskUserQuestion enabled (so checked). Apps enabled (checked);
+	// browser disabled (unchecked).
+	choices.ClaudeDisableIDEReading = true
+	choices.ClaudeDisableMemory = false
+	choices.ClaudeDisableConnectors = true
+	choices.ClaudeDisableQuestionTool = false
+	choices.CodexApps = true
+	choices.CodexDisableBrowser = true
+
+	// Capture the labels pre-selected for each group, then echo them back
+	// unchanged (a no-edit re-run).
+	preSelected := map[string][]string{}
+	ui := &MockUI{
+		SelectFunc: func(string, []string, *string) error { return nil },
+		MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+			if title == messages.WizardClaudeFeaturesTitle || title == messages.WizardCodexFeaturesTitle {
+				captured := make([]string, len(*selected))
+				copy(captured, *selected)
+				preSelected[title] = captured
+			}
+			return nil // leave *selected untouched = no edits
+		},
+	}
+
+	if err := promptModels(ui, choices); err != nil {
+		t.Fatalf("promptModels error: %v", err)
+	}
+
+	// Pre-selection contains exactly the enabled features (inverted from the
+	// disable-sense fields).
+	assert.ElementsMatch(t,
+		[]string{messages.WizardClaudeFeatureMemoryLabel, messages.WizardClaudeFeatureQuestionToolLabel},
+		preSelected[messages.WizardClaudeFeaturesTitle],
+		"only enabled Claude features should be pre-checked")
+	assert.ElementsMatch(t,
+		[]string{messages.WizardCodexFeatureAppsLabel},
+		preSelected[messages.WizardCodexFeaturesTitle],
+		"only enabled Codex features should be pre-checked")
+
+	// Round-trip: echoing the pre-selection back unchanged leaves every
+	// disable-sense field at its original value.
+	assert.True(t, choices.ClaudeDisableIDEReading)
+	assert.False(t, choices.ClaudeDisableMemory)
+	assert.True(t, choices.ClaudeDisableConnectors)
+	assert.False(t, choices.ClaudeDisableQuestionTool)
+	assert.True(t, choices.CodexApps)
+	assert.True(t, choices.CodexDisableBrowser)
+
+	// All toggles are marked touched after the prompt.
+	assert.True(t, choices.ClaudeDisableIDEReadingTouched)
+	assert.True(t, choices.ClaudeDisableMemoryTouched)
+	assert.True(t, choices.ClaudeDisableConnectorsTouched)
+	assert.True(t, choices.ClaudeDisableQuestionToolTouched)
+	assert.True(t, choices.CodexAppsTouched)
+	assert.True(t, choices.CodexDisableBrowserTouched)
+}
+
+// TestPromptModels_CodexDisabledRendersNoCodexMultiSelect confirms that when
+// Codex is not enabled, the Codex feature multi-select never renders and the
+// Codex disable-sense fields stay untouched.
+func TestPromptModels_CodexDisabledRendersNoCodexMultiSelect(t *testing.T) {
+	choices := NewChoices()
+	choices.EnabledAgents[AgentClaude] = true // Claude on, Codex off
+
+	var sawCodexFeatures bool
+	ui := &MockUI{
+		SelectFunc:  func(string, []string, *string) error { return nil },
+		ConfirmFunc: func(string, *bool) error { return nil },
+		MultiSelectFunc: func(title string, _ []string, _ *[]string) error {
+			if title == messages.WizardCodexFeaturesTitle {
+				sawCodexFeatures = true
+			}
+			return nil
+		},
+	}
+
+	if err := promptModels(ui, choices); err != nil {
+		t.Fatalf("promptModels error: %v", err)
+	}
+
+	assert.False(t, sawCodexFeatures, "Codex feature multi-select must not render when Codex is disabled")
+	assert.False(t, choices.CodexAppsTouched)
+	assert.False(t, choices.CodexDisableBrowserTouched)
+}

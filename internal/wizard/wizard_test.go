@@ -309,26 +309,27 @@ func TestRunWithWriter_ValidationErrorLenientAlsoFails(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to load config")
 }
 
-// TestPromptModels_SetsDisableToggles drives every new per-feature disable
-// confirm through promptModels and asserts the choice plus touched flag is set.
+// TestPromptModels_SetsDisableToggles drives both per-agent feature multi-selects
+// through promptModels with no labels checked (the all-disabled edge: unchecking
+// every box disables every feature) and asserts each disable-sense choice plus its
+// touched flag is set. CodexApps is covered by the coverage/round-trip tests, not
+// here.
 func TestPromptModels_SetsDisableToggles(t *testing.T) {
 	choices := NewChoices()
 	choices.EnabledAgents[AgentClaude] = true
 	choices.EnabledAgents[AgentCodex] = true
 
-	disablePrompts := map[string]bool{
-		messages.WizardClaudeDisableIDEReadingPrompt:   true,
-		messages.WizardClaudeDisableMemoryPrompt:       true,
-		messages.WizardClaudeDisableConnectorsPrompt:   true,
-		messages.WizardClaudeDisableQuestionToolPrompt: true,
-		messages.WizardCodexBrowserPrompt:              true,
+	featureTitles := map[string]bool{
+		messages.WizardClaudeFeaturesTitle: true,
+		messages.WizardCodexFeaturesTitle:  true,
 	}
 
 	ui := &MockUI{
-		SelectFunc: func(string, []string, *string) error { return nil },
-		ConfirmFunc: func(title string, value *bool) error {
-			if disablePrompts[title] {
-				*value = true
+		SelectFunc:  func(string, []string, *string) error { return nil },
+		ConfirmFunc: func(string, *bool) error { return nil },
+		MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+			if featureTitles[title] {
+				*selected = []string{} // check nothing = disable every feature
 			}
 			return nil
 		},

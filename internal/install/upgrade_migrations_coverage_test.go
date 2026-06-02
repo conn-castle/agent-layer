@@ -59,6 +59,11 @@ func TestWriteUpgradeMigrationReport_CoversFieldsAndWriterErrors(t *testing.T) {
 		t.Fatalf("write report: %v", err)
 	}
 	got := out.String()
+	// The report leads with a blank line so it is separated from any preceding
+	// prompt (e.g., a config_set_default choice) in the upgrade output.
+	if !strings.HasPrefix(got, "\nMigration report:") {
+		t.Fatalf("expected report to lead with a blank line, got:\n%q", got)
+	}
 	if !containsAll(got,
 		"Migration report:",
 		"target version: 0.7.0",
@@ -2635,4 +2640,20 @@ func writeTestConfigFile(t *testing.T, root string, content string) string {
 		t.Fatalf("write config file: %v", err)
 	}
 	return path
+}
+
+func TestHasMissingUnpinnedSourceAgnosticDefault_CorruptConfigSurfacesError(t *testing.T) {
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+	// Malformed TOML must surface a decode error, not be silently swallowed
+	// into a "no missing default" answer (no-silent-fallbacks rule).
+	triggered, err := inst.hasMissingUnpinnedSourceAgnosticDefault([]byte("this is = not valid = toml"), "0.11.0")
+	if err == nil {
+		t.Fatalf("expected decode error for corrupt config, got nil (triggered=%v)", triggered)
+	}
+	if triggered {
+		t.Fatalf("expected triggered=false on decode error, got true")
+	}
+	if !strings.Contains(err.Error(), "decode config") {
+		t.Fatalf("expected decode-config error, got: %v", err)
+	}
 }

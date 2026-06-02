@@ -624,19 +624,16 @@ func promptModels(ui UI, choices *Choices) error {
 		choices.ClaudeLocalConfigDir = claudeLocalConfigDir
 		choices.ClaudeLocalConfigDirTouched = true
 
-		// Per-feature "disable" toggles (default No keeps Claude Code's native
-		// default). Both Claude and Claude (VS Code) write .claude/settings.json,
-		// so these are offered whenever either is enabled.
-		if err := confirmToggle(ui, messages.WizardClaudeDisableIDEReadingPrompt, &choices.ClaudeDisableIDEReading, &choices.ClaudeDisableIDEReadingTouched); err != nil {
-			return err
-		}
-		if err := confirmToggle(ui, messages.WizardClaudeDisableMemoryPrompt, &choices.ClaudeDisableMemory, &choices.ClaudeDisableMemoryTouched); err != nil {
-			return err
-		}
-		if err := confirmToggle(ui, messages.WizardClaudeDisableConnectorsPrompt, &choices.ClaudeDisableConnectors, &choices.ClaudeDisableConnectorsTouched); err != nil {
-			return err
-		}
-		if err := confirmToggle(ui, messages.WizardClaudeDisableQuestionToolPrompt, &choices.ClaudeDisableQuestionTool, &choices.ClaudeDisableQuestionToolTouched); err != nil {
+		// Per-feature toggles as one multi-select. Checked = keep the feature
+		// enabled (Claude Code's native default); unchecking sets the disable-sense
+		// field. Both Claude and Claude (VS Code) write .claude/settings.json, so
+		// these are offered whenever either is enabled.
+		if err := promptFeatureToggles(ui, messages.WizardClaudeFeaturesTitle, []featureToggle{
+			{label: messages.WizardClaudeFeatureIDEReadingLabel, field: &choices.ClaudeDisableIDEReading, touched: &choices.ClaudeDisableIDEReadingTouched},
+			{label: messages.WizardClaudeFeatureMemoryLabel, field: &choices.ClaudeDisableMemory, touched: &choices.ClaudeDisableMemoryTouched},
+			{label: messages.WizardClaudeFeatureConnectorsLabel, field: &choices.ClaudeDisableConnectors, touched: &choices.ClaudeDisableConnectorsTouched},
+			{label: messages.WizardClaudeFeatureQuestionToolLabel, field: &choices.ClaudeDisableQuestionTool, touched: &choices.ClaudeDisableQuestionToolTouched},
+		}); err != nil {
 			return err
 		}
 	}
@@ -651,17 +648,14 @@ func promptModels(ui UI, choices *Choices) error {
 		}
 		choices.CodexReasoningTouched = true
 
-		// Apps confirm shares the "Disable …?" phrasing; the confirm variable is
-		// inverted at the prompt boundary while CodexApps keeps enabled-state
-		// storage (true = apps enabled). Default reflects the stored state.
-		disableApps := !choices.CodexApps
-		if err := ui.Confirm(messages.WizardCodexAppsPrompt, &disableApps); err != nil {
-			return err
-		}
-		choices.CodexApps = !disableApps
-		choices.CodexAppsTouched = true
-
-		if err := confirmToggle(ui, messages.WizardCodexBrowserPrompt, &choices.CodexDisableBrowser, &choices.CodexDisableBrowserTouched); err != nil {
+		// Codex per-feature toggles as one multi-select. Built-in apps store
+		// enabled-sense (true = apps on); browser/computer-use stores disable-sense
+		// like the Claude fields. Both are inverted at the prompt boundary so the
+		// checkbox always means "keep enabled".
+		if err := promptFeatureToggles(ui, messages.WizardCodexFeaturesTitle, []featureToggle{
+			{label: messages.WizardCodexFeatureAppsLabel, field: &choices.CodexApps, touched: &choices.CodexAppsTouched, enabledSense: true},
+			{label: messages.WizardCodexFeatureBrowserLabel, field: &choices.CodexDisableBrowser, touched: &choices.CodexDisableBrowserTouched},
+		}); err != nil {
 			return err
 		}
 	}

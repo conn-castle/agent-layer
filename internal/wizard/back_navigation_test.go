@@ -369,13 +369,14 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 				if mcpCalls > 0 && secondModelCalls == 0 {
 					return errWizardBack
 				}
+			case messages.WizardCodexFeaturesTitle:
+				// Uncheck every Codex feature (including apps) = disable them.
+				*selected = []string{}
 			}
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
 			switch title {
-			case messages.WizardCodexAppsPrompt:
-				*value = true
 			case messages.WizardEnableAgentLayerPrompt:
 				// During the back-navigation pass (mcpCalls > 0 and we have
 				// not yet reached Models again), propagate the back signal so

@@ -19,9 +19,18 @@ const codexHeader = `# GENERATED FILE — MAY CONTAIN SECRETS
 
 `
 
+const codexHeaderWithStatusline = `# GENERATED FILE — MAY CONTAIN SECRETS
+# This file is gitignored. Do not commit or share it.
+# Sources:
+# - .agent-layer/config.toml
+# - .agent-layer/codex-statusline.toml
+# Regenerate: al sync
+
+`
+
 // WriteCodexConfig generates .codex/config.toml.
 func WriteCodexConfig(sys System, root string, project *config.ProjectConfig) error {
-	content, err := buildCodexConfig(root, project)
+	content, err := buildCodexConfigWithSystem(sys, root, project)
 	if err != nil {
 		return err
 	}
@@ -54,41 +63,54 @@ func WriteCodexRules(sys System, root string, project *config.ProjectConfig) err
 }
 
 func buildCodexConfig(root string, project *config.ProjectConfig) (string, error) {
+	return buildCodexConfigWithSystem(RealSystem{}, root, project)
+}
+
+func buildCodexConfigWithSystem(sys System, root string, project *config.ProjectConfig) (string, error) {
 	trustedRoot, err := codexTrustedProjectRoot(root)
 	if err != nil {
 		return "", err
 	}
 
-	var builder strings.Builder
-	builder.WriteString(codexHeader)
+	agentSpecific, managedStatusline, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex)
+	if err != nil {
+		return "", err
+	}
 
-	if project.Config.Agents.Codex.Model != "" && !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "model") {
+	var builder strings.Builder
+	if managedStatusline {
+		builder.WriteString(codexHeaderWithStatusline)
+	} else {
+		builder.WriteString(codexHeader)
+	}
+
+	if project.Config.Agents.Codex.Model != "" && !config.HasAgentSpecificKey(agentSpecific, "model") {
 		fmt.Fprintf(&builder, "model = %q\n", project.Config.Agents.Codex.Model)
 	}
-	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "model_reasoning_effort") {
+	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasAgentSpecificKey(agentSpecific, "model_reasoning_effort") {
 		fmt.Fprintf(&builder, "model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort)
 	}
 	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
-		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "approval_policy") {
+		if !config.HasAgentSpecificKey(agentSpecific, "approval_policy") {
 			builder.WriteString("approval_policy = \"never\"\n")
 		}
-		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "sandbox_mode") {
+		if !config.HasAgentSpecificKey(agentSpecific, "sandbox_mode") {
 			builder.WriteString("sandbox_mode = \"danger-full-access\"\n")
 		}
-		if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "web_search") {
+		if !config.HasAgentSpecificKey(agentSpecific, "web_search") {
 			builder.WriteString("web_search = \"live\"\n")
 		}
 	}
 
 	// Write agent-specific root keys/tables before managed MCP tables so any
 	// scalar overrides remain at the TOML root.
-	if err := appendCodexAgentSpecific(&builder, project.Config.Agents.Codex.AgentSpecific); err != nil {
+	if err := appendCodexAgentSpecific(&builder, agentSpecific); err != nil {
 		return "", err
 	}
 
-	appendCodexTrustedProject(&builder, trustedRoot, project.Config.Agents.Codex.AgentSpecific)
+	appendCodexTrustedProject(&builder, trustedRoot, agentSpecific)
 
-	if !config.HasAgentSpecificKey(project.Config.Agents.Codex.AgentSpecific, "mcp_servers") {
+	if !config.HasAgentSpecificKey(agentSpecific, "mcp_servers") {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
 		resolved, err := projection.ResolveMCPServers(
 			project.Config.MCP.Servers,

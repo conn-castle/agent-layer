@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 func TestRunGolden(t *testing.T) {
@@ -50,6 +52,7 @@ func TestRunGolden(t *testing.T) {
 		actual := filepath.Join(root, rel)
 		assertFileEquals(t, expected, actual, root)
 	}
+	assertFileMatchesTemplate(t, "claude-statusline.sh", filepath.Join(root, ".claude", "claude-statusline.sh"))
 
 	absent := []string{
 		".codex/skills",
@@ -62,6 +65,21 @@ func TestRunGolden(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, rel)); !os.IsNotExist(err) {
 			t.Fatalf("expected retired skill output %s to be absent", rel)
 		}
+	}
+}
+
+func assertFileMatchesTemplate(t *testing.T, templatePath string, actualPath string) {
+	t.Helper()
+	expected, err := templates.Read(templatePath)
+	if err != nil {
+		t.Fatalf("read template %s: %v", templatePath, err)
+	}
+	actual, err := os.ReadFile(actualPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read actual %s: %v", actualPath, err)
+	}
+	if string(expected) != string(actual) {
+		t.Fatalf("mismatch for %s", actualPath)
 	}
 }
 

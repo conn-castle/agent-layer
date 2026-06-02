@@ -71,6 +71,7 @@ Do not duplicate information that belongs in other memory files:
 ## Test policy
 
 - Do not write tests that assert specific wording, language, headings, or prose contracts in skill and instruction templates. Those checks are tautological and brittle. Tests may verify Agent Layer mechanics such as parsing, validation, sync/projection, resource copying, file existence/absence, and generated artifacts.
+- When a test must confirm a template/instruction file was seeded or written in full (not stubbed/truncated), compare the output against the template read at runtime (`templates.Read(<path>)`) and key dedup/occurrence checks on the migration op's own fields (`op.Match`/`op.From`/`op.Value`) — never hardcode template prose as the proxy. Runtime comparison tracks the source of truth, survives content edits, and still catches stub/truncation regressions (see `TestExecuteAppendToFile_*` in `internal/install`).
 
 ## Root resolution in cmd/al tests
 

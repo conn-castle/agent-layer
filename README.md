@@ -240,7 +240,11 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **Approvals Mode** (all, mcp, commands, none, yolo)
 - **Agent Enablement** (Antigravity, Claude, Codex, VS Code, Copilot CLI)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
-- **Feature disable toggles** (folded into the model step): disable Codex browser/computer-use and built-in apps; disable Claude's IDE open-file reading, auto-memory, claude.ai connectors, and the AskUserQuestion tool. These default to **No** (keeping the client's native default, writing nothing unless you opt in) — except the Codex **apps** toggle, which defaults to **Yes** (it disables Codex's built-in apps by default and always writes an explicit `features.apps`). Most toggles write the matching `agent_specific` key only when enabled; the AskUserQuestion toggle writes a typed `agents.claude.disable_question_tool` flag and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
+- **Feature toggles** — folded into the model step as two per-agent multi-selects (one Claude, one Codex). Each feature is a checkbox where **checked = keep enabled** and unchecking disables it; checkboxes are pre-checked to match your current config, so re-running the wizard without changes makes no edits.
+    - *Claude:* IDE open-file reading, auto-memory, claude.ai connectors, and the AskUserQuestion tool.
+    - *Codex:* built-in apps (GitHub, Gmail, etc.) and browser/computer-use.
+    - Unchecking writes the matching `agent_specific` disable key; re-checking removes it, keeping the client's native default — except Codex **apps**, which defaults unchecked and always writes an explicit `features.apps`.
+    - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
 - **Workflow bundle** (yes/no — bundles ~24 workflow skills, instruction files, and memory templates; answering "no" on a fresh install or `al init --minimal-layout` seeds only a placeholder instruction file)
 - **CLI skills** (opt-in catalog: `tavily-web`, `playwright-cli`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
@@ -344,6 +348,11 @@ enabled = true
 # permissions.deny + a PreToolUse hook into .claude/settings.json (merged with any agent_specific
 # entries; the hook also enforces the block under YOLO). Run `al wizard` to set it.
 # disable_question_tool = true
+# statusline writes a Claude Code status line. The editable source of truth lives at
+# .agent-layer/claude-statusline.sh (seeded once, never overwritten); on sync it is
+# copied to .claude/claude-statusline.sh and statusLine is wired into .claude/settings.json.
+# Enabled by default; set to false to opt out. Requires jq on PATH at runtime.
+# statusline = true
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
@@ -364,6 +373,10 @@ enabled = true
 # model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
+# statusline writes Codex's native status line from the editable
+# .agent-layer/codex-statusline.toml fragment. Enabled by default; set to false
+# to opt out.
+# statusline = true
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
 # These are appended to .codex/config.toml and can override top-level managed keys.
 # Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".

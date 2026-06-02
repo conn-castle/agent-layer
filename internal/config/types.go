@@ -57,8 +57,14 @@ type ClaudeConfig struct {
 	// DisableQuestionTool, when true, blocks Claude Code's AskUserQuestion tool.
 	// Sync injects permissions.deny + a PreToolUse hook into .claude/settings.json
 	// (merged with any user agent_specific entries). nil/false leave it allowed.
-	DisableQuestionTool *bool          `toml:"disable_question_tool"`
-	AgentSpecific       map[string]any `toml:"agent_specific"`
+	DisableQuestionTool *bool `toml:"disable_question_tool"`
+	// Statusline controls whether Agent Layer projects the editable
+	// .agent-layer/claude-statusline.sh source into .claude/claude-statusline.sh and wires
+	// statusLine into .claude/settings.json on sync. Defaults to enabled:
+	// nil or true enable it; an explicit false opts out. Read via
+	// ClaudeStatuslineEnabled.
+	Statusline    *bool          `toml:"statusline"`
+	AgentSpecific map[string]any `toml:"agent_specific"`
 }
 
 // EnableOnlyConfig is for agents that support enablement but not model selection.
@@ -81,7 +87,13 @@ type CodexConfig struct {
 	Model           string         `toml:"model"`
 	ReasoningEffort string         `toml:"reasoning_effort"`
 	Dispatch        DispatchConfig `toml:"dispatch"`
-	AgentSpecific   map[string]any `toml:"agent_specific"`
+	// Statusline controls whether Agent Layer reads the editable
+	// .agent-layer/codex-statusline.toml source and injects its native
+	// tui.status_line list into .codex/config.toml on sync. Defaults to
+	// enabled: nil or true enable it; an explicit false opts out. Read via
+	// CodexStatuslineEnabled.
+	Statusline    *bool          `toml:"statusline"`
+	AgentSpecific map[string]any `toml:"agent_specific"`
 }
 
 // MCPConfig contains the external MCP servers configuration.
@@ -118,6 +130,20 @@ type MCPServer struct {
 // IsAgentEnabled returns true if the agent-enabled pointer is non-nil and true.
 func IsAgentEnabled(p *bool) bool {
 	return p != nil && *p
+}
+
+// ClaudeStatuslineEnabled reports whether the Claude status line should be
+// projected and wired. It is opt-out: an unset value (nil) or true enables it;
+// only an explicit false disables it.
+func ClaudeStatuslineEnabled(c ClaudeConfig) bool {
+	return c.Statusline == nil || *c.Statusline
+}
+
+// CodexStatuslineEnabled reports whether the Codex status line should be wired.
+// It is opt-out: an unset value (nil) or true enables it; only an explicit false
+// disables it.
+func CodexStatuslineEnabled(c CodexConfig) bool {
+	return c.Statusline == nil || *c.Statusline
 }
 
 // SharedAgentSkillsEnabled reports whether any agent that consumes the shared

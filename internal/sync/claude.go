@@ -12,7 +12,7 @@ import (
 
 // WriteClaudeSettings generates .claude/settings.json.
 func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig) error {
-	settings, err := buildClaudeSettings(project)
+	settings, err := buildClaudeSettings(root, project)
 	if err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig)
 	return nil
 }
 
-func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) {
+func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string]any, error) {
 	settings := make(map[string]any)
 	permissions := buildPermissionsBlock(
 		project.Config,
@@ -56,6 +56,16 @@ func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) 
 		settings["effortLevel"] = effort
 	}
 
+	// Wire the status line before merging agent_specific so an explicit
+	// agent_specific.statusLine override wins. The referenced script is produced
+	// by WriteClaudeStatusline before settings are written in the same sync.
+	if config.ClaudeStatuslineEnabled(project.Config.Agents.Claude) {
+		settings["statusLine"] = map[string]any{
+			"type":    "command",
+			"command": "bash " + shellSingleQuote(claudeStatuslinePath(root)),
+		}
+	}
+
 	mergeAgentSpecificSettings(settings, project.Config.Agents.Claude.AgentSpecific)
 
 	// Inject the AskUserQuestion block last so it unions with (rather than is
@@ -64,4 +74,9 @@ func buildClaudeSettings(project *config.ProjectConfig) (map[string]any, error) 
 		injectAskUserQuestionBlock(settings)
 	}
 	return settings, nil
+}
+
+// shellSingleQuote returns a POSIX shell single-quoted word.
+func shellSingleQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

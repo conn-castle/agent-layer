@@ -23,6 +23,8 @@ func TestRunCreatesStructure(t *testing.T) {
 		filepath.Join(root, ".agent-layer", ".env"),
 		filepath.Join(root, ".agent-layer", ".gitignore"),
 		filepath.Join(root, ".agent-layer", "gitignore.block"),
+		filepath.Join(root, ".agent-layer", "claude-statusline.sh"),
+		filepath.Join(root, ".agent-layer", "codex-statusline.toml"),
 		filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"),
 		filepath.Join(root, "docs", "agent-layer", "ISSUES.md"),
 	}
@@ -31,6 +33,8 @@ func TestRunCreatesStructure(t *testing.T) {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}
 	}
+	expectPerm(t, filepath.Join(root, ".agent-layer", "claude-statusline.sh"), 0o755)
+	expectPerm(t, filepath.Join(root, ".agent-layer", "codex-statusline.toml"), 0o644)
 
 	gitignorePath := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(gitignorePath) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -39,6 +43,28 @@ func TestRunCreatesStructure(t *testing.T) {
 	}
 	if !strings.Contains(string(data), gitignoreStart) {
 		t.Fatalf("expected gitignore block to be present")
+	}
+}
+
+func expectPerm(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s perm = %o, want %o", path, got, want)
+	}
+}
+
+func assertFileContent(t *testing.T, path string, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if string(data) != want {
+		t.Fatalf("%s content = %q, want %q", path, string(data), want)
 	}
 }
 
@@ -151,12 +177,21 @@ func TestRunWithOverwrite(t *testing.T) {
 
 	// Modify user-owned files to differ from templates.
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	if err := os.WriteFile(configPath, []byte("# custom config"), 0o600); err != nil {
+	customConfig := "[agents.antigravity]\nenabled = false\n\n[agents.claude]\nstatusline = false\n\n[agents.codex]\nstatusline = false\n"
+	if err := os.WriteFile(configPath, []byte(customConfig), 0o600); err != nil {
 		t.Fatalf("write custom config: %v", err)
 	}
 	envPath := filepath.Join(root, ".agent-layer", ".env")
 	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE=custom\n"), 0o600); err != nil {
 		t.Fatalf("write custom env: %v", err)
+	}
+	claudeStatuslinePath := filepath.Join(root, ".agent-layer", "claude-statusline.sh")
+	if err := os.WriteFile(claudeStatuslinePath, []byte("# custom claude statusline\n"), 0o600); err != nil {
+		t.Fatalf("write custom claude statusline: %v", err)
+	}
+	codexStatuslinePath := filepath.Join(root, ".agent-layer", "codex-statusline.toml")
+	if err := os.WriteFile(codexStatuslinePath, []byte("# custom codex statusline\n"), 0o600); err != nil {
+		t.Fatalf("write custom codex statusline: %v", err)
 	}
 
 	// Modify a managed file to differ from template.
@@ -175,7 +210,7 @@ func TestRunWithOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	if string(data) != "# custom config" {
+	if string(data) != customConfig {
 		t.Fatalf("expected config to remain unchanged")
 	}
 
@@ -186,6 +221,8 @@ func TestRunWithOverwrite(t *testing.T) {
 	if string(envData) != "AL_EXAMPLE=custom\n" {
 		t.Fatalf("expected env to remain unchanged")
 	}
+	assertFileContent(t, claudeStatuslinePath, "# custom claude statusline\n")
+	assertFileContent(t, codexStatuslinePath, "# custom codex statusline\n")
 
 	// Verify managed file was overwritten with template content.
 	allowData, err := os.ReadFile(allowPath) // #nosec G304 -- path is constructed from test-controlled inputs.

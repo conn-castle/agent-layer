@@ -214,16 +214,54 @@ func selectOptionalValue(ui UI, title string, options []string, value *string) e
 	return nil
 }
 
-// confirmToggle prompts a yes/no confirm seeded with the current value, stores
-// the answer back into value, and marks touched. Used by the per-feature
-// "disable" toggles whose stored polarity matches the prompt (Yes = disable).
-func confirmToggle(ui UI, prompt string, value *bool, touched *bool) error {
-	current := *value
-	if err := ui.Confirm(prompt, &current); err != nil {
+// featureToggle binds a checkbox label to the Choices bool it controls. The
+// label is the load-bearing identity: MultiSelect returns the chosen labels and
+// the invert logic matches on this exact string (define each label once in
+// messages and reuse it on both sides). field points at the canonical storage:
+// disable-sense by default (true = feature disabled, so "checked" means
+// !*field), or enabled-sense when enabledSense is true (true = feature enabled,
+// so "checked" means *field directly, e.g. CodexApps). touched is set to true
+// after the prompt so patch.go knows the user answered.
+type featureToggle struct {
+	label        string
+	field        *bool
+	touched      *bool
+	enabledSense bool
+}
+
+// promptFeatureToggles renders one MultiSelect for a group of per-feature
+// toggles using positive ("keep enabled") framing, then inverts the returned
+// selection back into each toggle's canonical disable-sense/enabled-sense field
+// and marks it touched. The single source of truth stays the Choices fields;
+// inversion happens only here at the prompt boundary.
+func promptFeatureToggles(ui UI, title string, toggles []featureToggle) error {
+	labels := make([]string, len(toggles))
+	selected := make([]string, 0, len(toggles))
+	for i, t := range toggles {
+		labels[i] = t.label
+		enabled := *t.field
+		if !t.enabledSense {
+			enabled = !enabled
+		}
+		if enabled {
+			selected = append(selected, t.label)
+		}
+	}
+	if err := ui.MultiSelect(title, labels, &selected); err != nil {
 		return err
 	}
-	*value = current
-	*touched = true
+	checkedSet := make(map[string]bool, len(selected))
+	for _, label := range selected {
+		checkedSet[label] = true
+	}
+	for _, t := range toggles {
+		checked := checkedSet[t.label]
+		if !t.enabledSense {
+			checked = !checked
+		}
+		*t.field = checked
+		*t.touched = true
+	}
 	return nil
 }
 
