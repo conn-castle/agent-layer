@@ -302,15 +302,6 @@ func (inst *installer) upgradeMigrationTargetVersion(resolution sourceVersionRes
 	if strings.TrimSpace(inst.pinVersion) != "" {
 		return inst.pinVersion, nil
 	}
-	if resolution.origin == UpgradeMigrationSourceUnknown {
-		triggered, err := inst.hasUnpinnedMigrationTrigger()
-		if err != nil {
-			return "", err
-		}
-		if !triggered {
-			return "", nil
-		}
-	}
 	versions, err := listMigrationManifestVersions()
 	if err != nil {
 		return "", err
@@ -318,10 +309,20 @@ func (inst *installer) upgradeMigrationTargetVersion(resolution sourceVersionRes
 	if len(versions) == 0 {
 		return "", nil
 	}
-	return versions[len(versions)-1], nil
+	targetVersion := versions[len(versions)-1]
+	if resolution.origin == UpgradeMigrationSourceUnknown {
+		triggered, err := inst.hasUnpinnedMigrationTrigger(targetVersion)
+		if err != nil {
+			return "", err
+		}
+		if !triggered {
+			return "", nil
+		}
+	}
+	return targetVersion, nil
 }
 
-func (inst *installer) hasUnpinnedMigrationTrigger() (bool, error) {
+func (inst *installer) hasUnpinnedMigrationTrigger(targetVersion string) (bool, error) {
 	data, err := inst.sys.ReadFile(filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath)))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -329,7 +330,36 @@ func (inst *installer) hasUnpinnedMigrationTrigger() (bool, error) {
 		}
 		return false, fmt.Errorf(messages.InstallFailedReadFmt, upgradeMigrationConfigPath, err)
 	}
-	return config.HasLegacyGeminiConfig(data) || hasLegacyGeminiMCPClient(data), nil
+	if config.HasLegacyGeminiConfig(data) || hasLegacyGeminiMCPClient(data) {
+		return true, nil
+	}
+	return inst.hasMissingUnpinnedSourceAgnosticDefault(data, targetVersion)
+}
+
+func (inst *installer) hasMissingUnpinnedSourceAgnosticDefault(data []byte, targetVersion string) (bool, error) {
+	targetManifest, _, err := loadUpgradeMigrationManifestByVersion(targetVersion)
+	if err != nil {
+		return false, err
+	}
+	var cfg map[string]any
+	if err := tomlv2.Unmarshal(data, &cfg); err != nil {
+		return false, fmt.Errorf("decode config %s for migration: %w", upgradeMigrationConfigPath, err)
+	}
+	for _, op := range targetManifest.Operations {
+		if op.Kind != upgradeMigrationKindConfigSetDefault || !op.SourceAgnostic {
+			continue
+		}
+		parts, splitErr := splitMigrationKeyPath(op.Key)
+		if splitErr != nil {
+			return false, splitErr
+		}
+		if _, exists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
+			return false, getErr
+		} else if !exists {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func hasLegacyGeminiMCPClient(data []byte) bool {
@@ -346,7 +376,10 @@ func hasLegacyGeminiMCPClient(data []byte) bool {
 }
 
 func (inst *installer) shouldSkipConditionalMigration(op upgradeMigrationOperation, resolution sourceVersionResolution) (bool, string, error) {
-	if op.ID != "a-delete-old-agents-antigravity" || resolution.origin != UpgradeMigrationSourceUnknown {
+	if op.ID != "a-delete-old-agents-antigravity" {
+		return false, "", nil
+	}
+	if resolution.origin != UpgradeMigrationSourceUnknown && strings.TrimSpace(inst.pinVersion) != "" {
 		return false, "", nil
 	}
 	data, err := inst.sys.ReadFile(filepath.Join(inst.root, filepath.FromSlash(upgradeMigrationConfigPath)))
@@ -422,7 +455,10 @@ func writeUpgradeMigrationReport(out io.Writer, report UpgradeMigrationReport) e
 		return nil
 	}
 	ew := &errWriter{w: out}
-	ew.println("Migration report:")
+	// Lead with a blank line so the report is separated from any preceding
+	// prompt (e.g., a config_set_default choice), matching how other section
+	// headers in the upgrade output lead with a blank line.
+	ew.println("\nMigration report:")
 	ew.printf("  - target version: %s\n", report.TargetVersion)
 	ew.printf("  - source version: %s (%s)\n", report.SourceVersion, report.SourceVersionOrigin)
 	for _, note := range report.SourceResolutionNotes {

@@ -1,6 +1,7 @@
 package install
 
 import (
+	"bytes"
 	"errors"
 	"io/fs"
 	"os"
@@ -1242,8 +1243,15 @@ func TestUserOwnedInstructionFile_SeededOnInit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected 04_conventions.md to exist after init: %v", err)
 	}
-	if !strings.Contains(string(data), "# Project Conventions") {
-		t.Fatalf("expected conventions file to contain header, got:\n%s", string(data))
+	// The user-owned conventions file is seeded verbatim from the embedded
+	// template. Compare against the live template read at runtime so edits to
+	// the template content never make this assertion fragile.
+	want, tplErr := templates.Read("instructions/04_conventions.md")
+	if tplErr != nil {
+		t.Fatalf("read conventions template: %v", tplErr)
+	}
+	if !bytes.Equal(data, want) {
+		t.Fatalf("expected conventions file to equal the embedded template verbatim, got:\n%s", string(data))
 	}
 }
 

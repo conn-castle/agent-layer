@@ -84,6 +84,10 @@ var fields = []FieldDef{
 		Type:    FieldEnum,
 		Options: dispatchDefaultAgentOptions(),
 	},
+	// statusline is opt-out (defaults on) and not surfaced in the wizard; it is
+	// registered here only so the 0.11.0 config_set_default upgrade migration
+	// renders a clean true/false prompt instead of a required-key decline error.
+	{Key: "agents.claude.statusline", Type: FieldBool},
 	{Key: "agents.claude_vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.codex.enabled", Type: FieldBool, Required: true},
 	{
@@ -115,6 +119,10 @@ var fields = []FieldDef{
 		Type:    FieldEnum,
 		Options: dispatchDefaultAgentOptions(),
 	},
+	// statusline is opt-out (defaults on) and not surfaced in the wizard; it is
+	// registered here so the 0.11.0 config_set_default upgrade migration renders
+	// a clean true/false prompt instead of a required-key decline error.
+	{Key: "agents.codex.statusline", Type: FieldBool},
 	{Key: "agents.vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.copilot_cli.enabled", Type: FieldBool, Required: true},
 	{

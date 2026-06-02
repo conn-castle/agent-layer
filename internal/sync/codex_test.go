@@ -172,7 +172,7 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.HasPrefix(output, codexHeader) {
+	if !strings.HasPrefix(output, codexHeaderWithStatusline) {
 		t.Fatalf("expected codex header at top of file, got:\n%s", output)
 	}
 
@@ -468,6 +468,316 @@ func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(
 	}
 }
 
+func TestWriteCodexConfigStatuslineEnabledSeedsAndPreservesSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	project := &config.ProjectConfig{
+		Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
+		Env:    map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	sourcePath := filepath.Join(root, ".agent-layer", "codex-statusline.toml")
+	seeded, err := os.ReadFile(sourcePath) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("expected codex statusline source seeded: %v", err)
+	}
+	if !strings.Contains(string(seeded), `"weekly-limit"`) {
+		t.Fatalf("expected seeded source to include weekly-limit:\n%s", string(seeded))
+	}
+	if strings.Contains(string(seeded), `"five-hour-limit"`) {
+		t.Fatalf("seeded source must not include five-hour-limit:\n%s", string(seeded))
+	}
+
+	const edited = "[tui]\nstatus_line = [\"raw-output\"]\n"
+	if err := os.WriteFile(sourcePath, []byte(edited), 0o600); err != nil {
+		t.Fatalf("edit codex statusline source: %v", err)
+	}
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig after edit: %v", err)
+	}
+	preserved, err := os.ReadFile(sourcePath) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("read edited codex statusline source: %v", err)
+	}
+	if string(preserved) != edited {
+		t.Fatalf("source was not preserved:\n%s", string(preserved))
+	}
+	generated, err := os.ReadFile(filepath.Join(root, ".codex", "config.toml")) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("read generated codex config: %v", err)
+	}
+	tui := parseCodexTUI(t, string(generated))
+	assertStringList(t, tui["status_line"], []string{"raw-output"})
+}
+
+func TestBuildCodexConfigDefaultStatuslineIncludesWeeklyLimitOnly(t *testing.T) {
+	t.Parallel()
+	output, err := buildCodexConfig(t.TempDir(), &config.ProjectConfig{
+		Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
+		Env:    map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("buildCodexConfig: %v", err)
+	}
+	tui := parseCodexTUI(t, output)
+	items := stringListFromValue(t, tui["status_line"])
+	if !containsString(items, "weekly-limit") {
+		t.Fatalf("expected weekly-limit in status line, got %#v", items)
+	}
+	if containsString(items, "five-hour-limit") {
+		t.Fatalf("did not expect five-hour-limit in status line, got %#v", items)
+	}
+	if !strings.HasPrefix(output, codexHeaderWithStatusline) {
+		t.Fatalf("expected statusline-aware header, got:\n%s", output)
+	}
+}
+
+func TestBuildCodexConfigAgentSpecificStatuslineWinsOverSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeCodexStatuslineSource(t, root, "[tui]\nstatus_line = [\"weekly-limit\"]\n")
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"tui": map[string]any{
+							"status_line": []any{"raw-output"},
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(root, project)
+	if err != nil {
+		t.Fatalf("buildCodexConfig: %v", err)
+	}
+	tui := parseCodexTUI(t, output)
+	assertStringList(t, tui["status_line"], []string{"raw-output"})
+	if strings.HasPrefix(output, codexHeaderWithStatusline) {
+		t.Fatalf("source header should not be used when agent_specific status_line wins:\n%s", output)
+	}
+	source, err := os.ReadFile(filepath.Join(root, ".agent-layer", "codex-statusline.toml")) // #nosec G304 -- test-controlled path.
+	if err != nil {
+		t.Fatalf("read source: %v", err)
+	}
+	if string(source) != "[tui]\nstatus_line = [\"weekly-limit\"]\n" {
+		t.Fatalf("source changed unexpectedly:\n%s", string(source))
+	}
+}
+
+func TestBuildCodexConfigStatuslineMergePreservesUnrelatedTUIKeys(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeCodexStatuslineSource(t, root, "[tui]\nstatus_line = [\"thread-id\"]\n")
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					AgentSpecific: map[string]any{
+						"tui": map[string]any{
+							"notifications": true,
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(root, project)
+	if err != nil {
+		t.Fatalf("buildCodexConfig: %v", err)
+	}
+	if strings.Count(output, "[tui]\n") != 1 {
+		t.Fatalf("expected single [tui] table, got:\n%s", output)
+	}
+	tui := parseCodexTUI(t, output)
+	assertStringList(t, tui["status_line"], []string{"thread-id"})
+	if got := tui["notifications"]; got != true {
+		t.Fatalf("expected unrelated tui.notifications preserved, got %#v", got)
+	}
+}
+
+func TestBuildCodexConfigStatuslineDisabledPreservesUnrelatedTUIKeys(t *testing.T) {
+	t.Parallel()
+	disabled := false
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Statusline: &disabled,
+					AgentSpecific: map[string]any{
+						"tui": map[string]any{
+							"notifications": true,
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(t.TempDir(), project)
+	if err != nil {
+		t.Fatalf("buildCodexConfig: %v", err)
+	}
+	tui := parseCodexTUI(t, output)
+	if _, ok := tui["status_line"]; ok {
+		t.Fatalf("did not expect managed status_line when disabled, got %#v", tui)
+	}
+	if got := tui["notifications"]; got != true {
+		t.Fatalf("expected unrelated tui.notifications preserved, got %#v", got)
+	}
+}
+
+func TestBuildCodexConfigStatuslineDisabledPreservesExplicitAgentSpecificStatusline(t *testing.T) {
+	t.Parallel()
+	disabled := false
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Statusline: &disabled,
+					AgentSpecific: map[string]any{
+						"tui": map[string]any{
+							"status_line": []any{"raw-output"},
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(t.TempDir(), project)
+	if err != nil {
+		t.Fatalf("buildCodexConfig: %v", err)
+	}
+	tui := parseCodexTUI(t, output)
+	assertStringList(t, tui["status_line"], []string{"raw-output"})
+}
+
+func TestBuildCodexConfigStatuslineSourceInvalidOrMissingFails(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "invalid toml", content: "[tui\nstatus_line = [\"thread-id\"]\n"},
+		{name: "missing status line", content: "[tui]\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeCodexStatuslineSource(t, root, tt.content)
+
+			_, err := buildCodexConfig(root, &config.ProjectConfig{
+				Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
+				Env:    map[string]string{},
+			})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestBuildCodexConfigStatuslineSourceUnrelatedKeysFail(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "top-level key", content: "model = \"gpt-5\"\n[tui]\nstatus_line = []\n"},
+		{name: "tui key", content: "[tui]\nstatus_line = []\nnotifications = true\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeCodexStatuslineSource(t, root, tt.content)
+
+			_, err := buildCodexConfig(root, &config.ProjectConfig{
+				Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
+				Env:    map[string]string{},
+			})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "codex statusline fragment may contain only [tui].status_line") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestBuildCodexConfigStatuslineSourceNonStringListFails(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "status_line scalar", content: "[tui]\nstatus_line = \"thread-id\"\n"},
+		{name: "status_line non-string item", content: "[tui]\nstatus_line = [1]\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeCodexStatuslineSource(t, root, tt.content)
+
+			_, err := buildCodexConfig(root, &config.ProjectConfig{
+				Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
+				Env:    map[string]string{},
+			})
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "[tui].status_line must be an array of strings") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestBuildCodexConfigStatuslineNonTableAgentSpecificTUIFails(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeCodexStatuslineSource(t, root, "[tui]\nstatus_line = [\"weekly-limit\"]\n")
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					// A scalar tui blocks merging the managed status_line.
+					AgentSpecific: map[string]any{"tui": "not-a-table"},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	_, err := buildCodexConfig(root, project)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "agents.codex.agent_specific.tui must be a table") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 	enabled := true
 	project := &config.ProjectConfig{
@@ -494,6 +804,73 @@ func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error")
 	}
+}
+
+func writeCodexStatuslineSource(t *testing.T, root, content string) {
+	t.Helper()
+	dir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "codex-statusline.toml"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write codex statusline source: %v", err)
+	}
+}
+
+func parseCodexTUI(t *testing.T, output string) map[string]any {
+	t.Helper()
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(output), &parsed); err != nil {
+		t.Fatalf("parse generated toml: %v\n%s", err, output)
+	}
+	tui, ok := parsed["tui"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected tui map, got %#v in:\n%s", parsed["tui"], output)
+	}
+	return tui
+}
+
+func assertStringList(t *testing.T, value any, want []string) {
+	t.Helper()
+	got := stringListFromValue(t, value)
+	if len(got) != len(want) {
+		t.Fatalf("status_line length = %d (%#v), want %d (%#v)", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("status_line[%d] = %q, want %q; full=%#v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func stringListFromValue(t *testing.T, value any) []string {
+	t.Helper()
+	switch items := value.(type) {
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			itemString, ok := item.(string)
+			if !ok {
+				t.Fatalf("expected string status_line item, got %#v", item)
+			}
+			out = append(out, itemString)
+		}
+		return out
+	case []string:
+		return append([]string(nil), items...)
+	default:
+		t.Fatalf("expected status_line array, got %#v", value)
+		return nil
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBuildCodexConfigMissingEnv(t *testing.T) {

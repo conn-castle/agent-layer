@@ -52,6 +52,11 @@ func (inst templateManager) userOwnedSeedFiles() []templateFile {
 	return []templateFile{
 		{filepath.Join(root, ".agent-layer", "config.toml"), "config.toml", 0o644},
 		{filepath.Join(root, ".agent-layer", ".env"), "env", 0o600},
+		// Editable status line sources. Seeded once and never overwritten; sync
+		// projects or merges them only when the matching agent statusline toggle
+		// is enabled (the default).
+		{filepath.Join(root, ".agent-layer", "claude-statusline.sh"), "claude-statusline.sh", 0o755},
+		{filepath.Join(root, ".agent-layer", "codex-statusline.toml"), "codex-statusline.toml", 0o644},
 	}
 }
 
