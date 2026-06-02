@@ -225,6 +225,13 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.ClaudeDisableMemory = readClaudeAutoMemoryDisabled(claudeAgentSpecific)
 	if cfg.Config.Agents.Claude.DisableQuestionTool != nil {
 		choices.ClaudeDisableQuestionTool = *cfg.Config.Agents.Claude.DisableQuestionTool
+	} else {
+		// Repos predating the typed flag may block the tool via a legacy/manual
+		// agent_specific deny or PreToolUse hook (e.g. the pre-0.11 install seed).
+		// Detect that so the prompt and summary reflect the effective state; if the
+		// user keeps it, the typed flag is written and sync dedups against the
+		// lingering legacy entry.
+		choices.ClaudeDisableQuestionTool = readClaudeQuestionToolDisabledLegacy(claudeAgentSpecific)
 	}
 	choices.CodexModel = cfg.Config.Agents.Codex.Model
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
@@ -331,6 +338,36 @@ func readClaudeEnvFalse(agentSpecific map[string]any, key string) bool {
 func readClaudeAutoMemoryDisabled(agentSpecific map[string]any) bool {
 	enabled, ok := agentSpecific["autoMemoryEnabled"].(bool)
 	return ok && !enabled
+}
+
+// readClaudeQuestionToolDisabledLegacy detects the pre-typed-flag form of the
+// AskUserQuestion block — a permissions.deny entry or a PreToolUse matcher in
+// agent_specific — so the wizard prompt defaults to Yes for repos that blocked
+// the tool before disable_question_tool existed. Only consulted when the typed
+// flag is unset. agent_specific arrays decode as []any (go-toml/v2).
+func readClaudeQuestionToolDisabledLegacy(agentSpecific map[string]any) bool {
+	const askUserQuestionTool = "AskUserQuestion"
+	if permissions, ok := agentSpecific["permissions"].(map[string]any); ok {
+		if deny, ok := permissions["deny"].([]any); ok {
+			for _, v := range deny {
+				if s, ok := v.(string); ok && s == askUserQuestionTool {
+					return true
+				}
+			}
+		}
+	}
+	if hooks, ok := agentSpecific["hooks"].(map[string]any); ok {
+		if entries, ok := hooks["PreToolUse"].([]any); ok {
+			for _, entry := range entries {
+				if m, ok := entry.(map[string]any); ok {
+					if matcher, ok := m["matcher"].(string); ok && matcher == askUserQuestionTool {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 type wizardFlowStep int

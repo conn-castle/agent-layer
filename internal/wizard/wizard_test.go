@@ -449,6 +449,62 @@ func TestReadClaudeDisableToggles(t *testing.T) {
 		assert.False(t, readClaudeAutoMemoryDisabled(map[string]any{"autoMemoryEnabled": true}))
 		assert.False(t, readClaudeAutoMemoryDisabled(map[string]any{}))
 	})
+	t.Run("legacy question-tool block detected via deny", func(t *testing.T) {
+		as := map[string]any{"permissions": map[string]any{"deny": []any{"Bash", "AskUserQuestion"}}}
+		assert.True(t, readClaudeQuestionToolDisabledLegacy(as))
+	})
+	t.Run("legacy question-tool block detected via PreToolUse hook", func(t *testing.T) {
+		as := map[string]any{"hooks": map[string]any{"PreToolUse": []any{"skip", map[string]any{"matcher": "AskUserQuestion"}}}}
+		assert.True(t, readClaudeQuestionToolDisabledLegacy(as))
+	})
+	t.Run("legacy question-tool block absent", func(t *testing.T) {
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{"permissions": map[string]any{"deny": []any{"Bash"}}}))
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"matcher": "Other"}}}}))
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{}))
+	})
+}
+
+// TestInitializeChoices_QuestionToolReadBackPrecedence verifies the typed
+// disable_question_tool flag wins over a legacy agent_specific block, and that
+// the legacy block is the fallback when the flag is unset.
+func TestInitializeChoices_QuestionToolReadBackPrecedence(t *testing.T) {
+	legacyDeny := map[string]any{"permissions": map[string]any{"deny": []any{"AskUserQuestion"}}}
+	disabledFalse := false
+
+	t.Run("legacy block, flag unset -> reads back disabled", func(t *testing.T) {
+		cfg := &config.ProjectConfig{
+			Config: config.Config{
+				Agents: config.AgentsConfig{Claude: config.ClaudeConfig{AgentSpecific: legacyDeny}},
+			},
+			Root: t.TempDir(),
+		}
+		choices, err := initializeChoices(cfg)
+		if err != nil {
+			t.Fatalf("initializeChoices: %v", err)
+		}
+		if !choices.ClaudeDisableQuestionTool {
+			t.Fatal("expected legacy agent_specific deny to read back as disabled")
+		}
+	})
+
+	t.Run("typed flag false overrides legacy block", func(t *testing.T) {
+		cfg := &config.ProjectConfig{
+			Config: config.Config{
+				Agents: config.AgentsConfig{Claude: config.ClaudeConfig{
+					AgentSpecific:       legacyDeny,
+					DisableQuestionTool: &disabledFalse,
+				}},
+			},
+			Root: t.TempDir(),
+		}
+		choices, err := initializeChoices(cfg)
+		if err != nil {
+			t.Fatalf("initializeChoices: %v", err)
+		}
+		if choices.ClaudeDisableQuestionTool {
+			t.Fatal("expected typed flag=false to take precedence over legacy block")
+		}
+	})
 }
 
 // TestReadCodexBrowserDisabled covers detecting the Codex browser-disable state.
