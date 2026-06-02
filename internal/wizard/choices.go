@@ -20,6 +20,22 @@ type Choices struct {
 	ClaudeLocalConfigDir        bool
 	ClaudeLocalConfigDirTouched bool
 
+	// Claude "disable" toggles (disable-intent: true = disable the feature).
+	// Each lands in .claude/settings.json via agent_specific passthrough. A key
+	// is written only when the toggle is on; leaving it off keeps the client's
+	// native default. Gated on Claude || ClaudeVSCode (both write settings.json).
+	ClaudeDisableIDEReading        bool // CLAUDE_CODE_AUTO_CONNECT_IDE = "false"
+	ClaudeDisableIDEReadingTouched bool
+
+	ClaudeDisableMemory        bool // autoMemoryEnabled = false
+	ClaudeDisableMemoryTouched bool
+
+	ClaudeDisableConnectors        bool // ENABLE_CLAUDEAI_MCP_SERVERS = "false"
+	ClaudeDisableConnectorsTouched bool
+
+	ClaudeDisableQuestionTool        bool // disable_question_tool flag; sync injects deny + PreToolUse hook
+	ClaudeDisableQuestionToolTouched bool
+
 	CodexModel        string
 	CodexModelTouched bool
 
@@ -28,6 +44,12 @@ type Choices struct {
 
 	CodexApps        bool
 	CodexAppsTouched bool
+
+	// CodexDisableBrowser disables Codex browser/computer-use features
+	// (browser_use/in_app_browser/computer_use = false). Disable-intent like the
+	// Claude toggles above; gated on Codex enabled.
+	CodexDisableBrowser        bool
+	CodexDisableBrowserTouched bool
 
 	CopilotCLIModel        string
 	CopilotCLIModelTouched bool

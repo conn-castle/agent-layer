@@ -71,12 +71,14 @@ func TestEnsureWizardConfig_StatErrorBranch(t *testing.T) {
 
 func TestInitializeChoices_AdditionalBranches(t *testing.T) {
 	claudeLocal := true
+	disableQuestion := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{},
 			Agents: config.AgentsConfig{
 				Claude: config.ClaudeConfig{
-					LocalConfigDir: &claudeLocal,
+					LocalConfigDir:      &claudeLocal,
+					DisableQuestionTool: &disableQuestion,
 				},
 			},
 		},
@@ -91,6 +93,11 @@ func TestInitializeChoices_AdditionalBranches(t *testing.T) {
 	}
 	if !choices.ClaudeLocalConfigDir {
 		t.Fatal("expected claude local config dir to be loaded from config")
+	}
+	// The typed disable_question_tool flag must read back so re-running the
+	// wizard defaults the prompt to Yes.
+	if !choices.ClaudeDisableQuestionTool {
+		t.Fatal("expected disable_question_tool to be loaded from config")
 	}
 }
 
@@ -157,9 +164,10 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("promptModels codex apps confirm propagates default false", func(t *testing.T) {
+	t.Run("promptModels codex apps confirm inverts disable default", func(t *testing.T) {
 		choices := NewChoices()
 		choices.EnabledAgents[AgentCodex] = true
+		choices.CodexApps = true // apps currently enabled
 		var sawAppsPrompt bool
 		var sawValue bool
 		err := promptModels(&MockUI{
@@ -168,6 +176,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 				if title == messages.WizardCodexAppsPrompt {
 					sawAppsPrompt = true
 					sawValue = *value
+					*value = true // user chooses to disable apps
 				}
 				return nil
 			},
@@ -178,8 +187,14 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		if !sawAppsPrompt {
 			t.Fatal("expected codex apps prompt to be invoked")
 		}
+		// The reworded "Disable apps?" prompt offers the inverse of the stored
+		// enabled-state: apps enabled => disable default is false.
 		if sawValue {
-			t.Fatal("expected codex apps prompt default to be false")
+			t.Fatal("expected disable default to be false when apps are enabled")
+		}
+		// Confirming the disable prompt flips CodexApps back to enabled-state false.
+		if choices.CodexApps {
+			t.Fatal("expected CodexApps to be disabled after confirming the disable prompt")
 		}
 		if !choices.CodexAppsTouched {
 			t.Fatal("expected CodexAppsTouched to be set")

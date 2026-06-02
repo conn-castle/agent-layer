@@ -795,3 +795,43 @@ func TestBuildCodexConfigStdioMissingEnvVarEnv(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestBuildCodexConfigDisableBrowserFeatures(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{
+					Enabled: &enabled,
+					AgentSpecific: map[string]any{
+						"features": map[string]any{
+							"browser_use":    false,
+							"in_app_browser": false,
+							"computer_use":   false,
+						},
+					},
+				},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	output, err := buildCodexConfig(t.TempDir(), project)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(output, "[features]\n") {
+		t.Fatalf("expected features table in output:\n%s", output)
+	}
+	if !strings.Contains(output, "browser_use = false") {
+		t.Fatalf("expected browser_use=false in output:\n%s", output)
+	}
+	if !strings.Contains(output, "in_app_browser = false") {
+		t.Fatalf("expected in_app_browser=false in output:\n%s", output)
+	}
+	if !strings.Contains(output, "computer_use = false") {
+		t.Fatalf("expected computer_use=false in output:\n%s", output)
+	}
+}

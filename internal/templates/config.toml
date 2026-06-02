@@ -35,12 +35,20 @@ enabled = true
 # (macOS Keychain service "Claude Code-credentials"; Linux libsecret/gnome-keyring)
 # regardless of this setting (upstream limitation).
 # local_config_dir = false
+# disable_question_tool blocks Claude Code's structured clarification-question (AskUserQuestion) tool.
+# When true, al sync injects permissions.deny + a PreToolUse hook into .claude/settings.json (merged
+# with any agent_specific entries). The hook also enforces the block under YOLO/bypassPermissions,
+# where permissions.deny is skipped. Run `al wizard` to set it.
+# disable_question_tool = true
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
-# Disable Claude Code's structured clarification-question tool for this project.
-agent_specific.permissions.deny = ["AskUserQuestion"]
+# Optional "disable" toggles (run `al wizard` to set these). Each keeps Claude
+# Code's native default until enabled; uncomment to opt in.
+# agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false" # stop reading files open in the IDE
+# agent_specific.env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"  # disable claude.ai app connectors
+# agent_specific.autoMemoryEnabled = false                  # disable auto-memory (does not affect CLAUDE.md)
 # Optional default target when `al dispatch` is invoked from Claude without --agent.
 # [agents.claude.dispatch]
 # default_agent = "random" # random | codex | claude | antigravity
@@ -65,6 +73,9 @@ enabled = true
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (Github, Gmail, etc.) to reduce tool surface
+# browser_use = false       # disable Codex browser/computer-use tools
+# in_app_browser = false    # disable the in-app browser
+# computer_use = false      # disable screen/computer control
 # multi_agent = true
 # prevent_idle_sleep = true
 

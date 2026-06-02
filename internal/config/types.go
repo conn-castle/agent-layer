@@ -54,7 +54,11 @@ type ClaudeConfig struct {
 	ReasoningEffort string         `toml:"reasoning_effort"`
 	Dispatch        DispatchConfig `toml:"dispatch"`
 	LocalConfigDir  *bool          `toml:"local_config_dir"`
-	AgentSpecific   map[string]any `toml:"agent_specific"`
+	// DisableQuestionTool, when true, blocks Claude Code's AskUserQuestion tool.
+	// Sync injects permissions.deny + a PreToolUse hook into .claude/settings.json
+	// (merged with any user agent_specific entries). nil/false leave it allowed.
+	DisableQuestionTool *bool          `toml:"disable_question_tool"`
+	AgentSpecific       map[string]any `toml:"agent_specific"`
 }
 
 // EnableOnlyConfig is for agents that support enablement but not model selection.

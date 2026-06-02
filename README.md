@@ -240,6 +240,7 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **Approvals Mode** (all, mcp, commands, none, yolo)
 - **Agent Enablement** (Antigravity, Claude, Codex, VS Code, Copilot CLI)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
+- **Feature disable toggles** (folded into the model step): disable Codex browser/computer-use and built-in apps; disable Claude's IDE open-file reading, auto-memory, claude.ai connectors, and the AskUserQuestion tool. These default to **No** (keeping the client's native default, writing nothing unless you opt in) — except the Codex **apps** toggle, which defaults to **Yes** (it disables Codex's built-in apps by default and always writes an explicit `features.apps`). Most toggles write the matching `agent_specific` key only when enabled; the AskUserQuestion toggle writes a typed `agents.claude.disable_question_tool` flag and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
 - **Workflow bundle** (yes/no — bundles ~24 workflow skills, instruction files, and memory templates; answering "no" on a fresh install or `al init --minimal-layout` seeds only a placeholder instruction file)
 - **CLI skills** (opt-in catalog: `tavily-web`, `playwright-cli`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
@@ -339,12 +340,19 @@ enabled = true
 # reasoning_effort is optional; Claude Code applies it where the active model supports it.
 # reasoning_effort = "medium" # low | medium | high | xhigh | max (custom values pass through with a warning)
 # Note: "max" is session-only (passed via --effort CLI flag) and is not written to .claude/settings.json.
+# disable_question_tool blocks Claude Code's AskUserQuestion tool. When true, al sync injects
+# permissions.deny + a PreToolUse hook into .claude/settings.json (merged with any agent_specific
+# entries; the hook also enforces the block under YOLO). Run `al wizard` to set it.
+# disable_question_tool = true
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
-# Disable Claude Code's structured clarification-question tool for this project.
-agent_specific.permissions.deny = ["AskUserQuestion"]
+# Optional "disable" toggles (run `al wizard` to set these). Each keeps Claude
+# Code's native default until enabled; uncomment to opt in.
+# agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false" # stop reading files open in the IDE
+# agent_specific.env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"  # disable claude.ai app connectors
+# agent_specific.autoMemoryEnabled = false                  # disable auto-memory (does not affect CLAUDE.md)
 # [agents.claude.agent_specific]
 
 [agents.claude_vscode]
@@ -362,6 +370,9 @@ enabled = true
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (Github, Gmail, etc.) to reduce tool surface
+# browser_use = false       # disable Codex browser/computer-use tools
+# in_app_browser = false    # disable the in-app browser
+# computer_use = false      # disable screen/computer control
 # multi_agent = true
 # prevent_idle_sleep = true
 

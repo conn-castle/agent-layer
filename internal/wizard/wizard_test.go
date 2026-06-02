@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 )
 
@@ -306,4 +307,209 @@ func TestRunWithWriter_ValidationErrorLenientAlsoFails(t *testing.T) {
 		t.Fatal("expected error")
 	}
 	assert.Contains(t, err.Error(), "failed to load config")
+}
+
+// TestPromptModels_SetsDisableToggles drives every new per-feature disable
+// confirm through promptModels and asserts the choice plus touched flag is set.
+func TestPromptModels_SetsDisableToggles(t *testing.T) {
+	choices := NewChoices()
+	choices.EnabledAgents[AgentClaude] = true
+	choices.EnabledAgents[AgentCodex] = true
+
+	disablePrompts := map[string]bool{
+		messages.WizardClaudeDisableIDEReadingPrompt:   true,
+		messages.WizardClaudeDisableMemoryPrompt:       true,
+		messages.WizardClaudeDisableConnectorsPrompt:   true,
+		messages.WizardClaudeDisableQuestionToolPrompt: true,
+		messages.WizardCodexBrowserPrompt:              true,
+	}
+
+	ui := &MockUI{
+		SelectFunc: func(string, []string, *string) error { return nil },
+		ConfirmFunc: func(title string, value *bool) error {
+			if disablePrompts[title] {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	if err := promptModels(ui, choices); err != nil {
+		t.Fatalf("promptModels error: %v", err)
+	}
+
+	assert.True(t, choices.ClaudeDisableIDEReading)
+	assert.True(t, choices.ClaudeDisableIDEReadingTouched)
+	assert.True(t, choices.ClaudeDisableMemory)
+	assert.True(t, choices.ClaudeDisableMemoryTouched)
+	assert.True(t, choices.ClaudeDisableConnectors)
+	assert.True(t, choices.ClaudeDisableConnectorsTouched)
+	assert.True(t, choices.ClaudeDisableQuestionTool)
+	assert.True(t, choices.ClaudeDisableQuestionToolTouched)
+	assert.True(t, choices.CodexDisableBrowser)
+	assert.True(t, choices.CodexDisableBrowserTouched)
+}
+
+// TestPromptEnabledAgents_ResetsDisableToggles asserts that deselecting the
+// Claude agents and Codex clears their per-feature disable toggles so a stale
+// "disable" choice cannot survive into an unrelated config.
+func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
+	choices := NewChoices()
+	choices.ClaudeDisableIDEReading = true
+	choices.ClaudeDisableIDEReadingTouched = true
+	choices.ClaudeDisableMemory = true
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableConnectors = true
+	choices.ClaudeDisableConnectorsTouched = true
+	choices.ClaudeDisableQuestionTool = true
+	choices.ClaudeDisableQuestionToolTouched = true
+	choices.CodexDisableBrowser = true
+	choices.CodexDisableBrowserTouched = true
+
+	ui := &MockUI{
+		MultiSelectFunc: func(_ string, _ []string, selected *[]string) error {
+			*selected = []string{AgentVSCode} // none of Claude/ClaudeVSCode/Codex
+			return nil
+		},
+	}
+
+	if err := promptEnabledAgents(ui, choices); err != nil {
+		t.Fatalf("promptEnabledAgents error: %v", err)
+	}
+
+	assert.False(t, choices.ClaudeDisableIDEReading)
+	assert.False(t, choices.ClaudeDisableIDEReadingTouched)
+	assert.False(t, choices.ClaudeDisableMemory)
+	assert.False(t, choices.ClaudeDisableMemoryTouched)
+	assert.False(t, choices.ClaudeDisableConnectors)
+	assert.False(t, choices.ClaudeDisableConnectorsTouched)
+	assert.False(t, choices.ClaudeDisableQuestionTool)
+	assert.False(t, choices.ClaudeDisableQuestionToolTouched)
+	assert.False(t, choices.CodexDisableBrowser)
+	assert.False(t, choices.CodexDisableBrowserTouched)
+}
+
+// TestPatchConfig_EndToEndDisableToggles confirms the prompt choices flow
+// through to concrete config keys for every toggle at once.
+func TestPatchConfig_EndToEndDisableToggles(t *testing.T) {
+	content := `
+[agents.claude]
+enabled = true
+
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.ClaudeDisableIDEReadingTouched = true
+	choices.ClaudeDisableIDEReading = true
+	choices.ClaudeDisableMemoryTouched = true
+	choices.ClaudeDisableMemory = true
+	choices.ClaudeDisableConnectorsTouched = true
+	choices.ClaudeDisableConnectors = true
+	choices.ClaudeDisableQuestionToolTouched = true
+	choices.ClaudeDisableQuestionTool = true
+	choices.CodexDisableBrowserTouched = true
+	choices.CodexDisableBrowser = true
+
+	out, err := PatchConfig(content, choices)
+	if err != nil {
+		t.Fatalf("PatchConfig error: %v", err)
+	}
+
+	for _, want := range []string{
+		`agent_specific.env.CLAUDE_CODE_AUTO_CONNECT_IDE = "false"`,
+		`agent_specific.env.ENABLE_CLAUDEAI_MCP_SERVERS = "false"`,
+		"agent_specific.autoMemoryEnabled = false",
+		"disable_question_tool = true",
+		"browser_use = false",
+	} {
+		assert.Contains(t, out, want)
+	}
+	// The AskUserQuestion toggle is a typed scalar now; it must not touch the
+	// user's agent_specific permissions/hooks arrays.
+	assert.NotContains(t, out, "agent_specific.permissions.deny")
+	assert.NotContains(t, out, "agent_specific.hooks.PreToolUse")
+}
+
+// TestReadClaudeDisableToggles covers the read-back helpers' detected-disabled
+// paths so re-running the wizard against a disabled config defaults the
+// matching prompt to Yes.
+func TestReadClaudeDisableToggles(t *testing.T) {
+	t.Run("env false detected", func(t *testing.T) {
+		as := map[string]any{"env": map[string]any{"CLAUDE_CODE_AUTO_CONNECT_IDE": "false"}}
+		assert.True(t, readClaudeEnvFalse(as, "CLAUDE_CODE_AUTO_CONNECT_IDE"))
+		assert.False(t, readClaudeEnvFalse(as, "ENABLE_CLAUDEAI_MCP_SERVERS"))
+	})
+	t.Run("env true or absent not detected", func(t *testing.T) {
+		assert.False(t, readClaudeEnvFalse(map[string]any{"env": map[string]any{"CLAUDE_CODE_AUTO_CONNECT_IDE": "true"}}, "CLAUDE_CODE_AUTO_CONNECT_IDE"))
+		assert.False(t, readClaudeEnvFalse(map[string]any{}, "CLAUDE_CODE_AUTO_CONNECT_IDE"))
+	})
+	t.Run("auto memory disabled detected", func(t *testing.T) {
+		assert.True(t, readClaudeAutoMemoryDisabled(map[string]any{"autoMemoryEnabled": false}))
+		assert.False(t, readClaudeAutoMemoryDisabled(map[string]any{"autoMemoryEnabled": true}))
+		assert.False(t, readClaudeAutoMemoryDisabled(map[string]any{}))
+	})
+	t.Run("legacy question-tool block detected via deny", func(t *testing.T) {
+		as := map[string]any{"permissions": map[string]any{"deny": []any{"Bash", "AskUserQuestion"}}}
+		assert.True(t, readClaudeQuestionToolDisabledLegacy(as))
+	})
+	t.Run("legacy question-tool block detected via PreToolUse hook", func(t *testing.T) {
+		as := map[string]any{"hooks": map[string]any{"PreToolUse": []any{"skip", map[string]any{"matcher": "AskUserQuestion"}}}}
+		assert.True(t, readClaudeQuestionToolDisabledLegacy(as))
+	})
+	t.Run("legacy question-tool block absent", func(t *testing.T) {
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{"permissions": map[string]any{"deny": []any{"Bash"}}}))
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"matcher": "Other"}}}}))
+		assert.False(t, readClaudeQuestionToolDisabledLegacy(map[string]any{}))
+	})
+}
+
+// TestInitializeChoices_QuestionToolReadBackPrecedence verifies the typed
+// disable_question_tool flag wins over a legacy agent_specific block, and that
+// the legacy block is the fallback when the flag is unset.
+func TestInitializeChoices_QuestionToolReadBackPrecedence(t *testing.T) {
+	legacyDeny := map[string]any{"permissions": map[string]any{"deny": []any{"AskUserQuestion"}}}
+	disabledFalse := false
+
+	t.Run("legacy block, flag unset -> reads back disabled", func(t *testing.T) {
+		cfg := &config.ProjectConfig{
+			Config: config.Config{
+				Agents: config.AgentsConfig{Claude: config.ClaudeConfig{AgentSpecific: legacyDeny}},
+			},
+			Root: t.TempDir(),
+		}
+		choices, err := initializeChoices(cfg)
+		if err != nil {
+			t.Fatalf("initializeChoices: %v", err)
+		}
+		if !choices.ClaudeDisableQuestionTool {
+			t.Fatal("expected legacy agent_specific deny to read back as disabled")
+		}
+	})
+
+	t.Run("typed flag false overrides legacy block", func(t *testing.T) {
+		cfg := &config.ProjectConfig{
+			Config: config.Config{
+				Agents: config.AgentsConfig{Claude: config.ClaudeConfig{
+					AgentSpecific:       legacyDeny,
+					DisableQuestionTool: &disabledFalse,
+				}},
+			},
+			Root: t.TempDir(),
+		}
+		choices, err := initializeChoices(cfg)
+		if err != nil {
+			t.Fatalf("initializeChoices: %v", err)
+		}
+		if choices.ClaudeDisableQuestionTool {
+			t.Fatal("expected typed flag=false to take precedence over legacy block")
+		}
+	})
+}
+
+// TestReadCodexBrowserDisabled covers detecting the Codex browser-disable state.
+func TestReadCodexBrowserDisabled(t *testing.T) {
+	assert.True(t, readCodexBrowserDisabled(map[string]any{"features": map[string]any{"browser_use": false}}))
+	assert.False(t, readCodexBrowserDisabled(map[string]any{"features": map[string]any{"browser_use": true}}))
+	assert.False(t, readCodexBrowserDisabled(map[string]any{}))
 }

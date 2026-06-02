@@ -494,3 +494,283 @@ func stringSliceContains(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestBuildClaudeSettingsDisableTogglesAgentSpecific(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					AgentSpecific: map[string]any{
+						"env": map[string]any{
+							"CLAUDE_CODE_AUTO_CONNECT_IDE": "false",
+							"ENABLE_CLAUDEAI_MCP_SERVERS":  "false",
+						},
+						"autoMemoryEnabled": false,
+						"permissions":       map[string]any{"deny": []any{"AskUserQuestion"}},
+						"hooks": map[string]any{
+							"PreToolUse": []any{
+								map[string]any{"matcher": "AskUserQuestion"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+
+	env, ok := settings["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected env map, got %#v", settings["env"])
+	}
+	if env["CLAUDE_CODE_AUTO_CONNECT_IDE"] != "false" {
+		t.Fatalf("expected CLAUDE_CODE_AUTO_CONNECT_IDE=\"false\", got %#v", env["CLAUDE_CODE_AUTO_CONNECT_IDE"])
+	}
+	if env["ENABLE_CLAUDEAI_MCP_SERVERS"] != "false" {
+		t.Fatalf("expected ENABLE_CLAUDEAI_MCP_SERVERS=\"false\", got %#v", env["ENABLE_CLAUDEAI_MCP_SERVERS"])
+	}
+
+	if memory, ok := settings["autoMemoryEnabled"].(bool); !ok || memory {
+		t.Fatalf("expected autoMemoryEnabled=false, got %#v", settings["autoMemoryEnabled"])
+	}
+
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected hooks map, got %#v", settings["hooks"])
+	}
+	if _, ok := hooks["PreToolUse"].([]any); !ok {
+		t.Fatalf("expected hooks.PreToolUse slice, got %#v", hooks["PreToolUse"])
+	}
+
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map, got %#v", settings["permissions"])
+	}
+	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
+		t.Fatalf("expected permissions.deny to contain AskUserQuestion, got %#v", permissions["deny"])
+	}
+}
+
+func claudeWithQuestionToolFlag(disable *bool, agentSpecific map[string]any) *config.ProjectConfig {
+	return &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{
+					DisableQuestionTool: disable,
+					AgentSpecific:       agentSpecific,
+				},
+			},
+		},
+	}
+}
+
+func denyOccurrences(value any, want string) int {
+	count := 0
+	switch values := value.(type) {
+	case []any:
+		for _, v := range values {
+			if s, ok := v.(string); ok && s == want {
+				count++
+			}
+		}
+	case []string:
+		for _, s := range values {
+			if s == want {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func preToolUseMatcherCount(settings map[string]any, matcher string) int {
+	hooks, ok := settings["hooks"].(map[string]any)
+	if !ok {
+		return 0
+	}
+	entries, ok := hooks["PreToolUse"].([]any)
+	if !ok {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if m, ok := entry.(map[string]any); ok && m["matcher"] == matcher {
+			count++
+		}
+	}
+	return count
+}
+
+func TestBuildClaudeSettings_InjectsDenyAndHookWhenFlagTrue(t *testing.T) {
+	t.Parallel()
+	disable := true
+	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, nil))
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	permissions, ok := settings["permissions"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected permissions map to be created for the injected deny, got %#v", settings["permissions"])
+	}
+	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
+		t.Fatalf("expected injected deny to contain AskUserQuestion, got %#v", permissions["deny"])
+	}
+	if got := preToolUseMatcherCount(settings, "AskUserQuestion"); got != 1 {
+		t.Fatalf("expected exactly one AskUserQuestion PreToolUse hook, got %d (%#v)", got, settings["hooks"])
+	}
+}
+
+func TestBuildClaudeSettings_NoInjectionWhenFlagNilOrFalse(t *testing.T) {
+	t.Parallel()
+	disable := false
+	for name, project := range map[string]*config.ProjectConfig{
+		"nil":   claudeWithQuestionToolFlag(nil, nil),
+		"false": claudeWithQuestionToolFlag(&disable, nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			settings, err := buildClaudeSettings(project)
+			if err != nil {
+				t.Fatalf("buildClaudeSettings error: %v", err)
+			}
+			if permissions, ok := settings["permissions"].(map[string]any); ok {
+				if anyDenyContains(permissions["deny"], "AskUserQuestion") {
+					t.Fatalf("expected no injected deny when flag %s, got %#v", name, permissions["deny"])
+				}
+			}
+			if got := preToolUseMatcherCount(settings, "AskUserQuestion"); got != 0 {
+				t.Fatalf("expected no injected hook when flag %s, got %d", name, got)
+			}
+		})
+	}
+}
+
+func TestBuildClaudeSettings_InjectionUnionsWithUserDenyAndHooks(t *testing.T) {
+	t.Parallel()
+	disable := true
+	agentSpecific := map[string]any{
+		"permissions": map[string]any{"deny": []any{"Bash(rm:*)"}},
+		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": "Write"}}},
+	}
+	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, agentSpecific))
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	permissions := settings["permissions"].(map[string]any)
+	if !anyDenyContains(permissions["deny"], "Bash(rm:*)") {
+		t.Fatalf("expected user deny entry preserved, got %#v", permissions["deny"])
+	}
+	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
+		t.Fatalf("expected injected deny entry, got %#v", permissions["deny"])
+	}
+	if got := preToolUseMatcherCount(settings, "Write"); got != 1 {
+		t.Fatalf("expected user PreToolUse hook preserved, got %d", got)
+	}
+	if got := preToolUseMatcherCount(settings, "AskUserQuestion"); got != 1 {
+		t.Fatalf("expected injected PreToolUse hook, got %d", got)
+	}
+}
+
+func TestBuildClaudeSettings_InjectionUnionsStringSliceDeny(t *testing.T) {
+	t.Parallel()
+	disable := true
+	// A []string deny (cloneAgentSpecificValue preserves this type) must be unioned,
+	// not dropped, when the injected entry is added.
+	agentSpecific := map[string]any{
+		"permissions": map[string]any{"deny": []string{"Bash(rm:*)"}},
+	}
+	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, agentSpecific))
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	permissions := settings["permissions"].(map[string]any)
+	if !anyDenyContains(permissions["deny"], "Bash(rm:*)") {
+		t.Fatalf("expected user []string deny entry preserved, got %#v", permissions["deny"])
+	}
+	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
+		t.Fatalf("expected injected deny entry, got %#v", permissions["deny"])
+	}
+}
+
+func TestBuildClaudeSettings_InjectionIsIdempotentAgainstUserEntries(t *testing.T) {
+	t.Parallel()
+	disable := true
+	// User already blocks AskUserQuestion by hand; injection must not duplicate.
+	agentSpecific := map[string]any{
+		"permissions": map[string]any{"deny": []any{"AskUserQuestion"}},
+		"hooks":       map[string]any{"PreToolUse": []any{map[string]any{"matcher": "AskUserQuestion"}}},
+	}
+	settings, err := buildClaudeSettings(claudeWithQuestionToolFlag(&disable, agentSpecific))
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	permissions := settings["permissions"].(map[string]any)
+	if got := denyOccurrences(permissions["deny"], "AskUserQuestion"); got != 1 {
+		t.Fatalf("expected AskUserQuestion deny deduped to 1, got %d (%#v)", got, permissions["deny"])
+	}
+	if got := preToolUseMatcherCount(settings, "AskUserQuestion"); got != 1 {
+		t.Fatalf("expected AskUserQuestion hook deduped to 1, got %d", got)
+	}
+}
+
+func TestBuildClaudeSettings_InjectionUnderYOLOStillEmitsHook(t *testing.T) {
+	t.Parallel()
+	disable := true
+	project := claudeWithQuestionToolFlag(&disable, nil)
+	project.Config.Approvals.Mode = config.ApprovalModeYOLO
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	// permissions.deny is ignored under YOLO/bypassPermissions, so the hook is the
+	// real enforcement and must always be present.
+	if got := preToolUseMatcherCount(settings, "AskUserQuestion"); got != 1 {
+		t.Fatalf("expected AskUserQuestion hook under YOLO, got %d", got)
+	}
+}
+
+func TestBuildClaudeSettings_InjectionPreservesManagedAllow(t *testing.T) {
+	t.Parallel()
+	disable := true
+	enabled := true
+	project := claudeWithQuestionToolFlag(&disable, nil)
+	project.Config.Approvals.Mode = config.ApprovalModeAll
+	project.Config.MCP.Servers = []config.MCPServer{
+		{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
+	}
+	project.CommandsAllow = []string{"git status"}
+
+	settings, err := buildClaudeSettings(project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	permissions := settings["permissions"].(map[string]any)
+	allow, ok := permissions["allow"].([]string)
+	if !ok || !stringSliceContains(allow, "Bash(git status:*)") || !stringSliceContains(allow, "mcp__example__*") {
+		t.Fatalf("expected managed allow entries preserved, got %#v", permissions["allow"])
+	}
+	if !anyDenyContains(permissions["deny"], "AskUserQuestion") {
+		t.Fatalf("expected injected deny alongside managed allow, got %#v", permissions["deny"])
+	}
+}
+
+func anyDenyContains(value any, want string) bool {
+	switch values := value.(type) {
+	case []any:
+		for _, v := range values {
+			if s, ok := v.(string); ok && s == want {
+				return true
+			}
+		}
+	case []string:
+		return stringSliceContains(values, want)
+	}
+	return false
+}

@@ -82,6 +82,10 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 	if err := applyCodexAppsUpdate(&currentDoc, choices); err != nil {
 		return "", err
 	}
+	if err := applyCodexBrowserUpdate(&currentDoc, choices); err != nil {
+		return "", err
+	}
+	applyClaudeAgentSpecificUpdate(&currentDoc, choices)
 
 	if choices.EnabledMCPServersTouched && len(choices.DefaultMCPServers) == 0 {
 		return "", fmt.Errorf(messages.WizardDefaultMCPServersRequired)
@@ -230,6 +234,13 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 				setKeyValue(block, templateBlock, "local_config_dir", formatTomlValue(true), "model")
 			} else {
 				setCommentedKeyLine(block, templateBlock, "local_config_dir", "model")
+			}
+		}
+		if choices.ClaudeDisableQuestionToolTouched {
+			if choices.ClaudeDisableQuestionTool {
+				setKeyValue(block, templateBlock, "disable_question_tool", formatTomlValue(true), "local_config_dir")
+			} else {
+				setCommentedKeyLine(block, templateBlock, "disable_question_tool", "local_config_dir")
 			}
 		}
 	case "agents.claude_vscode":
@@ -994,14 +1005,14 @@ func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
 		if hasUncommentedKeyLine(parentBlock.lines, "features") {
 			if apps, exists := codexAppsValueFromAgentSpecificBlock(parentBlock); exists {
 				if apps != choices.CodexApps {
-					return fmt.Errorf(messages.WizardCodexAppsInlineFeaturesUnsupported)
+					return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
 				}
 				return nil
 			}
 			if !choices.CodexApps {
 				return nil
 			}
-			return fmt.Errorf(messages.WizardCodexAppsInlineFeaturesUnsupported)
+			return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
 		}
 		if hasUncommentedKeyWithPrefix(parentBlock.lines, "features.") {
 			setKeyValue(parentBlock, nil, "features.apps", formatTomlValue(choices.CodexApps), "")
@@ -1016,6 +1027,214 @@ func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
 	doc.order = append(doc.order, codexAppsFeaturesSection)
 	setKeyValue(block, nil, "apps", formatTomlValue(choices.CodexApps), "")
 	return nil
+}
+
+// codexBrowserFeatureKeys are the [features] keys the browser/computer-use
+// disable toggle controls. All three are set to false together when disabling.
+var codexBrowserFeatureKeys = []string{"browser_use", "in_app_browser", "computer_use"}
+
+// applyCodexBrowserUpdate writes the browser/computer-use feature keys into the
+// [agents.codex.agent_specific.features] table, parallel to applyCodexAppsUpdate
+// (both target the same table). Disabling sets each key false; leaving the
+// toggle off comments any existing keys and adds none. Inline `features = {...}`
+// surfaces a clear error when a change is required. Mutates doc in place.
+func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
+	if !choices.CodexDisableBrowserTouched {
+		return nil
+	}
+	if choices.EnabledAgentsTouched && !choices.EnabledAgents[AgentCodex] {
+		return nil
+	}
+	if block, exists := doc.sections[codexAppsFeaturesSection]; exists {
+		applyCodexBrowserKeys(block, "", choices.CodexDisableBrowser)
+		return nil
+	}
+	if parentBlock, exists := doc.sections[codexAgentSpecificSectionPrefix]; exists {
+		if hasUncommentedKeyLine(parentBlock.lines, "features") {
+			// An inline `features = {...}` table cannot be edited line-by-line.
+			// Surface the limitation whenever a change is required: when disabling
+			// (we would need to set the keys) or when the inline table already pins
+			// a browser key the toggle would otherwise clear. Matches the apps path.
+			if choices.CodexDisableBrowser || inlineFeaturesHasAnyCodexBrowserKey(parentBlock) {
+				return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
+			}
+			return nil
+		}
+		if choices.CodexDisableBrowser || hasUncommentedKeyWithPrefix(parentBlock.lines, "features.") {
+			applyCodexBrowserKeys(parentBlock, "features.", choices.CodexDisableBrowser)
+		}
+		return nil
+	}
+	if !choices.CodexDisableBrowser {
+		return nil
+	}
+	block := &tomlBlock{
+		name:  codexAppsFeaturesSection,
+		lines: []string{"[" + codexAppsFeaturesSection + "]"},
+	}
+	doc.sections[codexAppsFeaturesSection] = block
+	doc.order = append(doc.order, codexAppsFeaturesSection)
+	applyCodexBrowserKeys(block, "", true)
+	return nil
+}
+
+// inlineFeaturesHasAnyCodexBrowserKey reports whether an inline
+// `features = {...}` table in block defines any browser/computer-use key. Used
+// to surface WizardCodexInlineFeaturesUnsupported when the line-based patcher
+// cannot edit those pins inside an inline table. Parallels
+// codexAppsValueFromAgentSpecificBlock.
+func inlineFeaturesHasAnyCodexBrowserKey(block *tomlBlock) bool {
+	if block == nil {
+		return false
+	}
+	var cfg struct {
+		Agents struct {
+			Codex struct {
+				AgentSpecific map[string]any `toml:"agent_specific"`
+			} `toml:"codex"`
+		} `toml:"agents"`
+	}
+	if err := toml.Unmarshal([]byte(strings.Join(block.lines, "\n")), &cfg); err != nil {
+		return false
+	}
+	features, ok := cfg.Agents.Codex.AgentSpecific["features"].(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, key := range codexBrowserFeatureKeys {
+		if _, exists := features[key]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+// applyCodexBrowserKeys sets (when disabling) or comments (when not) each
+// browser feature key in block. prefix is "" for a dedicated [features] table
+// or "features." for dotted keys under [agents.codex.agent_specific].
+func applyCodexBrowserKeys(block *tomlBlock, prefix string, disable bool) {
+	for _, key := range codexBrowserFeatureKeys {
+		if disable {
+			setKeyValue(block, nil, prefix+key, formatTomlValue(false), "")
+		} else {
+			setCommentedKeyLine(block, nil, prefix+key, "")
+		}
+	}
+}
+
+// Claude agent_specific sections and the dotted keys the wizard's Claude disable
+// toggles write. Keys go into the [agents.claude] block as dotted
+// `agent_specific.*` keys (the template's form) unless the user expanded
+// agent_specific into explicit sub-tables, in which case the leaf is written
+// into the matching section to avoid a TOML duplicate-table error.
+const (
+	claudeSection                 = "agents.claude"
+	claudeAgentSpecificSection    = "agents.claude.agent_specific"
+	claudeAgentSpecificEnvSection = "agents.claude.agent_specific.env"
+)
+
+// claudeAgentSpecificKey describes one agent_specific value the wizard writes
+// into the Claude config and the three forms it can take depending on how the
+// user has laid out agent_specific.
+type claudeAgentSpecificKey struct {
+	expandedSection string // section holding the leaf when agent_specific is expanded
+	leafKey         string // key name inside expandedSection
+	parentDotted    string // dotted path under [agents.claude.agent_specific]
+	claudeDotted    string // dotted path under [agents.claude]
+	value           string // TOML literal written when disabling
+}
+
+func claudeEnvKey(envKey string) claudeAgentSpecificKey {
+	return claudeAgentSpecificKey{
+		expandedSection: claudeAgentSpecificEnvSection,
+		leafKey:         envKey,
+		parentDotted:    "env." + envKey,
+		claudeDotted:    "agent_specific.env." + envKey,
+		value:           formatTomlValue("false"),
+	}
+}
+
+// applyClaudeAgentSpecificUpdate writes the touched Claude disable toggles into
+// doc. It mirrors applyCodexAppsUpdate but operates across the Claude
+// agent_specific sections so an expanded layout is handled without producing a
+// duplicate-table error. Mutates doc in place.
+func applyClaudeAgentSpecificUpdate(doc *tomlDocument, choices *Choices) {
+	if !claudeDisableTogglesTouched(choices) {
+		return
+	}
+	if choices.EnabledAgentsTouched &&
+		!choices.EnabledAgents[AgentClaude] && !choices.EnabledAgents[AgentClaudeVSCode] {
+		return
+	}
+	if choices.ClaudeDisableIDEReadingTouched {
+		writeClaudeAgentSpecificKey(doc, claudeEnvKey(claudeIDEReadingEnvKey), choices.ClaudeDisableIDEReading)
+	}
+	if choices.ClaudeDisableConnectorsTouched {
+		writeClaudeAgentSpecificKey(doc, claudeEnvKey(claudeConnectorsEnvKey), choices.ClaudeDisableConnectors)
+	}
+	if choices.ClaudeDisableMemoryTouched {
+		writeClaudeAgentSpecificKey(doc, claudeAgentSpecificKey{
+			expandedSection: claudeAgentSpecificSection,
+			leafKey:         "autoMemoryEnabled",
+			parentDotted:    "autoMemoryEnabled",
+			claudeDotted:    "agent_specific.autoMemoryEnabled",
+			value:           formatTomlValue(false),
+		}, choices.ClaudeDisableMemory)
+	}
+	// The AskUserQuestion toggle is written as a typed agents.claude
+	// disable_question_tool scalar in applySectionUpdates, not here — sync injects
+	// the deny + PreToolUse hook so user agent_specific entries are never clobbered.
+}
+
+// claudeDisableTogglesTouched gates the agent_specific writes in
+// applyClaudeAgentSpecificUpdate. The AskUserQuestion toggle is intentionally
+// excluded — it writes a typed agents.claude scalar, not an agent_specific key.
+func claudeDisableTogglesTouched(choices *Choices) bool {
+	return choices.ClaudeDisableIDEReadingTouched ||
+		choices.ClaudeDisableMemoryTouched ||
+		choices.ClaudeDisableConnectorsTouched
+}
+
+// writeClaudeAgentSpecificKey writes key into the most specific existing target
+// so the rendered config stays valid TOML: the expanded sub-table section if
+// present, else the [agents.claude.agent_specific] parent section, else the
+// [agents.claude] block as a fully-dotted key. Disabling writes the value;
+// leaving the toggle off comments any existing line and inserts nothing.
+func writeClaudeAgentSpecificKey(doc *tomlDocument, key claudeAgentSpecificKey, disable bool) {
+	if block, exists := doc.sections[key.expandedSection]; exists {
+		writeOrCommentKey(block, key.leafKey, key.value, disable)
+		return
+	}
+	if block, exists := doc.sections[claudeAgentSpecificSection]; exists && key.expandedSection != claudeAgentSpecificSection {
+		writeOrCommentKey(block, key.parentDotted, key.value, disable)
+		return
+	}
+	writeOrCommentKey(ensureClaudeSectionBlock(doc), key.claudeDotted, key.value, disable)
+}
+
+// writeOrCommentKey sets key = value when disable is true, otherwise comments
+// any existing uncommented line for key (inserting nothing when absent). Keys
+// in [agents.claude] are placed after "enabled"; in sub-tables the afterKey is
+// not found and the key lands just after the section header.
+func writeOrCommentKey(block *tomlBlock, key string, value string, disable bool) {
+	if disable {
+		setKeyValue(block, nil, key, value, "enabled")
+		return
+	}
+	setCommentedKeyLine(block, nil, key, "enabled")
+}
+
+// ensureClaudeSectionBlock returns the [agents.claude] block, creating an empty
+// one when absent. The section is present in every config derived from the
+// template; the create path is a defensive fallback for hand-edited configs.
+func ensureClaudeSectionBlock(doc *tomlDocument) *tomlBlock {
+	if block, exists := doc.sections[claudeSection]; exists {
+		return block
+	}
+	block := &tomlBlock{name: claudeSection, lines: []string{"[" + claudeSection + "]"}}
+	doc.sections[claudeSection] = block
+	doc.order = append(doc.order, claudeSection)
+	return block
 }
 
 func codexAppsValueFromAgentSpecificBlock(block *tomlBlock) (bool, bool) {

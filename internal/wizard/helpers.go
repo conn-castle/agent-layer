@@ -25,12 +25,29 @@ func buildSummary(c *Choices) string {
 	if c.ClaudeLocalConfigDirTouched && c.ClaudeLocalConfigDir {
 		sb.WriteString(messages.WizardSummaryClaudeLocalConfigDir)
 	}
-	if c.CodexAppsTouched && (!c.EnabledAgentsTouched || c.EnabledAgents[AgentCodex]) {
+	if c.CodexAppsTouched && codexToggleVisible(c) {
 		if c.CodexApps {
 			sb.WriteString(messages.WizardSummaryCodexAppsEnabled)
 		} else {
 			sb.WriteString(messages.WizardSummaryCodexAppsDisabled)
 		}
+	}
+	// Disable toggles print a line only when the feature is actually disabled;
+	// leaving a toggle off keeps the client default and reports nothing.
+	if c.CodexDisableBrowserTouched && codexToggleVisible(c) && c.CodexDisableBrowser {
+		sb.WriteString(messages.WizardSummaryCodexBrowserDisabled)
+	}
+	if c.ClaudeDisableIDEReadingTouched && claudeToggleVisible(c) && c.ClaudeDisableIDEReading {
+		sb.WriteString(messages.WizardSummaryClaudeIDEReadingDisabled)
+	}
+	if c.ClaudeDisableMemoryTouched && claudeToggleVisible(c) && c.ClaudeDisableMemory {
+		sb.WriteString(messages.WizardSummaryClaudeMemoryDisabled)
+	}
+	if c.ClaudeDisableConnectorsTouched && claudeToggleVisible(c) && c.ClaudeDisableConnectors {
+		sb.WriteString(messages.WizardSummaryClaudeConnectorsDisabled)
+	}
+	if c.ClaudeDisableQuestionToolTouched && claudeToggleVisible(c) && c.ClaudeDisableQuestionTool {
+		sb.WriteString(messages.WizardSummaryClaudeQuestionToolDisabled)
 	}
 
 	var mcp []string
@@ -99,6 +116,19 @@ func buildSummary(c *Choices) string {
 	fmt.Fprintf(&sb, messages.WizardSummaryWarningMCPSchemaTokensServerFmt, c.MCPSchemaTokensServerThreshold)
 
 	return sb.String()
+}
+
+// codexToggleVisible reports whether a Codex per-feature toggle applies to the
+// current selection: the agent step was either untouched or left Codex enabled.
+func codexToggleVisible(c *Choices) bool {
+	return !c.EnabledAgentsTouched || c.EnabledAgents[AgentCodex]
+}
+
+// claudeToggleVisible reports whether a Claude per-feature toggle applies: the
+// agent step was untouched or left Claude or Claude (VS Code) enabled (both
+// write .claude/settings.json).
+func claudeToggleVisible(c *Choices) bool {
+	return !c.EnabledAgentsTouched || c.EnabledAgents[AgentClaude] || c.EnabledAgents[AgentClaudeVSCode]
 }
 
 type agentEnabledConfig struct {
@@ -181,6 +211,19 @@ func selectOptionalValue(ui UI, title string, options []string, value *string) e
 		return nil
 	}
 	*value = selection
+	return nil
+}
+
+// confirmToggle prompts a yes/no confirm seeded with the current value, stores
+// the answer back into value, and marks touched. Used by the per-feature
+// "disable" toggles whose stored polarity matches the prompt (Yes = disable).
+func confirmToggle(ui UI, prompt string, value *bool, touched *bool) error {
+	current := *value
+	if err := ui.Confirm(prompt, &current); err != nil {
+		return err
+	}
+	*value = current
+	*touched = true
 	return nil
 }
 

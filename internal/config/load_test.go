@@ -350,12 +350,28 @@ func TestLoadTemplateConfig(t *testing.T) {
 	if cfg.Approvals.Mode == "" {
 		t.Fatalf("expected approvals.mode to be present in template config")
 	}
-	permissions, ok := cfg.Agents.Claude.AgentSpecific["permissions"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected template Claude agent-specific permissions map")
+	// AskUserQuestion is allowed by default now: the shipped template sets no
+	// disable_question_tool flag and carries no permissions.deny. The opt-in
+	// `al wizard` toggle sets disable_question_tool = true, after which sync
+	// injects the deny plus a PreToolUse hook.
+	if cfg.Agents.Claude.DisableQuestionTool != nil {
+		t.Fatalf("expected template to leave disable_question_tool unset, got %v", *cfg.Agents.Claude.DisableQuestionTool)
 	}
-	if !stringSliceValueContains(permissions["deny"], "AskUserQuestion") {
-		t.Fatalf("expected template to deny AskUserQuestion, got %v", permissions["deny"])
+	if permissions, ok := cfg.Agents.Claude.AgentSpecific["permissions"].(map[string]any); ok {
+		if stringSliceValueContains(permissions["deny"], "AskUserQuestion") {
+			t.Fatalf("expected template not to deny AskUserQuestion by default, got %v", permissions["deny"])
+		}
+	}
+	// A default PreToolUse matcher would also block the tool, so assert the
+	// template ships none (the deny check alone would miss a hook-only block).
+	if hooks, ok := cfg.Agents.Claude.AgentSpecific["hooks"].(map[string]any); ok {
+		if pre, ok := hooks["PreToolUse"].([]any); ok {
+			for _, entry := range pre {
+				if m, ok := entry.(map[string]any); ok && m["matcher"] == "AskUserQuestion" {
+					t.Fatalf("expected template not to block AskUserQuestion via PreToolUse hook")
+				}
+			}
+		}
 	}
 }
 
