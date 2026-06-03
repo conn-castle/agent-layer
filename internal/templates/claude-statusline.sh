@@ -183,17 +183,25 @@ if command -v git >/dev/null 2>&1; then
       lines_removed=$(( lines_removed + removed ))
     done < <(git -C "$git_root" diff --numstat HEAD -- 2>/dev/null)
 
-    # Count untracked files as the diff that would be created by adding them.
+    # Count untracked files without spawning one git diff per file.
+    untracked_paths=()
     while IFS= read -r -d '' path; do
-      while IFS=$'\t' read -r added removed _path; do
-        files_changed=$(( files_changed + 1 ))
-        case "$added:$removed" in
-          *-*) continue ;;
-        esac
-        lines_added=$(( lines_added + added ))
-        lines_removed=$(( lines_removed + removed ))
-      done < <(git -C "$git_root" diff --numstat --no-index -- /dev/null "$path" 2>/dev/null)
+      untracked_paths+=("$git_root/$path")
     done < <(git -C "$git_root" ls-files -z -o --exclude-standard -- 2>/dev/null)
+    if [ "${#untracked_paths[@]}" -gt 0 ]; then
+      files_changed=$(( files_changed + ${#untracked_paths[@]} ))
+      # Read wc fields directly in the loop condition (no per-line here-string).
+      # wc -l is an approximate added-line count: a file with no trailing newline
+      # is undercounted by one. That is acceptable for this at-a-glance metric and
+      # far cheaper than the prior per-file git diff.
+      while read -r count label _; do
+        case "$count" in
+          ''|*[!0-9]*) continue ;;
+        esac
+        [ "$label" = "total" ] && continue
+        lines_added=$(( lines_added + count ))
+      done < <(printf '%s\0' "${untracked_paths[@]}" | xargs -0 wc -l 2>/dev/null)
+    fi
   fi
 fi
 if [ "${files_changed:-0}" -gt 0 ] 2>/dev/null; then

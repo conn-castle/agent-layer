@@ -77,10 +77,23 @@ func (inst templateManager) knownTemplateFiles() []templateFile {
 
 func (inst templateManager) userOwnedStatuslineSourceFiles() []templateFile {
 	root := inst.root
-	return []templateFile{
-		{filepath.Join(root, ".agent-layer", "claude-statusline.sh"), "claude-statusline.sh", 0o755},
-		{filepath.Join(root, ".agent-layer", "codex-statusline.toml"), "codex-statusline.toml", 0o644},
+	sources := StatuslineSourceTemplates()
+	out := make([]templateFile, 0, len(sources)+1)
+	for _, source := range sources {
+		out = append(out, templateFile{
+			filepath.Join(root, filepath.FromSlash(source.RelPath)),
+			source.TemplatePath,
+			source.Perm,
+		})
+		if source.LegacyRelPath != "" {
+			out = append(out, templateFile{
+				filepath.Join(root, filepath.FromSlash(source.LegacyRelPath)),
+				source.TemplatePath,
+				source.Perm,
+			})
+		}
 	}
+	return out
 }
 
 // managedTemplateDirs lists template-managed directories under .agent-layer.

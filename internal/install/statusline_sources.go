@@ -17,25 +17,31 @@ const (
 	codexStatuslineSourceRelPath  = ".agent-layer/codex-statusline.toml"
 )
 
-type statuslineSourceTemplate struct {
-	relPath       string
-	templatePath  string
-	legacyRelPath string
-	perm          os.FileMode
+// statuslineSeedOriginTemplate labels seed bytes that came from the embedded
+// template (as opposed to a migrated legacy source file).
+const statuslineSeedOriginTemplate = "template"
+
+// StatuslineSourceTemplate describes an editable provider status line source.
+type StatuslineSourceTemplate struct {
+	RelPath       string
+	TemplatePath  string
+	LegacyRelPath string
+	Perm          os.FileMode
 }
 
-func statuslineSourceTemplates() []statuslineSourceTemplate {
-	return []statuslineSourceTemplate{
+// StatuslineSourceTemplates returns the canonical editable status line sources.
+func StatuslineSourceTemplates() []StatuslineSourceTemplate {
+	return []StatuslineSourceTemplate{
 		{
-			relPath:       claudeStatuslineSourceRelPath,
-			templatePath:  "claude-statusline.sh",
-			legacyRelPath: ".agent-layer/statusline.sh",
-			perm:          0o755,
+			RelPath:       claudeStatuslineSourceRelPath,
+			TemplatePath:  "claude-statusline.sh",
+			LegacyRelPath: ".agent-layer/statusline.sh",
+			Perm:          0o755,
 		},
 		{
-			relPath:      codexStatuslineSourceRelPath,
-			templatePath: "codex-statusline.toml",
-			perm:         0o644,
+			RelPath:      codexStatuslineSourceRelPath,
+			TemplatePath: "codex-statusline.toml",
+			Perm:         0o644,
 		},
 	}
 }
@@ -48,8 +54,8 @@ func (inst *installer) writeStatuslineSources() error {
 		}
 		return err
 	}
-	for _, source := range statuslineSourceTemplates() {
-		if !statuslineSourceEnabled(cfg, source.relPath) {
+	for _, source := range StatuslineSourceTemplates() {
+		if !statuslineSourceEnabled(cfg, source.RelPath) {
 			continue
 		}
 		if err := inst.writeStatuslineSource(source); err != nil {
@@ -70,8 +76,8 @@ func statuslineSourceEnabled(cfg *config.Config, relPath string) bool {
 	}
 }
 
-func (inst *installer) writeStatuslineSource(source statuslineSourceTemplate) error {
-	path := filepath.Join(inst.root, filepath.FromSlash(source.relPath))
+func (inst *installer) writeStatuslineSource(source StatuslineSourceTemplate) error {
+	path := filepath.Join(inst.root, filepath.FromSlash(source.RelPath))
 	info, err := inst.sys.Stat(path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -82,7 +88,7 @@ func (inst *installer) writeStatuslineSource(source statuslineSourceTemplate) er
 	if info.IsDir() {
 		return fmt.Errorf(messages.InstallFailedReadFmt, path, errors.New("is a directory"))
 	}
-	matches, err := inst.templates().matchTemplate(inst.sys, path, source.templatePath, info)
+	matches, err := inst.templates().matchTemplate(inst.sys, path, source.TemplatePath, info)
 	if err != nil {
 		return err
 	}
@@ -106,26 +112,20 @@ func (inst *installer) writeStatuslineSource(source statuslineSourceTemplate) er
 	return inst.writeStatuslineSourceTemplate(source, path)
 }
 
-func (inst *installer) seedMissingStatuslineSource(source statuslineSourceTemplate, path string) error {
-	if source.legacyRelPath != "" {
-		legacyPath := filepath.Join(inst.root, filepath.FromSlash(source.legacyRelPath))
-		data, err := inst.sys.ReadFile(legacyPath)
-		if err == nil {
-			return inst.writeStatuslineSourceBytes(path, data, source.perm)
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf(messages.InstallFailedReadFmt, legacyPath, err)
-		}
+func (inst *installer) seedMissingStatuslineSource(source StatuslineSourceTemplate, path string) error {
+	data, _, err := inst.statuslineSourceSeedBytes(source)
+	if err != nil {
+		return err
 	}
-	return inst.writeStatuslineSourceTemplate(source, path)
+	return inst.writeStatuslineSourceBytes(path, data, source.Perm)
 }
 
-func (inst *installer) writeStatuslineSourceTemplate(source statuslineSourceTemplate, path string) error {
-	data, err := templates.Read(source.templatePath)
+func (inst *installer) writeStatuslineSourceTemplate(source StatuslineSourceTemplate, path string) error {
+	data, err := templates.Read(source.TemplatePath)
 	if err != nil {
-		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.templatePath, err)
+		return fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.TemplatePath, err)
 	}
-	return inst.writeStatuslineSourceBytes(path, data, source.perm)
+	return inst.writeStatuslineSourceBytes(path, data, source.Perm)
 }
 
 func (inst *installer) writeStatuslineSourceBytes(path string, data []byte, perm os.FileMode) error {
@@ -138,25 +138,25 @@ func (inst *installer) writeStatuslineSourceBytes(path string, data []byte, perm
 	return nil
 }
 
-func (inst *installer) buildStatuslineSourceDiffPreview(source statuslineSourceTemplate) (DiffPreview, error) {
-	path := filepath.Join(inst.root, filepath.FromSlash(source.relPath))
+func (inst *installer) buildStatuslineSourceDiffPreview(source StatuslineSourceTemplate) (DiffPreview, error) {
+	path := filepath.Join(inst.root, filepath.FromSlash(source.RelPath))
 	localBytes, err := inst.sys.ReadFile(path)
 	if err != nil {
 		return DiffPreview{}, fmt.Errorf(messages.InstallFailedReadFmt, path, err)
 	}
-	templateBytes, err := templates.Read(source.templatePath)
+	templateBytes, err := templates.Read(source.TemplatePath)
 	if err != nil {
-		return DiffPreview{}, fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.templatePath, err)
+		return DiffPreview{}, fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.TemplatePath, err)
 	}
 	rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
-		source.relPath+" (current)",
-		source.relPath+" (template)",
+		source.RelPath+" (current)",
+		source.RelPath+" (template)",
 		normalizeTemplateContent(string(localBytes)),
 		normalizeTemplateContent(string(templateBytes)),
 		inst.diffMaxLines,
 	)
 	return DiffPreview{
-		Path:         source.relPath,
+		Path:         source.RelPath,
 		Ownership:    OwnershipLocalCustomization,
 		UnifiedDiff:  rendered,
 		Truncated:    truncated,
@@ -166,9 +166,10 @@ func (inst *installer) buildStatuslineSourceDiffPreview(source statuslineSourceT
 }
 
 func (inst *installer) writeStatuslineSourcesTargetPaths() []string {
-	paths := make([]string, 0, len(statuslineSourceTemplates()))
-	for _, source := range statuslineSourceTemplates() {
-		paths = append(paths, filepath.Join(inst.root, filepath.FromSlash(source.relPath)))
+	sources := StatuslineSourceTemplates()
+	paths := make([]string, 0, len(sources))
+	for _, source := range sources {
+		paths = append(paths, filepath.Join(inst.root, filepath.FromSlash(source.RelPath)))
 	}
 	return paths
 }
@@ -183,11 +184,11 @@ func (inst *installer) planStatuslineSourceChanges(plan migrationPlan) ([]upgrad
 	}
 	additions := make([]upgradeChangeWithTemplate, 0)
 	updates := make([]upgradeChangeWithTemplate, 0)
-	for _, source := range statuslineSourceTemplates() {
-		if !statuslineSourceEnabledAfterMigrations(cfg, source.relPath, plan) {
+	for _, source := range StatuslineSourceTemplates() {
+		if !statuslineSourceEnabledAfterMigrations(cfg, source.RelPath, plan) {
 			continue
 		}
-		path := filepath.Join(inst.root, filepath.FromSlash(source.relPath))
+		path := filepath.Join(inst.root, filepath.FromSlash(source.RelPath))
 		info, err := inst.sys.Stat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -199,7 +200,7 @@ func (inst *installer) planStatuslineSourceChanges(plan migrationPlan) ([]upgrad
 		if info.IsDir() {
 			continue
 		}
-		matches, err := inst.templates().matchTemplate(inst.sys, path, source.templatePath, info)
+		matches, err := inst.templates().matchTemplate(inst.sys, path, source.TemplatePath, info)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -210,15 +211,59 @@ func (inst *installer) planStatuslineSourceChanges(plan migrationPlan) ([]upgrad
 	return additions, updates, nil
 }
 
-func statuslineSourceUpgradeChange(source statuslineSourceTemplate) upgradeChangeWithTemplate {
+func statuslineSourceUpgradeChange(source StatuslineSourceTemplate) upgradeChangeWithTemplate {
 	return upgradeChangeWithTemplate{
-		path:         source.relPath,
-		templatePath: source.templatePath,
+		path:         source.RelPath,
+		templatePath: source.TemplatePath,
 		ownership: ownershipClassification{
 			Label: OwnershipLocalCustomization,
 			State: OwnershipStateLocalCustomization,
 		},
 	}
+}
+
+func (inst *installer) statuslineSourceSeedBytes(source StatuslineSourceTemplate) ([]byte, string, error) {
+	return statuslineSeedBytes(inst.root, inst.sys.ReadFile, source)
+}
+
+// StatuslineSourceSeedBytes returns the bytes to seed a missing status line
+// source under root, preferring a present legacy source file over the embedded
+// template so a reseed never clobbers the user's migrated legacy customizations.
+// Callers outside the install package (e.g. the wizard) use this to share the
+// canonical seed logic rather than reading TemplatePath directly.
+func StatuslineSourceSeedBytes(root string, source StatuslineSourceTemplate) ([]byte, error) {
+	data, _, err := statuslineSeedBytes(root, os.ReadFile, source)
+	return data, err
+}
+
+// statuslineSeedBytes resolves seed bytes for a status line source, preferring
+// the legacy source file (read via readFile) over the embedded template. It
+// returns the bytes and a short origin label (legacy rel-path or "template").
+func statuslineSeedBytes(root string, readFile func(string) ([]byte, error), source StatuslineSourceTemplate) ([]byte, string, error) {
+	if source.LegacyRelPath != "" {
+		legacyPath := filepath.Join(root, filepath.FromSlash(source.LegacyRelPath))
+		data, err := readFile(legacyPath)
+		if err == nil {
+			return data, source.LegacyRelPath, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, "", fmt.Errorf(messages.InstallFailedReadFmt, legacyPath, err)
+		}
+	}
+	data, err := templates.Read(source.TemplatePath)
+	if err != nil {
+		return nil, "", fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.TemplatePath, err)
+	}
+	return data, statuslineSeedOriginTemplate, nil
+}
+
+func statuslineSourceByRelPath(relPath string) (StatuslineSourceTemplate, bool) {
+	for _, source := range StatuslineSourceTemplates() {
+		if source.RelPath == relPath {
+			return source, true
+		}
+	}
+	return StatuslineSourceTemplate{}, false
 }
 
 func statuslineSourceEnabledAfterMigrations(cfg *config.Config, relPath string, plan migrationPlan) bool {

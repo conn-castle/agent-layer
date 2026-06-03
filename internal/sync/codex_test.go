@@ -92,7 +92,7 @@ func TestBuildCodexConfigHTTP(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc", "API_KEY": "def"},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestBuildCodexConfigStdio(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc"},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestBuildCodexConfigAgentSpecificDifferentProjectDoesNotSuppressTrust(t *te
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(root, project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, root, project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestBuildCodexConfigAgentSpecificSameProjectSuppressesManagedTrust(t *testi
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(root, project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, root, project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestBuildCodexConfigYOLO(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -334,7 +334,7 @@ func TestBuildCodexConfigAgentSpecific(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestBuildCodexConfigAgentSpecificOverrides(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -431,7 +431,7 @@ func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestBuildCodexConfigDefaultStatuslineIncludesWeeklyLimitOnly(t *testing.T) 
 	}
 	writeCodexStatuslineSource(t, root, string(templateBytes))
 	enabled := true
-	output, err := buildCodexConfig(root, &config.ProjectConfig{
+	output, err := buildCodexConfigWithSystem(RealSystem{}, root, &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
@@ -576,7 +576,7 @@ func TestBuildCodexConfigAgentSpecificStatuslineWinsOverSource(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(root, project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, root, project)
 	if err != nil {
 		t.Fatalf("buildCodexConfig: %v", err)
 	}
@@ -616,7 +616,7 @@ func TestBuildCodexConfigStatuslineMergePreservesUnrelatedTUIKeys(t *testing.T) 
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(root, project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, root, project)
 	if err != nil {
 		t.Fatalf("buildCodexConfig: %v", err)
 	}
@@ -650,7 +650,7 @@ func TestBuildCodexConfigStatuslineDisabledPreservesUnrelatedTUIKeys(t *testing.
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("buildCodexConfig: %v", err)
 	}
@@ -683,7 +683,7 @@ func TestBuildCodexConfigStatuslineDisabledPreservesExplicitAgentSpecificStatusl
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("buildCodexConfig: %v", err)
 	}
@@ -707,7 +707,7 @@ func TestBuildCodexConfigStatuslineSourceInvalidOrMissingFails(t *testing.T) {
 			writeCodexStatuslineSource(t, root, tt.content)
 			enabled := true
 
-			_, err := buildCodexConfig(root, &config.ProjectConfig{
+			_, err := buildCodexConfigWithSystem(RealSystem{}, root, &config.ProjectConfig{
 				Config: config.Config{
 					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 					Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
@@ -737,7 +737,7 @@ func TestBuildCodexConfigStatuslineSourceUnrelatedKeysFail(t *testing.T) {
 			writeCodexStatuslineSource(t, root, tt.content)
 			enabled := true
 
-			_, err := buildCodexConfig(root, &config.ProjectConfig{
+			_, err := buildCodexConfigWithSystem(RealSystem{}, root, &config.ProjectConfig{
 				Config: config.Config{
 					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 					Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
@@ -770,7 +770,7 @@ func TestBuildCodexConfigStatuslineSourceNonStringListFails(t *testing.T) {
 			writeCodexStatuslineSource(t, root, tt.content)
 			enabled := true
 
-			_, err := buildCodexConfig(root, &config.ProjectConfig{
+			_, err := buildCodexConfigWithSystem(RealSystem{}, root, &config.ProjectConfig{
 				Config: config.Config{
 					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 					Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
@@ -806,7 +806,7 @@ func TestBuildCodexConfigStatuslineNonTableAgentSpecificTUIFails(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(root, project)
+	_, err := buildCodexConfigWithSystem(RealSystem{}, root, project)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -837,7 +837,7 @@ func TestBuildCodexConfigUnsupportedHeaderPlaceholder(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc"},
 	}
 
-	_, err := buildCodexConfig(t.TempDir(), project)
+	_, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -931,7 +931,7 @@ func TestBuildCodexConfigMissingEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(t.TempDir(), project)
+	_, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -1075,7 +1075,7 @@ func TestBuildCodexConfigMultipleServers(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1109,7 +1109,7 @@ func TestBuildCodexConfigUnsupportedTransport(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(t.TempDir(), project)
+	_, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for unsupported transport")
 	}
@@ -1139,7 +1139,7 @@ func TestBuildCodexConfigStdioMissingCommandEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(t.TempDir(), project)
+	_, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for missing command env var")
 	}
@@ -1170,7 +1170,7 @@ func TestBuildCodexConfigStdioMissingArgEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(t.TempDir(), project)
+	_, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for missing arg env var")
 	}
@@ -1201,7 +1201,7 @@ func TestBuildCodexConfigStdioMissingEnvVarEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	_, err := buildCodexConfig(t.TempDir(), project)
+	_, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err == nil {
 		t.Fatalf("expected error for missing env var env")
 	}
@@ -1232,7 +1232,7 @@ func TestBuildCodexConfigDisableBrowserFeatures(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	output, err := buildCodexConfig(t.TempDir(), project)
+	output, err := buildCodexConfigWithSystem(RealSystem{}, t.TempDir(), project)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -62,10 +62,6 @@ func WriteCodexRules(sys System, root string, project *config.ProjectConfig) err
 	return nil
 }
 
-func buildCodexConfig(root string, project *config.ProjectConfig) (string, error) {
-	return buildCodexConfigWithSystem(RealSystem{}, root, project)
-}
-
 func buildCodexConfigWithSystem(sys System, root string, project *config.ProjectConfig) (string, error) {
 	trustedRoot, err := codexTrustedProjectRoot(root)
 	if err != nil {

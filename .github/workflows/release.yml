@@ -13,8 +13,8 @@ jobs:
   build-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: Install system dependencies
@@ -36,7 +36,7 @@ jobs:
           make release-dist AL_VERSION="${GITHUB_REF_NAME}" DIST_DIR=dist
 
       - name: Upload dist artifacts for downstream jobs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
           path: dist/*
@@ -78,7 +78,7 @@ jobs:
           echo "$NOTES" >> "$GITHUB_OUTPUT"
           echo "CHANGELOG_EOF" >> "$GITHUB_OUTPUT"
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           body: ${{ steps.changelog.outputs.notes }}
           files: |
@@ -95,7 +95,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout agent-layer at tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
@@ -108,14 +108,14 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Create GitHub App token for website repo
         id: web-app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ secrets.AGENT_LAYER_WEB_APP_ID }}
           private-key: ${{ secrets.AGENT_LAYER_WEB_APP_PRIVATE_KEY }}
@@ -123,7 +123,7 @@ jobs:
           repositories: agent-layer-web
 
       - name: Checkout agent-layer-web
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: conn-castle/agent-layer-web
           ref: main
@@ -131,7 +131,7 @@ jobs:
           path: agent-layer-web
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -177,14 +177,14 @@ jobs:
           exit 1
 
       - name: Download dist artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: dist
           path: dist
 
       - name: Create GitHub App token for tap repo
         id: app-token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
           private-key: ${{ secrets.HOMEBREW_TAP_PRIVATE_KEY }}
@@ -192,7 +192,7 @@ jobs:
           repositories: homebrew-tap
 
       - name: Checkout homebrew tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: conn-castle/homebrew-tap
           token: ${{ steps.app-token.outputs.token }}
@@ -250,7 +250,7 @@ jobs:
           git -C homebrew-tap diff -- Formula/agent-layer.rb
 
       - name: Create PR in tap repo
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6.1.0
         with:
           token: ${{ steps.app-token.outputs.token }}
           path: homebrew-tap

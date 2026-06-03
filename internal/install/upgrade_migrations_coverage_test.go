@@ -2642,6 +2642,365 @@ func writeTestConfigFile(t *testing.T, root string, content string) string {
 	return path
 }
 
+// TestExecuteConfigDeleteKeyMigration_Branches exercises the config_delete_key
+// executor: missing config and absent key are no-ops (returning changed=false),
+// while deleting an existing key both reports changed and removes it from the
+// persisted config. Would fail if the executor reported changes for absent keys
+// or failed to persist the deletion.
+func TestExecuteConfigDeleteKeyMigration_Branches(t *testing.T) {
+	t.Run("missing config no-op", func(t *testing.T) {
+		inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+		changed, err := inst.executeConfigDeleteKeyMigration("a.b")
+		if err != nil {
+			t.Fatalf("executeConfigDeleteKeyMigration: %v", err)
+		}
+		if changed {
+			t.Fatal("expected no-op when config missing")
+		}
+	})
+
+	t.Run("absent key no-op", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents]\nfoo = true\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigDeleteKeyMigration("agents.missing")
+		if err != nil {
+			t.Fatalf("executeConfigDeleteKeyMigration: %v", err)
+		}
+		if changed {
+			t.Fatal("expected no-op when key absent")
+		}
+	})
+
+	t.Run("invalid key path errors", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "a = 1\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		if _, err := inst.executeConfigDeleteKeyMigration("a..b"); err == nil {
+			t.Fatal("expected invalid key path error")
+		}
+	})
+
+	t.Run("existing key removed and persisted", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nstale = true\nkeep = false\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigDeleteKeyMigration("agents.claude.stale")
+		if err != nil {
+			t.Fatalf("executeConfigDeleteKeyMigration: %v", err)
+		}
+		if !changed {
+			t.Fatal("expected delete to report changed")
+		}
+		cfg, _, _, err := inst.readMigrationConfigMap()
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if _, exists, _ := getNestedConfigValue(cfg, []string{"agents", "claude", "stale"}); exists {
+			t.Fatal("expected agents.claude.stale to be removed")
+		}
+		if val, exists, _ := getNestedConfigValue(cfg, []string{"agents", "claude", "keep"}); !exists || val != false {
+			t.Fatalf("expected agents.claude.keep preserved, got val=%v exists=%v", val, exists)
+		}
+	})
+
+	t.Run("write error surfaced", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nstale = true\n")
+		cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+		fault := newFaultSystem(RealSystem{})
+		fault.writeErrs[normalizePath(cfgPath)] = errors.New("write boom")
+		inst := &installer{root: root, sys: fault}
+		if _, err := inst.executeConfigDeleteKeyMigration("agents.claude.stale"); err == nil ||
+			!strings.Contains(err.Error(), "write boom") {
+			t.Fatalf("expected write error, got %v", err)
+		}
+	})
+}
+
+// TestExecuteConfigReplaceStringMigration_Branches exercises the
+// config_replace_string executor: missing config is a no-op; a non-matching value
+// leaves the config unchanged; a matching string in a nested array is replaced and
+// deduped against existing entries; and traversing a non-string leaf surfaces a
+// type error. Would fail if the executor mutated on no match, skipped dedupe, or
+// silently swallowed a type mismatch.
+func TestExecuteConfigReplaceStringMigration_Branches(t *testing.T) {
+	makeOp := func(key, from, to string) upgradeMigrationOperation {
+		return upgradeMigrationOperation{
+			ID:   "test",
+			Kind: upgradeMigrationKindConfigReplaceString,
+			Key:  key,
+			From: from,
+			To:   to,
+		}
+	}
+
+	t.Run("missing config no-op", func(t *testing.T) {
+		inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(makeOp("a.b", "x", "y"))
+		if err != nil {
+			t.Fatalf("executeConfigReplaceStringMigration: %v", err)
+		}
+		if changed {
+			t.Fatal("expected no-op when config missing")
+		}
+	})
+
+	t.Run("no matching value is no-op", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nmodel = \"sonnet\"\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(makeOp("agents.claude.model", "opus", "haiku"))
+		if err != nil {
+			t.Fatalf("executeConfigReplaceStringMigration: %v", err)
+		}
+		if changed {
+			t.Fatal("expected no-op when value does not match From")
+		}
+		cfg, _, _, err := inst.readMigrationConfigMap()
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if val, _, _ := getNestedConfigValue(cfg, []string{"agents", "claude", "model"}); val != "sonnet" {
+			t.Fatalf("expected model unchanged, got %v", val)
+		}
+	})
+
+	t.Run("scalar string replaced", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nmodel = \"opus\"\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(makeOp("agents.claude.model", "opus", "haiku"))
+		if err != nil {
+			t.Fatalf("executeConfigReplaceStringMigration: %v", err)
+		}
+		if !changed {
+			t.Fatal("expected scalar replacement to report changed")
+		}
+		cfg, _, _, err := inst.readMigrationConfigMap()
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if val, _, _ := getNestedConfigValue(cfg, []string{"agents", "claude", "model"}); val != "haiku" {
+			t.Fatalf("expected model=haiku, got %v", val)
+		}
+	})
+
+	t.Run("array element replaced and deduped", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[[mcp.servers]]\nclients = [\"gemini\", \"antigravity\"]\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(makeOp("mcp.servers[].clients[]", "gemini", "antigravity"))
+		if err != nil {
+			t.Fatalf("executeConfigReplaceStringMigration: %v", err)
+		}
+		if !changed {
+			t.Fatal("expected array replacement to report changed")
+		}
+		data, err := os.ReadFile(filepath.Join(root, ".agent-layer", "config.toml")) // #nosec G304 -- test-controlled path.
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		// "gemini" must be gone, and the now-duplicate "antigravity" deduped to one.
+		if strings.Contains(string(data), "gemini") {
+			t.Fatalf("expected gemini replaced, got:\n%s", string(data))
+		}
+		if strings.Count(string(data), "antigravity") != 1 {
+			t.Fatalf("expected single deduped antigravity entry, got:\n%s", string(data))
+		}
+	})
+
+	t.Run("non-string leaf errors", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nstatusline = true\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		_, err := inst.executeConfigReplaceStringMigration(makeOp("agents.claude.statusline", "x", "y"))
+		if err == nil || !strings.Contains(err.Error(), "not a string") {
+			t.Fatalf("expected non-string type error, got %v", err)
+		}
+	})
+
+	t.Run("invalid value path errors", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "a = \"x\"\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		_, err := inst.executeConfigReplaceStringMigration(makeOp("a..b", "x", "y"))
+		if err == nil || !strings.Contains(err.Error(), "value path") {
+			t.Fatalf("expected invalid value path error, got %v", err)
+		}
+	})
+
+	t.Run("write error surfaced after match", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nmodel = \"opus\"\n")
+		cfgPath := filepath.Join(root, ".agent-layer", "config.toml")
+		fault := newFaultSystem(RealSystem{})
+		fault.writeErrs[normalizePath(cfgPath)] = errors.New("write boom")
+		inst := &installer{root: root, sys: fault}
+		_, err := inst.executeConfigReplaceStringMigration(makeOp("agents.claude.model", "opus", "haiku"))
+		if err == nil || !strings.Contains(err.Error(), "write boom") {
+			t.Fatalf("expected write error, got %v", err)
+		}
+	})
+}
+
+// TestReplaceStringAtMigrationValuePath_TraversalBranches covers the scalar-path
+// helper's remaining branches: an absent leading segment is a no-op, and a path
+// that traverses through a non-table intermediate value surfaces a type error.
+// Would fail if the helper reported changes for absent keys or descended into
+// non-table values.
+func TestReplaceStringAtMigrationValuePath_TraversalBranches(t *testing.T) {
+	t.Run("absent leading key is no-op", func(t *testing.T) {
+		parts, err := splitMigrationValuePath("agents.claude.model")
+		if err != nil {
+			t.Fatalf("split: %v", err)
+		}
+		changed, err := replaceStringAtMigrationValuePath(map[string]any{}, parts, "a", "b")
+		if err != nil || changed {
+			t.Fatalf("expected no-op for absent key, got changed=%v err=%v", changed, err)
+		}
+	})
+
+	t.Run("non-table intermediate errors", func(t *testing.T) {
+		parts, err := splitMigrationValuePath("agents.model")
+		if err != nil {
+			t.Fatalf("split: %v", err)
+		}
+		cfg := map[string]any{"agents": "scalar"}
+		_, err = replaceStringAtMigrationValuePath(cfg, parts, "a", "b")
+		if err == nil || !strings.Contains(err.Error(), "non-table value") {
+			t.Fatalf("expected non-table traversal error, got %v", err)
+		}
+	})
+
+	t.Run("empty parts errors", func(t *testing.T) {
+		_, err := replaceStringAtMigrationValuePath(map[string]any{}, nil, "a", "b")
+		if err == nil || !strings.Contains(err.Error(), "value path is required") {
+			t.Fatalf("expected required-path error, got %v", err)
+		}
+	})
+}
+
+// TestSplitMigrationValuePath_RejectsMalformedPaths verifies the value-path parser
+// rejects an empty input and a bare "[]" array segment with no name. Would fail if
+// the parser accepted these and produced an unusable segment list.
+func TestSplitMigrationValuePath_RejectsMalformedPaths(t *testing.T) {
+	if _, err := splitMigrationValuePath("  "); err == nil ||
+		!strings.Contains(err.Error(), "value path is required") {
+		t.Fatalf("expected required-path error, got %v", err)
+	}
+	if _, err := splitMigrationValuePath("mcp.[]"); err == nil ||
+		!strings.Contains(err.Error(), "invalid migration config value path") {
+		t.Fatalf("expected invalid array-segment error, got %v", err)
+	}
+}
+
+// TestDedupeMigrationStringArray_PreservesNonStringElements verifies non-string
+// entries pass through untouched while duplicate strings collapse. Would fail if
+// dedupe dropped or mistyped non-string entries.
+func TestDedupeMigrationStringArray_PreservesNonStringElements(t *testing.T) {
+	got := dedupeMigrationStringArray([]any{"a", "a", 42, "b"})
+	if len(got) != 3 {
+		t.Fatalf("expected 3 entries after dedupe, got %#v", got)
+	}
+	if got[0] != "a" || got[1] != 42 || got[2] != "b" {
+		t.Fatalf("expected [a 42 b], got %#v", got)
+	}
+}
+
+// TestReplaceStringInMigrationArray_TypedBranches drives the array replacement
+// helper across the value shapes a decoded config can take. Each case asserts the
+// concrete replacement/dedupe outcome or the specific type error, so the test fails
+// if any branch mis-handles its shape (e.g. mutating a non-matching slice, skipping
+// dedupe, or swallowing a non-string element).
+func TestReplaceStringInMigrationArray_TypedBranches(t *testing.T) {
+	t.Run("[]any leaf replaces and dedupes", func(t *testing.T) {
+		updated, changed, err := replaceStringInMigrationArray(
+			[]any{"gemini", "antigravity"}, nil, "gemini", "antigravity", "clients")
+		if err != nil || !changed {
+			t.Fatalf("expected change, got changed=%v err=%v", changed, err)
+		}
+		got, ok := updated.([]any)
+		if !ok || len(got) != 1 || got[0] != "antigravity" {
+			t.Fatalf("expected single deduped antigravity, got %#v", updated)
+		}
+	})
+
+	t.Run("[]any leaf no match leaves slice untouched", func(t *testing.T) {
+		input := []any{"a", "a"}
+		updated, changed, err := replaceStringInMigrationArray(input, nil, "x", "y", "clients")
+		if err != nil || changed {
+			t.Fatalf("expected no change, got changed=%v err=%v", changed, err)
+		}
+		// Pre-existing duplicates must be preserved when nothing matched.
+		if got := updated.([]any); len(got) != 2 {
+			t.Fatalf("expected duplicates preserved on no-match, got %#v", got)
+		}
+	})
+
+	t.Run("[]any leaf non-string element errors", func(t *testing.T) {
+		_, _, err := replaceStringInMigrationArray([]any{1}, nil, "x", "y", "clients")
+		if err == nil || !strings.Contains(err.Error(), "non-string value") {
+			t.Fatalf("expected non-string element error, got %v", err)
+		}
+	})
+
+	t.Run("[]string leaf replaces and dedupes", func(t *testing.T) {
+		updated, changed, err := replaceStringInMigrationArray(
+			[]string{"gemini", "antigravity"}, nil, "gemini", "antigravity", "clients")
+		if err != nil || !changed {
+			t.Fatalf("expected change, got changed=%v err=%v", changed, err)
+		}
+		got := updated.([]string)
+		if len(got) != 1 || got[0] != "antigravity" {
+			t.Fatalf("expected single deduped antigravity, got %#v", got)
+		}
+	})
+
+	t.Run("[]string with rest segments errors", func(t *testing.T) {
+		rest := []configValuePathSegment{{name: "clients"}}
+		_, _, err := replaceStringInMigrationArray([]string{"a"}, rest, "a", "b", "servers")
+		if err == nil || !strings.Contains(err.Error(), "traverses string array") {
+			t.Fatalf("expected string-array traversal error, got %v", err)
+		}
+	})
+
+	t.Run("[]map[string]any descends into tables", func(t *testing.T) {
+		input := []map[string]any{{"clients": []any{"gemini"}}}
+		rest := []configValuePathSegment{{name: "clients", array: true}}
+		updated, changed, err := replaceStringInMigrationArray(input, rest, "gemini", "antigravity", "servers")
+		if err != nil || !changed {
+			t.Fatalf("expected change, got changed=%v err=%v", changed, err)
+		}
+		got := updated.([]map[string]any)
+		if clients := got[0]["clients"].([]any); clients[0] != "antigravity" {
+			t.Fatalf("expected nested client replaced, got %#v", clients)
+		}
+	})
+
+	t.Run("[]map[string]any leaf without rest errors", func(t *testing.T) {
+		_, _, err := replaceStringInMigrationArray([]map[string]any{{}}, nil, "x", "y", "servers")
+		if err == nil || !strings.Contains(err.Error(), "table values, not strings") {
+			t.Fatalf("expected table-values error, got %v", err)
+		}
+	})
+
+	t.Run("[]any non-table element with rest errors", func(t *testing.T) {
+		rest := []configValuePathSegment{{name: "clients"}}
+		_, _, err := replaceStringInMigrationArray([]any{"scalar"}, rest, "x", "y", "servers")
+		if err == nil || !strings.Contains(err.Error(), "non-table value") {
+			t.Fatalf("expected non-table traversal error, got %v", err)
+		}
+	})
+
+	t.Run("non-array value errors", func(t *testing.T) {
+		_, _, err := replaceStringInMigrationArray("scalar", nil, "x", "y", "clients")
+		if err == nil || !strings.Contains(err.Error(), "is not an array") {
+			t.Fatalf("expected not-an-array error, got %v", err)
+		}
+	})
+}
+
 func TestHasMissingUnpinnedSourceAgnosticDefault_CorruptConfigSurfacesError(t *testing.T) {
 	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
 	// Malformed TOML must surface a decode error, not be silently swallowed
@@ -2655,5 +3014,37 @@ func TestHasMissingUnpinnedSourceAgnosticDefault_CorruptConfigSurfacesError(t *t
 	}
 	if !strings.Contains(err.Error(), "decode config") {
 		t.Fatalf("expected decode-config error, got: %v", err)
+	}
+}
+
+// TestHasMissingUnpinnedSourceAgnosticDefault_DetectsAbsentVsPresentKeys verifies
+// the detector against the real 0.11.0 manifest chain (min_prior_version 0.10.2),
+// whose source-agnostic config_set_default operations target
+// agents.antigravity.enabled, agents.claude.statusline, and agents.codex.statusline.
+// A config missing any of those keys must report a missing default (true); a config
+// that already sets all of them must report none missing (false). Would fail if the
+// chain walk skipped operations or the key-presence check were inverted. Also
+// exercises collectMigrationChainFromVersionThroughTarget across the version range
+// from min_prior_version through the target.
+func TestHasMissingUnpinnedSourceAgnosticDefault_DetectsAbsentVsPresentKeys(t *testing.T) {
+	inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+
+	missing, err := inst.hasMissingUnpinnedSourceAgnosticDefault([]byte("[agents.claude]\nenabled = true\n"), "0.11.0")
+	if err != nil {
+		t.Fatalf("hasMissingUnpinnedSourceAgnosticDefault (absent): %v", err)
+	}
+	if !missing {
+		t.Fatal("expected missing source-agnostic default when statusline keys are absent")
+	}
+
+	presentCfg := "[agents.antigravity]\nenabled = false\n" +
+		"[agents.claude]\nstatusline = true\n" +
+		"[agents.codex]\nstatusline = false\n"
+	present, err := inst.hasMissingUnpinnedSourceAgnosticDefault([]byte(presentCfg), "0.11.0")
+	if err != nil {
+		t.Fatalf("hasMissingUnpinnedSourceAgnosticDefault (present): %v", err)
+	}
+	if present {
+		t.Fatal("expected no missing default when all source-agnostic keys are set")
 	}
 }

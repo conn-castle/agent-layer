@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Scenario: CLI catalog skill doctor probe. Fresh `al init` does not install
-# catalog skills; when a catalog skill directory later exists, doctor checks
+# Scenario: Scripted wizard installs a CLI catalog skill, then doctor probes
 # the corresponding binary on PATH.
 
 run_scenario_wizard_cli_catalog_skills() {
-  section "CLI catalog skills: doctor binary check"
+  section "Scripted wizard + CLI catalog skills: doctor binary check"
 
   local repo_dir
   repo_dir="$(setup_scenario_dir)"
@@ -17,18 +16,62 @@ run_scenario_wizard_cli_catalog_skills() {
       "$id catalog skill is not seeded by al init"
   done
 
-  # Simulate Q2=tavily by manually creating the directory with a placeholder
-  # SKILL.md (sufficient for the doctor binary probe; full e2e wizard
-  # interactivity is exercised by unit tests).
+  local answers_file="$repo_dir/wizard-answers.json"
+  cat > "$answers_file" <<'JSON'
+{
+  "select": {
+    "Approval Mode": "all - Auto-approve shell commands and MCP tool calls (where supported).",
+    "Claude Model": "Leave blank (use client default)",
+    "Claude Reasoning Effort": "Leave blank (use client default)"
+  },
+  "multi_select": {
+    "Enable Agents": ["claude"],
+    "Claude features (checked = keep enabled; uncheck to disable)": [
+      "IDE open-file reading",
+      "Auto-memory",
+      "claude.ai connectors",
+      "AskUserQuestion tool"
+    ],
+    "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)": [
+      "Tavily web search"
+    ],
+    "Enable Default MCP Servers": []
+  },
+  "confirm": {
+    "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)": false,
+    "Install or refresh the Agent Layer workflow bundle? (refreshes ~24 workflow skills and managed instruction files; creates missing memory docs/templates)": true,
+    "Enable warnings for performance and usage issues?": true,
+    "Apply these config, secret, skills, instructions, memory-file, and statusline-source changes?": true
+  }
+}
+JSON
+
+  local wizard_output rc_wizard=0
+  wizard_output=$(cd "$repo_dir" && al wizard --answers "$answers_file" 2>&1) || rc_wizard=$?
+  if [[ $rc_wizard -eq 0 ]]; then
+    pass "al wizard --answers installs selected catalog skill"
+  else
+    fail "al wizard --answers should exit zero (rc=$rc_wizard)"
+    echo "$wizard_output" | head -20 | sed 's/^/    /'
+  fi
+  assert_output_contains "$wizard_output" "Running sync" \
+    "scripted wizard output says sync ran"
+  assert_output_contains "$wizard_output" "Wizard completed" \
+    "scripted wizard output says completed"
+  assert_file_exists "$repo_dir/.agent-layer/instructions/00_rules.md" \
+    "scripted wizard installed workflow instruction source"
+  assert_file_exists "$repo_dir/docs/agent-layer/COMMANDS.md" \
+    "scripted wizard installed memory docs"
+
   local skill_dir="$repo_dir/.agent-layer/skills/tavily-web"
-  mkdir -p "$skill_dir"
-  cat > "$skill_dir/SKILL.md" <<'SKILL'
----
-name: tavily-web
-description: Tavily web search.
----
-Placeholder for catalog skill content.
-SKILL
+  assert_file_exists "$skill_dir/SKILL.md" \
+    "scripted wizard installed tavily-web catalog skill"
+  assert_file_contains "$skill_dir/SKILL.md" "Use the Tavily CLI" \
+    "tavily-web catalog skill has real embedded content"
+  for id in playwright-cli find-docs agent-dispatch; do
+    assert_file_not_exists "$repo_dir/.agent-layer/skills/$id/SKILL.md" \
+      "$id catalog skill remains absent when unselected"
+  done
 
   # Doctor flags missing `tvly` binary when tavily-web is present and binary
   # is not on PATH. Keep this PATH hermetic so a host-installed tvly cannot

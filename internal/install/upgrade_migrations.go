@@ -176,7 +176,7 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 
 	// Always load and validate the target manifest first. This ensures a
 	// missing target manifest fails loudly regardless of source resolution.
-	targetManifest, targetManifestPath, err := loadUpgradeMigrationManifestByVersion(targetVersion)
+	targetManifest, _, err := loadUpgradeMigrationManifestByVersion(targetVersion)
 	if err != nil {
 		return migrationPlan{}, err
 	}
@@ -186,23 +186,23 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 	plan.report.SourceResolutionNotes = dedupSortedStrings(resolution.notes)
 
 	// Determine which manifests to load: when source is known, chain all
-	// intermediate manifests (source, target]; when unknown, load only target.
+	// intermediate manifests (source, target]; when unknown, use the target
+	// manifest's supported prior range and plan only source-agnostic operations.
 	sourceKnown := resolution.origin != UpgradeMigrationSourceUnknown
 	var manifests []chainedManifest
 	if sourceKnown {
-		chain, chainErr := collectMigrationChain(resolution.version, targetVersion)
-		if chainErr != nil {
-			return migrationPlan{}, chainErr
-		}
-		if len(chain) == 0 {
-			// No manifests in range (source == target). Target was already
-			// validated above; nothing to migrate.
-			plan.report.TargetVersion = targetVersion
-			return plan, nil
-		}
-		manifests = chain
+		manifests, err = collectMigrationChain(resolution.version, targetVersion)
 	} else {
-		manifests = []chainedManifest{{manifest: targetManifest, path: targetManifestPath}}
+		manifests, err = collectMigrationChainFromVersionThroughTarget(targetManifest.MinPriorVersion, targetVersion)
+	}
+	if err != nil {
+		return migrationPlan{}, err
+	}
+	if len(manifests) == 0 {
+		// No manifests in range (source == target). Target was already validated
+		// above; nothing to migrate.
+		plan.report.TargetVersion = targetVersion
+		return plan, nil
 	}
 
 	// Report fields from the chain.
@@ -341,22 +341,28 @@ func (inst *installer) hasMissingUnpinnedSourceAgnosticDefault(data []byte, targ
 	if err != nil {
 		return false, err
 	}
+	manifests, err := collectMigrationChainFromVersionThroughTarget(targetManifest.MinPriorVersion, targetVersion)
+	if err != nil {
+		return false, err
+	}
 	var cfg map[string]any
 	if err := tomlv2.Unmarshal(data, &cfg); err != nil {
 		return false, fmt.Errorf("decode config %s for migration: %w", upgradeMigrationConfigPath, err)
 	}
-	for _, op := range targetManifest.Operations {
-		if op.Kind != upgradeMigrationKindConfigSetDefault || !op.SourceAgnostic {
-			continue
-		}
-		parts, splitErr := splitMigrationKeyPath(op.Key)
-		if splitErr != nil {
-			return false, splitErr
-		}
-		if _, exists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
-			return false, getErr
-		} else if !exists {
-			return true, nil
+	for _, cm := range manifests {
+		for _, op := range cm.manifest.Operations {
+			if op.Kind != upgradeMigrationKindConfigSetDefault || !op.SourceAgnostic {
+				continue
+			}
+			parts, splitErr := splitMigrationKeyPath(op.Key)
+			if splitErr != nil {
+				return false, splitErr
+			}
+			if _, exists, getErr := getNestedConfigValue(cfg, parts); getErr != nil {
+				return false, getErr
+			} else if !exists {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -1615,6 +1621,36 @@ func collectMigrationChain(sourceVersion string, targetVersion string) ([]chaine
 		}
 		if cmpTarget > 0 {
 			break // past target
+		}
+		manifest, manifestPath, loadErr := loadUpgradeMigrationManifestByVersion(ver)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		chain = append(chain, chainedManifest{manifest: manifest, path: manifestPath})
+	}
+	return chain, nil
+}
+
+func collectMigrationChainFromVersionThroughTarget(startVersion string, targetVersion string) ([]chainedManifest, error) {
+	allVersions, err := listMigrationManifestVersions()
+	if err != nil {
+		return nil, err
+	}
+	var chain []chainedManifest
+	for _, ver := range allVersions {
+		cmpStart, cmpErr := compareSemver(ver, startVersion)
+		if cmpErr != nil {
+			return nil, fmt.Errorf("compare migration version %s with start %s: %w", ver, startVersion, cmpErr)
+		}
+		if cmpStart < 0 {
+			continue
+		}
+		cmpTarget, cmpErr := compareSemver(ver, targetVersion)
+		if cmpErr != nil {
+			return nil, fmt.Errorf("compare migration version %s with target %s: %w", ver, targetVersion, cmpErr)
+		}
+		if cmpTarget > 0 {
+			break
 		}
 		manifest, manifestPath, loadErr := loadUpgradeMigrationManifestByVersion(ver)
 		if loadErr != nil {

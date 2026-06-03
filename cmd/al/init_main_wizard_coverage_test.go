@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -210,12 +211,14 @@ func TestWizardCommand_AdditionalBranches(t *testing.T) {
 		origIsTerminal := isTerminal
 		origRunWizard := runWizard
 		origRunWizardProfile := runWizardProfile
+		origRunWizardAnswers := runWizardAnswers
 		origCleanup := cleanupWizardBackups
 		t.Cleanup(func() {
 			getwd = origGetwd
 			isTerminal = origIsTerminal
 			runWizard = origRunWizard
 			runWizardProfile = origRunWizardProfile
+			runWizardAnswers = origRunWizardAnswers
 			cleanupWizardBackups = origCleanup
 		})
 
@@ -231,6 +234,144 @@ func TestWizardCommand_AdditionalBranches(t *testing.T) {
 		cmd.SetErr(&bytes.Buffer{})
 		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), messages.WizardRequiresTerminal) {
 			t.Fatalf("expected terminal-required error, got %v", err)
+		}
+	})
+
+	t.Run("answers bypass terminal and call scripted runner", func(t *testing.T) {
+		origGetwd := getwd
+		origIsTerminal := isTerminal
+		origRunWizard := runWizard
+		origRunWizardProfile := runWizardProfile
+		origRunWizardAnswers := runWizardAnswers
+		origCleanup := cleanupWizardBackups
+		t.Cleanup(func() {
+			getwd = origGetwd
+			isTerminal = origIsTerminal
+			runWizard = origRunWizard
+			runWizardProfile = origRunWizardProfile
+			runWizardAnswers = origRunWizardAnswers
+			cleanupWizardBackups = origCleanup
+		})
+
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		getwd = func() (string, error) { return root, nil }
+		isTerminal = func() bool { return false }
+		called := false
+		runWizardAnswers = func(gotRoot string, _ string, answersPath string, _ io.Writer) error {
+			called = true
+			if gotRoot != root {
+				t.Fatalf("root = %q, want %q", gotRoot, root)
+			}
+			if answersPath != "answers.json" {
+				t.Fatalf("answers path = %q, want answers.json", answersPath)
+			}
+			return nil
+		}
+
+		cmd := newWizardCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs([]string{"--answers", "answers.json"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("expected nil error, got %v", err)
+		}
+		if !called {
+			t.Fatal("expected scripted wizard runner to be called")
+		}
+	})
+
+	t.Run("profile and answers conflict", func(t *testing.T) {
+		origGetwd := getwd
+		origRunWizardProfile := runWizardProfile
+		origRunWizardAnswers := runWizardAnswers
+		t.Cleanup(func() {
+			getwd = origGetwd
+			runWizardProfile = origRunWizardProfile
+			runWizardAnswers = origRunWizardAnswers
+		})
+
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		getwd = func() (string, error) { return root, nil }
+		runWizardProfile = func(string, string, string, bool, io.Writer) error {
+			t.Fatal("profile runner should not be called")
+			return nil
+		}
+		runWizardAnswers = func(string, string, string, io.Writer) error {
+			t.Fatal("answers runner should not be called")
+			return nil
+		}
+
+		cmd := newWizardCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs([]string{"--profile", "profile.toml", "--answers", "answers.json"})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "--profile and --answers cannot be used together") {
+			t.Fatalf("expected profile/answers conflict, got %v", err)
+		}
+	})
+
+	t.Run("answers and yes conflict", func(t *testing.T) {
+		origGetwd := getwd
+		origRunWizardAnswers := runWizardAnswers
+		t.Cleanup(func() {
+			getwd = origGetwd
+			runWizardAnswers = origRunWizardAnswers
+		})
+
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		getwd = func() (string, error) { return root, nil }
+		runWizardAnswers = func(string, string, string, io.Writer) error {
+			t.Fatal("answers runner should not be called")
+			return nil
+		}
+
+		cmd := newWizardCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs([]string{"--answers", "answers.json", "--yes"})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "--yes can only be used with --profile") {
+			t.Fatalf("expected answers/yes conflict, got %v", err)
+		}
+	})
+
+	// --yes without --profile must fail loud rather than be silently ignored on
+	// the interactive path. Would fail if the guard only rejected --answers --yes.
+	t.Run("yes without profile rejected", func(t *testing.T) {
+		origGetwd := getwd
+		origIsTerminal := isTerminal
+		t.Cleanup(func() {
+			getwd = origGetwd
+			isTerminal = origIsTerminal
+		})
+
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		getwd = func() (string, error) { return root, nil }
+		isTerminal = func() bool {
+			t.Fatal("interactive path should not be reached when --yes lacks --profile")
+			return false
+		}
+
+		cmd := newWizardCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs([]string{"--yes"})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "--yes can only be used with --profile") {
+			t.Fatalf("expected --yes-without-profile rejection, got %v", err)
 		}
 	})
 }

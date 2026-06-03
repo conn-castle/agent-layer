@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -39,7 +40,7 @@ func TestStatuslineSourceChanges_CreateSelectedVisibleSources(t *testing.T) {
 }
 
 func TestComputeStatuslineSourceChangeSet_VisibilityExistingAndErrors(t *testing.T) {
-	t.Run("requires touched enabled visible provider", func(t *testing.T) {
+	t.Run("requires enabled visible provider", func(t *testing.T) {
 		root := t.TempDir()
 		choices := NewChoices()
 		choices.EnabledAgentsTouched = true
@@ -51,6 +52,18 @@ func TestComputeStatuslineSourceChangeSet_VisibilityExistingAndErrors(t *testing
 		changes, err := computeStatuslineSourceChangeSet(root, choices)
 		require.NoError(t, err)
 		assert.Empty(t, changes.sourcesToCreate)
+	})
+
+	t.Run("enabled existing config seeds missing source without retoggle", func(t *testing.T) {
+		root := t.TempDir()
+		choices := NewChoices()
+		choices.EnabledAgents[AgentClaude] = true
+		choices.ClaudeStatusline = true
+
+		changes, err := computeStatuslineSourceChangeSet(root, choices)
+		require.NoError(t, err)
+		require.Len(t, changes.sourcesToCreate, 1)
+		assert.Equal(t, ".agent-layer/claude-statusline.sh", changes.sourcesToCreate[0].RelPath)
 	})
 
 	t.Run("existing source is preserved", func(t *testing.T) {
@@ -87,10 +100,10 @@ func TestComputeStatuslineSourceChangeSet_VisibilityExistingAndErrors(t *testing
 
 func TestApplyStatuslineSourceChanges_ReportsTemplateReadError(t *testing.T) {
 	err := applyStatuslineSourceChanges(t.TempDir(), statuslineSourceChangeSet{
-		sourcesToCreate: []statuslineSourceFile{{
-			relPath:      ".agent-layer/missing-statusline",
-			templatePath: "missing-statusline-template",
-			perm:         0o644,
+		sourcesToCreate: []install.StatuslineSourceTemplate{{
+			RelPath:      ".agent-layer/missing-statusline",
+			TemplatePath: "missing-statusline-template",
+			Perm:         0o644,
 		}},
 	})
 	require.Error(t, err)
@@ -109,16 +122,90 @@ func assertStatuslineTemplateWritten(t *testing.T, root string, relPath string, 
 	assert.Equal(t, perm, info.Mode().Perm())
 }
 
+// TestComputeStatuslineSourceChangeSet_PropagatesNonNotExistStatError verifies the
+// stat-error branch: when a parent path component is a file (ENOTDIR), the error is
+// surfaced rather than being treated as a missing source to create. Would fail if
+// the code collapsed all stat errors into "create source".
+func TestComputeStatuslineSourceChangeSet_PropagatesNonNotExistStatError(t *testing.T) {
+	root := t.TempDir()
+	// Make ".agent-layer" a regular file so stat of any file under it yields ENOTDIR.
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("x"), 0o600))
+
+	choices := NewChoices()
+	choices.EnabledAgents[AgentClaude] = true
+	choices.ClaudeStatusline = true
+	choices.ClaudeStatuslineTouched = true
+
+	_, err := computeStatuslineSourceChangeSet(root, choices)
+	require.Error(t, err)
+	assert.False(t, os.IsNotExist(err), "ENOTDIR stat error must not be reported as not-exist")
+}
+
+// TestApplyStatuslineSourceChanges_PropagatesWriteError verifies the atomic-write
+// error branch: when the target path is occupied by a directory, the write failure
+// is surfaced instead of being silently ignored. Would fail if write errors were
+// swallowed.
+func TestApplyStatuslineSourceChanges_PropagatesWriteError(t *testing.T) {
+	root := t.TempDir()
+	// Occupy the target source path with a directory so the atomic write fails.
+	target := filepath.Join(root, ".agent-layer", "claude-statusline.sh")
+	require.NoError(t, os.MkdirAll(target, 0o750))
+
+	err := applyStatuslineSourceChanges(root, statuslineSourceChangeSet{
+		sourcesToCreate: []install.StatuslineSourceTemplate{{
+			RelPath:      ".agent-layer/claude-statusline.sh",
+			TemplatePath: "claude-statusline.sh",
+			Perm:         0o755,
+		}},
+	})
+	require.Error(t, err)
+}
+
+// TestApplyStatuslineSourceChanges_SeedsLegacyContentNotTemplate verifies that the
+// self-heal seeding path preserves a user's migrated legacy status line: when the
+// legacy .agent-layer/statusline.sh exists and claude-statusline.sh is missing, the
+// wizard must seed the legacy content rather than overwrite it with the embedded
+// template. Would fail (regression) if applyStatuslineSourceChanges read TemplatePath
+// directly instead of routing through install's legacy-preferring seed logic.
+func TestApplyStatuslineSourceChanges_SeedsLegacyContentNotTemplate(t *testing.T) {
+	root := t.TempDir()
+
+	var claude install.StatuslineSourceTemplate
+	for _, source := range install.StatuslineSourceTemplates() {
+		if source.RelPath == ".agent-layer/claude-statusline.sh" {
+			claude = source
+		}
+	}
+	require.NotEmpty(t, claude.LegacyRelPath, "claude source must define a legacy rel-path")
+
+	legacyPath := filepath.Join(root, filepath.FromSlash(claude.LegacyRelPath))
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o750))
+	const legacyContent = "#!/bin/sh\n# user's customized legacy statusline\n"
+	require.NoError(t, os.WriteFile(legacyPath, []byte(legacyContent), 0o600))
+
+	require.NoError(t, applyStatuslineSourceChanges(root, statuslineSourceChangeSet{
+		sourcesToCreate: []install.StatuslineSourceTemplate{claude},
+	}))
+
+	seeded, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(claude.RelPath)))
+	require.NoError(t, err)
+	assert.Equal(t, legacyContent, string(seeded), "seed must preserve legacy content, not the template")
+
+	template, err := templates.Read(claude.TemplatePath)
+	require.NoError(t, err)
+	assert.NotEqual(t, string(template), string(seeded), "seed must not be the embedded template when legacy exists")
+}
+
 func TestApplyStatuslineSourceChanges_PropagatesCreateDirError(t *testing.T) {
 	root := t.TempDir()
 	blocker := filepath.Join(root, ".agent-layer")
 	require.NoError(t, os.WriteFile(blocker, []byte("not a directory"), 0o600))
 
 	err := applyStatuslineSourceChanges(root, statuslineSourceChangeSet{
-		sourcesToCreate: []statuslineSourceFile{{
-			relPath:      ".agent-layer/claude-statusline.sh",
-			templatePath: "claude-statusline.sh",
-			perm:         0o755,
+		sourcesToCreate: []install.StatuslineSourceTemplate{{
+			RelPath:      ".agent-layer/claude-statusline.sh",
+			TemplatePath: "claude-statusline.sh",
+			Perm:         0o755,
 		}},
 	})
 	require.Error(t, err)

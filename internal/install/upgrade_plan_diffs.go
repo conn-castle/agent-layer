@@ -87,19 +87,15 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 	case planDiffModeUpdate:
 		return inst.buildSingleDiffPreview(entry, templatePathByRel)
 	case planDiffModeAddition:
-		templatePath := templatePathByRel[change.Path]
-		if strings.TrimSpace(templatePath) == "" {
-			return DiffPreview{}, fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, change.Path)
-		}
-		templateBytes, err := templates.Read(templatePath)
+		desiredBytes, label, err := inst.additionPreviewBytes(change.Path, templatePathByRel)
 		if err != nil {
 			return DiffPreview{}, err
 		}
 		rendered, truncated, added, removed := renderTruncatedUnifiedDiff(
 			change.Path+" (current)",
-			change.Path+" (template)",
+			change.Path+" ("+label+")",
 			"",
-			normalizeTemplateContent(string(templateBytes)),
+			normalizeTemplateContent(string(desiredBytes)),
 			inst.diffMaxLines,
 		)
 		return DiffPreview{
@@ -136,6 +132,22 @@ func (inst *installer) buildPlanChangeDiffPreview(change UpgradeChange, mode pla
 	}
 }
 
+func (inst *installer) additionPreviewBytes(relPath string, templatePathByRel map[string]string) ([]byte, string, error) {
+	if source, ok := statuslineSourceByRelPath(relPath); ok {
+		data, label, err := inst.statuslineSourceSeedBytes(source)
+		return data, label, err
+	}
+	templatePath := templatePathByRel[relPath]
+	if strings.TrimSpace(templatePath) == "" {
+		return nil, "", fmt.Errorf(messages.InstallMissingTemplatePathMappingFmt, relPath)
+	}
+	templateBytes, err := templates.Read(templatePath)
+	if err != nil {
+		return nil, "", err
+	}
+	return templateBytes, statuslineSeedOriginTemplate, nil
+}
+
 func (inst *installer) allTemplatePathByRel() (map[string]string, error) {
 	managed, err := inst.templates().managedTemplatePathByRel()
 	if err != nil {
@@ -152,8 +164,8 @@ func (inst *installer) allTemplatePathByRel() (map[string]string, error) {
 	for key, value := range memory {
 		out[key] = value
 	}
-	for _, source := range statuslineSourceTemplates() {
-		out[source.relPath] = source.templatePath
+	for _, source := range StatuslineSourceTemplates() {
+		out[source.RelPath] = source.TemplatePath
 	}
 	return out, nil
 }
