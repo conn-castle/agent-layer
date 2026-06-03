@@ -62,6 +62,12 @@ func BuildUpgradePlanDiffPreviews(root string, plan UpgradePlan, opts UpgradePla
 	if err := addPlanChanges(plan.TemplateUpdates, planDiffModeUpdate); err != nil {
 		return nil, err
 	}
+	if err := addPlanChanges(plan.StatuslineSourceAdditions, planDiffModeAddition); err != nil {
+		return nil, err
+	}
+	if err := addPlanChanges(plan.StatuslineSourceUpdates, planDiffModeUpdate); err != nil {
+		return nil, err
+	}
 	if err := addPlanChanges(plan.SectionAwareUpdates, planDiffModeUpdate); err != nil {
 		return nil, err
 	}
@@ -145,6 +151,9 @@ func (inst *installer) allTemplatePathByRel() (map[string]string, error) {
 	}
 	for key, value := range memory {
 		out[key] = value
+	}
+	for _, source := range statuslineSourceTemplates() {
+		out[source.relPath] = source.templatePath
 	}
 	return out, nil
 }

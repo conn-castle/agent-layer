@@ -105,10 +105,6 @@ func LoadInstructionsFS(fsys fs.FS, root string, dir string) ([]InstructionFile,
 		}
 	}
 
-	if len(names) == 0 {
-		return nil, fmt.Errorf(messages.ConfigNoInstructionFilesFmt, dir)
-	}
-
 	sort.Strings(names)
 
 	files := make([]InstructionFile, 0, len(names))

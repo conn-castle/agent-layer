@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         id: setup-go
         with:
@@ -44,3 +46,27 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Build release artifacts (dry run)
         run: make release-dist AL_VERSION=ci DIST_DIR=dist
+
+  website-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout agent-layer
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Checkout agent-layer-web
+        uses: actions/checkout@v4
+        with:
+          repository: conn-castle/agent-layer-web
+          ref: main
+          path: agent-layer-web
+          persist-credentials: false
+      - name: Build published website
+        run: make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web

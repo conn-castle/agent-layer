@@ -39,15 +39,17 @@ session_id=$("$JQ" -r '.session_id // ""' <<<"$input")
 git_worktree=$("$JQ" -r '.workspace.git_worktree // ""' <<<"$input")
 used_pct=$("$JQ" -r '.context_window.used_percentage // empty' <<<"$input")
 weekly_pct=$("$JQ" -r '.rate_limits.seven_day.used_percentage // empty' <<<"$input")
+weekly_reset=$("$JQ" -r '.rate_limits.seven_day.resets_at // empty' <<<"$input")
 total_input=$("$JQ" -r '.context_window.total_input_tokens // 0' <<<"$input")
 ctx_size=$("$JQ" -r '.context_window.context_window_size // 0' <<<"$input")
-pr_num=$("$JQ" -r '.pr.number // empty' <<<"$input")
-pr_state=$("$JQ" -r '.pr.review_state // "open"' <<<"$input")
 cost_usd=$("$JQ" -r '.cost.total_cost_usd // empty' <<<"$input")
 effort=$("$JQ" -r '.effort.level // ""' <<<"$input")
 
-# ── Model ─────────────────────────────────────────────────────────────────────
+# ── Model (with reasoning effort, when present) ───────────────────────────────
 model_str="${CYAN}${model}${RESET}"
+if [ -n "$effort" ]; then
+  model_str="${model_str} ${BLUE}(${effort})${RESET}"
+fi
 
 # ── Session ───────────────────────────────────────────────────────────────────
 sess_str=""
@@ -115,10 +117,17 @@ else
 fi
 ctx_str="${ctx_color}${prefix}${used_int}%${RESET}"
 
-# ── Weekly usage limit ────────────────────────────────────────────────────────
+# ── Weekly usage limit: time-to-reset + remaining headroom ────────────────────
+# Renders "lim:5d/40% left" — days until the 7-day window resets (hours once
+# under a day) and the percentage of the weekly allowance still available. The
+# time segment is dropped when the reset timestamp is absent (e.g. before the
+# first API response), leaving "lim:40% left".
 weekly_str=""
 if [ -n "$weekly_pct" ]; then
   weekly_int=$(printf "%.0f" "$weekly_pct")
+  remaining_pct=$(( 100 - weekly_int ))
+  [ "$remaining_pct" -lt 0 ] && remaining_pct=0
+  # Color by pressure on the *used* fraction so red still means "almost out".
   if [ "$weekly_int" -ge 80 ]; then
     weekly_color="${RED}"
   elif [ "$weekly_int" -ge 50 ]; then
@@ -126,64 +135,88 @@ if [ -n "$weekly_pct" ]; then
   else
     weekly_color="${GREEN}"
   fi
-  weekly_str="${weekly_color}7d:${weekly_int}%${RESET}"
-fi
 
-# ── Reasoning effort ──────────────────────────────────────────────────────────
-effort_str=""
-if [ -n "$effort" ]; then
-  effort_str="${BLUE}effort:${effort}${RESET}"
-fi
+  # resets_at is Unix epoch seconds; compute whole days left, or whole hours
+  # once under 24h. Clamp negatives to 0 in case the window has already reset.
+  time_left=""
+  if [ -n "$weekly_reset" ]; then
+    reset_epoch=$(printf "%.0f" "$weekly_reset" 2>/dev/null)
+    now=$(date +%s 2>/dev/null)
+    if [ -n "$reset_epoch" ] && [ -n "$now" ] && [ "$reset_epoch" -gt 0 ] 2>/dev/null; then
+      secs_left=$(( reset_epoch - now ))
+      [ "$secs_left" -lt 0 ] && secs_left=0
+      if [ "$secs_left" -ge 86400 ]; then
+        time_left="$(( secs_left / 86400 ))d"
+      elif [ "$secs_left" -ge 3600 ]; then
+        time_left="$(( secs_left / 3600 ))h"
+      else
+        # Under an hour: avoid the misleading "0h".
+        time_left="<1h"
+      fi
+    fi
+  fi
 
-# ── Lines changed + session cost ──────────────────────────────────────────────
-cost_str=""
-lines_added=0
-lines_removed=0
-if command -v git >/dev/null 2>&1; then
-  # Count tracked staged and unstaged changes against HEAD; untracked files are
-  # intentionally excluded.
-  while IFS=$'\t' read -r added removed _path; do
-    case "$added:$removed" in
-      *-*) continue ;;
-    esac
-    lines_added=$(( lines_added + added ))
-    lines_removed=$(( lines_removed + removed ))
-  done < <(git -C "$cwd" diff --numstat HEAD -- 2>/dev/null)
-fi
-if [ "${lines_added:-0}" -gt 0 ] 2>/dev/null || [ "${lines_removed:-0}" -gt 0 ] 2>/dev/null; then
-  cost_str="${GREEN}+${lines_added}${RESET}${DIM}/${RESET}${RED}-${lines_removed}${RESET}"
-fi
-if [ -n "$cost_usd" ]; then
-  usd_fmt=$(printf "%.2f" "$cost_usd" 2>/dev/null)
-  if [ -n "$usd_fmt" ] && [ "$usd_fmt" != "0.00" ]; then
-    [ -n "$cost_str" ] && cost_str="${cost_str} ${SEP} "
-    cost_str="${cost_str}${DIM}\$${usd_fmt}${RESET}"
+  if [ -n "$time_left" ]; then
+    weekly_str="${weekly_color}lim:${time_left}/${remaining_pct}% left${RESET}"
+  else
+    weekly_str="${weekly_color}lim:${remaining_pct}% left${RESET}"
   fi
 fi
 
-# ── PR indicator ──────────────────────────────────────────────────────────────
-pr_str=""
-if [ -n "$pr_num" ]; then
-  case "$pr_state" in
-    approved)          pr_color="${GREEN}" ;;
-    changes_requested) pr_color="${RED}" ;;
-    draft)             pr_color="${DIM}" ;;
-    *)                 pr_color="${BLUE}" ;;
-  esac
-  pr_str="${pr_color}PR#${pr_num}${RESET}"
+# ── Lines changed + session cost ──────────────────────────────────────────────
+# Rendered as two independent segments (lines_str, dollar_str) so they can sit
+# at different positions on the line.
+lines_str=""
+lines_added=0
+lines_removed=0
+files_changed=0
+if command -v git >/dev/null 2>&1; then
+  git_root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
+  if [ -n "$git_root" ]; then
+    # Count tracked staged and unstaged changes against HEAD.
+    while IFS=$'\t' read -r added removed _path; do
+      files_changed=$(( files_changed + 1 ))
+      case "$added:$removed" in
+        *-*) continue ;;
+      esac
+      lines_added=$(( lines_added + added ))
+      lines_removed=$(( lines_removed + removed ))
+    done < <(git -C "$git_root" diff --numstat HEAD -- 2>/dev/null)
+
+    # Count untracked files as the diff that would be created by adding them.
+    while IFS= read -r -d '' path; do
+      while IFS=$'\t' read -r added removed _path; do
+        files_changed=$(( files_changed + 1 ))
+        case "$added:$removed" in
+          *-*) continue ;;
+        esac
+        lines_added=$(( lines_added + added ))
+        lines_removed=$(( lines_removed + removed ))
+      done < <(git -C "$git_root" diff --numstat --no-index -- /dev/null "$path" 2>/dev/null)
+    done < <(git -C "$git_root" ls-files -z -o --exclude-standard -- 2>/dev/null)
+  fi
+fi
+if [ "${files_changed:-0}" -gt 0 ] 2>/dev/null; then
+  lines_str="${GREEN}+${lines_added}${RESET}${DIM}/${RESET}${RED}-${lines_removed}${RESET} ${BLUE}Δ${files_changed}${RESET}"
+fi
+dollar_str=""
+if [ -n "$cost_usd" ]; then
+  usd_fmt=$(printf "%.2f" "$cost_usd" 2>/dev/null)
+  if [ -n "$usd_fmt" ] && [ "$usd_fmt" != "0.00" ]; then
+    dollar_str="${DIM}\$${usd_fmt}${RESET}"
+  fi
 fi
 
 # ── Assemble line ─────────────────────────────────────────────────────────────
 parts=()
 parts+=("${model_str}")
-[ -n "$effort_str" ]   && parts+=("${SEP}" "${effort_str}")
 parts+=("${SEP}" "${ctx_str}")
 [ -n "$weekly_str" ]   && parts+=("${SEP}" "${weekly_str}")
 [ -n "$sess_str" ]     && parts+=("${SEP}" "${sess_str}")
-parts+=("${SEP}" "${dir_str}")
+[ -n "$lines_str" ]    && parts+=("${SEP}" "${lines_str}")
 [ -n "$worktree_str" ] && parts+=("${SEP}" "${worktree_str}")
 [ -n "$git_str" ]      && parts+=("${SEP}" "${git_str}")
-[ -n "$cost_str" ]     && parts+=("${SEP}" "${cost_str}")
-[ -n "$pr_str" ]       && parts+=("${SEP}" "${pr_str}")
+[ -n "$dollar_str" ]   && parts+=("${SEP}" "${dollar_str}")
+parts+=("${SEP}" "${dir_str}")
 
 printf "%b\n" "${parts[*]}"

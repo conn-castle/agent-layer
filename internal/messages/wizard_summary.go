@@ -26,6 +26,10 @@ const (
 	WizardSummaryClaudeLocalConfigDir            = "\nClaude config isolation: enabled (per-repo settings and caches; auth shared globally — upstream limitation)\n"
 	WizardSummaryCodexAppsDisabled               = "\nCodex built-in apps: disabled (suppresses Github/Gmail/etc. tool surface)\n"
 	WizardSummaryCodexAppsEnabled                = "\nCodex built-in apps: enabled\n"
+	WizardSummaryClaudeStatuslineEnabled         = "\nClaude statusline: enabled\n"
+	WizardSummaryClaudeStatuslineDisabled        = "\nClaude statusline: disabled\n"
+	WizardSummaryCodexStatuslineEnabled          = "\nCodex statusline: enabled\n"
+	WizardSummaryCodexStatuslineDisabled         = "\nCodex statusline: disabled\n"
 	// Disable-toggle summary lines. Each is emitted only when the toggle is on
 	// (the feature is disabled); leaving a toggle off keeps the client default
 	// and prints nothing.

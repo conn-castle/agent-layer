@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Scenario: CLI catalog skill flow — by default a fresh `al init` does not
-# install any CLI catalog skills (they're opt-in via wizard); doctor reports
-# nothing about them. When the user later creates a catalog skill directory,
-# doctor checks the corresponding binary on PATH.
+# Scenario: CLI catalog skill doctor probe. Fresh `al init` does not install
+# catalog skills; when a catalog skill directory later exists, doctor checks
+# the corresponding binary on PATH.
 
 run_scenario_wizard_cli_catalog_skills() {
   section "CLI catalog skills: doctor binary check"
@@ -36,12 +35,21 @@ SKILL
   # turn the missing-binary assertion into a machine-dependent result.
   local doctor_output rc=0
   doctor_output=$(cd "$repo_dir" && PATH="$E2E_INSTALL_PREFIX/bin" al doctor 2>&1) || rc=$?
-  if grep -qF -- "tavily-web" <<<"$doctor_output"; then
-    pass "doctor mentions tavily-web when binary is missing"
+  if [[ $rc -ne 0 ]]; then
+    pass "doctor exits nonzero when tavily-web binary is missing"
   else
-    fail "doctor did not mention tavily-web with missing binary; rc=$rc"
-    echo "$doctor_output" | head -20 | sed 's/^/    /'
+    fail "doctor should exit nonzero when tavily-web binary is missing"
   fi
+  assert_output_contains "$doctor_output" "[FAIL]" \
+    "doctor reports failure when tavily-web binary is missing"
+  assert_output_contains "$doctor_output" "tavily-web" \
+    "doctor mentions tavily-web when binary is missing"
+  assert_output_contains "$doctor_output" "tvly" \
+    "doctor mentions missing tvly binary"
+  assert_output_contains "$doctor_output" "Some checks failed" \
+    "doctor prints failure summary for missing tavily-web binary"
+  assert_output_not_contains "$doctor_output" "All systems go" \
+    "doctor does not print healthy summary for missing tavily-web binary"
 
   # Drop a stub tvly into a mock bin dir, prepend to PATH, re-run doctor:
   # doctor should report OK for tavily-web's binary check.
@@ -55,17 +63,29 @@ STUB
 
   local doctor_output_ok rc_ok=0
   doctor_output_ok=$(cd "$repo_dir" && PATH="$mock_bin_with_tvly:$E2E_INSTALL_PREFIX/bin" al doctor 2>&1) || rc_ok=$?
+  if [[ $rc_ok -eq 0 ]]; then
+    pass "doctor exits zero when tvly is on PATH"
+  else
+    fail "doctor should exit zero when tvly is on PATH (rc=$rc_ok)"
+  fi
   if grep -qF -- "tavily-web found" <<<"$doctor_output_ok"; then
     pass "doctor reports tavily-web found when tvly is on PATH"
   else
     fail "doctor did not report tavily-web found; rc=$rc_ok"
     echo "$doctor_output_ok" | head -20 | sed 's/^/    /'
   fi
+  assert_output_not_contains "$doctor_output_ok" "[FAIL]" \
+    "doctor has no failures when tvly is on PATH"
 
   # Removing the catalog skill directory makes doctor stop reporting tavily-web.
   rm -rf "$skill_dir"
   local doctor_output_silent rc_silent=0
   doctor_output_silent=$(cd "$repo_dir" && PATH="$E2E_INSTALL_PREFIX/bin" al doctor 2>&1) || rc_silent=$?
+  if [[ $rc_silent -eq 0 ]]; then
+    pass "doctor exits zero after tavily-web directory removal"
+  else
+    fail "doctor should exit zero after tavily-web directory removal (rc=$rc_silent)"
+  fi
   if grep -qF -- "tavily-web" <<<"$doctor_output_silent"; then
     fail "doctor still mentions tavily-web after directory removal"
     echo "$doctor_output_silent" | head -20 | sed 's/^/    /'

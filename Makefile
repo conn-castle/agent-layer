@@ -164,6 +164,22 @@ docs-upgrade-check: ## Validate upgrade contract docs for a release tag (set REL
 docs-cta-check: ## Validate upgrade CTA syntax in core docs/messages
 	@./scripts/check-upgrade-ctas.sh
 
+.PHONY: website-build-check
+website-build-check: ## Publish site into a website checkout and run Docusaurus build (set SITE_BUILD_TAG=vX.Y.Z WEBSITE_REPO_DIR=path)
+	@if [[ -z "$${SITE_BUILD_TAG:-}" ]]; then \
+	  echo "SITE_BUILD_TAG is required (example: make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web)" >&2; \
+	  exit 1; \
+	fi
+	@if [[ -z "$${WEBSITE_REPO_DIR:-}" ]]; then \
+	  echo "WEBSITE_REPO_DIR is required (example: make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web)" >&2; \
+	  exit 1; \
+	fi
+	@npm --prefix "$${WEBSITE_REPO_DIR}" ci
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/publish-site \
+	  --tag "$${SITE_BUILD_TAG}" \
+	  --repo-b-dir "$${WEBSITE_REPO_DIR}"
+	@npm --prefix "$${WEBSITE_REPO_DIR}" run build
+
 .PHONY: release-preflight
 release-preflight: test-release ## Validate release readiness (set RELEASE_TAG=vX.Y.Z)
 	@if [[ -z "$${RELEASE_TAG:-}" ]]; then \

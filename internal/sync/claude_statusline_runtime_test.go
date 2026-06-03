@@ -6,8 +6,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
@@ -71,33 +73,40 @@ func runGit(t *testing.T, cwd string, args ...string) {
 }
 
 func TestClaudeStatuslineScript_RendersFullPayload(t *testing.T) {
-	cwd := t.TempDir()
-	runGit(t, cwd, "init")
-	if err := os.WriteFile(filepath.Join(cwd, "tracked.txt"), []byte("one\ntwo\nthree\n"), 0o600); err != nil {
+	root := t.TempDir()
+	runGit(t, root, "init")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("one\ntwo\nthree\n"), 0o600); err != nil {
 		t.Fatalf("write tracked fixture: %v", err)
 	}
-	runGit(t, cwd, "add", "tracked.txt")
-	runGit(t, cwd, "-c", "user.name=Agent Layer", "-c", "user.email=agent-layer@example.invalid", "commit", "-m", "baseline")
-	if err := os.WriteFile(filepath.Join(cwd, "tracked.txt"), []byte("one\nTWO\nthree\nfour\nfive\n"), 0o600); err != nil {
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "-c", "user.name=Agent Layer", "-c", "user.email=agent-layer@example.invalid", "commit", "-m", "baseline")
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("one\nTWO\nthree\nfour\nfive\n"), 0o600); err != nil {
 		t.Fatalf("modify tracked fixture: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(cwd, "untracked.txt"), []byte("ignored\nignored\nignored\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("ignored\nignored\nignored\n"), 0o600); err != nil {
 		t.Fatalf("write untracked fixture: %v", err)
 	}
+	cwd := filepath.Join(root, "subdir")
+	if err := os.Mkdir(cwd, 0o700); err != nil {
+		t.Fatalf("make subdir: %v", err)
+	}
 
+	// ~5 days out, buffered an extra hour so clock drift between this line and
+	// the script's own `date +%s` cannot tip the floored day count down to 4d.
+	resetEpoch := time.Now().Unix() + 5*86400 + 3600
 	input := `{
 		"model": {"display_name": "Opus 4.8"},
 		"workspace": {"current_dir": "` + cwd + `"},
 		"session_id": "sess123",
 		"effort": {"level": "high"},
 		"context_window": {"used_percentage": 43, "context_window_size": 200000, "total_input_tokens": 1000},
-		"rate_limits": {"seven_day": {"used_percentage": 60}},
-		"cost": {"total_cost_usd": 1.5, "total_lines_added": 99, "total_lines_removed": 88},
-		"pr": {"number": 123, "review_state": "approved"}
+		"rate_limits": {"seven_day": {"used_percentage": 60, "resets_at": ` + strconv.FormatInt(resetEpoch, 10) + `}},
+		"cost": {"total_cost_usd": 1.5, "total_lines_added": 99, "total_lines_removed": 88}
 	}`
 	out := runClaudeStatusline(t, cwd, input)
 
-	for _, want := range []string{"Opus 4.8", "effort:high", "ctx:43%", "7d:60%", "#sess123", "+3", "-1", "$1.50", "PR#123"} {
+	// used_percentage 60 → 40% headroom remaining; reset ~5 days out.
+	for _, want := range []string{"Opus 4.8 (high)", "ctx:43%", "lim:5d/40% left", "#sess123", "+6", "-1", "Δ2", "$1.50"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected output to contain %q, got: %q", want, out)
 		}
@@ -123,11 +132,62 @@ func TestClaudeStatuslineScript_FallsBackToTokenRatioForContext(t *testing.T) {
 	if !strings.Contains(out, "ctx:~25%") {
 		t.Errorf("expected approximate ctx:~25%%, got: %q", out)
 	}
-	// Absent optional fields must not render their segments.
-	for _, absent := range []string{"7d:", "PR#", "effort:"} {
+	// Absent optional fields must not render their segments. "(" guards against
+	// a stray reasoning-effort parenthetical on the model (e.g. "Sonnet (high)").
+	for _, absent := range []string{"lim:", "("} {
 		if strings.Contains(out, absent) {
 			t.Errorf("did not expect %q in minimal output, got: %q", absent, out)
 		}
+	}
+}
+
+func TestClaudeStatuslineScript_WeeklyLimitShowsHoursWhenUnderADay(t *testing.T) {
+	// Under 24h to reset: the time segment switches from days to whole hours.
+	cwd := t.TempDir()
+	// ~5 hours out, buffered 30 min against clock drift so the floor stays 5h.
+	resetEpoch := time.Now().Unix() + 5*3600 + 1800
+	input := `{
+		"model": {"display_name": "Opus 4.8"},
+		"workspace": {"current_dir": "` + cwd + `"},
+		"rate_limits": {"seven_day": {"used_percentage": 75, "resets_at": ` + strconv.FormatInt(resetEpoch, 10) + `}}
+	}`
+	out := runClaudeStatusline(t, cwd, input)
+	// used_percentage 75 → 25% headroom remaining.
+	if !strings.Contains(out, "lim:5h/25% left") {
+		t.Errorf("expected lim:5h/25%% left, got: %q", out)
+	}
+}
+
+func TestClaudeStatuslineScript_WeeklyLimitShowsSubHourReset(t *testing.T) {
+	// Under an hour to reset: render "<1h" rather than the misleading "0h".
+	cwd := t.TempDir()
+	// ~30 min out; well under 3600s even after clock drift, so it stays "<1h".
+	resetEpoch := time.Now().Unix() + 1800
+	input := `{
+		"model": {"display_name": "Opus 4.8"},
+		"workspace": {"current_dir": "` + cwd + `"},
+		"rate_limits": {"seven_day": {"used_percentage": 90, "resets_at": ` + strconv.FormatInt(resetEpoch, 10) + `}}
+	}`
+	out := runClaudeStatusline(t, cwd, input)
+	// used_percentage 90 → 10% headroom remaining.
+	if !strings.Contains(out, "lim:<1h/10% left") {
+		t.Errorf("expected lim:<1h/10%% left, got: %q", out)
+	}
+}
+
+func TestClaudeStatuslineScript_WeeklyLimitOmitsTimeWhenNoReset(t *testing.T) {
+	// rate_limits present but resets_at absent (e.g. before the first API
+	// response): show remaining headroom without fabricating a time-to-reset.
+	cwd := t.TempDir()
+	input := `{
+		"model": {"display_name": "Opus 4.8"},
+		"workspace": {"current_dir": "` + cwd + `"},
+		"rate_limits": {"seven_day": {"used_percentage": 10}}
+	}`
+	out := runClaudeStatusline(t, cwd, input)
+	// used_percentage 10 → 90% headroom; no "Nd/" or "Nh/" prefix.
+	if !strings.Contains(out, "lim:90% left") {
+		t.Errorf("expected lim:90%% left with no time segment, got: %q", out)
 	}
 }
 

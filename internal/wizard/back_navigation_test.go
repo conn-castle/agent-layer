@@ -53,7 +53,7 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 2, approvalCalls, "expected to revisit approval step after back from agents")
 	require.Equal(t, 2, agentCalls)
@@ -84,7 +84,7 @@ func TestPromptWizardFlow_FirstStepEscapeCancelsWhenConfirmed(t *testing.T) {
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.ErrorIs(t, err, errWizardCancelled)
 	require.Equal(t, 1, exitConfirmCalls)
 }
@@ -127,7 +127,7 @@ func TestPromptWizardFlow_FirstStepEscapeContinuesWhenDeclined(t *testing.T) {
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 2, approvalCalls)
 	require.Equal(t, 1, exitConfirmCalls)
@@ -173,7 +173,7 @@ func TestPromptWizardFlow_ClaudeReasoningPromptedForNonOpusModel(t *testing.T) {
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 1, claudeReasoningCalls, "reasoning effort prompt should be shown regardless of model")
 }
@@ -218,7 +218,7 @@ func TestPromptWizardFlow_ClaudeReasoningPreservedWhenSwitchingToNonOpusModel(t 
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, "high", choices.ClaudeReasoning, "reasoning should be preserved when switching to a non-opus model")
 	require.True(t, choices.ClaudeReasoningTouched, "reasoning touched flag should be set after the prompt")
@@ -265,7 +265,7 @@ func TestPromptWizardFlow_ClaudeReasoningPromptedForOpusModel(t *testing.T) {
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 1, claudeReasoningCalls, "reasoning effort prompt should be shown for opus model")
 }
@@ -315,7 +315,7 @@ func TestPromptWizardFlow_BackFromModelsRollsBackPartialModelState(t *testing.T)
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 2, agentCalls, "expected back from models to revisit agent selection")
 	require.Equal(t, "", choices.CodexModel)
@@ -392,7 +392,7 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 2, agentCalls, "expected back navigation to revisit agent selection")
 	require.Equal(t, 1, secondModelCalls, "expected second model step to go back to agent selection")
@@ -447,7 +447,7 @@ func TestPromptWizardFlow_BackFromWarningsSkipsNoOpSecretsStep(t *testing.T) {
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.NoError(t, err)
 	require.Equal(t, 2, warningsCalls, "expected warnings to be revisited after going forward from the previous step")
 	require.Equal(t, 2, mcpDefaultsCalls, "back from warnings should reach the MCP defaults step, not bounce off the no-op secrets step")
@@ -474,7 +474,7 @@ func TestPromptWizardFlow_CtrlCExitsImmediatelyWithoutConfirmation(t *testing.T)
 		},
 	}
 
-	err := promptWizardFlow(t.TempDir(), ui, choices, false)
+	err := promptWizardFlow(t.TempDir(), ui, choices)
 	require.ErrorIs(t, err, errWizardCancelled)
 	require.Equal(t, 0, exitConfirmCalls, "Ctrl+C should exit immediately without asking for confirmation")
 }

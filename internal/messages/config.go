@@ -62,7 +62,6 @@ const (
 	ConfigSkillFlatFormatUnsupportedFmt  = "found flat-format skill %q (%s) in skills directory; flat format is no longer supported -- run 'al upgrade' to migrate to directory format"
 
 	ConfigMissingInstructionsDirFmt = "missing instructions directory %s: %w"
-	ConfigNoInstructionFilesFmt     = "no instruction files found in %s"
 	ConfigFailedReadInstructionFmt  = "failed to read instruction %s: %w"
 
 	ConfigMissingEnvVarsFmt = "missing environment variables: %s"

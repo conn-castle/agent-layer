@@ -340,6 +340,7 @@ func TestHandleUnknowns_DocsAgentLayerOrphan_DetectedAndDeleted(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 	// Create an orphan file in docs/agent-layer/ that has no template.
 	orphanPath := filepath.Join(root, "docs", "agent-layer", "CUSTOM.md")
 	if err := os.WriteFile(orphanPath, []byte("custom"), 0o600); err != nil {
@@ -377,6 +378,7 @@ func TestScanUnknowns_DocsAgentLayerOrphan_Detected(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 	orphanPath := filepath.Join(root, "docs", "agent-layer", "ORPHAN.md")
 	if err := os.WriteFile(orphanPath, []byte("orphan"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
@@ -401,6 +403,7 @@ func TestBuildKnownPaths_IncludesDocsAgentLayerTemplateFiles(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 	inst := &installer{root: root, sys: RealSystem{}}
 	known, err := inst.buildKnownPaths()
 	if err != nil {

@@ -166,7 +166,7 @@ log="$log_dir/${binary}.log"
     echo "ARG_\${i}=\${arg}"
     i=\$((i + 1))
   done
-  env | grep -E '^(AL_|CLAUDE_|AGY_)' | sort || true
+  env | grep -E '^(AL_|CLAUDE_|AGY_|CODEX_HOME=)' | sort || true
   echo "---END---"
 } >> "\$log"
 
@@ -312,17 +312,28 @@ assert_claude_mock_env_non_empty() {
 }
 
 # assert_json_valid <file> <label> — verify file contains valid JSON.
-# Uses python3 json.load as fallback since jq may not be available.
 assert_json_valid() {
   local file="$1" label="$2"
-  if command -v python3 &>/dev/null; then
-    if python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$file" 2>/dev/null; then
+  if command -v jq &>/dev/null; then
+    if jq -e . "$file" >/dev/null 2>&1; then
+      pass "$label"
+    else
+      fail "$label (invalid JSON)"
+    fi
+  elif command -v node &>/dev/null; then
+    if node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$file" 2>/dev/null; then
+      pass "$label"
+    else
+      fail "$label (invalid JSON)"
+    fi
+  elif command -v python3 &>/dev/null; then
+    if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$file" 2>/dev/null; then
       pass "$label"
     else
       fail "$label (invalid JSON)"
     fi
   else
-    warn "$label (skipped: python3 not available for JSON validation)"
+    warn "$label (skipped: jq/node/python3 not available for JSON validation)"
   fi
 }
 
@@ -506,6 +517,18 @@ assert_file_not_exists() {
   fi
 }
 
+# assert_file_empty <path> <label>
+assert_file_empty() {
+  local path="$1" label="$2"
+  if [[ ! -f "$path" ]]; then
+    fail "$label (file not found: $path)"
+  elif [[ ! -s "$path" ]]; then
+    pass "$label"
+  else
+    fail "$label (file is not empty: $path)"
+  fi
+}
+
 # assert_dir_exists <path> <label>
 assert_dir_exists() {
   local path="$1" label="$2"
@@ -678,21 +701,35 @@ _SYNC_OUTPUT_PATHS=(
   ".mcp.json"
 )
 
+_instruction_sources_have_content() {
+  local dir="$1"
+  [[ -d "$dir/.agent-layer/instructions" ]] || return 1
+  [[ -n "$(find "$dir/.agent-layer/instructions" -type f -name '*.md' -size +0c -print -quit)" ]]
+}
+
 # assert_generated_artifacts <dir> — verify all sync output files exist and
-# contain expected content markers (not just existence checks).
+# instruction shim content matches the repo's instruction-source state.
 assert_generated_artifacts() {
   local dir="$1"
   for rel_path in "${_SYNC_OUTPUT_PATHS[@]}"; do
     assert_file_exists "$dir/$rel_path" "sync generated $rel_path"
   done
-  # Verify managed markers in instruction shims (all use the same header)
-  assert_file_contains "$dir/CLAUDE.md" "GENERATED FILE" "CLAUDE.md has managed marker"
-  assert_file_contains "$dir/AGENTS.md" "GENERATED FILE" "AGENTS.md has managed marker"
   assert_file_not_exists "$dir/GEMINI.md" "GEMINI.md is not generated after Gemini removal"
-  assert_file_contains "$dir/.github/copilot-instructions.md" "GENERATED FILE" \
-    "copilot-instructions.md has managed marker"
-  assert_file_contains "$dir/.codex/AGENTS.md" "GENERATED FILE" \
-    "codex AGENTS.md has managed marker"
+  if _instruction_sources_have_content "$dir"; then
+    # Verify managed markers in instruction shims (all use the same header).
+    assert_file_contains "$dir/CLAUDE.md" "GENERATED FILE" "CLAUDE.md has managed marker"
+    assert_file_contains "$dir/AGENTS.md" "GENERATED FILE" "AGENTS.md has managed marker"
+    assert_file_contains "$dir/.github/copilot-instructions.md" "GENERATED FILE" \
+      "copilot-instructions.md has managed marker"
+    assert_file_contains "$dir/.codex/AGENTS.md" "GENERATED FILE" \
+      "codex AGENTS.md has managed marker"
+  else
+    assert_file_empty "$dir/CLAUDE.md" "CLAUDE.md is empty without instruction sources"
+    assert_file_empty "$dir/AGENTS.md" "AGENTS.md is empty without instruction sources"
+    assert_file_empty "$dir/.github/copilot-instructions.md" \
+      "copilot-instructions.md is empty without instruction sources"
+    assert_file_empty "$dir/.codex/AGENTS.md" "codex AGENTS.md is empty without instruction sources"
+  fi
   # Verify JSON files have expected structure
   assert_file_contains "$dir/.claude/settings.json" "permissions" \
     "settings.json has permissions key"

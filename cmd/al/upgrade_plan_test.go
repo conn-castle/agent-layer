@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -293,6 +294,7 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 	if err := install.Run(root, install.Options{System: install.RealSystem{}, PinVersion: "1.2.3"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForUpgradeCmdTest(t, root)
 	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
@@ -327,4 +329,40 @@ func prepareUpgradeTestRepo(t *testing.T) string {
 		t.Fatalf("write orphan rename file: %v", err)
 	}
 	return root
+}
+
+func seedWorkflowBundleForUpgradeCmdTest(t *testing.T, root string) {
+	t.Helper()
+	copyEmbeddedDirForUpgradeCmdTest(t, "instructions", filepath.Join(root, ".agent-layer", "instructions"), 0o644)
+	copyEmbeddedDirForUpgradeCmdTest(t, "skills", filepath.Join(root, ".agent-layer", "skills"), 0o600)
+	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, ".agent-layer", "templates", "docs"), 0o644)
+	copyEmbeddedDirForUpgradeCmdTest(t, "docs/agent-layer", filepath.Join(root, "docs", "agent-layer"), 0o644)
+}
+
+func copyEmbeddedDirForUpgradeCmdTest(t *testing.T, templateRoot string, destRoot string, perm fs.FileMode) {
+	t.Helper()
+	err := templates.Walk(templateRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel := strings.TrimPrefix(path, templateRoot+"/")
+		if rel == path {
+			t.Fatalf("unexpected template path %s", path)
+		}
+		data, err := templates.Read(path)
+		if err != nil {
+			return err
+		}
+		dest := filepath.Join(destRoot, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+			return err
+		}
+		return os.WriteFile(dest, data, perm)
+	})
+	if err != nil {
+		t.Fatalf("copy embedded dir %s: %v", templateRoot, err)
+	}
 }

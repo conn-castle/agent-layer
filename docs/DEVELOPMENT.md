@@ -52,7 +52,7 @@ Agent Layer uses several light shell wrappers and `make` targets around standard
 ## Run the CLI locally (always uses latest changes)
 Run from source (`go run`):
 ```bash
-# One-time init for a fresh repo (creates .agent-layer/ and docs/agent-layer/)
+# One-time init for a fresh repo (creates bare .agent-layer/ operational scaffold)
 go run ./cmd/al init
 
 # Generate outputs (optional; client commands already sync on run)
@@ -78,8 +78,8 @@ go run ../../cmd/al agy
 ```
 
 Notes:
-- `init` is required once per repo to seed `.agent-layer/` and `docs/agent-layer/`.
-- `init` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically).
+- `init` is required once per repo to seed the bare `.agent-layer/` operational scaffold.
+- `init` prompts to run the setup wizard by default; pass `--no-wizard` to skip (non-interactive shells skip automatically). The wizard can install the workflow bundle, including `docs/agent-layer/` memory files/templates and instruction/skill templates.
 - `sync` is optional because `al <client>` always syncs before launch.
 - `./scripts/setup.sh` is only for tool + hook setup, not required just to run the CLI.
 
@@ -107,15 +107,15 @@ Note: `make ci` includes `make tidy-check`, which fails if `go.mod` or `go.sum` 
 
 ## Managing project conventions
 
-`04_conventions.md` contains project-specific defaults (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety). Unlike other instruction files, it is **user-managed**: seeded on `al init` but never overwritten during `al upgrade`. Users can freely edit, add, or remove entries to match their tech stack.
+`04_conventions.md` contains project-specific defaults (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety). Unlike other bundled instruction files, it is **user-managed**: created by the workflow bundle when missing, but never overwritten during `al wizard` refresh or `al upgrade`. Users can freely edit, add, or remove entries to match their tech stack.
 
 ### Ownership model
-- **New projects** (`al init`): `04_conventions.md` is created from the template in `internal/templates/instructions/04_conventions.md`.
-- **Existing projects** (`al upgrade`): the file is never overwritten. User edits are preserved.
+- **New projects** (`al wizard` workflow bundle): `04_conventions.md` is created from the template in `internal/templates/instructions/04_conventions.md` when missing.
+- **Existing projects** (`al wizard` refresh or `al upgrade`): the file is never overwritten. User edits are preserved.
 - **Managed diffs**: `04_conventions.md` does not appear in `al upgrade plan` managed diffs.
 
 ### Adding a new default convention
-Edit `internal/templates/instructions/04_conventions.md`. This only affects new `al init` — existing users are not impacted.
+Edit `internal/templates/instructions/04_conventions.md`. This only affects workflow-bundle installs where `04_conventions.md` is missing; existing users are not overwritten.
 
 ### Delivering a new convention to existing users via migration
 To add a convention that existing users should see:

@@ -84,6 +84,13 @@ func TestBuildUpgradePlan_DetectUpgradeRenamesError(t *testing.T) {
 	if err := os.WriteFile(orphanPath, []byte("orphan\n"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
+	evidencePath := filepath.Join(root, ".agent-layer", "skills", "review-scope", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(evidencePath), 0o700); err != nil {
+		t.Fatalf("mkdir evidence dir: %v", err)
+	}
+	if err := os.WriteFile(evidencePath, []byte("workflow evidence\n"), 0o600); err != nil {
+		t.Fatalf("write workflow evidence: %v", err)
+	}
 
 	original := templates.ReadFunc
 	templates.ReadFunc = func(name string) ([]byte, error) {
@@ -118,6 +125,13 @@ func TestTemplateOrphans_ClassifyOrphanOwnershipDetailError(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(orphanPath), 0o700); err != nil {
 		t.Fatalf("mkdir orphan dir: %v", err)
 	}
+	issuesTemplate, err := templates.Read("docs/agent-layer/ISSUES.md")
+	if err != nil {
+		t.Fatalf("read issues template: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ISSUES.md"), issuesTemplate, 0o600); err != nil {
+		t.Fatalf("write memory evidence: %v", err)
+	}
 	if err := os.WriteFile(orphanPath, []byte("orphan\n"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
@@ -141,6 +155,13 @@ func TestTemplateOrphans_SortsOrphans(t *testing.T) {
 	zPath := filepath.Join(root, "docs", "agent-layer", "Z.md")
 	if err := os.MkdirAll(filepath.Dir(aPath), 0o700); err != nil {
 		t.Fatalf("mkdir docs dir: %v", err)
+	}
+	issuesTemplate, err := templates.Read("docs/agent-layer/ISSUES.md")
+	if err != nil {
+		t.Fatalf("read issues template: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "docs", "agent-layer", "ISSUES.md"), issuesTemplate, 0o600); err != nil {
+		t.Fatalf("write memory evidence: %v", err)
 	}
 	if err := os.WriteFile(aPath, []byte("a\n"), 0o600); err != nil {
 		t.Fatalf("write a: %v", err)

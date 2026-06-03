@@ -61,7 +61,7 @@ func TestDoctorCommand(t *testing.T) {
 	}
 }
 
-func TestDoctorCommand_MissingOptionalDocsDirDoesNotFail(t *testing.T) {
+func TestDoctorCommand_MissingOptionalDocsDirIsQuiet(t *testing.T) {
 	root := t.TempDir()
 	writeDoctorTestRepo(t, root)
 	if err := os.RemoveAll(filepath.Join(root, "docs", "agent-layer")); err != nil {
@@ -93,8 +93,8 @@ func TestDoctorCommand_MissingOptionalDocsDirDoesNotFail(t *testing.T) {
 	})
 
 	output := out.String()
-	if !strings.Contains(output, fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, "docs/agent-layer")) {
-		t.Fatalf("expected optional directory warning in output, got:\n%s", output)
+	if strings.Contains(output, fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, "docs/agent-layer")) {
+		t.Fatalf("missing optional docs dir should be quiet, got:\n%s", output)
 	}
 	if strings.Contains(output, fmt.Sprintf(messages.DoctorMissingRequiredDirFmt, "docs/agent-layer")) {
 		t.Fatalf("expected docs/agent-layer to stop being described as required, got:\n%s", output)

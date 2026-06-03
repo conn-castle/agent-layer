@@ -148,6 +148,10 @@ jobs:
             --tag "${GITHUB_REF_NAME}" \
             --repo-b-dir "agent-layer-web"
 
+      - name: Build website
+        working-directory: agent-layer-web
+        run: npm run build
+
       - name: Commit and push
         working-directory: agent-layer-web
         run: |

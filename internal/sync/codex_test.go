@@ -9,6 +9,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 func TestSplitCodexHeaders(t *testing.T) {
@@ -172,7 +173,7 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.HasPrefix(output, codexHeaderWithStatusline) {
+	if !strings.HasPrefix(output, codexHeader) {
 		t.Fatalf("expected codex header at top of file, got:\n%s", output)
 	}
 
@@ -468,35 +469,28 @@ func TestBuildCodexConfigAgentSpecificRootOverridesRemainTopLevelWithManagedMCP(
 	}
 }
 
-func TestWriteCodexConfigStatuslineEnabledSeedsAndPreservesSource(t *testing.T) {
+func TestWriteCodexConfigStatuslineEnabledPreservesSource(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	enabled := true
 	project := &config.ProjectConfig{
-		Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
-		Env:    map[string]string{},
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
+		},
+		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
-	}
 	sourcePath := filepath.Join(root, ".agent-layer", "codex-statusline.toml")
-	seeded, err := os.ReadFile(sourcePath) // #nosec G304 -- test-controlled path.
-	if err != nil {
-		t.Fatalf("expected codex statusline source seeded: %v", err)
-	}
-	if !strings.Contains(string(seeded), `"weekly-limit"`) {
-		t.Fatalf("expected seeded source to include weekly-limit:\n%s", string(seeded))
-	}
-	if strings.Contains(string(seeded), `"five-hour-limit"`) {
-		t.Fatalf("seeded source must not include five-hour-limit:\n%s", string(seeded))
-	}
-
 	const edited = "[tui]\nstatus_line = [\"raw-output\"]\n"
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o700); err != nil {
+		t.Fatalf("mkdir source dir: %v", err)
+	}
 	if err := os.WriteFile(sourcePath, []byte(edited), 0o600); err != nil {
 		t.Fatalf("edit codex statusline source: %v", err)
 	}
 	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig after edit: %v", err)
+		t.Fatalf("WriteCodexConfig: %v", err)
 	}
 	preserved, err := os.ReadFile(sourcePath) // #nosec G304 -- test-controlled path.
 	if err != nil {
@@ -513,11 +507,36 @@ func TestWriteCodexConfigStatuslineEnabledSeedsAndPreservesSource(t *testing.T) 
 	assertStringList(t, tui["status_line"], []string{"raw-output"})
 }
 
+func TestWriteCodexConfigStatuslineEnabledMissingSourceErrors(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	err := WriteCodexConfig(RealSystem{}, t.TempDir(), &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
+		},
+		Env: map[string]string{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "agents.codex.statusline is true") {
+		t.Fatalf("expected missing-source error, got %v", err)
+	}
+}
+
 func TestBuildCodexConfigDefaultStatuslineIncludesWeeklyLimitOnly(t *testing.T) {
 	t.Parallel()
-	output, err := buildCodexConfig(t.TempDir(), &config.ProjectConfig{
-		Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
-		Env:    map[string]string{},
+	root := t.TempDir()
+	templateBytes, err := templates.Read("codex-statusline.toml")
+	if err != nil {
+		t.Fatalf("read codex statusline template: %v", err)
+	}
+	writeCodexStatuslineSource(t, root, string(templateBytes))
+	enabled := true
+	output, err := buildCodexConfig(root, &config.ProjectConfig{
+		Config: config.Config{
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
+		},
+		Env: map[string]string{},
 	})
 	if err != nil {
 		t.Fatalf("buildCodexConfig: %v", err)
@@ -539,11 +558,13 @@ func TestBuildCodexConfigAgentSpecificStatuslineWinsOverSource(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	writeCodexStatuslineSource(t, root, "[tui]\nstatus_line = [\"weekly-limit\"]\n")
+	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
+					Statusline: &enabled,
 					AgentSpecific: map[string]any{
 						"tui": map[string]any{
 							"status_line": []any{"raw-output"},
@@ -577,11 +598,13 @@ func TestBuildCodexConfigStatuslineMergePreservesUnrelatedTUIKeys(t *testing.T) 
 	t.Parallel()
 	root := t.TempDir()
 	writeCodexStatuslineSource(t, root, "[tui]\nstatus_line = [\"thread-id\"]\n")
+	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
+					Statusline: &enabled,
 					AgentSpecific: map[string]any{
 						"tui": map[string]any{
 							"notifications": true,
@@ -682,10 +705,14 @@ func TestBuildCodexConfigStatuslineSourceInvalidOrMissingFails(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
 			writeCodexStatuslineSource(t, root, tt.content)
+			enabled := true
 
 			_, err := buildCodexConfig(root, &config.ProjectConfig{
-				Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
-				Env:    map[string]string{},
+				Config: config.Config{
+					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+					Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
+				},
+				Env: map[string]string{},
 			})
 			if err == nil {
 				t.Fatal("expected error")
@@ -708,10 +735,14 @@ func TestBuildCodexConfigStatuslineSourceUnrelatedKeysFail(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
 			writeCodexStatuslineSource(t, root, tt.content)
+			enabled := true
 
 			_, err := buildCodexConfig(root, &config.ProjectConfig{
-				Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
-				Env:    map[string]string{},
+				Config: config.Config{
+					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+					Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
+				},
+				Env: map[string]string{},
 			})
 			if err == nil {
 				t.Fatal("expected error")
@@ -737,10 +768,14 @@ func TestBuildCodexConfigStatuslineSourceNonStringListFails(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
 			writeCodexStatuslineSource(t, root, tt.content)
+			enabled := true
 
 			_, err := buildCodexConfig(root, &config.ProjectConfig{
-				Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
-				Env:    map[string]string{},
+				Config: config.Config{
+					Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+					Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
+				},
+				Env: map[string]string{},
 			})
 			if err == nil {
 				t.Fatal("expected error")
@@ -756,11 +791,13 @@ func TestBuildCodexConfigStatuslineNonTableAgentSpecificTUIFails(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	writeCodexStatuslineSource(t, root, "[tui]\nstatus_line = [\"weekly-limit\"]\n")
+	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents: config.AgentsConfig{
 				Codex: config.CodexConfig{
+					Statusline: &enabled,
 					// A scalar tui blocks merging the managed status_line.
 					AgentSpecific: map[string]any{"tui": "not-a-table"},
 				},

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Upgrade from old version with transport-incompatible MCP fields,
-# wizard profile overwrite repairs them, al claude works.
+# Upgrade from old version with transport-incompatible MCP fields. The managed
+# upgrade should clean those fields, then a clean wizard profile verifies the
+# upgraded config remains overwriteable and usable. This does not exercise the
+# interactive wizard sanitizer path.
 
-run_scenario_upgrade_sanitize_claude() {
-  section "Upgrade + wizard profile overwrite + al claude"
+run_scenario_upgrade_profile_overwrite_claude() {
+  section "Upgrade cleans polluted MCP fields + wizard profile + al claude"
 
   if skip_if_no_oldest_binary; then return; fi
   E2E_UPGRADE_SCENARIO_COUNT=$((E2E_UPGRADE_SCENARIO_COUNT + 1))
@@ -59,10 +61,36 @@ args = ["-y", "example-github-mcp"]
     'args = ["-y", "example-github-mcp"]' \
     "injected transport-incompatible args on github (HTTP)"
 
-  assert_exit_zero_in "$repo_dir" "al upgrade from $E2E_OLDEST_VERSION" \
-    al upgrade --yes --apply-managed-updates --apply-memory-updates --apply-deletions
+  local upgrade_output upgrade_rc=0
+  upgrade_output=$(cd "$repo_dir" && al upgrade --yes --apply-managed-updates --apply-memory-updates --apply-deletions 2>&1) || upgrade_rc=$?
+  if [[ $upgrade_rc -eq 0 ]]; then
+    pass "al upgrade from $E2E_OLDEST_VERSION"
+  else
+    fail "al upgrade from $E2E_OLDEST_VERSION (exit code: $upgrade_rc)"
+    echo "  output (first 10 lines):"
+    echo "$upgrade_output" | head -10 | sed 's/^/    /'
+  fi
+  assert_no_crash_markers "$upgrade_output" "no crash markers in MCP-clean upgrade output"
+  assert_output_contains "$upgrade_output" "Created upgrade snapshot" \
+    "MCP-clean upgrade output mentions snapshot creation"
+  assert_output_contains "$upgrade_output" "Running sync" \
+    "MCP-clean upgrade output says sync ran"
+  assert_output_contains "$upgrade_output" "Upgrade successful." \
+    "MCP-clean upgrade output says successful"
 
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
+  assert_file_not_contains "$config" \
+    'headers = { Authorization' \
+    "upgrade removes polluted context7 headers before profile overwrite"
+  assert_file_not_contains "$config" \
+    'url = "https://example.com/context7"' \
+    "upgrade removes polluted context7 url before profile overwrite"
+  assert_file_not_contains "$config" \
+    'command = "npx"' \
+    "upgrade removes polluted github command before profile overwrite"
+  assert_file_not_contains "$config" \
+    'args = ["-y", "example-github-mcp"]' \
+    "upgrade removes polluted github args before profile overwrite"
 
   # Write env values needed for MCP server resolution
   cat > "$repo_dir/.agent-layer/.env" <<'ENVEOF'
@@ -75,9 +103,9 @@ ENVEOF
   # the interactive sanitizer path. Build a scenario-local clean profile so this
   # e2e proves a profile overwrite can recover from polluted upgraded config.
   # Unit tests cover sanitizeMCPServerBlock and the interactive patch path.
-  local sanitize_profile="$repo_dir/.agent-layer/.sanitize-profile.toml"
-  cp "$E2E_DEFAULTS_TOML" "$sanitize_profile"
-  cat >> "$sanitize_profile" <<'PROFILE_EOF'
+  local overwrite_profile="$repo_dir/.agent-layer/.overwrite-profile.toml"
+  cp "$E2E_DEFAULTS_TOML" "$overwrite_profile"
+  cat >> "$overwrite_profile" <<'PROFILE_EOF'
 
 [[mcp.servers]]
 id = "context7"
@@ -91,13 +119,26 @@ env = { CONTEXT7_API_KEY = "${AL_CONTEXT7_API_KEY}" }
 id = "github"
 enabled = false
 transport = "http"
+http_transport = "streamable"
 url = "https://api.githubcopilot.com/mcp/"
 headers = { Authorization = "Bearer ${AL_GITHUB_PERSONAL_ACCESS_TOKEN}" }
 PROFILE_EOF
 
   # Run wizard with the scenario-local profile to overwrite the polluted blocks.
-  assert_exit_zero_in "$repo_dir" "al wizard clean profile after upgrade" \
-    al wizard --profile "$sanitize_profile" --yes
+  local wizard_output wizard_rc=0
+  wizard_output=$(cd "$repo_dir" && al wizard --profile "$overwrite_profile" --yes 2>&1) || wizard_rc=$?
+  if [[ $wizard_rc -eq 0 ]]; then
+    pass "al wizard clean profile after upgrade"
+  else
+    fail "al wizard clean profile after upgrade (exit code: $wizard_rc)"
+    echo "  output (first 10 lines):"
+    echo "$wizard_output" | head -10 | sed 's/^/    /'
+  fi
+  assert_no_crash_markers "$wizard_output" "no crash markers in clean profile wizard output"
+  assert_output_contains "$wizard_output" "Running sync" \
+    "clean profile wizard output says sync ran"
+  assert_output_contains "$wizard_output" "Wizard completed" \
+    "clean profile wizard output says completed"
 
   # Verify blocks survived profile overwrite (they should be cleaned, not removed).
   assert_file_contains "$repo_dir/.agent-layer/config.toml" 'id = "context7"' \
@@ -110,30 +151,46 @@ PROFILE_EOF
   local context7_block
   context7_block=$(sed -n '/^id = "context7"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
 
-  if echo "$context7_block" | grep -q 'headers'; then
+  assert_output_contains "$context7_block" 'transport = "stdio"' \
+    "context7 block keeps stdio transport after profile overwrite"
+  assert_output_contains "$context7_block" 'command = "npx"' \
+    "context7 block has stdio command after profile overwrite"
+  assert_output_contains "$context7_block" '@upstash/context7-mcp@2.1.1' \
+    "context7 block has expected stdio package after profile overwrite"
+  assert_output_contains "$context7_block" 'CONTEXT7_API_KEY' \
+    "context7 block has expected env after profile overwrite"
+  if echo "$context7_block" | grep -Eq '^[[:space:]]*headers[[:space:]]*='; then
     fail "context7 block still has 'headers' after wizard profile overwrite"
   else
     pass "context7 block clean after profile overwrite: no headers"
   fi
 
-  if echo "$context7_block" | grep -q 'url = "https://example.com'; then
-    fail "context7 block still has transport-incompatible url after wizard profile overwrite"
+  if echo "$context7_block" | grep -Eq '^[[:space:]]*url[[:space:]]*='; then
+    fail "context7 block still has any url after wizard profile overwrite"
   else
-    pass "context7 block clean after profile overwrite: no incompatible url"
+    pass "context7 block clean after profile overwrite: no url"
   fi
 
   # Verify github block (HTTP) no longer has stdio-only fields.
   local github_block
   github_block=$(sed -n '/^id = "github"/,/^\[\[mcp/p' "$repo_dir/.agent-layer/config.toml" | head -20)
 
-  if echo "$github_block" | grep -q '^command = "npx"'; then
-    fail "github block still has 'command' after wizard profile overwrite"
+  assert_output_contains "$github_block" 'transport = "http"' \
+    "github block keeps HTTP transport after profile overwrite"
+  assert_output_contains "$github_block" 'http_transport = "streamable"' \
+    "github block keeps streamable HTTP transport after profile overwrite"
+  assert_output_contains "$github_block" 'url = "https://api.githubcopilot.com/mcp/"' \
+    "github block has expected URL after profile overwrite"
+  assert_output_contains "$github_block" 'Authorization' \
+    "github block has expected Authorization header after profile overwrite"
+  if echo "$github_block" | grep -Eq '^[[:space:]]*command[[:space:]]*='; then
+    fail "github block still has any command after wizard profile overwrite"
   else
     pass "github block clean after profile overwrite: no command"
   fi
 
-  if echo "$github_block" | grep -q '^args = \["-y"'; then
-    fail "github block still has stdio 'args' after wizard profile overwrite"
+  if echo "$github_block" | grep -Eq '^[[:space:]]*args[[:space:]]*='; then
+    fail "github block still has any args after wizard profile overwrite"
   else
     pass "github block clean after profile overwrite: no stdio args"
   fi

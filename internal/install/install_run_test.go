@@ -23,18 +23,28 @@ func TestRunCreatesStructure(t *testing.T) {
 		filepath.Join(root, ".agent-layer", ".env"),
 		filepath.Join(root, ".agent-layer", ".gitignore"),
 		filepath.Join(root, ".agent-layer", "gitignore.block"),
-		filepath.Join(root, ".agent-layer", "claude-statusline.sh"),
-		filepath.Join(root, ".agent-layer", "codex-statusline.toml"),
-		filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"),
-		filepath.Join(root, "docs", "agent-layer", "ISSUES.md"),
+		filepath.Join(root, ".agent-layer", "instructions"),
+		filepath.Join(root, ".agent-layer", "skills"),
+		filepath.Join(root, ".agent-layer", "tmp", "runs"),
 	}
 	for _, path := range expectFiles {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
 		}
 	}
-	expectPerm(t, filepath.Join(root, ".agent-layer", "claude-statusline.sh"), 0o755)
-	expectPerm(t, filepath.Join(root, ".agent-layer", "codex-statusline.toml"), 0o644)
+	expectAbsent := []string{
+		filepath.Join(root, ".agent-layer", "claude-statusline.sh"),
+		filepath.Join(root, ".agent-layer", "codex-statusline.toml"),
+		filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"),
+		filepath.Join(root, "docs", "agent-layer", "ISSUES.md"),
+		filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"),
+		filepath.Join(root, ".agent-layer", "skills", "review-scope", "SKILL.md"),
+	}
+	for _, path := range expectAbsent {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected %s to be absent, got %v", path, err)
+		}
+	}
 
 	gitignorePath := filepath.Join(root, ".gitignore")
 	data, err := os.ReadFile(gitignorePath) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -43,17 +53,6 @@ func TestRunCreatesStructure(t *testing.T) {
 	}
 	if !strings.Contains(string(data), gitignoreStart) {
 		t.Fatalf("expected gitignore block to be present")
-	}
-}
-
-func expectPerm(t *testing.T, path string, want os.FileMode) {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat %s: %v", path, err)
-	}
-	if got := info.Mode().Perm(); got != want {
-		t.Fatalf("%s perm = %o, want %o", path, got, want)
 	}
 }
 
@@ -791,6 +790,7 @@ func TestRun_SectionAwareOverwritePreservesUserEntries(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 
 	issuesPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
 	initial, err := os.ReadFile(issuesPath) // #nosec G304 -- path is constructed from test-controlled inputs.

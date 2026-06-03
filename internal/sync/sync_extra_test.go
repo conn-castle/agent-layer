@@ -110,6 +110,8 @@ func TestRunWithProject_AppliesWarningNoiseControl(t *testing.T) {
 		if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
 			t.Fatalf("write env: %v", err)
 		}
+		writeTemplateToFixtureSource(t, root, "claude-statusline.sh", filepath.Join(".agent-layer", "claude-statusline.sh"), 0o755)
+		writeTemplateToFixtureSource(t, root, "codex-statusline.toml", filepath.Join(".agent-layer", "codex-statusline.toml"), 0o644)
 		project, err := config.LoadProjectConfig(root)
 		if err != nil {
 			t.Fatalf("load project: %v", err)

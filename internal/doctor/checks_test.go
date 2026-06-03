@@ -17,7 +17,6 @@ func TestCheckStructure(t *testing.T) {
 	// Test missing directories
 	results := CheckStructure(tmpDir)
 	var sawRequiredFail bool
-	var sawOptionalWarn bool
 	for _, r := range results {
 		switch r.Message {
 		case fmt.Sprintf(messages.DoctorMissingRequiredDirFmt, ".agent-layer"):
@@ -29,21 +28,11 @@ func TestCheckStructure(t *testing.T) {
 				t.Fatalf("unexpected required-dir recommendation: %q", r.Recommendation)
 			}
 		case fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, "docs/agent-layer"):
-			sawOptionalWarn = true
-			if r.Status != StatusWarn {
-				t.Fatalf("expected docs/agent-layer to warn when missing, got %s", r.Status)
-			}
-			wantRecommendation := fmt.Sprintf(messages.DoctorMissingOptionalDirRecommend, "docs/agent-layer")
-			if r.Recommendation != wantRecommendation {
-				t.Fatalf("unexpected optional-dir recommendation: %q", r.Recommendation)
-			}
+			t.Fatalf("missing optional docs dir should be quiet, got %s", r.Status)
 		}
 	}
 	if !sawRequiredFail {
 		t.Fatal("expected missing .agent-layer failure")
-	}
-	if !sawOptionalWarn {
-		t.Fatal("expected missing docs/agent-layer warning")
 	}
 
 	// Test exists but not directory
@@ -71,10 +60,35 @@ func TestCheckStructure(t *testing.T) {
 	}
 	results = CheckStructure(tmpDir)
 	for _, r := range results {
-		if r.Message == fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, "docs/agent-layer") && r.Status != StatusWarn {
-			t.Fatalf("expected warning for missing optional docs dir, got %s", r.Status)
+		if r.Message == fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, "docs/agent-layer") {
+			t.Fatalf("missing optional docs dir should be quiet, got %s", r.Status)
 		}
 	}
+
+	if err := os.MkdirAll(filepath.Join(tmpDir, ".agent-layer", "instructions"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, ".agent-layer", "instructions", "02_memory.md"), []byte("Read docs/agent-layer/COMMANDS.md before running checks."), 0600); err != nil {
+		t.Fatal(err)
+	}
+	results = CheckStructure(tmpDir)
+	sawReferencedDocsWarn := false
+	for _, r := range results {
+		if r.Message == fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, "docs/agent-layer") {
+			sawReferencedDocsWarn = true
+			if r.Status != StatusWarn {
+				t.Fatalf("expected warning for missing referenced docs dir, got %s", r.Status)
+			}
+			wantRecommendation := fmt.Sprintf(messages.DoctorMissingOptionalDirRecommend, "docs/agent-layer")
+			if r.Recommendation != wantRecommendation {
+				t.Fatalf("unexpected referenced-docs recommendation: %q", r.Recommendation)
+			}
+		}
+	}
+	if !sawReferencedDocsWarn {
+		t.Fatal("expected missing docs warning when instructions reference docs/agent-layer")
+	}
+
 	if err := os.RemoveAll(filepath.Join(tmpDir, ".agent-layer")); err != nil {
 		t.Fatal(err)
 	}

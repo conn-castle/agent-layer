@@ -58,10 +58,9 @@ al init
 This seeds:
 
 - `.agent-layer/` (your configuration)
-- `docs/agent-layer/` (project memory)
 - a managed `.gitignore` block
 
-By default, `al init` prompts to run the setup wizard. Skip it with `--no-wizard` if you prefer to configure manually.
+By default, `al init` prompts to run the setup wizard. The wizard can add the optional workflow bundle, including `docs/agent-layer/` project memory. Skip it with `--no-wizard` if you prefer to configure manually.
 
 `al init` is intended to be run once per repo. If `.agent-layer/` already exists, `al init` errors; use `al upgrade plan` and `al upgrade` to refresh template-managed files.
 
@@ -165,7 +164,7 @@ Skill sources follow the [agentskills.io specification](https://agentskills.io/s
 
 ### Project memory (`docs/agent-layer/`)
 
-These files are referenced by default instructions and act as long-lived memory for the repo:
+These files are created when you select the workflow bundle in `al wizard`. The bundled memory instructions reference them as long-lived memory for the repo:
 
 ```text
 docs/agent-layer/

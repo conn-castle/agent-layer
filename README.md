@@ -98,7 +98,7 @@ al doctor
 ```
 
 Notes:
-- `al init` prompts to run `al wizard` after seeding files. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
+- `al init` prompts to run `al wizard` after creating the bare operational scaffold. Use `al init --no-wizard` to skip; non-interactive shells skip automatically.
 - `al init` is intended to be run once per repo. If the repo is already initialized, use `al upgrade plan` and `al upgrade` to refresh template-managed files.
 - By default `al init` first walks up for an ancestor `.agent-layer/`, then for an ancestor `.git`. To install a separate Agent Layer in a subfolder of an existing repo (for example a sub-project that needs its own `.agent-layer/`), pass `al init --here` to target the current directory.
 - `al upgrade` is the recommended path. For CI-safe non-interactive apply, use `al upgrade --yes --apply-managed-updates`. Add `--apply-memory-updates` and/or `--apply-deletions` only when you explicitly want those categories. `--apply-deletions` never removes files under `.agent-layer/tmp/`; to clean up those ephemeral agent run artifacts, use `--apply-tmp-deletions` (destructive — requires explicit double confirmation unless combined with `--yes`).
@@ -241,11 +241,12 @@ Run `al wizard` any time to interactively configure the most important settings:
 - **Agent Enablement** (Antigravity, Claude, Codex, VS Code, Copilot CLI)
 - **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
 - **Feature toggles** — folded into the model step as two per-agent multi-selects (one Claude, one Codex). Each feature is a checkbox where **checked = keep enabled** and unchecking disables it; checkboxes are pre-checked to match your current config, so re-running the wizard without changes makes no edits.
-    - *Claude:* IDE open-file reading, auto-memory, claude.ai connectors, and the AskUserQuestion tool.
-    - *Codex:* built-in apps (GitHub, Gmail, etc.) and browser/computer-use.
+    - *Claude:* IDE open-file reading, auto-memory, claude.ai connectors, the AskUserQuestion tool, and the Claude status line.
+    - *Codex:* built-in apps (GitHub, Gmail, etc.), browser/computer-use, and the Codex status line.
     - Unchecking writes the matching `agent_specific` disable key; re-checking removes it, keeping the client's native default — except Codex **apps**, which defaults unchecked and always writes an explicit `features.apps`.
     - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
-- **Workflow bundle** (yes/no — bundles ~24 workflow skills, instruction files, and memory templates; answering "no" on a fresh install or `al init --minimal-layout` seeds only a placeholder instruction file)
+    - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
+- **Workflow bundle** (yes/no — installs or refreshes bundled workflow skills and managed instruction files, and creates missing memory docs/templates plus `04_conventions.md`; answering "no" leaves existing files unchanged)
 - **CLI skills** (opt-in catalog: `tavily-web`, `playwright-cli`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
@@ -277,14 +278,15 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
 
 ## What gets created in your repo
 
-`al init` creates three buckets: user configuration, project memory, and generated client files.
+Bare `al init` creates the operational scaffold. The optional workflow-bundle wizard step creates project memory and bundled workflow files, and `al sync` creates generated client files.
 
 ### User configuration (gitignored by default, but can be committed)
   - `.agent-layer/`
   - `config.toml` (main configuration; human-editable)
   - `al.version` (repo pin; required)
-  - `instructions/` (numbered `*.md` fragments; lexicographic order)
-  - `skills/` (workflow markdown; one skill source per command, as `<name>/SKILL.md` directories)
+  - `instructions/` (created empty by bare init; workflow bundle can add numbered `*.md` fragments)
+  - `skills/` (created empty by bare init; workflow bundle and CLI catalog can add `<name>/SKILL.md` directories)
+  - `tmp/runs/` (runtime scratch directory)
   - `commands.allow` (approved shell commands; line-based)
   - `gitignore.block` (managed `.gitignore` block template; customize here)
   - `.gitignore` (ignores repo-local launchers, template copies, and backups inside `.agent-layer/`)
@@ -292,8 +294,8 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
 
 Repo-local launchers and template copies live under `.agent-layer/` and are ignored by `.agent-layer/.gitignore`.
 
-### Project memory (required; teams can commit or ignore)
-Default instructions and skills rely on these files existing, along with any additional memory files your team adopts.
+### Project memory (optional; teams can commit or ignore)
+The workflow bundle creates missing memory docs and templates. Bare init does not create `docs/agent-layer/`.
 
 Common memory files include:
 - `docs/agent-layer/ISSUES.md`
@@ -316,7 +318,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 ## Configuration (human-editable)
 
-You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings) and `.agent-layer/.env` (secrets); it does not touch instructions, skills, or `commands.allow`.
+You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings) and `.agent-layer/.env` (secrets). It can also install or refresh the workflow bundle and seed missing statusline source files; it does not overwrite existing statusline sources or touch `commands.allow`.
 
 ### `.agent-layer/config.toml`
 
@@ -348,10 +350,10 @@ enabled = true
 # permissions.deny + a PreToolUse hook into .claude/settings.json (merged with any agent_specific
 # entries; the hook also enforces the block under YOLO). Run `al wizard` to set it.
 # disable_question_tool = true
-# statusline writes a Claude Code status line. The editable source of truth lives at
-# .agent-layer/claude-statusline.sh (seeded once, never overwritten); on sync it is
-# copied to .claude/claude-statusline.sh and statusLine is wired into .claude/settings.json.
-# Enabled by default; set to false to opt out. Requires jq on PATH at runtime.
+# statusline writes a Claude Code status line. Run `al wizard` or interactive
+# `al upgrade` to enable it and seed .agent-layer/claude-statusline.sh once; on
+# sync that source is copied to .claude/claude-statusline.sh and statusLine is
+# wired into .claude/settings.json. Absent means disabled. Requires jq on PATH.
 # statusline = true
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
@@ -374,8 +376,8 @@ enabled = true
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 # statusline writes Codex's native status line from the editable
-# .agent-layer/codex-statusline.toml fragment. Enabled by default; set to false
-# to opt out.
+# .agent-layer/codex-statusline.toml fragment. Run `al wizard` or interactive
+# `al upgrade` to enable it and seed the source once. Absent means disabled.
 # statusline = true
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
 # These are appended to .codex/config.toml and can override top-level managed keys.
@@ -643,7 +645,7 @@ al vscode --no-sync -- --reuse-window
 
 Other commands:
 
-- `al init` — initialize `.agent-layer/`, `docs/agent-layer/`, and `.gitignore`
+- `al init` — initialize the bare `.agent-layer/` operational scaffold and `.gitignore`
 - `al upgrade` — apply template-managed updates and update the repo pin (interactive by default; non-interactive requires `--yes` plus one or more apply flags; line-level diff previews shown by default, `--diff-lines N` to raise per-file preview size; automatic snapshot + rollback on failure)
 - `al upgrade plan` — preview plain-language categorized template/pin changes and readiness actions with line-level diff previews (`--diff-lines N` to raise per-file preview size)
 - `al upgrade prefetch` — download and cache a release binary (use `--version X.Y.Z` on dev builds; useful for offline/CI cache warm-up)
@@ -693,7 +695,7 @@ To customize the managed block, edit `.agent-layer/gitignore.block` and re-run `
 
 `.agent-layer/.env` is ignored by `.agent-layer/.gitignore`, not the parent repo `.gitignore`.
 
-`docs/agent-layer/` is created by default; teams may choose to commit it or ignore it.
+`docs/agent-layer/` is created by the optional workflow bundle; teams may choose to commit it or ignore it.
 
 ---
 

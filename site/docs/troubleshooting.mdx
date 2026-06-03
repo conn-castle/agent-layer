@@ -67,7 +67,7 @@ Fix:
 
 ### "agent layer isn't initialized"
 
-Run [`al init`](./reference#init) in the repo to create `.agent-layer/` and `docs/agent-layer/`.
+Run [`al init`](./reference#init) in the repo to create `.agent-layer/`. To add `docs/agent-layer/` memory files, run [`al wizard`](./reference#wizard) and select the workflow bundle.
 
 ### Generated files showing up in git
 
@@ -217,7 +217,7 @@ If `mcp_runtime_discovery` is still false, the generated config exists but Antig
 
 ### `al agy` fails to launch or `agy` is not found
 
-If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe agy` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-<ts>-<suffix>/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
+If `al agy` exits with `antigravity launcher requires \`agy\` on PATH`, install Antigravity from [antigravity.google](https://antigravity.google) and ensure the `agy` binary is on your `PATH`. Run `al probe agy` as a single-step diagnostic: it confirms `agy` is discoverable, captures the version, and reports the observed capability matrix. The probe writes a forensic workspace under `.agent-layer/tmp/probe-antigravity-TIMESTAMP-SUFFIX/` which you can attach to a bug report; `al upgrade --apply-tmp-deletions` cleans these up.
 
 ### Client CLI not found
 

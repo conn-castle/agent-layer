@@ -93,8 +93,7 @@ Use them sparingly:
 
 If you find yourself carrying many permanent overrides, that is usually a sign the setting should become a first-class key in `.agent-layer/config.toml`.
 
-<a id="per-repo-credential-isolation"></a>
-## Per-repo isolation
+## Per-repo isolation {#per-repo-credential-isolation}
 
 Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex credential isolation is fully supported. Claude settings and caches isolation is supported, but Claude auth credential isolation is blocked by an upstream limitation (see below).
 
@@ -312,7 +311,7 @@ Start with one or two servers, verify with `al doctor`, then expand. It is easie
 
 ## Project memory
 
-Agent Layer seeds `docs/agent-layer/` as a place for repo-specific memory files. These files are meant to be long-lived, human-readable context that agents can reference. Treat them as the team's shared recall, not as transient notes, so future changes have context instead of guesswork.
+The optional workflow bundle creates `docs/agent-layer/` as a place for repo-specific memory files. These files are meant to be long-lived, human-readable context that agents can reference. Treat them as the team's shared recall, not as transient notes, so future changes have context instead of guesswork.
 
 This is less about documentation and more about continuity. Agents work best when you can answer “what are we building,” “what are the constraints,” and “what did we decide last time.” Memory files make that context durable.
 
@@ -320,7 +319,7 @@ They are also for humans. When a new teammate joins or you return to a repo afte
 
 ### Default memory files
 
-`al init` creates:
+When selected in `al wizard`, the workflow bundle creates:
 
 - `docs/agent-layer/ISSUES.md`
 - `docs/agent-layer/BACKLOG.md`

@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Scenario: Wizard --profile can recover from various broken states:
-# - missing config.toml (not just corrupt)
-# - missing .agent-layer directory structure
-# This tests the resilience of the wizard recovery path.
+# Scenario: Wizard --profile recovers from a missing config.toml and leaves
+# the repo syncable/launchable.
 
 run_scenario_wizard_recovery() {
   section "Wizard recovery"
@@ -31,6 +29,10 @@ run_scenario_wizard_recovery() {
 
   assert_output_not_contains "$wizard_output" "panic" \
     "no panic during wizard recovery"
+  assert_output_contains "$wizard_output" "Running sync" \
+    "wizard recovery output says sync ran"
+  assert_output_contains "$wizard_output" "Wizard completed" \
+    "wizard recovery output says completed"
   assert_file_exists "$repo_dir/.agent-layer/config.toml" \
     "config.toml restored by wizard"
   assert_file_contains "$repo_dir/.agent-layer/config.toml" "[approvals]" \

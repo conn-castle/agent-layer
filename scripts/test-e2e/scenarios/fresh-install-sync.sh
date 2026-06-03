@@ -16,18 +16,6 @@ run_scenario_fresh_install_sync() {
 
   assert_generated_artifacts "$repo_dir"
 
-  # Verify all instruction shim files have real content, not just existence
-  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
-    "CLAUDE.md includes instruction blocks"
-  assert_file_contains "$repo_dir/AGENTS.md" "GENERATED FILE" \
-    "AGENTS.md has managed marker"
-  assert_file_not_exists "$repo_dir/GEMINI.md" \
-    "GEMINI.md is not generated after Gemini removal"
-  assert_file_contains "$repo_dir/.github/copilot-instructions.md" "GENERATED FILE" \
-    "copilot-instructions.md has managed marker"
-  assert_file_contains "$repo_dir/.codex/AGENTS.md" "GENERATED FILE" \
-    "codex AGENTS.md has managed marker"
-
   # .mcp.json should be valid JSON
   assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON"
   assert_file_contains "$repo_dir/.mcp.json" '"_generatedBy"' \

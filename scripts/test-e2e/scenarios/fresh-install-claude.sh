@@ -12,11 +12,12 @@ run_scenario_fresh_install_claude() {
   assert_al_init_structure "$repo_dir"
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
 
-  # Verify instruction files were created with real content
-  assert_file_contains "$repo_dir/.agent-layer/instructions/01_base.md" \
-    "Critical Protocol" "instructions/01_base.md has Critical Protocol"
-  assert_file_contains "$repo_dir/.agent-layer/instructions/00_rules.md" \
-    "Rules" "instructions/00_rules.md has Rules header"
+  # Bare init creates operational directories only; the workflow bundle is
+  # installed explicitly through the wizard or preserved during upgrade.
+  for name in 00_rules.md 01_base.md 02_memory.md 03_tools.md 04_conventions.md; do
+    assert_file_not_exists "$repo_dir/.agent-layer/instructions/$name" \
+      "$name is not seeded by bare init"
+  done
 
   install_mock_claude "$repo_dir"
 
@@ -42,6 +43,7 @@ run_scenario_fresh_install_claude() {
   # Verify mock claude received critical env vars with non-empty values
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
   assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
 
   # Default config does not enable local_config_dir, so CLAUDE_CONFIG_DIR
   # should NOT be set by the launcher.
@@ -50,12 +52,6 @@ run_scenario_fresh_install_claude() {
   # Verify generated artifacts exist AND have correct content
   assert_generated_artifacts "$repo_dir"
 
-  # CLAUDE.md should contain actual instruction content, not just the marker
-  assert_file_contains "$repo_dir/CLAUDE.md" "BEGIN: 00_rules.md" \
-    "CLAUDE.md includes 00_rules.md instruction block"
-  assert_file_contains "$repo_dir/CLAUDE.md" "Critical Protocol" \
-    "CLAUDE.md has real instruction content"
-
   # .mcp.json and settings.json should be valid JSON
   assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON"
   assert_json_valid "$repo_dir/.claude/settings.json" "settings.json is valid JSON"
@@ -63,12 +59,28 @@ run_scenario_fresh_install_claude() {
   # .mcp.json should have no MCP servers enabled by default
   assert_file_not_contains "$repo_dir/.mcp.json" '"context7"' \
     ".mcp.json has no context7 (not enabled)"
+  assert_file_not_contains "$repo_dir/.mcp.json" '"github"' \
+    ".mcp.json has no github (not enabled)"
+  assert_file_not_contains "$repo_dir/.mcp.json" '"tavily"' \
+    ".mcp.json has no tavily (not enabled)"
+  assert_file_not_contains "$repo_dir/.mcp.json" '"fetch"' \
+    ".mcp.json has no fetch (not enabled)"
+  assert_file_not_contains "$repo_dir/.mcp.json" '"playwright"' \
+    ".mcp.json has no playwright (not enabled)"
 
   # .claude/settings.json should have permissions but no external MCP
   assert_file_contains "$repo_dir/.claude/settings.json" '"permissions"' \
     "settings.json has permissions block"
   assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
     "settings.json has no context7 permission (not enabled)"
+  assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__github__" \
+    "settings.json has no github permission (not enabled)"
+  assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__tavily__" \
+    "settings.json has no tavily permission (not enabled)"
+  assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__fetch__" \
+    "settings.json has no fetch permission (not enabled)"
+  assert_file_not_contains "$repo_dir/.claude/settings.json" "mcp__playwright__" \
+    "settings.json has no playwright permission (not enabled)"
 
   cleanup_scenario_dir "$repo_dir"
 }

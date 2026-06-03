@@ -171,6 +171,38 @@ func TestWriteCopilotMCPConfig(t *testing.T) {
 	}
 }
 
+func TestWriteCopilotMCPConfigEmptyServersKeepsTopLevelKey(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			MCP: config.MCPConfig{},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := WriteCopilotMCPConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCopilotMCPConfig error: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".copilot", "mcp-config.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("failed to read generated file: %v", err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	servers, ok := result["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected mcpServers object, got %T", result["mcpServers"])
+	}
+	if len(servers) != 0 {
+		t.Fatalf("expected no servers, got %d", len(servers))
+	}
+}
+
 func TestWriteCopilotMCPConfigMkdirError(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

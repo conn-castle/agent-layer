@@ -571,6 +571,14 @@ func (inst *installer) upgradeSnapshotTargetPaths() []string {
 	for _, dir := range inst.templates().memoryTemplateDirs() {
 		add(dir.destRoot)
 	}
+	// Statusline sources are rollback targets of the writeStatuslineSources
+	// transaction step, so they must be snapshotted too. Otherwise an automatic
+	// rollback would RemoveAll a pre-existing, possibly user-customized source
+	// with no snapshot entry to restore it — the same trap documented for tmp
+	// paths in handleUnknownsTargetPaths.
+	for _, path := range inst.writeStatuslineSourcesTargetPaths() {
+		add(path)
+	}
 	add(filepath.Join(root, ".gitignore"))
 	for _, path := range launchers.VSCodePaths(root).All() {
 		add(path)

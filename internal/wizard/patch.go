@@ -243,6 +243,9 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 				setCommentedKeyLine(block, templateBlock, "disable_question_tool", "local_config_dir")
 			}
 		}
+		if choices.ClaudeStatuslineTouched {
+			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.ClaudeStatusline), "disable_question_tool")
+		}
 	case "agents.claude_vscode":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaudeVSCode]), "")
@@ -256,6 +259,9 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		}
 		if choices.CodexReasoningTouched {
 			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.CodexReasoning, "model")
+		}
+		if choices.CodexStatuslineTouched {
+			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.CodexStatusline), "reasoning_effort")
 		}
 	case "agents.vscode":
 		if choices.EnabledAgentsTouched {

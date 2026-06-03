@@ -357,7 +357,6 @@ func (inst *installer) buildKnownPaths() (map[string]struct{}, error) {
 	if err := addTemplatePaths("instructions", filepath.Join(root, ".agent-layer", "instructions")); err != nil {
 		return nil, err
 	}
-	add(filepath.Join(root, ".agent-layer", "instructions", MinimalLayoutPlaceholderFile))
 	if err := addTemplatePaths("skills", filepath.Join(root, ".agent-layer", "skills")); err != nil {
 		return nil, err
 	}

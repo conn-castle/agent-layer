@@ -27,11 +27,20 @@ run_scenario_codex_launch() {
   # Verify AL_RUN_DIR and AL_RUN_ID env vars have non-empty values
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_DIR"
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_ID"
+  assert_mock_agent_env "$MOCK_AGENT_LOG" "AL_DISPATCH_CALLER_AGENT" "codex"
+  assert_mock_agent_env "$MOCK_AGENT_LOG" "CODEX_HOME" "$repo_dir/.codex"
 
-  # Verify sync generated the codex-specific output
+  # Verify sync generated the codex-specific output. Bare init has no
+  # instruction sources, so the codex instruction shim is intentionally empty.
   assert_file_exists "$repo_dir/.codex/AGENTS.md" "codex AGENTS.md generated"
-  assert_file_contains "$repo_dir/.codex/AGENTS.md" "GENERATED FILE" \
-    "codex AGENTS.md has managed marker"
+  assert_file_empty "$repo_dir/.codex/AGENTS.md" \
+    "codex AGENTS.md is empty without instruction sources"
+  assert_file_contains "$repo_dir/.codex/config.toml" "GENERATED FILE" \
+    "codex config has managed marker"
+  assert_file_contains "$repo_dir/.codex/config.toml" 'trust_level = "trusted"' \
+    "codex config trusts the scenario repo"
+  assert_file_contains "$repo_dir/.codex/rules/default.rules" "Source: .agent-layer/commands.allow" \
+    "codex rules are generated from commands.allow"
 
   cleanup_scenario_dir "$repo_dir"
 }

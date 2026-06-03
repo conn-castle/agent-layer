@@ -209,6 +209,9 @@ func TestCheckAgents(t *testing.T) {
 	if statusMap["Agent disabled: Codex"] != StatusOK {
 		t.Error("agent with nil enabled flag should report StatusOK")
 	}
+	if statusMap["Agent disabled: CopilotCLI"] != StatusOK {
+		t.Error("Copilot CLI should be reported with StatusOK")
+	}
 	if statusMap["Antigravity version OK: 1.0.0"] != StatusOK {
 		t.Error("enabled Antigravity should check agy version")
 	}

@@ -248,6 +248,7 @@ func TestBuildUpgradePlan_ManifestCoverageSkipsHashRenameInference(t *testing.T)
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.6.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
 	if err := os.Remove(planWorkPath); err != nil {
 		t.Fatalf("remove plan-work: %v", err)
@@ -337,6 +338,7 @@ func TestBuildUpgradePlan_NoopMigrationDoesNotHideTemplateChange(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.6.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 
 	// Remove plan-work/SKILL.md so the template system would add it back.
 	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
@@ -378,6 +380,7 @@ func TestRun_UpgradeRoundTripWithMigrationManifest(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.6.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 
 	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
 	if err := os.Remove(planWorkPath); err != nil {
@@ -1359,12 +1362,14 @@ func TestRun_DevUpgradeRunsLatestMigrationsWithoutWritingPin(t *testing.T) {
 	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
 		t.Fatalf("expected agents.antigravity.enabled = true after dev upgrade, got %v", cfg.Agents.Antigravity.Enabled)
 	}
-	// The 0.11.0 manifest also seeds the opt-out status line defaults.
-	if cfg.Agents.Claude.Statusline == nil || !*cfg.Agents.Claude.Statusline {
-		t.Fatalf("expected agents.claude.statusline = true after dev upgrade, got %v", cfg.Agents.Claude.Statusline)
+	// The 0.11.0 manifest writes explicit status line defaults. The default is
+	// disabled, so a non-interactive (auto-approve) upgrade must keep both off
+	// and seed no sources rather than silently enabling the status lines.
+	if cfg.Agents.Claude.Statusline == nil || *cfg.Agents.Claude.Statusline {
+		t.Fatalf("expected agents.claude.statusline = false after dev upgrade, got %v", cfg.Agents.Claude.Statusline)
 	}
-	if cfg.Agents.Codex.Statusline == nil || !*cfg.Agents.Codex.Statusline {
-		t.Fatalf("expected agents.codex.statusline = true after dev upgrade, got %v", cfg.Agents.Codex.Statusline)
+	if cfg.Agents.Codex.Statusline == nil || *cfg.Agents.Codex.Statusline {
+		t.Fatalf("expected agents.codex.statusline = false after dev upgrade, got %v", cfg.Agents.Codex.Statusline)
 	}
 	if _, statErr := os.Stat(filepath.Join(root, ".agent-layer", "al.version")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("dev upgrade should not write al.version, statErr=%v", statErr)

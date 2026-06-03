@@ -61,6 +61,61 @@ func TestRunWithWriter_AdditionalBranches(t *testing.T) {
 	})
 }
 
+func TestRunAfterFreshInitWithWriter_UsesFreshStatuslineDefaults(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+	configText := strings.ReplaceAll(basicAgentConfig(), "[agents.claude]\nenabled = false", "[agents.claude]\nenabled = true")
+	configText = strings.ReplaceAll(configText, "[agents.codex]\nenabled = false", "[agents.codex]\nenabled = true")
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(configText), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), nil, 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	sawClaudeStatuslineDefault := false
+	sawCodexStatuslineDefault := false
+	ui := &MockUI{
+		SelectFunc: func(string, []string, *string) error { return nil },
+		MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+			for _, label := range *selected {
+				if title == messages.WizardClaudeFeaturesTitle && label == messages.WizardClaudeFeatureStatuslineLabel {
+					sawClaudeStatuslineDefault = true
+				}
+				if title == messages.WizardCodexFeaturesTitle && label == messages.WizardCodexFeatureStatuslineLabel {
+					sawCodexStatuslineDefault = true
+				}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardApplyChangesPrompt {
+				*value = false
+			}
+			return nil
+		},
+		NoteFunc: func(string, string) error { return nil },
+	}
+
+	err := RunAfterFreshInitWithWriter(root, ui, func(string) (*alsync.Result, error) {
+		t.Fatal("sync should not run when apply is declined")
+		return nil, nil
+	}, "", io.Discard)
+	if err != nil {
+		t.Fatalf("RunAfterFreshInitWithWriter: %v", err)
+	}
+	// Status lines are opt-in: the fresh-init wizard must NOT preselect them, so
+	// accepting the defaults leaves both disabled until the user explicitly checks
+	// the toggle. Mirrors the non-interactive upgrade default (migration value: false).
+	if sawClaudeStatuslineDefault {
+		t.Fatal("fresh init wrapper should not preselect Claude statusline (opt-in)")
+	}
+	if sawCodexStatuslineDefault {
+		t.Fatal("fresh init wrapper should not preselect Codex statusline (opt-in)")
+	}
+}
+
 func TestEnsureWizardConfig_StatErrorBranch(t *testing.T) {
 	ui := &MockUI{}
 	_, _, err := ensureWizardConfig(t.TempDir(), "bad\x00config.toml", ui, "", io.Discard)
@@ -113,7 +168,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 				return errors.New("confirm failed")
 			},
 		}
-		err := promptWizardFlow(t.TempDir(), ui, choices, false)
+		err := promptWizardFlow(t.TempDir(), ui, choices)
 		if err == nil || !strings.Contains(err.Error(), "confirm failed") {
 			t.Fatalf("expected confirm error, got %v", err)
 		}

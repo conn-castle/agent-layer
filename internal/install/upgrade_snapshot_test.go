@@ -92,6 +92,55 @@ func TestRunWithOverwrite_RollbackRestoresGitignoreOnFailure(t *testing.T) {
 	}
 }
 
+func TestRunWithOverwrite_RollbackRestoresStatuslineSourceOnFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	// A pre-existing, user-customized statusline source must survive an automatic
+	// rollback. writeStatuslineSources registers this path as a rollback target
+	// (writeStatuslineSourcesTargetPaths), so unless the path is also captured by
+	// upgradeSnapshotTargetPaths, rollback RemoveAll's it with no snapshot entry
+	// to restore — silently destroying a file the user never asked to delete.
+	// Statusline is disabled here, so the write step never touches the file: the
+	// only thing that can delete it is the rollback bug this guards against.
+	sourcePath := filepath.Join(root, ".agent-layer", "claude-statusline.sh")
+	customSource := "#!/usr/bin/env bash\n# user-customized statusline\nprintf 'hello\\n'\n"
+	if err := os.WriteFile(sourcePath, []byte(customSource), 0o600); err != nil {
+		t.Fatalf("write statusline source: %v", err)
+	}
+
+	faultsOnce := &writeFailOnceSystem{
+		base:     RealSystem{},
+		failPath: launchers.VSCodePaths(root).Command,
+		err:      errors.New("launcher write failed"),
+	}
+
+	err := Run(root, Options{System: faultsOnce, Overwrite: true, Prompter: autoApprovePrompter(), PinVersion: "0.6.0"})
+	if err == nil {
+		t.Fatal("expected upgrade failure")
+	}
+	if !strings.Contains(err.Error(), "writeVSCodeLaunchers") {
+		t.Fatalf("expected failure in writeVSCodeLaunchers, got %v", err)
+	}
+
+	restored, readErr := os.ReadFile(sourcePath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if readErr != nil {
+		t.Fatalf("statusline source was not restored after rollback: %v", readErr)
+	}
+	if string(restored) != customSource {
+		t.Fatalf("statusline source not restored to user content.\nwant:\n%s\ngot:\n%s", customSource, string(restored))
+	}
+
+	snapshot := latestSnapshot(t, root)
+	if snapshot.Status != upgradeSnapshotStatusAutoRolledBack {
+		t.Fatalf("snapshot status = %q, want %q", snapshot.Status, upgradeSnapshotStatusAutoRolledBack)
+	}
+	if snapshot.FailureStep != "writeVSCodeLaunchers" {
+		t.Fatalf("snapshot failure_step = %q, want writeVSCodeLaunchers", snapshot.FailureStep)
+	}
+}
+
 func TestRunWithOverwrite_RollbackRestoresDeletedUnknownPath(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
@@ -155,6 +204,7 @@ func TestRunWithOverwrite_SnapshotMarksRollbackFailed(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 
 	faults := newFaultSystem(RealSystem{})
 	managedFile := filepath.Join(root, ".gitignore")
@@ -180,6 +230,7 @@ func TestRunWithOverwrite_RollbackScopesToExecutedStepTargets(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "0.5.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 
 	faults := newFaultSystem(RealSystem{})
 	versionPath := filepath.Join(root, ".agent-layer", "al.version")

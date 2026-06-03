@@ -28,7 +28,7 @@ const (
 	WizardMCPSchemaTokensServerThresholdTitle = "MCP schema tokens server threshold"
 	WizardSummaryTitle                        = "Summary of Changes"
 	WizardRewritePreviewTitle                 = "Rewrite Preview"
-	WizardApplyChangesPrompt                  = "Save changes to .agent-layer/config.toml and .agent-layer/.env?"
+	WizardApplyChangesPrompt                  = "Apply these config, secret, skills, instructions, memory-file, and statusline-source changes?"
 	WizardCompleted                           = "Wizard completed."
 	WizardRunningSync                         = "Running sync..."
 	WizardWarningFmt                          = "Warning: %s\n"
@@ -40,15 +40,9 @@ const (
 	WizardCustomOption                        = "Custom..."
 	WizardCustomPromptFmt                     = "Custom %s"
 
-	// WizardEnableAgentLayerInstallPrompt prompts during the fresh-install confirm
-	// sequence for whether to install the Agent Layer workflow bundle (instructions,
-	// memory templates, and the ~24 bundled workflow skills). The opt-out result
-	// produces a minimal layout with only a placeholder 00_instructions.md.
-	WizardEnableAgentLayerInstallPrompt = "Enable Agent Layer workflow bundle? (bundles ~24 workflow skills, instruction files, and memory templates)" +
-		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
-	// WizardEnableAgentLayerPrompt asks the same question mid-flow during a wizard
-	// rerun on an existing repo. A "no" answer prunes the bundle from .agent-layer/.
-	WizardEnableAgentLayerPrompt = "Keep Agent Layer workflow bundle enabled? (bundles ~24 workflow skills, instruction files, and memory templates)" +
+	// WizardEnableAgentLayerPrompt asks whether to install or refresh the Agent
+	// Layer workflow bundle. A "no" answer leaves existing files unchanged.
+	WizardEnableAgentLayerPrompt = "Install or refresh the Agent Layer workflow bundle? (refreshes ~24 workflow skills and managed instruction files; creates missing memory docs/templates)" +
 		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
 	// WizardEnableCLISkillsTitle labels the catalog multiselect screen.
 	WizardEnableCLISkillsTitle = "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)"
@@ -72,10 +66,12 @@ const (
 	// these exact strings to invert checkbox state back into the disable-sense
 	// Choices fields. Define each label ONCE here and reuse it on both the
 	// option-list and contains-check sides so the identity cannot drift.
+	WizardClaudeFeatureStatuslineLabel   = "Claude statusline"
 	WizardClaudeFeatureIDEReadingLabel   = "IDE open-file reading"
 	WizardClaudeFeatureMemoryLabel       = "Auto-memory"
 	WizardClaudeFeatureConnectorsLabel   = "claude.ai connectors"
 	WizardClaudeFeatureQuestionToolLabel = "AskUserQuestion tool"
+	WizardCodexFeatureStatuslineLabel    = "Codex statusline"
 	WizardCodexFeatureAppsLabel          = "Built-in apps (GitHub, Gmail, etc.)"
 	WizardCodexFeatureBrowserLabel       = "Browser / computer-use"
 
@@ -85,6 +81,7 @@ const (
 	// per-option description field (same multi-line convention as the MCP/CLI-skills
 	// titles above).
 	WizardClaudeFeaturesTitle = "Claude features (checked = keep enabled; uncheck to disable)" +
+		"\n  Claude statusline: creates .agent-layer/claude-statusline.sh if missing, then sync wires Claude Code statusLine." +
 		"\n  IDE open-file reading: Claude Code otherwise auto-connects to your IDE and reads files open in the editor." +
 		"\n  Auto-memory: Claude Code's auto-memory persists notes across sessions. (This does not affect CLAUDE.md.)" +
 		"\n  claude.ai connectors: claude.ai app connectors load only under Claude.ai-subscription auth." +
@@ -94,6 +91,7 @@ const (
 	// unchecked (Agent Layer disables Codex's app surface by default and always
 	// writes an explicit features.apps).
 	WizardCodexFeaturesTitle = "Codex features (checked = keep enabled; uncheck to disable)" +
+		"\n  Codex statusline: creates .agent-layer/codex-statusline.toml if missing, then sync merges [tui].status_line." +
 		"\n  Built-in apps (GitHub, Gmail, etc.): Codex's built-in app integrations add extra tools to every session." +
 		"\n  Browser / computer-use: these tools let Codex drive a browser and control the screen."
 )

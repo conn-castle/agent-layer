@@ -81,7 +81,7 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		return fmt.Errorf(messages.WizardWriteEnvFailedFmt, err)
 	}
 
-	// Skills (catalog adds/removes, workflow bundle restore/prune on Q1 changes).
+	// Skills (catalog adds/removes, workflow bundle install/refresh on Q1 changes).
 	// Run before sync so sync sees the final on-disk layout.
 	skillsChangeSet, err := computeSkillsChangeSet(root, c)
 	if err != nil {
@@ -89,6 +89,14 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 	}
 	if err := applySkillsChanges(root, skillsChangeSet); err != nil {
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt, err)
+	}
+
+	statuslineSourceChangeSet, err := computeStatuslineSourceChangeSet(root, c)
+	if err != nil {
+		return err
+	}
+	if err := applyStatuslineSourceChanges(root, statuslineSourceChangeSet); err != nil {
+		return err
 	}
 
 	// Sync

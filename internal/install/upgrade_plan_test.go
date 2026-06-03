@@ -15,6 +15,7 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 	if err := os.Remove(filepath.Join(root, ".agent-layer", "state", "managed-baseline.json")); err != nil {
 		t.Fatalf("remove canonical baseline: %v", err)
 	}
@@ -275,10 +276,21 @@ func TestBuildUpgradePlan_StatErrorOnTemplateEntry(t *testing.T) {
 func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 	root := t.TempDir()
 	sys := newFaultSystem(RealSystem{})
+	issuesTemplate, err := templates.Read("docs/agent-layer/ISSUES.md")
+	if err != nil {
+		t.Fatalf("read issues template: %v", err)
+	}
+	issuesPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
+	if err := os.MkdirAll(filepath.Dir(issuesPath), 0o700); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.WriteFile(issuesPath, issuesTemplate, 0o600); err != nil {
+		t.Fatalf("write issues evidence: %v", err)
+	}
 
 	instructionsRoot := filepath.Join(root, ".agent-layer", "instructions")
 	sys.statErrs[normalizePath(instructionsRoot)] = errors.New("permission denied")
-	_, err := BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
+	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})
 	if err == nil || !strings.Contains(err.Error(), "failed to stat") {
 		t.Fatalf("expected stat error from orphan root, got %v", err)
 	}
@@ -286,6 +298,9 @@ func TestBuildUpgradePlan_WalkTemplateOrphansErrors(t *testing.T) {
 	delete(sys.statErrs, normalizePath(instructionsRoot))
 	if err := os.MkdirAll(instructionsRoot, 0o700); err != nil {
 		t.Fatalf("mkdir instructions: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(instructionsRoot, "00_rules.md"), []byte("rules"), 0o600); err != nil {
+		t.Fatalf("write instruction evidence: %v", err)
 	}
 	sys.walkErrs[normalizePath(instructionsRoot)] = errors.New("walk failed")
 	_, err = BuildUpgradePlan(root, UpgradePlanOptions{System: sys, TargetPinVersion: "0.7.0"})

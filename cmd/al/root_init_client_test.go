@@ -56,13 +56,13 @@ func TestInitCommandNoWizardSkipsWizard(t *testing.T) {
 	isTerminal = func() bool { return true }
 	t.Cleanup(func() { isTerminal = originalIsTerminal })
 
-	originalRunWizard := runWizard
+	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizard = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
-	t.Cleanup(func() { runWizard = originalRunWizard })
+	t.Cleanup(func() { runWizardAfterInit = originalRunWizardAfterInit })
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{"--no-wizard"})
@@ -87,13 +87,13 @@ func TestInitCommandPromptYesRunsWizard(t *testing.T) {
 	isTerminal = func() bool { return true }
 	t.Cleanup(func() { isTerminal = originalIsTerminal })
 
-	originalRunWizard := runWizard
+	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizard = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
-	t.Cleanup(func() { runWizard = originalRunWizard })
+	t.Cleanup(func() { runWizardAfterInit = originalRunWizardAfterInit })
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{})
@@ -118,13 +118,13 @@ func TestInitCommandNonInteractiveSkipsWizard(t *testing.T) {
 	isTerminal = func() bool { return false }
 	t.Cleanup(func() { isTerminal = originalIsTerminal })
 
-	originalRunWizard := runWizard
+	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizard = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
-	t.Cleanup(func() { runWizard = originalRunWizard })
+	t.Cleanup(func() { runWizardAfterInit = originalRunWizardAfterInit })
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{})
@@ -149,13 +149,13 @@ func TestInitCommandPromptNoDeclinesWizard(t *testing.T) {
 	isTerminal = func() bool { return true }
 	t.Cleanup(func() { isTerminal = originalIsTerminal })
 
-	originalRunWizard := runWizard
+	originalRunWizardAfterInit := runWizardAfterInit
 	wizardCalled := false
-	runWizard = func(_ string, _ string) error {
+	runWizardAfterInit = func(_ string, _ string) error {
 		wizardCalled = true
 		return nil
 	}
-	t.Cleanup(func() { runWizard = originalRunWizard })
+	t.Cleanup(func() { runWizardAfterInit = originalRunWizardAfterInit })
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{})

@@ -19,6 +19,8 @@ func TestRunGolden(t *testing.T) {
 	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
+	writeTemplateToFixtureSource(t, root, "claude-statusline.sh", filepath.Join(".agent-layer", "claude-statusline.sh"), 0o755)
+	writeTemplateToFixtureSource(t, root, "codex-statusline.toml", filepath.Join(".agent-layer", "codex-statusline.toml"), 0o644)
 	result, err := Run(root)
 	if err != nil {
 		t.Fatalf("sync run: %v", err)
@@ -68,6 +70,21 @@ func TestRunGolden(t *testing.T) {
 	}
 }
 
+func writeTemplateToFixtureSource(t *testing.T, root string, templatePath string, relPath string, perm os.FileMode) {
+	t.Helper()
+	data, err := templates.Read(templatePath)
+	if err != nil {
+		t.Fatalf("read template %s: %v", templatePath, err)
+	}
+	path := filepath.Join(root, relPath)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, data, perm); err != nil {
+		t.Fatalf("write %s: %v", relPath, err)
+	}
+}
+
 func assertFileMatchesTemplate(t *testing.T, templatePath string, actualPath string) {
 	t.Helper()
 	expected, err := templates.Read(templatePath)
@@ -93,6 +110,8 @@ func TestRunCleansLegacySkillOutputs(t *testing.T) {
 	if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
 		t.Fatalf("write env: %v", err)
 	}
+	writeTemplateToFixtureSource(t, root, "claude-statusline.sh", filepath.Join(".agent-layer", "claude-statusline.sh"), 0o755)
+	writeTemplateToFixtureSource(t, root, "codex-statusline.toml", filepath.Join(".agent-layer", "codex-statusline.toml"), 0o644)
 
 	// Seed legacy projection paths with both generated and manual content. Per the
 	// SKILL-CLIENT-SPEC ownership contract, Agent Layer claims these directories

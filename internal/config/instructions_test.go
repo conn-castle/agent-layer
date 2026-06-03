@@ -51,12 +51,12 @@ func TestLoadInstructionsNoFiles(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	_, err := LoadInstructions(dir)
-	if err == nil {
-		t.Fatalf("expected no instruction files error")
+	files, err := LoadInstructions(dir)
+	if err != nil {
+		t.Fatalf("LoadInstructions error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "no instruction files") {
-		t.Fatalf("unexpected error: %v", err)
+	if len(files) != 0 {
+		t.Fatalf("expected no instruction files, got %d", len(files))
 	}
 }
 

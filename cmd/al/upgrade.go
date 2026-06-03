@@ -244,12 +244,13 @@ type upgradeApplyPolicy struct {
 }
 
 type upgradeReviewState struct {
-	enabled         bool
-	prompted        bool
-	managedPreviews []install.DiffPreview
-	memoryPreviews  []install.DiffPreview
-	applyManaged    bool
-	applyMemory     bool
+	enabled                       bool
+	prompted                      bool
+	statuslineSourceSkipAnnounced bool
+	managedPreviews               []install.DiffPreview
+	memoryPreviews                []install.DiffPreview
+	applyManaged                  bool
+	applyMemory                   bool
 }
 
 func buildUpgradeReviewState(policy upgradeApplyPolicy) *upgradeReviewState {
@@ -361,6 +362,22 @@ func buildUpgradePrompter(cmd *cobra.Command, policy upgradeApplyPolicy, reviewS
 			}
 			prompt := fmt.Sprintf(messages.UpgradeOverwritePromptFmt, preview.Path)
 			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, true)
+		},
+		StatuslineSourcePreviewFunc: func(preview install.DiffPreview) (bool, error) {
+			if policy.yes || !policy.interactive {
+				if reviewState != nil && !reviewState.statuslineSourceSkipAnnounced {
+					if _, err := fmt.Fprintln(cmd.ErrOrStderr(), messages.UpgradeSkipStatuslineSourceUpdatesInfo); err != nil {
+						return false, err
+					}
+					reviewState.statuslineSourceSkipAnnounced = true
+				}
+				return false, nil
+			}
+			if err := printDiffPreviews(cmd.OutOrStdout(), "User-owned statusline source that differs from the template:", []install.DiffPreview{preview}); err != nil {
+				return false, err
+			}
+			prompt := fmt.Sprintf(messages.UpgradeOverwriteStatuslineSourcePromptFmt, preview.Path)
+			return promptYesNo(stdinReader, cmd.OutOrStdout(), prompt, false)
 		},
 		DeleteUnknownAllFunc: func(paths []string) (bool, error) {
 			if policy.explicitCategory {
@@ -638,7 +655,13 @@ func renderUpgradePlanText(out io.Writer, plan install.UpgradePlan, previews map
 	if err := writeUpgradeChangeSection(out, "Files to add", plan.TemplateAdditions, previews); err != nil {
 		return err
 	}
+	if err := writeUpgradeChangeSection(out, "Statusline source files to add", plan.StatuslineSourceAdditions, previews); err != nil {
+		return err
+	}
 	if err := writeUpgradeChangeSection(out, "Files to update", allUpdates, previews); err != nil {
+		return err
+	}
+	if err := writeUpgradeChangeSection(out, "Statusline source files to review", plan.StatuslineSourceUpdates, previews); err != nil {
 		return err
 	}
 	if err := writeUpgradeRenameSection(out, "Files to rename", plan.TemplateRenames); err != nil {

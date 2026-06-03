@@ -52,12 +52,22 @@ PROFILE
   assert_mock_agent_called "$MOCK_AGENT_LOG"
 
   assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "--gemini_dir=$repo_dir/.agy"
+  assert_mock_agent_has_arg "$MOCK_AGENT_LOG" "--dangerously-skip-permissions"
   assert_file_contains "$MOCK_AGENT_LOG" "AGY_CLI_DISABLE_AUTO_UPDATE=1" \
     "agy auto-update disabled for contained launch"
 
   # Verify env vars have non-empty values
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_DIR"
   assert_mock_agent_env_non_empty "$MOCK_AGENT_LOG" "AL_RUN_ID"
+  assert_mock_agent_env "$MOCK_AGENT_LOG" "AL_DISPATCH_CALLER_AGENT" "antigravity"
+  assert_json_valid "$repo_dir/.agy/antigravity-cli/settings.json" \
+    "Antigravity settings is valid JSON after launch"
+  assert_json_valid "$repo_dir/.agy/antigravity-cli/mcp_config.json" \
+    "Antigravity MCP config is valid JSON after launch"
+  assert_file_contains "$repo_dir/.agy/antigravity-cli/settings.json" '"permissions"' \
+    "Antigravity settings has permissions block"
+  assert_file_contains "$repo_dir/.agy/antigravity-cli/mcp_config.json" '"mcpServers"' \
+    "Antigravity MCP config has mcpServers object"
 
   cleanup_scenario_dir "$repo_dir"
 }
