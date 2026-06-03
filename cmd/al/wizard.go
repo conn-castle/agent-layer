@@ -73,7 +73,9 @@ func newWizardCmd() *cobra.Command {
 			if profilePath != "" && answersPath != "" {
 				return fmt.Errorf("--profile and --answers cannot be used together")
 			}
-			if answersPath != "" && yes {
+			// --yes only applies to profile application; reject it for --answers
+			// and the interactive path so it never fails silently.
+			if yes && profilePath == "" {
 				return fmt.Errorf("--yes can only be used with --profile")
 			}
 

@@ -344,6 +344,36 @@ func TestWizardCommand_AdditionalBranches(t *testing.T) {
 			t.Fatalf("expected answers/yes conflict, got %v", err)
 		}
 	})
+
+	// --yes without --profile must fail loud rather than be silently ignored on
+	// the interactive path. Would fail if the guard only rejected --answers --yes.
+	t.Run("yes without profile rejected", func(t *testing.T) {
+		origGetwd := getwd
+		origIsTerminal := isTerminal
+		t.Cleanup(func() {
+			getwd = origGetwd
+			isTerminal = origIsTerminal
+		})
+
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o700); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		getwd = func() (string, error) { return root, nil }
+		isTerminal = func() bool {
+			t.Fatal("interactive path should not be reached when --yes lacks --profile")
+			return false
+		}
+
+		cmd := newWizardCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs([]string{"--yes"})
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "--yes can only be used with --profile") {
+			t.Fatalf("expected --yes-without-profile rejection, got %v", err)
+		}
+	})
 }
 
 func TestInitWarnUpdate_FailureBranch(t *testing.T) {
