@@ -101,13 +101,12 @@ func TestClaudeStatuslineScript_RendersFullPayload(t *testing.T) {
 		"effort": {"level": "high"},
 		"context_window": {"used_percentage": 43, "context_window_size": 200000, "total_input_tokens": 1000},
 		"rate_limits": {"seven_day": {"used_percentage": 60, "resets_at": ` + strconv.FormatInt(resetEpoch, 10) + `}},
-		"cost": {"total_cost_usd": 1.5, "total_lines_added": 99, "total_lines_removed": 88},
-		"pr": {"number": 123, "review_state": "approved"}
+		"cost": {"total_cost_usd": 1.5, "total_lines_added": 99, "total_lines_removed": 88}
 	}`
 	out := runClaudeStatusline(t, cwd, input)
 
 	// used_percentage 60 → 40% headroom remaining; reset ~5 days out.
-	for _, want := range []string{"Opus 4.8 (high)", "ctx:43%", "lim:5d/40% left", "#sess123", "+6", "-1", "Δ2", "$1.50", "PR#123"} {
+	for _, want := range []string{"Opus 4.8 (high)", "ctx:43%", "lim:5d/40% left", "#sess123", "+6", "-1", "Δ2", "$1.50"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected output to contain %q, got: %q", want, out)
 		}
@@ -135,7 +134,7 @@ func TestClaudeStatuslineScript_FallsBackToTokenRatioForContext(t *testing.T) {
 	}
 	// Absent optional fields must not render their segments. "(" guards against
 	// a stray reasoning-effort parenthetical on the model (e.g. "Sonnet (high)").
-	for _, absent := range []string{"lim:", "PR#", "("} {
+	for _, absent := range []string{"lim:", "("} {
 		if strings.Contains(out, absent) {
 			t.Errorf("did not expect %q in minimal output, got: %q", absent, out)
 		}

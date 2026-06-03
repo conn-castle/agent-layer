@@ -11,6 +11,12 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
+// Repo-relative paths of the editable status line source files.
+const (
+	claudeStatuslineSourceRelPath = ".agent-layer/claude-statusline.sh"
+	codexStatuslineSourceRelPath  = ".agent-layer/codex-statusline.toml"
+)
+
 type statuslineSourceTemplate struct {
 	relPath       string
 	templatePath  string
@@ -21,13 +27,13 @@ type statuslineSourceTemplate struct {
 func statuslineSourceTemplates() []statuslineSourceTemplate {
 	return []statuslineSourceTemplate{
 		{
-			relPath:       ".agent-layer/claude-statusline.sh",
+			relPath:       claudeStatuslineSourceRelPath,
 			templatePath:  "claude-statusline.sh",
 			legacyRelPath: ".agent-layer/statusline.sh",
 			perm:          0o755,
 		},
 		{
-			relPath:      ".agent-layer/codex-statusline.toml",
+			relPath:      codexStatuslineSourceRelPath,
 			templatePath: "codex-statusline.toml",
 			perm:         0o644,
 		},
@@ -55,9 +61,9 @@ func (inst *installer) writeStatuslineSources() error {
 
 func statuslineSourceEnabled(cfg *config.Config, relPath string) bool {
 	switch relPath {
-	case ".agent-layer/claude-statusline.sh":
+	case claudeStatuslineSourceRelPath:
 		return config.ClaudeStatuslineEnabled(cfg.Agents.Claude)
-	case ".agent-layer/codex-statusline.toml":
+	case codexStatuslineSourceRelPath:
 		return config.CodexStatuslineEnabled(cfg.Agents.Codex)
 	default:
 		return false
@@ -218,12 +224,12 @@ func statuslineSourceUpgradeChange(source statuslineSourceTemplate) upgradeChang
 func statuslineSourceEnabledAfterMigrations(cfg *config.Config, relPath string, plan migrationPlan) bool {
 	var key string
 	switch relPath {
-	case ".agent-layer/claude-statusline.sh":
+	case claudeStatuslineSourceRelPath:
 		key = "agents.claude.statusline"
 		if cfg.Agents.Claude.Statusline != nil {
 			return *cfg.Agents.Claude.Statusline
 		}
-	case ".agent-layer/codex-statusline.toml":
+	case codexStatuslineSourceRelPath:
 		key = "agents.codex.statusline"
 		if cfg.Agents.Codex.Statusline != nil {
 			return *cfg.Agents.Codex.Statusline

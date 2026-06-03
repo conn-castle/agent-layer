@@ -183,10 +183,16 @@ type transactionStep struct {
 func (inst upgradeOrchestrator) runUpgradeTransaction(snapshot *upgradeSnapshot) error {
 	steps := []transactionStep{
 		{name: "runMigrations", run: inst.runMigrations, rollbackTargets: inst.runMigrationsTargetPaths},
-		{name: "writeStatuslineSources", run: inst.writeStatuslineSources, rollbackTargets: inst.writeStatuslineSourcesTargetPaths},
 		{name: "writeVersionFile", run: inst.writeVersionFile, rollbackTargets: inst.writeVersionFileTargetPaths},
 		{name: "writeTemplateFiles", run: inst.templates().writeTemplateFiles, rollbackTargets: inst.writeTemplateFilesTargetPaths},
 		{name: "writeTemplateDirs", run: inst.templates().writeTemplateDirs, rollbackTargets: inst.writeTemplateDirsTargetPaths},
+		// Statusline sources run after the managed/memory template steps so their
+		// interactive diff prompt comes after the main overwrite prompt rather than
+		// ahead of it; when nothing else changes it is naturally the only prompt.
+		// Must stay after runMigrations (it reads the post-migration statusline
+		// config) and before writeVSCodeLaunchers (so a later-step rollback still
+		// covers a source this step wrote).
+		{name: "writeStatuslineSources", run: inst.writeStatuslineSources, rollbackTargets: inst.writeStatuslineSourcesTargetPaths},
 		{name: "updateGitignore", run: inst.updateGitignore, rollbackTargets: inst.updateGitignoreTargetPaths},
 		{name: "writeVSCodeLaunchers", run: inst.writeVSCodeLaunchers, rollbackTargets: inst.writeVSCodeLaunchersTargetPaths},
 		{name: "handleUnknowns", run: inst.handleUnknowns, rollbackTargets: inst.handleUnknownsTargetPaths},

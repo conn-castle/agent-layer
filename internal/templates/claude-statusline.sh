@@ -42,8 +42,6 @@ weekly_pct=$("$JQ" -r '.rate_limits.seven_day.used_percentage // empty' <<<"$inp
 weekly_reset=$("$JQ" -r '.rate_limits.seven_day.resets_at // empty' <<<"$input")
 total_input=$("$JQ" -r '.context_window.total_input_tokens // 0' <<<"$input")
 ctx_size=$("$JQ" -r '.context_window.context_window_size // 0' <<<"$input")
-pr_num=$("$JQ" -r '.pr.number // empty' <<<"$input")
-pr_state=$("$JQ" -r '.pr.review_state // "open"' <<<"$input")
 cost_usd=$("$JQ" -r '.cost.total_cost_usd // empty' <<<"$input")
 effort=$("$JQ" -r '.effort.level // ""' <<<"$input")
 
@@ -209,18 +207,6 @@ if [ -n "$cost_usd" ]; then
   fi
 fi
 
-# ── PR indicator ──────────────────────────────────────────────────────────────
-pr_str=""
-if [ -n "$pr_num" ]; then
-  case "$pr_state" in
-    approved)          pr_color="${GREEN}" ;;
-    changes_requested) pr_color="${RED}" ;;
-    draft)             pr_color="${DIM}" ;;
-    *)                 pr_color="${BLUE}" ;;
-  esac
-  pr_str="${pr_color}PR#${pr_num}${RESET}"
-fi
-
 # ── Assemble line ─────────────────────────────────────────────────────────────
 parts=()
 parts+=("${model_str}")
@@ -230,7 +216,6 @@ parts+=("${SEP}" "${ctx_str}")
 [ -n "$lines_str" ]    && parts+=("${SEP}" "${lines_str}")
 [ -n "$worktree_str" ] && parts+=("${SEP}" "${worktree_str}")
 [ -n "$git_str" ]      && parts+=("${SEP}" "${git_str}")
-[ -n "$pr_str" ]       && parts+=("${SEP}" "${pr_str}")
 [ -n "$dollar_str" ]   && parts+=("${SEP}" "${dollar_str}")
 parts+=("${SEP}" "${dir_str}")
 

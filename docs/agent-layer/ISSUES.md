@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-06-03 local-lint-ci-parity-gap: `make lint` does not reproduce CI golangci-lint findings
+    Priority: Medium. Area: tooling/lint
+    Description: CI `make ci` failed on a `goconst` finding (`internal/install/statusline_sources.go`: a 3x string should be a constant), but local `make lint` reports `0 issues` on the same code — even with the go.mod-pinned golangci-lint v2.10.1 in `.tools/bin` and a cleared `GOLANGCI_LINT_CACHE`. Local gives false confidence and lets lint failures reach CI. Suspected golangci-lint build/toolchain or GOCACHE-analysis difference between local (darwin) and CI (linux).
+    Next step: Reproduce by linting with a fully fresh `GOCACHE` (and on linux/container matching CI) to isolate cache-vs-version-vs-OS; pin the lint result so local `make lint` matches CI.
+    Notes: Surfaced while fixing the v0.11.0 PR CI; the specific goconst finding was fixed by extracting `claudeStatuslineSourceRelPath`/`codexStatuslineSourceRelPath` constants.
+
 - Issue 2026-06-03 wizard-no-selfheal-missing-statusline-source: Wizard does not reseed a missing status line source on an enabled-but-untouched repo
     Priority: Medium. Area: wizard/statusline
     Description: `selectedStatuslineSourceFiles` (`internal/wizard/apply_statusline.go:36-58`) seeds a source only when the toggle was touched (`ClaudeStatuslineTouched`/`CodexStatuslineTouched`). If config already has `statusline = true` but the source is missing (deleted, or hand-set), running `al wizard` without re-toggling seeds nothing, then sync fails loud (`internal/sync/claude_statusline.go:90-105`). The DECISIONS promise that running `al wizard` repairs the missing-source state is not fully met.
