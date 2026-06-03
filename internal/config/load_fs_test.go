@@ -142,9 +142,12 @@ func TestLoadInstructionsFS_NoMarkdown(t *testing.T) {
 		".agent-layer/instructions/readme.txt": {Data: []byte("no markdown")},
 	}
 
-	_, err := LoadInstructionsFS(fsys, "root", ".agent-layer/instructions")
-	if err == nil {
-		t.Fatalf("expected error when no markdown files exist")
+	files, err := LoadInstructionsFS(fsys, "root", ".agent-layer/instructions")
+	if err != nil {
+		t.Fatalf("LoadInstructionsFS error: %v", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected no instruction files, got %d", len(files))
 	}
 }
 

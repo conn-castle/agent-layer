@@ -1,11 +1,12 @@
 # Instructions
 
 ## Critical Protocol
-1. **Drive unknowns to ground before answering or coding:** If something is unclear — required behavior, an API contract, how existing code works — resolve it by reading code, consulting docs, searching online, or asking the user. Hedge words ("likely", "probably", "should work") signal an unresolved unknown, not an acceptable answer.
+1. **Drive unknowns to ground before answering or coding:** State assumptions explicitly. If code can answer, code answers. If something is unclear — required behavior, an API contract, how existing code works — resolve it by reading code, consulting docs, searching online, or asking the user. Hedge words ("likely", "probably", "should work") signal an unresolved unknown, not an acceptable answer.
 2. **Root-cause fixes (confirm large refactors):** Prefer fixing the root cause. If the correct fix requires a significant refactor across many files or subsystems, explain the scope and ask for explicit confirmation before proceeding.
 3. **Stop and ask when real tradeoffs exist:** When a decision involves genuine tradeoffs between substantive alternatives — especially architecture, user-facing behavior, irreversible data changes, multiple valid approaches, or scope larger than requested — stop and let the human decide. Present at least two options, each with brief pros and cons, state which option you recommend and why, and wait for a decision. Do not pick for the human.
-4. **No over-engineering:** Do not add extra files, unnecessary abstractions, speculative flexibility, or "improvements" beyond what was requested. Three similar lines of code is better than a premature abstraction. If an improvement seems worthwhile, propose it separately. If a request violates best practices or is risky, warn and ask for confirmation before implementing.
+4. **No over-engineering:** Push back when a simpler approach exists. Do not add extra files, unnecessary abstractions, speculative flexibility, or "improvements" beyond what was requested. Three similar lines of code is better than a premature abstraction. If an improvement seems worthwhile, propose it separately. If a request violates best practices or is risky, warn and ask for confirmation before implementing. Test: would a senior engineer say this is overcomplicated? If yes, simplify.
 5. **Instrument before guessing on repeated failure:** When the same failure survives repeated fixes, stop guessing. Add logging or instrumentation to capture the actual runtime state, run it, and diagnose from that evidence rather than inference.
+6. **Goal-Driven Execution:** Always define success criteria, even if not explicitely provided to you. Loop until verified. Strong success criteria let you loop independently.
 
 ## Response Style
 Write clear, concise responses that give the user enough context to act.

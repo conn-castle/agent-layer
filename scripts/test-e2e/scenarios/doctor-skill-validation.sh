@@ -50,10 +50,23 @@ SKILL
   local doctor_output doctor_rc=0
   doctor_output=$(cd "$repo_dir" && al doctor 2>&1) || doctor_rc=$?
 
+  if [[ $doctor_rc -ne 0 ]]; then
+    pass "doctor exits nonzero for skill name mismatch"
+  else
+    fail "doctor should exit nonzero for skill name mismatch"
+  fi
   assert_output_contains "$doctor_output" "Checking Agent Layer health" \
     "doctor runs health check despite skill issue"
   assert_output_contains "$doctor_output" "[FAIL]" \
     "doctor reports failure for skill mismatch"
+  assert_output_contains "$doctor_output" "real-name" \
+    "doctor output mentions expected skill directory name"
+  assert_output_contains "$doctor_output" "wrong-name" \
+    "doctor output mentions mismatched skill name"
+  assert_output_contains "$doctor_output" "Some checks failed" \
+    "doctor prints failure summary for skill mismatch"
+  assert_output_not_contains "$doctor_output" "All systems go" \
+    "doctor does not print healthy summary for skill mismatch"
   assert_no_crash_markers "$doctor_output" "no crash markers in doctor output"
   assert_output_not_contains "$doctor_output" "panic" \
     "no panic in doctor output"
@@ -75,6 +88,7 @@ SKILL
   fi
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
 
   cleanup_scenario_dir "$repo_dir"
 }

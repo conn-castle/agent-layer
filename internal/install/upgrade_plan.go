@@ -50,6 +50,8 @@ type UpgradePlan struct {
 	DryRun                    bool                    `json:"dry_run"`
 	TemplateAdditions         []UpgradeChange         `json:"template_additions"`
 	TemplateUpdates           []UpgradeChange         `json:"template_updates"`
+	StatuslineSourceAdditions []UpgradeChange         `json:"statusline_source_additions"`
+	StatuslineSourceUpdates   []UpgradeChange         `json:"statusline_source_updates"`
 	SectionAwareUpdates       []UpgradeChange         `json:"section_aware_updates"`
 	TemplateRenames           []UpgradeRename         `json:"template_renames"`
 	TemplateRemovalsOrOrphans []UpgradeChange         `json:"template_removals_or_orphans"`
@@ -195,6 +197,10 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 	if err != nil {
 		return UpgradePlan{}, err
 	}
+	statuslineAdditions, statuslineUpdates, err := inst.planStatuslineSourceChanges(migrationPlan)
+	if err != nil {
+		return UpgradePlan{}, err
+	}
 
 	pinDiff, err := inst.templates().pinVersionDiff()
 	if err != nil {
@@ -212,6 +218,8 @@ func BuildUpgradePlan(root string, opts UpgradePlanOptions) (UpgradePlan, error)
 		DryRun:                    true,
 		TemplateAdditions:         toUpgradeChanges(additions),
 		TemplateUpdates:           toUpgradeChanges(regularUpdates),
+		StatuslineSourceAdditions: toUpgradeChanges(statuslineAdditions),
+		StatuslineSourceUpdates:   toUpgradeChanges(statuslineUpdates),
 		SectionAwareUpdates:       toUpgradeChanges(sectionUpdates),
 		TemplateRenames:           renames,
 		TemplateRemovalsOrOrphans: toUpgradeChanges(orphans),

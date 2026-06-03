@@ -33,10 +33,9 @@ func TestClaudeStatuslineEnabled(t *testing.T) {
 		ptr  *bool
 		want bool
 	}{
-		// Opt-out semantics: unset defaults to enabled, only explicit false disables.
-		{"nil defaults on", nil, true},
+		{"nil defaults off", nil, false},
 		{"explicit true", &trueVal, true},
-		{"explicit false opts out", &falseVal, false},
+		{"explicit false", &falseVal, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -56,10 +55,9 @@ func TestCodexStatuslineEnabled(t *testing.T) {
 		ptr  *bool
 		want bool
 	}{
-		// Opt-out semantics: unset defaults to enabled, only explicit false disables.
-		{"nil defaults on", nil, true},
+		{"nil defaults off", nil, false},
 		{"explicit true", &trueVal, true},
-		{"explicit false opts out", &falseVal, false},
+		{"explicit false", &falseVal, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

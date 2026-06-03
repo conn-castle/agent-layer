@@ -256,6 +256,7 @@ func TestBuildManagedAndMemoryDiffPreviews(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 	inst := &installer{
 		root:         root,
 		sys:          RealSystem{},
@@ -365,6 +366,7 @@ func TestBuildSingleDiffPreview_SectionAwareMarkerError(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 	roadmapPath := filepath.Join(root, "docs", "agent-layer", "ROADMAP.md")
 	if err := os.WriteFile(roadmapPath, []byte("# no marker here\n"), 0o600); err != nil {
 		t.Fatalf("write roadmap without marker: %v", err)

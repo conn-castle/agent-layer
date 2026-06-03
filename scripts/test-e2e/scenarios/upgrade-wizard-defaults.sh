@@ -11,9 +11,25 @@ run_scenario_upgrade_wizard_defaults() {
   repo_dir="$(setup_scenario_dir)"
 
   setup_old_version_via_binary "$repo_dir" "$E2E_OLDEST_BINARY"
+  assert_al_version_content "$repo_dir" "$E2E_OLDEST_VERSION"
 
-  assert_exit_zero_in "$repo_dir" "al upgrade from $E2E_OLDEST_VERSION" \
-    al upgrade --yes --apply-managed-updates --apply-memory-updates --apply-deletions
+  local upgrade_output upgrade_rc=0
+  upgrade_output=$(cd "$repo_dir" && al upgrade --yes --apply-managed-updates --apply-memory-updates --apply-deletions 2>&1) || upgrade_rc=$?
+  if [[ $upgrade_rc -eq 0 ]]; then
+    pass "al upgrade from $E2E_OLDEST_VERSION"
+  else
+    fail "al upgrade from $E2E_OLDEST_VERSION (exit code: $upgrade_rc)"
+    echo "  output (first 10 lines):"
+    echo "$upgrade_output" | head -10 | sed 's/^/    /'
+  fi
+  assert_no_crash_markers "$upgrade_output" "no crash markers in upgrade defaults output"
+  assert_output_contains "$upgrade_output" "Created upgrade snapshot" \
+    "upgrade defaults output mentions snapshot creation"
+  assert_output_contains "$upgrade_output" "Running sync" \
+    "upgrade defaults output says sync ran"
+  assert_output_contains "$upgrade_output" "Upgrade successful." \
+    "upgrade defaults output says successful"
+  assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
 
   # Capture wizard output to verify it ran successfully
   local wizard_output rc=0
@@ -27,6 +43,8 @@ run_scenario_upgrade_wizard_defaults() {
   fi
 
   assert_no_crash_markers "$wizard_output" "no crash markers in wizard output after upgrade"
+  assert_output_contains "$wizard_output" "Running sync" \
+    "wizard output says sync ran after upgrade"
   assert_output_contains "$wizard_output" "Wizard completed" \
     "wizard output says completed after upgrade"
 
@@ -39,8 +57,9 @@ run_scenario_upgrade_wizard_defaults() {
   assert_exit_zero_in "$repo_dir" "al claude after upgrade + wizard" al claude
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
   assert_generated_artifacts "$repo_dir"
 
   # Verify CLAUDE.md has real instruction content after full pipeline

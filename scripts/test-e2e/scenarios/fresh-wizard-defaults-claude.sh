@@ -21,6 +21,8 @@ run_scenario_fresh_wizard_defaults_claude() {
   fi
 
   assert_no_crash_markers "$wizard_output" "no crash markers in wizard output"
+  assert_output_contains "$wizard_output" "Running sync" \
+    "wizard output says sync ran"
 
   # Wizard should print completion message
   assert_output_contains "$wizard_output" "Wizard completed" \
@@ -59,8 +61,9 @@ run_scenario_fresh_wizard_defaults_claude() {
   assert_exit_zero_in "$repo_dir" "al claude with mock" al claude
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
   assert_generated_artifacts "$repo_dir"
 
   cleanup_scenario_dir "$repo_dir"

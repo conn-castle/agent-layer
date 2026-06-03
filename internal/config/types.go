@@ -59,9 +59,9 @@ type ClaudeConfig struct {
 	// (merged with any user agent_specific entries). nil/false leave it allowed.
 	DisableQuestionTool *bool `toml:"disable_question_tool"`
 	// Statusline controls whether Agent Layer projects the editable
-	// .agent-layer/claude-statusline.sh source into .claude/claude-statusline.sh and wires
-	// statusLine into .claude/settings.json on sync. Defaults to enabled:
-	// nil or true enable it; an explicit false opts out. Read via
+	// .agent-layer/claude-statusline.sh source into .claude/claude-statusline.sh
+	// and wires statusLine into .claude/settings.json on sync. It is explicit
+	// opt-in: only true enables it. Read via
 	// ClaudeStatuslineEnabled.
 	Statusline    *bool          `toml:"statusline"`
 	AgentSpecific map[string]any `toml:"agent_specific"`
@@ -89,8 +89,8 @@ type CodexConfig struct {
 	Dispatch        DispatchConfig `toml:"dispatch"`
 	// Statusline controls whether Agent Layer reads the editable
 	// .agent-layer/codex-statusline.toml source and injects its native
-	// tui.status_line list into .codex/config.toml on sync. Defaults to
-	// enabled: nil or true enable it; an explicit false opts out. Read via
+	// tui.status_line list into .codex/config.toml on sync. It is explicit
+	// opt-in: only true enables it. Read via
 	// CodexStatuslineEnabled.
 	Statusline    *bool          `toml:"statusline"`
 	AgentSpecific map[string]any `toml:"agent_specific"`
@@ -133,17 +133,15 @@ func IsAgentEnabled(p *bool) bool {
 }
 
 // ClaudeStatuslineEnabled reports whether the Claude status line should be
-// projected and wired. It is opt-out: an unset value (nil) or true enables it;
-// only an explicit false disables it.
+// projected and wired. It is explicit opt-in: only true enables it.
 func ClaudeStatuslineEnabled(c ClaudeConfig) bool {
-	return c.Statusline == nil || *c.Statusline
+	return c.Statusline != nil && *c.Statusline
 }
 
 // CodexStatuslineEnabled reports whether the Codex status line should be wired.
-// It is opt-out: an unset value (nil) or true enables it; only an explicit false
-// disables it.
+// It is explicit opt-in: only true enables it.
 func CodexStatuslineEnabled(c CodexConfig) bool {
-	return c.Statusline == nil || *c.Statusline
+	return c.Statusline != nil && *c.Statusline
 }
 
 // SharedAgentSkillsEnabled reports whether any agent that consumes the shared

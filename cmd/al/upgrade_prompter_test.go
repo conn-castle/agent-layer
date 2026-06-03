@@ -150,6 +150,58 @@ func TestBuildUpgradePrompter_OverwritePreviewMemoryPath(t *testing.T) {
 	}
 }
 
+func TestBuildUpgradePrompter_StatuslineSourceInteractiveReview(t *testing.T) {
+	cmd := newUpgradeCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetIn(bytes.NewBufferString("y\n"))
+
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{interactive: true}, &upgradeReviewState{enabled: true})
+	apply, err := p.StatuslineSource(install.DiffPreview{
+		Path:         ".agent-layer/claude-statusline.sh",
+		UnifiedDiff:  "--- current\n+++ template\n-old\n+new\n",
+		LinesAdded:   1,
+		LinesRemoved: 1,
+	})
+	if err != nil {
+		t.Fatalf("StatuslineSource: %v", err)
+	}
+	if !apply {
+		t.Fatal("expected interactive yes to approve statusline source replacement")
+	}
+	output := out.String()
+	if !strings.Contains(output, "User-owned statusline source") {
+		t.Fatalf("expected statusline source review header, got %q", output)
+	}
+	if !strings.Contains(output, ".agent-layer/claude-statusline.sh") {
+		t.Fatalf("expected reviewed path in output, got %q", output)
+	}
+}
+
+func TestBuildUpgradePrompter_StatuslineSourceNonInteractiveSkipsOnce(t *testing.T) {
+	cmd := newUpgradeCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetIn(bytes.NewBufferString(""))
+
+	state := &upgradeReviewState{}
+	p := buildUpgradePrompter(cmd, upgradeApplyPolicy{yes: true}, state)
+	for i := 0; i < 2; i++ {
+		apply, err := p.StatuslineSource(install.DiffPreview{Path: ".agent-layer/claude-statusline.sh"})
+		if err != nil {
+			t.Fatalf("StatuslineSource(%d): %v", i, err)
+		}
+		if apply {
+			t.Fatalf("StatuslineSource(%d) applied in noninteractive mode", i)
+		}
+	}
+	if got := strings.Count(stderr.String(), messages.UpgradeSkipStatuslineSourceUpdatesInfo); got != 1 {
+		t.Fatalf("expected one skip note, got %d in %q", got, stderr.String())
+	}
+}
+
 func TestBuildUpgradePrompter_UnifiedReviewStatePromptsOnce(t *testing.T) {
 	cmd := newUpgradeCmd()
 	cmd.SetOut(&bytes.Buffer{})

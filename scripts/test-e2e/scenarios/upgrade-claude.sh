@@ -32,6 +32,18 @@ run_scenario_upgrade_claude() {
 
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
 
+  # Non-interactive `--yes` upgrade must stay minimal: it must not enable the new
+  # status lines or seed their editable sources. Status lines are opt-in via
+  # `al wizard` or interactive `al upgrade` only.
+  assert_file_not_contains "$repo_dir/.agent-layer/config.toml" "statusline = true" \
+    "non-interactive upgrade does not enable a status line"
+  assert_file_not_exists "$repo_dir/.agent-layer/claude-statusline.sh" \
+    "non-interactive upgrade does not seed the Claude status line source"
+  assert_file_not_exists "$repo_dir/.agent-layer/codex-statusline.toml" \
+    "non-interactive upgrade does not seed the Codex status line source"
+  assert_file_not_exists "$repo_dir/.claude/claude-statusline.sh" \
+    "non-interactive upgrade does not project a Claude status line"
+
   # Verify upgrade actually updated template files (not just version)
   # docs/agent-layer/ should have been created by upgrade (memory templates)
   assert_dir_exists "$repo_dir/docs/agent-layer" \
@@ -44,8 +56,9 @@ run_scenario_upgrade_claude() {
   assert_exit_zero_in "$repo_dir" "al claude after upgrade from $E2E_OLDEST_VERSION" al claude
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
   assert_generated_artifacts "$repo_dir"
 
   # Verify instruction files exist and have current template content

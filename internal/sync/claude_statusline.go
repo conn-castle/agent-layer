@@ -7,7 +7,6 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 // claudeStatuslineSourceName is the basename of the editable Claude status line
@@ -39,9 +38,9 @@ func legacyClaudeStatuslineSourcePath(root string) string {
 }
 
 // WriteClaudeStatusline projects the editable .agent-layer/claude-statusline.sh
-// source into .claude/claude-statusline.sh when the status line is enabled,
-// seeding the source from the embedded template if it is missing. When disabled
-// it removes any previously generated copy so a stale script does not linger.
+// source into .claude/claude-statusline.sh when the status line is explicitly
+// enabled. When disabled or absent, it removes any previously generated copy so
+// a stale script does not linger.
 func WriteClaudeStatusline(sys System, root string, project *config.ProjectConfig) error {
 	dest := claudeStatuslinePath(root)
 	if !config.ClaudeStatuslineEnabled(project.Config.Agents.Claude) {
@@ -74,10 +73,10 @@ func WriteClaudeStatusline(sys System, root string, project *config.ProjectConfi
 }
 
 // ensureStatuslineSource returns the contents of
-// .agent-layer/claude-statusline.sh, seeding it from the legacy source or
-// embedded template (write-if-missing) when absent so that a standalone `al
-// sync` works even if install never seeded it. Existing user edits are read and
-// preserved — the template only fills a missing source.
+// .agent-layer/claude-statusline.sh. It migrates the legacy
+// .agent-layer/statusline.sh source write-if-missing, but otherwise fails when
+// explicit statusline enablement has no source file. Wizard and upgrade own
+// template seeding so ordinary sync never creates user-owned sources silently.
 func ensureStatuslineSource(sys System, root string) ([]byte, error) {
 	src := claudeStatuslineSourcePath(root)
 	data, err := sys.ReadFile(src)
@@ -102,16 +101,5 @@ func ensureStatuslineSource(sys System, root string) ([]byte, error) {
 	if !os.IsNotExist(legacyErr) {
 		return nil, fmt.Errorf(messages.SyncReadFailedFmt, legacySrc, legacyErr)
 	}
-
-	tpl, err := templates.Read(claudeStatuslineSourceName)
-	if err != nil {
-		return nil, fmt.Errorf(messages.SyncReadTemplateFailedFmt, claudeStatuslineSourceName, err)
-	}
-	if err := sys.MkdirAll(filepath.Dir(src), 0o755); err != nil {
-		return nil, fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(src), err)
-	}
-	if err := sys.WriteFileAtomic(src, tpl, 0o755); err != nil {
-		return nil, fmt.Errorf(messages.SyncWriteFileFailedFmt, src, err)
-	}
-	return tpl, nil
+	return nil, fmt.Errorf(messages.SyncClaudeStatuslineSourceMissingFmt, src)
 }

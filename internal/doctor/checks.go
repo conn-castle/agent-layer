@@ -118,6 +118,20 @@ func CheckStructure(root string) []Result {
 		fullPath := filepath.Join(root, entry.path)
 		info, err := os.Stat(fullPath)
 		if err != nil {
+			if !entry.required && errors.Is(err, os.ErrNotExist) {
+				warnMissing, scanErr := instructionsReferencePath(root, entry.path)
+				if scanErr != nil {
+					results = append(results, Result{
+						Status:         StatusFail,
+						CheckName:      messages.DoctorCheckNameStructure,
+						Message:        fmt.Sprintf(messages.DoctorInstructionReferenceScanFailedFmt, scanErr),
+						Recommendation: messages.DoctorInstructionReferenceScanFailedRecommend,
+					})
+				}
+				if !warnMissing {
+					continue
+				}
+			}
 			status := StatusWarn
 			message := fmt.Sprintf(messages.DoctorMissingOptionalDirFmt, entry.path)
 			recommendation := fmt.Sprintf(messages.DoctorMissingOptionalDirRecommend, entry.path)
@@ -150,6 +164,31 @@ func CheckStructure(root string) []Result {
 		})
 	}
 	return results
+}
+
+func instructionsReferencePath(root string, relPath string) (bool, error) {
+	instructionsDir := filepath.Join(root, ".agent-layer", "instructions")
+	entries, err := os.ReadDir(instructionsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		path := filepath.Join(instructionsDir, entry.Name())
+		content, err := os.ReadFile(path) // #nosec G304 -- path is from os.ReadDir of caller-resolved .agent-layer/instructions.
+		if err != nil {
+			return false, err
+		}
+		if strings.Contains(string(content), relPath) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // CheckConfig validates that the configuration file can be loaded and parsed.
@@ -331,6 +370,7 @@ func CheckAgents(cfg *config.ProjectConfig) []Result {
 		{"ClaudeVSCode", cfg.Config.Agents.ClaudeVSCode.Enabled},
 		{"Codex", cfg.Config.Agents.Codex.Enabled},
 		{"VSCode", cfg.Config.Agents.VSCode.Enabled},
+		{"CopilotCLI", cfg.Config.Agents.CopilotCLI.Enabled},
 	}
 
 	for _, a := range agents {

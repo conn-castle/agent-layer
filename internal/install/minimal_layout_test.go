@@ -9,58 +9,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestInstallRun_MinimalLayoutSeedsOnlyPlaceholder(t *testing.T) {
+func TestInstallRun_BareInitSeedsOnlyOperationalScaffolding(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Run(root, Options{
-		Overwrite:     false,
-		MinimalLayout: true,
-		System:        RealSystem{},
-	}))
+	require.NoError(t, Run(root, Options{System: RealSystem{}}))
 
-	// Placeholder is present and zero-byte.
-	placeholder := filepath.Join(root, ".agent-layer", "instructions", MinimalLayoutPlaceholderFile)
-	info, err := os.Stat(placeholder)
-	require.NoError(t, err, "placeholder should exist after minimal install")
-	assert.Equal(t, int64(0), info.Size(), "placeholder is intentionally zero-byte")
-
-	// Standard instruction files are NOT seeded.
-	for _, name := range []string{"00_rules.md", "01_base.md", "02_memory.md", "03_tools.md", "04_conventions.md"} {
-		_, err := os.Stat(filepath.Join(root, ".agent-layer", "instructions", name))
-		assert.True(t, os.IsNotExist(err), "%s should not be seeded under minimal layout", name)
+	for _, dir := range []string{
+		filepath.Join(root, ".agent-layer", "instructions"),
+		filepath.Join(root, ".agent-layer", "skills"),
+		filepath.Join(root, ".agent-layer", "tmp", "runs"),
+	} {
+		info, err := os.Stat(dir)
+		require.NoError(t, err, "%s should exist after bare init", dir)
+		assert.True(t, info.IsDir(), "%s should be a directory", dir)
 	}
 
-	// Skills directory exists but is empty.
+	for _, name := range []string{"00_rules.md", "01_base.md", "02_memory.md", "03_tools.md", "04_conventions.md"} {
+		_, err := os.Stat(filepath.Join(root, ".agent-layer", "instructions", name))
+		assert.True(t, os.IsNotExist(err), "%s should not be seeded under bare init", name)
+	}
+
 	skillsDir := filepath.Join(root, ".agent-layer", "skills")
 	entries, err := os.ReadDir(skillsDir)
 	require.NoError(t, err)
-	assert.Empty(t, entries, "skills directory should be empty under minimal layout")
+	assert.Empty(t, entries, "skills directory should be empty under bare init")
 
-	// Memory templates are not written.
 	for _, name := range []string{"ISSUES.md", "BACKLOG.md", "ROADMAP.md", "DECISIONS.md", "COMMANDS.md", "CONTEXT.md"} {
 		_, err := os.Stat(filepath.Join(root, "docs", "agent-layer", name))
-		assert.True(t, os.IsNotExist(err), "%s should not be seeded under minimal layout", name)
+		assert.True(t, os.IsNotExist(err), "%s should not be seeded under bare init", name)
+		_, err = os.Stat(filepath.Join(root, ".agent-layer", "templates", "docs", name))
+		assert.True(t, os.IsNotExist(err), "%s template should not be seeded under bare init", name)
 	}
 
-	// Config and env exist (those are user-owned seed files and still seeded).
 	assert.FileExists(t, filepath.Join(root, ".agent-layer", "config.toml"))
 	assert.FileExists(t, filepath.Join(root, ".agent-layer", ".env"))
+	assert.FileExists(t, filepath.Join(root, ".agent-layer", "commands.allow"))
+	assert.FileExists(t, filepath.Join(root, ".agent-layer", "gitignore.block"))
+	assert.NoFileExists(t, filepath.Join(root, ".agent-layer", "claude-statusline.sh"))
+	assert.NoFileExists(t, filepath.Join(root, ".agent-layer", "codex-statusline.toml"))
 }
 
-func TestInstallRun_UpgradePreservesMinimalLayout(t *testing.T) {
+func TestInstallRun_UpgradePreservesBareLayoutWithoutWorkflowEvidence(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Run(root, Options{
-		Overwrite:     false,
-		MinimalLayout: true,
-		System:        RealSystem{},
-	}))
+	require.NoError(t, Run(root, Options{System: RealSystem{}}))
 
 	require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "tavily-web"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer", "skills", "tavily-web", "SKILL.md"), []byte("custom"), 0o600))
-	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(memoryPath), 0o750))
-	require.NoError(t, os.WriteFile(memoryPath, []byte("edited memory"), 0o600))
-	conventionsPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	require.NoError(t, os.WriteFile(conventionsPath, []byte("custom conventions"), 0o600))
 
 	require.NoError(t, Run(root, Options{
 		Overwrite:  true,
@@ -69,27 +62,15 @@ func TestInstallRun_UpgradePreservesMinimalLayout(t *testing.T) {
 		PinVersion: "0.7.0",
 	}))
 
-	assert.FileExists(t, filepath.Join(root, ".agent-layer", "instructions", MinimalLayoutPlaceholderFile))
 	assert.NoFileExists(t, filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"))
 	assert.NoFileExists(t, filepath.Join(root, ".agent-layer", "skills", "review-scope", "SKILL.md"))
-	assert.FileExists(t, memoryPath)
-	assert.FileExists(t, conventionsPath)
+	assert.NoFileExists(t, filepath.Join(root, "docs", "agent-layer", "ISSUES.md"))
 	assert.FileExists(t, filepath.Join(root, ".agent-layer", "skills", "tavily-web", "SKILL.md"))
 }
 
-func TestBuildUpgradePlan_MinimalLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
+func TestBuildUpgradePlan_BareLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Run(root, Options{
-		Overwrite:     false,
-		MinimalLayout: true,
-		System:        RealSystem{},
-		PinVersion:    "1.2.3",
-	}))
-	memoryPath := filepath.Join(root, "docs", "agent-layer", "ISSUES.md")
-	require.NoError(t, os.MkdirAll(filepath.Dir(memoryPath), 0o750))
-	require.NoError(t, os.WriteFile(memoryPath, []byte("edited memory"), 0o600))
-	conventionsPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	require.NoError(t, os.WriteFile(conventionsPath, []byte("custom conventions"), 0o600))
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
 
 	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
 	require.NoError(t, err)
@@ -99,17 +80,11 @@ func TestBuildUpgradePlan_MinimalLayoutDoesNotPlanWorkflowBundle(t *testing.T) {
 	assert.Nil(t, findUpgradeChange(plan.TemplateAdditions, "docs/agent-layer/ISSUES.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, "docs/agent-layer/ISSUES.md"))
 	assert.Nil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/04_conventions.md"))
-	assert.Nil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/instructions/"+MinimalLayoutPlaceholderFile))
 }
 
-func TestBuildUpgradePlan_EditedManagedInstructionExitsMinimalLayout(t *testing.T) {
+func TestBuildUpgradePlan_ManagedInstructionEvidenceIncludesWorkflowBundle(t *testing.T) {
 	root := t.TempDir()
-	require.NoError(t, Run(root, Options{
-		Overwrite:     false,
-		MinimalLayout: true,
-		System:        RealSystem{},
-		PinVersion:    "1.2.3",
-	}))
+	require.NoError(t, Run(root, Options{System: RealSystem{}, PinVersion: "1.2.3"}))
 	rulesPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
 	require.NoError(t, os.WriteFile(rulesPath, []byte("custom rules"), 0o600))
 
@@ -119,7 +94,6 @@ func TestBuildUpgradePlan_EditedManagedInstructionExitsMinimalLayout(t *testing.
 	assert.NotNil(t, findUpgradeChange(plan.TemplateUpdates, ".agent-layer/instructions/00_rules.md"))
 	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/instructions/01_base.md"))
 	assert.NotNil(t, findUpgradeChange(plan.TemplateAdditions, ".agent-layer/skills/review-scope/SKILL.md"))
-	assert.NotNil(t, findUpgradeChange(plan.TemplateRemovalsOrOrphans, ".agent-layer/instructions/"+MinimalLayoutPlaceholderFile))
 }
 
 func TestBuildUpgradePlan_InstalledCatalogSkillIsUpgradeManaged(t *testing.T) {

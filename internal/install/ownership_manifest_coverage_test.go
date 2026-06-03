@@ -431,7 +431,12 @@ func TestBuildCurrentTemplateManifest_ErrorPaths(t *testing.T) {
 	})
 
 	t.Run("buildOwnershipComparable error", func(t *testing.T) {
-		inst := &installer{root: t.TempDir(), sys: RealSystem{}}
+		root := t.TempDir()
+		if err := Run(root, Options{System: RealSystem{}}); err != nil {
+			t.Fatalf("seed repo: %v", err)
+		}
+		seedWorkflowBundleForTest(t, root)
+		inst := &installer{root: root, sys: RealSystem{}}
 		original := templates.ReadFunc
 		templates.ReadFunc = func(name string) ([]byte, error) {
 			if name == "docs/agent-layer/ISSUES.md" {

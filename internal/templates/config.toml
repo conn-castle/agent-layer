@@ -40,10 +40,10 @@ enabled = true
 # with any agent_specific entries). The hook also enforces the block under YOLO/bypassPermissions,
 # where permissions.deny is skipped. Run `al wizard` to set it.
 # disable_question_tool = true
-# statusline writes a Claude Code status line. The editable source of truth lives
-# at .agent-layer/claude-statusline.sh (seeded once, never overwritten); on sync it is
-# copied to .claude/claude-statusline.sh and statusLine is wired into .claude/settings.json.
-# Enabled by default; set to false to opt out. Requires jq on PATH at runtime.
+# statusline writes a Claude Code status line. Run `al wizard` to enable it and
+# seed .agent-layer/claude-statusline.sh once; on sync that source is copied to
+# .claude/claude-statusline.sh and statusLine is wired into .claude/settings.json.
+# Absent means disabled. Requires jq on PATH at runtime.
 # statusline = true
 # Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
@@ -69,8 +69,8 @@ enabled = true
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
 # statusline writes Codex's native status line from the editable
-# .agent-layer/codex-statusline.toml fragment. Enabled by default; set to false
-# to opt out. For provider-native overrides, define
+# .agent-layer/codex-statusline.toml fragment. Run `al wizard` to enable it and
+# seed the source once. Absent means disabled. For provider-native overrides, define
 # agents.codex.agent_specific.tui.status_line directly.
 # statusline = true
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).

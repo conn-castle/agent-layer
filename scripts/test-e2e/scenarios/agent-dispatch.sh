@@ -64,6 +64,10 @@ SKILL
     fail "al dispatch --agent codex succeeds (exit code: $rc)"
   fi
   assert_file_contains "$stdout_file" "codex-dispatch-ok" "dispatch decodes codex final answer"
+  assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_0=exec" "dispatch invokes codex exec"
+  assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_1=--json" "dispatch requests codex JSON stream"
+  assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_2=-" "dispatch passes prompt on stdin"
+  assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "CODEX_HOME=$repo_dir/.codex" "dispatch child receives repo CODEX_HOME"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "AL_DISPATCH_ACTIVE=1" "dispatch child receives recursion guard"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "AL_DISPATCH_CALLER_AGENT=codex" "dispatch child receives target caller marker"
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Return ok" "dispatch passes positional prompt"

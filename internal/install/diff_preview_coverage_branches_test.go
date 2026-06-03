@@ -30,6 +30,7 @@ func TestBuildSingleDiffPreview_TemplateSectionSplitError(t *testing.T) {
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 
 	inst := &installer{root: root, sys: RealSystem{}, diffMaxLines: 20}
 	templatePathByRel, err := inst.templates().memoryTemplatePathByRel()

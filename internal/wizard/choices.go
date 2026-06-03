@@ -36,6 +36,9 @@ type Choices struct {
 	ClaudeDisableQuestionTool        bool // disable_question_tool flag; sync injects deny + PreToolUse hook
 	ClaudeDisableQuestionToolTouched bool
 
+	ClaudeStatusline        bool
+	ClaudeStatuslineTouched bool
+
 	CodexModel        string
 	CodexModelTouched bool
 
@@ -51,17 +54,18 @@ type Choices struct {
 	CodexDisableBrowser        bool
 	CodexDisableBrowserTouched bool
 
+	CodexStatusline        bool
+	CodexStatuslineTouched bool
+
 	CopilotCLIModel        string
 	CopilotCLIModelTouched bool
 
-	// Agent Layer workflow bundle (Q1).
-	// EnableAgentLayer is true when the bundled workflow skills, instruction files,
-	// memory templates, and live memory files should be present. When false on an
-	// existing repo, apply prunes bundled files while preserving custom skills and
-	// edited live memory files. On a fresh install, false drives a minimal layout
-	// (placeholder instruction file only).
-	EnableAgentLayer        bool
-	EnableAgentLayerTouched bool
+	// Agent Layer workflow bundle install/refresh action (Q1).
+	// InstallWorkflowBundle=true refreshes managed bundled instruction files and
+	// workflow skill dirs, then creates missing conventions and memory files.
+	// false is a no-op for workflow-bundle files.
+	InstallWorkflowBundle        bool
+	InstallWorkflowBundleTouched bool
 
 	// Catalog CLI skills (Q2).
 	// EnabledCLISkills is keyed by catalog entry id. Apply copies the matching

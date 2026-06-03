@@ -56,11 +56,11 @@ CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>
 2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists, blocking placeholder migration text when changelog notes breaking/manual migration impact, verifying the migration manifest and template ownership manifest exist, and enforcing upgrade CTA syntax drift checks in core docs/message surfaces.
 3. The workflow publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
 4. The workflow opens a PR against `conn-castle/homebrew-tap` to update `Formula/agent-layer.rb` with the new tarball URL + SHA256.
-5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing.
+5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing, or if the published Docusaurus site does not build.
 6. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
 
 ## Website publish details (agent-layer-web)
-The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`.
+The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`, then runs `npm run build` in `agent-layer-web`.
 Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally unsupported.
 That command:
 1. Copies `site/pages/` into `agent-layer-web/src/pages/`, deleting the destination first.
@@ -75,6 +75,14 @@ That command:
 6. Prunes dropped versions from both `versioned_docs/version-<version>/` and `versioned_sidebars/version-<version>-sidebars.json`.
 
 Historical docs are retained by the policy above. The current tag is always removed/recreated first for idempotency before retention is applied.
+
+After publishing, the workflow runs the Docusaurus production build before committing and pushing the website changes.
+
+CI also runs the same website build shape on pull requests and pushes to `main` with a synthetic docs tag:
+
+```bash
+make website-build-check SITE_BUILD_TAG=v0.0.0 WEBSITE_REPO_DIR=agent-layer-web
+```
 
 Required secrets for the tap PR:
 - `HOMEBREW_TAP_APP_ID`

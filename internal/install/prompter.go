@@ -25,6 +25,10 @@ type PromptOverwriteAllUnifiedPreviewFunc func(managed []DiffPreview, memory []D
 // PromptOverwritePreviewFunc asks whether to overwrite a single diff preview path.
 type PromptOverwritePreviewFunc func(preview DiffPreview) (bool, error)
 
+// PromptStatuslineSourcePreviewFunc asks whether to replace a user-owned
+// statusline source with the embedded template version.
+type PromptStatuslineSourcePreviewFunc func(preview DiffPreview) (bool, error)
+
 // PromptConfigSetDefaultFunc asks the user to confirm or customize a value for a
 // missing required config key. It receives the key path, a default value from the
 // migration manifest, a rationale string, and an optional field definition from the
@@ -39,6 +43,7 @@ type PromptFuncs struct {
 	OverwriteAllMemoryPreviewFunc  PromptOverwriteAllPreviewFunc
 	OverwriteAllUnifiedPreviewFunc PromptOverwriteAllUnifiedPreviewFunc
 	OverwritePreviewFunc           PromptOverwritePreviewFunc
+	StatuslineSourcePreviewFunc    PromptStatuslineSourcePreviewFunc
 	DeleteUnknownAllFunc           PromptDeleteUnknownAllFunc
 	DeleteUnknownFunc              PromptDeleteUnknownFunc
 	DeleteUnknownTmpAllFunc        PromptDeleteUnknownTmpAllFunc
@@ -80,6 +85,16 @@ func (p PromptFuncs) Overwrite(preview DiffPreview) (bool, error) {
 		return false, fmt.Errorf(messages.InstallOverwritePromptRequired)
 	}
 	return p.OverwritePreviewFunc(preview)
+}
+
+// StatuslineSource prompts for a user-owned statusline source replacement.
+// Returns false when no callback is set so headless/non-integrated prompters
+// never overwrite these files silently.
+func (p PromptFuncs) StatuslineSource(preview DiffPreview) (bool, error) {
+	if p.StatuslineSourcePreviewFunc == nil {
+		return false, nil
+	}
+	return p.StatuslineSourcePreviewFunc(preview)
 }
 
 // DeleteUnknownAll prompts the user to confirm deleting all unknown paths.
@@ -147,6 +162,10 @@ type SkillsMigrationConflict struct {
 // migration proceeds automatically (headless default).
 type skillsMigrationPrompter interface {
 	ConfirmSkillsMigration(flatSkills []string, conflicts []SkillsMigrationConflict) (bool, error)
+}
+
+type statuslineSourcePrompter interface {
+	StatuslineSource(preview DiffPreview) (bool, error)
 }
 
 // PromptConfirmSkillsMigrationFunc asks the user to confirm the skills-format

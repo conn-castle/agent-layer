@@ -1,7 +1,6 @@
 package install
 
 import (
-	"bytes"
 	"errors"
 	"io/fs"
 	"os"
@@ -367,6 +366,9 @@ func TestWriteTemplateDirs_WriteError(t *testing.T) {
 	instrDir := filepath.Join(root, ".agent-layer", "instructions")
 	if err := os.MkdirAll(instrDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(instrDir, "00_rules.md"), []byte("existing rules"), 0o600); err != nil {
+		t.Fatalf("write workflow evidence: %v", err)
 	}
 	// Now make it read-only to prevent file writes
 	if err := os.Chmod(instrDir, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
@@ -1233,25 +1235,14 @@ func TestIsUserOwnedInstructionFile(t *testing.T) {
 	}
 }
 
-func TestUserOwnedInstructionFile_SeededOnInit(t *testing.T) {
+func TestUserOwnedInstructionFile_NotSeededOnBareInit(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	convPath := filepath.Join(root, ".agent-layer", "instructions", "04_conventions.md")
-	data, err := os.ReadFile(convPath) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("expected 04_conventions.md to exist after init: %v", err)
-	}
-	// The user-owned conventions file is seeded verbatim from the embedded
-	// template. Compare against the live template read at runtime so edits to
-	// the template content never make this assertion fragile.
-	want, tplErr := templates.Read("instructions/04_conventions.md")
-	if tplErr != nil {
-		t.Fatalf("read conventions template: %v", tplErr)
-	}
-	if !bytes.Equal(data, want) {
-		t.Fatalf("expected conventions file to equal the embedded template verbatim, got:\n%s", string(data))
+	if _, err := os.Stat(convPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected bare init to leave 04_conventions.md absent, got %v", err)
 	}
 }
 

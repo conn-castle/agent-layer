@@ -15,8 +15,22 @@ run_scenario_upgrade_latest_wizard_all() {
   setup_old_version_via_binary "$repo_dir" "$E2E_LATEST_BINARY"
   assert_al_version_content "$repo_dir" "$E2E_LATEST_VERSION"
 
-  assert_exit_zero_in "$repo_dir" "al upgrade from $E2E_LATEST_VERSION (latest)" \
-    al upgrade --yes --apply-managed-updates --apply-memory-updates --apply-deletions
+  local upgrade_output upgrade_rc=0
+  upgrade_output=$(cd "$repo_dir" && al upgrade --yes --apply-managed-updates --apply-memory-updates --apply-deletions 2>&1) || upgrade_rc=$?
+  if [[ $upgrade_rc -eq 0 ]]; then
+    pass "al upgrade from $E2E_LATEST_VERSION (latest)"
+  else
+    fail "al upgrade from $E2E_LATEST_VERSION (latest) (exit code: $upgrade_rc)"
+    echo "  output (first 10 lines):"
+    echo "$upgrade_output" | head -10 | sed 's/^/    /'
+  fi
+  assert_no_crash_markers "$upgrade_output" "no crash markers in latest wizard-all upgrade output"
+  assert_output_contains "$upgrade_output" "Created upgrade snapshot" \
+    "latest wizard-all upgrade output mentions snapshot creation"
+  assert_output_contains "$upgrade_output" "Running sync" \
+    "latest wizard-all upgrade output says sync ran"
+  assert_output_contains "$upgrade_output" "Upgrade successful." \
+    "latest wizard-all upgrade output says successful"
 
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
 
@@ -39,6 +53,8 @@ ENVEOF
   fi
 
   assert_no_crash_markers "$wizard_output" "no crash markers in wizard output after latest upgrade"
+  assert_output_contains "$wizard_output" "Running sync" \
+    "wizard output says sync ran after latest release upgrade"
   assert_output_contains "$wizard_output" "Wizard completed" \
     "wizard output says completed after latest release upgrade"
 
@@ -53,6 +69,18 @@ ENVEOF
     ".mcp.json has fetch after latest upgrade+wizard"
   assert_file_contains "$repo_dir/.mcp.json" '"playwright"' \
     ".mcp.json has playwright after latest upgrade+wizard"
+  assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON after latest upgrade+wizard"
+  assert_json_valid "$repo_dir/.claude/settings.json" "settings.json is valid JSON after latest upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" 'context7-mcp' \
+    ".mcp.json context7 has correct package after latest upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" 'https://api.githubcopilot.com/mcp/' \
+    ".mcp.json github has HTTP URL after latest upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" 'mcp.tavily.com' \
+    ".mcp.json tavily has HTTP URL after latest upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" 'mcp-server-fetch==2025.4.7' \
+    ".mcp.json fetch has expected package after latest upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" '@playwright/mcp@0.0.68' \
+    ".mcp.json playwright has expected package after latest upgrade+wizard"
 
   # Verify settings.json has MCP permissions for ALL servers (5 total)
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
@@ -79,7 +107,9 @@ ENVEOF
   fi
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
   assert_generated_artifacts "$repo_dir"
 
   cleanup_scenario_dir "$repo_dir"

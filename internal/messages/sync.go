@@ -22,6 +22,8 @@ const (
 	SyncCodexStatuslineStatusLineMissingFmt         = "%s: codex statusline fragment must define [tui].status_line"
 	SyncCodexStatuslineStatusLineTypeFmt            = "%s: [tui].status_line must be an array of strings"
 	SyncCodexStatuslineTUITableConflict             = "agents.codex.agent_specific.tui must be a table to merge managed status_line; set agents.codex.statusline = false or define agents.codex.agent_specific.tui.status_line explicitly"
+	SyncClaudeStatuslineSourceMissingFmt            = "agents.claude.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
+	SyncCodexStatuslineSourceMissingFmt             = "agents.codex.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
 	SyncMarshalAntigravitySettingsFailedFmt         = "failed to marshal antigravity settings: %w"
 	SyncMarshalAntigravityMCPConfigFailedFmt        = "failed to marshal antigravity MCP config: %w"
 	SyncMarshalCopilotMCPConfigFailedFmt            = "failed to marshal copilot mcp config: %w"

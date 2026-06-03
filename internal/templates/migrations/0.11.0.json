@@ -53,16 +53,16 @@
       "id": "g-set-default-agents-claude-statusline",
       "kind": "config_set_default",
       "key": "agents.claude.statusline",
-      "value": true,
-      "rationale": "Agent Layer now ships a Claude Code status line (model, reasoning effort, context %, weekly usage limit, directory, git branch/dirty state, lines changed, session cost, PR). It is enabled by default: sync seeds the editable .agent-layer/claude-statusline.sh, copies it to .claude/claude-statusline.sh, and wires statusLine into .claude/settings.json. Choose false to opt out; you can change agents.claude.statusline in .agent-layer/config.toml at any time.",
+      "value": false,
+      "rationale": "Agent Layer now ships a Claude Code status line (model, reasoning effort, context %, weekly usage limit, directory, git branch/dirty state, lines changed, session cost, PR). Defaults to disabled, so a non-interactive upgrade keeps it off. Choose true to enable it; that seeds a missing editable .agent-layer/claude-statusline.sh source, sync copies it to .claude/claude-statusline.sh, and sync wires statusLine into .claude/settings.json. Choose false (the default) to keep it disabled; you can change agents.claude.statusline in .agent-layer/config.toml at any time.",
       "source_agnostic": true
     },
     {
       "id": "h-set-default-agents-codex-statusline",
       "kind": "config_set_default",
       "key": "agents.codex.statusline",
-      "value": true,
-      "rationale": "Agent Layer now ships a Codex native status line fragment. It is enabled by default: sync seeds the editable .agent-layer/codex-statusline.toml and merges its [tui].status_line list into .codex/config.toml unless agents.codex.agent_specific.tui.status_line is explicitly set. Choose false to opt out; you can change agents.codex.statusline in .agent-layer/config.toml at any time.",
+      "value": false,
+      "rationale": "Agent Layer now ships a Codex native status line fragment. Defaults to disabled, so a non-interactive upgrade keeps it off. Choose true to enable it; that seeds a missing editable .agent-layer/codex-statusline.toml source and sync merges its [tui].status_line list into .codex/config.toml unless agents.codex.agent_specific.tui.status_line is explicitly set. Choose false (the default) to keep it disabled; you can change agents.codex.statusline in .agent-layer/config.toml at any time.",
       "source_agnostic": true
     }
   ]

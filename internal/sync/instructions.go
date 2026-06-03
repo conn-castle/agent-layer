@@ -55,6 +55,9 @@ func writeInstructionFile(sys System, path string, instructions []config.Instruc
 }
 
 func buildInstructionShim(instructions []config.InstructionFile) string {
+	if len(instructions) == 0 {
+		return ""
+	}
 	var builder strings.Builder
 	builder.WriteString(instructionHeader)
 	for _, instruction := range instructions {

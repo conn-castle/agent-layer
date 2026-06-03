@@ -33,16 +33,20 @@ func Run(root string, ui UI, runSync syncer, pinVersion string) error {
 	return RunWithWriter(root, ui, runSync, pinVersion, os.Stdout)
 }
 
-// freshInstallResult captures decisions taken during the inline fresh-install
-// confirm sequence. It is nil for existing-repo runs; non-nil only when the
-// wizard performed a fresh install during this run.
-type freshInstallResult struct {
-	enableAgentLayer bool
-}
-
 // RunWithWriter starts the interactive wizard and writes user-facing output to out.
 // pinVersion is written to .agent-layer/al.version when install is needed.
 func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
+	return runWithWriter(root, ui, runSync, pinVersion, out, false)
+}
+
+// RunAfterFreshInitWithWriter runs the wizard immediately after `al init`
+// created the bare operational layout. Provider statusline options and the
+// workflow-bundle install prompt use fresh-setup defaults in this path.
+func RunAfterFreshInitWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
+	return runWithWriter(root, ui, runSync, pinVersion, out, true)
+}
+
+func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer, freshInitDefaults bool) error {
 	if out == nil {
 		out = os.Stdout
 	}
@@ -93,16 +97,13 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		return err
 	}
 
-	skipEnableLayer := false
-	if freshInstall != nil {
-		choices.EnableAgentLayer = freshInstall.enableAgentLayer
-		choices.EnableAgentLayerTouched = true
-		skipEnableLayer = true
+	if freshInstall || freshInitDefaults {
+		applyFreshSetupDefaults(choices)
 	}
 
-	if err := promptWizardFlow(root, ui, choices, skipEnableLayer); err != nil {
+	if err := promptWizardFlow(root, ui, choices); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
-			if freshInstall == nil {
+			if !freshInstall {
 				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 			}
 			return nil
@@ -110,9 +111,9 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 		return err
 	}
 
-	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, freshInstall == nil); err != nil {
+	if err := confirmAndApply(root, configPath, envPath, ui, choices, runSync, out, !freshInstall); err != nil {
 		if errors.Is(err, errWizardCancelled) || errors.Is(err, errWizardBack) {
-			if freshInstall == nil {
+			if !freshInstall {
 				_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
 			}
 			return nil
@@ -123,50 +124,51 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 	return nil
 }
 
-func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, *freshInstallResult, error) {
+func applyFreshSetupDefaults(choices *Choices) {
+	choices.InstallWorkflowBundle = true
+	if choices.EnabledAgents[AgentClaude] || choices.EnabledAgents[AgentClaudeVSCode] {
+		choices.ClaudeStatusline = true
+	}
+	if choices.EnabledAgents[AgentCodex] {
+		choices.CodexStatusline = true
+	}
+}
+
+func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, bool, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		agentLayerPath := filepath.Join(root, ".agent-layer")
 		if info, agentLayerErr := os.Stat(agentLayerPath); agentLayerErr == nil {
 			if !info.IsDir() {
-				return false, nil, fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
+				return false, false, fmt.Errorf(messages.RootPathNotDirFmt, agentLayerPath)
 			}
-			return false, nil, fmt.Errorf(messages.WizardPartialInstallUpgradeRequired)
+			return false, false, fmt.Errorf(messages.WizardPartialInstallUpgradeRequired)
 		} else if !os.IsNotExist(agentLayerErr) {
-			return false, nil, agentLayerErr
+			return false, false, agentLayerErr
 		}
 
 		confirm := true
 		if err := ui.Confirm(messages.WizardInstallPrompt, &confirm); err != nil {
-			return false, nil, err
+			return false, false, err
 		}
 		if !confirm {
 			_, _ = fmt.Fprintln(out, messages.WizardExitWithoutChanges)
-			return false, nil, nil
-		}
-
-		// Q1 inline: ask the workflow-bundle question before any files land on
-		// disk so the rewrite preview doesn't list every standard file as
-		// "removed" on the first wizard run. Q1's answer drives MinimalLayout.
-		enableAgentLayer := true
-		if err := ui.Confirm(messages.WizardEnableAgentLayerInstallPrompt, &enableAgentLayer); err != nil {
-			return false, nil, err
+			return false, false, nil
 		}
 
 		if err := install.Run(root, install.Options{
-			Overwrite:     false,
-			PinVersion:    pinVersion,
-			System:        install.RealSystem{},
-			MinimalLayout: !enableAgentLayer,
+			Overwrite:  false,
+			PinVersion: pinVersion,
+			System:     install.RealSystem{},
 		}); err != nil {
-			return false, nil, fmt.Errorf(messages.WizardInstallFailedFmt, err)
+			return false, false, fmt.Errorf(messages.WizardInstallFailedFmt, err)
 		}
 		_, _ = fmt.Fprintln(out, messages.WizardInstallComplete)
-		return true, &freshInstallResult{enableAgentLayer: enableAgentLayer}, nil
+		return true, true, nil
 	} else if err != nil {
-		return false, nil, err
+		return false, false, err
 	}
 
-	return true, nil, nil
+	return true, false, nil
 }
 
 func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
@@ -183,7 +185,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		return nil, err
 	}
 	choices.CLISkillsCatalog = cliSkills
-	choices.EnableAgentLayer = detectAgentLayerEnabledFromDisk(cfg.Root)
+	choices.InstallWorkflowBundle = detectAgentLayerEnabledFromDisk(cfg.Root)
 	for _, entry := range cliSkills {
 		choices.EnabledCLISkills[entry.ID] = catalogSkillExistsOnDisk(cfg.Root, entry.ID)
 	}
@@ -223,6 +225,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.ClaudeDisableIDEReading = readClaudeEnvFalse(claudeAgentSpecific, claudeIDEReadingEnvKey)
 	choices.ClaudeDisableConnectors = readClaudeEnvFalse(claudeAgentSpecific, claudeConnectorsEnvKey)
 	choices.ClaudeDisableMemory = readClaudeAutoMemoryDisabled(claudeAgentSpecific)
+	choices.ClaudeStatusline = cfg.Config.Agents.Claude.Statusline != nil && *cfg.Config.Agents.Claude.Statusline
 	if cfg.Config.Agents.Claude.DisableQuestionTool != nil {
 		choices.ClaudeDisableQuestionTool = *cfg.Config.Agents.Claude.DisableQuestionTool
 	} else {
@@ -237,6 +240,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
 	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CodexDisableBrowser = readCodexBrowserDisabled(cfg.Config.Agents.Codex.AgentSpecific)
+	choices.CodexStatusline = cfg.Config.Agents.Codex.Statusline != nil && *cfg.Config.Agents.Codex.Statusline
 	choices.CopilotCLIModel = cfg.Config.Agents.CopilotCLI.Model
 
 	for _, srv := range cfg.Config.MCP.Servers {
@@ -384,16 +388,12 @@ const (
 	wizardFlowStepWarnings
 )
 
-// promptWizardFlow drives the step-by-step prompt loop. skipEnableLayerStep is
-// true when the fresh-install inline confirm already answered Q1; in that case
-// the EnableLayer step is skipped in both forward and back directions so the
-// user cannot reach a state where their install decision is contradicted
-// silently.
-func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep bool) error {
+// promptWizardFlow drives the step-by-step prompt loop.
+func promptWizardFlow(root string, ui UI, choices *Choices) error {
 	// The custom-MCP step has nothing to ask when config.toml has no non-catalog
 	// servers. CustomMCPServers is set before the flow and never mutated by it, so
 	// skip the step in both directions to avoid trapping back-navigation on a
-	// no-op screen (the same pattern as skipEnableLayerStep).
+	// no-op screen (the same pattern as the skippable secrets step).
 	skipCustomMCPStep := len(choices.CustomMCPServers) == 0
 	step := wizardFlowStepApproval
 	for {
@@ -428,9 +428,6 @@ func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep 
 				return nil
 			}
 			step++
-			if skipEnableLayerStep && step == wizardFlowStepEnableLayer {
-				step++
-			}
 			if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
 				step++
 			}
@@ -466,9 +463,6 @@ func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep 
 		if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
 			step--
 		}
-		if skipEnableLayerStep && step == wizardFlowStepEnableLayer {
-			step--
-		}
 	}
 }
 
@@ -476,8 +470,8 @@ func promptWizardFlow(root string, ui UI, choices *Choices, skipEnableLayerStep 
 // prompt for the current choices. The secrets step is a no-op when no enabled
 // default MCP server has a required-env key still missing from choices.Secrets;
 // in that case it must be skipped in both directions so it does not trap back
-// navigation (the same reason wizardFlowStepEnableLayer and
-// wizardFlowStepCustomMCP are skipped). This must stay in sync with the gating
+// navigation (the same reason wizardFlowStepCustomMCP is skipped). This must
+// stay in sync with the gating
 // conditions at the top of promptSecrets's loop.
 func secretsStepHasPrompts(choices *Choices) bool {
 	for _, server := range choices.DefaultMCPServers {
@@ -497,16 +491,15 @@ func secretsStepHasPrompts(choices *Choices) bool {
 	return false
 }
 
-// promptEnableAgentLayer asks the user whether the workflow bundle (instructions,
-// memory templates, and ~24 bundled workflow skills) should stay enabled. The
-// answer drives a previewed bundle prune on apply when the user opts out.
+// promptEnableAgentLayer asks whether to install or refresh the workflow bundle.
+// A no answer is a no-op for existing files.
 func promptEnableAgentLayer(ui UI, choices *Choices) error {
-	enabled := choices.EnableAgentLayer
-	if err := ui.Confirm(messages.WizardEnableAgentLayerPrompt, &enabled); err != nil {
+	installWorkflowBundle := choices.InstallWorkflowBundle
+	if err := ui.Confirm(messages.WizardEnableAgentLayerPrompt, &installWorkflowBundle); err != nil {
 		return err
 	}
-	choices.EnableAgentLayer = enabled
-	choices.EnableAgentLayerTouched = true
+	choices.InstallWorkflowBundle = installWorkflowBundle
+	choices.InstallWorkflowBundleTouched = true
 	return nil
 }
 
@@ -567,6 +560,8 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 		choices.CodexAppsTouched = false
 		choices.CodexDisableBrowser = false
 		choices.CodexDisableBrowserTouched = false
+		choices.CodexStatusline = false
+		choices.CodexStatuslineTouched = false
 	}
 	if !choices.EnabledAgents[AgentClaude] && !choices.EnabledAgents[AgentClaudeVSCode] {
 		choices.ClaudeDisableIDEReading = false
@@ -577,6 +572,8 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 		choices.ClaudeDisableConnectorsTouched = false
 		choices.ClaudeDisableQuestionTool = false
 		choices.ClaudeDisableQuestionToolTouched = false
+		choices.ClaudeStatusline = false
+		choices.ClaudeStatuslineTouched = false
 	}
 	return nil
 }
@@ -629,6 +626,7 @@ func promptModels(ui UI, choices *Choices) error {
 		// field. Both Claude and Claude (VS Code) write .claude/settings.json, so
 		// these are offered whenever either is enabled.
 		if err := promptFeatureToggles(ui, messages.WizardClaudeFeaturesTitle, []featureToggle{
+			{label: messages.WizardClaudeFeatureStatuslineLabel, field: &choices.ClaudeStatusline, touched: &choices.ClaudeStatuslineTouched, enabledSense: true},
 			{label: messages.WizardClaudeFeatureIDEReadingLabel, field: &choices.ClaudeDisableIDEReading, touched: &choices.ClaudeDisableIDEReadingTouched},
 			{label: messages.WizardClaudeFeatureMemoryLabel, field: &choices.ClaudeDisableMemory, touched: &choices.ClaudeDisableMemoryTouched},
 			{label: messages.WizardClaudeFeatureConnectorsLabel, field: &choices.ClaudeDisableConnectors, touched: &choices.ClaudeDisableConnectorsTouched},
@@ -653,6 +651,7 @@ func promptModels(ui UI, choices *Choices) error {
 		// like the Claude fields. Both are inverted at the prompt boundary so the
 		// checkbox always means "keep enabled".
 		if err := promptFeatureToggles(ui, messages.WizardCodexFeaturesTitle, []featureToggle{
+			{label: messages.WizardCodexFeatureStatuslineLabel, field: &choices.CodexStatusline, touched: &choices.CodexStatuslineTouched, enabledSense: true},
 			{label: messages.WizardCodexFeatureAppsLabel, field: &choices.CodexApps, touched: &choices.CodexAppsTouched, enabledSense: true},
 			{label: messages.WizardCodexFeatureBrowserLabel, field: &choices.CodexDisableBrowser, touched: &choices.CodexDisableBrowserTouched},
 		}); err != nil {
@@ -737,6 +736,17 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 			rewritePreview = skillsPreview
 		} else {
 			rewritePreview = rewritePreview + "\n\n" + skillsPreview
+		}
+	}
+	statuslineSourceChangeSet, err := computeStatuslineSourceChangeSet(root, choices)
+	if err != nil {
+		return err
+	}
+	if statuslinePreview := buildStatuslineSourcePreview(statuslineSourceChangeSet); statuslinePreview != "" {
+		if rewritePreview == "" || strings.HasPrefix(rewritePreview, "No rewrites needed") {
+			rewritePreview = statuslinePreview
+		} else {
+			rewritePreview = rewritePreview + "\n\n" + statuslinePreview
 		}
 	}
 	if err := ui.Note(messages.WizardRewritePreviewTitle, rewritePreview); err != nil {

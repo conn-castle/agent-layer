@@ -27,6 +27,10 @@ var runWizard = func(root string, pinVersion string) error {
 	return wizard.RunWithWriter(root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
 }
 
+var runWizardAfterInit = func(root string, pinVersion string) error {
+	return wizard.RunAfterFreshInitWithWriter(root, wizard.NewHuhUI(), alsync.Run, pinVersion, os.Stdout)
+}
+
 var installRun = install.Run
 var installRollbackUpgradeSnapshot = install.RollbackUpgradeSnapshot
 var syncRun = alsync.Run
@@ -52,7 +56,6 @@ func newInitCmd() *cobra.Command {
 	var noWizard bool
 	var pinVersion string
 	var here bool
-	var minimalLayout bool
 
 	cmd := &cobra.Command{
 		Use:   messages.InitUse,
@@ -85,10 +88,9 @@ func newInitCmd() *cobra.Command {
 			}
 			warnInitUpdate(cmd, pinVersion)
 			opts := install.Options{
-				Overwrite:     false,
-				PinVersion:    pinned,
-				System:        install.RealSystem{},
-				MinimalLayout: minimalLayout,
+				Overwrite:  false,
+				PinVersion: pinned,
+				System:     install.RealSystem{},
 			}
 			if err := installRun(root, opts); err != nil {
 				return err
@@ -103,14 +105,13 @@ func newInitCmd() *cobra.Command {
 			if !run {
 				return nil
 			}
-			return runWizard(root, pinned)
+			return runWizardAfterInit(root, pinned)
 		},
 	}
 
 	cmd.Flags().BoolVar(&noWizard, "no-wizard", false, messages.InitFlagNoWizard)
 	cmd.Flags().StringVar(&pinVersion, "version", "", messages.InitFlagVersion)
 	cmd.Flags().BoolVar(&here, "here", false, messages.InitFlagHere)
-	cmd.Flags().BoolVar(&minimalLayout, "minimal-layout", false, messages.InitFlagMinimalLayout)
 
 	return cmd
 }

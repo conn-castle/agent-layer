@@ -20,6 +20,11 @@ func statuslineProject(enabled *bool) *config.ProjectConfig {
 	}
 }
 
+func enabledStatuslineProject() *config.ProjectConfig {
+	enabled := true
+	return statuslineProject(&enabled)
+}
+
 func writeSourceStatusline(t *testing.T, root, content string) {
 	t.Helper()
 	writeStatuslineFile(t, root, "claude-statusline.sh", content)
@@ -51,7 +56,7 @@ func TestWriteClaudeStatusline_EnabledCopiesEditedSourceToNewPath(t *testing.T) 
 	const edited = "#!/usr/bin/env bash\necho my custom status\n"
 	writeSourceStatusline(t, root, edited)
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(nil)); err != nil {
+	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
 		t.Fatalf("WriteClaudeStatusline: %v", err)
 	}
 
@@ -71,39 +76,13 @@ func TestWriteClaudeStatusline_EnabledCopiesEditedSourceToNewPath(t *testing.T) 
 	}
 }
 
-// With no source on disk, sync seeds .agent-layer/claude-statusline.sh from the
-// embedded template and then projects it, so a standalone `al sync` is
-// self-healing.
-func TestWriteClaudeStatusline_SeedsMissingNewSourceFromTemplate(t *testing.T) {
+func TestWriteClaudeStatusline_EnabledMissingNewSourceErrors(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(nil)); err != nil {
-		t.Fatalf("WriteClaudeStatusline: %v", err)
-	}
-
-	src, err := os.ReadFile(filepath.Join(root, ".agent-layer", "claude-statusline.sh")) // #nosec G304 -- test-controlled path.
-	if err != nil {
-		t.Fatalf("expected source seeded: %v", err)
-	}
-	if !strings.Contains(string(src), "Claude Code status line") {
-		t.Fatalf("seeded source does not look like the template:\n%s", string(src))
-	}
-	if !strings.Contains(string(src), "rate_limits.seven_day.used_percentage") {
-		t.Fatalf("expected weekly limit parsing in seeded source:\n%s", string(src))
-	}
-	if !strings.Contains(string(src), "7d:") {
-		t.Fatalf("expected weekly limit segment in seeded source:\n%s", string(src))
-	}
-	if !strings.Contains(string(src), ".pr.number") || !strings.Contains(string(src), "PR#") {
-		t.Fatalf("expected PR segment in seeded source:\n%s", string(src))
-	}
-	dest, err := os.ReadFile(filepath.Join(root, ".claude", "claude-statusline.sh")) // #nosec G304 -- test-controlled path.
-	if err != nil {
-		t.Fatalf("expected projection: %v", err)
-	}
-	if string(dest) != string(src) {
-		t.Fatalf("projection does not match seeded source")
+	err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject())
+	if err == nil || !strings.Contains(err.Error(), "agents.claude.statusline is true") {
+		t.Fatalf("expected missing-source error, got %v", err)
 	}
 }
 
@@ -113,7 +92,7 @@ func TestWriteClaudeStatusline_MigratesLegacySourceWhenNewMissing(t *testing.T) 
 	const legacy = "#!/usr/bin/env bash\necho legacy edit\n"
 	writeLegacySourceStatusline(t, root, legacy)
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(nil)); err != nil {
+	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
 		t.Fatalf("WriteClaudeStatusline: %v", err)
 	}
 
@@ -141,7 +120,7 @@ func TestWriteClaudeStatusline_BothSourcesUsesNewAndLeavesLegacy(t *testing.T) {
 	writeLegacySourceStatusline(t, root, legacy)
 	writeSourceStatusline(t, root, current)
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(nil)); err != nil {
+	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
 		t.Fatalf("WriteClaudeStatusline: %v", err)
 	}
 
@@ -176,7 +155,7 @@ func TestWriteClaudeStatusline_EnabledRemovesStaleLegacyProjection(t *testing.T)
 		t.Fatalf("seed legacy projection: %v", err)
 	}
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(nil)); err != nil {
+	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
 		t.Fatalf("WriteClaudeStatusline: %v", err)
 	}
 
@@ -261,7 +240,7 @@ func TestWriteClaudeStatusline_SourceReadErrorSurfaces(t *testing.T) {
 			return os.ReadFile(name) // #nosec G304 -- test-controlled path.
 		},
 	}
-	err := WriteClaudeStatusline(sys, root, statuslineProject(nil))
+	err := WriteClaudeStatusline(sys, root, enabledStatuslineProject())
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped source read error, got %v", err)
 	}
@@ -282,16 +261,15 @@ func TestWriteClaudeStatusline_DestMkdirErrorSurfaces(t *testing.T) {
 			return os.MkdirAll(path, perm)
 		},
 	}
-	err := WriteClaudeStatusline(sys, root, statuslineProject(nil))
+	err := WriteClaudeStatusline(sys, root, enabledStatuslineProject())
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped mkdir error, got %v", err)
 	}
 }
 
-// buildClaudeSettings wires statusLine to the projected script by default.
-func TestBuildClaudeSettings_StatusLineEnabledByDefault(t *testing.T) {
+func TestBuildClaudeSettings_StatusLineEnabledExplicitly(t *testing.T) {
 	t.Parallel()
-	settings, err := buildClaudeSettings("/repo", statuslineProject(nil))
+	settings, err := buildClaudeSettings("/repo", enabledStatuslineProject())
 	if err != nil {
 		t.Fatalf("buildClaudeSettings: %v", err)
 	}
@@ -311,7 +289,7 @@ func TestBuildClaudeSettings_StatusLineEnabledByDefault(t *testing.T) {
 func TestBuildClaudeSettings_StatusLinePathIsShellQuoted(t *testing.T) {
 	t.Parallel()
 	root := "/repo with spaces/it's here"
-	settings, err := buildClaudeSettings(root, statuslineProject(nil))
+	settings, err := buildClaudeSettings(root, enabledStatuslineProject())
 	if err != nil {
 		t.Fatalf("buildClaudeSettings: %v", err)
 	}
@@ -325,16 +303,19 @@ func TestBuildClaudeSettings_StatusLinePathIsShellQuoted(t *testing.T) {
 	}
 }
 
-// An explicit false opt-out omits the statusLine block entirely.
 func TestBuildClaudeSettings_StatusLineDisabledOmitsBlock(t *testing.T) {
 	t.Parallel()
-	disabled := false
-	settings, err := buildClaudeSettings("/repo", statuslineProject(&disabled))
-	if err != nil {
-		t.Fatalf("buildClaudeSettings: %v", err)
-	}
-	if _, ok := settings["statusLine"]; ok {
-		t.Fatalf("expected no statusLine block when disabled, got %#v", settings["statusLine"])
+	for _, project := range []*config.ProjectConfig{statuslineProject(nil), func() *config.ProjectConfig {
+		disabled := false
+		return statuslineProject(&disabled)
+	}()} {
+		settings, err := buildClaudeSettings("/repo", project)
+		if err != nil {
+			t.Fatalf("buildClaudeSettings: %v", err)
+		}
+		if _, ok := settings["statusLine"]; ok {
+			t.Fatalf("expected no statusLine block when disabled, got %#v", settings["statusLine"])
+		}
 	}
 }
 

@@ -49,6 +49,14 @@ ENVEOF
   fi
 
   assert_no_crash_markers "$wizard_output" "no crash markers in wizard output after upgrade"
+  assert_output_contains "$upgrade_output" "Created upgrade snapshot" \
+    "upgrade all output mentions snapshot creation"
+  assert_output_contains "$upgrade_output" "Running sync" \
+    "upgrade all output says sync ran"
+  assert_output_contains "$upgrade_output" "Upgrade successful." \
+    "upgrade all output says successful"
+  assert_output_contains "$wizard_output" "Running sync" \
+    "wizard output says sync ran after upgrade"
   assert_output_contains "$wizard_output" "Wizard completed" \
     "wizard output says completed after upgrade"
 
@@ -63,6 +71,18 @@ ENVEOF
     ".mcp.json has fetch after upgrade+wizard"
   assert_file_contains "$repo_dir/.mcp.json" '"playwright"' \
     ".mcp.json has playwright after upgrade+wizard"
+  assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON after upgrade+wizard all"
+  assert_json_valid "$repo_dir/.claude/settings.json" "settings.json is valid JSON after upgrade+wizard all"
+  assert_file_contains "$repo_dir/.mcp.json" 'context7-mcp' \
+    ".mcp.json context7 has correct package after upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" 'https://api.githubcopilot.com/mcp/' \
+    ".mcp.json github has HTTP URL after upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" 'mcp.tavily.com' \
+    ".mcp.json tavily has HTTP URL after upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" 'mcp-server-fetch==2025.4.7' \
+    ".mcp.json fetch has expected package after upgrade+wizard"
+  assert_file_contains "$repo_dir/.mcp.json" '@playwright/mcp@0.0.68' \
+    ".mcp.json playwright has expected package after upgrade+wizard"
 
   # Verify settings.json has MCP permissions for ALL servers (5 total)
   assert_file_contains "$repo_dir/.claude/settings.json" "mcp__context7__" \
@@ -90,8 +110,9 @@ ENVEOF
   fi
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
   assert_generated_artifacts "$repo_dir"
 
   # Verify CLAUDE.md has instruction content

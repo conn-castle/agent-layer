@@ -52,11 +52,6 @@ func (inst templateManager) userOwnedSeedFiles() []templateFile {
 	return []templateFile{
 		{filepath.Join(root, ".agent-layer", "config.toml"), "config.toml", 0o644},
 		{filepath.Join(root, ".agent-layer", ".env"), "env", 0o600},
-		// Editable status line sources. Seeded once and never overwritten; sync
-		// projects or merges them only when the matching agent statusline toggle
-		// is enabled (the default).
-		{filepath.Join(root, ".agent-layer", "claude-statusline.sh"), "claude-statusline.sh", 0o755},
-		{filepath.Join(root, ".agent-layer", "codex-statusline.toml"), "codex-statusline.toml", 0o644},
 	}
 }
 
@@ -72,11 +67,20 @@ func (inst templateManager) agentOnlyFiles() []templateFile {
 // knownTemplateFiles returns all template-related file paths that should be
 // treated as known (never "unknown") within .agent-layer.
 func (inst templateManager) knownTemplateFiles() []templateFile {
-	out := make([]templateFile, 0, len(inst.managedTemplateFiles())+len(inst.userOwnedSeedFiles())+len(inst.agentOnlyFiles()))
+	out := make([]templateFile, 0, len(inst.managedTemplateFiles())+len(inst.userOwnedSeedFiles())+len(inst.userOwnedStatuslineSourceFiles())+len(inst.agentOnlyFiles()))
 	out = append(out, inst.managedTemplateFiles()...)
 	out = append(out, inst.userOwnedSeedFiles()...)
+	out = append(out, inst.userOwnedStatuslineSourceFiles()...)
 	out = append(out, inst.agentOnlyFiles()...)
 	return out
+}
+
+func (inst templateManager) userOwnedStatuslineSourceFiles() []templateFile {
+	root := inst.root
+	return []templateFile{
+		{filepath.Join(root, ".agent-layer", "claude-statusline.sh"), "claude-statusline.sh", 0o755},
+		{filepath.Join(root, ".agent-layer", "codex-statusline.toml"), "codex-statusline.toml", 0o644},
+	}
 }
 
 // managedTemplateDirs lists template-managed directories under .agent-layer.
@@ -102,11 +106,11 @@ func (inst templateManager) memoryTemplateDirs() []templateDir {
 // on-disk layout.
 func (inst templateManager) activeManagedTemplateDirs() ([]templateDir, error) {
 	dirs := []templateDir{}
-	minimal, err := inst.minimalLayoutOnDisk()
+	hasWorkflowBundle, err := inst.workflowBundleEvidenceOnDisk()
 	if err != nil {
 		return nil, err
 	}
-	if !minimal {
+	if hasWorkflowBundle {
 		dirs = append(dirs, inst.managedTemplateDirs()...)
 	}
 	catalogDirs, err := inst.installedCatalogSkillTemplateDirs()
@@ -121,14 +125,14 @@ func (inst templateManager) activeManagedTemplateDirs() ([]templateDir, error) {
 // in install, upgrade, diff, and baseline operations for the current on-disk
 // layout.
 func (inst templateManager) activeMemoryTemplateDirs() ([]templateDir, error) {
-	minimal, err := inst.minimalLayoutOnDisk()
+	hasWorkflowBundle, err := inst.workflowBundleEvidenceOnDisk()
 	if err != nil {
 		return nil, err
 	}
-	if minimal {
-		return nil, nil
+	if hasWorkflowBundle {
+		return inst.memoryTemplateDirs(), nil
 	}
-	return inst.memoryTemplateDirs(), nil
+	return nil, nil
 }
 
 // activeAllTemplateDirs returns all template dirs that should participate in
@@ -148,62 +152,28 @@ func (inst templateManager) activeAllTemplateDirs() ([]templateDir, error) {
 	return dirs, nil
 }
 
-// minimalLayoutOnDisk reports whether the repository is in the workflow-bundle
-// opt-out layout: the placeholder exists and no standard workflow bundle files
-// exist.
-func (inst templateManager) minimalLayoutOnDisk() (bool, error) {
-	if inst.minimalLayout {
-		return true, nil
-	}
-	placeholder := filepath.Join(inst.root, ".agent-layer", "instructions", MinimalLayoutPlaceholderFile)
-	info, err := inst.sys.Stat(placeholder)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
-		}
-		return false, fmt.Errorf(messages.InstallFailedStatFmt, placeholder, err)
-	}
-	if info.IsDir() {
-		return false, nil
-	}
-	// Live memory files under docs/agent-layer may be preserved user data from a
-	// workflow-bundle opt-out, so only managed .agent-layer template dirs can
-	// disqualify the minimal layout marker.
+// workflowBundleEvidenceOnDisk reports whether the repo already has any
+// workflow-bundle surface. Fresh bare repos with only empty instructions/skills
+// dirs stay bare during upgrade; repos with existing bundled instructions,
+// workflow skills, memory templates, or live memory files keep receiving
+// template updates for those surfaces.
+func (inst templateManager) workflowBundleEvidenceOnDisk() (bool, error) {
 	for _, dir := range inst.managedTemplateDirs() {
-		var found bool
-		var foundErr error
-		if dir.templateRoot == "instructions" {
-			found, foundErr = inst.anyExistingManagedInstructionFile(dir)
-		} else {
-			found, foundErr = inst.anyExistingTemplateDirFile(dir)
-		}
-		if foundErr != nil {
-			return false, foundErr
+		found, err := inst.anyExistingTemplateDirFile(dir)
+		if err != nil {
+			return false, err
 		}
 		if found {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-// anyExistingManagedInstructionFile reports whether a managed instruction file
-// exists at its destination. User-owned instruction seed files are ignored so a
-// minimal-layout repo can keep local conventions without re-entering the managed
-// workflow-bundle layout.
-func (inst templateManager) anyExistingManagedInstructionFile(dir templateDir) (bool, error) {
-	entries, err := inst.templateDirEntries(dir)
-	if err != nil {
-		return false, err
-	}
-	for _, entry := range entries {
-		if IsUserOwnedInstructionFile(entry.destPath) {
-			continue
-		}
-		if _, statErr := inst.sys.Stat(entry.destPath); statErr == nil {
 			return true, nil
-		} else if !errors.Is(statErr, os.ErrNotExist) {
-			return false, fmt.Errorf(messages.InstallFailedStatFmt, entry.destPath, statErr)
+		}
+	}
+	for _, dir := range inst.memoryTemplateDirs() {
+		found, err := inst.anyExistingTemplateDirFile(dir)
+		if err != nil {
+			return false, err
+		}
+		if found {
+			return true, nil
 		}
 	}
 	return false, nil
@@ -450,19 +420,17 @@ func (inst templateManager) buildLabeledDiffs(paths []string, templatePathByRel 
 }
 
 func (inst templateManager) managedTemplatePathByRel() (map[string]string, error) {
-	dirs, err := inst.activeManagedTemplateDirs()
+	dirs := inst.managedTemplateDirs()
+	catalogDirs, err := inst.installedCatalogSkillTemplateDirs()
 	if err != nil {
 		return nil, err
 	}
+	dirs = append(dirs, catalogDirs...)
 	return inst.templatePathByRel(dirs, true)
 }
 
 func (inst templateManager) memoryTemplatePathByRel() (map[string]string, error) {
-	dirs, err := inst.activeMemoryTemplateDirs()
-	if err != nil {
-		return nil, err
-	}
-	return inst.templatePathByRel(dirs, false)
+	return inst.templatePathByRel(inst.memoryTemplateDirs(), false)
 }
 
 func (inst templateManager) templatePathByRel(dirs []templateDir, includeManagedFiles bool) (map[string]string, error) {

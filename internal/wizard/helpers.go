@@ -32,6 +32,20 @@ func buildSummary(c *Choices) string {
 			sb.WriteString(messages.WizardSummaryCodexAppsDisabled)
 		}
 	}
+	if c.ClaudeStatuslineTouched && claudeToggleVisible(c) {
+		if c.ClaudeStatusline {
+			sb.WriteString(messages.WizardSummaryClaudeStatuslineEnabled)
+		} else {
+			sb.WriteString(messages.WizardSummaryClaudeStatuslineDisabled)
+		}
+	}
+	if c.CodexStatuslineTouched && codexToggleVisible(c) {
+		if c.CodexStatusline {
+			sb.WriteString(messages.WizardSummaryCodexStatuslineEnabled)
+		} else {
+			sb.WriteString(messages.WizardSummaryCodexStatuslineDisabled)
+		}
+	}
 	// Disable toggles print a line only when the feature is actually disabled;
 	// leaving a toggle off keeps the client default and reports nothing.
 	if c.CodexDisableBrowserTouched && codexToggleVisible(c) && c.CodexDisableBrowser {

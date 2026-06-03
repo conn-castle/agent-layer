@@ -9,7 +9,6 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 const codexStatuslineSourceName = "codex-statusline.toml"
@@ -69,16 +68,7 @@ func readCodexStatuslineSource(sys System, root string) ([]string, error) {
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf(messages.SyncReadFailedFmt, src, err)
 		}
-		data, err = templates.Read(codexStatuslineSourceName)
-		if err != nil {
-			return nil, fmt.Errorf(messages.SyncReadTemplateFailedFmt, codexStatuslineSourceName, err)
-		}
-		if err := sys.MkdirAll(filepath.Dir(src), 0o755); err != nil {
-			return nil, fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(src), err)
-		}
-		if err := sys.WriteFileAtomic(src, data, 0o644); err != nil {
-			return nil, fmt.Errorf(messages.SyncWriteFileFailedFmt, src, err)
-		}
+		return nil, fmt.Errorf(messages.SyncCodexStatuslineSourceMissingFmt, src)
 	}
 	return parseCodexStatuslineSource(data, src)
 }

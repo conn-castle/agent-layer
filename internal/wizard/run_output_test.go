@@ -75,8 +75,7 @@ func TestRunWithWriter_FreshInstallPromptCancelledDoesNotClaimNoChanges(t *testi
 	root := t.TempDir()
 	ui := &MockUI{
 		ConfirmFunc: func(title string, value *bool) error {
-			switch title {
-			case messages.WizardInstallPrompt, messages.WizardEnableAgentLayerInstallPrompt:
+			if title == messages.WizardInstallPrompt {
 				*value = true
 			}
 			return nil
@@ -101,7 +100,7 @@ func TestRunWithWriter_FreshInstallApplyCancelledDoesNotClaimNoChanges(t *testin
 		MultiSelectFunc: func(string, []string, *[]string) error { return nil },
 		ConfirmFunc: func(title string, value *bool) error {
 			switch title {
-			case messages.WizardInstallPrompt, messages.WizardEnableAgentLayerInstallPrompt:
+			case messages.WizardInstallPrompt:
 				*value = true
 			case messages.WizardApplyChangesPrompt:
 				*value = false

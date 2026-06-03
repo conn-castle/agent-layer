@@ -29,6 +29,8 @@ ENVEOF
   fi
 
   assert_no_crash_markers "$wizard_output" "no crash markers in wizard output"
+  assert_output_contains "$wizard_output" "Running sync" \
+    "wizard output says sync ran"
   assert_output_contains "$wizard_output" "Wizard completed" \
     "wizard output says completed"
 
@@ -37,14 +39,17 @@ ENVEOF
   assert_exit_zero_in "$repo_dir" "al claude with mock (all MCP enabled)" al claude
 
   assert_claude_mock_called "$MOCK_CLAUDE_LOG"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
 
   # Everything-enabled profile sets local_config_dir = true, so
   # CLAUDE_CONFIG_DIR should be set to repo-local .claude-config.
   assert_claude_mock_env "$MOCK_CLAUDE_LOG" "CLAUDE_CONFIG_DIR" "$repo_dir/.claude-config"
 
   assert_generated_artifacts "$repo_dir"
+  assert_json_valid "$repo_dir/.mcp.json" ".mcp.json is valid JSON after wizard all"
+  assert_json_valid "$repo_dir/.claude/settings.json" "settings.json is valid JSON after wizard all"
 
   # Verify ALL 5 MCP servers are in .mcp.json
   assert_file_contains "$repo_dir/.mcp.json" '"context7"' \
@@ -73,6 +78,14 @@ ENVEOF
   # Verify .mcp.json has actual server config content (not just names)
   assert_file_contains "$repo_dir/.mcp.json" 'context7-mcp' \
     ".mcp.json context7 has correct package"
+  assert_file_contains "$repo_dir/.mcp.json" 'https://api.githubcopilot.com/mcp/' \
+    ".mcp.json github has HTTP URL"
+  assert_file_contains "$repo_dir/.mcp.json" 'mcp.tavily.com' \
+    ".mcp.json tavily has HTTP URL"
+  assert_file_contains "$repo_dir/.mcp.json" 'mcp-server-fetch==2025.4.7' \
+    ".mcp.json fetch has expected package"
+  assert_file_contains "$repo_dir/.mcp.json" '@playwright/mcp@0.0.68' \
+    ".mcp.json playwright has expected package"
 
   cleanup_scenario_dir "$repo_dir"
 }

@@ -12,7 +12,7 @@ import (
 
 // copilotMCPConfig mirrors the Copilot CLI mcp-config.json structure.
 type copilotMCPConfig struct {
-	Servers OrderedMap[copilotMCPServer] `json:"mcpServers,omitempty"`
+	Servers OrderedMap[copilotMCPServer] `json:"mcpServers"`
 }
 
 type copilotMCPServer struct {

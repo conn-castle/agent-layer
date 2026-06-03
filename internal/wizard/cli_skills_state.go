@@ -26,11 +26,8 @@ func catalogSkillExistsOnDisk(root string, id string) bool {
 // detectAgentLayerEnabledFromDisk returns true when the workflow bundle appears
 // present in the project — any embedded workflow-bundle skill directory,
 // standard instruction file, managed memory template, or live memory file exists.
-// The minimal placeholder overrides live memory evidence because edited memory
-// files may be preserved when the user opts out. The function defaults to true
-// when scans fail or the root is unset; an empty `.agent-layer/skills/` directory
-// with no managed bundle files maps to false so a wizard rerun on a minimal
-// install does not flip Q1 to "yes" by accident.
+// The function defaults to true when scans fail or the root is unset; an empty
+// `.agent-layer/skills/` directory with no managed bundle files maps to false.
 //
 // The result is a hint for the default value of the Q1 prompt and is overridden
 // by the user's actual selection.
@@ -43,9 +40,6 @@ func detectAgentLayerEnabledFromDisk(root string) bool {
 	}
 	if hasAnyTemplateMemoryFile(root) {
 		return true
-	}
-	if instructionPlaceholderExists(root) {
-		return hasAnyManagedStandardInstructionFile(root)
 	}
 	if hasAnyStandardInstructionFile(root) {
 		return true
@@ -104,19 +98,6 @@ func hasAnyTemplateMemoryFile(root string) bool {
 
 func hasAnyStandardInstructionFile(root string) bool {
 	for _, name := range standardInstructionBasenames {
-		path := filepath.Join(root, ".agent-layer", "instructions", name)
-		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-			return true
-		}
-	}
-	return false
-}
-
-func hasAnyManagedStandardInstructionFile(root string) bool {
-	for _, name := range standardInstructionBasenames {
-		if isUserOwnedStandardInstructionFile(name) {
-			continue
-		}
 		path := filepath.Join(root, ".agent-layer", "instructions", name)
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			return true

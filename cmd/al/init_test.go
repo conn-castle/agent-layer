@@ -1,7 +1,7 @@
 package main
 
 // NOTE: Tests in this file mutate package-level globals (getwd, isTerminal,
-// installRun, runWizard, checkForUpdate). Do not use t.Parallel() at the
+// installRun, runWizard, runWizardAfterInit, checkForUpdate). Do not use t.Parallel() at the
 // top level. Each test must restore globals via t.Cleanup().
 
 import (
@@ -40,6 +40,7 @@ func TestInitCmd(t *testing.T) {
 	origIsTerminal := isTerminal
 	origInstallRun := installRun
 	origRunWizard := runWizard
+	origRunWizardAfterInit := runWizardAfterInit
 	origCheckForUpdate := checkForUpdate
 
 	t.Cleanup(func() {
@@ -47,6 +48,7 @@ func TestInitCmd(t *testing.T) {
 		isTerminal = origIsTerminal
 		installRun = origInstallRun
 		runWizard = origRunWizard
+		runWizardAfterInit = origRunWizardAfterInit
 		checkForUpdate = origCheckForUpdate
 	})
 
@@ -182,9 +184,9 @@ func TestInitCmd(t *testing.T) {
 				return tt.mockInstallErr
 			}
 
-			// Mock runWizard
+			// Mock post-init wizard
 			wizardCalled := false
-			runWizard = func(root string, pinVersion string) error {
+			runWizardAfterInit = func(root string, pinVersion string) error {
 				wizardCalled = true
 				return tt.mockWizardErr
 			}

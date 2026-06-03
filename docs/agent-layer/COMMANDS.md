@@ -216,6 +216,7 @@ make ci
 Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
 Notes: Includes `make tidy-check`, `make test-release`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires a clean working tree and network access for upgrade binary downloads.
+GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
 
 ### Release
 
@@ -250,6 +251,14 @@ make docs-cta-check
 Run from: repo root
 Prerequisites: `rg` (ripgrep) available on PATH
 Notes: Fails on removed/invalid upgrade command surfaces (for example `--force` or `upgrade plan --json`) and on `al upgrade --yes` guidance that omits required apply flags.
+
+- Build the published website in a local `agent-layer-web` checkout
+```bash
+make website-build-check SITE_BUILD_TAG=vX.Y.Z WEBSITE_REPO_DIR=/path/to/agent-layer-web
+```
+Run from: repo root
+Prerequisites: Go 1.26.0+, Node 22+, npm, and a local `conn-castle/agent-layer-web` git checkout
+Notes: Installs website dependencies, publishes this repo's `site/` content into `WEBSITE_REPO_DIR`, snapshots docs for `SITE_BUILD_TAG`, then runs `npm run build`. The checkout is mutated; use a temporary clone for release previews.
 
 - Build release artifacts locally (cross-compile)
 ```bash

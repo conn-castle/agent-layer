@@ -6,12 +6,14 @@ enabled = true
 
 [agents.claude]
 enabled = true
+statusline = true
 
 [agents.claude_vscode]
 enabled = true
 
 [agents.codex]
 enabled = true
+statusline = true
 
 [agents.vscode]
 enabled = true

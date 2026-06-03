@@ -285,7 +285,7 @@ func TestPromptWizardFlow_BackFromSecretsSkipsEmptyCustomStep(t *testing.T) {
 		NoteFunc: func(title, body string) error { return nil },
 	}
 
-	require.NoError(t, promptWizardFlow(t.TempDir(), ui, choices, false))
+	require.NoError(t, promptWizardFlow(t.TempDir(), ui, choices))
 	require.Equal(t, 2, mcpDefaultsCalls, "back from secrets should return to the MCP defaults step")
 	require.Equal(t, 2, secretInputCalls)
 	require.Equal(t, "secret-value", choices.Secrets["AL_CONTEXT7_API_KEY"])

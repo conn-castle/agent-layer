@@ -200,6 +200,7 @@ func TestBuildUpgradePlanDiffPreviews_CoversAllCollectionsWithoutPinDiff(t *test
 	if err := Run(root, Options{System: RealSystem{}, PinVersion: "1.0.0"}); err != nil {
 		t.Fatalf("seed repo: %v", err)
 	}
+	seedWorkflowBundleForTest(t, root)
 
 	managedPath := filepath.Join(root, ".agent-layer", "commands.allow")
 	if err := os.WriteFile(managedPath, []byte("git status\n"), 0o600); err != nil {

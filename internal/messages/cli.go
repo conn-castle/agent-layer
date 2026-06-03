@@ -28,10 +28,9 @@ const (
 	InitAlreadyInitializedAncestorFmt = "agent layer is already initialized in an ancestor directory (%s); run 'al upgrade' there to upgrade or repair templates, or re-run as `al init --here` to install a separate agent-layer in %s"
 	InitRunWizardPrompt               = "Run the setup wizard now? (recommended)"
 
-	InitFlagNoWizard      = "Skip prompting to run the setup wizard after init"
-	InitFlagVersion       = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
-	InitFlagHere          = "Install in the current directory without walking up to an ancestor .agent-layer/ or .git"
-	InitFlagMinimalLayout = "Seed only a placeholder instruction file (no bundled instructions, memory templates, or skills); equivalent to answering 'no' to the wizard's workflow-bundle prompt"
+	InitFlagNoWizard = "Skip prompting to run the setup wizard after init"
+	InitFlagVersion  = "Pin the repo to a specific Agent Layer version (vX.Y.Z or X.Y.Z) or latest"
+	InitFlagHere     = "Install in the current directory without walking up to an ancestor .agent-layer/ or .git"
 
 	UpgradeUse                            = "upgrade"
 	UpgradeShort                          = "Apply template-managed updates and update the repo pin"
@@ -81,6 +80,8 @@ const (
 	UpgradeSkipMemoryUpdatesInfo                    = "Info: skipping memory file updates (pass --apply-memory-updates to include them)."
 	UpgradeSkipDeletionsInfo                        = "Info: skipping unknown file deletions outside .agent-layer/tmp/ (pass --apply-deletions to include them)."
 	UpgradeSkipTmpDeletionsInfo                     = "Info: skipping deletions under .agent-layer/tmp/ (pass --apply-tmp-deletions to include them; this is destructive and may impact ongoing agent work)."
+	UpgradeSkipStatuslineSourceUpdatesInfo          = "Info: skipping statusline source replacements; run interactive `al upgrade` to review user-owned statusline source diffs."
+	UpgradeOverwriteStatuslineSourcePromptFmt       = "Replace user-owned statusline source %s with the template version?"
 	UpgradeSuccessful                               = "Upgrade successful."
 	UpgradeReviewSettingsHint                       = "Run `al wizard` to review your settings."
 	UpgradeRunningSync                              = "Running sync..."

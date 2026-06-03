@@ -41,7 +41,9 @@ run_scenario_yolo_mode() {
   assert_claude_mock_lacks_arg "$MOCK_CLAUDE_LOG" "--model"
 
   # Verify mock received env vars
-  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
+  assert_claude_mock_env_non_empty "$MOCK_CLAUDE_LOG" "AL_RUN_ID"
+  assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_DISPATCH_CALLER_AGENT" "claude"
 
   cleanup_scenario_dir "$repo_dir"
 }
