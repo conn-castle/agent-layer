@@ -8,7 +8,6 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/install"
-	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
 type statuslineSourceChangeSet struct {
@@ -53,7 +52,7 @@ func selectedStatuslineSourceFiles(choices *Choices) []install.StatuslineSourceT
 
 func applyStatuslineSourceChanges(root string, changes statuslineSourceChangeSet) error {
 	for _, file := range changes.sourcesToCreate {
-		data, err := templates.Read(file.TemplatePath)
+		data, err := install.StatuslineSourceSeedBytes(root, file)
 		if err != nil {
 			return err
 		}

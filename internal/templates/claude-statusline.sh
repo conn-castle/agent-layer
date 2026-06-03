@@ -190,8 +190,11 @@ if command -v git >/dev/null 2>&1; then
     done < <(git -C "$git_root" ls-files -z -o --exclude-standard -- 2>/dev/null)
     if [ "${#untracked_paths[@]}" -gt 0 ]; then
       files_changed=$(( files_changed + ${#untracked_paths[@]} ))
-      while IFS= read -r wc_line; do
-        read -r count label _ <<< "$wc_line"
+      # Read wc fields directly in the loop condition (no per-line here-string).
+      # wc -l is an approximate added-line count: a file with no trailing newline
+      # is undercounted by one. That is acceptable for this at-a-glance metric and
+      # far cheaper than the prior per-file git diff.
+      while read -r count label _; do
         case "$count" in
           ''|*[!0-9]*) continue ;;
         esac

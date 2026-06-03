@@ -41,7 +41,7 @@ func NewScriptedUIFromFile(path string) (*ScriptedUI, error) {
 	if err := decoder.Decode(&extra); err == nil {
 		return nil, fmt.Errorf("decode wizard answers %s: multiple JSON values", path)
 	} else if !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("decode wizard answers %s: multiple JSON values", path)
+		return nil, fmt.Errorf("decode wizard answers %s: trailing data: %w", path, err)
 	}
 	return &ScriptedUI{answers: answers, used: make(map[string]struct{})}, nil
 }

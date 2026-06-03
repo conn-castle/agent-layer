@@ -161,6 +161,41 @@ func TestApplyStatuslineSourceChanges_PropagatesWriteError(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestApplyStatuslineSourceChanges_SeedsLegacyContentNotTemplate verifies that the
+// self-heal seeding path preserves a user's migrated legacy status line: when the
+// legacy .agent-layer/statusline.sh exists and claude-statusline.sh is missing, the
+// wizard must seed the legacy content rather than overwrite it with the embedded
+// template. Would fail (regression) if applyStatuslineSourceChanges read TemplatePath
+// directly instead of routing through install's legacy-preferring seed logic.
+func TestApplyStatuslineSourceChanges_SeedsLegacyContentNotTemplate(t *testing.T) {
+	root := t.TempDir()
+
+	var claude install.StatuslineSourceTemplate
+	for _, source := range install.StatuslineSourceTemplates() {
+		if source.RelPath == ".agent-layer/claude-statusline.sh" {
+			claude = source
+		}
+	}
+	require.NotEmpty(t, claude.LegacyRelPath, "claude source must define a legacy rel-path")
+
+	legacyPath := filepath.Join(root, filepath.FromSlash(claude.LegacyRelPath))
+	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o750))
+	const legacyContent = "#!/bin/sh\n# user's customized legacy statusline\n"
+	require.NoError(t, os.WriteFile(legacyPath, []byte(legacyContent), 0o600))
+
+	require.NoError(t, applyStatuslineSourceChanges(root, statuslineSourceChangeSet{
+		sourcesToCreate: []install.StatuslineSourceTemplate{claude},
+	}))
+
+	seeded, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(claude.RelPath)))
+	require.NoError(t, err)
+	assert.Equal(t, legacyContent, string(seeded), "seed must preserve legacy content, not the template")
+
+	template, err := templates.Read(claude.TemplatePath)
+	require.NoError(t, err)
+	assert.NotEqual(t, string(template), string(seeded), "seed must not be the embedded template when legacy exists")
+}
+
 func TestApplyStatuslineSourceChanges_PropagatesCreateDirError(t *testing.T) {
 	root := t.TempDir()
 	blocker := filepath.Join(root, ".agent-layer")

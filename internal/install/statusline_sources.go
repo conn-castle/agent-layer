@@ -223,9 +223,26 @@ func statuslineSourceUpgradeChange(source StatuslineSourceTemplate) upgradeChang
 }
 
 func (inst *installer) statuslineSourceSeedBytes(source StatuslineSourceTemplate) ([]byte, string, error) {
+	return statuslineSeedBytes(inst.root, inst.sys.ReadFile, source)
+}
+
+// StatuslineSourceSeedBytes returns the bytes to seed a missing status line
+// source under root, preferring a present legacy source file over the embedded
+// template so a reseed never clobbers the user's migrated legacy customizations.
+// Callers outside the install package (e.g. the wizard) use this to share the
+// canonical seed logic rather than reading TemplatePath directly.
+func StatuslineSourceSeedBytes(root string, source StatuslineSourceTemplate) ([]byte, error) {
+	data, _, err := statuslineSeedBytes(root, os.ReadFile, source)
+	return data, err
+}
+
+// statuslineSeedBytes resolves seed bytes for a status line source, preferring
+// the legacy source file (read via readFile) over the embedded template. It
+// returns the bytes and a short origin label (legacy rel-path or "template").
+func statuslineSeedBytes(root string, readFile func(string) ([]byte, error), source StatuslineSourceTemplate) ([]byte, string, error) {
 	if source.LegacyRelPath != "" {
-		legacyPath := filepath.Join(inst.root, filepath.FromSlash(source.LegacyRelPath))
-		data, err := inst.sys.ReadFile(legacyPath)
+		legacyPath := filepath.Join(root, filepath.FromSlash(source.LegacyRelPath))
+		data, err := readFile(legacyPath)
 		if err == nil {
 			return data, source.LegacyRelPath, nil
 		}

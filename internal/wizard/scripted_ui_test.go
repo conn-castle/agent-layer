@@ -150,6 +150,27 @@ func TestScriptedUILoadRejectsMultipleJSONValues(t *testing.T) {
 	}
 }
 
+// TestScriptedUILoadTrailingGarbageSurfacesParseError guards the trailing-data
+// branch: non-JSON content after the answer object must surface the underlying
+// parse error to aid diagnosis, not be mislabeled as "multiple JSON values".
+// Would fail if the branch dropped the real decode error.
+func TestScriptedUILoadTrailingGarbageSurfacesParseError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "answers.json")
+	if err := os.WriteFile(path, []byte(`{"confirm":{}} not-json`), 0o600); err != nil {
+		t.Fatalf("write answers: %v", err)
+	}
+	_, err := NewScriptedUIFromFile(path)
+	if err == nil {
+		t.Fatal("expected trailing-data error, got nil")
+	}
+	if strings.Contains(err.Error(), "multiple JSON values") {
+		t.Fatalf("trailing garbage must not be mislabeled as multiple JSON values: %v", err)
+	}
+	if !strings.Contains(err.Error(), "trailing data") || !strings.Contains(err.Error(), "invalid character") {
+		t.Fatalf("expected underlying parse error to be surfaced, got %v", err)
+	}
+}
+
 // TestScriptedUILoadRejectsUnknownFields guards the DisallowUnknownFields decoder
 // setting: a typo'd top-level key must fail loudly rather than be silently ignored.
 // Would fail if the decoder stopped rejecting unknown fields.
