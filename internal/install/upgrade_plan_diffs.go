@@ -145,7 +145,7 @@ func (inst *installer) additionPreviewBytes(relPath string, templatePathByRel ma
 	if err != nil {
 		return nil, "", err
 	}
-	return templateBytes, "template", nil
+	return templateBytes, statuslineSeedOriginTemplate, nil
 }
 
 func (inst *installer) allTemplatePathByRel() (map[string]string, error) {

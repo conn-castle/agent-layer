@@ -122,6 +122,45 @@ func assertStatuslineTemplateWritten(t *testing.T, root string, relPath string, 
 	assert.Equal(t, perm, info.Mode().Perm())
 }
 
+// TestComputeStatuslineSourceChangeSet_PropagatesNonNotExistStatError verifies the
+// stat-error branch: when a parent path component is a file (ENOTDIR), the error is
+// surfaced rather than being treated as a missing source to create. Would fail if
+// the code collapsed all stat errors into "create source".
+func TestComputeStatuslineSourceChangeSet_PropagatesNonNotExistStatError(t *testing.T) {
+	root := t.TempDir()
+	// Make ".agent-layer" a regular file so stat of any file under it yields ENOTDIR.
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".agent-layer"), []byte("x"), 0o600))
+
+	choices := NewChoices()
+	choices.EnabledAgents[AgentClaude] = true
+	choices.ClaudeStatusline = true
+	choices.ClaudeStatuslineTouched = true
+
+	_, err := computeStatuslineSourceChangeSet(root, choices)
+	require.Error(t, err)
+	assert.False(t, os.IsNotExist(err), "ENOTDIR stat error must not be reported as not-exist")
+}
+
+// TestApplyStatuslineSourceChanges_PropagatesWriteError verifies the atomic-write
+// error branch: when the target path is occupied by a directory, the write failure
+// is surfaced instead of being silently ignored. Would fail if write errors were
+// swallowed.
+func TestApplyStatuslineSourceChanges_PropagatesWriteError(t *testing.T) {
+	root := t.TempDir()
+	// Occupy the target source path with a directory so the atomic write fails.
+	target := filepath.Join(root, ".agent-layer", "claude-statusline.sh")
+	require.NoError(t, os.MkdirAll(target, 0o750))
+
+	err := applyStatuslineSourceChanges(root, statuslineSourceChangeSet{
+		sourcesToCreate: []install.StatuslineSourceTemplate{{
+			RelPath:      ".agent-layer/claude-statusline.sh",
+			TemplatePath: "claude-statusline.sh",
+			Perm:         0o755,
+		}},
+	})
+	require.Error(t, err)
+}
+
 func TestApplyStatuslineSourceChanges_PropagatesCreateDirError(t *testing.T) {
 	root := t.TempDir()
 	blocker := filepath.Join(root, ".agent-layer")

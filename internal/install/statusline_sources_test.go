@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -491,6 +492,111 @@ func TestPlanStatuslineSourceChanges_ErrorAndSkipBranches(t *testing.T) {
 		_, _, err := (&installer{root: root, sys: sys}).planStatuslineSourceChanges(migrationPlan{})
 		if err == nil || !strings.Contains(err.Error(), "match boom") {
 			t.Fatalf("expected match read error, got %v", err)
+		}
+	})
+}
+
+// TestStatuslineSourceEnabled_UnknownRelPathIsDisabled guards the default branch:
+// any relPath that is not a known statusline source must report disabled, so an
+// unrelated file never gets seeded. Would fail if the default returned true.
+func TestStatuslineSourceEnabled_UnknownRelPathIsDisabled(t *testing.T) {
+	cfg, err := config.LoadConfigLenient(filepath.Join(t.TempDir(), "missing.toml"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	if statuslineSourceEnabled(cfg, ".agent-layer/some-other-file") {
+		t.Fatal("expected unknown statusline source relPath to be disabled")
+	}
+}
+
+// TestStatuslineSourceSeedBytes_FallsBackToTemplateWithoutLegacy verifies that when
+// no legacy source exists the seed content comes from the embedded template and is
+// labeled "template". Would fail if seeding skipped the template fallback.
+func TestStatuslineSourceSeedBytes_FallsBackToTemplateWithoutLegacy(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	source := StatuslineSourceTemplate{
+		RelPath:       claudeStatuslineSourceRelPath,
+		TemplatePath:  "claude-statusline.sh",
+		LegacyRelPath: ".agent-layer/statusline.sh",
+		Perm:          0o755,
+	}
+
+	data, origin, err := inst.statuslineSourceSeedBytes(source)
+	if err != nil {
+		t.Fatalf("statuslineSourceSeedBytes: %v", err)
+	}
+	if origin != "template" {
+		t.Fatalf("origin = %q, want template", origin)
+	}
+	want, err := templates.Read("claude-statusline.sh")
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	if string(data) != string(want) {
+		t.Fatal("seed bytes do not match embedded template")
+	}
+}
+
+// TestStatuslineSourceSeedBytes_ReportsMissingTemplate guards the template-read
+// error path: a source with no legacy file and an unknown template must surface a
+// read error rather than seed empty content.
+func TestStatuslineSourceSeedBytes_ReportsMissingTemplate(t *testing.T) {
+	root := t.TempDir()
+	inst := &installer{root: root, sys: RealSystem{}}
+	_, _, err := inst.statuslineSourceSeedBytes(StatuslineSourceTemplate{
+		RelPath:      ".agent-layer/custom-statusline",
+		TemplatePath: "missing-statusline-template",
+		Perm:         0o644,
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing-statusline-template") {
+		t.Fatalf("expected missing template error, got %v", err)
+	}
+}
+
+// TestStatuslineSourceEnabledAfterMigrations_Branches exercises the migration-aware
+// enablement: explicit config wins, an unset key enabled by a "true" migration
+// default counts as enabled, a "false" migration default does not, and an unknown
+// relPath is disabled. Each branch would fail if its outcome were inverted.
+func TestStatuslineSourceEnabledAfterMigrations_Branches(t *testing.T) {
+	root := t.TempDir()
+
+	t.Run("explicit config true wins over plan", func(t *testing.T) {
+		writeStatuslineConfigForTest(t, root, true, false)
+		cfg, err := config.LoadConfigLenient(filepath.Join(root, ".agent-layer", "config.toml"))
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		if !statuslineSourceEnabledAfterMigrations(cfg, claudeStatuslineSourceRelPath, migrationPlan{}) {
+			t.Fatal("expected explicit statusline=true to be enabled")
+		}
+	})
+
+	t.Run("unset key disabled without enabling migration", func(t *testing.T) {
+		writeStatuslineConfigForTest(t, root, false, false)
+		cfg, err := config.LoadConfigLenient(filepath.Join(root, ".agent-layer", "config.toml"))
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		plan := migrationPlan{configMigrations: []ConfigKeyMigration{
+			{Key: "agents.codex.statusline", From: "(unset)", To: "false"},
+		}}
+		if statuslineSourceEnabledAfterMigrations(cfg, codexStatuslineSourceRelPath, plan) {
+			t.Fatal("expected codex statusline disabled when migration default is false")
+		}
+	})
+
+	t.Run("unknown relPath disabled", func(t *testing.T) {
+		writeStatuslineConfigForTest(t, root, false, false)
+		cfg, err := config.LoadConfigLenient(filepath.Join(root, ".agent-layer", "config.toml"))
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		if statuslineSourceEnabledAfterMigrations(cfg, ".agent-layer/some-other-file", migrationPlan{}) {
+			t.Fatal("expected unknown statusline source relPath to be disabled")
 		}
 	})
 }

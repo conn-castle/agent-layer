@@ -17,6 +17,10 @@ const (
 	codexStatuslineSourceRelPath  = ".agent-layer/codex-statusline.toml"
 )
 
+// statuslineSeedOriginTemplate labels seed bytes that came from the embedded
+// template (as opposed to a migrated legacy source file).
+const statuslineSeedOriginTemplate = "template"
+
 // StatuslineSourceTemplate describes an editable provider status line source.
 type StatuslineSourceTemplate struct {
 	RelPath       string
@@ -233,7 +237,7 @@ func (inst *installer) statuslineSourceSeedBytes(source StatuslineSourceTemplate
 	if err != nil {
 		return nil, "", fmt.Errorf(messages.InstallFailedReadTemplateFmt, source.TemplatePath, err)
 	}
-	return data, "template", nil
+	return data, statuslineSeedOriginTemplate, nil
 }
 
 func statuslineSourceByRelPath(relPath string) (StatuslineSourceTemplate, bool) {
