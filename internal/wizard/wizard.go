@@ -126,12 +126,10 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 func applyFreshSetupDefaults(choices *Choices) {
 	choices.InstallWorkflowBundle = true
-	if choices.EnabledAgents[AgentClaude] || choices.EnabledAgents[AgentClaudeVSCode] {
-		choices.ClaudeStatusline = true
-	}
-	if choices.EnabledAgents[AgentCodex] {
-		choices.CodexStatusline = true
-	}
+	// Status lines stay opt-in: leave the fresh-init toggles unchecked so the
+	// interactive wizard does not enable them by default. This matches the
+	// non-interactive upgrade default (migration value: false) and the bare
+	// `al init` default; the user enables a status line by explicitly checking it.
 }
 
 func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, bool, error) {

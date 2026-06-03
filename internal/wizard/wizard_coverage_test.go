@@ -105,11 +105,14 @@ func TestRunAfterFreshInitWithWriter_UsesFreshStatuslineDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAfterFreshInitWithWriter: %v", err)
 	}
-	if !sawClaudeStatuslineDefault {
-		t.Fatal("expected fresh init wrapper to preselect Claude statusline")
+	// Status lines are opt-in: the fresh-init wizard must NOT preselect them, so
+	// accepting the defaults leaves both disabled until the user explicitly checks
+	// the toggle. Mirrors the non-interactive upgrade default (migration value: false).
+	if sawClaudeStatuslineDefault {
+		t.Fatal("fresh init wrapper should not preselect Claude statusline (opt-in)")
 	}
-	if !sawCodexStatuslineDefault {
-		t.Fatal("expected fresh init wrapper to preselect Codex statusline")
+	if sawCodexStatuslineDefault {
+		t.Fatal("fresh init wrapper should not preselect Codex statusline (opt-in)")
 	}
 }
 

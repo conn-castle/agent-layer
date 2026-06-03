@@ -326,8 +326,14 @@ assert_json_valid() {
     else
       fail "$label (invalid JSON)"
     fi
+  elif command -v python3 &>/dev/null; then
+    if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$file" 2>/dev/null; then
+      pass "$label"
+    else
+      fail "$label (invalid JSON)"
+    fi
   else
-    warn "$label (skipped: jq/node not available for JSON validation)"
+    warn "$label (skipped: jq/node/python3 not available for JSON validation)"
   fi
 }
 
