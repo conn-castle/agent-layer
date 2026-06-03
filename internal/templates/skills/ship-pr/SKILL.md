@@ -38,7 +38,7 @@ Accept any combination of:
 
 Delegate to:
 - `audit-and-fix-uncommitted-changes` for pre-commit quality gates
-- `repair-checks` for pre-push local verification when the current session has not already observed the repo-defined local lane passing after the latest changes
+- `repair-checks` for the local check lane, run in parallel with remote CI, when the current session has not already observed the repo-defined local lane passing after the latest changes
 - `fix-ci` for CI failure diagnosis and repair
 - `address-pr-comments` for review comment handling
 
@@ -51,9 +51,9 @@ The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored 
 ## Global constraints
 
 - Do not create a PR if the current branch is the default branch and there is nothing to ship.
-- CI is not the first debugger: run the repo's local check lane before the initial push/PR, and use CI only to confirm parity after local verification.
+- Run the repo's local check lane in parallel with remote CI rather than before the push: push early to start CI, then reconcile the local lane's result in Phase 3. Do not push commits that fail the commit-time fast lane (e.g. pre-commit lint and tests).
 - Do not let ship-pr push CI-fix commits unless `fix-ci` found a local reproducer and observed it pass after the fix, or `fix-ci` hit a human checkpoint without pushing.
-- Pre-push local verification must use the repo-documented CI-equivalent lane when one exists; do not silently downgrade to a fast lane.
+- The local lane must use the repo-documented CI-equivalent lane when one exists; do not skip it or silently downgrade to only the fast lane.
 - Do not skip CI checks.
 - PR feedback handling must pass the `address-pr-comments` definition of done before this skill completes.
 - The skill must end with CI passing.
@@ -84,13 +84,7 @@ The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored 
    d. Commit the changes.
 5. If no uncommitted changes exist and the current branch is not the default branch, proceed — the branch's existing commits are the content to ship.
 6. If no uncommitted changes exist and the current branch is the default branch, trigger a human checkpoint — there is nothing to ship.
-7. Run or delegate to `repair-checks` for the repo-defined local check lane unless the current session already observed that lane passing after the latest branch changes.
-8. If local verification changes files:
-   a. Use `audit-and-fix-uncommitted-changes` to stabilize those changes.
-   b. Stage all changes: `git add -A`
-   c. Commit the local-check fixes.
-   d. Re-run the repo-defined local check lane.
-9. Push the branch to the remote.
+7. Push the branch to the remote.
 
 ### Phase 2: Create the PR (PR creator)
 
@@ -101,16 +95,20 @@ The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored 
    c. Create the PR: `gh pr create --title "<title>" --body "<body>" --base <base-branch>`
 3. If a PR already exists, use that PR.
 4. Record the PR number/URL and the current time as `start_time`.
+5. Start the repo-defined local check lane in parallel (run it or delegate to `repair-checks`), unless the current session already observed it passing after the latest changes. Do not wait on it here; Phase 3 reconciles it with remote CI.
 
 ### Phase 3: Wait for CI and fix failures (CI monitor)
 
 1. Poll CI status using `gh pr checks <pr-number>`.
-2. Wait for all CI checks to complete.
+2. Wait for all remote CI checks and the parallel local check lane to complete.
 3. If any CI check failed:
    a. Use the `fix-ci` skill, passing the PR number.
    b. The fix-ci skill handles the internal loop of diagnose, fix, audit, commit, push, re-check.
    c. Confirm `fix-ci` satisfied its local-reproducer definition of done; if it stopped at a human checkpoint, stop here too.
-4. CI must be passing before proceeding.
+4. Reconcile the local check lane once it finishes:
+   a. If it surfaced a failure, fix the cause — `repair-checks` for a local-only failure, or `fix-ci` when it overlaps a failing remote check.
+   b. If the fix (or the lane itself) changed files: use `audit-and-fix-uncommitted-changes` to stabilize, stage with `git add -A`, commit, push, and re-run the lane.
+5. Remote CI and the local lane must both be passing before proceeding.
 
 ### Phase 4: Wait for review comments (Timer)
 
@@ -195,7 +193,7 @@ This phase does not run automatically. After Phase 8 the skill stops and waits.
 ## Definition of done
 
 - A PR exists for the current branch and `gh pr checks` shows every required CI check passing on the final pushed commit.
-- The repo-defined local check lane passed before the first push/PR, and CI-fix commits were not pushed without a local reproducer and passing post-fix local verification.
+- The repo-defined local check lane passed (run in parallel with remote CI), and CI-fix commits were not pushed without a local reproducer and passing post-fix local verification.
 - `address-pr-comments` reached its definition of done, and Phase 7 independently verified that result by re-fetching the PR state.
 - The skill did not force-push, did not create a duplicate PR, and did not end with CI failing.
 - The skill ends after Phase 8 with the PR open and green unless the user explicitly approves your request to do so; in that case the PR is merged with an explicit, unambiguous GitHub merge method and the source branch is deleted both locally and remotely.
@@ -204,7 +202,7 @@ This phase does not run automatically. After Phase 8 the skill stops and waits.
 
 After the run:
 1. Echo the PR URL.
-2. Summarize: what was committed, local verification run before push, CI status, comments addressed.
+2. Summarize: what was committed, the local check lane run in parallel with CI, CI status, comments addressed.
 3. For any CI fixes, summarize the `fix-ci` local-reproducer evidence.
 4. State whether all comments passed the Phase 7 audit or if any require further human attention.
 5. If any comments were re-addressed during the audit, list them and explain what was corrected.
