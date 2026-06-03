@@ -27,6 +27,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-06-03 ci-actions-pin-shas: Pin GitHub Actions to commit SHAs across all workflows
+    Priority: Medium. Area: ci/security
+    Description: `.github/workflows/ci.yml` and `release.yml` reference actions by mutable version tags (`actions/checkout@v4`, `setup-go@v5`, `setup-node@v4`, `cache@v4`). zizmor/CodeRabbit flag unpinned-uses: a compromised action repo could rewrite a tag (supply-chain risk). `persist-credentials: false` was already applied to ci.yml checkouts; SHA pinning is the remaining, larger hardening.
+    Next step: Pin every action to an immutable commit SHA with a `# vX.Y.Z` comment, consistently across ci.yml and release.yml in one pass; consider a tool (e.g. pin-github-action) to keep them updated.
+    Notes: Deferred from the v0.11.0 PR review — repo-wide change orthogonal to the release.
+
+- Issue 2026-06-03 e2e-profile-overwrite-block-scope: upgrade-profile-overwrite-claude.sh asserts against whole config.toml
+    Priority: Low. Area: test-e2e
+    Description: `scripts/test-e2e/scenarios/upgrade-profile-overwrite-claude.sh` (~line 82-93) asserts pre-wizard MCP pollution removal with `assert_file_not_contains "$config" ...` over the whole file. The fixture is controlled (only the seeded `github` block carries those `command`/`args` values) so it cannot false-fail today, but a future fixture with another server using matching values could. Suggested: extract the `github` block and assert within it.
+    Next step: Scope the assertions to the extracted `github` block (or a bounded block range) in a test-hardening pass.
+    Notes: Deferred from the v0.11.0 PR review (CodeRabbit); minor robustness nicety, no current false-fail.
+
 - Issue 2026-06-03 local-lint-ci-parity-gap: `make lint` does not reproduce CI golangci-lint findings
     Priority: Medium. Area: tooling/lint
     Description: CI `make ci` failed on a `goconst` finding (`internal/install/statusline_sources.go`: a 3x string should be a constant), but local `make lint` reports `0 issues` on the same code — even with the go.mod-pinned golangci-lint v2.10.1 in `.tools/bin` and a cleared `GOLANGCI_LINT_CACHE`. Local gives false confidence and lets lint failures reach CI. Suspected golangci-lint build/toolchain or GOCACHE-analysis difference between local (darwin) and CI (linux).
