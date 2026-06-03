@@ -17,10 +17,22 @@ var runWizardProfile = func(root string, pinVersion string, profilePath string, 
 	return wizard.RunProfile(root, alsync.Run, pinVersion, profilePath, apply, out)
 }
 
+var runWizardAnswers = func(root string, pinVersion string, answersPath string, out io.Writer) error {
+	ui, err := wizard.NewScriptedUIFromFile(answersPath)
+	if err != nil {
+		return err
+	}
+	if err := wizard.RunWithWriter(root, ui, alsync.Run, pinVersion, out); err != nil {
+		return err
+	}
+	return ui.AssertComplete()
+}
+
 var cleanupWizardBackups = wizard.CleanupBackups
 
 func newWizardCmd() *cobra.Command {
 	var profilePath string
+	var answersPath string
 	var yes bool
 	var cleanupBackups bool
 
@@ -58,8 +70,19 @@ func newWizardCmd() *cobra.Command {
 				return err
 			}
 
+			if profilePath != "" && answersPath != "" {
+				return fmt.Errorf("--profile and --answers cannot be used together")
+			}
+			if answersPath != "" && yes {
+				return fmt.Errorf("--yes can only be used with --profile")
+			}
+
 			if profilePath != "" {
 				return runWizardProfile(root, pinned, profilePath, yes, cmd.OutOrStdout())
+			}
+
+			if answersPath != "" {
+				return runWizardAnswers(root, pinned, answersPath, cmd.OutOrStdout())
 			}
 
 			if !isTerminal() {
@@ -71,6 +94,7 @@ func newWizardCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&profilePath, "profile", "", messages.WizardProfileFlagHelp)
+	cmd.Flags().StringVar(&answersPath, "answers", "", messages.WizardAnswersFlagHelp)
 	cmd.Flags().BoolVar(&yes, "yes", false, messages.WizardProfileYesFlagHelp)
 	cmd.Flags().BoolVar(&cleanupBackups, "cleanup-backups", false, messages.WizardCleanupBackupsFlagHelp)
 	return cmd

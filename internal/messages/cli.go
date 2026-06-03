@@ -133,6 +133,7 @@ const (
 	WizardRequiresTerminal       = "wizard requires an interactive terminal"
 	WizardProfileFlagHelp        = "Run wizard in non-interactive profile mode using a profile config TOML file"
 	WizardProfileYesFlagHelp     = "Apply profile-mode changes; without this flag profile mode prints a rewrite preview only"
+	WizardAnswersFlagHelp        = "Run wizard with a deterministic JSON answer file"
 	WizardCleanupBackupsFlagHelp = "Delete wizard backup files (.agent-layer/config.toml.bak and .agent-layer/.env.bak)"
 	WizardCleanupBackupsHeader   = "Removed wizard backup files:"
 	WizardCleanupBackupsPathFmt  = "  - %s\n"

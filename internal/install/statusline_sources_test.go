@@ -104,6 +104,35 @@ func TestBuildUpgradePlan_StatuslineSourceAdditionsAndUpdates(t *testing.T) {
 	}
 }
 
+func TestBuildUpgradePlanDiffPreviews_StatuslineAdditionUsesLegacySourceContent(t *testing.T) {
+	root := t.TempDir()
+	writeStatuslineConfigForTest(t, root, true, false)
+	legacyPath := filepath.Join(root, ".agent-layer", "statusline.sh")
+	if err := os.WriteFile(legacyPath, []byte("# legacy statusline\n"), 0o600); err != nil {
+		t.Fatalf("write legacy source: %v", err)
+	}
+
+	plan, err := BuildUpgradePlan(root, UpgradePlanOptions{System: RealSystem{}})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlan: %v", err)
+	}
+	if findUpgradeChange(plan.StatuslineSourceAdditions, ".agent-layer/claude-statusline.sh") == nil {
+		t.Fatalf("expected claude statusline source addition in plan")
+	}
+
+	previews, err := BuildUpgradePlanDiffPreviews(root, plan, UpgradePlanDiffPreviewOptions{System: RealSystem{}})
+	if err != nil {
+		t.Fatalf("BuildUpgradePlanDiffPreviews: %v", err)
+	}
+	preview := previews[".agent-layer/claude-statusline.sh"]
+	if !strings.Contains(preview.UnifiedDiff, "# legacy statusline") {
+		t.Fatalf("expected preview to show legacy source content, got:\n%s", preview.UnifiedDiff)
+	}
+	if !strings.Contains(preview.UnifiedDiff, ".agent-layer/statusline.sh") {
+		t.Fatalf("expected preview label to name legacy source, got:\n%s", preview.UnifiedDiff)
+	}
+}
+
 func TestWriteStatuslineSources_NoConfigAndDisabledAreNoop(t *testing.T) {
 	t.Run("missing config", func(t *testing.T) {
 		root := t.TempDir()
@@ -320,10 +349,10 @@ func TestWriteStatuslineSource_CustomSourceBranches(t *testing.T) {
 
 func TestStatuslineSourceHelpers_ErrorBranches(t *testing.T) {
 	root := t.TempDir()
-	source := statuslineSourceTemplate{
-		relPath:      ".agent-layer/custom-statusline",
-		templatePath: "claude-statusline.sh",
-		perm:         0o755,
+	source := StatuslineSourceTemplate{
+		RelPath:      ".agent-layer/custom-statusline",
+		TemplatePath: "claude-statusline.sh",
+		Perm:         0o755,
 	}
 
 	t.Run("mkdir source parent", func(t *testing.T) {
@@ -338,10 +367,10 @@ func TestStatuslineSourceHelpers_ErrorBranches(t *testing.T) {
 	})
 
 	t.Run("template read", func(t *testing.T) {
-		err := (&installer{root: root, sys: RealSystem{}}).writeStatuslineSourceTemplate(statuslineSourceTemplate{
-			relPath:      ".agent-layer/missing-statusline",
-			templatePath: "missing-statusline-template",
-			perm:         0o644,
+		err := (&installer{root: root, sys: RealSystem{}}).writeStatuslineSourceTemplate(StatuslineSourceTemplate{
+			RelPath:      ".agent-layer/missing-statusline",
+			TemplatePath: "missing-statusline-template",
+			Perm:         0o644,
 		}, filepath.Join(root, ".agent-layer", "missing-statusline"))
 		if err == nil || !strings.Contains(err.Error(), "missing-statusline-template") {
 			t.Fatalf("expected template read error, got %v", err)
@@ -368,10 +397,10 @@ func TestStatuslineSourceHelpers_ErrorBranches(t *testing.T) {
 			t.Fatalf("write source: %v", err)
 		}
 
-		_, err := (&installer{root: root, sys: RealSystem{}}).buildStatuslineSourceDiffPreview(statuslineSourceTemplate{
-			relPath:      ".agent-layer/custom-statusline",
-			templatePath: "missing-statusline-template",
-			perm:         0o644,
+		_, err := (&installer{root: root, sys: RealSystem{}}).buildStatuslineSourceDiffPreview(StatuslineSourceTemplate{
+			RelPath:      ".agent-layer/custom-statusline",
+			TemplatePath: "missing-statusline-template",
+			Perm:         0o644,
 		})
 		if err == nil || !strings.Contains(err.Error(), "missing-statusline-template") {
 			t.Fatalf("expected preview template read error, got %v", err)

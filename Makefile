@@ -93,6 +93,18 @@ fmt-check: check-goimports ## Check Go formatting (gofmt + goimports)
 lint: check-golangci-lint ## Run golangci-lint
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/golangci-lint" run ./...
 
+.PHONY: lint-ci-local
+lint-ci-local: check-golangci-lint ## Run golangci-lint with fresh caches and Linux target settings
+	@tmp_root="$$(mktemp -d "$${TMPDIR:-/tmp}/agent-layer-lint-ci-local.XXXXXX")"; \
+	  trap 'chmod -R u+w "$$tmp_root" 2>/dev/null || true; rm -rf "$$tmp_root"' EXIT; \
+	  mkdir -p "$$tmp_root/go-build" "$$tmp_root/go-mod" "$$tmp_root/golangci-lint"; \
+	  GOCACHE="$$tmp_root/go-build" GOMODCACHE="$$tmp_root/go-mod" go mod download; \
+	  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+	    GOCACHE="$$tmp_root/go-build" \
+	    GOMODCACHE="$$tmp_root/go-mod" \
+	    GOLANGCI_LINT_CACHE="$$tmp_root/golangci-lint" \
+	    "$(TOOL_BIN)/golangci-lint" run ./...
+
 .PHONY: test
 test: check-gotestsum ## Run tests
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"

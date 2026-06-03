@@ -4,52 +4,6 @@
   "min_prior_version": "0.10.2",
   "operations": [
     {
-      "id": "a-delete-old-agents-antigravity",
-      "kind": "config_delete_key",
-      "key": "agents.antigravity",
-      "rationale": "Carried forward from 0.10.2 so unpinned upgrades (which load only the latest manifest) still receive the Gemini->Antigravity cleanup. Remove the retired Antigravity desktop enablement table before reusing agents.antigravity for the agy-backed client. Idempotent: a no-op once the table is already migrated.",
-      "source_agnostic": true
-    },
-    {
-      "id": "b-rename-agents-gemini-enabled",
-      "kind": "config_rename_key",
-      "from": "agents.gemini.enabled",
-      "to": "agents.antigravity.enabled",
-      "rationale": "Carried forward from 0.10.2 for unpinned upgrades. Migrate the deprecated Gemini CLI enablement flag to the replacement agy-backed Antigravity client. Idempotent: a no-op when agents.gemini.enabled is already gone.",
-      "source_agnostic": true
-    },
-    {
-      "id": "c-delete-agents-gemini",
-      "kind": "config_delete_key",
-      "key": "agents.gemini",
-      "rationale": "Carried forward from 0.10.2 for unpinned upgrades. Remove the leftover deprecated Gemini CLI table, including unsupported model and reasoning_effort keys. Idempotent: a no-op when the table is already gone.",
-      "source_agnostic": true
-    },
-    {
-      "id": "d-set-default-agents-antigravity-enabled",
-      "kind": "config_set_default",
-      "key": "agents.antigravity.enabled",
-      "value": false,
-      "rationale": "Carried forward from 0.10.2 for unpinned upgrades. Ensure required agents.antigravity.enabled exists when no Gemini CLI setting was present. Idempotent: a no-op when the key already exists.",
-      "source_agnostic": true
-    },
-    {
-      "id": "e-replace-gemini-mcp-client",
-      "kind": "config_replace_string",
-      "key": "mcp.servers[].clients[]",
-      "from": "gemini",
-      "to": "antigravity",
-      "rationale": "Carried forward from 0.10.2 for unpinned upgrades. Replace the deprecated Gemini CLI client ID in MCP server client lists with Antigravity. Idempotent: a no-op when no gemini client remains.",
-      "source_agnostic": true
-    },
-    {
-      "id": "f-delete-orphan-gemini-md",
-      "kind": "delete_generated_artifact",
-      "path": "GEMINI.md",
-      "rationale": "Carried forward from 0.10.2 for unpinned upgrades. Remove the GEMINI.md instruction shim now that the Gemini CLI is retired; agy reads AGENTS.md. Idempotent: a no-op when the file is already gone.",
-      "source_agnostic": true
-    },
-    {
       "id": "g-set-default-agents-claude-statusline",
       "kind": "config_set_default",
       "key": "agents.claude.statusline",

@@ -2,33 +2,27 @@ package wizard
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
+	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
-type statuslineSourceFile struct {
-	relPath      string
-	templatePath string
-	perm         fs.FileMode
-}
-
 type statuslineSourceChangeSet struct {
-	sourcesToCreate []statuslineSourceFile
+	sourcesToCreate []install.StatuslineSourceTemplate
 }
 
 func computeStatuslineSourceChangeSet(root string, choices *Choices) (statuslineSourceChangeSet, error) {
 	var out statuslineSourceChangeSet
 	for _, file := range selectedStatuslineSourceFiles(choices) {
-		path := filepath.Join(root, filepath.FromSlash(file.relPath))
+		path := filepath.Join(root, filepath.FromSlash(file.RelPath))
 		info, err := os.Stat(path)
 		if err == nil {
 			if info.IsDir() {
-				return statuslineSourceChangeSet{}, fmt.Errorf("%s is a directory", file.relPath)
+				return statuslineSourceChangeSet{}, fmt.Errorf("%s is a directory", file.RelPath)
 			}
 			continue
 		}
@@ -40,36 +34,34 @@ func computeStatuslineSourceChangeSet(root string, choices *Choices) (statusline
 	return out, nil
 }
 
-func selectedStatuslineSourceFiles(choices *Choices) []statuslineSourceFile {
-	files := make([]statuslineSourceFile, 0, 2)
-	if choices.ClaudeStatuslineTouched && choices.ClaudeStatusline && claudeToggleVisible(choices) {
-		files = append(files, statuslineSourceFile{
-			relPath:      ".agent-layer/claude-statusline.sh",
-			templatePath: "claude-statusline.sh",
-			perm:         0o755,
-		})
-	}
-	if choices.CodexStatuslineTouched && choices.CodexStatusline && codexToggleVisible(choices) {
-		files = append(files, statuslineSourceFile{
-			relPath:      ".agent-layer/codex-statusline.toml",
-			templatePath: "codex-statusline.toml",
-			perm:         0o644,
-		})
+func selectedStatuslineSourceFiles(choices *Choices) []install.StatuslineSourceTemplate {
+	files := make([]install.StatuslineSourceTemplate, 0, 2)
+	for _, source := range install.StatuslineSourceTemplates() {
+		switch source.RelPath {
+		case ".agent-layer/claude-statusline.sh":
+			if choices.ClaudeStatusline && claudeToggleVisible(choices) {
+				files = append(files, source)
+			}
+		case ".agent-layer/codex-statusline.toml":
+			if choices.CodexStatusline && codexToggleVisible(choices) {
+				files = append(files, source)
+			}
+		}
 	}
 	return files
 }
 
 func applyStatuslineSourceChanges(root string, changes statuslineSourceChangeSet) error {
 	for _, file := range changes.sourcesToCreate {
-		data, err := templates.Read(file.templatePath)
+		data, err := templates.Read(file.TemplatePath)
 		if err != nil {
 			return err
 		}
-		path := filepath.Join(root, filepath.FromSlash(file.relPath))
+		path := filepath.Join(root, filepath.FromSlash(file.RelPath))
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			return err
 		}
-		if err := fsutil.WriteFileAtomic(path, data, file.perm); err != nil {
+		if err := fsutil.WriteFileAtomic(path, data, file.Perm); err != nil {
 			return err
 		}
 	}
@@ -83,7 +75,7 @@ func buildStatuslineSourcePreview(changes statuslineSourceChangeSet) string {
 	lines := make([]string, 0, len(changes.sourcesToCreate)+1)
 	lines = append(lines, "Statusline source changes:")
 	for _, file := range changes.sourcesToCreate {
-		lines = append(lines, "  + "+file.relPath+"  (seed-once source)")
+		lines = append(lines, "  + "+file.RelPath+"  (seed-once source)")
 	}
 	return strings.Join(lines, "\n")
 }

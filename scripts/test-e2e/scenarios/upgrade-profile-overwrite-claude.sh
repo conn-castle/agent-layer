@@ -79,18 +79,39 @@ args = ["-y", "example-github-mcp"]
     "MCP-clean upgrade output says successful"
 
   assert_al_version_content "$repo_dir" "$AL_E2E_VERSION_NO_V"
-  assert_file_not_contains "$config" \
-    'headers = { Authorization' \
-    "upgrade removes polluted context7 headers before profile overwrite"
-  assert_file_not_contains "$config" \
-    'url = "https://example.com/context7"' \
-    "upgrade removes polluted context7 url before profile overwrite"
-  assert_file_not_contains "$config" \
-    'command = "npx"' \
-    "upgrade removes polluted github command before profile overwrite"
-  assert_file_not_contains "$config" \
-    'args = ["-y", "example-github-mcp"]' \
-    "upgrade removes polluted github args before profile overwrite"
+  local context7_after_upgrade
+  context7_after_upgrade=$(awk '
+    /^\[\[mcp\.servers\]\]/ { in_block = 0 }
+    /^id = "context7"/ { in_block = 1 }
+    in_block { print }
+  ' "$config")
+  if printf '%s\n' "$context7_after_upgrade" | grep -Fq 'headers = { Authorization'; then
+    fail "upgrade removes polluted context7 headers before profile overwrite"
+  else
+    pass "upgrade removes polluted context7 headers before profile overwrite"
+  fi
+  if printf '%s\n' "$context7_after_upgrade" | grep -Fq 'url = "https://example.com/context7"'; then
+    fail "upgrade removes polluted context7 url before profile overwrite"
+  else
+    pass "upgrade removes polluted context7 url before profile overwrite"
+  fi
+
+  local github_after_upgrade
+  github_after_upgrade=$(awk '
+    /^\[\[mcp\.servers\]\]/ { in_block = 0 }
+    /^id = "github"/ { in_block = 1 }
+    in_block { print }
+  ' "$config")
+  if printf '%s\n' "$github_after_upgrade" | grep -Fq 'command = "npx"'; then
+    fail "upgrade removes polluted github command before profile overwrite"
+  else
+    pass "upgrade removes polluted github command before profile overwrite"
+  fi
+  if printf '%s\n' "$github_after_upgrade" | grep -Fq 'args = ["-y", "example-github-mcp"]'; then
+    fail "upgrade removes polluted github args before profile overwrite"
+  else
+    pass "upgrade removes polluted github args before profile overwrite"
+  fi
 
   # Write env values needed for MCP server resolution
   cat > "$repo_dir/.agent-layer/.env" <<'ENVEOF'

@@ -84,6 +84,14 @@ make lint
 Run from: repo root  
 Prerequisites: `make tools` has been run
 
+- Run no-Docker CI-parity golangci-lint
+```bash
+make lint-ci-local
+```
+Run from: repo root
+Prerequisites: `make tools` has been run; network access may be needed for a fresh module download
+Notes: Uses disposable `GOCACHE`, `GOMODCACHE`, and `GOLANGCI_LINT_CACHE` with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`. Closer to CI than `make lint` without requiring Docker.
+
 - Run dead code analysis across all packages (test-aware default)
 ```bash
 make dead-code

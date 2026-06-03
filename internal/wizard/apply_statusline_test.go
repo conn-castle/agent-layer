@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -39,7 +40,7 @@ func TestStatuslineSourceChanges_CreateSelectedVisibleSources(t *testing.T) {
 }
 
 func TestComputeStatuslineSourceChangeSet_VisibilityExistingAndErrors(t *testing.T) {
-	t.Run("requires touched enabled visible provider", func(t *testing.T) {
+	t.Run("requires enabled visible provider", func(t *testing.T) {
 		root := t.TempDir()
 		choices := NewChoices()
 		choices.EnabledAgentsTouched = true
@@ -51,6 +52,18 @@ func TestComputeStatuslineSourceChangeSet_VisibilityExistingAndErrors(t *testing
 		changes, err := computeStatuslineSourceChangeSet(root, choices)
 		require.NoError(t, err)
 		assert.Empty(t, changes.sourcesToCreate)
+	})
+
+	t.Run("enabled existing config seeds missing source without retoggle", func(t *testing.T) {
+		root := t.TempDir()
+		choices := NewChoices()
+		choices.EnabledAgents[AgentClaude] = true
+		choices.ClaudeStatusline = true
+
+		changes, err := computeStatuslineSourceChangeSet(root, choices)
+		require.NoError(t, err)
+		require.Len(t, changes.sourcesToCreate, 1)
+		assert.Equal(t, ".agent-layer/claude-statusline.sh", changes.sourcesToCreate[0].RelPath)
 	})
 
 	t.Run("existing source is preserved", func(t *testing.T) {
@@ -87,10 +100,10 @@ func TestComputeStatuslineSourceChangeSet_VisibilityExistingAndErrors(t *testing
 
 func TestApplyStatuslineSourceChanges_ReportsTemplateReadError(t *testing.T) {
 	err := applyStatuslineSourceChanges(t.TempDir(), statuslineSourceChangeSet{
-		sourcesToCreate: []statuslineSourceFile{{
-			relPath:      ".agent-layer/missing-statusline",
-			templatePath: "missing-statusline-template",
-			perm:         0o644,
+		sourcesToCreate: []install.StatuslineSourceTemplate{{
+			RelPath:      ".agent-layer/missing-statusline",
+			TemplatePath: "missing-statusline-template",
+			Perm:         0o644,
 		}},
 	})
 	require.Error(t, err)
@@ -115,10 +128,10 @@ func TestApplyStatuslineSourceChanges_PropagatesCreateDirError(t *testing.T) {
 	require.NoError(t, os.WriteFile(blocker, []byte("not a directory"), 0o600))
 
 	err := applyStatuslineSourceChanges(root, statuslineSourceChangeSet{
-		sourcesToCreate: []statuslineSourceFile{{
-			relPath:      ".agent-layer/claude-statusline.sh",
-			templatePath: "claude-statusline.sh",
-			perm:         0o755,
+		sourcesToCreate: []install.StatuslineSourceTemplate{{
+			RelPath:      ".agent-layer/claude-statusline.sh",
+			TemplatePath: "claude-statusline.sh",
+			Perm:         0o755,
 		}},
 	})
 	require.Error(t, err)

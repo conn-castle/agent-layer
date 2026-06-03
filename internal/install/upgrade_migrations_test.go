@@ -1417,6 +1417,68 @@ func TestPlanUpgradeMigrations_UnpinnedMCPGeminiClientTriggersLatestManifest(t *
 	}
 }
 
+func TestPlanUpgradeMigrations_UnpinnedMCPGeminiClientRunsOlderSourceAgnosticManifest(t *testing.T) {
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
+		nil,
+		`["gemini"]`,
+	))
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.10.2": `{
+  "schema_version": 1,
+  "target_version": "0.10.2",
+  "min_prior_version": "0.10.1",
+  "operations": [
+    {
+      "id": "replace-gemini-client",
+      "kind": "config_replace_string",
+      "rationale": "Replace legacy Gemini MCP client name",
+      "source_agnostic": true,
+      "key": "mcp.servers[].clients[]",
+      "from": "gemini",
+      "to": "antigravity"
+    }
+  ]
+}`,
+		"0.11.0": `{
+  "schema_version": 1,
+  "target_version": "0.11.0",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "set-claude-statusline",
+      "kind": "config_set_default",
+      "rationale": "Write explicit statusline default before sync",
+      "source_agnostic": true,
+      "key": "agents.claude.statusline",
+      "value": false
+    }
+  ]
+}`,
+	})
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if plan.report.TargetVersion != "0.11.0" {
+		t.Fatalf("target version = %q, want 0.11.0", plan.report.TargetVersion)
+	}
+	execIDs := make([]string, 0, len(plan.executable))
+	for _, op := range plan.executable {
+		execIDs = append(execIDs, op.ID)
+	}
+	for _, id := range []string{"replace-gemini-client", "set-claude-statusline"} {
+		if !containsString(execIDs, id) {
+			t.Fatalf("missing executable migration %s, got %v", id, execIDs)
+		}
+	}
+	if !containsAll(plan.report.ManifestPath, "0.10.2.json", "0.11.0.json") {
+		t.Fatalf("manifest path should contain older and target manifests, got %q", plan.report.ManifestPath)
+	}
+}
+
 func TestPlanUpgradeMigrations_UnpinnedNoLegacyTriggerSkipsManifest(t *testing.T) {
 	root := t.TempDir()
 	writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
@@ -1450,6 +1512,49 @@ func TestPlanUpgradeMigrations_UnpinnedNoLegacyTriggerSkipsManifest(t *testing.T
 	}
 	if len(plan.report.Entries) != 0 || len(plan.executable) != 0 {
 		t.Fatalf("expected no migration entries or executable ops, got entries=%#v executable=%#v", plan.report.Entries, plan.executable)
+	}
+}
+
+func TestPlanUpgradeMigrations_UnpinnedMissingSourceAgnosticDefaultScansTargetSupportedChain(t *testing.T) {
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
+		nil,
+		`["antigravity"]`,
+	))
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.10.2": `{
+  "schema_version": 1,
+  "target_version": "0.10.2",
+  "min_prior_version": "0.10.1",
+  "operations": [
+    {
+      "id": "set-old-default",
+      "kind": "config_set_default",
+      "rationale": "Older source-agnostic default",
+      "source_agnostic": true,
+      "key": "agents.claude.statusline",
+      "value": false
+    }
+  ]
+}`,
+		"0.11.0": `{
+  "schema_version": 1,
+  "target_version": "0.11.0",
+  "min_prior_version": "0.10.2",
+  "operations": []
+}`,
+	})
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if plan.report.TargetVersion != "0.11.0" {
+		t.Fatalf("target version = %q, want 0.11.0", plan.report.TargetVersion)
+	}
+	if len(plan.executable) != 1 || plan.executable[0].ID != "set-old-default" {
+		t.Fatalf("executable migrations = %#v, want set-old-default", plan.executable)
 	}
 }
 
@@ -2519,16 +2624,16 @@ func TestPlanUpgradeMigrations_ChainDeduplicatesOperationIDs(t *testing.T) {
 	}
 }
 
-func TestPlanUpgradeMigrations_UnknownSourceFallsBackToTargetOnly(t *testing.T) {
+func TestPlanUpgradeMigrations_UnknownSourceUsesTargetSupportedSourceAgnosticChain(t *testing.T) {
 	root := t.TempDir()
 	// No pin file → source is unknown.
 
 	withMigrationManifestChainOverride(t, map[string]string{
 		"0.6.0": `{"schema_version":1,"target_version":"0.6.0","min_prior_version":"0.5.0","operations":[
-			{"id":"should-not-appear","kind":"delete_file","rationale":"from 0.6.0","path":"x.txt","source_agnostic":true}
+			{"id":"from-0-6-0","kind":"delete_file","rationale":"from 0.6.0","path":"x.txt","source_agnostic":true}
 		]}`,
 		"0.6.1": `{"schema_version":1,"target_version":"0.6.1","min_prior_version":"0.6.0","operations":[
-			{"id":"should-not-appear-either","kind":"delete_file","rationale":"from 0.6.1","path":"y.txt","source_agnostic":true}
+			{"id":"from-0-6-1","kind":"delete_file","rationale":"from 0.6.1","path":"y.txt","source_agnostic":true}
 		]}`,
 		"0.7.0": `{"schema_version":1,"target_version":"0.7.0","min_prior_version":"0.6.0","operations":[
 			{"id":"target-only","kind":"delete_file","rationale":"from target","path":"z.txt","source_agnostic":true}
@@ -2545,16 +2650,20 @@ func TestPlanUpgradeMigrations_UnknownSourceFallsBackToTargetOnly(t *testing.T) 
 		t.Fatalf("source origin = %q, want unknown", plan.report.SourceVersionOrigin)
 	}
 
-	// Only the target manifest's operations should appear.
-	if len(plan.report.Entries) != 1 {
-		t.Fatalf("expected 1 entry (target only), got %d", len(plan.report.Entries))
+	if len(plan.report.Entries) != 3 {
+		t.Fatalf("expected 3 source-agnostic entries across the supported chain, got %d", len(plan.report.Entries))
 	}
-	if plan.report.Entries[0].ID != "target-only" {
-		t.Fatalf("entry ID = %q, want target-only", plan.report.Entries[0].ID)
+	ids := make([]string, 0, len(plan.report.Entries))
+	for _, entry := range plan.report.Entries {
+		ids = append(ids, entry.ID)
 	}
-	// ManifestPath should be a single path (not comma-joined).
-	if strings.Contains(plan.report.ManifestPath, ",") {
-		t.Fatalf("expected single manifest path, got %q", plan.report.ManifestPath)
+	for _, id := range []string{"from-0-6-0", "from-0-6-1", "target-only"} {
+		if !containsString(ids, id) {
+			t.Fatalf("missing %s in entries: %v", id, ids)
+		}
+	}
+	if !containsAll(plan.report.ManifestPath, "0.6.0.json", "0.6.1.json", "0.7.0.json") {
+		t.Fatalf("manifest path should contain target-supported unknown-source chain, got %q", plan.report.ManifestPath)
 	}
 }
 

@@ -25,6 +25,25 @@ func TestScanUnknownRoot_StatError(t *testing.T) {
 	_ = inst.scanUnknowns()
 }
 
+func TestScanUnknowns_LegacyStatuslineSourceIsKnown(t *testing.T) {
+	root := t.TempDir()
+	legacyPath := filepath.Join(root, ".agent-layer", "statusline.sh")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte("# legacy statusline\n"), 0o600); err != nil {
+		t.Fatalf("write legacy statusline source: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	if rel := inst.relativeUnknowns(); len(rel) != 0 {
+		t.Fatalf("legacy statusline source should be known, got unknowns %v", rel)
+	}
+}
+
 // setupUnknownFile creates a .agent-layer/ directory with a single unknown file
 // and returns the installer and the path to the unknown file. The returned
 // installer has root, overwrite, and sys set — caller must set prompter.
