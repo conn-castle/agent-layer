@@ -37,10 +37,16 @@ func injectAskUserQuestionBlock(settings map[string]any) error {
 	if err != nil {
 		return err
 	}
+	if err := requireQuestionToolList(permissions["deny"], "permissions.deny"); err != nil {
+		return err
+	}
 	permissions["deny"] = unionStringIntoList(permissions["deny"], askUserQuestionTool)
 
 	hooks, err := questionToolTable(settings, "hooks")
 	if err != nil {
+		return err
+	}
+	if err := requireQuestionToolList(hooks["PreToolUse"], "hooks.PreToolUse"); err != nil {
 		return err
 	}
 	hooks["PreToolUse"] = appendAskUserQuestionHook(hooks["PreToolUse"])
@@ -63,6 +69,21 @@ func questionToolTable(settings map[string]any, key string) (map[string]any, err
 		return nil, fmt.Errorf(messages.SyncClaudeQuestionToolKeyTableConflictFmt, key)
 	}
 	return table, nil
+}
+
+// requireQuestionToolList fails loud when a present nested override value is not
+// list-shaped. unionStringIntoList and appendAskUserQuestionHook quietly drop any
+// non-list value (their type switches fall through), which would silently discard
+// a user-supplied permissions.deny / hooks.PreToolUse override and break the
+// guarantee that injection unions with — rather than replaces — user entries. A
+// missing key (nil) is fine; the managed list is created from scratch.
+func requireQuestionToolList(existing any, name string) error {
+	switch existing.(type) {
+	case nil, []any, []string:
+		return nil
+	default:
+		return fmt.Errorf(messages.SyncClaudeQuestionToolListConflictFmt, name)
+	}
 }
 
 // unionStringIntoList returns existing with want appended unless it is already

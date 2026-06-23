@@ -96,8 +96,8 @@ func TestUpdateGitignoreContent_AdditionalBranches(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if strings.Contains(updated, "\n\n\nafter") {
-			t.Fatalf("expected collapsed blank lines before post section, got %q", updated)
+		if strings.Contains(updated, "\n\n\n") {
+			t.Fatalf("expected no run of blank lines anywhere in output, got %q", updated)
 		}
 		if !strings.Contains(updated, "\n\nafter") {
 			t.Fatalf("expected exactly one blank line before post section, got %q", updated)

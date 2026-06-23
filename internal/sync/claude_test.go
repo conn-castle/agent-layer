@@ -677,6 +677,40 @@ func TestBuildClaudeSettings_QuestionToolMalformedOverrideFailsLoud(t *testing.T
 	}
 }
 
+func TestBuildClaudeSettings_QuestionToolMalformedNestedListFailsLoud(t *testing.T) {
+	t.Parallel()
+	// A scalar (non-list) permissions.deny or hooks.PreToolUse override would be
+	// silently discarded by unionStringIntoList / appendAskUserQuestionHook (their
+	// type switches fall through on a string), replacing the user's value with only
+	// the managed entry. That violates the union guarantee, so it must fail loud.
+	disable := true
+	cases := map[string]struct {
+		agentSpecific map[string]any
+		wantInError   string
+	}{
+		"deny is a scalar": {
+			agentSpecific: map[string]any{"permissions": map[string]any{"deny": "Bash(rm:*)"}},
+			wantInError:   "permissions.deny",
+		},
+		"PreToolUse is a scalar": {
+			agentSpecific: map[string]any{"hooks": map[string]any{"PreToolUse": "not-a-list"}},
+			wantInError:   "hooks.PreToolUse",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, tc.agentSpecific))
+			if err == nil {
+				t.Fatalf("expected error for malformed nested list %q, got nil", tc.wantInError)
+			}
+			if !strings.Contains(err.Error(), tc.wantInError) {
+				t.Fatalf("expected error to name %q, got %v", tc.wantInError, err)
+			}
+		})
+	}
+}
+
 func TestBuildClaudeSettings_NoInjectionWhenFlagNilOrFalse(t *testing.T) {
 	t.Parallel()
 	disable := false
