@@ -53,7 +53,10 @@ func EnsureGitignore(sys GitignoreSystem, path string, block string) error {
 	}
 
 	content := normalizeGitignoreBlock(string(contentBytes))
-	updated := updateGitignoreContent(content, block)
+	updated, err := updateGitignoreContent(content, block, path)
+	if err != nil {
+		return err
+	}
 	if err := sys.WriteFileAtomic(path, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf(messages.InstallFailedWriteFmt, path, err)
 	}

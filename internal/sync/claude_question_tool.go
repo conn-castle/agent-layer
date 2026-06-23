@@ -1,6 +1,11 @@
 package sync
 
-import "github.com/conn-castle/agent-layer/internal/config"
+import (
+	"fmt"
+
+	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/messages"
+)
 
 // askUserQuestionTool is the Claude Code tool blocked when
 // agents.claude.disable_question_tool is true.
@@ -27,20 +32,58 @@ func isQuestionToolDisabled(claude config.ClaudeConfig) bool {
 // arrays. The hook is always added (when absent) regardless of approvals.mode,
 // because permissions.deny is ignored under YOLO/bypassPermissions while
 // PreToolUse hooks always fire.
-func injectAskUserQuestionBlock(settings map[string]any) {
-	permissions, ok := settings["permissions"].(map[string]any)
-	if !ok {
-		permissions = make(map[string]any)
-		settings["permissions"] = permissions
+func injectAskUserQuestionBlock(settings map[string]any) error {
+	permissions, err := questionToolTable(settings, "permissions")
+	if err != nil {
+		return err
+	}
+	if err := requireQuestionToolList(permissions["deny"], "permissions.deny"); err != nil {
+		return err
 	}
 	permissions["deny"] = unionStringIntoList(permissions["deny"], askUserQuestionTool)
 
-	hooks, ok := settings["hooks"].(map[string]any)
-	if !ok {
-		hooks = make(map[string]any)
-		settings["hooks"] = hooks
+	hooks, err := questionToolTable(settings, "hooks")
+	if err != nil {
+		return err
+	}
+	if err := requireQuestionToolList(hooks["PreToolUse"], "hooks.PreToolUse"); err != nil {
+		return err
 	}
 	hooks["PreToolUse"] = appendAskUserQuestionHook(hooks["PreToolUse"])
+	return nil
+}
+
+// questionToolTable returns the table at settings[key], creating it when absent.
+// A present-but-non-table value (a malformed agent_specific override) fails loud
+// rather than being silently overwritten, since silently dropping the override
+// would discard a user-supplied setting with no diagnostic.
+func questionToolTable(settings map[string]any, key string) (map[string]any, error) {
+	existing, present := settings[key]
+	if !present {
+		table := make(map[string]any)
+		settings[key] = table
+		return table, nil
+	}
+	table, ok := existing.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf(messages.SyncClaudeQuestionToolKeyTableConflictFmt, key)
+	}
+	return table, nil
+}
+
+// requireQuestionToolList fails loud when a present nested override value is not
+// list-shaped. unionStringIntoList and appendAskUserQuestionHook quietly drop any
+// non-list value (their type switches fall through), which would silently discard
+// a user-supplied permissions.deny / hooks.PreToolUse override and break the
+// guarantee that injection unions with — rather than replaces — user entries. A
+// missing key (nil) is fine; the managed list is created from scratch.
+func requireQuestionToolList(existing any, name string) error {
+	switch existing.(type) {
+	case nil, []any, []string:
+		return nil
+	default:
+		return fmt.Errorf(messages.SyncClaudeQuestionToolListConflictFmt, name)
+	}
 }
 
 // unionStringIntoList returns existing with want appended unless it is already

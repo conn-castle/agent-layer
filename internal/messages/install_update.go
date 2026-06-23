@@ -18,6 +18,7 @@ const (
 	InstallFailedStatFmt                             = "failed to stat %s: %w"
 	InstallFailedReadGitignoreBlockFmt               = "failed to read gitignore block %s: %w"
 	InstallInvalidGitignoreBlockFmt                  = "gitignore block %s must not include managed markers or template hash; run `al upgrade` to review regenerating it"
+	InstallGitignoreUnterminatedBlockFmt             = "%s has a malformed agent-layer managed block: the start (%s) and end (%s) markers must each appear exactly once, with start before end; restore or remove the stray markers, then re-run `al sync`"
 	InstallUnexpectedTemplatePathFmt                 = "unexpected template path %s"
 	InstallDiffHeader                                = "Found existing files that differ from the templates:"
 	InstallDiffLineFmt                               = "  - %s\n"

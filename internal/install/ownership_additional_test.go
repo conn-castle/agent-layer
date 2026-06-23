@@ -3,8 +3,6 @@ package install
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -144,23 +142,5 @@ func TestUpgradeChangeAt_OutOfRange(t *testing.T) {
 	}
 	if _, ok := upgradeChangeAt(changes, 1); ok {
 		t.Fatal("expected out-of-range for index past end")
-	}
-}
-
-func TestReadCurrentPinVersion_InvalidPinReturnsEmpty(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, ".agent-layer", "al.version")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, []byte("invalid\n"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	pin, err := readCurrentPinVersion(root, RealSystem{})
-	if err != nil {
-		t.Fatalf("readCurrentPinVersion: %v", err)
-	}
-	if pin != "" {
-		t.Fatalf("expected empty pin, got %q", pin)
 	}
 }

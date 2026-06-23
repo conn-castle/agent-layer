@@ -24,6 +24,8 @@ const (
 	SyncCodexStatuslineStatusLineMissingFmt         = "%s: codex statusline fragment must define [tui].status_line"
 	SyncCodexStatuslineStatusLineTypeFmt            = "%s: [tui].status_line must be an array of strings"
 	SyncCodexStatuslineTUITableConflict             = "agents.codex.agent_specific.tui must be a table to merge managed status_line; set agents.codex.statusline = false or define agents.codex.agent_specific.tui.status_line explicitly"
+	SyncClaudeQuestionToolKeyTableConflictFmt       = "agents.claude.agent_specific.%s must be a table to merge the managed AskUserQuestion block; remove or fix that override, or set agents.claude.disable_question_tool = false"
+	SyncClaudeQuestionToolListConflictFmt           = "agents.claude.agent_specific.%s must be a list to merge the managed AskUserQuestion block; remove or fix that override, or set agents.claude.disable_question_tool = false"
 	SyncClaudeStatuslineSourceMissingFmt            = "agents.claude.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
 	SyncCodexStatuslineSourceMissingFmt             = "agents.codex.statusline is true but %s is missing; run `al wizard` to create the source file, run interactive `al upgrade` to review statusline sources, or create the file manually"
 	SyncMarshalAntigravitySettingsFailedFmt         = "failed to marshal antigravity settings: %w"

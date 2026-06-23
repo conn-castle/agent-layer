@@ -471,6 +471,29 @@ func TestReadCurrentPinVersion_EmptyContentReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestReadCurrentPinVersion_MalformedContentReturnsError(t *testing.T) {
+	// A non-empty but unparseable al.version must fail loud rather than be
+	// silently treated as "no pin" — an empty return is indistinguishable from
+	// an absent/empty file and would let a corrupt pin steer baseline/upgrade
+	// source resolution to the wrong fallback without any signal.
+	root := t.TempDir()
+	pinPath := filepath.Join(root, ".agent-layer", "al.version")
+	if err := os.MkdirAll(filepath.Dir(pinPath), 0o700); err != nil {
+		t.Fatalf("mkdir pin dir: %v", err)
+	}
+	if err := os.WriteFile(pinPath, []byte("not-a-version\n"), 0o600); err != nil {
+		t.Fatalf("write pin file: %v", err)
+	}
+
+	pin, err := readCurrentPinVersion(root, RealSystem{})
+	if err == nil {
+		t.Fatalf("expected error for malformed pin, got pin %q", pin)
+	}
+	if pin != "" {
+		t.Fatalf("expected empty pin on error, got %q", pin)
+	}
+}
+
 func TestWriteManagedBaselineIfConsistent_ErrorPaths(t *testing.T) {
 	t.Run("listManagedDiffs error", func(t *testing.T) {
 		root := t.TempDir()

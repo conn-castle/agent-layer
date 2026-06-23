@@ -3,11 +3,17 @@ package install
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
+
+// errMalformedGitignoreBlock signals that the managed agent-layer block in a
+// .gitignore is corrupt (an orphaned or duplicated marker, or an end marker
+// before the start). It is wrapped into a user-facing message by callers.
+var errMalformedGitignoreBlock = errors.New("malformed agent-layer managed block")
 
 const (
 	gitignoreStart = "# >>> agent-layer"
@@ -92,20 +98,28 @@ func ValidateGitignoreBlock(block string, blockPath string) (string, error) {
 
 // updateGitignoreContent replaces or appends the managed block in a .gitignore file.
 // content is the existing file content; block is the normalized block; returns updated content.
-func updateGitignoreContent(content string, block string) string {
+// It fails loud on any malformed managed block (an orphaned/duplicated marker, or an
+// end marker before the start): repairing such a file by appending or by replacing only
+// the first marker pair would silently delete the user's content between mispaired
+// markers on the next sync. This mirrors the VS Code managed-block handling.
+func updateGitignoreContent(content string, block string, path string) (string, error) {
 	lines := splitLines(content)
 	blockLines := splitLines(block)
 
-	start, end := findGitignoreBlock(lines)
-	if start == -1 || end == -1 || end < start {
+	start, end, err := findGitignoreBlock(lines)
+	if err != nil {
+		return "", fmt.Errorf(messages.InstallGitignoreUnterminatedBlockFmt, path, gitignoreStart, gitignoreEnd)
+	}
+	if start == -1 && end == -1 {
+		// No managed block: create or append one.
 		if content == "" {
-			return strings.Join(blockLines, "\n") + "\n"
+			return strings.Join(blockLines, "\n") + "\n", nil
 		}
 		separator := ""
 		if !strings.HasSuffix(content, "\n") {
 			separator = "\n"
 		}
-		return content + separator + strings.Join(blockLines, "\n") + "\n"
+		return content + separator + strings.Join(blockLines, "\n") + "\n", nil
 	}
 
 	pre := append([]string{}, lines[:start]...)
@@ -125,7 +139,7 @@ func updateGitignoreContent(content string, block string) string {
 		updated = append(updated, post...)
 	}
 
-	return strings.Join(updated, "\n") + "\n"
+	return strings.Join(updated, "\n") + "\n", nil
 }
 
 // splitLines normalizes line endings and splits content into lines.
@@ -163,25 +177,39 @@ func containsManagedGitignoreMarkers(block string) bool {
 	return false
 }
 
-// findGitignoreBlock returns the start and end indices of the managed block.
-// lines is the .gitignore content split into lines; returns -1 values when missing.
-func findGitignoreBlock(lines []string) (int, int) {
+// findGitignoreBlock returns the indices of the managed start and end markers.
+// lines is the .gitignore content split into lines. It returns (start, end, nil)
+// for a well-formed block (both markers present, start before end), (-1, -1, nil)
+// when there is no managed block at all, and (-1, -1, err) when the markers are
+// malformed — duplicated, only one present, or end before start. It never returns
+// a partial-index success: a single dangling marker is an error, not a success
+// with one index set. This makes callers fail loud rather than mispairing markers
+// and silently deleting user content. This mirrors findVSCodeManagedBlock.
+func findGitignoreBlock(lines []string) (int, int, error) {
 	start := -1
+	end := -1
 	for i, line := range lines {
-		if strings.TrimSpace(line) == gitignoreStart {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == gitignoreStart {
+			if start != -1 {
+				return -1, -1, errMalformedGitignoreBlock
+			}
 			start = i
-			break
+		}
+		if trimmed == gitignoreEnd {
+			if end != -1 {
+				return -1, -1, errMalformedGitignoreBlock
+			}
+			end = i
 		}
 	}
-	if start == -1 {
-		return -1, -1
+	if start == -1 && end == -1 {
+		return -1, -1, nil
 	}
-	for i := start; i < len(lines); i++ {
-		if strings.TrimSpace(lines[i]) == gitignoreEnd {
-			return start, i
-		}
+	if start == -1 || end == -1 || end < start {
+		return -1, -1, errMalformedGitignoreBlock
 	}
-	return start, -1
+	return start, end, nil
 }
 
 // trimLeadingBlankLines removes leading blank lines from input.

@@ -654,6 +654,63 @@ func TestBuildClaudeSettings_InjectsDenyAndHookWhenFlagTrue(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeSettings_QuestionToolMalformedOverrideFailsLoud(t *testing.T) {
+	t.Parallel()
+	// When disable_question_tool is set, a non-table agent_specific override for
+	// permissions/hooks must fail loud rather than be silently discarded: silently
+	// overwriting it would drop a user-supplied setting with no diagnostic and
+	// (worse) hide that the AskUserQuestion control's enforcement assumptions about
+	// the user's own override were ignored.
+	disable := true
+	for name, key := range map[string]string{"permissions": "permissions", "hooks": "hooks"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			project := claudeWithQuestionToolFlag(&disable, map[string]any{key: "not-a-table"})
+			_, err := buildClaudeSettings("/repo", project)
+			if err == nil {
+				t.Fatalf("expected error for malformed agent_specific.%s override, got nil", key)
+			}
+			if !strings.Contains(err.Error(), key) {
+				t.Fatalf("expected error to name agent_specific.%s, got %v", key, err)
+			}
+		})
+	}
+}
+
+func TestBuildClaudeSettings_QuestionToolMalformedNestedListFailsLoud(t *testing.T) {
+	t.Parallel()
+	// A scalar (non-list) permissions.deny or hooks.PreToolUse override would be
+	// silently discarded by unionStringIntoList / appendAskUserQuestionHook (their
+	// type switches fall through on a string), replacing the user's value with only
+	// the managed entry. That violates the union guarantee, so it must fail loud.
+	disable := true
+	cases := map[string]struct {
+		agentSpecific map[string]any
+		wantInError   string
+	}{
+		"deny is a scalar": {
+			agentSpecific: map[string]any{"permissions": map[string]any{"deny": "Bash(rm:*)"}},
+			wantInError:   "permissions.deny",
+		},
+		"PreToolUse is a scalar": {
+			agentSpecific: map[string]any{"hooks": map[string]any{"PreToolUse": "not-a-list"}},
+			wantInError:   "hooks.PreToolUse",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, err := buildClaudeSettings("/repo", claudeWithQuestionToolFlag(&disable, tc.agentSpecific))
+			if err == nil {
+				t.Fatalf("expected error for malformed nested list %q, got nil", tc.wantInError)
+			}
+			if !strings.Contains(err.Error(), tc.wantInError) {
+				t.Fatalf("expected error to name %q, got %v", tc.wantInError, err)
+			}
+		})
+	}
+}
+
 func TestBuildClaudeSettings_NoInjectionWhenFlagNilOrFalse(t *testing.T) {
 	t.Parallel()
 	disable := false
