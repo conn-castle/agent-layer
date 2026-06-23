@@ -82,7 +82,7 @@ func Check(ctx context.Context, currentVersion string) (CheckResult, error) {
 		CurrentIsDev: isDev,
 	}
 	if !isDev {
-		cmp, err := compareSemver(current, latest)
+		cmp, err := version.Compare(current, latest)
 		if err != nil {
 			return CheckResult{}, err
 		}
@@ -196,47 +196,4 @@ func normalizeCurrentVersion(raw string) (string, bool, error) {
 		return "", false, fmt.Errorf(messages.UpdateInvalidCurrentVersionFmt, raw, err)
 	}
 	return normalized, false, nil
-}
-
-// compareSemver compares two semantic versions in X.Y.Z form.
-// It returns -1 if a < b, 0 if a == b, and 1 if a > b.
-func compareSemver(a string, b string) (int, error) {
-	aParts, err := parseSemver(a)
-	if err != nil {
-		return 0, err
-	}
-	bParts, err := parseSemver(b)
-	if err != nil {
-		return 0, err
-	}
-	for i := 0; i < len(aParts); i++ {
-		if aParts[i] < bParts[i] {
-			return -1, nil
-		}
-		if aParts[i] > bParts[i] {
-			return 1, nil
-		}
-	}
-	return 0, nil
-}
-
-// parseSemver converts a semantic version into numeric components.
-func parseSemver(raw string) ([3]int, error) {
-	normalized, err := version.Normalize(raw)
-	if err != nil {
-		return [3]int{}, err
-	}
-	parts := strings.Split(normalized, ".")
-	if len(parts) != 3 {
-		return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionFmt, raw)
-	}
-	var out [3]int
-	for i, part := range parts {
-		value, err := strconv.Atoi(part)
-		if err != nil {
-			return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionSegmentFmt, part, err)
-		}
-		out[i] = value
-	}
-	return out, nil
 }

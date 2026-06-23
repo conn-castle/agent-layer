@@ -253,12 +253,6 @@ func TestResolveAndInferSourceVersion_ErrorNotesAndBranches(t *testing.T) {
 }
 
 func TestParseAndLoadMigrationManifest_AdditionalErrors(t *testing.T) {
-	t.Run("parse semver integer overflow", func(t *testing.T) {
-		if _, err := parseSemver("999999999999999999999999999999.1.2"); err == nil {
-			t.Fatal("expected parseSemver overflow error")
-		}
-	})
-
 	t.Run("load migration manifest non-not-exist read error", func(t *testing.T) {
 		origRead := templates.ReadFunc
 		templates.ReadFunc = func(name string) ([]byte, error) {

@@ -326,24 +326,6 @@ func TestFetchLatestReleaseVersion_EmptyTag(t *testing.T) {
 	}
 }
 
-func TestCompareSemverInvalid(t *testing.T) {
-	if _, err := compareSemver("1.2", "1.0.0"); err == nil {
-		t.Fatal("expected error for invalid semantic version")
-	}
-}
-
-func TestCompareSemverInvalidLatest(t *testing.T) {
-	if _, err := compareSemver("1.0.0", "1.2"); err == nil {
-		t.Fatal("expected error for invalid latest version")
-	}
-}
-
-func TestParseSemverOverflow(t *testing.T) {
-	if _, err := parseSemver("9999999999999999999999999.0.0"); err == nil {
-		t.Fatal("expected error for overflowed version segment")
-	}
-}
-
 func TestRateLimitErrorError(t *testing.T) {
 	withRemaining := &RateLimitError{StatusCode: http.StatusForbidden, Status: "403 Forbidden", Remaining: intPtr(0)}
 	if got := withRemaining.Error(); !strings.Contains(got, "remaining=0") {

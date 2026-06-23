@@ -14,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 func TestLoadUpgradeMigrationManifestByVersion(t *testing.T) {
@@ -2530,9 +2531,9 @@ func TestListMigrationManifestVersions(t *testing.T) {
 	}
 	// Verify sorted ascending.
 	for i := 1; i < len(versions); i++ {
-		cmp, cmpErr := compareSemver(versions[i-1], versions[i])
+		cmp, cmpErr := version.Compare(versions[i-1], versions[i])
 		if cmpErr != nil {
-			t.Fatalf("compareSemver(%q, %q): %v", versions[i-1], versions[i], cmpErr)
+			t.Fatalf("version.Compare(%q, %q): %v", versions[i-1], versions[i], cmpErr)
 		}
 		if cmp >= 0 {
 			t.Fatalf("versions not sorted ascending: %q >= %q", versions[i-1], versions[i])

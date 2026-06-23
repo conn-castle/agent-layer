@@ -246,3 +246,17 @@ EOF
     fi
   fi
 }
+
+run_go_tool_tests_gentemplatemanifest() {
+  section "Go Tool Tests: gentemplatemanifest"
+
+  # The gentemplatemanifest package (and its tests) are guarded by the `tools`
+  # build tag, so `go test ./...` (used by make coverage) skips them. Run them
+  # explicitly here so the manifest generator's managed/excluded partition
+  # completeness check actually executes in CI.
+  if (cd "$ROOT_DIR" && go test -tags tools ./internal/tools/gentemplatemanifest/); then
+    pass "gentemplatemanifest tests passed"
+  else
+    fail "gentemplatemanifest tests failed"
+  fi
+}

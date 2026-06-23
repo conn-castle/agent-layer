@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
 	tomlv2 "github.com/pelletier/go-toml/v2"
@@ -236,7 +235,7 @@ func (inst *installer) planUpgradeMigrations() (migrationPlan, error) {
 					status = UpgradeMigrationStatusSkippedUnknownSource
 					skipReason = "source version is unknown"
 				} else {
-					cmp, cmpErr := compareSemver(resolution.version, cm.manifest.MinPriorVersion)
+					cmp, cmpErr := version.Compare(resolution.version, cm.manifest.MinPriorVersion)
 					if cmpErr != nil {
 						return migrationPlan{}, fmt.Errorf("compare source version %s with min_prior_version %s: %w", resolution.version, cm.manifest.MinPriorVersion, cmpErr)
 					}
@@ -636,7 +635,7 @@ func (inst *installer) executeDeleteMigration(relPath string, requireGeneratedWa
 		// through and remove the link entity.
 		if requireGeneratedWatermark {
 			if inst.warnWriter != nil {
-				_, _ = fmt.Fprintf(inst.warnWriter, "skipped %s: dangling symlink, watermarked-delete refuses to remove without verifying target content; resolve manually\n", relPath)
+				_, _ = fmt.Fprintf(inst.warnWriter, messages.InstallMigrationSkipDanglingSymlinkFmt, relPath)
 			}
 			return false, nil
 		}
@@ -647,7 +646,7 @@ func (inst *installer) executeDeleteMigration(relPath string, requireGeneratedWa
 	if requireGeneratedWatermark && info != nil {
 		if info.IsDir() {
 			if inst.warnWriter != nil {
-				_, _ = fmt.Fprintf(inst.warnWriter, "skipped %s: generated-artifact deletion refuses to remove directories without explicit generated ownership proof\n", relPath)
+				_, _ = fmt.Fprintf(inst.warnWriter, messages.InstallMigrationSkipGeneratedDirFmt, relPath)
 			}
 			return false, nil
 		}
@@ -1496,46 +1495,6 @@ func dedupSortedStrings(values []string) []string {
 	return out
 }
 
-func compareSemver(a string, b string) (int, error) {
-	aParts, err := parseSemver(a)
-	if err != nil {
-		return 0, err
-	}
-	bParts, err := parseSemver(b)
-	if err != nil {
-		return 0, err
-	}
-	for idx := 0; idx < len(aParts); idx++ {
-		if aParts[idx] < bParts[idx] {
-			return -1, nil
-		}
-		if aParts[idx] > bParts[idx] {
-			return 1, nil
-		}
-	}
-	return 0, nil
-}
-
-func parseSemver(raw string) ([3]int, error) {
-	normalized, err := version.Normalize(raw)
-	if err != nil {
-		return [3]int{}, err
-	}
-	parts := strings.Split(normalized, ".")
-	if len(parts) != 3 {
-		return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionFmt, raw)
-	}
-	var out [3]int
-	for idx, part := range parts {
-		value, atoiErr := strconv.Atoi(part)
-		if atoiErr != nil {
-			return [3]int{}, fmt.Errorf(messages.UpdateInvalidVersionSegmentFmt, part, atoiErr)
-		}
-		out[idx] = value
-	}
-	return out, nil
-}
-
 func loadUpgradeMigrationManifestByVersion(versionRaw string) (upgradeMigrationManifest, string, error) {
 	normalized, err := version.Normalize(versionRaw)
 	if err != nil {
@@ -1584,7 +1543,7 @@ func listMigrationManifestVersions() ([]string, error) {
 			return nil
 		}
 		ver := strings.TrimSuffix(name, ".json")
-		if _, parseErr := parseSemver(ver); parseErr == nil {
+		if _, parseErr := version.Parse(ver); parseErr == nil {
 			versions = append(versions, ver)
 		}
 		return nil
@@ -1593,7 +1552,7 @@ func listMigrationManifestVersions() ([]string, error) {
 		return nil, fmt.Errorf("walk migration manifests: %w", err)
 	}
 	sort.Slice(versions, func(i, j int) bool {
-		cmp, _ := compareSemver(versions[i], versions[j])
+		cmp, _ := version.Compare(versions[i], versions[j])
 		return cmp < 0
 	})
 	return versions, nil
@@ -1608,14 +1567,14 @@ func collectMigrationChain(sourceVersion string, targetVersion string) ([]chaine
 	}
 	var chain []chainedManifest
 	for _, ver := range allVersions {
-		cmpSource, cmpErr := compareSemver(ver, sourceVersion)
+		cmpSource, cmpErr := version.Compare(ver, sourceVersion)
 		if cmpErr != nil {
 			return nil, fmt.Errorf("compare migration version %s with source %s: %w", ver, sourceVersion, cmpErr)
 		}
 		if cmpSource <= 0 {
 			continue // skip versions <= source
 		}
-		cmpTarget, cmpErr := compareSemver(ver, targetVersion)
+		cmpTarget, cmpErr := version.Compare(ver, targetVersion)
 		if cmpErr != nil {
 			return nil, fmt.Errorf("compare migration version %s with target %s: %w", ver, targetVersion, cmpErr)
 		}
@@ -1638,14 +1597,14 @@ func collectMigrationChainFromVersionThroughTarget(startVersion string, targetVe
 	}
 	var chain []chainedManifest
 	for _, ver := range allVersions {
-		cmpStart, cmpErr := compareSemver(ver, startVersion)
+		cmpStart, cmpErr := version.Compare(ver, startVersion)
 		if cmpErr != nil {
 			return nil, fmt.Errorf("compare migration version %s with start %s: %w", ver, startVersion, cmpErr)
 		}
 		if cmpStart < 0 {
 			continue
 		}
-		cmpTarget, cmpErr := compareSemver(ver, targetVersion)
+		cmpTarget, cmpErr := version.Compare(ver, targetVersion)
 		if cmpErr != nil {
 			return nil, fmt.Errorf("compare migration version %s with target %s: %w", ver, targetVersion, cmpErr)
 		}

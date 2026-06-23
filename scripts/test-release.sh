@@ -146,6 +146,7 @@ run_checksum_integrity
 run_upgrade_docs_script_tests
 run_go_tool_tests_extractchecksum
 run_go_tool_tests_updateformula
+run_go_tool_tests_gentemplatemanifest
 
 # -----------------------------------------------------------------------------
 # Summary

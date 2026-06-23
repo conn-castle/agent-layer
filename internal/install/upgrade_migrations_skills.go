@@ -72,18 +72,18 @@ func (inst *installer) preflightAndConfirmSkillsMigration() error {
 	out := inst.warnOutput()
 	ew := &errWriter{w: out}
 	ew.println()
-	ew.println("=============================================================")
-	ew.println("  BREAKING CHANGE: Slash-commands renamed to skills")
-	ew.println("=============================================================")
+	ew.println(messages.InstallSkillsMigrationBannerRule)
+	ew.println(messages.InstallSkillsMigrationBannerTitle)
+	ew.println(messages.InstallSkillsMigrationBannerRule)
 	ew.println()
-	ew.println("  Slash-commands are being renamed to skills and converted to")
-	ew.println("  directory format. The old flat file format (<name>.md) will")
-	ew.println("  no longer work after this upgrade.")
+	ew.println(messages.InstallSkillsMigrationBannerBody1)
+	ew.println(messages.InstallSkillsMigrationBannerBody2)
+	ew.println(messages.InstallSkillsMigrationBannerBody3)
 	ew.println()
-	ew.printf("  Found %d flat-format skill(s) that must be migrated:\n", len(flatSkills))
+	ew.printf(messages.InstallSkillsMigrationFoundFlatFmt, len(flatSkills))
 	ew.println()
 	for _, name := range flatSkills {
-		ew.printf("    %s.md  ->  %s/SKILL.md\n", name, name)
+		ew.printf(messages.InstallSkillsMigrationFlatToDirFmt, name, name)
 	}
 	if ew.err != nil {
 		return ew.err
@@ -91,34 +91,34 @@ func (inst *installer) preflightAndConfirmSkillsMigration() error {
 
 	if len(conflicts) > 0 {
 		ew.println()
-		ew.println("  MIGRATION BLOCKED")
+		ew.println(messages.InstallSkillsMigrationBlockedHeader)
 		ew.println()
-		ew.println("  The following skills exist in BOTH flat and directory format")
-		ew.println("  with DIFFERENT content. The migration cannot choose which")
-		ew.println("  version to keep — you need to resolve this manually.")
+		ew.println(messages.InstallSkillsMigrationBlockedBody1)
+		ew.println(messages.InstallSkillsMigrationBlockedBody2)
+		ew.println(messages.InstallSkillsMigrationBlockedBody3)
 		ew.println()
 		for _, c := range conflicts {
-			ew.printf("    Skill: %s\n", c.SkillName)
-			ew.printf("      Flat file:  %s\n", c.FlatPath)
-			ew.printf("      Directory:  %s\n", c.DirPath)
+			ew.printf(messages.InstallSkillsMigrationConflictSkillFmt, c.SkillName)
+			ew.printf(messages.InstallSkillsMigrationConflictFlatFmt, c.FlatPath)
+			ew.printf(messages.InstallSkillsMigrationConflictDirFmt, c.DirPath)
 			ew.println()
 		}
-		ew.println("  To fix: choose which version to keep for each skill above,")
-		ew.println("  then delete the other one:")
+		ew.println(messages.InstallSkillsMigrationFixHint1)
+		ew.println(messages.InstallSkillsMigrationFixHint2)
 		ew.println()
-		ew.println("    Keep directory version:  rm .agent-layer/skills/<name>.md")
-		ew.println("    Keep flat version:       rm -r .agent-layer/skills/<name>/")
+		ew.println(messages.InstallSkillsMigrationFixKeepDir)
+		ew.println(messages.InstallSkillsMigrationFixKeepFlat)
 		ew.println()
-		ew.println("  Then re-run: al upgrade")
+		ew.println(messages.InstallSkillsMigrationFixRerun)
 		ew.println()
 		if ew.err != nil {
 			return ew.err
 		}
-		return fmt.Errorf("skills format migration blocked by %d conflict(s); resolve manually and re-run 'al upgrade'", len(conflicts))
+		return fmt.Errorf(messages.InstallSkillsMigrationBlockedErrFmt, len(conflicts))
 	}
 
 	ew.println()
-	ew.println("  No conflicts detected — all skills can be migrated automatically.")
+	ew.println(messages.InstallSkillsMigrationNoConflicts)
 	ew.println()
 	if ew.err != nil {
 		return ew.err
@@ -128,10 +128,10 @@ func (inst *installer) preflightAndConfirmSkillsMigration() error {
 	if prompter, ok := inst.prompter.(skillsMigrationPrompter); ok {
 		proceed, promptErr := prompter.ConfirmSkillsMigration(flatSkills, conflicts)
 		if promptErr != nil {
-			return fmt.Errorf("skills migration prompt: %w", promptErr)
+			return fmt.Errorf(messages.InstallSkillsMigrationPromptErrFmt, promptErr)
 		}
 		if !proceed {
-			return fmt.Errorf("skills format migration declined by user")
+			return fmt.Errorf(messages.InstallSkillsMigrationDeclinedErr)
 		}
 	}
 
@@ -172,15 +172,15 @@ func (inst *installer) executeMigrateSkillsFormat(relSkillsDir string) (bool, er
 			return false, preErr
 		}
 		if len(conflicts) > 0 {
-			return false, fmt.Errorf("skills format migration blocked by %d conflict(s); resolve manually and re-run 'al upgrade'", len(conflicts))
+			return false, fmt.Errorf(messages.InstallSkillsMigrationBlockedErrFmt, len(conflicts))
 		}
 		if prompter, ok := inst.prompter.(skillsMigrationPrompter); ok {
 			proceed, promptErr := prompter.ConfirmSkillsMigration(flatSkills, conflicts)
 			if promptErr != nil {
-				return false, fmt.Errorf("skills migration prompt: %w", promptErr)
+				return false, fmt.Errorf(messages.InstallSkillsMigrationPromptErrFmt, promptErr)
 			}
 			if !proceed {
-				return false, fmt.Errorf("skills format migration declined by user")
+				return false, fmt.Errorf(messages.InstallSkillsMigrationDeclinedErr)
 			}
 		}
 	}
@@ -219,14 +219,14 @@ func (inst *installer) executeMigrateSkillsFormat(relSkillsDir string) (bool, er
 		ew := &errWriter{w: out}
 		ew.println()
 		if len(migratedNames) > 0 {
-			ew.printf("  Migrated %d skill(s) to directory format:\n", len(migratedNames))
+			ew.printf(messages.InstallSkillsMigrationMigratedCountFmt, len(migratedNames))
 			ew.println()
 			for _, name := range migratedNames {
-				ew.printf("    %s.md  ->  %s/SKILL.md\n", name, name)
+				ew.printf(messages.InstallSkillsMigrationFlatToDirFmt, name, name)
 			}
 			ew.println()
 		}
-		ew.println("  Skills migration complete.")
+		ew.println(messages.InstallSkillsMigrationComplete)
 		ew.println()
 		if ew.err != nil {
 			return false, ew.err
@@ -278,7 +278,7 @@ func preflightSkillsMigration(sys System, absSkillsDir string) (flatCount int, c
 				SkillName: name,
 				FlatPath:  flatPath,
 				DirPath:   destPath,
-				Reason:    fmt.Sprintf("%s.md and %s/SKILL.md have different content", name, name),
+				Reason:    fmt.Sprintf(messages.InstallSkillsMigrationConflictReasonFmt, name, name),
 			})
 		}
 	}
