@@ -72,6 +72,68 @@ enabled = true
 	}
 }
 
+func TestCheckConfig_LenientFallback_MalformedEnv_ReportsSecretsFailure(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Config that fails strict validation, forcing the lenient fallback path.
+	partialConfig := `
+[approvals]
+mode = "all"
+
+[agents.antigravity]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(partialConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A malformed .env (line without `=`) must be surfaced loudly rather than
+	// silently swallowed into a misleading "Missing secret" cascade.
+	if err := os.WriteFile(filepath.Join(configDir, ".env"), []byte("AL_BROKEN_LINE_NO_EQUALS\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "skills"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	results, cfg := CheckConfig(root)
+
+	secretsResult := requireResultByCheckName(t, results, messages.DoctorCheckNameSecrets)
+	if secretsResult.Status != StatusFail {
+		t.Fatalf("expected Secrets FAIL for malformed .env, got %v", secretsResult)
+	}
+	if secretsResult.Recommendation != messages.DoctorEnvFileUnreadableRecommend {
+		t.Fatalf("expected actionable recommendation, got %q", secretsResult.Recommendation)
+	}
+
+	if cfg == nil {
+		t.Fatal("expected non-nil config from lenient fallback")
+	}
+	// AL_REPO_ROOT must still be injected so downstream MCP resolution does not
+	// produce false positives even when .env failed to parse.
+	if got := cfg.Env[config.BuiltinRepoRootEnvVar]; got != root {
+		t.Fatalf("expected %s=%q even with malformed .env, got %q", config.BuiltinRepoRootEnvVar, root, got)
+	}
+}
+
 func TestCheckConfig_LenientFallback_UnknownKeys(t *testing.T) {
 	root := t.TempDir()
 	configDir := filepath.Join(root, ".agent-layer")

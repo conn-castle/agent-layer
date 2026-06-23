@@ -30,14 +30,6 @@ func TestWriteTemplateIfMissingExisting(t *testing.T) {
 	}
 }
 
-func TestWriteTemplateDirMissing(t *testing.T) {
-	root := t.TempDir()
-	err := writeTemplateDir(RealSystem{}, "missing-root", root, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for missing template root")
-	}
-}
-
 func TestWriteTemplateIfMissingInvalidTemplate(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
@@ -157,23 +149,6 @@ func TestWriteTemplateFileWithMatch_UsesCache(t *testing.T) {
 	}
 }
 
-func TestWriteTemplateDirWalkError(t *testing.T) {
-	original := templates.WalkFunc
-	templates.WalkFunc = func(root string, fn fs.WalkDirFunc) error {
-		return errors.New("mock walk error")
-	}
-	t.Cleanup(func() { templates.WalkFunc = original })
-
-	root := t.TempDir()
-	err := writeTemplateDir(RealSystem{}, "instructions", root, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for walk failure")
-	}
-	if !strings.Contains(err.Error(), "mock walk error") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestFileMatchesTemplateReadError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
@@ -221,7 +196,7 @@ func TestWriteTemplateFile_OverwritePromptError(t *testing.T) {
 	prompt := func(path string) (bool, error) {
 		return false, errors.New("prompt error")
 	}
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt, nil)
+	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt)
 	if err == nil {
 		t.Fatalf("expected error from prompt")
 	}
@@ -255,33 +230,6 @@ func TestBuildKnownPaths_TemplatePathError(t *testing.T) {
 	}
 }
 
-func TestWriteTemplateDir_WalkError(t *testing.T) {
-	original := templates.WalkFunc
-	templates.WalkFunc = func(root string, fn fs.WalkDirFunc) error {
-		return errors.New("walk error")
-	}
-	t.Cleanup(func() { templates.WalkFunc = original })
-
-	err := writeTemplateDir(RealSystem{}, "instructions", "/tmp/dest", nil, nil)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteTemplateDir_PathError(t *testing.T) {
-	original := templates.WalkFunc
-	templates.WalkFunc = func(root string, fn fs.WalkDirFunc) error {
-		// Pass a path that doesn't start with root + "/"
-		return fn("other/file", &mockDirEntry{name: "file"}, nil)
-	}
-	t.Cleanup(func() { templates.WalkFunc = original })
-
-	err := writeTemplateDir(RealSystem{}, "instructions", "/tmp/dest", nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for unexpected path")
-	}
-}
-
 func TestWriteTemplateFile_StatError(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("skipping permissions test on windows")
@@ -294,7 +242,7 @@ func TestWriteTemplateFile_StatError(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 
 	path := filepath.Join(dir, "config.toml")
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil, nil)
+	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil)
 	if err == nil {
 		t.Fatalf("expected error for stat failure")
 	}
@@ -308,7 +256,7 @@ func TestWriteTemplateFile_MkdirError(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	path := filepath.Join(blocker, "subdir", "config.toml")
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil, nil)
+	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, nil)
 	if err == nil {
 		t.Fatalf("expected error for mkdir failure")
 	}
@@ -402,7 +350,7 @@ func TestWriteTemplateFile_WriteAfterOverwriteError(t *testing.T) {
 	prompt := func(p string) (bool, error) {
 		return true, nil // Agree to overwrite
 	}
-	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt, nil)
+	err := writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt)
 	if err == nil {
 		t.Fatalf("expected error for write failure")
 	}
@@ -411,7 +359,7 @@ func TestWriteTemplateFile_WriteAfterOverwriteError(t *testing.T) {
 func TestWriteTemplateFile_ReadTemplateError(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "file.toml")
-	err := writeTemplateFile(RealSystem{}, path, "nonexistent-template", 0o644, nil, nil)
+	err := writeTemplateFile(RealSystem{}, path, "nonexistent-template", 0o644, nil)
 	if err == nil {
 		t.Fatalf("expected error for template read failure")
 	}
@@ -436,7 +384,7 @@ func TestWriteTemplateFile_ExactMatch(t *testing.T) {
 		overwriteCalled = true
 		return false, nil
 	}
-	err = writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt, nil)
+	err = writeTemplateFile(RealSystem{}, path, "config.toml", 0o644, prompt)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -478,91 +426,6 @@ func (m *mockDirEntry) Name() string               { return m.name }
 func (m *mockDirEntry) IsDir() bool                { return m.isDir }
 func (m *mockDirEntry) Type() fs.FileMode          { return 0 }
 func (m *mockDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
-
-func TestWriteTemplateDirSuccess(t *testing.T) {
-	root := t.TempDir()
-	destRoot := filepath.Join(root, "dest")
-	if err := os.MkdirAll(destRoot, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	var recorded []string
-	recordDiff := func(path string) {
-		recorded = append(recorded, path)
-	}
-
-	err := writeTemplateDir(RealSystem{}, "instructions", destRoot, nil, recordDiff)
-	if err != nil {
-		t.Fatalf("writeTemplateDir error: %v", err)
-	}
-
-	// Check that at least one instruction file was written
-	entries, err := os.ReadDir(destRoot)
-	if err != nil {
-		t.Fatalf("read dest dir: %v", err)
-	}
-	if len(entries) == 0 {
-		t.Fatalf("expected instruction files to be written")
-	}
-}
-
-func TestWriteTemplateDirWithOverwrite(t *testing.T) {
-	root := t.TempDir()
-	destRoot := filepath.Join(root, "dest")
-	if err := os.MkdirAll(destRoot, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	// Write an existing file that differs
-	existingPath := filepath.Join(destRoot, "00_rules.md")
-	if err := os.WriteFile(existingPath, []byte("different content"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	overwriteCalled := false
-	shouldOverwrite := func(path string) (bool, error) {
-		overwriteCalled = true
-		return true, nil
-	}
-
-	err := writeTemplateDir(RealSystem{}, "instructions", destRoot, shouldOverwrite, nil)
-	if err != nil {
-		t.Fatalf("writeTemplateDir error: %v", err)
-	}
-	if !overwriteCalled {
-		t.Fatalf("expected overwrite prompt to be called")
-	}
-}
-
-func TestWriteTemplateDirNoOverwrite(t *testing.T) {
-	root := t.TempDir()
-	destRoot := filepath.Join(root, "dest")
-	if err := os.MkdirAll(destRoot, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
-	// Write an existing file that differs
-	existingPath := filepath.Join(destRoot, "00_rules.md")
-	if err := os.WriteFile(existingPath, []byte("different content"), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-
-	var recorded []string
-	recordDiff := func(path string) {
-		recorded = append(recorded, path)
-	}
-	shouldOverwrite := func(path string) (bool, error) {
-		return false, nil
-	}
-
-	err := writeTemplateDir(RealSystem{}, "instructions", destRoot, shouldOverwrite, recordDiff)
-	if err != nil {
-		t.Fatalf("writeTemplateDir error: %v", err)
-	}
-	if len(recorded) == 0 {
-		t.Fatalf("expected diff to be recorded when not overwriting")
-	}
-}
 
 func TestListManagedDiffs_DirDiffError(t *testing.T) {
 	root := t.TempDir()

@@ -84,14 +84,26 @@ func newDoctorCmd() *cobra.Command {
 			allResults = append(allResults, doctor.CheckFlatFormatSkills(root)...)
 
 			if cfg != nil {
-				// 4. Check Secrets
-				allResults = append(allResults, doctor.CheckSecrets(cfg)...)
+				// 4. Check Secrets.
+				// CheckConfig's lenient fallback emits a Secrets FAIL when .env is
+				// malformed/unreadable (it cannot populate cfg.Env in that case).
+				// Skipping CheckSecrets here avoids a misleading "Missing secret"
+				// cascade layered on top of the real root cause.
+				if !doctor.HasFailResultForCheck(configResults, messages.DoctorCheckNameSecrets) {
+					allResults = append(allResults, doctor.CheckSecrets(cfg)...)
+				}
 
 				// 5. Check Agents
 				allResults = append(allResults, doctor.CheckAgents(cfg)...)
 
-				// 6. Check Skills
-				allResults = append(allResults, doctor.CheckSkills(cfg)...)
+				// 6. Check Skills.
+				// CheckConfig's lenient fallback already emits a Skills result when
+				// skills loading failed (it cannot populate cfg.Skills in that case).
+				// Skipping CheckSkills here avoids a contradictory second "No skills
+				// configured" OK line layered on top of that FAIL.
+				if !doctor.HasFailResultForCheck(configResults, messages.DoctorCheckNameSkills) {
+					allResults = append(allResults, doctor.CheckSkills(cfg)...)
+				}
 
 				// 7. Check CLI Skills (catalog-installed skills' binaries on PATH).
 				allResults = append(allResults, doctor.CheckCLISkills(cfg)...)
@@ -175,7 +187,12 @@ func newDoctorCmd() *cobra.Command {
 			// of warning suppression.
 			if cfg != nil {
 				skillText, _ := doctor.SkillCatalogMetadata(cfg)
-				renderSizeSummary(out, cfg.Config.Warnings, instTokens, instSubject, instErr, warnings.EstimateTokens(skillText), mcpSummary)
+				// Skills are unmeasurable (not merely empty) when the lenient
+				// fallback emitted a Skills FAIL because loading failed. Naming
+				// them as excluded avoids silently reporting 0 tokens, mirroring
+				// how instructions and MCP unavailability are surfaced.
+				skillsAvailable := !doctor.HasFailResultForCheck(configResults, messages.DoctorCheckNameSkills)
+				renderSizeSummary(out, cfg.Config.Warnings, instTokens, instSubject, instErr, warnings.EstimateTokens(skillText), skillsAvailable, mcpSummary)
 			}
 
 			if hasFail {
@@ -230,7 +247,7 @@ func printRecommendation(out io.Writer, recommendation string) {
 // the three token-denominated, always-loaded costs
 // (instructions + skill catalog + MCP tool schemas); any component that is unavailable is
 // named in an "(excludes ...)" note rather than being silently counted as zero.
-func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, instSubject string, instErr error, skillTokens int, mcp warnings.MCPSummary) {
+func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, instSubject string, instErr error, skillTokens int, skillsAvailable bool, mcp warnings.MCPSummary) {
 	_, _ = fmt.Fprintln(out, messages.DoctorSizeSummaryHeader)
 
 	switch {
@@ -242,10 +259,14 @@ func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, i
 		_, _ = fmt.Fprintf(out, messages.DoctorSizeInstructionsNoLimitFmt, instSubject, instTokens)
 	}
 
-	_, _ = fmt.Fprintf(out, messages.DoctorSizeSkillsFmt, skillTokens, doctor.MaxSkillCatalogMetadataTokens)
+	if skillsAvailable {
+		_, _ = fmt.Fprintf(out, messages.DoctorSizeSkillsFmt, skillTokens, doctor.MaxSkillCatalogMetadataTokens)
+	} else {
+		_, _ = fmt.Fprint(out, messages.DoctorSizeSkillsUnavailable)
+	}
 
 	if !mcp.Available {
-		_, _ = fmt.Fprintln(out, messages.DoctorSizeMCPUnavailable)
+		_, _ = fmt.Fprint(out, messages.DoctorSizeMCPUnavailable)
 	} else {
 		if w.MCPServerThreshold != nil {
 			_, _ = fmt.Fprintf(out, messages.DoctorSizeMCPServersFmt, mcp.EnabledServers, *w.MCPServerThreshold)
@@ -272,8 +293,13 @@ func renderSizeSummary(out io.Writer, w config.WarningsConfig, instTokens int, i
 
 	// Total always-loaded context (estimated): sum of the token-denominated metrics.
 	// Components that could not be measured are excluded and named, never counted as zero.
-	total := skillTokens
+	total := 0
 	var excludes []string
+	if skillsAvailable {
+		total += skillTokens
+	} else {
+		excludes = append(excludes, "skills")
+	}
 	if instErr != nil {
 		excludes = append(excludes, "instructions")
 	} else {

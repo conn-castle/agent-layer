@@ -126,9 +126,11 @@ func TestDecodeClaudeStreamInvalidJSON(t *testing.T) {
 	_ = requireDispatchExitCode(t, err, ExitTargetFailure)
 }
 
-// TestDecodeClaudeStreamWriteError covers adapters.go:331 — a stdout
-// writer that fails mid-decode must propagate the writer error to the
-// caller (without wrapping it as a stream error).
+// TestDecodeClaudeStreamWriteError covers the stdout-write-error branch — a
+// stdout writer that fails mid-decode must propagate the underlying writer
+// error AND carry the stable ExitTargetFailure dispatch exit code, so callers
+// parsing the dispatch exit-code contract get a consistent code rather than a
+// raw error that cobra would surface as a generic failure.
 func TestDecodeClaudeStreamWriteError(t *testing.T) {
 	sentinel := errors.New("stdout broke")
 	err := decodeClaudeStream(
@@ -137,12 +139,16 @@ func TestDecodeClaudeStreamWriteError(t *testing.T) {
 		&bytes.Buffer{},
 	)
 	if !errors.Is(err, sentinel) {
-		t.Fatalf("expected sentinel writer error, got %v", err)
+		t.Fatalf("expected sentinel writer error in chain, got %v", err)
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != ExitTargetFailure {
+		t.Fatalf("expected wrapped ExitError with ExitTargetFailure, got %v", err)
 	}
 }
 
-// TestDecodeCodexStreamWriteError covers adapters.go:413 — a stdout
-// writer that fails mid-decode for Codex must propagate the writer error.
+// TestDecodeCodexStreamWriteError covers the Codex stdout-write-error branch —
+// the writer error must propagate AND carry the stable ExitTargetFailure code.
 func TestDecodeCodexStreamWriteError(t *testing.T) {
 	sentinel := errors.New("stdout broke")
 	err := decodeCodexStream(
@@ -151,7 +157,11 @@ func TestDecodeCodexStreamWriteError(t *testing.T) {
 		&bytes.Buffer{},
 	)
 	if !errors.Is(err, sentinel) {
-		t.Fatalf("expected sentinel writer error, got %v", err)
+		t.Fatalf("expected sentinel writer error in chain, got %v", err)
+	}
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != ExitTargetFailure {
+		t.Fatalf("expected wrapped ExitError with ExitTargetFailure, got %v", err)
 	}
 }
 

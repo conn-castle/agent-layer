@@ -354,7 +354,7 @@ func decodeClaudeStream(reader io.Reader, stdout io.Writer, stderr io.Writer) er
 		if text, ok := claudeTextDelta(raw); ok {
 			sawRecognizedTextEvent = true
 			if _, err := io.WriteString(stdout, text); err != nil {
-				return err
+				return wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchStdoutWriteFailedFmt, AgentClaude, err), err)
 			}
 			continue
 		}
@@ -436,7 +436,7 @@ func decodeCodexStream(reader io.Reader, stdout io.Writer, stderr io.Writer) err
 		if text, ok := codexAgentText(raw); ok {
 			sawRecognizedTextEvent = true
 			if _, err := io.WriteString(stdout, text); err != nil {
-				return err
+				return wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchStdoutWriteFailedFmt, AgentCodex, err), err)
 			}
 			continue
 		}

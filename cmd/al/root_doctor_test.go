@@ -563,6 +563,120 @@ func TestDoctorCommand_FlatSkillsDetectedEvenWhenConfigFails(t *testing.T) {
 	}
 }
 
+// writeTestRepoLenientConfig writes a repo whose config fails STRICT validation
+// (an unknown key) but still parses leniently, so doctor's lenient fallback runs
+// and the orchestrator's CheckSecrets/CheckSkills calls execute against the
+// partial config. body is appended verbatim under the valid sections.
+func writeTestRepoLenientConfig(t *testing.T, root string) {
+	t.Helper()
+	configDir := filepath.Join(root, ".agent-layer")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(configDir, "instructions"), 0o700); err != nil {
+		t.Fatalf("mkdir instructions: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "instructions", "00_rules.md"), []byte("# Base"), 0o600); err != nil {
+		t.Fatalf("write rules: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(configDir, "commands.allow"), []byte(""), 0o600); err != nil {
+		t.Fatalf("write commands.allow: %v", err)
+	}
+	// `definitely_unknown_key` fails strict decoding but parses leniently.
+	configToml := `
+definitely_unknown_key = true
+
+[approvals]
+mode = "all"
+
+[agents.antigravity]
+enabled = true
+[agents.claude]
+enabled = true
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = true
+`
+	if err := os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(configToml), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+func TestDoctorCommand_MalformedSkill_NoContradictorySkillsOK(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoLenientConfig(t, root)
+	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+
+	// A directory-format skill whose SKILL.md fails to load, so CheckConfig's
+	// lenient fallback emits a Skills FAIL and leaves cfg.Skills empty.
+	skillDir := filepath.Join(root, ".agent-layer", "skills", "broken")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatalf("mkdir skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("no frontmatter here"), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	var out bytes.Buffer
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		cmd.SetOut(&out)
+		if err := cmd.RunE(cmd, nil); err == nil {
+			t.Fatal("expected doctor to fail")
+		}
+	})
+
+	output := out.String()
+	// The Skills load failure must be reported.
+	if !strings.Contains(output, "Failed to load skills") {
+		t.Fatalf("expected Skills load failure, got:\n%s", output)
+	}
+	// The contradictory "No skills configured" OK line must NOT appear.
+	if strings.Contains(output, messages.DoctorSkillsNoneConfigured) {
+		t.Fatalf("did not expect contradictory %q line, got:\n%s", messages.DoctorSkillsNoneConfigured, output)
+	}
+}
+
+func TestDoctorCommand_MalformedEnv_NoMissingSecretCascade(t *testing.T) {
+	root := t.TempDir()
+	writeTestRepoLenientConfig(t, root)
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer", "skills"), 0o700); err != nil {
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	stubUpdateCheck(t, update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil)
+
+	// A malformed .env (line without `=`).
+	if err := os.WriteFile(filepath.Join(root, ".agent-layer", ".env"), []byte("AL_NO_EQUALS_HERE\n"), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	var out bytes.Buffer
+	testutil.WithWorkingDir(t, root, func() {
+		cmd := newDoctorCmd()
+		cmd.SetOut(&out)
+		if err := cmd.RunE(cmd, nil); err == nil {
+			t.Fatal("expected doctor to fail")
+		}
+	})
+
+	output := out.String()
+	// The .env parse failure must be surfaced with an actionable next step.
+	if !strings.Contains(output, "Could not read .agent-layer/.env") {
+		t.Fatalf("expected .env unreadable diagnostic, got:\n%s", output)
+	}
+	if !strings.Contains(output, messages.DoctorEnvFileUnreadableRecommend) {
+		t.Fatalf("expected actionable recommendation, got:\n%s", output)
+	}
+	// The misleading "Missing secret" cascade must NOT be layered on top.
+	if strings.Contains(output, "Missing secret") {
+		t.Fatalf("did not expect misleading Missing secret cascade, got:\n%s", output)
+	}
+}
+
 func TestStartMCPDiscoveryReporterZero(t *testing.T) {
 	var output bytes.Buffer
 	reporter, stop := startMCPDiscoveryReporter(nil, &output)
@@ -588,7 +702,7 @@ func TestRenderSizeSummary(t *testing.T) {
 			MCPSchemaTokensTotalThreshold: intp(30000),
 		}
 		mcp := warnings.MCPSummary{Available: true, EnabledServers: 4, ReachableServers: 4, TotalTools: 38, TotalSchemaTokens: 18400}
-		renderSizeSummary(&out, w, 3240, "AGENTS.md", nil, 1820, mcp)
+		renderSizeSummary(&out, w, 3240, "AGENTS.md", nil, 1820, true, mcp)
 		s := out.String()
 		for _, want := range []string{
 			"📊 Context size summary",
@@ -614,7 +728,7 @@ func TestRenderSizeSummary(t *testing.T) {
 	t.Run("nil thresholds show no limit set", func(t *testing.T) {
 		var out bytes.Buffer
 		mcp := warnings.MCPSummary{Available: true, EnabledServers: 2, ReachableServers: 2, TotalTools: 5, TotalSchemaTokens: 1000}
-		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 12, mcp)
+		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 12, true, mcp)
 		s := out.String()
 		for _, want := range []string{
 			"Instructions (AGENTS.md): 100 tokens (no limit set)",
@@ -632,7 +746,7 @@ func TestRenderSizeSummary(t *testing.T) {
 
 	t.Run("instruction measure error is surfaced", func(t *testing.T) {
 		var out bytes.Buffer
-		renderSizeSummary(&out, config.WarningsConfig{}, 0, "", errors.New("boom"), 0, warnings.MCPSummary{Available: true})
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "", errors.New("boom"), 0, true, warnings.MCPSummary{Available: true})
 		s := out.String()
 		if !strings.Contains(s, "Instructions: size unavailable (boom)") {
 			t.Fatalf("expected instruction error surfaced, got:\n%s", s)
@@ -644,7 +758,7 @@ func TestRenderSizeSummary(t *testing.T) {
 
 	t.Run("mcp unavailable hides totals", func(t *testing.T) {
 		var out bytes.Buffer
-		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 0, warnings.MCPSummary{Available: false})
+		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 0, true, warnings.MCPSummary{Available: false})
 		s := out.String()
 		if !strings.Contains(s, "MCP servers: size unavailable") {
 			t.Fatalf("expected mcp unavailable, got:\n%s", s)
@@ -660,9 +774,27 @@ func TestRenderSizeSummary(t *testing.T) {
 	t.Run("partial note when some servers unreachable", func(t *testing.T) {
 		var out bytes.Buffer
 		mcp := warnings.MCPSummary{Available: true, EnabledServers: 3, ReachableServers: 1, TotalTools: 2, TotalSchemaTokens: 500}
-		renderSizeSummary(&out, config.WarningsConfig{}, 0, "AGENTS.md", nil, 0, mcp)
+		renderSizeSummary(&out, config.WarningsConfig{}, 0, "AGENTS.md", nil, 0, true, mcp)
 		if !strings.Contains(out.String(), "2 of 3 enabled MCP server(s) unreachable") {
 			t.Fatalf("expected partial note, got:\n%s", out.String())
+		}
+	})
+
+	t.Run("skills unavailable excluded from total and named", func(t *testing.T) {
+		var out bytes.Buffer
+		mcp := warnings.MCPSummary{Available: true, EnabledServers: 1, ReachableServers: 1, TotalTools: 2, TotalSchemaTokens: 300}
+		// skillTokens is non-zero but must NOT be counted because skills are unavailable.
+		renderSizeSummary(&out, config.WarningsConfig{}, 100, "AGENTS.md", nil, 999, false, mcp)
+		s := out.String()
+		if !strings.Contains(s, "Skills: size unavailable") {
+			t.Fatalf("expected skills unavailable line, got:\n%s", s)
+		}
+		if strings.Contains(s, "Skills (always-loaded descriptions):") {
+			t.Fatalf("did not expect skills token line when unavailable, got:\n%s", s)
+		}
+		// Total excludes the 999 skill tokens: 100 (instructions) + 300 (MCP schema) = 400.
+		if !strings.Contains(s, "Total always-loaded (estimated): ~400 tokens (excludes skills)") {
+			t.Fatalf("expected total to exclude skills, got:\n%s", s)
 		}
 	})
 }

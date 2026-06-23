@@ -195,6 +195,14 @@ func instructionsReferencePath(root string, relPath string) (bool, error) {
 // When strict loading fails but lenient loading succeeds (e.g., missing required
 // fields from a newer version), CheckConfig returns a FAIL result with the
 // validation error AND the leniently-loaded config so downstream checks still run.
+//
+// On the lenient-fallback path CheckConfig may also emit blocking results owned
+// by later checks: a DoctorCheckNameSecrets FAIL when .env is malformed (so
+// CheckSecrets is not run on top of an unreadable .env) and a
+// DoctorCheckNameSkills FAIL when skills loading fails (so CheckSkills does not
+// add a contradictory "No skills configured" line). The doctor orchestrator
+// uses HasFailResultForCheck to skip the corresponding standalone check when one
+// of these results is present.
 func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 	var results []Result
 	cfg, err := config.LoadProjectConfig(root)
@@ -253,10 +261,21 @@ func CheckConfig(root string) ([]Result, *config.ProjectConfig) {
 		// Best-effort: load .env so CheckSecrets can check against it.
 		// Always inject built-in env vars (e.g., AL_REPO_ROOT) so downstream
 		// checks like MCP server resolution don't produce false positives.
+		// A genuinely missing .env is valid (secrets may live in the process
+		// environment), but a malformed/unreadable .env must be surfaced loudly:
+		// silently swallowing it produces a misleading "Missing secret" cascade
+		// from CheckSecrets that points at the wrong root cause.
 		envPath := filepath.Join(root, ".agent-layer", ".env")
 		var env map[string]string
 		if loaded, envErr := loadEnvFunc(envPath); envErr == nil {
 			env = loaded
+		} else if !errors.Is(envErr, os.ErrNotExist) {
+			results = append(results, Result{
+				Status:         StatusFail,
+				CheckName:      messages.DoctorCheckNameSecrets,
+				Message:        fmt.Sprintf(messages.DoctorEnvFileUnreadableFmt, envErr),
+				Recommendation: messages.DoctorEnvFileUnreadableRecommend,
+			})
 		}
 		partial.Env = config.WithBuiltInEnv(env, root)
 

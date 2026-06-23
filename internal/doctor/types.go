@@ -19,3 +19,19 @@ type Result struct {
 	Message        string
 	Recommendation string
 }
+
+// HasFailResultForCheck reports whether results contains a StatusFail result for
+// checkName. It is used to detect when CheckConfig's lenient fallback already
+// emitted a blocking result for a check (Secrets/Skills) so the orchestrator can
+// skip the corresponding standalone check and avoid a contradictory cascade.
+// Only StatusFail results suppress the standalone check; an OK or WARN result
+// for the same check name does not, so non-blocking diagnostics never silence a
+// check that could still report meaningful results.
+func HasFailResultForCheck(results []Result, checkName string) bool {
+	for _, r := range results {
+		if r.Status == StatusFail && r.CheckName == checkName {
+			return true
+		}
+	}
+	return false
+}

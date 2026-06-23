@@ -135,11 +135,6 @@ linters:
       - path: internal/warnings/mcp_connector\.go$
         linters:
           - noctx
-      # sys parameter kept for interface compatibility with other template operations
-      - path: internal/install/install_templates\.go$
-        linters:
-          - unparam
-        text: writeTemplateDir
       # buildClaudeSettings returns error for consistency with other build* functions
       - path: internal/sync/claude\.go$
         linters:
