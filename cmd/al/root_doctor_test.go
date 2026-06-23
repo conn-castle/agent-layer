@@ -566,7 +566,7 @@ func TestDoctorCommand_FlatSkillsDetectedEvenWhenConfigFails(t *testing.T) {
 // writeTestRepoLenientConfig writes a repo whose config fails STRICT validation
 // (an unknown key) but still parses leniently, so doctor's lenient fallback runs
 // and the orchestrator's CheckSecrets/CheckSkills calls execute against the
-// partial config. body is appended verbatim under the valid sections.
+// partial config.
 func writeTestRepoLenientConfig(t *testing.T, root string) {
 	t.Helper()
 	configDir := filepath.Join(root, ".agent-layer")

@@ -118,13 +118,15 @@ test-race: ## Run race detector for concurrency-critical packages
 .PHONY: dead-code
 dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware); fails on findings
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./...)"; \
+	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./... 2>&1)"; rc=$$?; \
+	  if [[ $$rc -ne 0 ]]; then echo "$$out" >&2; echo "deadcode failed (exit $$rc); see output above" >&2; exit $$rc; fi; \
 	  if [[ -n "$$out" ]]; then echo "$$out" >&2; echo "dead code detected (deadcode always exits 0; non-empty output fails this target)" >&2; exit 1; fi
 
 .PHONY: dead-code-entrypoints
 dead-code-entrypoints: check-deadcode ## Run dead code analysis from CLI entrypoints only; fails on findings
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site)"; \
+	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site 2>&1)"; rc=$$?; \
+	  if [[ $$rc -ne 0 ]]; then echo "$$out" >&2; echo "deadcode failed (exit $$rc); see output above" >&2; exit $$rc; fi; \
 	  if [[ -n "$$out" ]]; then echo "$$out" >&2; echo "dead code detected (deadcode always exits 0; non-empty output fails this target)" >&2; exit 1; fi
 
 .PHONY: tidy
