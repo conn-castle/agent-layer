@@ -195,6 +195,20 @@ func TestCodexTrustedProjectRoot_RejectsControlChars(t *testing.T) {
 	}
 }
 
+// TestCodexTrustedProjectRoot_RejectsInvalidUTF8 covers the companion guard for
+// invalid UTF-8 bytes. On Unix, paths are arbitrary byte sequences; a byte like
+// 0xff decodes as utf8.RuneError, so the unicode.IsControl scan alone does NOT
+// catch it (IndexFunc returns -1), yet fmt %q would escape it as \xff, which
+// TOML rejects — corrupting the whole .codex/config.toml. A regression that
+// dropped the utf8.ValidString check would let such a path through.
+func TestCodexTrustedProjectRoot_RejectsInvalidUTF8(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "repo\xffx")
+	if _, err := codexTrustedProjectRoot(root); err == nil {
+		t.Fatalf("expected error for repo root containing invalid UTF-8 bytes")
+	}
+}
+
 // TestCodexTrustedProjectRoot_AcceptsPrintablePath confirms the guard does not
 // over-reject: a normal absolute path (including printable special characters
 // that fmt %q escapes safely, like a double quote) resolves without error and
