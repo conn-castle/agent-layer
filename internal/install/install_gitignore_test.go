@@ -10,10 +10,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
-func managedBlock(block string) string {
-	return wrapGitignoreBlock(renderGitignoreBlock(block))
-}
-
 func TestRenderGitignoreBlock_UsesSyncGuidance(t *testing.T) {
 	rendered := renderGitignoreBlock("foo\n")
 	if !strings.Contains(rendered, "re-run `al sync`") {
@@ -36,10 +32,37 @@ func TestEnsureGitignoreCreatesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gitignore: %v", err)
 	}
-	// EnsureGitignore wraps with markers and managed header.
-	expected := managedBlock(block)
-	if string(data) != expected {
-		t.Fatalf("unexpected gitignore content: %q", string(data))
+	got := string(data)
+	// Assert hand-written structural invariants of a freshly created file so a
+	// defect in the render/wrap helpers (dropped marker, missing header, absent
+	// hash, lost block body) actually fails the test — re-deriving `expected`
+	// from the same helpers would mutate both sides together and never fail.
+	wantLines := []string{
+		"# >>> agent-layer",
+		"# Managed by Agent Layer. To customize, edit .agent-layer/gitignore.block",
+		"# and re-run `al sync` to apply changes.",
+		"al",
+		"# <<< agent-layer",
+	}
+	for _, line := range wantLines {
+		if !strings.Contains(got, line+"\n") {
+			t.Fatalf("expected gitignore to contain line %q, got:\n%s", line, got)
+		}
+	}
+	if !strings.Contains(got, "# Template hash: ") {
+		t.Fatalf("expected a template hash line, got:\n%s", got)
+	}
+	// The managed block must start at the start marker and the body must follow
+	// the header (start marker before hash before header before the block body).
+	startIdx := strings.Index(got, "# >>> agent-layer")
+	hashIdx := strings.Index(got, "# Template hash: ")
+	bodyIdx := strings.Index(got, "\nal\n")
+	endIdx := strings.Index(got, "# <<< agent-layer")
+	if startIdx != 0 || startIdx >= hashIdx || hashIdx >= bodyIdx || bodyIdx >= endIdx {
+		t.Fatalf("unexpected ordering of marker/hash/header/body/end markers: %q", got)
+	}
+	if !strings.HasSuffix(got, "# <<< agent-layer\n") || strings.HasSuffix(got, "\n\n") {
+		t.Fatalf("expected exactly one trailing newline after end marker, got %q", got)
 	}
 }
 
@@ -122,11 +145,26 @@ func TestEnsureGitignoreSingleBlankLineAfterBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gitignore: %v", err)
 	}
-	expected := updateGitignoreContent(original, managedBlock(block))
-	if string(data) != expected {
-		t.Fatalf("unexpected gitignore content: %q", string(data))
+	firstRun := string(data)
+	// The input had TWO blank lines between the old end marker and `next`; the
+	// merge must collapse them to exactly one. Assert that hand-written
+	// invariant directly instead of re-deriving the expected output from the
+	// same production function (which could never catch a collapse defect).
+	if !strings.Contains(firstRun, "# <<< agent-layer\n\nnext\n") {
+		t.Fatalf("expected exactly one blank line between end marker and following content, got %q", firstRun)
+	}
+	if strings.Contains(firstRun, "# <<< agent-layer\n\n\nnext") {
+		t.Fatalf("blank lines after the managed block were not collapsed to one, got %q", firstRun)
+	}
+	if !strings.HasPrefix(firstRun, "keep\n") {
+		t.Fatalf("expected pre-block content to be preserved, got %q", firstRun)
+	}
+	if strings.Contains(firstRun, "old") {
+		t.Fatalf("expected the old managed block body to be replaced, got %q", firstRun)
 	}
 
+	// Re-running must be idempotent: a second apply produces byte-identical
+	// content (no drift, no extra blank lines accumulating).
 	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
 		t.Fatalf("EnsureGitignore second run error: %v", err)
 	}
@@ -134,8 +172,8 @@ func TestEnsureGitignoreSingleBlankLineAfterBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gitignore second run: %v", err)
 	}
-	if string(data) != expected {
-		t.Fatalf("unexpected gitignore content after rerun: %q", string(data))
+	if string(data) != firstRun {
+		t.Fatalf("second run not idempotent: %q != %q", string(data), firstRun)
 	}
 }
 

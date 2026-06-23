@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
@@ -34,24 +35,50 @@ func TestBuildClaudeSettings(t *testing.T) {
 		t.Fatalf("expected permissions map")
 	}
 	allow, ok := permissions["allow"].([]string)
-	if !ok || len(allow) < 2 {
-		t.Fatalf("expected permissions allow list")
+	if !ok {
+		t.Fatalf("expected permissions allow []string, got %T", permissions["allow"])
+	}
+	// Under ApprovalModeAll the managed allow list must render the configured
+	// command (Claude Bash form) and the enabled MCP server (mcp__<id>__* form),
+	// commands first then sorted MCP IDs. Asserting the exact entries catches a
+	// defect in the renderer, the client filter, or the approval gating that a
+	// bare length check (>= 2) would miss.
+	want := []string{"Bash(git status:*)", "mcp__example__*"}
+	if !reflect.DeepEqual(allow, want) {
+		t.Fatalf("unexpected allow list: got %v want %v", allow, want)
 	}
 }
 
 func TestWriteClaudeSettings(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	enabled := true
 	project := &config.ProjectConfig{
 		Config: config.Config{
-			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
+			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
+			MCP: config.MCPConfig{
+				Servers: []config.MCPServer{
+					{ID: "example", Enabled: &enabled, Transport: "http", URL: "https://example.com", Clients: []string{"claude"}},
+				},
+			},
 		},
+		CommandsAllow: []string{"git status"},
 	}
 	if err := WriteClaudeSettings(RealSystem{}, root, project); err != nil {
 		t.Fatalf("WriteClaudeSettings error: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".claude", "settings.json")); err != nil {
+	// The writer must persist the built settings, not an empty object. Read the
+	// file back and assert the managed allow entries are present so a regression
+	// that writes "{}" (or drops permissions) actually fails.
+	data, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json")) // #nosec G304 -- test-controlled path.
+	if err != nil {
 		t.Fatalf("expected settings.json: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{`"permissions"`, `"allow"`, `Bash(git status:*)`, `mcp__example__*`} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected settings.json to contain %q, got:\n%s", want, content)
+		}
 	}
 }
 

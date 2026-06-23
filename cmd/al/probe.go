@@ -28,6 +28,7 @@ func newProbeAntigravityCmd() *cobra.Command {
 		Use:   messages.ProbeAntigravityUse,
 		Short: messages.ProbeAntigravityShort,
 		Long:  messages.ProbeAntigravityLong,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := resolveRepoRoot()
 			if err != nil {

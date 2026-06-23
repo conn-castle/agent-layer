@@ -421,35 +421,41 @@ func TestWriteSinglePreviewBlock_ColorizedWhenInteractive(t *testing.T) {
 }
 
 func TestReadinessSummaryAndAction(t *testing.T) {
-	ids := []string{
-		"unrecognized_config_keys",
-		"unresolved_config_placeholders",
-		"process_env_overrides_dotenv",
-		"ignored_empty_dotenv_assignments",
-		"path_expansion_anomalies",
-		"vscode_no_sync_outputs_stale",
-		"floating_external_dependency_specs",
-		"stale_disabled_agent_artifacts",
-		"missing_required_config_fields",
-		"unknown_id",
+	// Assert each known ID maps to its SPECIFIC summary/action constant. A bare
+	// non-empty check would pass even if two cases were swapped or an ID mapped
+	// to the wrong constant; the explicit expected values catch that.
+	cases := []struct {
+		id          string
+		wantSummary string
+		wantAction  string
+	}{
+		{"unrecognized_config_keys", messages.UpgradeReadinessUnrecognizedKeys, messages.UpgradeReadinessActionUnrecognizedKeys},
+		{"unresolved_config_placeholders", messages.UpgradeReadinessUnresolvedPlaceholder, messages.UpgradeReadinessActionUnresolvedPlaceholder},
+		{"process_env_overrides_dotenv", messages.UpgradeReadinessProcessEnvOverrides, messages.UpgradeReadinessActionProcessEnvOverrides},
+		{"ignored_empty_dotenv_assignments", messages.UpgradeReadinessEmptyDotenv, messages.UpgradeReadinessActionEmptyDotenv},
+		{"path_expansion_anomalies", messages.UpgradeReadinessPathExpansion, messages.UpgradeReadinessActionPathExpansion},
+		{"vscode_no_sync_outputs_stale", messages.UpgradeReadinessVSCodeStale, messages.UpgradeReadinessActionVSCodeStale},
+		{"floating_external_dependency_specs", messages.UpgradeReadinessFloatingDeps, messages.UpgradeReadinessActionFloatingDeps},
+		{"stale_disabled_agent_artifacts", messages.UpgradeReadinessStaleDisabledAgents, messages.UpgradeReadinessActionStaleDisabledAgents},
+		{"missing_required_config_fields", messages.UpgradeReadinessMissingRequiredFields, messages.UpgradeReadinessActionMissingRequiredFields},
 	}
-	for _, id := range ids {
-		check := install.UpgradeReadinessCheck{ID: id, Summary: "fallback summary"}
-		summary := readinessSummary(check)
-		if summary == "" {
-			t.Fatalf("readinessSummary(%q) returned empty", id)
+	for _, tc := range cases {
+		check := install.UpgradeReadinessCheck{ID: tc.id, Summary: "fallback summary"}
+		if got := readinessSummary(check); got != tc.wantSummary {
+			t.Fatalf("readinessSummary(%q) = %q, want %q", tc.id, got, tc.wantSummary)
 		}
-		action := readinessAction(id)
-		if id == "unknown_id" {
-			if action != "" {
-				t.Fatalf("readinessAction(%q) = %q, want empty", id, action)
-			}
-			if summary != "fallback summary" {
-				t.Fatalf("readinessSummary(%q) = %q, want %q", id, summary, "fallback summary")
-			}
-		} else if action == "" {
-			t.Fatalf("readinessAction(%q) returned empty", id)
+		if got := readinessAction(tc.id); got != tc.wantAction {
+			t.Fatalf("readinessAction(%q) = %q, want %q", tc.id, got, tc.wantAction)
 		}
+	}
+
+	// Unknown IDs fall back to the check's own summary and produce no action.
+	check := install.UpgradeReadinessCheck{ID: "unknown_id", Summary: "fallback summary"}
+	if got := readinessSummary(check); got != "fallback summary" {
+		t.Fatalf("readinessSummary(unknown) = %q, want fallback", got)
+	}
+	if got := readinessAction("unknown_id"); got != "" {
+		t.Fatalf("readinessAction(unknown) = %q, want empty", got)
 	}
 }
 
