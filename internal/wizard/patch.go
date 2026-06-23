@@ -19,6 +19,7 @@ package wizard
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -175,7 +176,7 @@ func orderedWizardSections(templateOrder []string) []string {
 	ordered := make([]string, 0, len(templateOrder))
 
 	for _, name := range preferredWizardSectionOrder {
-		if containsString(templateOrder, name) {
+		if slices.Contains(templateOrder, name) {
 			ordered = append(ordered, name)
 			seen[name] = struct{}{}
 		}
@@ -188,15 +189,6 @@ func orderedWizardSections(templateOrder []string) []string {
 		seen[name] = struct{}{}
 	}
 	return ordered
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 // selectSectionBlock picks the current block when present, otherwise the template block.

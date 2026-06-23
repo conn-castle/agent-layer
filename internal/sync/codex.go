@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -151,6 +153,23 @@ func codexTrustedProjectRoot(root string) (string, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return "", fmt.Errorf(messages.SyncCodexTrustRootResolveFailedFmt, root, err)
+	}
+	// fmt %q (used to encode the `[projects.<root>]` TOML key) emits Go escapes
+	// for control characters (e.g. \x00, \a, \v, \x1b, \x85) and for invalid
+	// UTF-8 bytes (e.g. \xff) that are NOT valid TOML basic-string escapes. A
+	// repo root containing such a byte would yield a .codex/config.toml that
+	// Codex rejects in its entirety (silent loss of model, approval, and MCP
+	// settings, not just the trust block). Fail loud instead.
+	//
+	// Check invalid UTF-8 first: on Unix, paths are arbitrary byte sequences, and
+	// strings.IndexFunc decodes invalid bytes as utf8.RuneError (which is not a
+	// control rune), so the control-char scan alone would miss them.
+	if !utf8.ValidString(absRoot) {
+		return "", fmt.Errorf(messages.SyncCodexTrustRootInvalidUTF8Fmt, absRoot)
+	}
+	if idx := strings.IndexFunc(absRoot, unicode.IsControl); idx >= 0 {
+		bad, _ := utf8.DecodeRuneInString(absRoot[idx:])
+		return "", fmt.Errorf(messages.SyncCodexTrustRootControlCharFmt, absRoot, bad)
 	}
 	return absRoot, nil
 }

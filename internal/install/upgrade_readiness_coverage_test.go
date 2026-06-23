@@ -299,3 +299,53 @@ func TestDetectVSCodeNoSyncStaleness_SharedSkillsWalkError(t *testing.T) {
 		t.Fatalf("expected shared skills walk error, got %v", err)
 	}
 }
+
+// TestHasAgentLayerMCPSignature guards the provenance check that decides whether
+// a leftover .mcp.json is reported as agent-layer-generated. The decisive case
+// is the negative one: a user-authored file containing only the token
+// "agent-layer" (but neither the "_generatedBy" marker nor the legacy
+// "mcp-prompts" entry) must return false, so the disabled-artifacts readiness
+// rule never false-flags a user's own file as a managed leftover. A regression
+// that collapsed the two AND-clauses into a single substring check would
+// wrongly report such a file.
+func TestHasAgentLayerMCPSignature(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "current format with provenance marker",
+			content: `{"_generatedBy":"agent-layer","mcpServers":{}}`,
+			want:    true,
+		},
+		{
+			name:    "legacy format with mcp-prompts entry",
+			content: `{"mcpServers":{"agent-layer":{"args":["mcp-prompts"]}}}`,
+			want:    true,
+		},
+		{
+			name:    "user-authored file mentioning agent-layer is not a signature",
+			content: `{"mcpServers":{"my-server":{"command":"run-agent-layer-thing"}}}`,
+			want:    false,
+		},
+		{
+			name:    "unrelated json",
+			content: `{"mcpServers":{"other":{"command":"foo"}}}`,
+			want:    false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := hasAgentLayerMCPSignature([]byte(tt.content))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("hasAgentLayerMCPSignature(%s) = %v, want %v", tt.content, got, tt.want)
+			}
+		})
+	}
+}

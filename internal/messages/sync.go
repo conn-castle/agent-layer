@@ -17,6 +17,8 @@ const (
 	SyncMarshalCodexAgentSpecificFailedFmt          = "failed to marshal codex agent-specific config: %w"
 	SyncCodexTrustRootRequired                      = "repo root required for codex trust stanza"
 	SyncCodexTrustRootResolveFailedFmt              = "failed to resolve repo root for codex trust stanza %q: %w"
+	SyncCodexTrustRootControlCharFmt                = "repo root %q for codex trust stanza contains a control character (U+%04X) that cannot be encoded as a valid TOML key; move the repository to a path without control characters"
+	SyncCodexTrustRootInvalidUTF8Fmt                = "repo root %q for codex trust stanza contains invalid UTF-8 bytes that cannot be encoded as a valid TOML key; move the repository to a path with valid UTF-8 characters"
 	SyncCodexStatuslineInvalidTOMLFmt               = "%s: invalid codex statusline TOML: %w"
 	SyncCodexStatuslineOnlyStatusLineFmt            = "%s: codex statusline fragment may contain only [tui].status_line; put unrelated Codex config under agents.codex.agent_specific"
 	SyncCodexStatuslineStatusLineMissingFmt         = "%s: codex statusline fragment must define [tui].status_line"

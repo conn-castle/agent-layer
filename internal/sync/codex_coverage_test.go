@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
@@ -166,6 +168,71 @@ func TestSplitCodexHeaders_AuthorizationStatic(t *testing.T) {
 	}
 	if spec.HTTPHeaders["Authorization"] != "Bearer abc" {
 		t.Fatalf("expected Authorization in HTTP headers, got %v", spec.HTTPHeaders)
+	}
+}
+
+func TestCodexTrustedProjectRoot_RejectsEmptyRoot(t *testing.T) {
+	t.Parallel()
+	if _, err := codexTrustedProjectRoot("   "); err == nil {
+		t.Fatalf("expected error for blank repo root")
+	}
+}
+
+// TestCodexTrustedProjectRoot_RejectsControlChars asserts the fail-loud guard:
+// a repo root containing a control character that fmt %q would escape into an
+// invalid TOML basic-string escape (e.g. \x00, \a, \v, \x1b) must abort with an
+// actionable error instead of silently emitting a .codex/config.toml that Codex
+// rejects in its entirety. A regression that dropped the guard would let the
+// corrupt key reach the TOML writer and break the whole Codex config.
+func TestCodexTrustedProjectRoot_RejectsControlChars(t *testing.T) {
+	t.Parallel()
+	base := t.TempDir()
+	for _, ctrl := range []rune{0x00, '\a', '\v', 0x1b, 0x85} {
+		root := filepath.Join(base, "repo"+string(ctrl)+"x")
+		if _, err := codexTrustedProjectRoot(root); err == nil {
+			t.Fatalf("expected error for repo root containing control char U+%04X", ctrl)
+		}
+	}
+}
+
+// TestCodexTrustedProjectRoot_RejectsInvalidUTF8 covers the companion guard for
+// invalid UTF-8 bytes. On Unix, paths are arbitrary byte sequences; a byte like
+// 0xff decodes as utf8.RuneError, so the unicode.IsControl scan alone does NOT
+// catch it (IndexFunc returns -1), yet fmt %q would escape it as \xff, which
+// TOML rejects — corrupting the whole .codex/config.toml. A regression that
+// dropped the utf8.ValidString check would let such a path through.
+func TestCodexTrustedProjectRoot_RejectsInvalidUTF8(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), "repo\xffx")
+	if _, err := codexTrustedProjectRoot(root); err == nil {
+		t.Fatalf("expected error for repo root containing invalid UTF-8 bytes")
+	}
+}
+
+// TestCodexTrustedProjectRoot_AcceptsPrintablePath confirms the guard does not
+// over-reject: a normal absolute path (including printable special characters
+// that fmt %q escapes safely, like a double quote) resolves without error and
+// round-trips through the TOML key writer producing a single parseable key.
+func TestCodexTrustedProjectRoot_AcceptsPrintablePath(t *testing.T) {
+	t.Parallel()
+	root := filepath.Join(t.TempDir(), `repo"quote`)
+	resolved, err := codexTrustedProjectRoot(root)
+	if err != nil {
+		t.Fatalf("unexpected error for printable path: %v", err)
+	}
+	if !filepath.IsAbs(resolved) {
+		t.Fatalf("expected absolute resolved root, got %q", resolved)
+	}
+
+	var builder strings.Builder
+	appendCodexTrustedProject(&builder, resolved, nil)
+	out := builder.String()
+	if !strings.Contains(out, "trust_level = \"trusted\"") {
+		t.Fatalf("expected managed trust block, got:\n%s", out)
+	}
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("emitted trust block is not valid TOML: %v\n%s", err, out)
 	}
 }
 
