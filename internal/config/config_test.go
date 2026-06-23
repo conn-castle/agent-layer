@@ -8,6 +8,17 @@ import (
 	"testing"
 )
 
+// parseConfigFile reads and parses a config.toml at path, mirroring the
+// production read+parse path (LoadConfigFS -> ParseConfig) used by callers.
+func parseConfigFile(t *testing.T, path string) (*Config, error) {
+	t.Helper()
+	data, err := os.ReadFile(path) // #nosec G304 -- test-controlled path under t.TempDir().
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	return ParseConfig(data, path)
+}
+
 func TestLoadConfigValid(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "config.toml")
@@ -52,7 +63,7 @@ command = "tool"
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, err := LoadConfig(path)
+	cfg, err := parseConfigFile(t, path)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -156,7 +167,7 @@ headers."X-Custom" = "value"
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, err := LoadConfig(path)
+	cfg, err := parseConfigFile(t, path)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -212,7 +223,7 @@ args = ["--old"]
 		t.Fatalf("write config: %v", err)
 	}
 
-	cfg, err := LoadConfig(path)
+	cfg, err := parseConfigFile(t, path)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
@@ -242,7 +253,7 @@ mode = "all"
 		t.Fatalf("write config: %v", err)
 	}
 
-	_, err := LoadConfig(path)
+	_, err := parseConfigFile(t, path)
 	if err == nil {
 		t.Fatalf("expected error")
 	}

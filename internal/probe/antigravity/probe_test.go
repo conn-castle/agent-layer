@@ -2,12 +2,50 @@ package antigravity
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestCommandExitCode(t *testing.T) {
+	t.Run("cancelled context returns 124", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		// Even with a non-nil non-exit error, a cancelled context wins (timeout).
+		if got := commandExitCode(ctx, errors.New("boom")); got != 124 {
+			t.Fatalf("expected 124 for cancelled context, got %d", got)
+		}
+	})
+
+	t.Run("nil error returns 0", func(t *testing.T) {
+		if got := commandExitCode(context.Background(), nil); got != 0 {
+			t.Fatalf("expected 0 for nil error, got %d", got)
+		}
+	})
+
+	t.Run("exit error returns its code", func(t *testing.T) {
+		// `false` exits with code 1; produces a real *exec.ExitError.
+		err := exec.Command("false").Run()
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			t.Skipf("could not produce an *exec.ExitError on this platform: %v", err)
+		}
+		if got := commandExitCode(context.Background(), err); got != 1 {
+			t.Fatalf("expected 1 for exit-1 command, got %d", got)
+		}
+	})
+
+	t.Run("generic error returns -1", func(t *testing.T) {
+		if got := commandExitCode(context.Background(), errors.New("not an exit error")); got != -1 {
+			t.Fatalf("expected -1 for generic error, got %d", got)
+		}
+	})
+}
 
 func TestParseCapabilities(t *testing.T) {
 	tests := []struct {

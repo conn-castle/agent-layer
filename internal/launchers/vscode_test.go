@@ -37,8 +37,31 @@ func TestVSCodePaths(t *testing.T) {
 		t.Fatalf("AppExec mismatch: %s", paths.AppExec)
 	}
 
-	all := paths.All()
-	if len(all) != 8 {
-		t.Fatalf("expected 8 paths, got %d", len(all))
+	// All() must return exactly the projected launcher artifacts (every field
+	// except AgentLayerDir, which is the container, not an artifact). Asserting the
+	// exact set — not just the count — catches a dropped, swapped, or added entry.
+	want := []string{
+		paths.Command,
+		paths.Shell,
+		paths.Desktop,
+		paths.AppDir,
+		paths.AppContents,
+		paths.AppMacOS,
+		paths.AppInfoPlist,
+		paths.AppExec,
+	}
+	got := paths.All()
+	if len(got) != len(want) {
+		t.Fatalf("expected %d paths, got %d", len(want), len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("All()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	for _, p := range got {
+		if p == paths.AgentLayerDir {
+			t.Fatalf("All() must not include the AgentLayerDir container path")
+		}
 	}
 }

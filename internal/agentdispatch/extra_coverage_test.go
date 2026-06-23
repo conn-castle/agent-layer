@@ -642,23 +642,18 @@ func TestRunSurfacesSyncFailure(t *testing.T) {
 }
 
 // TestRunSurfacesSkillProjectionMismatch covers dispatch.go:90 — when the
-// skill is in config but its target-specific projection is missing,
-// dispatch must surface ExitConfig with the missing-skill-projection
-// message after sync (proving sync ran AND validation fired after it).
-func TestRunSurfacesSkillProjectionMismatch(t *testing.T) {
+// TestRunRejectsUnknownSkillBeforeLaunch covers the BuildChildPrompt
+// missing-skill branch reached via Run: when --skill names a skill that is
+// not present in the loaded project config (here, removed before Run), dispatch
+// must surface ExitConfig naming the skill, before any sync or adapter launch.
+// (The separate post-sync validateSkillProjection guard is covered directly by
+// TestValidateSkillProjectionRejectsSymlink and coverage_test.go.)
+func TestRunRejectsUnknownSkillBeforeLaunch(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	writeDispatchStub(t, binDir, "agy", `printf 'ok'`)
-	// Remove the synced projection so the post-sync check fires. We do
-	// this AFTER the dispatch sync regenerates it: instead, point Run at
-	// a target that uses the shared agents projection (antigravity) and
-	// remove .agents after sync would run by deleting the source skill
-	// directory entirely. Simpler approach: delete sync's projection
-	// output by removing the .agents/skills/review-plan/SKILL.md file
-	// that sync would create, then run with --skill review-plan. The
-	// dispatch's sync call regenerates it, so to make this fail we must
-	// remove the source skill template that sync reads from. The
-	// dispatchRepoConfig writes the source in .agent-layer/skills/.
+	// Remove the source skill so it is absent from the loaded project config;
+	// BuildChildPrompt's projectHasSkill check then rejects --skill review-plan.
 	if err := os.RemoveAll(filepath.Join(root, ".agent-layer", "skills", "review-plan")); err != nil {
 		t.Fatalf("remove skill source: %v", err)
 	}
@@ -671,8 +666,6 @@ func TestRunSurfacesSkillProjectionMismatch(t *testing.T) {
 		LookPath:   mockLookPath(binDir),
 	})
 	exitErr := requireDispatchExitCode(t, err, ExitConfig)
-	// The error must come from BuildChildPrompt's missing-skill branch
-	// (skill not in project) before adapter launch.
 	if !strings.Contains(exitErr.Error(), "review-plan") {
 		t.Fatalf("expected review-plan in error, got %q", exitErr.Error())
 	}

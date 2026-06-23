@@ -73,9 +73,9 @@ func ensureClaudeConfigDir(root string, env []string) []string {
 	}
 
 	if !clients.SamePath(current, expected) {
-		if _, err := fmt.Fprintf(os.Stderr, messages.ClientsClaudeConfigDirWarningFmt, current, expected); err != nil {
-			return env
-		}
+		// Best-effort warning; a stderr write failure does not change the returned
+		// env (the existing CLAUDE_CONFIG_DIR is preserved regardless).
+		_, _ = fmt.Fprintf(os.Stderr, messages.ClientsClaudeConfigDirWarningFmt, current, expected)
 	}
 
 	return env

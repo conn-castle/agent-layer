@@ -43,7 +43,7 @@ func run(args []string, out io.Writer, errOut io.Writer) int {
 	}
 	defer file.Close()
 
-	targetTrimmed := strings.TrimLeft(target, "./")
+	targetTrimmed := strings.TrimPrefix(target, "./")
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -59,7 +59,7 @@ func run(args []string, out io.Writer, errOut io.Writer) int {
 		if strings.HasPrefix(filename, "*") {
 			filename = strings.TrimSpace(strings.TrimPrefix(filename, "*"))
 		}
-		filename = strings.TrimLeft(filename, "./")
+		filename = strings.TrimPrefix(filename, "./")
 		if filename == target || filename == targetTrimmed {
 			checksum = strings.TrimPrefix(checksum, sha256Prefix)
 			fmt.Fprintln(out, checksum)

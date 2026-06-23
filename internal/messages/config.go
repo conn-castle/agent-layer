@@ -15,6 +15,7 @@ const (
 	ConfigInvalidConfigFmt      = "invalid config %s: %w"
 	ConfigFSRequired            = "config filesystem is required"
 	ConfigRootRequired          = "config root path is required"
+	ConfigRepoRootRequiredPath  = "repo root required for path expansion"
 	ConfigPathOutsideRootFmt    = "path %s is outside repo root %s"
 
 	ConfigMissingCommandsAllowlistFmt    = "missing commands allowlist %s: %w"
@@ -51,6 +52,7 @@ const (
 	ConfigSkillUnterminatedFrontMatter   = "unterminated front matter"
 	ConfigSkillInvalidFrontMatterFmt     = "invalid front matter: %w"
 	ConfigSkillInvalidFrontMatterTypeFmt = "invalid front matter type: %s"
+	ConfigSkillDuplicateKeyFmt           = "skill front matter contains duplicate key %q"
 	ConfigSkillFailedReadContentFmt      = "failed to read content: %w"
 	ConfigSkillDescriptionEmpty          = "description is empty"
 	ConfigSkillMissingDescription        = "missing description in front matter"

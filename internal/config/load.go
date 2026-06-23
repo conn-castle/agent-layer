@@ -33,15 +33,6 @@ func LoadProjectConfig(root string) (*ProjectConfig, error) {
 	return LoadProjectConfigFS(os.DirFS(root), root)
 }
 
-// LoadConfig reads .agent-layer/config.toml and validates it.
-func LoadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf(messages.ConfigMissingFileFmt, path, err)
-	}
-	return ParseConfig(data, path)
-}
-
 // LoadTemplateConfig returns the embedded default config template as a validated Config.
 func LoadTemplateConfig() (*Config, error) {
 	data, err := templates.Read("config.toml")

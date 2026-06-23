@@ -34,10 +34,21 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestIsDev(t *testing.T) {
-	if !IsDev("dev") {
-		t.Fatalf("expected IsDev(dev) to be true")
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{input: "dev", want: true},
+		{input: "  dev  ", want: true}, // surrounding whitespace is trimmed
+		{input: "\tdev\n", want: true}, // tabs/newlines too
+		{input: "v0.5.0", want: false},
+		{input: "DEV", want: false}, // comparison is case-sensitive
+		{input: "develop", want: false},
+		{input: "", want: false},
 	}
-	if IsDev("v0.5.0") {
-		t.Fatalf("expected IsDev(v0.5.0) to be false")
+	for _, tt := range tests {
+		if got := IsDev(tt.input); got != tt.want {
+			t.Fatalf("IsDev(%q) = %v, want %v", tt.input, got, tt.want)
+		}
 	}
 }

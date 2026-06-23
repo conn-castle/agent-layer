@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-06-15 interactive-html-review-skill: Skill to make any HTML output file browser-commentable
+    Priority: High. Area: skills / UX
+    Description: A skill that turns any agent-produced HTML file (report, visualization, mockup) into a live, commentable document without leaving the terminal. Mechanic: (1) inject a small JS/CSS feedback overlay into the HTML via a script tag; (2) start a local stdlib Python server that serves the file and accepts POST batches of comments to a JSONL inbox; (3) the agent monitors the inbox via the Monitor tool, edits the HTML in response to each comment, and appends each change to a `history.json` log; (4) the page polls `history.json` every ~4 s and auto-reloads with a walkthrough tour of changes using `data-cf-change` markers. Net effect: iterating on HTML outputs feels like editing a Google Doc instead of describing changes in text.
+    Acceptance criteria: User can run the skill against any `.html` output file, leave comments in the browser, and see agent-applied edits reflected in the page within ~10 s; `history.json` records each change with a timestamp; the Python server and overlay inject no external network dependencies.
+    Notes: Before building, research the Codex native equivalent of this pattern (paraschopra/make-pages-interactive on GitHub is the conceptual reference; OpenAI Codex may have a first-party version). The investigation should determine whether to build from scratch, adapt an existing implementation, or provide a thin Agent Layer wrapper around a Codex-native mechanism.
+
 - Backlog 2026-05-26 shipped-skill-update-channel: Keep bundled skills current
     Priority: High. Area: skills / templates
     Description: Define a repeatable way to track, review, and refresh Tavily and other third-party or bundled skills shipped with Agent Layer.

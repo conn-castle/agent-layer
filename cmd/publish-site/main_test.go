@@ -614,6 +614,61 @@ func TestGenerateGuidePage_NoLevelTwoHeadingsFails(t *testing.T) {
 	}
 }
 
+func TestCollectLevelTwoHeadings_DeduplicatesCollidingSlugs(t *testing.T) {
+	// Two distinct H2 headings that slugify to the same base must get distinct
+	// anchors (foo-bar, foo-bar-1, foo-bar-2), matching Docusaurus's
+	// github-slugger output, so TOC links resolve to the right sections.
+	body := "## Foo Bar\n\ntext\n\n## Foo  Bar\n\ntext\n\n## Foo Bar\n\ntext\n"
+	headings := collectLevelTwoHeadings(body)
+	if len(headings) != 3 {
+		t.Fatalf("expected 3 headings, got %d", len(headings))
+	}
+	want := []string{"foo-bar", "foo-bar-1", "foo-bar-2"}
+	seen := make(map[string]bool)
+	for i, h := range headings {
+		if h.slug != want[i] {
+			t.Fatalf("heading %d slug = %q, want %q", i, h.slug, want[i])
+		}
+		if seen[h.slug] {
+			t.Fatalf("duplicate slug emitted: %q", h.slug)
+		}
+		seen[h.slug] = true
+	}
+
+	toc, err := buildGuideTableOfContents(body)
+	if err != nil {
+		t.Fatalf("buildGuideTableOfContents: %v", err)
+	}
+	for _, slug := range want {
+		if !strings.Contains(toc, "(#"+slug+")") {
+			t.Fatalf("TOC missing anchor #%s:\n%s", slug, toc)
+		}
+	}
+}
+
+func TestCollectLevelTwoHeadings_SuffixCollisionResolved(t *testing.T) {
+	// "## Foo", "## Foo", "## Foo-1": the second Foo claims "foo-1", and the
+	// natural "foo-1" heading then needs "foo-1-1" to avoid a duplicate.
+	// A count-only deduplicator would emit two "foo-1" slugs; the emitted-set
+	// guard must resolve this.
+	body := "## Foo\n\ntext\n\n## Foo\n\ntext\n\n## Foo-1\n\ntext\n"
+	headings := collectLevelTwoHeadings(body)
+	if len(headings) != 3 {
+		t.Fatalf("expected 3 headings, got %d", len(headings))
+	}
+	want := []string{"foo", "foo-1", "foo-1-1"}
+	seen := make(map[string]bool)
+	for i, h := range headings {
+		if h.slug != want[i] {
+			t.Fatalf("heading %d slug = %q, want %q", i, h.slug, want[i])
+		}
+		if seen[h.slug] {
+			t.Fatalf("duplicate slug emitted: %q", h.slug)
+		}
+		seen[h.slug] = true
+	}
+}
+
 func TestPublishPages_StagesPagesAndGeneratesGuides(t *testing.T) {
 	repoA := t.TempDir()
 	repoB := setupRepoB(t)

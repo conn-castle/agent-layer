@@ -455,9 +455,19 @@ func buildGuideTableOfContents(body string) (string, error) {
 }
 
 // collectLevelTwoHeadings finds Markdown H2 headings while ignoring fenced code
-// blocks that may contain example headings.
+// blocks that may contain example headings. Colliding slugs are de-duplicated
+// with a numeric suffix (foo, foo-1, foo-2, ...) to match the heading IDs
+// Docusaurus generates via github-slugger, so the generated TOC links stay
+// aligned with the rendered anchors.
 func collectLevelTwoHeadings(body string) []guideHeading {
 	var headings []guideHeading
+	// slugCounts tracks how many times each BASE slug has been seen, mirroring
+	// github-slugger's counter. emittedSlugs guards against the edge case where a
+	// suffix we generate (e.g. "foo-1") collides with a heading whose natural slug
+	// is already "foo-1" — in that case we keep incrementing until we find a free
+	// slot, matching Docusaurus's tie-breaking behaviour.
+	slugCounts := make(map[string]int)
+	emittedSlugs := make(map[string]bool)
 	inFence := false
 
 	for _, line := range strings.Split(body, "\n") {
@@ -478,10 +488,23 @@ func collectLevelTwoHeadings(body string) []guideHeading {
 		if text == "" {
 			continue
 		}
-		slug := slugifyHeading(text)
-		if slug == "" {
+		baseSlug := slugifyHeading(text)
+		if baseSlug == "" {
 			continue
 		}
+		n := slugCounts[baseSlug]
+		slug := baseSlug
+		if n > 0 {
+			slug = fmt.Sprintf("%s-%d", baseSlug, n)
+		}
+		// If the candidate slug was already emitted (suffix-collision with a
+		// heading whose natural slug matches), keep incrementing.
+		for emittedSlugs[slug] {
+			n++
+			slug = fmt.Sprintf("%s-%d", baseSlug, n)
+		}
+		slugCounts[baseSlug]++
+		emittedSlugs[slug] = true
 		headings = append(headings, guideHeading{text: text, slug: slug})
 	}
 

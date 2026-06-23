@@ -8,10 +8,12 @@ import (
 )
 
 func TestEstimateTokens(t *testing.T) {
+	// Each expected value is the exact heuristic output:
+	// T = ceil(max(ceil(B/3), ceil(R/4)) * 1.10), B = bytes, R = runes.
 	tests := []struct {
 		name     string
 		input    string
-		expected int // Approximate expectation
+		expected int
 	}{
 		{
 			name:     "empty string",
@@ -19,36 +21,29 @@ func TestEstimateTokens(t *testing.T) {
 			expected: 0,
 		},
 		{
+			// 44 bytes, 44 runes: max(ceil(44/3)=15, ceil(44/4)=11)=15; ceil(15*1.10)=17.
 			name:     "ascii prose",
 			input:    "The quick brown fox jumps over the lazy dog.",
-			expected: 15, // 44 bytes, 44 runes. max(ceil(44/3)=15, ceil(44/4)=11) = 15. 15 * 1.1 = 16.5 -> 17? Wait. 44/3 = 14.66 -> 15. 15 * 1.1 = 16.5 -> 17.
+			expected: 17,
 		},
 		{
+			// 36 bytes, 36 runes: max(ceil(36/3)=12, ceil(36/4)=9)=12; ceil(12*1.10)=14.
 			name:     "code snippet",
 			input:    `func main() { fmt.Println("Hello") }`,
-			expected: 15, // 36 bytes. 36/3 = 12. 12 * 1.1 = 13.2 -> 14.
+			expected: 14,
 		},
 		{
+			// 12 bytes, 8 runes: max(ceil(12/3)=4, ceil(8/4)=2)=4; ceil(4*1.10)=5.
+			// Exercises the byte-vs-rune divergence for multibyte input.
 			name:     "unicode text",
 			input:    "Hello 世界",
-			expected: 5, // 6 bytes + 2 spaces + 6 bytes = 12 bytes? No. "Hello " is 6 bytes. "世界" is 6 bytes (3 each). Total 12 bytes. Runes: 6 + 2 = 8. B/3 = 4. R/4 = 2. Max = 4. 4 * 1.1 = 4.4 -> 5.
+			expected: 5,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := EstimateTokens(tt.input)
-			// Since it's an estimate, we can check exact values for small strings where we calculated it manually.
-			if tt.input == "" {
-				assert.Equal(t, 0, got)
-			} else {
-				assert.Greater(t, got, 0)
-			}
-
-			// Let's verify the calculation for "Hello 世界" specifically as I did the math.
-			if tt.input == "Hello 世界" {
-				assert.Equal(t, 5, got)
-			}
+			assert.Equal(t, tt.expected, EstimateTokens(tt.input))
 		})
 	}
 }

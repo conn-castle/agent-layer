@@ -436,6 +436,18 @@ func TestParseSkill_NullMetadataAccepted(t *testing.T) {
 	}
 }
 
+func TestParseSkill_DuplicateMetadataKeyRejected(t *testing.T) {
+	// Duplicate metadata keys must fail loudly, like duplicate top-level keys,
+	// rather than silently letting the last value win.
+	_, err := parseSkill("---\ndescription: test\nmetadata:\n  owner: a\n  owner: b\n---\n")
+	if err == nil {
+		t.Fatal("expected error for duplicate metadata key")
+	}
+	if !strings.Contains(err.Error(), "duplicate key") {
+		t.Fatalf("expected duplicate key error, got %v", err)
+	}
+}
+
 func TestParseSkill_NullDescriptionFails(t *testing.T) {
 	_, err := parseSkill("---\ndescription: null\n---\n")
 	if err == nil {

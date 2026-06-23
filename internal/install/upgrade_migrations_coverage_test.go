@@ -2766,6 +2766,30 @@ func TestExecuteConfigReplaceStringMigration_Branches(t *testing.T) {
 		}
 	})
 
+	t.Run("substring value is not a match", func(t *testing.T) {
+		// Replacement must use exact equality, not substring containment: a value
+		// like "gemini-pro" must NOT be touched by From="gemini". A buggy
+		// Contains/ReplaceAll implementation would corrupt it; the no-substring
+		// cases elsewhere share no substring and would not catch that.
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nmodel = \"gemini-pro\"\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(makeOp("agents.claude.model", "gemini", "antigravity"))
+		if err != nil {
+			t.Fatalf("executeConfigReplaceStringMigration: %v", err)
+		}
+		if changed {
+			t.Fatal("expected no change: From is only a substring of the value, not an exact match")
+		}
+		cfg, _, _, err := inst.readMigrationConfigMap()
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if val, _, _ := getNestedConfigValue(cfg, []string{"agents", "claude", "model"}); val != "gemini-pro" {
+			t.Fatalf("expected model unchanged at gemini-pro, got %v", val)
+		}
+	})
+
 	t.Run("scalar string replaced", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestConfigFile(t, root, "[agents.claude]\nmodel = \"opus\"\n")
