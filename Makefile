@@ -116,14 +116,18 @@ test-race: ## Run race detector for concurrency-critical packages
 	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/sync/... ./internal/install/... ./internal/warnings/...
 
 .PHONY: dead-code
-dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware)
+dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware); fails on findings
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./...
+	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./... 2>&1)"; rc=$$?; \
+	  if [[ $$rc -ne 0 ]]; then echo "$$out" >&2; echo "deadcode failed (exit $$rc); see output above" >&2; exit $$rc; fi; \
+	  if [[ -n "$$out" ]]; then echo "$$out" >&2; echo "dead code detected (deadcode always exits 0; non-empty output fails this target)" >&2; exit 1; fi
 
 .PHONY: dead-code-entrypoints
-dead-code-entrypoints: check-deadcode ## Run dead code analysis from CLI entrypoints only
+dead-code-entrypoints: check-deadcode ## Run dead code analysis from CLI entrypoints only; fails on findings
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site
+	@out="$$(GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" "$(TOOL_BIN)/deadcode" -test ./cmd/al ./cmd/publish-site 2>&1)"; rc=$$?; \
+	  if [[ $$rc -ne 0 ]]; then echo "$$out" >&2; echo "deadcode failed (exit $$rc); see output above" >&2; exit $$rc; fi; \
+	  if [[ -n "$$out" ]]; then echo "$$out" >&2; echo "dead code detected (deadcode always exits 0; non-empty output fails this target)" >&2; exit 1; fi
 
 .PHONY: tidy
 tidy: ## Run go mod tidy
@@ -217,7 +221,7 @@ test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios requir
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint coverage test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint dead-code coverage test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local checks during development (format + lint + coverage + release tests)

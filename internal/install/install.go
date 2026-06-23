@@ -318,7 +318,7 @@ func (inst templateManager) writeTemplateFiles() error {
 	// Agent-owned internal files: always overwrite to enforce safety invariants.
 	alwaysOverwrite := func(string) (bool, error) { return true, nil }
 	for _, file := range inst.agentOnlyFiles() {
-		if err := writeTemplateFile(inst.sys, file.path, file.template, file.perm, alwaysOverwrite, nil); err != nil {
+		if err := writeTemplateFile(inst.sys, file.path, file.template, file.perm, alwaysOverwrite); err != nil {
 			return err
 		}
 	}

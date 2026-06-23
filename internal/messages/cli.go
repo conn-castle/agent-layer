@@ -283,6 +283,7 @@ const (
 	DispatchOptionsNoRandomTargets        = "(none)"
 	DispatchOptionsNoUnavailableReasons   = "none"
 	DispatchInvalidStructuredOutputFmt    = "%s emitted unreadable structured output: %v"
+	DispatchStdoutWriteFailedFmt          = "failed to write %s answer text to stdout: %v"
 	DispatchNoRecognizedTextEventFmt      = "%s stream produced no recognized answer-text event; upstream stream shape may have changed"
 	DispatchSkillProjectionNotRegularFmt  = "`al dispatch` skill projection %s is not a regular file (mode %s); refusing to follow symlink or special file"
 	DispatchAntigravityPromptTooLargeFmt  = "antigravity prompt is %d bytes; `al dispatch` caps it at %d bytes because agy --print has no stdin/file path. Use --agent claude or --agent codex for larger prompts."

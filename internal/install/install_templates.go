@@ -612,24 +612,7 @@ func (inst templateManager) matchCacheKey(path string, templatePath string) stri
 }
 
 func writeTemplateIfMissing(sys System, path string, templatePath string, perm fs.FileMode) error {
-	return writeTemplateFile(sys, path, templatePath, perm, nil, nil)
-}
-
-func writeTemplateDir(sys System, templateRoot string, destRoot string, shouldOverwrite PromptOverwriteFunc, recordDiff func(string)) error {
-	return templates.Walk(templateRoot, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		rel := strings.TrimPrefix(path, templateRoot+"/")
-		if rel == path {
-			return fmt.Errorf(messages.InstallUnexpectedTemplatePathFmt, path)
-		}
-		destPath := filepath.Join(destRoot, rel)
-		return writeTemplateFile(sys, destPath, path, 0o644, shouldOverwrite, recordDiff)
-	})
+	return writeTemplateFile(sys, path, templatePath, perm, nil)
 }
 
 // MatchTemplateFunc compares a destination file to a template.
@@ -639,8 +622,8 @@ func fileMatchesTemplateWithInfo(sys System, path string, templatePath string, _
 	return fileMatchesTemplate(sys, path, templatePath)
 }
 
-func writeTemplateFile(sys System, path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc, recordDiff func(string)) error {
-	return writeTemplateFileWithMatch(sys, path, templatePath, perm, shouldOverwrite, recordDiff, fileMatchesTemplateWithInfo)
+func writeTemplateFile(sys System, path string, templatePath string, perm fs.FileMode, shouldOverwrite PromptOverwriteFunc) error {
+	return writeTemplateFileWithMatch(sys, path, templatePath, perm, shouldOverwrite, nil, fileMatchesTemplateWithInfo)
 }
 
 func writeTemplateFileWithMatch(
