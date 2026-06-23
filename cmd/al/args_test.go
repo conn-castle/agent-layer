@@ -95,8 +95,15 @@ func TestNoArgsCommandsRejectExtraArgs(t *testing.T) {
 			cmd.SetArgs(tc.args)
 			cmd.SetOut(io.Discard)
 			cmd.SetErr(io.Discard)
-			if err := cmd.Execute(); err == nil {
+			err := cmd.Execute()
+			if err == nil {
 				t.Fatalf("%s accepted unexpected positional arg %v; want error", tc.name, tc.args)
+			}
+			// cobra.NoArgs rejects extra positionals with "unknown command"
+			// before RunE runs, so the error cannot be a side effect of command
+			// execution (repository resolution, env, etc.).
+			if !strings.Contains(err.Error(), "unknown command") {
+				t.Fatalf("%s failed with unexpected error %q; want 'unknown command'", tc.name, err)
 			}
 		})
 	}

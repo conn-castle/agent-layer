@@ -153,7 +153,7 @@ func TestEnsureGitignoreSingleBlankLineAfterBlock(t *testing.T) {
 	if !strings.Contains(firstRun, "# <<< agent-layer\n\nnext\n") {
 		t.Fatalf("expected exactly one blank line between end marker and following content, got %q", firstRun)
 	}
-	if strings.Contains(firstRun, "# <<< agent-layer\n\n\nnext") {
+	if strings.Contains(firstRun, "# <<< agent-layer\n\n\n") {
 		t.Fatalf("blank lines after the managed block were not collapsed to one, got %q", firstRun)
 	}
 	if !strings.HasPrefix(firstRun, "keep\n") {
