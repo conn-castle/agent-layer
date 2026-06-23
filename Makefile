@@ -221,7 +221,7 @@ test-e2e-ci: ## Run e2e tests for CI (online downloads, upgrade scenarios requir
 	@AL_E2E_ONLINE=1 AL_E2E_REQUIRE_UPGRADE=1 ./scripts/test-e2e.sh
 
 .PHONY: ci
-ci: tidy-check fmt-check lint dead-code coverage test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
+ci: tidy-check fmt-check lint dead-code coverage test-race test-release test-e2e-harness test-e2e-ci docs-cta-check ## Run CI checks locally
 
 .PHONY: dev
 dev: ## Fast local checks during development (format + lint + coverage + release tests)

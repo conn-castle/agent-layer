@@ -104,7 +104,11 @@ func (r *RealConnector) ConnectAndDiscover(ctx context.Context, server projectio
 
 	switch server.Transport {
 	case config.TransportStdio:
-		cmd := exec.Command(server.Command, server.Args...)
+		// Bind the spawned MCP server process to the discovery context (which
+		// carries mcpDiscoveryTimeout) so a hung or misbehaving server is killed
+		// directly on cancel/timeout rather than only torn down indirectly via
+		// session Close().
+		cmd := exec.CommandContext(ctx, server.Command, server.Args...)
 		cmd.Env = buildMCPCommandEnv(os.Environ(), server.Env)
 
 		transport = &mcp.CommandTransport{

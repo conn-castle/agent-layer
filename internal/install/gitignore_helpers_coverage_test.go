@@ -9,7 +9,10 @@ func TestUpdateGitignoreContent_AdditionalBranches(t *testing.T) {
 	t.Run("append without existing trailing newline", func(t *testing.T) {
 		content := "node_modules/"
 		block := wrapGitignoreBlock("dist/")
-		updated := updateGitignoreContent(content, block)
+		updated, err := updateGitignoreContent(content, block, ".gitignore")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if !strings.HasPrefix(updated, "node_modules/\n") {
 			t.Fatalf("expected inserted separator newline, got %q", updated)
 		}
@@ -18,12 +21,62 @@ func TestUpdateGitignoreContent_AdditionalBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("dangling start marker appends new block", func(t *testing.T) {
+	t.Run("dangling start marker fails loud instead of appending", func(t *testing.T) {
+		// An orphaned start marker (start present, end missing) must NOT append a
+		// second managed block: doing so would, on the next sync, cause the user's
+		// content between the orphaned start and the appended block to be silently
+		// deleted. The correct behavior is to surface the corruption.
 		content := gitignoreStart + "\nold block line\n"
 		block := wrapGitignoreBlock("new-line")
-		updated := updateGitignoreContent(content, block)
-		if strings.Count(updated, gitignoreStart) < 2 {
-			t.Fatalf("expected dangling block to remain and new block to append, got %q", updated)
+		updated, err := updateGitignoreContent(content, block, ".gitignore")
+		if err == nil {
+			t.Fatalf("expected error for unterminated managed block, got updated content %q", updated)
+		}
+		if !strings.Contains(err.Error(), gitignoreStart) || !strings.Contains(err.Error(), gitignoreEnd) {
+			t.Fatalf("expected error to name both markers, got %v", err)
+		}
+	})
+
+	t.Run("dangling end marker fails loud", func(t *testing.T) {
+		// Symmetric to the orphaned-start case: an end marker with no preceding
+		// start marker is also a corrupt managed block and must fail loud rather
+		// than silently appending a second block. Mirrors the VS Code sibling,
+		// which rejects either incomplete marker.
+		content := "user-line\n" + gitignoreEnd + "\nmore\n"
+		block := wrapGitignoreBlock("new-line")
+		updated, err := updateGitignoreContent(content, block, ".gitignore")
+		if err == nil {
+			t.Fatalf("expected error for orphaned end marker, got updated content %q", updated)
+		}
+	})
+
+	t.Run("end marker before start marker fails loud", func(t *testing.T) {
+		content := gitignoreEnd + "\nuser-line\n" + gitignoreStart + "\n"
+		block := wrapGitignoreBlock("new-line")
+		updated, err := updateGitignoreContent(content, block, ".gitignore")
+		if err == nil {
+			t.Fatalf("expected error for inverted markers, got updated content %q", updated)
+		}
+	})
+
+	t.Run("duplicate start marker fails loud", func(t *testing.T) {
+		// start ... start ... USER ... end: pairing the first start with the end
+		// would silently delete the nested USER content. Must fail loud, matching
+		// the VS Code sibling's duplicate-marker rejection.
+		content := gitignoreStart + "\nold\n" + gitignoreStart + "\nuser-precious\n" + gitignoreEnd + "\n"
+		block := wrapGitignoreBlock("new-line")
+		updated, err := updateGitignoreContent(content, block, ".gitignore")
+		if err == nil {
+			t.Fatalf("expected error for duplicate start marker, got updated content %q", updated)
+		}
+	})
+
+	t.Run("duplicate end marker fails loud", func(t *testing.T) {
+		content := gitignoreStart + "\nold\n" + gitignoreEnd + "\nuser\n" + gitignoreEnd + "\n"
+		block := wrapGitignoreBlock("new-line")
+		updated, err := updateGitignoreContent(content, block, ".gitignore")
+		if err == nil {
+			t.Fatalf("expected error for duplicate end marker, got updated content %q", updated)
 		}
 	})
 
@@ -39,7 +92,10 @@ func TestUpdateGitignoreContent_AdditionalBranches(t *testing.T) {
 			"",
 		}, "\n")
 		block := wrapGitignoreBlock("new")
-		updated := updateGitignoreContent(content, block)
+		updated, err := updateGitignoreContent(content, block, ".gitignore")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if strings.Contains(updated, "\n\n\nafter") {
 			t.Fatalf("expected collapsed blank lines before post section, got %q", updated)
 		}

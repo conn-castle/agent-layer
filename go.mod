@@ -2,6 +2,8 @@ module github.com/conn-castle/agent-layer
 
 go 1.26.0
 
+toolchain go1.26.4
+
 require (
 	github.com/aymanbagabas/go-udiff v0.3.1
 	github.com/charmbracelet/bubbles v0.21.1-0.20250623103423-23b8fd6302d7

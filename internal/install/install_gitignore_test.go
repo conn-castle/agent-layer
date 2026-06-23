@@ -109,6 +109,11 @@ func TestEnsureGitignoreAppendsBlock(t *testing.T) {
 }
 
 func TestEnsureGitignorePartialBlock(t *testing.T) {
+	// A .gitignore with an agent-layer start marker but no matching end marker is
+	// corrupt. Appending a second managed block (the previous behavior) would, on
+	// the next sync, silently delete everything between the orphaned start marker
+	// and the appended block — i.e. the user's "old" line here. EnsureGitignore
+	// must instead fail loud and leave the file untouched.
 	root := t.TempDir()
 	path := filepath.Join(root, ".gitignore")
 	original := "keep\n# >>> agent-layer\nold\n"
@@ -117,15 +122,19 @@ func TestEnsureGitignorePartialBlock(t *testing.T) {
 	}
 
 	block := "new\n" // No markers - EnsureGitignore adds them
-	if err := EnsureGitignore(RealSystem{}, path, block); err != nil {
-		t.Fatalf("EnsureGitignore error: %v", err)
+	err := EnsureGitignore(RealSystem{}, path, block)
+	if err == nil {
+		t.Fatalf("expected error for orphaned start marker, got nil")
+	}
+	if !strings.Contains(err.Error(), "# >>> agent-layer") || !strings.Contains(err.Error(), "# <<< agent-layer") {
+		t.Fatalf("expected error to name both markers, got %v", err)
 	}
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read gitignore: %v", err)
 	}
-	if !strings.Contains(string(data), "new") {
-		t.Fatalf("expected block to be appended")
+	if string(data) != original {
+		t.Fatalf("expected file to be left untouched on error, got %q", string(data))
 	}
 }
 

@@ -387,10 +387,10 @@ func readCurrentPinVersion(root string, sys System) (string, error) {
 		return "", nil
 	}
 	normalized, normalizeErr := version.Normalize(trimmed)
-	if normalizeErr == nil {
-		return normalized, nil
+	if normalizeErr != nil {
+		return "", fmt.Errorf(messages.InstallInvalidPinVersionFmt, normalizeErr)
 	}
-	return "", nil
+	return normalized, nil
 }
 
 func (inst *installer) writeManagedBaselineIfConsistent(source BaselineStateSource) error {
