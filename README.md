@@ -673,7 +673,7 @@ Typical behavior:
 - `al completion <shell> --install` writes the completion file to the standard user location
 
 This enables:
-- `al <TAB>` to complete supported subcommands (antigravity/claude/codex/copilot/vscode/sync/…)
+- `al <TAB>` to complete supported subcommands (agy/claude/codex/copilot/vscode/sync/…)
 
 Notes:
 - Zsh may require adding the install directory to `$fpath` before `compinit` (the command prints a snippet when needed).

@@ -684,6 +684,12 @@ func promptDefaultMCPServers(ui UI, choices *Choices) error {
 	}
 	for _, id := range enabledDefaultServers {
 		choices.EnabledMCPServers[id] = true
+		// Re-enabling a server clears any stale "disabled (missing secrets)"
+		// flag set earlier by promptSecrets; otherwise the same server would be
+		// listed under both the enabled and disabled sections of the summary
+		// after back-navigation (re-select in the MCP step after a blank-secret
+		// disable in the secrets step).
+		delete(choices.DisabledMCPServers, id)
 	}
 	choices.EnabledMCPServersTouched = true
 	return nil

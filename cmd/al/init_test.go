@@ -123,7 +123,7 @@ func TestInitCmd(t *testing.T) {
 			args:    []string{"--version", "invalid"},
 			wantErr: true,
 			checkErr: func(err error) bool {
-				return err != nil // Specific error message check if needed
+				return err != nil && strings.Contains(err.Error(), "must be in the form")
 			},
 		},
 		{
@@ -617,16 +617,22 @@ func TestInitCmd_UpdateWarningDevBuild(t *testing.T) {
 	}
 }
 
-func TestInitCmd_WizardPromptError(t *testing.T) {
+func TestInitCmd_TerminalEOFDeclinesWizard(t *testing.T) {
+	// On a terminal with EOF stdin, promptYesNo returns "no" (decline-on-EOF),
+	// so init must complete WITHOUT invoking the wizard. The prior version of
+	// this test was misnamed ("WizardPromptError") and asserted nothing about
+	// the wizard; assert the decline outcome the path actually produces.
 	origGetwd := getwd
 	origIsTerminal := isTerminal
 	origInstallRun := installRun
 	origCheckForUpdate := checkForUpdate
+	origRunWizardAfterInit := runWizardAfterInit
 	t.Cleanup(func() {
 		getwd = origGetwd
 		isTerminal = origIsTerminal
 		installRun = origInstallRun
 		checkForUpdate = origCheckForUpdate
+		runWizardAfterInit = origRunWizardAfterInit
 	})
 
 	tmpDir := t.TempDir()
@@ -640,18 +646,24 @@ func TestInitCmd_WizardPromptError(t *testing.T) {
 	checkForUpdate = func(context.Context, string) (update.CheckResult, error) {
 		return update.CheckResult{Current: "1.0.0", Latest: "1.0.0"}, nil
 	}
+	wizardCalled := false
+	runWizardAfterInit = func(string, string) error {
+		wizardCalled = true
+		return nil
+	}
 
 	cmd := newInitCmd()
 	cmd.SetArgs([]string{})
-	// Set stdin that will cause promptYesNo to fail
-	cmd.SetIn(strings.NewReader(""))
+	cmd.SetIn(strings.NewReader("")) // EOF -> decline-on-EOF
 	var stdout, stderr bytes.Buffer
 	cmd.SetOut(&stdout)
 	cmd.SetErr(&stderr)
 
-	// Should not error since empty stdin results in "no" response
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("init failed: %v", err)
+	}
+	if wizardCalled {
+		t.Fatalf("expected wizard to be skipped on EOF decline")
 	}
 }
 

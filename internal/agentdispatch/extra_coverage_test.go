@@ -386,8 +386,12 @@ func TestChooseRandomTargetSkipsUninstalledAgents(t *testing.T) {
 
 // TestBuildOptionsDefaultsEnvAndLookPath covers options.go:70-76 — when
 // the request does not supply Env or LookPath, BuildOptions must fall back
-// to os.Environ and exec.LookPath. We just need the call to succeed
-// without panicking (config load surfaces from disk).
+// to os.Environ and exec.LookPath. The observable, environment-independent
+// consequence is config-derived: the three agents the repo enables report
+// Enabled=true. (Installed depends on the host's PATH and Caller.Known depends
+// on the ambient AL_DISPATCH_CALLER_AGENT env var, so neither is asserted here
+// — the os.Environ fallback path is still exercised, just not asserted on a
+// machine-dependent value.)
 func TestBuildOptionsDefaultsEnvAndLookPath(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	options, err := BuildOptions(OptionsRequest{Root: root})
@@ -396,6 +400,15 @@ func TestBuildOptionsDefaultsEnvAndLookPath(t *testing.T) {
 	}
 	if options == nil || len(options.Targets) == 0 {
 		t.Fatal("expected non-empty default options response")
+	}
+	enabled := map[string]bool{}
+	for _, target := range options.Targets {
+		enabled[target.Agent] = target.Enabled
+	}
+	for _, agent := range []string{AgentCodex, AgentClaude, AgentAntigravity} {
+		if !enabled[agent] {
+			t.Fatalf("expected %s to report Enabled=true from config, got %v", agent, enabled[agent])
+		}
 	}
 }
 

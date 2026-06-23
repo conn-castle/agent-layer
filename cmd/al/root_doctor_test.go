@@ -481,15 +481,51 @@ func TestDoctorCommand_MCPError(t *testing.T) {
 }
 
 func TestPrintResult_AllStatuses(t *testing.T) {
-	var out bytes.Buffer
-	// Test all status types to ensure coverage
-	results := []doctor.Result{
-		{Status: doctor.StatusOK, CheckName: "test-ok", Message: "OK message"},
-		{Status: doctor.StatusWarn, CheckName: "test-warn", Message: "Warning message", Recommendation: "Fix it"},
-		{Status: doctor.StatusFail, CheckName: "test-fail", Message: "Fail message"},
+	cases := []struct {
+		name      string
+		result    doctor.Result
+		wantLabel string
+	}{
+		{
+			name:      "ok",
+			result:    doctor.Result{Status: doctor.StatusOK, CheckName: "test-ok", Message: "OK message"},
+			wantLabel: messages.DoctorStatusOKLabel,
+		},
+		{
+			name:      "warn",
+			result:    doctor.Result{Status: doctor.StatusWarn, CheckName: "test-warn", Message: "Warning message", Recommendation: "Fix it"},
+			wantLabel: messages.DoctorStatusWarnLabel,
+		},
+		{
+			name:      "fail",
+			result:    doctor.Result{Status: doctor.StatusFail, CheckName: "test-fail", Message: "Fail message"},
+			wantLabel: messages.DoctorStatusFailLabel,
+		},
 	}
-	for _, r := range results {
-		printResult(&out, r)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			printResult(&out, tc.result)
+			got := out.String()
+			// The status label must match the result's status (catches a label
+			// swapped between the switch arms).
+			if !strings.Contains(got, tc.wantLabel) {
+				t.Fatalf("output %q missing status label %q", got, tc.wantLabel)
+			}
+			// CheckName and Message must both be rendered on the result line.
+			if !strings.Contains(got, tc.result.CheckName) {
+				t.Fatalf("output %q missing check name %q", got, tc.result.CheckName)
+			}
+			if !strings.Contains(got, tc.result.Message) {
+				t.Fatalf("output %q missing message %q", got, tc.result.Message)
+			}
+			// The recommendation block renders only when a recommendation is set.
+			hasRecommendation := strings.Contains(got, messages.DoctorRecommendationPrefix)
+			if (tc.result.Recommendation != "") != hasRecommendation {
+				t.Fatalf("recommendation rendering mismatch for %q: recommendation=%q rendered=%v\noutput:\n%s",
+					tc.name, tc.result.Recommendation, hasRecommendation, got)
+			}
+		})
 	}
 }
 

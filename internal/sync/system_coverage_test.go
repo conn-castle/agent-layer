@@ -16,8 +16,16 @@ func TestRealSystem_LookPath_NotFound(t *testing.T) {
 func TestRealSystem_MkdirAll(t *testing.T) {
 	sys := RealSystem{}
 	dir := t.TempDir()
-	if err := sys.MkdirAll(dir+"/sub/dir", 0o755); err != nil {
+	target := dir + "/sub/dir"
+	if err := sys.MkdirAll(target, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("expected created directory to exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected %q to be a directory", target)
 	}
 }
 

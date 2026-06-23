@@ -5,24 +5,34 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func TestScanUnknownRoot_StatError(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("skipping permissions test on windows")
-	}
+	// A non-ErrNotExist Stat failure on a scan root must abort scanUnknowns with
+	// the wrapped "failed to stat" error rather than silently treating the root
+	// as empty. Inject the failure deterministically via faultSystem so the
+	// assertion exercises the real error branch without OS-dependent chmod tricks.
 	root := t.TempDir()
-	locked := filepath.Join(root, "locked")
-	if err := os.Mkdir(locked, 0o000); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	sys := newFaultSystem(RealSystem{})
+	statBoom := errors.New("stat boom")
+	firstRoot := filepath.Join(root, ".agent-layer")
+	sys.statErrs[normalizePath(firstRoot)] = statBoom
 
-	inst := &installer{root: locked, sys: RealSystem{}}
-	// scanUnknowns may or may not error depending on OS behavior with 000 perms.
-	// We just exercise the code path; the test passes regardless of result.
-	_ = inst.scanUnknowns()
+	inst := &installer{root: root, sys: sys}
+	err := inst.scanUnknowns()
+	if err == nil {
+		t.Fatalf("expected error when a scan root fails to stat")
+	}
+	if !errors.Is(err, statBoom) {
+		t.Fatalf("expected wrapped stat error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to stat") || !strings.Contains(err.Error(), firstRoot) {
+		t.Fatalf("expected error to name the failing root, got %v", err)
+	}
 }
 
 func TestScanUnknowns_LegacyStatuslineSourceIsKnown(t *testing.T) {
@@ -137,10 +147,17 @@ func TestWarnUnknowns_WithUnknowns(t *testing.T) {
 		sys:        RealSystem{},
 		warnWriter: &buf,
 	}
-	// Just exercise the code path - it writes to the warning output.
 	inst.warnUnknowns()
-	if buf.Len() == 0 {
-		t.Fatalf("expected warning output")
+	out := buf.String()
+	// Assert the header AND each unknown path appears, not merely that "something"
+	// was written — a single space or a wrong-path message would pass buf.Len()>0.
+	if !strings.Contains(out, messages.InstallUnknownHeader) {
+		t.Fatalf("expected unknown header in output, got:\n%s", out)
+	}
+	for _, want := range []string{"unknown1", "unknown2"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected warning output to name %q, got:\n%s", want, out)
+		}
 	}
 }
 
@@ -155,8 +172,14 @@ func TestWarnDifferences_WithDiffs(t *testing.T) {
 		warnWriter: &buf,
 	}
 	inst.warnDifferences()
-	if buf.Len() == 0 {
-		t.Fatalf("expected warning output")
+	out := buf.String()
+	if !strings.Contains(out, messages.InstallDiffHeader) {
+		t.Fatalf("expected diff header in output, got:\n%s", out)
+	}
+	for _, want := range []string{"diff1", "diff2"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected warning output to name %q, got:\n%s", want, out)
+		}
 	}
 }
 
@@ -290,27 +313,27 @@ func TestScanUnknownRoot_WalkDirError(t *testing.T) {
 }
 
 func TestScanUnknownRoot_StatErrorNonNotExist(t *testing.T) {
-	if os.PathSeparator == '\\' {
-		t.Skip("skipping permissions test on windows")
-	}
+	// A Stat error that is NOT os.ErrNotExist must propagate as the wrapped
+	// "failed to stat" error (the ErrNotExist branch returns nil). Inject a
+	// generic stat error deterministically so the non-ErrNotExist branch is
+	// exercised regardless of OS permission semantics.
 	root := t.TempDir()
 	alDir := filepath.Join(root, ".agent-layer")
-	if err := os.MkdirAll(alDir, 0o700); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	// Remove read permissions from alDir to cause stat error
-	if err := os.Chmod(alDir, 0o000); err != nil {
-		t.Fatalf("chmod: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(alDir, 0o755) }) // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
+	sys := newFaultSystem(RealSystem{})
+	statBoom := errors.New("permission denied")
+	sys.statErrs[normalizePath(alDir)] = statBoom
 
-	inst := &installer{root: root, sys: RealSystem{}}
+	inst := &installer{root: root, sys: sys}
 	known := make(map[string]struct{})
 	err := inst.scanUnknownRoot(alDir, known)
-	// Should error due to stat permission denied
 	if err == nil {
-		// Some systems may not error - that's OK
-		t.Logf("no error (system may allow stat on 000 dir)")
+		t.Fatalf("expected error for non-ErrNotExist stat failure")
+	}
+	if !errors.Is(err, statBoom) {
+		t.Fatalf("expected wrapped stat error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to stat") {
+		t.Fatalf("expected 'failed to stat' error, got %v", err)
 	}
 }
 

@@ -206,7 +206,6 @@ func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
-	confirmCalls := 0
 	ui := &MockUI{
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
@@ -217,9 +216,11 @@ func TestRun_SecretFromEnv_ConfirmError(t *testing.T) {
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			confirmCalls++
-			// First confirm is for restore missing, second is env variable
-			if confirmCalls == 2 {
+			// Match the env-secret-found prompt by title so the injected error
+			// targets the intended prompt regardless of how many confirms
+			// precede it (the prior ordinal `confirmCalls == 2` gate silently
+			// hit a different prompt if step ordering changed).
+			if title == fmt.Sprintf(messages.WizardEnvSecretFoundPromptFmt, "AL_TAVILY_API_KEY") {
 				return errors.New("env confirm error")
 			}
 			*value = true
@@ -349,7 +350,6 @@ func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(validConfig), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
 
-	confirmCalls := 0
 	ui := &MockUI{
 		NoteFunc:   func(title, body string) error { return nil },
 		SelectFunc: func(title string, options []string, current *string) error { return nil },
@@ -360,9 +360,9 @@ func TestRun_SecretBlank_DisableMCP_ConfirmError(t *testing.T) {
 			return nil
 		},
 		ConfirmFunc: func(title string, value *bool) error {
-			confirmCalls++
-			// Third confirm is disable MCP (after restore missing and env check)
-			if confirmCalls == 2 {
+			// Match the disable-on-blank-secret prompt by title rather than by
+			// call order so the injected error targets the intended prompt.
+			if title == fmt.Sprintf(messages.WizardSecretMissingDisablePromptFmt, "AL_TAVILY_API_KEY", "tavily") {
 				return errors.New("disable confirm error")
 			}
 			*value = true

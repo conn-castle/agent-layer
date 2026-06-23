@@ -577,19 +577,6 @@ func TestVerifyChecksum_FileOpenError(t *testing.T) {
 	}
 }
 
-func TestPlatformStrings(t *testing.T) {
-	osName, arch, err := platformStrings()
-	if err != nil {
-		t.Fatalf("platformStrings failed: %v", err)
-	}
-	if osName != runtime.GOOS {
-		t.Errorf("osName: got %s, want %s", osName, runtime.GOOS)
-	}
-	if arch != runtime.GOARCH {
-		t.Errorf("arch: got %s, want %s", arch, runtime.GOARCH)
-	}
-}
-
 func TestCheckPlatform(t *testing.T) {
 	tests := []struct {
 		os      string

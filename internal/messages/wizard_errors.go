@@ -2,6 +2,8 @@ package messages
 
 // Wizard error messages and validation text.
 const (
+	WizardProfileAnswersConflict          = "--profile and --answers cannot be used together"
+	WizardYesRequiresProfile              = "--yes can only be used with --profile"
 	WizardInstallFailedFmt                = "install failed: %w"
 	WizardPartialInstallUpgradeRequired   = "agent layer is partially initialized in this repository (missing .agent-layer/config.toml); run 'al upgrade' to repair templates before using 'al wizard'"
 	WizardLoadConfigFailedFmt             = "failed to load config: %w"

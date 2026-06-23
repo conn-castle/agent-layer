@@ -25,14 +25,6 @@ func TestMainVersion(t *testing.T) {
 	}
 }
 
-func TestMainUnknownCommand(t *testing.T) {
-	var out bytes.Buffer
-	err := execute([]string{"al", "unknown"}, &out, &out)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
 func TestRunMainSuccess(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()

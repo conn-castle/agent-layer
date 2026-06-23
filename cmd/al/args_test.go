@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
@@ -71,39 +74,36 @@ func TestClientArgsPassThroughWithSeparator(t *testing.T) {
 	}
 }
 
-func TestStripArgsSeparator(t *testing.T) {
-	tests := []struct {
+// TestNoArgsCommandsRejectExtraArgs verifies that commands which take no
+// positional arguments fail loud (rather than silently ignoring) when given a
+// stray token. cobra's Args validator runs before RunE, so Execute returns the
+// "unknown command" error before any side effect or root resolution occurs.
+func TestNoArgsCommandsRejectExtraArgs(t *testing.T) {
+	cases := []struct {
 		name string
+		cmd  func() *cobra.Command
 		args []string
-		want []string
 	}{
-		{
-			name: "empty args",
-			args: nil,
-			want: []string{},
-		},
-		{
-			name: "separator at start",
-			args: []string{"--", "--help"},
-			want: []string{"--help"},
-		},
-		{
-			name: "separator in middle",
-			args: []string{"--foo", "--", "--bar"},
-			want: []string{"--foo", "--bar"},
-		},
-		{
-			name: "multiple separators",
-			args: []string{"--foo", "--", "--bar", "--", "--baz"},
-			want: []string{"--foo", "--bar", "--", "--baz"},
-		},
+		{name: "sync", cmd: newSyncCmd, args: []string{"unexpected"}},
+		{name: "init", cmd: newInitCmd, args: []string{"unexpected"}},
+		{name: "probe antigravity", cmd: newProbeAntigravityCmd, args: []string{"unexpected"}},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := stripArgsSeparator(tt.args)
-			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
-				t.Fatalf("expected %v, got %v", tt.want, got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := tc.cmd()
+			cmd.SetArgs(tc.args)
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			err := cmd.Execute()
+			if err == nil {
+				t.Fatalf("%s accepted unexpected positional arg %v; want error", tc.name, tc.args)
+			}
+			// cobra.NoArgs rejects extra positionals with "unknown command"
+			// before RunE runs, so the error cannot be a side effect of command
+			// execution (repository resolution, env, etc.).
+			if !strings.Contains(err.Error(), "unknown command") {
+				t.Fatalf("%s failed with unexpected error %q; want 'unknown command'", tc.name, err)
 			}
 		})
 	}

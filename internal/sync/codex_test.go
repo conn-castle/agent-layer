@@ -225,11 +225,24 @@ func TestBuildCodexConfigAgentSpecificDifferentProjectDoesNotSuppressTrust(t *te
 		t.Fatalf("parse generated toml: %v\n%s", err, output)
 	}
 	projects := parsed["projects"].(map[string]any)
-	if _, ok := projects[absRoot].(map[string]any); !ok {
+	// The whole point of this test ("DoesNotSuppressTrust") is that an
+	// agent_specific entry for a DIFFERENT project must NOT prevent the managed
+	// trusted block for the repo root from being emitted. Assert the trust_level
+	// values, not just key presence — otherwise a regression that emits the keys
+	// with wrong/empty trust levels would pass.
+	managed, ok := projects[absRoot].(map[string]any)
+	if !ok {
 		t.Fatalf("expected managed exact-path project %q, got %#v", absRoot, projects)
 	}
-	if _, ok := projects[otherRoot].(map[string]any); !ok {
+	if got := managed["trust_level"]; got != "trusted" {
+		t.Fatalf("expected managed trust_level=trusted for repo root, got %#v", got)
+	}
+	other, ok := projects[otherRoot].(map[string]any)
+	if !ok {
 		t.Fatalf("expected agent-specific project %q, got %#v", otherRoot, projects)
+	}
+	if got := other["trust_level"]; got != "trusted" {
+		t.Fatalf("expected agent-specific trust_level preserved, got %#v", got)
 	}
 }
 

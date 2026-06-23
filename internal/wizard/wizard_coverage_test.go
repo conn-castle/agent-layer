@@ -334,13 +334,25 @@ func TestPromptSecrets_ExistingSecretBranch(t *testing.T) {
 	choices.EnabledMCPServers["server"] = true
 	choices.Secrets["AL_TOKEN"] = "already-set"
 
+	// The skip-existing-secret behavior is the point of this test: an already
+	// populated secret must NOT trigger a prompt. Asserting err==nil alone is
+	// satisfied by setup (the error func never runs), so record the call and
+	// assert it was skipped and the value preserved.
+	secretInputCalled := false
 	err := promptSecrets(root, &MockUI{
 		SecretInputFunc: func(string, *string) error {
+			secretInputCalled = true
 			return errors.New("should not prompt for existing secret")
 		},
 	}, choices)
 	if err != nil {
 		t.Fatalf("expected nil error, got %v", err)
+	}
+	if secretInputCalled {
+		t.Fatal("SecretInput was called for an already-populated secret; expected it to be skipped")
+	}
+	if choices.Secrets["AL_TOKEN"] != "already-set" {
+		t.Fatalf("existing secret was modified: got %q, want %q", choices.Secrets["AL_TOKEN"], "already-set")
 	}
 }
 

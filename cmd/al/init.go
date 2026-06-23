@@ -60,6 +60,7 @@ func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   messages.InitUse,
 		Short: messages.InitShort,
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, cwd, err := resolveInitRoot(here)
 			if err != nil {

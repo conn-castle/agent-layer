@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	toml "github.com/pelletier/go-toml/v2"
@@ -40,6 +41,43 @@ func mcpServerByID(t *testing.T, content string, id string) config.MCPServer {
 func mcpServerEnabled(t *testing.T, content string, id string) bool {
 	t.Helper()
 	return config.IsAgentEnabled(mcpServerByID(t, content, id).Enabled)
+}
+
+// TestPromptDefaultMCPServers_ReEnableClearsDisabledFlag guards the
+// back-navigation case where a server is disabled for a missing secret in the
+// secrets step (which sets both EnabledMCPServers[id]=false and
+// DisabledMCPServers[id]=true) and is then re-selected in the MCP defaults step.
+// Re-enabling must clear the stale disabled flag; otherwise the same server is
+// listed under BOTH the "Enabled MCP Servers" and "Disabled MCP Servers (missing
+// secrets)" sections of the review summary.
+func TestPromptDefaultMCPServers_ReEnableClearsDisabledFlag(t *testing.T) {
+	choices := NewChoices()
+	choices.DefaultMCPServers = []DefaultMCPServer{{ID: "tavily", RequiredEnv: []string{"AL_TAVILY_API_KEY"}}}
+	// Simulate the secrets step having disabled the server for a blank secret.
+	choices.EnabledMCPServers["tavily"] = false
+	choices.DisabledMCPServers["tavily"] = true
+
+	ui := &MockUI{
+		MultiSelectFunc: func(_ string, _ []string, selected *[]string) error {
+			*selected = []string{"tavily"} // user re-selects it
+			return nil
+		},
+	}
+	require.NoError(t, promptDefaultMCPServers(ui, choices))
+
+	assert.True(t, choices.EnabledMCPServers["tavily"], "re-selected server must be enabled")
+	assert.False(t, choices.DisabledMCPServers["tavily"], "stale disabled flag must be cleared on re-enable")
+
+	// The review summary must list the server only under Enabled, never under both.
+	summary := buildSummary(choices)
+	enabledIdx := strings.Index(summary, messages.WizardSummaryEnabledMCPServersHeader)
+	disabledIdx := strings.Index(summary, messages.WizardSummaryDisabledMCPServersHeader)
+	require.GreaterOrEqual(t, enabledIdx, 0)
+	require.GreaterOrEqual(t, disabledIdx, 0)
+	enabledSection := summary[enabledIdx:disabledIdx]
+	disabledSection := summary[disabledIdx:]
+	assert.Contains(t, enabledSection, "tavily", "re-enabled server must appear under Enabled")
+	assert.NotContains(t, disabledSection, "tavily", "re-enabled server must NOT appear under Disabled")
 }
 
 func TestCustomMCPServers(t *testing.T) {
