@@ -2,6 +2,7 @@ package codex
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,9 +104,11 @@ func TestEnsureCodexHomeWarnsOnMismatch(t *testing.T) {
 		t.Fatalf("close pipe writer: %v", err)
 	}
 
-	var buf [4096]byte
-	n, _ := r.Read(buf[:])
-	stderr := string(buf[:n])
+	stderrBytes, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read stderr: %v", err)
+	}
+	stderr := string(stderrBytes)
 
 	// Warn-and-preserve: the original value must be kept.
 	value, ok := clients.GetEnv(out, "CODEX_HOME")
