@@ -39,9 +39,9 @@ func ensureCodexHome(root string, env []string) []string {
 	}
 
 	if !clients.SamePath(current, expected) {
-		if _, err := fmt.Fprintf(os.Stderr, messages.ClientsCodexHomeWarningFmt, current, expected); err != nil {
-			return env
-		}
+		// Best-effort warning; a stderr write failure does not change the returned
+		// env (the existing CODEX_HOME is preserved regardless).
+		_, _ = fmt.Fprintf(os.Stderr, messages.ClientsCodexHomeWarningFmt, current, expected)
 	}
 
 	return env

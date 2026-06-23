@@ -14,6 +14,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/version"
 )
 
 func TestLoadUpgradeMigrationManifestByVersion(t *testing.T) {
@@ -1809,6 +1810,83 @@ func TestDeleteGeneratedArtifact_DeletesWatermarkedFile(t *testing.T) {
 	}
 }
 
+// TestDeleteGeneratedArtifact_ReRunIsIdempotentNoOp pins that re-running the
+// watermarked delete after the file is already gone is a clean no-op (Stat
+// returns ErrNotExist, no symlink present) rather than an error.
+func TestDeleteGeneratedArtifact_ReRunIsIdempotentNoOp(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	generated := filepath.Join(root, "GEMINI.md")
+	if err := os.WriteFile(generated, []byte("<!--\n  GENERATED FILE\n-->\nbody\n"), 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}}
+	if changed, err := inst.executeDeleteMigration("GEMINI.md", true); err != nil || !changed {
+		t.Fatalf("first delete: changed=%v err=%v", changed, err)
+	}
+	// Second run with the watermark gate still set: the file is gone, so the
+	// op must report no change and no error (idempotent).
+	changed, err := inst.executeDeleteMigration("GEMINI.md", true)
+	if err != nil {
+		t.Fatalf("idempotent re-run errored: %v", err)
+	}
+	if changed {
+		t.Fatal("expected no change on re-run after the file was already deleted")
+	}
+}
+
+// TestDeleteGeneratedArtifact_DanglingSymlinkWatermarkRefuses pins that under
+// the watermark gate a dangling symlink (whose target's content cannot be
+// verified) is preserved with a warning rather than removed.
+func TestDeleteGeneratedArtifact_DanglingSymlinkWatermarkRefuses(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	link := filepath.Join(root, "GEMINI.md")
+	if err := os.Symlink(filepath.Join(root, "missing-target"), link); err != nil {
+		t.Skipf("symlinks unsupported on this platform: %v", err)
+	}
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}, warnWriter: &warn}
+	changed, err := inst.executeDeleteMigration("GEMINI.md", true)
+	if err != nil {
+		t.Fatalf("execute delete: %v", err)
+	}
+	if changed {
+		t.Fatal("watermarked delete must not remove a dangling symlink")
+	}
+	if _, lerr := os.Lstat(link); lerr != nil {
+		t.Fatalf("dangling symlink must survive watermarked delete: %v", lerr)
+	}
+	if !strings.Contains(warn.String(), "dangling symlink") {
+		t.Fatalf("expected dangling-symlink warning, got %q", warn.String())
+	}
+}
+
+// TestDeleteGeneratedArtifact_DanglingSymlinkNonWatermarkRemoves pins that a
+// non-watermark delete (delete_file) removes the dangling link entity itself.
+func TestDeleteGeneratedArtifact_DanglingSymlinkNonWatermarkRemoves(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	link := filepath.Join(root, ".agent-layer", "stale-link")
+	if err := os.MkdirAll(filepath.Dir(link), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(root, "missing-target"), link); err != nil {
+		t.Skipf("symlinks unsupported on this platform: %v", err)
+	}
+	inst := &installer{root: root, pinVersion: "0.10.2", sys: RealSystem{}}
+	changed, err := inst.executeDeleteMigration(".agent-layer/stale-link", false)
+	if err != nil {
+		t.Fatalf("execute delete: %v", err)
+	}
+	if !changed {
+		t.Fatal("non-watermark delete must remove the dangling link entity")
+	}
+	if _, lerr := os.Lstat(link); !os.IsNotExist(lerr) {
+		t.Fatalf("expected dangling link removed, lstat err = %v", lerr)
+	}
+}
+
 // TestConfigMigrationFromOperation_SurfacesAllConfigKinds locks in F-A-1:
 // every config-kind migration operation must produce a ConfigKeyMigration so
 // the upgrade preview tells the user what the migration will change. Before
@@ -2453,9 +2531,9 @@ func TestListMigrationManifestVersions(t *testing.T) {
 	}
 	// Verify sorted ascending.
 	for i := 1; i < len(versions); i++ {
-		cmp, cmpErr := compareSemver(versions[i-1], versions[i])
+		cmp, cmpErr := version.Compare(versions[i-1], versions[i])
 		if cmpErr != nil {
-			t.Fatalf("compareSemver(%q, %q): %v", versions[i-1], versions[i], cmpErr)
+			t.Fatalf("version.Compare(%q, %q): %v", versions[i-1], versions[i], cmpErr)
 		}
 		if cmp >= 0 {
 			t.Fatalf("versions not sorted ascending: %q >= %q", versions[i-1], versions[i])

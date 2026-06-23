@@ -16,6 +16,13 @@ import (
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
+// utf8BOM is the UTF-8 byte-order-mark trimmed from skill and instruction file
+// content before parsing.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// osReadFileFunc is a test seam over os.ReadFile used by LoadSkills.
+var osReadFileFunc = os.ReadFile
+
 const (
 	yamlTagStr  = "!!str"
 	yamlTagNull = "!!null"
@@ -281,7 +288,7 @@ func parseSkillFrontMatter(lines []string) (skillFrontMatter, error) {
 		key := strings.TrimSpace(keyNode.Value)
 
 		if key != "" && seen[key] {
-			return skillFrontMatter{}, fmt.Errorf("skill front matter contains duplicate key %q", key)
+			return skillFrontMatter{}, fmt.Errorf(messages.ConfigSkillDuplicateKeyFmt, key)
 		}
 		seen[key] = true
 
@@ -413,6 +420,11 @@ func parseFrontMatterMetadata(node *yaml.Node) (map[string]string, error) {
 		}
 		if valueNode.Kind != yaml.ScalarNode || (valueNode.Tag != "" && valueNode.Tag != yamlTagStr) {
 			return nil, fmt.Errorf(messages.ConfigSkillInvalidFrontMatterTypeFmt, "metadata values must be strings")
+		}
+		// Reject duplicate metadata keys for parity with top-level front-matter
+		// keys, which fail loudly. Otherwise a duplicate silently last-value-wins.
+		if _, exists := metadata[keyNode.Value]; exists {
+			return nil, fmt.Errorf(messages.ConfigSkillDuplicateKeyFmt, keyNode.Value)
 		}
 		metadata[keyNode.Value] = valueNode.Value
 	}

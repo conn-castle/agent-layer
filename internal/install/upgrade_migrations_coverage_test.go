@@ -1582,77 +1582,6 @@ func TestResolveUpgradeMigrationSourceVersion_BaselineAndSnapshotFallback(t *tes
 	})
 }
 
-func TestCompareSemver_AdditionalCases(t *testing.T) {
-	tests := []struct {
-		name string
-		a    string
-		b    string
-		want int
-	}{
-		{name: "equal", a: "1.2.3", b: "1.2.3", want: 0},
-		{name: "a less major", a: "0.9.9", b: "1.0.0", want: -1},
-		{name: "a greater major", a: "2.0.0", b: "1.9.9", want: 1},
-		{name: "a less minor", a: "1.0.9", b: "1.1.0", want: -1},
-		{name: "a greater minor", a: "1.2.0", b: "1.1.9", want: 1},
-		{name: "a less patch", a: "1.2.3", b: "1.2.4", want: -1},
-		{name: "a greater patch", a: "1.2.5", b: "1.2.4", want: 1},
-		{name: "with v prefix", a: "v1.2.3", b: "v1.2.3", want: 0},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := compareSemver(tc.a, tc.b)
-			if err != nil {
-				t.Fatalf("compareSemver(%q, %q) err: %v", tc.a, tc.b, err)
-			}
-			if got != tc.want {
-				t.Fatalf("compareSemver(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
-			}
-		})
-	}
-
-	t.Run("invalid a", func(t *testing.T) {
-		if _, err := compareSemver("bad", "1.0.0"); err == nil {
-			t.Fatal("expected error for invalid a")
-		}
-	})
-	t.Run("invalid b", func(t *testing.T) {
-		if _, err := compareSemver("1.0.0", "bad"); err == nil {
-			t.Fatal("expected error for invalid b")
-		}
-	})
-}
-
-func TestParseSemver_EdgeCases(t *testing.T) {
-	t.Run("valid version", func(t *testing.T) {
-		parts, err := parseSemver("1.2.3")
-		if err != nil {
-			t.Fatalf("parseSemver: %v", err)
-		}
-		if parts != [3]int{1, 2, 3} {
-			t.Fatalf("parseSemver = %v, want [1 2 3]", parts)
-		}
-	})
-	t.Run("v-prefix version", func(t *testing.T) {
-		parts, err := parseSemver("v0.7.0")
-		if err != nil {
-			t.Fatalf("parseSemver: %v", err)
-		}
-		if parts != [3]int{0, 7, 0} {
-			t.Fatalf("parseSemver = %v, want [0 7 0]", parts)
-		}
-	})
-	t.Run("invalid version", func(t *testing.T) {
-		if _, err := parseSemver("abc"); err == nil {
-			t.Fatal("expected error for invalid version")
-		}
-	})
-	t.Run("empty version", func(t *testing.T) {
-		if _, err := parseSemver(""); err == nil {
-			t.Fatal("expected error for empty version")
-		}
-	})
-}
-
 func TestLoadUpgradeMigrationManifestByVersion_ValidationError(t *testing.T) {
 	// Invalid schema_version triggers validation error path.
 	original := templates.ReadFunc
@@ -2763,6 +2692,30 @@ func TestExecuteConfigReplaceStringMigration_Branches(t *testing.T) {
 		}
 		if val, _, _ := getNestedConfigValue(cfg, []string{"agents", "claude", "model"}); val != "sonnet" {
 			t.Fatalf("expected model unchanged, got %v", val)
+		}
+	})
+
+	t.Run("substring value is not a match", func(t *testing.T) {
+		// Replacement must use exact equality, not substring containment: a value
+		// like "gemini-pro" must NOT be touched by From="gemini". A buggy
+		// Contains/ReplaceAll implementation would corrupt it; the no-substring
+		// cases elsewhere share no substring and would not catch that.
+		root := t.TempDir()
+		writeTestConfigFile(t, root, "[agents.claude]\nmodel = \"gemini-pro\"\n")
+		inst := &installer{root: root, sys: RealSystem{}}
+		changed, err := inst.executeConfigReplaceStringMigration(makeOp("agents.claude.model", "gemini", "antigravity"))
+		if err != nil {
+			t.Fatalf("executeConfigReplaceStringMigration: %v", err)
+		}
+		if changed {
+			t.Fatal("expected no change: From is only a substring of the value, not an exact match")
+		}
+		cfg, _, _, err := inst.readMigrationConfigMap()
+		if err != nil {
+			t.Fatalf("read config: %v", err)
+		}
+		if val, _, _ := getNestedConfigValue(cfg, []string{"agents", "claude", "model"}); val != "gemini-pro" {
+			t.Fatalf("expected model unchanged at gemini-pro, got %v", val)
 		}
 	})
 

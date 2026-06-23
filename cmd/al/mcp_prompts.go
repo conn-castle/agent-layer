@@ -4,15 +4,17 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func newMcpPromptsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "mcp-prompts",
-		Short:  "Start the MCP prompt server (deprecated)",
+		Use:    messages.McpPromptsUse,
+		Short:  messages.McpPromptsShort,
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "al mcp-prompts is deprecated: skills are now synced natively. Run 'al sync' to update.")
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), messages.McpPromptsDeprecated)
 			return nil
 		},
 	}

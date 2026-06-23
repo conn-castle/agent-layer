@@ -107,7 +107,7 @@ func ExpandPath(value string, repoRoot string) (string, error) {
 		return filepath.Clean(expanded), nil
 	}
 	if repoRoot == "" {
-		return "", fmt.Errorf("repo root required for path expansion")
+		return "", fmt.Errorf(messages.ConfigRepoRootRequiredPath)
 	}
 	return filepath.Clean(filepath.Join(repoRoot, expanded)), nil
 }

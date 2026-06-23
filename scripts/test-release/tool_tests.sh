@@ -31,6 +31,7 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abc12345  file1.tar.
 sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba987654321  file2.tar.gz
 1111111111111111111111111111111111111111111111111111111111111111  ./path/to/file3.bin
 2222222222222222222222222222222222222222222222222222222222222222  *./path/with spaces/file 4.bin
+3333333333333333333333333333333333333333333333333333333333333333  .hidden-file.bin
 EOF
 
       # Test 1: Extract checksum for existing file (standard format)
@@ -84,6 +85,16 @@ EOF
         fail "extractchecksum: should exit 1 with wrong argument count"
       else
         pass "extractchecksum: exits 1 with wrong argument count"
+      fi
+
+      # Test 8: Dotfile leading "." must be preserved, not stripped as a cutset.
+      # A "./" prefix is a path marker (stripped); a leading dot in the basename
+      # is part of the name and must survive (regression guard for TrimLeft cutset bug).
+      result=$(run_extract_checksum "$test_checksums" ".hidden-file.bin" 2>/dev/null) || true
+      if [[ "$result" == "3333333333333333333333333333333333333333333333333333333333333333" ]]; then
+        pass "extractchecksum: preserves leading dot in dotfile names"
+      else
+        fail "extractchecksum: mangled dotfile name (got: $result)"
       fi
     fi
   fi
@@ -233,5 +244,19 @@ EOF
         pass "updateformula: exits 1 with no sha256 line"
       fi
     fi
+  fi
+}
+
+run_go_tool_tests_gentemplatemanifest() {
+  section "Go Tool Tests: gentemplatemanifest"
+
+  # The gentemplatemanifest package (and its tests) are guarded by the `tools`
+  # build tag, so `go test ./...` (used by make coverage) skips them. Run them
+  # explicitly here so the manifest generator's managed/excluded partition
+  # completeness check actually executes in CI.
+  if (cd "$ROOT_DIR" && go test -tags tools ./internal/tools/gentemplatemanifest/); then
+    pass "gentemplatemanifest tests passed"
+  else
+    fail "gentemplatemanifest tests failed"
   fi
 }

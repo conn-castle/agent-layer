@@ -297,29 +297,6 @@ func TestEnsureClaudeConfigDirWarnsOnMismatch(t *testing.T) {
 	}
 }
 
-func TestEnsureClaudeConfigDir_WarningWriteFailureLeavesEnvUnchanged(t *testing.T) {
-	root := t.TempDir()
-	current := filepath.Join(t.TempDir(), "other")
-	env := []string{"CLAUDE_CONFIG_DIR=" + current}
-
-	origStderr := os.Stderr
-	_, stderrWriter, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	if err := stderrWriter.Close(); err != nil {
-		t.Fatalf("close pipe writer: %v", err)
-	}
-	os.Stderr = stderrWriter
-	t.Cleanup(func() { os.Stderr = origStderr })
-
-	out := ensureClaudeConfigDir(root, env)
-	value, ok := clients.GetEnv(out, "CLAUDE_CONFIG_DIR")
-	if !ok || value != current {
-		t.Fatalf("expected CLAUDE_CONFIG_DIR to remain unchanged, got %q", value)
-	}
-}
-
 func TestLaunchClaude_NoLocalConfigDir(t *testing.T) {
 	root := t.TempDir()
 	binDir := t.TempDir()
