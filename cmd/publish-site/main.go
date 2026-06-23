@@ -503,7 +503,11 @@ func collectLevelTwoHeadings(body string) []guideHeading {
 			n++
 			slug = fmt.Sprintf("%s-%d", baseSlug, n)
 		}
-		slugCounts[baseSlug]++
+		// Advance the base counter past the suffix actually used so the next
+		// repeat starts searching from there instead of re-walking claimed low
+		// suffixes (avoids quadratic behaviour on many collisions). The
+		// emittedSlugs guard above still guarantees uniqueness.
+		slugCounts[baseSlug] = n + 1
 		emittedSlugs[slug] = true
 		headings = append(headings, guideHeading{text: text, slug: slug})
 	}
