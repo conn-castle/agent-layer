@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -75,7 +76,7 @@ func (ui *ScriptedUI) Select(title string, options []string, current *string) er
 	if !ok {
 		return missingScriptedAnswer("select", title)
 	}
-	if !containsScriptedOption(options, answer) {
+	if !slices.Contains(options, answer) {
 		return fmt.Errorf("wizard select answer %q for %q is not one of %v", answer, title, options)
 	}
 	*current = answer
@@ -90,7 +91,7 @@ func (ui *ScriptedUI) MultiSelect(title string, options []string, selected *[]st
 		return missingScriptedAnswer("multi_select", title)
 	}
 	for _, value := range answer {
-		if !containsScriptedOption(options, value) {
+		if !slices.Contains(options, value) {
 			return fmt.Errorf("wizard multi-select answer %q for %q is not one of %v", value, title, options)
 		}
 	}
@@ -179,15 +180,6 @@ func lookupBoolScriptedAnswer(answers map[string]bool, title string) (bool, stri
 func firstScriptedTitleLine(title string) string {
 	first, _, _ := strings.Cut(title, "\n")
 	return first
-}
-
-func containsScriptedOption(options []string, value string) bool {
-	for _, option := range options {
-		if option == value {
-			return true
-		}
-	}
-	return false
 }
 
 func stringMapKeys(in map[string]string) map[string]struct{} {

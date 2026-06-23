@@ -3,7 +3,45 @@ package doctor
 import (
 	"reflect"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
+
+// TestFindUnknownConfigKeys_NamedSliceFieldRecursion exercises the real schema's
+// named-slice-field branch (findUnknownConfigKeys: `child.arrayChild != nil`),
+// which fires for struct fields like `mcp.servers []MCPServer`. The existing
+// array test only reaches the map-valued `[]any` branch via an allowAny parent,
+// so a regression in the named-slice recursion would let a typo'd field inside
+// `[[mcp.servers]]` (e.g. `comand` for `command`) go unreported by `al doctor`,
+// silently accepting a broken MCP server definition. The indexed path
+// `mcp.servers[0].<key>` must be surfaced.
+func TestFindUnknownConfigKeys_NamedSliceFieldRecursion(t *testing.T) {
+	t.Parallel()
+	schema := buildSchema(reflect.TypeOf(config.Config{}))
+	raw := map[string]any{
+		"mcp": map[string]any{
+			"servers": []any{
+				map[string]any{
+					"id":     "srv",
+					"comand": "oops", // typo of "command"
+				},
+			},
+		},
+	}
+
+	var details []configUnknownKeyDetail
+	findUnknownConfigKeys(raw, schema, "", &details)
+
+	found := false
+	for _, d := range details {
+		if d.Path == "mcp.servers[0].comand" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected unknown key mcp.servers[0].comand to be reported, got %#v", details)
+	}
+}
 
 func TestFindUnknownConfigKeys_TraversesMapValuesWithSchema(t *testing.T) {
 	type dynamicEntry struct {
