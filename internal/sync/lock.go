@@ -9,10 +9,15 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-const projectSyncLockFile = "sync.lock"
+// projectSyncLockFile is sourced from internal/install (the package that owns the
+// .agent-layer layout and its known-paths set) so the lock this package creates
+// and the file the installer recognizes can never drift. internal/sync already
+// imports internal/install, so this is the cycle-safe home for the name.
+const projectSyncLockFile = install.SyncLockFileName
 
 var projectSyncProcessLocks stdsync.Map
 
@@ -47,7 +52,7 @@ func processLockForSyncPath(path string) *stdsync.Mutex {
 }
 
 func acquireProjectSyncLock(path string, processLock *stdsync.Mutex) (*projectSyncLock, error) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- lock path is rooted under the caller-resolved repo's .agent-layer directory.
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304,G302 -- lock path is rooted under the caller-resolved repo's .agent-layer directory; 0o644 lets a lock file (no sensitive data) be opened by other users/CI runners, matching internal/dispatch/lock.go.
 	if err != nil {
 		return nil, fmt.Errorf(messages.SyncOpenLockFmt, path, err)
 	}

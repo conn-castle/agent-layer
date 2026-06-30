@@ -63,7 +63,21 @@ func TestRunWithProjectSerializesConcurrentRuns(t *testing.T) {
 		secondErr <- err
 	}()
 
-	overlapped := sys.waitForOverlap(500 * time.Millisecond)
+	// The first run is blocked mid-write while holding the lock. A correctly
+	// serialized second run must block on lock acquisition: it can neither reach
+	// the generated-file writer (overlap) nor run to completion until the first
+	// releases. Broken serialization makes it do one of those. waitForOverlap
+	// catches the writer overlap; the secondErr probe catches early completion so
+	// the test does not silently pass just because the second run was slow to
+	// reach the contended write within the window.
+	overlapped := sys.waitForOverlap(2 * time.Second)
+	if !overlapped {
+		select {
+		case err := <-secondErr:
+			t.Fatalf("second sync finished while the first still held the lock; serialization is broken: %v", err)
+		default:
+		}
+	}
 	sys.releaseBlockedWrite()
 
 	err1 := receiveSyncRunError(t, firstErr)
