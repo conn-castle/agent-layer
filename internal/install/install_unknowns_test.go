@@ -54,6 +54,30 @@ func TestScanUnknowns_LegacyStatuslineSourceIsKnown(t *testing.T) {
 	}
 }
 
+func TestScanUnknowns_SyncLockIsKnown(t *testing.T) {
+	// The per-project sync lock (.agent-layer/sync.lock) is a persistent file the
+	// sync package creates. If the installer treated it as unknown, `al upgrade`
+	// would offer to delete it; deleting it while a sync holds the lock lets a
+	// concurrent sync acquire a fresh flock and defeats serialization. Assert the
+	// installer recognizes the real lock path as known.
+	root := t.TempDir()
+	lockPath := filepath.Join(root, ".agent-layer", SyncLockFileName)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	if err := os.WriteFile(lockPath, nil, 0o600); err != nil {
+		t.Fatalf("write sync lock: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	if rel := inst.relativeUnknowns(); len(rel) != 0 {
+		t.Fatalf("sync lock %q should be known to the installer, got unknowns %v", SyncLockFileName, rel)
+	}
+}
+
 // setupUnknownFile creates a .agent-layer/ directory with a single unknown file
 // and returns the installer and the path to the unknown file. The returned
 // installer has root, overwrite, and sys set — caller must set prompter.
