@@ -42,6 +42,10 @@ const (
 	SyncSystemRequired                              = "sync system is required"
 	SyncConfigFSRequired                            = "sync config filesystem is required"
 	SyncFailedReadGitignoreBlockFmt                 = "failed to read gitignore block %s: %w"
+	SyncOpenLockFmt                                 = "failed to open sync lock %s: %w"
+	SyncLockFmt                                     = "failed to lock sync %s: %w"
+	SyncUnlockFmt                                   = "failed to unlock sync %s: %w"
+	SyncCloseLockFmt                                = "failed to close sync lock %s: %w"
 
 	MCPServerResolveFmt              = "mcp server %s: %w"
 	MCPServerURLFmt                  = "mcp server %s url: %w"

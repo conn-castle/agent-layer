@@ -27,6 +27,24 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-06-30 sync-lock-blocking-no-timeout-divergent: Sync project lock blocks indefinitely and hardcodes unix.Flock, diverging from dispatch lock
+    Priority: Low. Area: internal/sync/lock.go (`lockProjectSyncFile`/`acquireProjectSyncLock`) vs internal/dispatch/lock.go (`lockFile`)
+    Description: The per-project sync lock blocks indefinitely on `unix.Flock(fd, LOCK_EX)` (only an EINTR retry) and calls `unix.Flock` directly (not injectable), so a live-but-stuck concurrent holder makes `al sync` hang with no diagnostic and the flock path is hard to unit-test. The sibling dispatch lock uses `LOCK_EX|LOCK_NB` with a 30s deadline/poll loop, surfaces a timeout error, and routes through an injectable `System.Flock`. A crashed holder is fine (flock auto-releases on fd close at process death), so this is reliability/UX/consistency, not a correctness bug.
+    Next step: Human to decide whether to align sync with the dispatch pattern (bounded wait + injectable Flock seam) for a clear diagnostic instead of a silent hang and for testability/consistency, or to keep indefinite blocking and add a "waiting for lock" notice plus a one-line rationale for the divergence.
+    Notes: Tradeoff: a timeout could spuriously fail a legitimately long-held lock, but the practical risk is low because the locked section is only local generated-file writes. Flagged by review-scope 20260630.
+
+- Issue 2026-06-30 sync-exported-writers-bypass-lock: Exported low-level sync writers bypass the per-project sync lock (latent, no live bug)
+    Priority: Low. Area: internal/sync (exported `Write*`/`Clean*` writers across internal/sync/*.go; `withProjectSyncLock` in lock.go)
+    Description: Only `RunWithProject` (and thus `Run`/`RunWithSystemFS`) is wrapped by `withProjectSyncLock`; the exported `Write*`/`Clean*` generated-file writers (e.g. WriteAgentSkills, WriteClaudeSettings, WriteMCPConfig) write outside the lock. Verified no caller outside internal/sync invokes them today — all external callers funnel through Run/RunWithProject (cmd/al/sync.go, internal/clients/runner.go, internal/agentdispatch/dispatch.go) — so there is no current bypass. The risk is latent: a future external caller or new exported entry point calling a Write*/Clean* helper directly would silently skip serialization. The lock invariant is not enforced at the package boundary.
+    Next step: Human to decide whether to unexport the writers that have no external consumers, or add a package/writer doc comment stating that generated-file writes must go through RunWithProject to be serialized.
+    Notes: No code change strictly required now. Flagged by review-scope 20260630.
+
+- Issue 2026-06-30 sync-lock-release-failure-misattributes-success: Successful sync with a failed lock release/close returns a populated Result and a non-nil error
+    Priority: Low. Area: internal/sync/lock.go (`withProjectSyncLock`, deferred release)
+    Description: In `withProjectSyncLock`, `return fn()` sets the named `result` to the successful `*Result`, then the deferred `release()` sets `err = releaseErr` (only when `fn()` succeeded), so the function returns both a non-nil Result and a non-nil error. All callers (cmd/al/sync.go, internal/clients/runner.go, internal/agentdispatch/dispatch.go) check `err` first and report "sync failed" even though the generated files were written successfully — only the LOCK_UN/Close failed. This is failing loud (acceptable per repo rules), but the message misattributes the failure on a rare path.
+    Next step: Human to decide whether, on a release error after a successful run, to wrap the message so it is clear the sync itself succeeded (post-write lock release/close failed) or to null the Result for a clean error contract.
+    Notes: Low priority given rarity of unlock/close failures on a local file. Behavior intentionally unchanged in this pass. Flagged by review-scope 20260630.
+
 - Issue 2026-06-29 dispatch-claude-print-bg-ceiling: Claude print-mode background-task ceiling can end long dispatches without findings
     Priority: Medium. Area: internal/agentdispatch/providers/claude (`al dispatch` Claude path)
     Description: Agent Layer's Claude dispatch path uses `claude --print --output-format stream-json --verbose --include-partial-messages` to preserve structured streaming output. In current Claude Code print mode, if the main turn is otherwise done/input is closed while Claude-managed background tasks/subagents are still running, Claude Code can terminate after 600s with stderr `Background tasks still running after 600s; terminating. Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.` This is not an Agent Layer subprocess timeout; Agent Layer starts Claude and waits on the child process.

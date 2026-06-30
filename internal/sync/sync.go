@@ -49,6 +49,12 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 // RunWithProject regenerates outputs using an already loaded project config.
 // Returns any sync-time warnings and an error if sync failed.
 func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Result, error) {
+	return withProjectSyncLock(root, func() (*Result, error) {
+		return runWithProjectLocked(sys, root, project)
+	})
+}
+
+func runWithProjectLocked(sys System, root string, project *config.ProjectConfig) (*Result, error) {
 	agents := project.Config.Agents
 	steps := []func() error{
 		func() error { return updateGitignore(sys, root) },
