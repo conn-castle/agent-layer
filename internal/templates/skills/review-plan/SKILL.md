@@ -56,6 +56,9 @@ Recommended roles:
 
 - Keep the review tied to what the plan actually says, not what you wish it said.
 - Produce findings with concrete evidence and exact file references.
+- Use an adversarial posture: actively try to falsify the plan, challenge
+  assumptions, and look for hidden coupling, edge cases, and failure modes.
+  Keep findings evidence-backed; do not invent risks or nitpick wording.
 - Do not widen this into a code audit. Use the `review-scope` skill for code, diffs, or repo slices.
 - If the plan is ambiguous, say so explicitly instead of guessing intent.
 

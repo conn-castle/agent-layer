@@ -44,7 +44,7 @@ Delegate to:
 
 ## Continuation rule
 
-Sub-skill returns are intermediate, not terminal. After every delegation (`audit-and-fix-uncommitted-changes`, `repair-checks`, `fix-ci`, `address-pr-comments`), continue to the next numbered step in the same turn — the sub-skill's closing summary is not ship-pr's closeout. The most common failure is stopping after `audit-and-fix-uncommitted-changes` returns, before staging and commit happen.
+Sub-skill returns are intermediate, not terminal. This also applies when `ship-pr` is running inside a dispatched/headless subagent: after each sub-skill return, resume the current phase. After every delegation (`audit-and-fix-uncommitted-changes`, `repair-checks`, `fix-ci`, `address-pr-comments`), continue to the next numbered step in the same turn — the sub-skill's closing summary is not ship-pr's closeout. The most common failure is stopping after `audit-and-fix-uncommitted-changes` returns, before staging and commit happen.
 
 The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored sub-skill checkpoint (e.g., `fix-ci` halting without pushing — Phase 3 step 3c, Phase 6 step 1c).
 

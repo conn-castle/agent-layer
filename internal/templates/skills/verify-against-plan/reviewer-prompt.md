@@ -10,6 +10,8 @@ Compare them point-by-point against the plan's promises:
 - scope drift: anything in the diff not justified by the plan
 - undocumented deviations: behavior or shape that differs from the plan without explicit deviation tracking
 
+Use an adversarial posture: actively try to falsify completion, challenge assumptions, and look for hidden coupling, edge cases, and failure modes. Report only evidence-backed findings; do not invent issues or report low-signal nits.
+
 For each finding, output one JSON line: `{"plan_item": "<the exact promise>", "status": "complete"|"partial"|"missing"|"undocumented_deviation"|"scope_drift", "evidence": "<file:line or artifact reference>", "severity": "Critical"|"High"|"Medium"|"Low", "smallest_corrective_action": "<one specific next step>"}`.
 
 Do **not** infer the implementer's intent. If the plan promises X and the diff delivers Y, that is an `undocumented_deviation` even if Y looks reasonable — the plan was the contract.

@@ -15,6 +15,9 @@ while preserving the behavior the user requested. LLM coding agents reliably
 add speculative flexibility, premature abstractions, defensive scaffolding for
 impossible cases, clever patterns, and half-finished extras beyond what was
 asked. This skill identifies that scope creep by pattern and undoes it.
+It reviews both individual hunks and the changed structure they create,
+asking whether added abstraction, indirection, or complexity is justified
+by the current behavior.
 
 Use `simplify-codebase` instead when the goal is a codebase-wide complexity
 sweep over committed code. This skill never operates outside the current diff
@@ -55,9 +58,9 @@ Required roles:
    changed code (and the minimal surrounding context needed to judge it)
    and the smell list below. It does **not** receive the user's original
    prompt, the plan, the task list, the implementer's narrative, or the
-   prior conversation. Scope creep is identified by pattern, not by
-   comparison to the request — a minimal implementation of the visible
-   behavior is the implicit baseline.
+   prior conversation. Scope creep is identified by pattern and changed
+   structure, not by comparison to the request — a minimal implementation
+   of the visible behavior is the implicit baseline.
 3. `Applier`: applies each accepted simplification, runs the project test
    command after each batch, and writes the report.
 
@@ -128,7 +131,10 @@ Inputs the reviewer receives alongside the prompt:
 2. For each chunk, invoke the reviewer subagent with the contents of
    `reviewer-prompt.md` and the chunk inputs above. The subagent must be
    a fresh invocation with no carryover from this conversation.
-3. Collect the JSON-line findings under `## Findings` as a table with
+3. Require the reviewer to consider the changed diff as a small structure,
+   not just isolated lines: added helpers, layers, types, state, branches,
+   and control flow must earn their complexity against the current behavior.
+4. Collect the JSON-line findings under `## Findings` as a table with
    columns `Location`, `Smell`, `Before`, `After`, `Rationale`.
 
 ### Phase 3: Apply simplifications (Applier)

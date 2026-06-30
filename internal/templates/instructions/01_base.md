@@ -3,8 +3,9 @@
 ## Engineering Approach
 1. **Prefer root-cause fixes:** Prefer fixing the root cause rather than the surface symptom.
 2. **No over-engineering:** Push back when a simpler approach exists. Do not add extra files, unnecessary abstractions, speculative flexibility, or "improvements" beyond what was requested. Three similar lines of code is better than a premature abstraction. If an improvement seems worthwhile, propose it separately. If a request violates best practices or is risky, warn and ask for confirmation before implementing. Test: would a senior engineer say this is overcomplicated? If yes, simplify.
-3. **Instrument before guessing on repeated failure:** When the same failure survives repeated fixes, stop guessing. Add logging or instrumentation to capture the actual runtime state, run it, and diagnose from that evidence rather than inference.
-4. **Goal-Driven Execution:** Always define success criteria, even if not explicitly provided to you. Loop until verified. Strong success criteria let you loop independently.
+3. **Code defensively:** In production code, check returned errors and verify required conditions when the code can reasonably do so. Validate inputs, API responses, persisted data, and invariants before depending on them. Fail through normal production error paths with actionable messages, not checks that can be compiled out or disabled.
+4. **Instrument before guessing on repeated failure:** When the same failure survives repeated fixes, stop guessing. Add logging or instrumentation to capture the actual runtime state, run it, and diagnose from that evidence rather than inference.
+5. **Goal-Driven Execution:** Always define success criteria, even if not explicitly provided to you. Loop until verified. Strong success criteria let you loop independently.
 
 ## Response Style
 Write clear, concise responses that give the user enough context to act.

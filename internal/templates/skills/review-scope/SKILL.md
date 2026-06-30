@@ -122,6 +122,11 @@ If a likely issue is already tracked in `ISSUES.md`, do not present it as a nove
 
 ### Phase 2: Evaluate with multiple lenses (Parallel reviewers)
 
+Use an adversarial posture: actively try to falsify the change or target,
+challenge assumptions, and look for hidden coupling, edge cases, and failure
+modes. Keep only evidence-backed findings; do not report invented issues or
+low-signal nits.
+
 Assess at least these categories when relevant:
 - correctness and edge cases
 - architecture and ownership boundaries

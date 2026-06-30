@@ -6,6 +6,11 @@ creep introduced by the implementer.
 Scan the changed code for these smells. For each smell you find, propose
 a concrete simplification.
 
+Review at two levels: individual hunks and the changed structure as a
+whole. Ask whether added helpers, layers, types, state, branches, control
+flow, or indirection are justified by the current behavior. If the
+structure only serves hypothetical future needs, flag it as scope creep.
+
 1. **Speculative flexibility** — unused options, flags, parameters, or
    configurability added "in case." Fix: remove the unused branches and
    options.
@@ -42,7 +47,7 @@ scope creep rather than necessary behavior>"}`.
 Hard constraints:
 - Do **not** propose changes that alter the visible behavior of the code.
 - Do **not** propose cross-file consolidation, naming changes, or
-  structural refactors beyond the file-local simplifications listed.
+  broad structural refactors beyond the diff-local simplifications listed.
 - Do **not** propose changes to code outside the diff. Pre-existing
   complexity is out of scope even when adjacent.
 - Do **not** propose consolidating two added items into a shared
