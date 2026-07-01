@@ -132,6 +132,14 @@ func gitignorePatternIsTracked(content string, pattern string) bool {
 	for _, line := range strings.Split(content, "\n") {
 		commented, ok := gitignorePatternLineStatus(line, pattern)
 		if !ok {
+			// An active entry carrying an inline trailing comment (e.g.
+			// "/.agent-layer/  # keep ignored") is still an active ignore, not
+			// tracked. Mirror setGitignorePatternTracked so the default reflects
+			// the current ignore semantics instead of flipping the path to
+			// tracked when the user accepts defaults.
+			if relatedActiveGitignorePatternLine(strings.TrimSpace(line), pattern) {
+				return false
+			}
 			continue
 		}
 		return commented

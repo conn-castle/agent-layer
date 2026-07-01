@@ -29,14 +29,17 @@ func TestRun_GitTrackingPromptDefaultsFromManagedGitignoreBlock(t *testing.T) {
 		assert.Empty(t, selected)
 	})
 
-	t.Run("invalid active inline comment defaults to tracked", func(t *testing.T) {
+	t.Run("active inline-comment ignore defaults to not tracked", func(t *testing.T) {
+		// An active ignore with an inline trailing comment must default to
+		// ignored (not tracked); otherwise accepting defaults would flip
+		// .agent-layer/ from ignored to tracked and drop the comment.
 		selected := runWizardToGitTrackingPrompt(t, strings.Replace(
 			readTemplateGitignoreBlock(t),
 			"/.agent-layer/",
 			"/.agent-layer/  # keep generated config ignored",
 			1,
 		))
-		assert.Contains(t, selected, messages.WizardGitTrackAgentLayerLabel)
+		assert.NotContains(t, selected, messages.WizardGitTrackAgentLayerLabel)
 		assert.Contains(t, selected, messages.WizardGitTrackDocsAgentLayerLabel)
 	})
 }
@@ -117,10 +120,10 @@ func TestApplyChanges_GitTrackingUpdatesSourceBeforeSync(t *testing.T) {
 
 	gitignore, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	require.NoError(t, err)
-	content := string(gitignore)
-	assert.Contains(t, content, "# /.agent-layer/")
-	assert.Contains(t, content, "/docs/agent-layer/")
-	assert.NotContains(t, strings.ReplaceAll(content, "# /.agent-layer/", ""), "/.agent-layer/")
+	lines := strings.Split(string(gitignore), "\n")
+	assert.Contains(t, lines, "# /.agent-layer/")
+	assert.Contains(t, lines, "/docs/agent-layer/")
+	assert.NotContains(t, lines, "/.agent-layer/")
 }
 
 func readGitignoreBlock(t *testing.T, root string) string {
