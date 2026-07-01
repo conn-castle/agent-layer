@@ -14,7 +14,6 @@ import (
 )
 
 type vscodeSettings struct {
-	ChatToolsGlobalAutoApprove          *bool            `json:"chat.tools.global.autoApprove,omitempty"`
 	ChatToolsTerminalAutoApprove        OrderedMap[bool] `json:"chat.tools.terminal.autoApprove,omitempty"`
 	ChatAgentSkillsLocations            OrderedMap[bool] `json:"chat.agentSkillsLocations,omitempty"`
 	ClaudeCodeAllowDangerouslySkipPerms *bool            `json:"claudeCode.allowDangerouslySkipPermissions,omitempty"`
@@ -84,11 +83,6 @@ func buildVSCodeSettings(project *config.ProjectConfig) (*vscodeSettings, error)
 	// Copilot settings: only when agents.vscode is enabled.
 	if vscodeEnabled {
 		settings.ChatAgentSkillsLocations = buildVSCodeAgentSkillsLocations()
-
-		if isYOLO {
-			trueVal := true
-			settings.ChatToolsGlobalAutoApprove = &trueVal
-		}
 
 		if approvals.AllowCommands {
 			autoApprove := make(OrderedMap[bool])

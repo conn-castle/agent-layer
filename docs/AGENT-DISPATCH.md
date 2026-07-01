@@ -96,19 +96,22 @@ Allowed values are `codex`, `claude`, and `antigravity`.
 
 The caller marker is a routing hint, not a security boundary. Users and tests can spoof environment variables; permission and trust decisions must not rely on `AL_DISPATCH_CALLER_AGENT` as proof of identity.
 
-Dispatch sets a recursion guard while running a target agent:
+Dispatch sets the current active dispatch depth while running a target agent:
 
 ```bash
 AL_DISPATCH_ACTIVE=1
 ```
 
-Dispatch supports depth 1. If `AL_DISPATCH_ACTIVE=1` is already present, dispatch fails to prevent nested agent-call chains.
+`AL_DISPATCH_ACTIVE` is a depth counter for active dispatch ancestors. A top-level `al dispatch` call starts from depth 0 and launches its target with `AL_DISPATCH_ACTIVE=1`. A nested dispatch is allowed only while the current depth is lower than `dispatch.max_depth`; the nested target receives the incremented value.
 
 ## Config
 
-Dispatch defaults are configured under the calling agent:
+Dispatch has a repo-wide depth limit plus optional per-caller target defaults:
 
 ```toml
+[dispatch]
+max_depth = 1
+
 [agents.claude.dispatch]
 default_agent = "random"
 
@@ -118,6 +121,8 @@ default_agent = "random"
 [agents.antigravity.dispatch]
 default_agent = "random"
 ```
+
+`dispatch.max_depth` is the repo-wide maximum depth, including the initial dispatch call. The default is `1`, which means a dispatched target cannot call `al dispatch` again. Set it to `2` to allow one nested dispatch level, `3` for two nested levels, and so on. Values must be positive integers.
 
 `default_agent` accepts `random`, `codex`, `claude`, or `antigravity`. If omitted for a known caller, the built-in default is `random`.
 
@@ -144,7 +149,7 @@ Dispatch uses stable wrapper-owned exit categories:
 - `65`: Agent Layer configuration or state failure, including missing source skill, stale/missing target skill projection, malformed config, or disabled target
 - `69`: target unavailable, including missing target binary, unauthenticated/unusable target CLI detected before launch, or no eligible target in the random-selection pool
 - `70`: target or adapter failure, including target subprocess non-zero exit, target rejection of a custom override value, changed structured stream shape, unreadable target output, or internal dispatch error
-- `75`: nested dispatch blocked by `AL_DISPATCH_ACTIVE=1`
+- `75`: nested dispatch blocked by `dispatch.max_depth` or invalid `AL_DISPATCH_ACTIVE`
 - `130`: interrupted by `SIGINT`
 - `143`: terminated by `SIGTERM`
 

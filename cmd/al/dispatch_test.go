@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -13,16 +14,27 @@ import (
 
 // clearDispatchEnv scrubs AL_DISPATCH_* markers inherited from the parent shell
 // so newDispatchCmd's RunE closure (which calls os.Environ()) cannot be
-// short-circuited by a developer's or CI runner's ambient AL_DISPATCH_ACTIVE=1
+// short-circuited by a developer's or CI runner's ambient AL_DISPATCH_ACTIVE
 // (would return ExitNested=75) or AL_DISPATCH_CALLER_AGENT (would pick a
 // configured default that bypasses the missing-prompt validation under test).
-// t.Setenv to empty works because dispatch treats empty AL_DISPATCH_ACTIVE
-// as not-set (compared against "1") and knownCallerFromEnv returns ("", false)
-// for non-matching values.
+// The markers are genuinely unset rather than set to "": dispatch now treats a
+// present-but-empty AL_DISPATCH_ACTIVE as a malformed value that fails loud, so
+// only true absence (GetEnv ok=false) reads as depth 0 / no active dispatch.
 func clearDispatchEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("AL_DISPATCH_ACTIVE", "")
-	t.Setenv("AL_DISPATCH_CALLER_AGENT", "")
+	unsetEnvForTest(t, "AL_DISPATCH_ACTIVE")
+	unsetEnvForTest(t, "AL_DISPATCH_CALLER_AGENT")
+}
+
+// unsetEnvForTest removes key from the environment for the duration of the test.
+// t.Setenv registers restoration of the pre-test value on cleanup; os.Unsetenv
+// then removes the variable so lookups see it as absent, not present-but-empty.
+func unsetEnvForTest(t *testing.T, key string) {
+	t.Helper()
+	t.Setenv(key, "")
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("unset %s: %v", key, err)
+	}
 }
 
 func TestDispatchCommandMapsExitError(t *testing.T) {

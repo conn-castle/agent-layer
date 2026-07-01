@@ -165,11 +165,20 @@ func TestBuildVSCodeSettingsYOLO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildVSCodeSettings error: %v", err)
 	}
-	if settings.ChatToolsGlobalAutoApprove == nil || !*settings.ChatToolsGlobalAutoApprove {
-		t.Fatalf("expected ChatToolsGlobalAutoApprove=true for yolo mode")
-	}
 	if len(settings.ChatToolsTerminalAutoApprove) != 1 {
 		t.Fatalf("expected 1 terminal auto-approve entry for yolo mode")
+	}
+
+	root := t.TempDir()
+	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteVSCodeSettings error: %v", err)
+	}
+	updatedBytes, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read settings.json: %v", err)
+	}
+	if strings.Contains(string(updatedBytes), "chat.tools.global.autoApprove") {
+		t.Fatalf("expected yolo mode not to emit deprecated chat.tools.global.autoApprove setting")
 	}
 }
 

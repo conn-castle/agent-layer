@@ -51,6 +51,7 @@ var fields = []FieldDef{
 			{Value: ApprovalModeYOLO, Description: messages.WizardApprovalYOLODescription},
 		},
 	},
+	{Key: "dispatch.max_depth", Type: FieldPositiveInt},
 	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         AntigravityModelFieldKey,

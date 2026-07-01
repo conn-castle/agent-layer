@@ -26,6 +26,9 @@ func TestLoadConfigValid(t *testing.T) {
 [approvals]
 mode = "all"
 
+[dispatch]
+max_depth = 2
+
 [agents.antigravity]
 enabled = true
 [agents.antigravity.dispatch]
@@ -81,6 +84,18 @@ command = "tool"
 	}
 	if cfg.Agents.Codex.Dispatch.DefaultAgent != "antigravity" {
 		t.Fatalf("unexpected codex dispatch default: %q", cfg.Agents.Codex.Dispatch.DefaultAgent)
+	}
+	if cfg.Dispatch.MaxDepth == nil || *cfg.Dispatch.MaxDepth != 2 {
+		t.Fatalf("unexpected dispatch max_depth: %#v", cfg.Dispatch.MaxDepth)
+	}
+	if got := DispatchMaxDepth(*cfg); got != 2 {
+		t.Fatalf("DispatchMaxDepth = %d, want 2", got)
+	}
+}
+
+func TestDispatchMaxDepthDefaultsToOne(t *testing.T) {
+	if got := DispatchMaxDepth(Config{}); got != DefaultDispatchMaxDepth {
+		t.Fatalf("DispatchMaxDepth = %d, want %d", got, DefaultDispatchMaxDepth)
 	}
 }
 

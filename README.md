@@ -491,7 +491,7 @@ These modes control whether the agent is allowed to run shell commands and/or MC
 - `mcp`: auto-approve **only** MCP tool calls; shell commands still require approval (or are restricted)
 - `commands`: auto-approve **only** shell commands; MCP tool calls still require approval
 - `none`: approve **nothing** automatically
-- `yolo`: skip **all** permission prompts where the client supports it (sends `--dangerously-skip-permissions` to Claude and Antigravity, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `--yolo` to Copilot CLI, `chat.tools.global.autoApprove` to VS Code); intended for sandboxed/ephemeral environments
+- `yolo`: skip **all** permission prompts where the client supports it (sends `--dangerously-skip-permissions` to Claude and Antigravity, `approval_policy=never` + `sandbox_mode=danger-full-access` + `web_search=live` to Codex, `--yolo` to Copilot CLI); intended for sandboxed/ephemeral environments
 
 Client notes:
 - Some clients do not support all approval types; Agent Layer generates the closest supported behavior per client.
@@ -568,7 +568,7 @@ cat prompt.md | al dispatch --agent claude
 al dispatch options --json
 ```
 
-Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It supports depth 1 through `AL_DISPATCH_ACTIVE=1`; a dispatched child cannot call `al dispatch` again. Codex, Claude, and Antigravity support per-run `--model` dispatch overrides; Antigravity does not support separate `--reasoning-effort` because agy encodes effort in model display strings. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
+Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It defaults to depth 1, so a dispatched child cannot call `al dispatch` again unless `dispatch.max_depth` is raised in `config.toml`. Codex, Claude, and Antigravity support per-run `--model` dispatch overrides; Antigravity does not support separate `--reasoning-effort` because agy encodes effort in model display strings. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
 
 ---
 

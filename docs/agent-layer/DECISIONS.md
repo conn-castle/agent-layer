@@ -48,7 +48,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Tradeoffs: Stale references in old entries (e.g., renamed files) remain; readers must consult current docs for the latest names.
 
 - Decision 2026-02-17 p12-yolo-mode: Approvals policy is a 5-mode system including `yolo` (supersedes f6a7b8c)
-    Decision: `approvals.mode = "yolo"` auto-approves commands + MCP (like `all`) and sends full-auto flags to supporting clients: Claude `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, VS Code `chat.tools.global.autoApprove=true`, Copilot CLI `--yolo`, Antigravity `--dangerously-skip-permissions`. A one-line `[yolo]` stderr acknowledgement runs on every sync/launch.
+    Decision: `approvals.mode = "yolo"` auto-approves commands + MCP (like `all`) and sends full-auto flags to supporting clients: Claude `--dangerously-skip-permissions`, Codex `approval_policy=never` + `sandbox_mode=danger-full-access`, Copilot CLI `--yolo`, Antigravity `--dangerously-skip-permissions`. A one-line `[yolo]` stderr acknowledgement runs on every sync/launch.
     Reason: Sandboxed/ephemeral environments want to skip all prompts without per-client setup.
     Tradeoffs: YOLO bypasses all safety prompts only where clients expose the control. No `al doctor` warning — YOLO is a deliberate choice, not a health issue.
 

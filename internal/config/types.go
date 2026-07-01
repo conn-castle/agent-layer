@@ -9,10 +9,14 @@ const (
 	ApprovalModeYOLO     = "yolo"
 )
 
+// DefaultDispatchMaxDepth is the maximum dispatch recursion depth when unset.
+const DefaultDispatchMaxDepth = 1
+
 // Config is the root configuration loaded from .agent-layer/config.toml.
 type Config struct {
 	Approvals ApprovalsConfig `toml:"approvals"`
 	Agents    AgentsConfig    `toml:"agents"`
+	Dispatch  DispatchLimits  `toml:"dispatch"`
 	MCP       MCPConfig       `toml:"mcp"`
 	Warnings  WarningsConfig  `toml:"warnings"`
 }
@@ -35,6 +39,11 @@ type AgentsConfig struct {
 // DispatchConfig controls Agent Dispatch defaults for a caller agent.
 type DispatchConfig struct {
 	DefaultAgent string `toml:"default_agent"`
+}
+
+// DispatchLimits controls Agent Dispatch recursion limits.
+type DispatchLimits struct {
+	MaxDepth *int `toml:"max_depth"`
 }
 
 // AgentConfig is for agents that support enablement and model selection.
@@ -143,6 +152,14 @@ func ClaudeStatuslineEnabled(c ClaudeConfig) bool {
 // It is explicit opt-in: only true enables it.
 func CodexStatuslineEnabled(c CodexConfig) bool {
 	return c.Statusline != nil && *c.Statusline
+}
+
+// DispatchMaxDepth returns the configured Agent Dispatch maximum depth.
+func DispatchMaxDepth(c Config) int {
+	if c.Dispatch.MaxDepth == nil {
+		return DefaultDispatchMaxDepth
+	}
+	return *c.Dispatch.MaxDepth
 }
 
 // SharedAgentSkillsEnabled reports whether any agent that consumes the shared

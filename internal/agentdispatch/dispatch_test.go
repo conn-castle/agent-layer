@@ -95,14 +95,77 @@ fi`)
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
-func TestRunBlocksNestedDispatchBeforeConfigLoad(t *testing.T) {
+func TestRunBlocksNestedDispatchAtDefaultDepth(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	err := Run(RunOptions{
-		Root: "/missing",
+		Root: root,
 		Env:  []string{clients.EnvDispatchActive + "=1"},
 	})
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
 		t.Fatalf("expected nested exit, got %T: %v", err, err)
+	}
+}
+
+func TestRunAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "codex.log")
+	writeDispatchStub(t, binDir, "codex", `printf '{"type":"agent_message","message":"codex ok"}\n'`)
+	var stdout bytes.Buffer
+	err := Run(RunOptions{
+		Root:       root,
+		Agent:      AgentCodex,
+		PromptArgs: []string{"Review"},
+		Env: []string{
+			"PATH=" + testPath(binDir),
+			clients.EnvDispatchActive + "=1",
+			"AL_TEST_LOG=" + logPath,
+		},
+		Stdout:   &stdout,
+		Stderr:   &bytes.Buffer{},
+		LookPath: mockLookPath(binDir),
+	})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if stdout.String() != "codex ok" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	assertFileContains(t, logPath, clients.EnvDispatchActive+"=2")
+}
+
+func TestRunBlocksNestedDispatchAtConfiguredDepth(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
+	err := Run(RunOptions{
+		Root: root,
+		Env:  []string{clients.EnvDispatchActive + "=2"},
+	})
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
+		t.Fatalf("expected nested exit, got %T: %v", err, err)
+	}
+}
+
+func TestRunRejectsInvalidDispatchDepthEnv(t *testing.T) {
+	// A present-but-non-parseable AL_DISPATCH_ACTIVE fails loud rather than
+	// silently defaulting to depth 0. Empty/whitespace counts as malformed: the
+	// variable is only ever set by dispatch itself to a positive integer.
+	for _, value := range []string{"bogus", "", "-1"} {
+		t.Run(fmt.Sprintf("value=%q", value), func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
+			err := Run(RunOptions{
+				Root: root,
+				Env:  []string{clients.EnvDispatchActive + "=" + value},
+			})
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
+				t.Fatalf("expected nested exit, got %T: %v", err, err)
+			}
+			if !strings.Contains(exitErr.Error(), clients.EnvDispatchActive) {
+				t.Fatalf("expected %s in error, got %q", clients.EnvDispatchActive, exitErr.Error())
+			}
+		})
 	}
 }
 
@@ -378,6 +441,7 @@ type dispatchRepoConfig struct {
 	ClaudeModel           string
 	ClaudeReasoningEffort string
 	ClaudeLocalConfigDir  bool
+	DispatchMaxDepth      int
 }
 
 func writeDispatchRepo(t *testing.T, repoConfig dispatchRepoConfig) string {
@@ -397,7 +461,14 @@ func writeDispatchRepo(t *testing.T, repoConfig dispatchRepoConfig) string {
 	if repoConfig.AntigravityModel != "" {
 		antigravityModelLine = fmt.Sprintf("model = %q\n", repoConfig.AntigravityModel)
 	}
+	dispatchBlock := ""
+	if repoConfig.DispatchMaxDepth != 0 {
+		dispatchBlock = fmt.Sprintf("max_depth = %d\n", repoConfig.DispatchMaxDepth)
+	}
 	configToml := fmt.Sprintf(`
+[dispatch]
+%s
+
 [approvals]
 mode = "all"
 
@@ -425,7 +496,7 @@ enabled = false
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 50
-`, antigravityModelLine, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine)
+`, dispatchBlock, antigravityModelLine, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine)
 	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

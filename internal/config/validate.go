@@ -90,6 +90,9 @@ func (c *Config) Validate(path string) error {
 	if strings.TrimSpace(c.Agents.CopilotCLI.ReasoningEffort) != "" {
 		return fmt.Errorf(messages.ConfigCopilotCLIReasoningEffortUnsupportedFmt, path)
 	}
+	if c.Dispatch.MaxDepth != nil && *c.Dispatch.MaxDepth <= 0 {
+		return fmt.Errorf(messages.ConfigDispatchMaxDepthInvalidFmt, path)
+	}
 
 	// Model and reasoning-effort validation: agent model values
 	// (agents.antigravity.model, agents.claude.model, agents.codex.model) and
