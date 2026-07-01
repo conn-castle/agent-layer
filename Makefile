@@ -261,4 +261,4 @@ al-agy: ## Run al agy against this repo using current source
 
 .PHONY: al-copilot
 al-copilot: ## Run al copilot against this repo using current source
-	@$(AL_RUN) copilot
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) copilot

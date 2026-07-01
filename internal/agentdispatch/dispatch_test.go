@@ -148,17 +148,24 @@ func TestRunBlocksNestedDispatchAtConfiguredDepth(t *testing.T) {
 }
 
 func TestRunRejectsInvalidDispatchDepthEnv(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
-	err := Run(RunOptions{
-		Root: root,
-		Env:  []string{clients.EnvDispatchActive + "=bogus"},
-	})
-	var exitErr *ExitError
-	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
-		t.Fatalf("expected nested exit, got %T: %v", err, err)
-	}
-	if !strings.Contains(exitErr.Error(), clients.EnvDispatchActive) {
-		t.Fatalf("expected %s in error, got %q", clients.EnvDispatchActive, exitErr.Error())
+	// A present-but-non-parseable AL_DISPATCH_ACTIVE fails loud rather than
+	// silently defaulting to depth 0. Empty/whitespace counts as malformed: the
+	// variable is only ever set by dispatch itself to a positive integer.
+	for _, value := range []string{"bogus", "", "-1"} {
+		t.Run(fmt.Sprintf("value=%q", value), func(t *testing.T) {
+			root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 2})
+			err := Run(RunOptions{
+				Root: root,
+				Env:  []string{clients.EnvDispatchActive + "=" + value},
+			})
+			var exitErr *ExitError
+			if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
+				t.Fatalf("expected nested exit, got %T: %v", err, err)
+			}
+			if !strings.Contains(exitErr.Error(), clients.EnvDispatchActive) {
+				t.Fatalf("expected %s in error, got %q", clients.EnvDispatchActive, exitErr.Error())
+			}
+		})
 	}
 }
 

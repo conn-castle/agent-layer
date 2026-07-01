@@ -113,11 +113,7 @@ func dispatchDepthFromEnv(env []string) (int, error) {
 	if !ok {
 		return 0, nil
 	}
-	normalized := strings.TrimSpace(value)
-	if normalized == "" {
-		return 0, nil
-	}
-	depth, err := strconv.Atoi(normalized)
+	depth, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || depth < 0 {
 		return 0, exitError(ExitNested, fmt.Sprintf(messages.DispatchActiveDepthInvalidFmt, clients.EnvDispatchActive, value))
 	}
