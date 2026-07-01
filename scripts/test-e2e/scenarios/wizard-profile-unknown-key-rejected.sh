@@ -14,12 +14,13 @@ run_scenario_wizard_profile_unknown_key_rejected() {
   local bad_profile_tmp="$repo_dir/bad-profile.toml.tmp"
   cp "$E2E_DEFAULTS_TOML" "$bad_profile"
 
-  # Inject an invalid key for an enable-only agent section in the profile.
+  # Inject a key no agent section recognizes so strict profile validation rejects it.
+  # (agents.antigravity.model is now a first-class field, so use a genuinely-unknown key.)
   awk '
     /^\[agents\.antigravity\]$/ { print; in_antigravity=1; next }
     in_antigravity == 1 && /^enabled = / {
       print
-      print "model = \"not-supported\""
+      print "unrecognized_option = \"not-supported\""
       in_antigravity=0
       next
     }
@@ -27,8 +28,8 @@ run_scenario_wizard_profile_unknown_key_rejected() {
   ' "$bad_profile" > "$bad_profile_tmp"
   mv "$bad_profile_tmp" "$bad_profile"
 
-  assert_file_contains "$bad_profile" 'model = "not-supported"' \
-    "invalid antigravity model key injected into profile"
+  assert_file_contains "$bad_profile" 'unrecognized_option = "not-supported"' \
+    "unknown antigravity key injected into profile"
 
   local pre_snapshot="$E2E_TMP_ROOT/wizard-profile-unknown-pre.txt"
   _snapshot_agent_layer_state "$repo_dir" > "$pre_snapshot"

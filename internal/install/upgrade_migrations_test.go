@@ -1480,6 +1480,64 @@ func TestPlanUpgradeMigrations_UnpinnedMCPGeminiClientRunsOlderSourceAgnosticMan
 	}
 }
 
+func TestPlanUpgradeMigrations_UnpinnedLegacyAntigravityModelRunsLatestManifest(t *testing.T) {
+	root := t.TempDir()
+	writeMigrationConfigForTest(t, root, strings.Join([]string{
+		"[approvals]",
+		`mode = "all"`,
+		"",
+		"[agents.antigravity]",
+		"enabled = true",
+		"",
+		"[agents.antigravity.agent_specific]",
+		`model = "Gemini 3.5 Flash (High)"`,
+		"",
+		"[agents.claude]",
+		"enabled = false",
+		"",
+		"[agents.claude_vscode]",
+		"enabled = false",
+		"",
+		"[agents.codex]",
+		"enabled = false",
+		"",
+		"[agents.vscode]",
+		"enabled = false",
+		"",
+		"[agents.copilot_cli]",
+		"enabled = false",
+	}, "\n"))
+	withMigrationManifestChainOverride(t, map[string]string{
+		"0.11.1": `{
+  "schema_version": 1,
+  "target_version": "0.11.1",
+  "min_prior_version": "0.11.0",
+  "operations": [
+    {
+      "id": "rename-antigravity-model",
+      "kind": "config_rename_key",
+      "rationale": "Promote Antigravity model selection",
+      "source_agnostic": true,
+      "from": "agents.antigravity.agent_specific.model",
+      "to": "agents.antigravity.model"
+    }
+  ]
+}`,
+	})
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	plan, err := inst.planUpgradeMigrations()
+	if err != nil {
+		t.Fatalf("planUpgradeMigrations: %v", err)
+	}
+	if plan.report.TargetVersion != "0.11.1" {
+		t.Fatalf("target version = %q, want 0.11.1", plan.report.TargetVersion)
+	}
+	if len(plan.executable) != 1 || plan.executable[0].ID != "rename-antigravity-model" {
+		t.Fatalf("executable migrations = %#v, want rename-antigravity-model", plan.executable)
+	}
+}
+
 func TestPlanUpgradeMigrations_UnpinnedNoLegacyTriggerSkipsManifest(t *testing.T) {
 	root := t.TempDir()
 	writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
@@ -2198,6 +2256,68 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 	}
 	if cfg.Agents.ClaudeVSCode.Enabled == nil || !*cfg.Agents.ClaudeVSCode.Enabled {
 		t.Fatal("expected agents.claude_vscode.enabled = true after migration")
+	}
+}
+
+func TestMigration_0_11_1_MigratesAntigravityAgentSpecificModelToTypedField(t *testing.T) {
+	legacyConfig := strings.Join([]string{
+		"[approvals]",
+		`mode = "all"`,
+		"",
+		"[agents.antigravity]",
+		"enabled = true",
+		"",
+		"[agents.antigravity.agent_specific]",
+		`model = "Gemini 3.5 Flash (High)"`,
+		`custom = "preserved"`,
+		"",
+		"[agents.claude]",
+		"enabled = false",
+		"",
+		"[agents.claude_vscode]",
+		"enabled = false",
+		"",
+		"[agents.codex]",
+		"enabled = false",
+		"",
+		"[agents.vscode]",
+		"enabled = false",
+		"",
+		"[agents.copilot_cli]",
+		"enabled = false",
+	}, "\n")
+
+	root := t.TempDir()
+	cfgPath := writeMigrationConfigForTest(t, root, legacyConfig)
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.11.1", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "i-rename-antigravity-agent-specific-model"); !ok || entry.Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("expected applied Antigravity model migration entry, got %#v ok=%v", entry, ok)
+	}
+
+	data, err := os.ReadFile(cfgPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if config.HasLegacyAntigravityAgentSpecificModel(data) {
+		t.Fatalf("legacy Antigravity agent_specific model remained after migration:\n%s", string(data))
+	}
+	cfg, err := config.ParseConfig(data, cfgPath)
+	if err != nil {
+		t.Fatalf("strict config parse failed after v0.11.1 migration: %v", err)
+	}
+	if cfg.Agents.Antigravity.Model != "Gemini 3.5 Flash (High)" {
+		t.Fatalf("agents.antigravity.model = %q, want migrated model", cfg.Agents.Antigravity.Model)
+	}
+	if got := cfg.Agents.Antigravity.AgentSpecific["custom"]; got != "preserved" {
+		t.Fatalf("agents.antigravity.agent_specific.custom = %#v, want preserved", got)
 	}
 }
 

@@ -31,6 +31,11 @@ type FieldDef struct {
 	AllowCustom bool // when true, enum fields also accept freetext values
 }
 
+// AntigravityModelFieldKey is the canonical config path for agy's model display
+// string. Sync projects this typed Agent Layer setting into Antigravity's
+// generated settings.json.
+const AntigravityModelFieldKey = "agents.antigravity.model"
+
 // fields is the canonical ordered registry of all config fields with constrained values.
 // Order matches the wizard UI flow (approval → agents → models).
 var fields = []FieldDef{
@@ -47,6 +52,21 @@ var fields = []FieldDef{
 		},
 	},
 	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
+	{
+		Key:         AntigravityModelFieldKey,
+		Type:        FieldEnum,
+		AllowCustom: true,
+		Options: []FieldOption{
+			{Value: "Gemini 3.5 Flash (Medium)"},
+			{Value: "Gemini 3.5 Flash (High)"},
+			{Value: "Gemini 3.5 Flash (Low)"},
+			{Value: "Gemini 3.1 Pro (Low)"},
+			{Value: "Gemini 3.1 Pro (High)"},
+			{Value: "Claude Sonnet 4.6 (Thinking)"},
+			{Value: "Claude Opus 4.6 (Thinking)"},
+			{Value: "GPT-OSS 120B (Medium)"},
+		},
+	},
 	{
 		Key:     "agents.antigravity.dispatch.default_agent",
 		Type:    FieldEnum,

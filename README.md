@@ -239,7 +239,7 @@ Run `al wizard` any time to interactively configure the most important settings:
 
 - **Approvals Mode** (all, mcp, commands, none, yolo)
 - **Agent Enablement** (Antigravity, Claude, Codex, VS Code, Copilot CLI)
-- **Model Selection** (optional; leave blank to use client defaults, including Codex and Claude reasoning effort where supported)
+- **Model Selection** (optional; leave blank to use client defaults. Antigravity model names include reasoning level in the `agy models` display string; Codex and Claude expose reasoning effort separately where supported)
 - **Feature toggles** — folded into the model step as two per-agent multi-selects (one Claude, one Codex). Each feature is a checkbox where **checked = keep enabled** and unchecking disables it; checkboxes are pre-checked to match your current config, so re-running the wizard without changes makes no edits.
     - *Claude:* IDE open-file reading, auto-memory, claude.ai connectors, the AskUserQuestion tool, and the Claude status line.
     - *Codex:* built-in apps (GitHub, Gmail, etc.), browser/computer-use, and the Codex status line.
@@ -247,6 +247,7 @@ Run `al wizard` any time to interactively configure the most important settings:
     - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
 - **Workflow bundle** (yes/no — installs or refreshes bundled workflow skills and managed instruction files, and creates missing memory docs/templates plus `04_conventions.md`; answering "no" leaves existing files unchanged)
+- **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
 - **CLI skills** (opt-in catalog: `tavily-web`, `playwright-cli`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
 - **Warnings** (enable/disable warning checks; threshold values use template defaults)
@@ -318,7 +319,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 ## Configuration (human-editable)
 
-You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings) and `.agent-layer/.env` (secrets). It can also install or refresh the workflow bundle and seed missing statusline source files; it does not overwrite existing statusline sources or touch `commands.allow`.
+You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings), `.agent-layer/.env` (secrets), and `.agent-layer/gitignore.block` (Agent Layer folder tracking). It can also install or refresh the workflow bundle and seed missing statusline source files; it does not overwrite existing statusline sources or touch `commands.allow`.
 
 ### `.agent-layer/config.toml`
 
@@ -333,11 +334,9 @@ mode = "all"
 
 [agents.antigravity]
 enabled = true
-# The agy CLI does not accept model or reasoning_effort flags, so Agent Layer
-# does not surface those keys for Antigravity. Use agent_specific to inject
-# arbitrary JSON keys into .agy/antigravity-cli/settings.json (deep-merged with
-# Agent Layer-managed permissions).
-# [agents.antigravity.agent_specific]
+# Antigravity model/reasoning selection is a single agy model display string.
+# al wizard writes this key and fresh wizard setups default it to high reasoning.
+model = "Gemini 3.1 Pro (High)"
 
 [agents.claude]
 enabled = true
@@ -355,7 +354,7 @@ enabled = true
 # sync that source is copied to .claude/claude-statusline.sh and statusLine is
 # wired into .claude/settings.json. Absent means disabled. Requires jq on PATH.
 # statusline = true
-# Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
+# Optional `agent_specific` passthrough for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
@@ -379,7 +378,7 @@ enabled = true
 # .agent-layer/codex-statusline.toml fragment. Run `al wizard` or interactive
 # `al upgrade` to enable it and seed the source once. Absent means disabled.
 # statusline = true
-# Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
+# Optional `agent_specific` passthrough for Codex (arbitrary TOML tables/keys).
 # These are appended to .codex/config.toml and can override top-level managed keys.
 # Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
 # [agents.codex.agent_specific]
@@ -437,7 +436,7 @@ mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
 ```
 
-Agent-specific passthrough keys in `agents.codex.agent_specific`, `agents.claude.agent_specific`, or `agents.antigravity.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys. Codex project trust is managed automatically for the current absolute repo root.
+`agent_specific` passthrough keys are copied into provider-native settings. Codex and Claude warn when supported passthrough keys collide with Agent Layer-managed keys; Antigravity rejects `agents.antigravity.agent_specific.model` because `agents.antigravity.model` is the only model source. Codex project trust is managed automatically for the current absolute repo root.
 
 #### Built-in placeholders
 
@@ -564,11 +563,12 @@ Examples:
 ```bash
 al dispatch --agent codex "Review this plan."
 al dispatch --agent random --skill review-plan "Review this plan."
+al dispatch --agent antigravity --model "Gemini 3.1 Pro (High)" "Review this plan."
 cat prompt.md | al dispatch --agent claude
 al dispatch options --json
 ```
 
-Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It supports depth 1 through `AL_DISPATCH_ACTIVE=1`; a dispatched child cannot call `al dispatch` again. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
+Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It supports depth 1 through `AL_DISPATCH_ACTIVE=1`; a dispatched child cannot call `al dispatch` again. Codex, Claude, and Antigravity support per-run `--model` dispatch overrides; Antigravity does not support separate `--reasoning-effort` because agy encodes effort in model display strings. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
 
 ---
 

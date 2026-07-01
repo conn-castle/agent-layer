@@ -640,6 +640,58 @@ enabled = true
 	}
 }
 
+func TestParseConfig_AntigravityAgentSpecificModelPointsToUpgrade(t *testing.T) {
+	data := `
+[approvals]
+mode = "all"
+[agents.antigravity]
+enabled = true
+[agents.antigravity.agent_specific]
+model = "Gemini 3.5 Flash (High)"
+[agents.claude]
+enabled = true
+[agents.claude_vscode]
+enabled = true
+[agents.codex]
+enabled = true
+[agents.vscode]
+enabled = true
+[agents.copilot_cli]
+enabled = true
+`
+	_, err := ParseConfig([]byte(data), "test")
+	if err == nil {
+		t.Fatal("expected error for legacy agents.antigravity.agent_specific.model")
+	}
+	if !strings.Contains(err.Error(), "agents.antigravity.agent_specific.model is not supported") {
+		t.Fatalf("expected Antigravity agent_specific model marker in error, got: %v", err)
+	}
+	if !errors.Is(err, ErrConfigValidation) {
+		t.Fatalf("legacy Antigravity model error should match ErrConfigValidation, got: %v", err)
+	}
+	if !errors.Is(err, ErrConfigNeedsUpgrade) {
+		t.Fatalf("legacy Antigravity model error should match ErrConfigNeedsUpgrade, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "al wizard") {
+		t.Fatalf("legacy Antigravity model error should not route to wizard guidance, got: %v", err)
+	}
+}
+
+func TestHasLegacyAntigravityAgentSpecificModel(t *testing.T) {
+	data := []byte(`
+[agents.antigravity]
+enabled = true
+[agents.antigravity.agent_specific]
+model = "Gemini 3.5 Flash (High)"
+`)
+	if !HasLegacyAntigravityAgentSpecificModel(data) {
+		t.Fatal("expected legacy Antigravity agent_specific model to be detected")
+	}
+	if HasLegacyAntigravityAgentSpecificModel([]byte("# model = \"Gemini\"\n[agents.antigravity]\nmodel = \"Gemini\"\n")) {
+		t.Fatal("typed model or commented text must not be detected as legacy agent_specific model")
+	}
+}
+
 func TestHasLegacyGeminiConfig_TabIndentedHeader(t *testing.T) {
 	// Tab-indented TOML headers are valid; the previous space-strip helper
 	// missed them and skipped the legacy-Gemini diagnostic. The map-based

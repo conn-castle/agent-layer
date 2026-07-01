@@ -27,7 +27,7 @@ git push origin "$VERSION"
 
 Before tagging, prepare and commit both release manifests:
 
-1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the previous release line (N-1 to N per the compatibility guarantee in `site/docs/upgrades.mdx`). Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
+1. **Migration manifest** — create `internal/templates/migrations/<version>.json` (version without leading `v`). Set `min_prior_version` to the release line supported by the target row in `site/docs/upgrades.mdx`; for patch releases, preserve the previous target's supported range when unknown-source upgrades still need source-agnostic operations from that range. Add any needed migration operations; use an empty `operations` array if all changes are additive. See existing manifests for the schema.
 
 2. **Template ownership manifest** — generate via the script below. The script reads templates directly from the working tree (no git tag required). This keeps `al upgrade plan` ownership inference deterministic without runtime network/tag lookups.
 

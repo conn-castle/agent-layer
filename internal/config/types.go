@@ -63,8 +63,8 @@ type ClaudeConfig struct {
 	// and wires statusLine into .claude/settings.json on sync. It is explicit
 	// opt-in: only true enables it. Read via
 	// ClaudeStatuslineEnabled.
-	Statusline    *bool          `toml:"statusline"`
-	AgentSpecific map[string]any `toml:"agent_specific"`
+	Statusline    *bool               `toml:"statusline"`
+	AgentSpecific ProviderPassthrough `toml:"agent_specific"`
 }
 
 // EnableOnlyConfig is for agents that support enablement but not model selection.
@@ -72,13 +72,14 @@ type EnableOnlyConfig struct {
 	Enabled *bool `toml:"enabled"`
 }
 
-// AntigravityConfig is for the Antigravity (`agy`) client, which supports
-// enablement and agent-specific settings passthrough but not model/effort
-// (the agy CLI does not accept those flags).
+// AntigravityConfig is for the Antigravity (`agy`) client. Model selection is a
+// first-class Agent Layer setting and sync projects it into
+// .agy/antigravity-cli/settings.json.
 type AntigravityConfig struct {
-	Enabled       *bool          `toml:"enabled"`
-	Dispatch      DispatchConfig `toml:"dispatch"`
-	AgentSpecific map[string]any `toml:"agent_specific"`
+	Enabled       *bool               `toml:"enabled"`
+	Model         string              `toml:"model"`
+	Dispatch      DispatchConfig      `toml:"dispatch"`
+	AgentSpecific ProviderPassthrough `toml:"agent_specific"`
 }
 
 // CodexConfig extends AgentConfig with Codex-specific settings.
@@ -92,8 +93,8 @@ type CodexConfig struct {
 	// tui.status_line list into .codex/config.toml on sync. It is explicit
 	// opt-in: only true enables it. Read via
 	// CodexStatuslineEnabled.
-	Statusline    *bool          `toml:"statusline"`
-	AgentSpecific map[string]any `toml:"agent_specific"`
+	Statusline    *bool               `toml:"statusline"`
+	AgentSpecific ProviderPassthrough `toml:"agent_specific"`
 }
 
 // MCPConfig contains the external MCP servers configuration.

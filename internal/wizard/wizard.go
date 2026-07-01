@@ -6,11 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/aymanbagabas/go-udiff"
 	"github.com/fatih/color"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/envfile"
 	"github.com/conn-castle/agent-layer/internal/install"
@@ -26,6 +28,8 @@ var (
 	errWizardBack             = errors.New("wizard back requested")
 	errWizardCancelled        = errors.New("wizard cancelled")
 )
+
+const defaultAntigravityModel = "Gemini 3.5 Flash (High)"
 
 // Run starts the interactive wizard.
 // pinVersion is written to .agent-layer/al.version when install is needed.
@@ -126,10 +130,10 @@ func runWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 func applyFreshSetupDefaults(choices *Choices) {
 	choices.InstallWorkflowBundle = true
-	// Status lines stay opt-in: leave the fresh-init toggles unchecked so the
-	// interactive wizard does not enable them by default. This matches the
-	// non-interactive upgrade default (migration value: false) and the bare
-	// `al init` default; the user enables a status line by explicitly checking it.
+	choices.EnabledAgents[AgentAntigravity] = true
+	choices.AntigravityModel = defaultAntigravityModel
+	// Statusline defaults come from initializeChoices: absent config keys default
+	// on in the interactive wizard, while explicit false remains off.
 }
 
 func ensureWizardConfig(root, configPath string, ui UI, pinVersion string, out io.Writer) (bool, bool, error) {
@@ -187,6 +191,9 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	for _, entry := range cliSkills {
 		choices.EnabledCLISkills[entry.ID] = catalogSkillExistsOnDisk(cfg.Root, entry.ID)
 	}
+	if err := initializeGitTrackingChoices(cfg.Root, choices); err != nil {
+		return nil, err
+	}
 
 	warningDefaults, err := loadWarningDefaultsFunc()
 	if err != nil {
@@ -214,8 +221,9 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	setEnabledAgentsFromConfig(choices.EnabledAgents, agentConfigs)
 
-	choices.ClaudeModel = cfg.Config.Agents.Claude.Model
-	choices.ClaudeReasoning = cfg.Config.Agents.Claude.ReasoningEffort
+	choices.AntigravityModel = agentoptions.ConfiguredValue(cfg.Config, AgentAntigravity, agentoptions.KindModel)
+	choices.ClaudeModel = agentoptions.ConfiguredValue(cfg.Config, AgentClaude, agentoptions.KindModel)
+	choices.ClaudeReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentClaude, agentoptions.KindReasoningEffort)
 	if cfg.Config.Agents.Claude.LocalConfigDir != nil {
 		choices.ClaudeLocalConfigDir = *cfg.Config.Agents.Claude.LocalConfigDir
 	}
@@ -223,7 +231,10 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	choices.ClaudeDisableIDEReading = readClaudeEnvFalse(claudeAgentSpecific, claudeIDEReadingEnvKey)
 	choices.ClaudeDisableConnectors = readClaudeEnvFalse(claudeAgentSpecific, claudeConnectorsEnvKey)
 	choices.ClaudeDisableMemory = readClaudeAutoMemoryDisabled(claudeAgentSpecific)
-	choices.ClaudeStatusline = cfg.Config.Agents.Claude.Statusline != nil && *cfg.Config.Agents.Claude.Statusline
+	choices.ClaudeStatusline = true
+	if cfg.Config.Agents.Claude.Statusline != nil {
+		choices.ClaudeStatusline = *cfg.Config.Agents.Claude.Statusline
+	}
 	if cfg.Config.Agents.Claude.DisableQuestionTool != nil {
 		choices.ClaudeDisableQuestionTool = *cfg.Config.Agents.Claude.DisableQuestionTool
 	} else {
@@ -234,12 +245,15 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		// lingering legacy entry.
 		choices.ClaudeDisableQuestionTool = readClaudeQuestionToolDisabledLegacy(claudeAgentSpecific)
 	}
-	choices.CodexModel = cfg.Config.Agents.Codex.Model
-	choices.CodexReasoning = cfg.Config.Agents.Codex.ReasoningEffort
+	choices.CodexModel = agentoptions.ConfiguredValue(cfg.Config, AgentCodex, agentoptions.KindModel)
+	choices.CodexReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentCodex, agentoptions.KindReasoningEffort)
 	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CodexDisableBrowser = readCodexBrowserDisabled(cfg.Config.Agents.Codex.AgentSpecific)
-	choices.CodexStatusline = cfg.Config.Agents.Codex.Statusline != nil && *cfg.Config.Agents.Codex.Statusline
-	choices.CopilotCLIModel = cfg.Config.Agents.CopilotCLI.Model
+	choices.CodexStatusline = true
+	if cfg.Config.Agents.Codex.Statusline != nil {
+		choices.CodexStatusline = *cfg.Config.Agents.Codex.Statusline
+	}
+	choices.CopilotCLIModel = agentoptions.ConfiguredValue(cfg.Config, AgentCopilotCLI, agentoptions.KindModel)
 
 	for _, srv := range cfg.Config.MCP.Servers {
 		if config.IsAgentEnabled(srv.Enabled) {
@@ -379,6 +393,7 @@ const (
 	wizardFlowStepAgents
 	wizardFlowStepModels
 	wizardFlowStepEnableLayer
+	wizardFlowStepGitTracking
 	wizardFlowStepCLISkills
 	wizardFlowStepMCPDefaults
 	wizardFlowStepCustomMCP
@@ -407,6 +422,8 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 			err = promptModels(ui, choices)
 		case wizardFlowStepEnableLayer:
 			err = promptEnableAgentLayer(ui, choices)
+		case wizardFlowStepGitTracking:
+			err = promptGitTracking(ui, choices)
 		case wizardFlowStepCLISkills:
 			err = promptCLISkills(ui, choices)
 		case wizardFlowStepMCPDefaults:
@@ -501,6 +518,29 @@ func promptEnableAgentLayer(ui UI, choices *Choices) error {
 	return nil
 }
 
+// promptGitTracking asks which Agent Layer folders should remain trackable by
+// git, then stores the selections for the managed gitignore block rewrite.
+func promptGitTracking(ui UI, choices *Choices) error {
+	options := []string{
+		messages.WizardGitTrackAgentLayerLabel,
+		messages.WizardGitTrackDocsAgentLayerLabel,
+	}
+	selected := make([]string, 0, len(options))
+	if choices.TrackAgentLayerDir {
+		selected = append(selected, messages.WizardGitTrackAgentLayerLabel)
+	}
+	if choices.TrackDocsAgentLayerDir {
+		selected = append(selected, messages.WizardGitTrackDocsAgentLayerLabel)
+	}
+	if err := ui.MultiSelect(messages.WizardGitTrackingTitle, options, &selected); err != nil {
+		return err
+	}
+	choices.TrackAgentLayerDir = slices.Contains(selected, messages.WizardGitTrackAgentLayerLabel)
+	choices.TrackDocsAgentLayerDir = slices.Contains(selected, messages.WizardGitTrackDocsAgentLayerLabel)
+	choices.GitTrackingTouched = true
+	return nil
+}
+
 // promptCLISkills presents the CLI skills catalog multiselect. Each row label
 // is the catalog entry's user-facing Name, while EnabledCLISkills keys use the
 // catalog id. The mapping between names and ids is rebuilt from the catalog so
@@ -553,6 +593,10 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 	}
 	choices.EnabledAgents = agentIDSet(enabledAgents)
 	choices.EnabledAgentsTouched = true
+	if !choices.EnabledAgents[AgentAntigravity] {
+		choices.AntigravityModel = ""
+		choices.AntigravityModelTouched = false
+	}
 	if !choices.EnabledAgents[AgentCodex] {
 		choices.CodexApps = false
 		choices.CodexAppsTouched = false
@@ -598,15 +642,21 @@ func confirmWizardExitOnFirstStepEscape(ui UI) (bool, error) {
 }
 
 func promptModels(ui UI, choices *Choices) error {
+	if choices.EnabledAgents[AgentAntigravity] {
+		if err := selectOptionalValue(ui, messages.WizardAntigravityModelTitle, modelOptions(AgentAntigravity), &choices.AntigravityModel); err != nil {
+			return err
+		}
+		choices.AntigravityModelTouched = true
+	}
 	if choices.EnabledAgents[AgentClaude] {
-		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, ClaudeModels(), &choices.ClaudeModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardClaudeModelTitle, modelOptions(AgentClaude), &choices.ClaudeModel); err != nil {
 			return err
 		}
 		choices.ClaudeModelTouched = true
 		// Reasoning effort is offered regardless of model. Claude Code is the
 		// authority on which model/effort combinations apply, so the wizard does
 		// not gate or clear the choice based on the selected model.
-		if err := selectOptionalValue(ui, messages.WizardClaudeReasoningEffortTitle, ClaudeReasoningEfforts(), &choices.ClaudeReasoning); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardClaudeReasoningEffortTitle, reasoningEffortOptions(AgentClaude), &choices.ClaudeReasoning); err != nil {
 			return err
 		}
 		choices.ClaudeReasoningTouched = true
@@ -634,12 +684,12 @@ func promptModels(ui UI, choices *Choices) error {
 		}
 	}
 	if choices.EnabledAgents[AgentCodex] {
-		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, CodexModels(), &choices.CodexModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexModelTitle, modelOptions(AgentCodex), &choices.CodexModel); err != nil {
 			return err
 		}
 		choices.CodexModelTouched = true
 
-		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, CodexReasoningEfforts(), &choices.CodexReasoning); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCodexReasoningEffortTitle, reasoningEffortOptions(AgentCodex), &choices.CodexReasoning); err != nil {
 			return err
 		}
 		choices.CodexReasoningTouched = true
@@ -657,7 +707,7 @@ func promptModels(ui UI, choices *Choices) error {
 		}
 	}
 	if choices.EnabledAgents[AgentCopilotCLI] {
-		if err := selectOptionalValue(ui, messages.WizardCopilotCLIModelTitle, CopilotCLIModels(), &choices.CopilotCLIModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardCopilotCLIModelTitle, modelOptions(AgentCopilotCLI), &choices.CopilotCLIModel); err != nil {
 			return err
 		}
 		choices.CopilotCLIModelTouched = true
@@ -740,6 +790,17 @@ func confirmAndApply(root, configPath, envPath string, ui UI, choices *Choices, 
 			rewritePreview = skillsPreview
 		} else {
 			rewritePreview = rewritePreview + "\n\n" + skillsPreview
+		}
+	}
+	gitignoreChangeSet, err := computeGitignoreBlockChangeSet(root, choices)
+	if err != nil {
+		return err
+	}
+	if gitignorePreview := buildGitignoreBlockPreview(gitignoreChangeSet); gitignorePreview != "" {
+		if rewritePreview == "" || strings.HasPrefix(rewritePreview, "No rewrites needed") {
+			rewritePreview = gitignorePreview
+		} else {
+			rewritePreview = rewritePreview + "\n\n" + gitignorePreview
 		}
 	}
 	statuslineSourceChangeSet, err := computeStatuslineSourceChangeSet(root, choices)

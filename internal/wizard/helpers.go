@@ -64,6 +64,10 @@ func buildSummary(c *Choices) string {
 		sb.WriteString(messages.WizardSummaryClaudeQuestionToolDisabled)
 	}
 
+	sb.WriteString(messages.WizardSummaryGitTrackingHeader)
+	writeGitTrackingSummaryLine(&sb, messages.WizardGitTrackAgentLayerLabel, c.TrackAgentLayerDir)
+	writeGitTrackingSummaryLine(&sb, messages.WizardGitTrackDocsAgentLayerLabel, c.TrackDocsAgentLayerDir)
+
 	var mcp []string
 	for _, s := range c.DefaultMCPServers {
 		if c.EnabledMCPServers[s.ID] {
@@ -130,6 +134,14 @@ func buildSummary(c *Choices) string {
 	fmt.Fprintf(&sb, messages.WizardSummaryWarningMCPSchemaTokensServerFmt, c.MCPSchemaTokensServerThreshold)
 
 	return sb.String()
+}
+
+func writeGitTrackingSummaryLine(sb *strings.Builder, label string, tracked bool) {
+	if tracked {
+		fmt.Fprintf(sb, messages.WizardSummaryGitTrackedFmt, label)
+		return
+	}
+	fmt.Fprintf(sb, messages.WizardSummaryGitIgnoredFmt, label)
 }
 
 // codexToggleVisible reports whether a Codex per-feature toggle applies to the
@@ -320,6 +332,8 @@ func agentSummaryLines(c *Choices) []string {
 // agent identifies the agent; c holds wizard choices; returns summary text.
 func agentModelSummary(agent string, c *Choices) string {
 	switch agent {
+	case AgentAntigravity:
+		return c.AntigravityModel
 	case AgentClaude:
 		return claudeModelSummary(c)
 	case AgentCodex:

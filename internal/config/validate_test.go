@@ -120,6 +120,13 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.antigravity.dispatch.default_agent",
 		},
 		{
+			name: "antigravity agent_specific model is unsupported",
+			cfg: withAntigravityAgentSpecific(valid, map[string]any{
+				"model": "Gemini 3.1 Pro (High)",
+			}),
+			wantErr: "agents.antigravity.agent_specific.model is not supported",
+		},
+		{
 			name:    "copilot_cli reasoning effort unsupported",
 			cfg:     withCopilotCLIReasoning(valid, "high"),
 			wantErr: "agents.copilot_cli.reasoning_effort is not supported",
@@ -142,6 +149,11 @@ func withApprovals(cfg Config, mode string) Config {
 
 func withAntigravityEnabled(cfg Config, enabled *bool) Config {
 	cfg.Agents.Antigravity.Enabled = enabled
+	return cfg
+}
+
+func withAntigravityAgentSpecific(cfg Config, agentSpecific map[string]any) Config {
+	cfg.Agents.Antigravity.AgentSpecific = agentSpecific
 	return cfg
 }
 

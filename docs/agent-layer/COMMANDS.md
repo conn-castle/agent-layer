@@ -234,7 +234,7 @@ GitHub Actions also runs a separate website build job using `make website-build-
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+ (reads from the working tree, no git tag required)
-Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new release version and commit the generated manifest.
+Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new release version and commit the generated manifest. After a version is tagged, do not regenerate or edit its manifest for later work; create the next version's manifest instead.
 
 - Validate release readiness (run before tagging)
 ```bash

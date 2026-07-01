@@ -369,6 +369,10 @@ func TestPromptWizardFlow_DisablingCodexClearsAppsChoiceAfterBackNavigation(t *t
 				if mcpCalls > 0 && secondModelCalls == 0 {
 					return errWizardBack
 				}
+			case messages.WizardGitTrackingTitle:
+				if mcpCalls > 0 && secondModelCalls == 0 {
+					return errWizardBack
+				}
 			case messages.WizardCodexFeaturesTitle:
 				// Uncheck every Codex feature (including apps) = disable them.
 				*selected = []string{}

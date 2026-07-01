@@ -211,6 +211,9 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentAntigravity]), "")
 		}
+		if choices.AntigravityModelTouched && (!choices.EnabledAgentsTouched || choices.EnabledAgents[AgentAntigravity]) {
+			setOptionalKeyValue(block, templateBlock, "model", choices.AntigravityModel, "enabled")
+		}
 	case "agents.claude":
 		if choices.EnabledAgentsTouched {
 			setKeyValue(block, templateBlock, "enabled", formatTomlValue(choices.EnabledAgents[AgentClaude]), "")

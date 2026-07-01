@@ -82,20 +82,20 @@ func buildCodexConfigWithSystem(sys System, root string, project *config.Project
 		builder.WriteString(codexHeader)
 	}
 
-	if project.Config.Agents.Codex.Model != "" && !config.HasAgentSpecificKey(agentSpecific, "model") {
+	if project.Config.Agents.Codex.Model != "" && !config.HasProviderPassthroughKey(agentSpecific, config.CodexModelKey) {
 		fmt.Fprintf(&builder, "model = %q\n", project.Config.Agents.Codex.Model)
 	}
-	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasAgentSpecificKey(agentSpecific, "model_reasoning_effort") {
+	if project.Config.Agents.Codex.ReasoningEffort != "" && !config.HasProviderPassthroughKey(agentSpecific, config.CodexReasoningEffortKey) {
 		fmt.Fprintf(&builder, "model_reasoning_effort = %q\n", project.Config.Agents.Codex.ReasoningEffort)
 	}
 	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
-		if !config.HasAgentSpecificKey(agentSpecific, "approval_policy") {
+		if !config.HasProviderPassthroughKey(agentSpecific, config.CodexApprovalPolicyKey) {
 			builder.WriteString("approval_policy = \"never\"\n")
 		}
-		if !config.HasAgentSpecificKey(agentSpecific, "sandbox_mode") {
+		if !config.HasProviderPassthroughKey(agentSpecific, config.CodexSandboxModeKey) {
 			builder.WriteString("sandbox_mode = \"danger-full-access\"\n")
 		}
-		if !config.HasAgentSpecificKey(agentSpecific, "web_search") {
+		if !config.HasProviderPassthroughKey(agentSpecific, config.CodexWebSearchKey) {
 			builder.WriteString("web_search = \"live\"\n")
 		}
 	}
@@ -108,7 +108,7 @@ func buildCodexConfigWithSystem(sys System, root string, project *config.Project
 
 	appendCodexTrustedProject(&builder, trustedRoot, agentSpecific)
 
-	if !config.HasAgentSpecificKey(agentSpecific, "mcp_servers") {
+	if !config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
 		resolved, err := projection.ResolveMCPServers(
 			project.Config.MCP.Servers,

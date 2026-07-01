@@ -52,7 +52,12 @@ Do not duplicate information that belongs in other memory files:
 ## Antigravity
 
 - Antigravity uses the `agy` binary and is launched with `--gemini_dir=<repo>/.agy` plus `AGY_CLI_DISABLE_AUTO_UPDATE=1` for repo-local containment. Agent Layer writes `.agy/antigravity-cli/settings.json` and `.agy/antigravity-cli/mcp_config.json`.
+- Antigravity model selection is `agents.antigravity.model` and sync projects it into generated `settings.json`; `agents.antigravity.agent_specific.model` is unsupported because `model` is an Agent Layer-owned field.
 - `agy` v1.0.0 migrates `.agy/antigravity-cli/mcp_config.json` into `<gemini_dir>/config/mcp_config.json`, but runtime MCP discovery remains false in the observed probe baseline. Use `al probe agy` when checking whether upstream behavior has changed.
+
+## Agent Dispatch
+
+- Agent Dispatch's public request/API shapes should stay caller- and provider-agnostic. Target-specific model or option discovery belongs behind the target/provider registry, not as fields like `AntigravityModels` on dispatch request structs.
 
 ## Pin file recovery
 

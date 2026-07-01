@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -393,6 +394,7 @@ func TestChooseRandomTargetSkipsUninstalledAgents(t *testing.T) {
 // — the os.Environ fallback path is still exercised, just not asserted on a
 // machine-dependent value.)
 func TestBuildOptionsDefaultsEnvAndLookPath(t *testing.T) {
+	t.Setenv("PATH", "")
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	options, err := BuildOptions(OptionsRequest{Root: root})
 	if err != nil {
@@ -429,8 +431,11 @@ func TestBuildOptionsSurfacesConfigLoadError(t *testing.T) {
 func TestBuildTargetOptionsReportsUninstalledExclusion(t *testing.T) {
 	cfg := dispatchCoverageConfig(AgentCodex)
 	// Codex is enabled in cfg; lookPath fails so it is uninstalled.
-	options := buildTargetOptions(cfg, "", false, func(string) (string, error) {
-		return "", exec.ErrNotFound
+	options := buildTargetOptions(cfg, "", false, agentoptions.DiscoveryRequest{
+		LookPath: func(string) (string, error) {
+			return "", exec.ErrNotFound
+		},
+		Live: true,
 	})
 	var codex TargetOption
 	for _, target := range options {
@@ -466,26 +471,20 @@ func TestUnavailableReasonsReportsDisabledFirst(t *testing.T) {
 	}
 }
 
-// TestFieldOptionMissingFieldLookup covers options.go:187 — when the
-// registry advertises an override key but the field catalog has no
-// matching entry, fieldOption must return early with allow_custom=false
-// and an empty suggestions list rather than panicking.
-func TestFieldOptionMissingFieldLookup(t *testing.T) {
+// TestFieldOptionUnsupportedTarget covers the unsupported-field branch:
+// unknown targets must not advertise overrides or suggestions.
+func TestFieldOptionUnsupportedTarget(t *testing.T) {
 	cfg := dispatchCoverageConfig(AgentCodex)
-	target := targetMeta{
-		Name:          AgentCodex,
-		ModelKey:      "agents.not.a.real.key",
-		SupportsModel: true,
-	}
-	option := fieldOption(cfg, target, true)
-	if !option.OverrideSupported {
-		t.Fatal("override supported should remain true even when field is missing")
+	target := targetMeta{Name: "not-a-target"}
+	option := fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, agentoptions.DiscoveryRequest{})
+	if option.OverrideSupported {
+		t.Fatal("unknown target must not support model override")
 	}
 	if option.AllowCustom {
-		t.Fatal("missing field must not allow custom values")
+		t.Fatal("unknown target must not allow custom values")
 	}
 	if len(option.Suggestions) != 0 {
-		t.Fatalf("missing field must yield zero suggestions, got %#v", option.Suggestions)
+		t.Fatalf("unknown target must yield zero suggestions, got %#v", option.Suggestions)
 	}
 }
 
@@ -727,22 +726,22 @@ func TestRunSurfacesRunCreateFailure(t *testing.T) {
 	}
 }
 
-// TestRunUnsupportedModelTarget covers dispatch.go:52 — supplying --model
-// against a target whose registry entry has SupportsModel=false must
-// surface ExitUsage with the documented message.
-func TestRunUnsupportedModelTarget(t *testing.T) {
+// TestRunUnsupportedReasoningTarget covers dispatch.go's shared option-support
+// check: supplying --reasoning-effort against Antigravity must surface ExitUsage
+// with the documented message.
+func TestRunUnsupportedReasoningTarget(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentAntigravity,
-		Model:      "anything",
-		PromptArgs: []string{"Review"},
-		Env:        []string{"PATH=/bin"},
-		LookPath:   alwaysFound,
+		Root:            root,
+		Agent:           AgentAntigravity,
+		ReasoningEffort: "high",
+		PromptArgs:      []string{"Review"},
+		Env:             []string{"PATH=/bin"},
+		LookPath:        alwaysFound,
 	})
 	exitErr := requireDispatchExitCode(t, err, ExitUsage)
-	if !strings.Contains(exitErr.Error(), "does not support --model") {
-		t.Fatalf("expected unsupported-model message, got %q", exitErr.Error())
+	if !strings.Contains(exitErr.Error(), "does not support --reasoning-effort") {
+		t.Fatalf("expected unsupported-reasoning message, got %q", exitErr.Error())
 	}
 }
 

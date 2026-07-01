@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
@@ -86,7 +87,11 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 	// see `"pool": []` instead of `"pool": null` when no targets are
 	// eligible. The documented JSON shape promises an array.
 	response.Random.Pool = []string{}
-	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, lookPath)
+	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, agentoptions.DiscoveryRequest{
+		Env:      env,
+		LookPath: lookPath,
+		Live:     true,
+	})
 	for _, target := range response.Targets {
 		if target.RandomEligible {
 			response.Random.Pool = append(response.Random.Pool, target.Agent)
@@ -115,11 +120,16 @@ func WriteOptions(req OptionsRequest) error {
 	return writeOptionsText(stdout, options)
 }
 
-func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, lookPath func(string) (string, error)) []TargetOption {
+func buildTargetOptions(
+	cfg config.Config,
+	caller string,
+	callerKnown bool,
+	discovery agentoptions.DiscoveryRequest,
+) []TargetOption {
 	targets := targetRegistry()
 	out := make([]TargetOption, 0, len(targets))
 	for _, meta := range targets {
-		_, installedErr := lookPath(meta.Binary)
+		_, installedErr := discovery.LookPath(meta.Binary)
 		installed := installedErr == nil
 		enabled := targetEnabled(cfg, meta.Name)
 		reasons := unavailableReasons(enabled, installed)
@@ -137,6 +147,10 @@ func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, look
 			exclusion = stringPtr("caller")
 			randomEligible = false
 		}
+		fieldDiscovery := discovery
+		if !dispatchCapable {
+			fieldDiscovery.Live = false
+		}
 		out = append(out, TargetOption{
 			Agent:                 meta.Name,
 			Enabled:               enabled,
@@ -148,8 +162,8 @@ func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, look
 				AnswerText: meta.AnswerText,
 				Progress:   meta.Progress,
 			},
-			Model:              fieldOption(cfg, meta, true),
-			ReasoningEffort:    fieldOption(cfg, meta, false),
+			Model:              fieldOptionWithDiscovery(cfg, meta, agentoptions.KindModel, fieldDiscovery),
+			ReasoningEffort:    fieldOptionWithDiscovery(cfg, meta, agentoptions.KindReasoningEffort, fieldDiscovery),
 			UnavailableReasons: reasons,
 		})
 	}
@@ -166,37 +180,14 @@ func unavailableReasons(enabled bool, installed bool) []string {
 	return []string{}
 }
 
-func fieldOption(cfg config.Config, target targetMeta, model bool) FieldOption {
-	var key string
-	var supported bool
-	var configured string
-	if model {
-		key = target.ModelKey
-		supported = target.SupportsModel
-		configured = configuredModel(cfg, target.Name)
-	} else {
-		key = target.ReasoningKey
-		supported = target.SupportsReasoning
-		configured = configuredReasoning(cfg, target.Name)
+func fieldOptionWithDiscovery(cfg config.Config, target targetMeta, kind agentoptions.Kind, discovery agentoptions.DiscoveryRequest) FieldOption {
+	resolved := agentoptions.Resolve(cfg, target.Name, kind, discovery)
+	return FieldOption{
+		OverrideSupported: resolved.OverrideSupported,
+		Configured:        resolved.Configured,
+		Suggestions:       resolved.Suggestions,
+		AllowCustom:       resolved.AllowCustom,
 	}
-	option := FieldOption{
-		OverrideSupported: supported,
-		Configured:        configured,
-		Suggestions:       []string{},
-	}
-	if !supported {
-		return option
-	}
-	field, ok := config.LookupField(key)
-	if !ok {
-		return option
-	}
-	option.AllowCustom = field.AllowCustom
-	option.Suggestions = make([]string, 0, len(field.Options))
-	for _, value := range field.Options {
-		option.Suggestions = append(option.Suggestions, value.Value)
-	}
-	return option
 }
 
 func writeOptionsText(stdout io.Writer, options *OptionsResponse) error {

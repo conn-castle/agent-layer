@@ -25,6 +25,7 @@ Use `--model` and `--reasoning-effort` for per-run overrides when the selected t
 
 ```bash
 al dispatch --agent codex --model <model-name> --reasoning-effort high "Review this plan artifact set."
+al dispatch --agent antigravity --model "Gemini 3.1 Pro (High)" "Review this plan artifact set."
 ```
 
 Dispatch streams the target's human-readable output as supported by the target CLI. Target answer text is written to standard output. Dispatch status, selected-target notices, compact progress, and errors are written to standard error.
@@ -39,11 +40,11 @@ Verified target behavior:
 
 `--agent` selects the target CLI/runtime. Supported values are `codex`, `claude`, `antigravity`, and `random`. If `--agent` is omitted, Agent Layer must know the calling agent. If the caller is unknown, dispatch fails and asks for `--agent`.
 
-`--model` and `--reasoning-effort` are optional. If omitted, dispatch uses the same Agent Layer and client defaults that normal `al <agent>` launches use. Override support is target-specific and reported by `al dispatch options`; unsupported override fields fail before launch with exit `64`. Antigravity currently supports neither `--model` nor `--reasoning-effort` through Agent Layer.
+`--model` and `--reasoning-effort` are optional. If omitted, dispatch uses the same Agent Layer and client defaults that normal `al <agent>` launches use. Override support is target-specific and reported by `al dispatch options`; unsupported override fields fail before launch with exit `64`. Antigravity supports per-run `--model` overrides and otherwise uses `agents.antigravity.model` when configured. Antigravity does not expose separate `--reasoning-effort` overrides because agy encodes reasoning level in the model display string.
 
 For targets whose Agent Layer field catalog accepts custom values, out-of-catalog values are passed to the target CLI verbatim. If the target rejects the value, dispatch exits `70` and preserves the target's error text on standard error.
 
-`al dispatch options` lists available dispatch targets, dispatch capability, random-selection eligibility, configured model and reasoning values, known suggestions from Agent Layer's field catalog, whether custom values are accepted, detected caller, and the current random pool.
+`al dispatch options` lists available dispatch targets, dispatch capability, random-selection eligibility, configured model and reasoning values, known suggestions, whether custom values are accepted, detected caller, and the current random pool.
 
 Use `al dispatch options --json` for structured output. The JSON shape is stable in v1: existing fields keep their meaning, and future versions may add fields. The top-level object contains:
 

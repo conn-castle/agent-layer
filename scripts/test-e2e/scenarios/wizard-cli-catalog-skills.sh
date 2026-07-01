@@ -32,6 +32,9 @@ run_scenario_wizard_cli_catalog_skills() {
       "claude.ai connectors",
       "AskUserQuestion tool"
     ],
+    "Track the following Agent Layer folders in git? (checked = tracked; unchecked = gitignored)": [
+      "docs/agent-layer/"
+    ],
     "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)": [
       "Tavily web search"
     ],
@@ -41,7 +44,7 @@ run_scenario_wizard_cli_catalog_skills() {
     "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)": false,
     "Install or refresh the Agent Layer workflow bundle? (refreshes ~24 workflow skills and managed instruction files; creates missing memory docs/templates)": true,
     "Enable warnings for performance and usage issues?": true,
-    "Apply these config, secret, skills, instructions, memory-file, and statusline-source changes?": true
+    "Apply these config, secret, skills, instructions, memory-file, gitignore-source, and statusline-source changes?": true
   }
 }
 JSON

@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-06-30 shared-live-options: Use shared live option providers for wizard and dispatch choices
+    Priority: Medium. Area: providers / dispatch / wizard
+    Description: Replace hard-coded model/reasoning suggestions with provider-backed discovery where a client exposes an authoritative source: Codex model and reasoning suggestions from `codex debug models`, Claude reasoning-effort choices from CLI help where available, and Antigravity models from `agy models`.
+    Acceptance criteria: Wizard and `al dispatch options` share one provider-backed option-discovery path with catalog fallbacks; no agent gets a one-off wizard or dispatch special case; Codex models/efforts come from the local CLI catalog; Antigravity models come from `agy models`; Claude efforts come from local help; Claude model suggestions remain catalog-backed or custom-only unless Claude exposes an authoritative model list.
+    Notes: Wizard and dispatch now share `internal/agentoptions` for provider-backed options; remaining work is adding Codex/Claude live sources. Keep custom overrides allowed, and do not parse Claude model examples as a complete catalog.
+
 - Backlog 2026-06-15 interactive-html-review-skill: Skill to make any HTML output file browser-commentable
     Priority: High. Area: skills / UX
     Description: A skill that turns any agent-produced HTML file (report, visualization, mockup) into a live, commentable document without leaving the terminal. Mechanic: (1) inject a small JS/CSS feedback overlay into the HTML via a script tag; (2) start a local stdlib Python server that serves the file and accepts POST batches of comments to a JSONL inbox; (3) the agent monitors the inbox via the Monitor tool, edits the HTML in response to each comment, and appends each change to a `history.json` log; (4) the page polls `history.json` every ~4 s and auto-reloads with a walkthrough tour of changes using `data-cf-change` markers. Net effect: iterating on HTML outputs feels like editing a Google Doc instead of describing changes in text.

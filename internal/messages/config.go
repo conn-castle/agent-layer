@@ -27,6 +27,7 @@ const (
 	ConfigCodexEnabledRequiredFmt                 = "%s: agents.codex.enabled is required"
 	ConfigVSCodeEnabledRequiredFmt                = "%s: agents.vscode.enabled is required"
 	ConfigAntigravityEnabledRequiredFmt           = "%s: agents.antigravity.enabled is required"
+	ConfigAntigravityAgentSpecificModelInvalidFmt = "%s: agents.antigravity.agent_specific.model is not supported; use agents.antigravity.model for Antigravity model selection"
 	ConfigCopilotCLIEnabledRequiredFmt            = "%s: agents.copilot_cli.enabled is required"
 	ConfigCopilotCLIReasoningEffortUnsupportedFmt = "%s: agents.copilot_cli.reasoning_effort is not supported in this release"
 	ConfigDispatchDefaultAgentInvalidFmt          = "%s: %s %q is invalid (allowed: random, codex, claude, antigravity)"

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -49,10 +50,10 @@ func Run(opts RunOptions) error {
 		return err
 	}
 	target := resolved.Target
-	if strings.TrimSpace(opts.Model) != "" && !target.SupportsModel {
+	if strings.TrimSpace(opts.Model) != "" && !agentoptions.Supports(target.Name, agentoptions.KindModel) {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnsupportedModelFmt, target.Name))
 	}
-	if strings.TrimSpace(opts.ReasoningEffort) != "" && !target.SupportsReasoning {
+	if strings.TrimSpace(opts.ReasoningEffort) != "" && !agentoptions.Supports(target.Name, agentoptions.KindReasoningEffort) {
 		return exitError(ExitUsage, fmt.Sprintf(messages.DispatchUnsupportedReasoningEffortFmt, target.Name))
 	}
 	if !targetEnabled(project.Config, target.Name) {

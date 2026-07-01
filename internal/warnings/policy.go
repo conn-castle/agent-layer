@@ -104,12 +104,12 @@ func codexAgentSpecificOverrideWarning(repoRoot string, agentSpecific map[string
 		return nil
 	}
 	var keys []string
-	for key := range config.CodexReservedKeys {
+	for _, key := range config.CodexManagedTopLevelKeys() {
 		value, present := agentSpecific[key]
 		if !present {
 			continue
 		}
-		if key == "projects" && !codexProjectsCollides(value, repoRoot) {
+		if key == config.CodexProjectsKey && !codexProjectsCollides(value, repoRoot) {
 			continue
 		}
 		keys = append(keys, key)

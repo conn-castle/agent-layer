@@ -61,7 +61,7 @@ func TestRunWithWriter_AdditionalBranches(t *testing.T) {
 	})
 }
 
-func TestRunAfterFreshInitWithWriter_UsesFreshStatuslineDefaults(t *testing.T) {
+func TestRunAfterFreshInitWithWriter_UsesFreshDefaults(t *testing.T) {
 	root := t.TempDir()
 	setupRepo(t, root)
 	configDir := filepath.Join(root, ".agent-layer")
@@ -74,12 +74,35 @@ func TestRunAfterFreshInitWithWriter_UsesFreshStatuslineDefaults(t *testing.T) {
 		t.Fatalf("write env: %v", err)
 	}
 
+	sawAntigravityDefault := false
+	sawAntigravityModelDefault := false
 	sawClaudeStatuslineDefault := false
 	sawCodexStatuslineDefault := false
 	ui := &MockUI{
-		SelectFunc: func(string, []string, *string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == messages.WizardAntigravityModelTitle {
+				sawAntigravityModelDefault = true
+				if *current != defaultAntigravityModel {
+					t.Fatalf("fresh init Antigravity model = %q, want %q", *current, defaultAntigravityModel)
+				}
+				for _, want := range []string{
+					"Gemini 3.5 Flash (Medium)",
+					"Gemini 3.5 Flash (High)",
+					"Gemini 3.5 Flash (Low)",
+					"Gemini 3.1 Pro (Low)",
+				} {
+					if !strings.Contains(strings.Join(options, "\n"), want) {
+						t.Fatalf("fresh init Antigravity options missing %q: %v", want, options)
+					}
+				}
+			}
+			return nil
+		},
 		MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
 			for _, label := range *selected {
+				if title == messages.WizardEnableAgentsTitle && label == AgentAntigravity {
+					sawAntigravityDefault = true
+				}
 				if title == messages.WizardClaudeFeaturesTitle && label == messages.WizardClaudeFeatureStatuslineLabel {
 					sawClaudeStatuslineDefault = true
 				}
@@ -105,14 +128,17 @@ func TestRunAfterFreshInitWithWriter_UsesFreshStatuslineDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAfterFreshInitWithWriter: %v", err)
 	}
-	// Status lines are opt-in: the fresh-init wizard must NOT preselect them, so
-	// accepting the defaults leaves both disabled until the user explicitly checks
-	// the toggle. Mirrors the non-interactive upgrade default (migration value: false).
-	if sawClaudeStatuslineDefault {
-		t.Fatal("fresh init wrapper should not preselect Claude statusline (opt-in)")
+	if !sawAntigravityDefault {
+		t.Fatal("fresh init wrapper should preselect Antigravity in Enable Agents")
 	}
-	if sawCodexStatuslineDefault {
-		t.Fatal("fresh init wrapper should not preselect Codex statusline (opt-in)")
+	if !sawAntigravityModelDefault {
+		t.Fatal("fresh init wrapper should preselect the Antigravity high reasoning model")
+	}
+	if !sawClaudeStatuslineDefault {
+		t.Fatal("fresh init wrapper should preselect Claude statusline when config key is absent")
+	}
+	if !sawCodexStatuslineDefault {
+		t.Fatal("fresh init wrapper should preselect Codex statusline when config key is absent")
 	}
 }
 

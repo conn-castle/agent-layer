@@ -329,7 +329,7 @@ func (inst *installer) hasUnpinnedMigrationTrigger(targetVersion string) (bool, 
 		}
 		return false, fmt.Errorf(messages.InstallFailedReadFmt, upgradeMigrationConfigPath, err)
 	}
-	if config.HasLegacyGeminiConfig(data) || hasLegacyGeminiMCPClient(data) {
+	if config.HasLegacyGeminiConfig(data) || config.HasLegacyAntigravityAgentSpecificModel(data) || hasLegacyGeminiMCPClient(data) {
 		return true, nil
 	}
 	return inst.hasMissingUnpinnedSourceAgnosticDefault(data, targetVersion)

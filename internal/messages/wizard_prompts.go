@@ -9,6 +9,7 @@ const (
 	WizardInstallComplete                     = "Installation complete. Continuing the wizard..."
 	WizardApprovalModeTitle                   = "Approval Mode"
 	WizardEnableAgentsTitle                   = "Enable Agents"
+	WizardAntigravityModelTitle               = "Antigravity Model"
 	WizardClaudeModelTitle                    = "Claude Model"
 	WizardClaudeReasoningEffortTitle          = "Claude Reasoning Effort"
 	WizardClaudeLocalConfigDirPrompt          = "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)"
@@ -28,7 +29,7 @@ const (
 	WizardMCPSchemaTokensServerThresholdTitle = "MCP schema tokens server threshold"
 	WizardSummaryTitle                        = "Summary of Changes"
 	WizardRewritePreviewTitle                 = "Rewrite Preview"
-	WizardApplyChangesPrompt                  = "Apply these config, secret, skills, instructions, memory-file, and statusline-source changes?"
+	WizardApplyChangesPrompt                  = "Apply these config, secret, skills, instructions, memory-file, gitignore-source, and statusline-source changes?"
 	WizardCompleted                           = "Wizard completed."
 	WizardRunningSync                         = "Running sync..."
 	WizardWarningFmt                          = "Warning: %s\n"
@@ -46,6 +47,12 @@ const (
 		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
 	// WizardEnableCLISkillsTitle labels the catalog multiselect screen.
 	WizardEnableCLISkillsTitle = "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)"
+	// WizardGitTrackingTitle labels the multiselect that controls the managed
+	// gitignore block source. Checked folders are left trackable by git; unchecked
+	// folders are written as ignore patterns in .agent-layer/gitignore.block.
+	WizardGitTrackingTitle = "Track the following Agent Layer folders in git? (checked = tracked; unchecked = gitignored)" +
+		"\n  .agent-layer/: repo-local config, instructions, and skills; .agent-layer/.gitignore still protects .env, tmp, state, templates, and generated launchers." +
+		"\n  docs/agent-layer/: project memory docs."
 	// WizardEnableDefaultMCPServersTitle labels the MCP server multiselect screen.
 	// The warning steers users toward CLI command-based skills for ordinary
 	// CLI-backed tools, where MCP servers add tool-schema overhead and config drift.
@@ -74,6 +81,8 @@ const (
 	WizardCodexFeatureStatuslineLabel    = "Codex statusline"
 	WizardCodexFeatureAppsLabel          = "Built-in apps (GitHub, Gmail, etc.)"
 	WizardCodexFeatureBrowserLabel       = "Browser / computer-use"
+	WizardGitTrackAgentLayerLabel        = ".agent-layer/"
+	WizardGitTrackDocsAgentLayerLabel    = "docs/agent-layer/"
 
 	// WizardClaudeFeaturesTitle labels the Claude feature multi-select. Checked =
 	// keep the feature enabled (Claude Code's native default); unchecking disables
@@ -81,7 +90,7 @@ const (
 	// per-option description field (same multi-line convention as the MCP/CLI-skills
 	// titles above).
 	WizardClaudeFeaturesTitle = "Claude features (checked = keep enabled; uncheck to disable)" +
-		"\n  Claude statusline: creates .agent-layer/claude-statusline.sh if missing, then sync wires Claude Code statusLine." +
+		"\n  Claude statusline: use .agent-layer/claude-statusline.sh for Claude Code statusLine." +
 		"\n  IDE open-file reading: Claude Code otherwise auto-connects to your IDE and reads files open in the editor." +
 		"\n  Auto-memory: Claude Code's auto-memory persists notes across sessions. (This does not affect CLAUDE.md.)" +
 		"\n  claude.ai connectors: claude.ai app connectors load only under Claude.ai-subscription auth." +
@@ -91,7 +100,7 @@ const (
 	// unchecked (Agent Layer disables Codex's app surface by default and always
 	// writes an explicit features.apps).
 	WizardCodexFeaturesTitle = "Codex features (checked = keep enabled; uncheck to disable)" +
-		"\n  Codex statusline: creates .agent-layer/codex-statusline.toml if missing, then sync merges [tui].status_line." +
+		"\n  Codex statusline: use .agent-layer/codex-statusline.toml for [tui].status_line." +
 		"\n  Built-in apps (GitHub, Gmail, etc.): Codex's built-in app integrations add extra tools to every session." +
 		"\n  Browser / computer-use: these tools let Codex drive a browser and control the screen."
 )

@@ -1,6 +1,9 @@
 package wizard
 
-import "github.com/conn-castle/agent-layer/internal/config"
+import (
+	"github.com/conn-castle/agent-layer/internal/agentoptions"
+	"github.com/conn-castle/agent-layer/internal/config"
+)
 
 // AgentID constants matching config keys
 const (
@@ -57,27 +60,12 @@ func ApprovalModeFieldOptions() []config.FieldOption {
 	return f.Options
 }
 
-// ClaudeModels returns supported Claude model values from the config field catalog.
-func ClaudeModels() []string {
-	return config.FieldOptionValues("agents.claude.model")
+var wizardOptionDiscoveryRequestFunc = agentoptions.DefaultDiscoveryRequest
+
+func modelOptions(agent string) []string {
+	return agentoptions.Values(agent, agentoptions.KindModel, wizardOptionDiscoveryRequestFunc())
 }
 
-// ClaudeReasoningEfforts returns supported Claude reasoning effort values.
-func ClaudeReasoningEfforts() []string {
-	return config.FieldOptionValues("agents.claude.reasoning_effort")
-}
-
-// CodexModels returns supported Codex model values from the config field catalog.
-func CodexModels() []string {
-	return config.FieldOptionValues("agents.codex.model")
-}
-
-// CodexReasoningEfforts returns supported reasoning effort values from the config field catalog.
-func CodexReasoningEfforts() []string {
-	return config.FieldOptionValues("agents.codex.reasoning_effort")
-}
-
-// CopilotCLIModels returns supported Copilot CLI model values from the config field catalog.
-func CopilotCLIModels() []string {
-	return config.FieldOptionValues("agents.copilot_cli.model")
+func reasoningEffortOptions(agent string) []string {
+	return agentoptions.Values(agent, agentoptions.KindReasoningEffort, wizardOptionDiscoveryRequestFunc())
 }
