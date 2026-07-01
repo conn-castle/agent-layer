@@ -8,6 +8,11 @@
 # yolo skips ALL permission prompts; use only in sandboxed/ephemeral environments
 mode = "all"
 
+[dispatch]
+# Maximum dispatch depth, including the initial `al dispatch` call.
+# 1 means a dispatched target cannot call `al dispatch` again.
+max_depth = 1
+
 [agents.antigravity]
 enabled = false
 # Antigravity model selection is projected into .agy/antigravity-cli/settings.json.

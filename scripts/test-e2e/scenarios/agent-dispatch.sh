@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Agent Dispatch — verifies mock headless dispatch success, target resolution,
-# skill prefixing, and nested-dispatch failure.
+# skill prefixing, and max-depth failure.
 
 install_dispatch_mock_codex() {
   local dir="$1"
@@ -68,7 +68,7 @@ SKILL
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_1=--json" "dispatch requests codex JSON stream"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_2=-" "dispatch passes prompt on stdin"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "CODEX_HOME=$repo_dir/.codex" "dispatch child receives repo CODEX_HOME"
-  assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "AL_DISPATCH_ACTIVE=1" "dispatch child receives recursion guard"
+  assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "AL_DISPATCH_ACTIVE=1" "dispatch child receives depth marker"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "AL_DISPATCH_CALLER_AGENT=codex" "dispatch child receives target caller marker"
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Return ok" "dispatch passes positional prompt"
 
@@ -107,7 +107,7 @@ TOML
   else
     fail "nested dispatch exits 75 (got: $rc)"
   fi
-  assert_file_contains "$stderr_file" "nested dispatch is not supported" "nested dispatch explains failure"
+  assert_file_contains "$stderr_file" "dispatch.max_depth = 1" "nested dispatch explains failure"
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "nested dispatch did not invoke target"
 
   cleanup_scenario_dir "$repo_dir"

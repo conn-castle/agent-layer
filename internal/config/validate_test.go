@@ -120,6 +120,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			wantErr: "agents.antigravity.dispatch.default_agent",
 		},
 		{
+			name:    "invalid dispatch max depth",
+			cfg:     withDispatchMaxDepth(valid, 0),
+			wantErr: "dispatch.max_depth",
+		},
+		{
 			name: "antigravity agent_specific model is unsupported",
 			cfg: withAntigravityAgentSpecific(valid, map[string]any{
 				"model": "Gemini 3.1 Pro (High)",
@@ -184,6 +189,11 @@ func withCodexDispatchDefault(cfg Config, defaultAgent string) Config {
 
 func withAntigravityDispatchDefault(cfg Config, defaultAgent string) Config {
 	cfg.Agents.Antigravity.Dispatch.DefaultAgent = defaultAgent
+	return cfg
+}
+
+func withDispatchMaxDepth(cfg Config, maxDepth int) Config {
+	cfg.Dispatch.MaxDepth = &maxDepth
 	return cfg
 }
 

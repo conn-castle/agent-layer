@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
@@ -29,9 +30,6 @@ func Run(opts RunOptions) error {
 	if env == nil {
 		env = os.Environ()
 	}
-	if active, _ := clients.GetEnv(env, clients.EnvDispatchActive); active == "1" {
-		return exitError(ExitNested, messages.DispatchNestedActive)
-	}
 	if opts.LookPath == nil {
 		opts.LookPath = exec.LookPath
 	}
@@ -39,6 +37,14 @@ func Run(opts RunOptions) error {
 	project, err := config.LoadProjectConfig(opts.Root)
 	if err != nil {
 		return wrapExitError(ExitConfig, err.Error(), err)
+	}
+	currentDepth, err := dispatchDepthFromEnv(env)
+	if err != nil {
+		return err
+	}
+	maxDepth := config.DispatchMaxDepth(project.Config)
+	if currentDepth >= maxDepth {
+		return exitError(ExitNested, fmt.Sprintf(messages.DispatchNestedActiveFmt, currentDepth, maxDepth))
 	}
 	infoStderr := stderr
 	if opts.Quiet || strings.EqualFold(strings.TrimSpace(project.Config.Warnings.NoiseMode), "quiet") {
@@ -96,8 +102,24 @@ func Run(opts RunOptions) error {
 		return wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchRunCreateFailedFmt, err), err)
 	}
 	childEnv := clients.BuildEnvForAgent(env, project.Env, runInfo, target.Name)
-	childEnv = clients.SetEnv(childEnv, clients.EnvDispatchActive, "1")
+	childEnv = clients.SetEnv(childEnv, clients.EnvDispatchActive, strconv.Itoa(currentDepth+1))
 	opts.Stdout = stdout
 	opts.Stderr = stderr
 	return runTarget(target, project, childEnv, childPrompt, opts)
+}
+
+func dispatchDepthFromEnv(env []string) (int, error) {
+	value, ok := clients.GetEnv(env, clients.EnvDispatchActive)
+	if !ok {
+		return 0, nil
+	}
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return 0, nil
+	}
+	depth, err := strconv.Atoi(normalized)
+	if err != nil || depth < 0 {
+		return 0, exitError(ExitNested, fmt.Sprintf(messages.DispatchActiveDepthInvalidFmt, clients.EnvDispatchActive, value))
+	}
+	return depth, nil
 }

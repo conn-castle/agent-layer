@@ -19,7 +19,7 @@ Agent Layer is explicit by design. It prefers failing fast over guessing, and it
 
 ## Configuration
 
-`.agent-layer/config.toml` is the primary structured configuration file. It is the single source of truth for approvals, agents, MCP servers, and warning thresholds. If you treat one file as the contract, make it this one—everything else is derived from it.
+`.agent-layer/config.toml` is the primary structured configuration file. It is the single source of truth for approvals, dispatch limits, agents, MCP servers, and warning thresholds. If you treat one file as the contract, make it this one—everything else is derived from it.
 
 `al wizard` updates `config.toml` and `.agent-layer/.env`. Everything else is edited by hand.
 
@@ -35,6 +35,11 @@ Never put secrets in `config.toml`. Secrets belong in `.agent-layer/.env`.
 [approvals]
 # one of: "all", "mcp", "commands", "none", "yolo"
 mode = "all"
+
+[dispatch]
+# Maximum dispatch depth, including the initial `al dispatch` call.
+# 1 means a dispatched target cannot call `al dispatch` again.
+max_depth = 1
 
 [agents.antigravity]
 enabled = true
@@ -239,6 +244,7 @@ Set `noise_mode` to control warning verbosity:
 Agent Layer validates `config.toml` on every run. Common validation rules:
 
 - `approvals.mode` must be one of `all`, `mcp`, `commands`, `none`, `yolo`
+- `dispatch.max_depth` must be a positive integer when set
 - `enabled` flags must be set for all agents and MCP servers
 - MCP transport must be `http` or `stdio`
 - `http_transport` (when set) must be `sse` or `streamable`
@@ -636,7 +642,7 @@ al dispatch --agent random --skill review-plan "Review this plan."
 cat prompt.md | al dispatch --agent claude
 ```
 
-Supported target values are `codex`, `claude`, `antigravity`, and `random`. When `--agent` is omitted, Agent Layer uses the env-only caller marker (`AL_DISPATCH_CALLER_AGENT`) and the caller's optional `agents.<caller>.dispatch.default_agent`, defaulting to `random`. Dispatch writes target answer text to stdout and status/errors to stderr, blocks nested calls with `AL_DISPATCH_ACTIVE=1`, and uses the selected target's generated config and permissions. See `docs/AGENT-DISPATCH.md` in the repository for the full v1 contract.
+Supported target values are `codex`, `claude`, `antigravity`, and `random`. When `--agent` is omitted, Agent Layer uses the env-only caller marker (`AL_DISPATCH_CALLER_AGENT`) and the caller's optional `agents.<caller>.dispatch.default_agent`, defaulting to `random`. Dispatch writes target answer text to stdout and status/errors to stderr, limits nested calls with `dispatch.max_depth` (default `1`), and uses the selected target's generated config and permissions. See `docs/AGENT-DISPATCH.md` in the repository for the full v1 contract.
 
 **Exit codes**
 
@@ -645,7 +651,7 @@ Supported target values are `codex`, `claude`, `antigravity`, and `random`. When
 - `65` — configuration or state failure (missing source skill, stale/missing target skill projection, malformed config, disabled target)
 - `69` — target unavailable (missing target binary, unauthenticated/unusable target CLI, no eligible target in the random-selection pool)
 - `70` — target or adapter failure (target subprocess non-zero exit, target rejection of a custom override value, changed structured stream shape, unreadable target output, internal dispatch error)
-- `75` — nested dispatch blocked (`AL_DISPATCH_ACTIVE=1` already set)
+- `75` — nested dispatch blocked by `dispatch.max_depth` or invalid `AL_DISPATCH_ACTIVE`
 - `130` — interrupted by `SIGINT`
 - `143` — terminated by `SIGTERM`
 

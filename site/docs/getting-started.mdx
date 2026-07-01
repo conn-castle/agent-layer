@@ -87,7 +87,7 @@ Edit these files to make the agent behave the way you want:
 - `.agent-layer/instructions/` for global rules and preferences
 - `.agent-layer/skills/` for reusable workflows (aligned with the [agentskills.io specification](https://agentskills.io/specification))
 - `.agent-layer/commands.allow` to define approved shell command prefixes
-- `.agent-layer/config.toml` for approvals, agent enablement, models, MCP servers, and warnings
+- `.agent-layer/config.toml` for approvals, dispatch limits, agent enablement, models, MCP servers, and warnings
 
 Everything is plain text and local to the repo, which makes it easy to review changes and share them with a team when you are ready.
 
@@ -147,7 +147,7 @@ Typical layout:
 
 ```text
 .agent-layer/
-  config.toml          # approvals, agents, models, MCP servers, warnings
+  config.toml          # approvals, dispatch limits, agents, models, MCP servers, warnings
   instructions/        # numbered instruction fragments
   skills/             # <name>/SKILL.md
   commands.allow       # approved shell command prefixes

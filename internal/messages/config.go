@@ -31,6 +31,7 @@ const (
 	ConfigCopilotCLIEnabledRequiredFmt            = "%s: agents.copilot_cli.enabled is required"
 	ConfigCopilotCLIReasoningEffortUnsupportedFmt = "%s: agents.copilot_cli.reasoning_effort is not supported in this release"
 	ConfigDispatchDefaultAgentInvalidFmt          = "%s: %s %q is invalid (allowed: random, codex, claude, antigravity)"
+	ConfigDispatchMaxDepthInvalidFmt              = "%s: dispatch.max_depth must be greater than zero"
 	ConfigMcpServerIDRequiredFmt                  = "%s: mcp.servers[%d].id is required"
 	ConfigMcpServerIDReservedFmt                  = "%s: mcp.servers[%d].id is reserved"
 	ConfigMcpServerIDDuplicateFmt                 = "%s: mcp.servers[%d].id %q duplicates mcp.servers[%d].id"

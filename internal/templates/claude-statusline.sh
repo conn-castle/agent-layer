@@ -7,6 +7,12 @@
 # otherwise fail with "invalid number").
 export LC_NUMERIC=C
 
+ceil_div() {
+  local numerator="$1"
+  local denominator="$2"
+  printf '%s\n' "$(( (numerator + denominator - 1) / denominator ))"
+}
+
 # ── Color codes ───────────────────────────────────────────────────────────────
 RESET='\033[0m'
 BOLD='\033[1m'
@@ -54,7 +60,7 @@ fi
 # ── Session ───────────────────────────────────────────────────────────────────
 sess_str=""
 if [ -n "$session_id" ]; then
-  sess_str="${DIM}#${session_id}${RESET}"
+  sess_str="${DIM}${session_id}${RESET}"
 fi
 
 # ── Directory: show path relative to project root, or full cwd ───────────────
@@ -136,8 +142,9 @@ if [ -n "$weekly_pct" ]; then
     weekly_color="${GREEN}"
   fi
 
-  # resets_at is Unix epoch seconds; compute whole days left, or whole hours
-  # once under 24h. Clamp negatives to 0 in case the window has already reset.
+  # resets_at is Unix epoch seconds; compute days left, or hours once under
+  # 24h, rounded up so any partial remaining unit is still visible. Clamp
+  # negatives to 0 in case the window has already reset.
   time_left=""
   if [ -n "$weekly_reset" ]; then
     reset_epoch=$(printf "%.0f" "$weekly_reset" 2>/dev/null)
@@ -146,9 +153,9 @@ if [ -n "$weekly_pct" ]; then
       secs_left=$(( reset_epoch - now ))
       [ "$secs_left" -lt 0 ] && secs_left=0
       if [ "$secs_left" -ge 86400 ]; then
-        time_left="$(( secs_left / 86400 ))d"
+        time_left="$(ceil_div "$secs_left" 86400)d"
       elif [ "$secs_left" -ge 3600 ]; then
-        time_left="$(( secs_left / 3600 ))h"
+        time_left="$(ceil_div "$secs_left" 3600)h"
       else
         # Under an hour: avoid the misleading "0h".
         time_left="<1h"

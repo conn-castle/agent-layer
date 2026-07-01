@@ -233,6 +233,7 @@ dev: ## Fast local checks during development (format + lint + coverage + release
 
 # Local dev targets — run al subcommands against this repo's own .agent-layer using source
 AL_RUN := GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al
+AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE
 
 .PHONY: al-upgrade
 al-upgrade: ## Upgrade this repo's .agent-layer using current source
@@ -248,15 +249,15 @@ al-doctor: ## Run al doctor against this repo using current source
 
 .PHONY: al-claude
 al-claude: ## Run al claude against this repo using current source
-	@$(AL_RUN) claude
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) claude
 
 .PHONY: al-codex
 al-codex: ## Run al codex against this repo using current source
-	@$(AL_RUN) codex
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) codex
 
 .PHONY: al-agy
 al-agy: ## Run al agy against this repo using current source
-	@$(AL_RUN) agy
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) agy
 
 .PHONY: al-copilot
 al-copilot: ## Run al copilot against this repo using current source

@@ -91,9 +91,8 @@ func TestClaudeStatuslineScript_RendersFullPayload(t *testing.T) {
 		t.Fatalf("make subdir: %v", err)
 	}
 
-	// ~5 days out, buffered an extra hour so clock drift between this line and
-	// the script's own `date +%s` cannot tip the floored day count down to 4d.
-	resetEpoch := time.Now().Unix() + 5*86400 + 3600
+	// ~6.1 days out verifies the statusline rounds up partial days.
+	resetEpoch := time.Now().Unix() + 6*86400 + 3*3600
 	input := `{
 		"model": {"display_name": "Opus 4.8"},
 		"workspace": {"current_dir": "` + cwd + `"},
@@ -105,13 +104,13 @@ func TestClaudeStatuslineScript_RendersFullPayload(t *testing.T) {
 	}`
 	out := runClaudeStatusline(t, cwd, input)
 
-	// used_percentage 60 → 40% headroom remaining; reset ~5 days out.
-	for _, want := range []string{"Opus 4.8 (high)", "ctx:43%", "lim:5d/40% left", "#sess123", "+6", "-1", "Δ2", "$1.50"} {
+	// used_percentage 60 → 40% headroom remaining; reset ~6.1 days out.
+	for _, want := range []string{"Opus 4.8 (high)", "ctx:43%", "lim:7d/40% left", "sess123", "+6", "-1", "Δ2", "$1.50"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected output to contain %q, got: %q", want, out)
 		}
 	}
-	for _, absent := range []string{"+99", "-88"} {
+	for _, absent := range []string{"#sess123", "+99", "-88"} {
 		if strings.Contains(out, absent) {
 			t.Errorf("did not expect JSON line count %q in output, got: %q", absent, out)
 		}
@@ -141,10 +140,11 @@ func TestClaudeStatuslineScript_FallsBackToTokenRatioForContext(t *testing.T) {
 	}
 }
 
-func TestClaudeStatuslineScript_WeeklyLimitShowsHoursWhenUnderADay(t *testing.T) {
-	// Under 24h to reset: the time segment switches from days to whole hours.
+func TestClaudeStatuslineScript_WeeklyLimitShowsRoundedUpHoursWhenUnderADay(t *testing.T) {
+	// Under 24h to reset: the time segment switches from days to hours, rounded
+	// up so partial remaining hours are not hidden.
 	cwd := t.TempDir()
-	// ~5 hours out, buffered 30 min against clock drift so the floor stays 5h.
+	// ~5.5 hours out, which rounds up to 6h.
 	resetEpoch := time.Now().Unix() + 5*3600 + 1800
 	input := `{
 		"model": {"display_name": "Opus 4.8"},
@@ -153,8 +153,8 @@ func TestClaudeStatuslineScript_WeeklyLimitShowsHoursWhenUnderADay(t *testing.T)
 	}`
 	out := runClaudeStatusline(t, cwd, input)
 	// used_percentage 75 → 25% headroom remaining.
-	if !strings.Contains(out, "lim:5h/25% left") {
-		t.Errorf("expected lim:5h/25%% left, got: %q", out)
+	if !strings.Contains(out, "lim:6h/25% left") {
+		t.Errorf("expected lim:6h/25%% left, got: %q", out)
 	}
 }
 

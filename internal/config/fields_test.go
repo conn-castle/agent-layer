@@ -114,6 +114,19 @@ func TestFieldOptionValues_BoolField(t *testing.T) {
 	}
 }
 
+func TestLookupField_DispatchMaxDepth(t *testing.T) {
+	f, ok := LookupField("dispatch.max_depth")
+	if !ok {
+		t.Fatal("expected dispatch.max_depth to be in catalog")
+	}
+	if f.Type != FieldPositiveInt {
+		t.Fatalf("dispatch.max_depth type = %s, want %s", f.Type, FieldPositiveInt)
+	}
+	if f.Required {
+		t.Fatal("dispatch.max_depth should not be required")
+	}
+}
+
 func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.claude.model")
 	want := []string{"default", "sonnet", "opus", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"}
