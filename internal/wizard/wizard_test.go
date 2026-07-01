@@ -27,6 +27,17 @@ func TestBuildSummaryIncludesDisabledMCPServers(t *testing.T) {
 	assert.Contains(t, summary, "- github")
 }
 
+func TestBuildSummaryIncludesAntigravityModel(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+	choices.EnabledAgents[AgentAntigravity] = true
+	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+
+	summary := buildSummary(choices)
+
+	assert.Contains(t, summary, "- antigravity: Gemini 3.5 Flash (High)")
+}
+
 func TestApprovalModeLabelForValue_NotFound(t *testing.T) {
 	label, ok := approvalModeLabelForValue("unknown")
 	assert.False(t, ok)
@@ -165,6 +176,42 @@ func TestRunWithWriter_RedirectsWhenConfigNeedsUpgrade(t *testing.T) {
 		t.Fatalf("must not promise a wizard fix for a needs-upgrade config, got: %q", out.String())
 	}
 	assert.Contains(t, out.String(), "al upgrade")
+}
+
+func TestRunWithWriter_RedirectsLegacyAntigravityAgentSpecificModel(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := root + "/.agent-layer"
+	configData := basicAgentConfig() + `
+[agents.antigravity.agent_specific]
+model = "Gemini 3.5 Flash (High)"
+`
+	if err := os.WriteFile(configDir+"/config.toml", []byte(configData), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err := os.WriteFile(configDir+"/.env", []byte(""), 0o600); err != nil {
+		t.Fatalf("write env: %v", err)
+	}
+
+	syncCalled := false
+	runSync := func(string) (*alsync.Result, error) {
+		syncCalled = true
+		return &alsync.Result{}, nil
+	}
+
+	var out bytes.Buffer
+	err := RunWithWriter(root, &errUI{err: errors.New("stub UI error")}, runSync, "0.0.0", &out)
+	if err != nil {
+		t.Fatalf("expected clean exit (nil) for legacy Antigravity model config, got: %v", err)
+	}
+	if syncCalled {
+		t.Fatal("runSync must not be called when legacy Antigravity model config needs an upgrade")
+	}
+	if strings.Contains(out.String(), "will help you fix") {
+		t.Fatalf("must not promise a wizard fix for legacy Antigravity model config, got: %q", out.String())
+	}
+	assert.Contains(t, out.String(), "al upgrade")
+	assert.Contains(t, out.String(), "agents.antigravity.agent_specific.model")
 }
 
 func TestRunWithWriter_LenientFallbackOnUnknownKeys(t *testing.T) {
@@ -351,11 +398,42 @@ func TestPromptModels_SetsDisableToggles(t *testing.T) {
 	assert.True(t, choices.CodexDisableBrowserTouched)
 }
 
+func TestPromptModels_AntigravityModelOptions(t *testing.T) {
+	choices := NewChoices()
+	choices.EnabledAgents[AgentAntigravity] = true
+	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+
+	var sawAntigravityModel bool
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title != messages.WizardAntigravityModelTitle {
+				t.Fatalf("unexpected select title %q", title)
+			}
+			sawAntigravityModel = true
+			wantOptions := append([]string{messages.WizardLeaveBlankOption}, config.FieldOptionValues(config.AntigravityModelFieldKey)...)
+			wantOptions = append(wantOptions, messages.WizardCustomOption)
+			assert.Equal(t, wantOptions, options)
+			assert.Equal(t, "Gemini 3.5 Flash (High)", *current)
+			*current = "Gemini 3.1 Pro (High)"
+			return nil
+		},
+	}
+
+	if err := promptModels(ui, choices); err != nil {
+		t.Fatalf("promptModels error: %v", err)
+	}
+	assert.True(t, sawAntigravityModel)
+	assert.True(t, choices.AntigravityModelTouched)
+	assert.Equal(t, "Gemini 3.1 Pro (High)", choices.AntigravityModel)
+}
+
 // TestPromptEnabledAgents_ResetsDisableToggles asserts that deselecting the
 // Claude agents and Codex clears their per-feature disable toggles so a stale
 // "disable" choice cannot survive into an unrelated config.
 func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	choices := NewChoices()
+	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+	choices.AntigravityModelTouched = true
 	choices.ClaudeDisableIDEReading = true
 	choices.ClaudeDisableIDEReadingTouched = true
 	choices.ClaudeDisableMemory = true
@@ -386,6 +464,8 @@ func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	assert.False(t, choices.ClaudeDisableConnectorsTouched)
 	assert.False(t, choices.ClaudeDisableQuestionTool)
 	assert.False(t, choices.ClaudeDisableQuestionToolTouched)
+	assert.Empty(t, choices.AntigravityModel)
+	assert.False(t, choices.AntigravityModelTouched)
 	assert.False(t, choices.CodexDisableBrowser)
 	assert.False(t, choices.CodexDisableBrowserTouched)
 }
@@ -506,6 +586,88 @@ func TestInitializeChoices_QuestionToolReadBackPrecedence(t *testing.T) {
 			t.Fatal("expected typed flag=false to take precedence over legacy block")
 		}
 	})
+}
+
+func TestInitializeChoices_StatuslineWizardDefaults(t *testing.T) {
+	falseValue := false
+	trueValue := true
+
+	tests := []struct {
+		name        string
+		claudeValue *bool
+		codexValue  *bool
+		wantClaude  bool
+		wantCodex   bool
+	}{
+		{
+			name:       "absent config defaults enabled in wizard",
+			wantClaude: true,
+			wantCodex:  true,
+		},
+		{
+			name:        "explicit false remains disabled",
+			claudeValue: &falseValue,
+			codexValue:  &falseValue,
+		},
+		{
+			name:        "explicit true remains enabled",
+			claudeValue: &trueValue,
+			codexValue:  &trueValue,
+			wantClaude:  true,
+			wantCodex:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.ProjectConfig{
+				Config: config.Config{
+					Agents: config.AgentsConfig{
+						Claude: config.ClaudeConfig{Statusline: tt.claudeValue},
+						Codex:  config.CodexConfig{Statusline: tt.codexValue},
+					},
+				},
+				Root: t.TempDir(),
+			}
+
+			choices, err := initializeChoices(cfg)
+			if err != nil {
+				t.Fatalf("initializeChoices: %v", err)
+			}
+			if choices.ClaudeStatusline != tt.wantClaude {
+				t.Fatalf("ClaudeStatusline = %v, want %v", choices.ClaudeStatusline, tt.wantClaude)
+			}
+			if choices.CodexStatusline != tt.wantCodex {
+				t.Fatalf("CodexStatusline = %v, want %v", choices.CodexStatusline, tt.wantCodex)
+			}
+		})
+	}
+}
+
+func TestInitializeChoices_AntigravityModelReadBack(t *testing.T) {
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Antigravity: config.AntigravityConfig{Model: "Gemini 3.5 Flash (High)"},
+			},
+		},
+		Root: t.TempDir(),
+	}
+
+	choices, err := initializeChoices(cfg)
+	if err != nil {
+		t.Fatalf("initializeChoices: %v", err)
+	}
+	assert.Equal(t, "Gemini 3.5 Flash (High)", choices.AntigravityModel)
+}
+
+func TestApplyFreshSetupDefaults_DefaultsAntigravityModelToHigh(t *testing.T) {
+	choices := NewChoices()
+
+	applyFreshSetupDefaults(choices)
+
+	assert.True(t, choices.EnabledAgents[AgentAntigravity])
+	assert.Equal(t, defaultAntigravityModel, choices.AntigravityModel)
 }
 
 // TestReadCodexBrowserDisabled covers detecting the Codex browser-disable state.

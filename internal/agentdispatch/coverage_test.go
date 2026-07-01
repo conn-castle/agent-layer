@@ -579,7 +579,7 @@ func TestWriteOptionsTextIncludesPerTargetContract(t *testing.T) {
 				DispatchCapable:    false,
 				RandomEligible:     false,
 				Streaming:          StreamingOption{AnswerText: "partial", Progress: "none"},
-				Model:              FieldOption{OverrideSupported: false},
+				Model:              FieldOption{OverrideSupported: true, Configured: "Gemini 3.1 Pro (High)", Suggestions: []string{"Gemini 3.1 Pro (High)"}, AllowCustom: true},
 				ReasoningEffort:    FieldOption{OverrideSupported: false},
 				UnavailableReasons: []string{"binary_not_found"},
 			},
@@ -597,11 +597,11 @@ func TestWriteOptionsTextIncludesPerTargetContract(t *testing.T) {
 		"model: configured=gpt-5 override=true allow_custom=true suggestions=[gpt-5, gpt-5-mini]",
 		"reasoning_effort: configured=high override=true allow_custom=true suggestions=[low, medium, high]",
 		"unavailable_reasons: [none]",
-		// Antigravity block (not dispatch-capable, no override support).
+		// Antigravity block (not dispatch-capable, model override supported).
 		"- antigravity enabled=true installed=false dispatch_capable=false",
 		"random_eligible: false\n",
 		"streaming: answer_text=partial progress=none",
-		"model: configured=none override=false allow_custom=false suggestions=[]",
+		"model: configured=Gemini 3.1 Pro (High) override=true allow_custom=true suggestions=[Gemini 3.1 Pro (High)]",
 		"unavailable_reasons: [binary_not_found]",
 	} {
 		if !strings.Contains(got, want) {

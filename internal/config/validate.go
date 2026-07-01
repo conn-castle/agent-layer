@@ -78,6 +78,9 @@ func (c *Config) Validate(path string) error {
 	if err := validateDispatchDefault(path, "agents.antigravity.dispatch.default_agent", c.Agents.Antigravity.Dispatch.DefaultAgent); err != nil {
 		return err
 	}
+	if err := validateAntigravityModelSource(path, c.Agents.Antigravity); err != nil {
+		return err
+	}
 	if err := validateDispatchDefault(path, "agents.claude.dispatch.default_agent", c.Agents.Claude.Dispatch.DefaultAgent); err != nil {
 		return err
 	}
@@ -88,13 +91,15 @@ func (c *Config) Validate(path string) error {
 		return fmt.Errorf(messages.ConfigCopilotCLIReasoningEffortUnsupportedFmt, path)
 	}
 
-	// Model and reasoning-effort validation: agent model values (agents.claude.model,
-	// agents.codex.model) and reasoning-effort values (agents.claude.reasoning_effort,
-	// agents.codex.reasoning_effort) are intentionally NOT validated here. The field
-	// catalog (fields.go) defines known options with AllowCustom: true, meaning arbitrary
-	// strings are accepted. The downstream client is the authority on which model and
-	// effort combinations are valid — Claude Code applies reasoning effort where the active
-	// model supports it and ignores it otherwise. See Decision config-field-catalog.
+	// Model and reasoning-effort validation: agent model values
+	// (agents.antigravity.model, agents.claude.model, agents.codex.model) and
+	// reasoning-effort values (agents.claude.reasoning_effort,
+	// agents.codex.reasoning_effort) are intentionally NOT validated here. The
+	// field catalog (fields.go) defines known options with AllowCustom: true,
+	// meaning arbitrary strings are accepted. The downstream client is the
+	// authority on which model and effort combinations are valid — Claude Code
+	// applies reasoning effort where the active model supports it and ignores it
+	// otherwise. See Decision config-field-catalog.
 	// (Copilot CLI is the lone exception above: it exposes no reasoning-effort control at
 	// all, so a value there is rejected outright.)
 
@@ -168,6 +173,13 @@ func validateDispatchDefault(path string, key string, value string) error {
 		}
 	}
 	return fmt.Errorf(messages.ConfigDispatchDefaultAgentInvalidFmt, path, key, value)
+}
+
+func validateAntigravityModelSource(path string, cfg AntigravityConfig) error {
+	if HasProviderPassthroughKey(cfg.AgentSpecific, "model") {
+		return fmt.Errorf("%w: "+messages.ConfigAntigravityAgentSpecificModelInvalidFmt, ErrConfigNeedsUpgrade, path)
+	}
+	return nil
 }
 
 // validateWarnings validates optional warning thresholds.

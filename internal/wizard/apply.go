@@ -91,6 +91,14 @@ func applyChanges(root, configPath, envPath string, c *Choices, runSync syncer, 
 		return fmt.Errorf(messages.WizardApplySkillsFailedFmt, err)
 	}
 
+	gitignoreChangeSet, err := computeGitignoreBlockChangeSet(root, c)
+	if err != nil {
+		return err
+	}
+	if err := applyGitignoreBlockChanges(root, gitignoreChangeSet); err != nil {
+		return err
+	}
+
 	statuslineSourceChangeSet, err := computeStatuslineSourceChangeSet(root, c)
 	if err != nil {
 		return err

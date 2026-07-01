@@ -59,6 +59,9 @@ func WriteAntigravitySettings(sys System, root string, project *config.ProjectCo
 
 func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
 	settings := make(map[string]any)
+	if model := strings.TrimSpace(project.Config.Agents.Antigravity.Model); model != "" {
+		settings["model"] = model
+	}
 	permissions := buildPermissionsBlock(
 		project.Config,
 		project.CommandsAllow,

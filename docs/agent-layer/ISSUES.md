@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-01 dispatch-concurrent-sync-temp-rename: Concurrent dispatch sync can fail during generated skill writes
+    Priority: Low. Area: al dispatch / sync generated-file writes
+    Description: A parallel `al dispatch` reviewer attempt failed before the target started with `al dispatch sync failed: failed to write .agents/skills/audit-memory/SKILL.md: rename temp file ... no such file or directory`. Sequential dispatch succeeded, so this appears to be a concurrent sync/write reliability edge rather than a deterministic target-agent failure.
+    Next step: Reproduce parallel `al dispatch` from a clean repo with two targets, capture sync logs, and verify whether generated skill writes share a lock before `fsutil.WriteFileAtomic` temp/rename operations.
+    Notes: Observed during ship-pr audit on 2026-07-01; related to, but more specific than, the existing sync-lock consistency issues below.
+
 - Issue 2026-06-30 sync-lock-blocking-no-timeout-divergent: Sync project lock blocks indefinitely and hardcodes unix.Flock, diverging from dispatch lock
     Priority: Low. Area: internal/sync/lock.go (`lockProjectSyncFile`/`acquireProjectSyncLock`) vs internal/dispatch/lock.go (`lockFile`)
     Description: The per-project sync lock blocks indefinitely on `unix.Flock(fd, LOCK_EX)` (only an EINTR retry) and calls `unix.Flock` directly (not injectable), so a live-but-stuck concurrent holder makes `al sync` hang with no diagnostic and the flock path is hard to unit-test. The sibling dispatch lock uses `LOCK_EX|LOCK_NB` with a 30s deadline/poll loop, surfaces a timeout error, and routes through an injectable `System.Flock`. A crashed holder is fine (flock auto-releases on fd close at process death), so this is reliability/UX/consistency, not a correctness bug.
@@ -95,7 +101,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-06-23 codex-malformed-projects-silent-trust-skip: Malformed `agent_specific.projects` silently suppresses the managed Codex trust block
     Priority: Low. Area: internal/sync/codex.go (`codexAgentSpecificDefinesProject`, line ~184)
-    Description: `agent_specific` is `map[string]any` with no value-shape validation (the `projects` key is allowlisted in internal/config/agent_specific.go but its value type is unchecked). When a user writes `projects = "foo"` (scalar) or `projects = ["a"]` (array) under `[agents.codex.agent_specific]`, `codexAgentSpecificDefinesProject` hits `return true` (the non-table branch), so `appendCodexTrustedProject` skips emitting the managed `[projects."<root>"] trust_level = "trusted"` block. The repo silently loses Codex project trust, while the malformed `projects` is still emitted verbatim — a hidden-default/silent-fallback that degrades a security-adjacent control with no error. Reachable, not dead.
+    Description: `agent_specific` is raw passthrough with no value-shape validation (the `projects` key is recognized by the Codex collision-warning policy but its value type is unchecked). When a user writes `projects = "foo"` (scalar) or `projects = ["a"]` (array) under `[agents.codex.agent_specific]`, `codexAgentSpecificDefinesProject` hits `return true` (the non-table branch), so `appendCodexTrustedProject` skips emitting the managed `[projects."<root>"] trust_level = "trusted"` block. The repo silently loses Codex project trust, while the malformed `projects` is still emitted verbatim — a hidden-default/silent-fallback that degrades a security-adjacent control with no error. Reachable, not dead.
     Next step: Human to choose the disposition: (A) fail loud — change `codexAgentSpecificDefinesProject` to return an error so a non-table `projects` aborts sync with an actionable message; (B) write managed trust defensively (`return false`) — but this risks a TOML key conflict (`projects` as both scalar and table) that Codex would reject; (C) leave as-is and document that `agent_specific.projects` must be a table. Option A is the cleanest fail-loud fit but changes the function signature and call site.
     Notes: Deferred because the safest behavior is a genuine tradeoff (fail-loud vs defensive-write vs document) on a trust control, not a mechanical fix.
 

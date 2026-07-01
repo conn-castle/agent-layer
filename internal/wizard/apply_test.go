@@ -384,6 +384,29 @@ broken toml`
 	assert.Contains(t, err.Error(), "failed to patch config")
 }
 
+func TestApplyChanges_WritesAntigravityModel(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, ".agent-layer")
+	require.NoError(t, os.MkdirAll(configDir, 0o700))
+	configPath := filepath.Join(configDir, "config.toml")
+	envPath := filepath.Join(configDir, ".env")
+	require.NoError(t, os.WriteFile(configPath, []byte(basicAgentConfig()), 0o600))
+	require.NoError(t, os.WriteFile(envPath, nil, 0o600))
+
+	choices := NewChoices()
+	choices.AntigravityModelTouched = true
+	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+
+	err := applyChanges(root, configPath, envPath, choices, func(string) (*alsync.Result, error) {
+		return &alsync.Result{}, nil
+	}, io.Discard)
+	require.NoError(t, err)
+
+	updated, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(updated), `model = "Gemini 3.5 Flash (High)"`)
+}
+
 func TestApplyChanges_SyncWarnings(t *testing.T) {
 	choices := NewChoices()
 	choices.ApprovalMode = "all"

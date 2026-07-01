@@ -1,6 +1,24 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.11.1 - 2026-07-01
+
+Adds first-class Antigravity model selection across wizard, dispatch, sync, and generated config, and lets the wizard choose which Agent Layer folders stay trackable in Git.
+
+### Added
+- Antigravity model choices in `al wizard`, backed by live `agy models` discovery with static catalog fallback.
+- Antigravity `--model` support for `al dispatch`, plus model metadata in `al dispatch options`.
+- Wizard Git tracking step for `.agent-layer/` and `docs/agent-layer/`, implemented by rewriting the managed `.agent-layer/gitignore.block` source before sync.
+- `agents.antigravity.model` typed config and generated Antigravity settings projection.
+
+### Changed
+- Antigravity reasoning level is encoded in the selected agy model display string; `--reasoning-effort` remains unsupported for Antigravity.
+- Provider passthrough config now uses the `ProviderPassthrough` alias, and Agent Layer-owned Antigravity model config is rejected under `agents.antigravity.agent_specific.model`.
+
+### Fixed
+- Upgrades move `agents.antigravity.agent_specific.model` to `agents.antigravity.model` before runtime validation rejects the passthrough key.
+- Wizard gitignore tracking recognizes managed patterns with inline comments and avoids duplicating them.
+
 ## v0.11.0 - 2026-06-03
 
 Replaces Gemini CLI support with the agy-backed Antigravity integration, adds Agent Dispatch for focused second-agent work, ships explicit opt-in Claude/Codex status lines, expands the wizard into a workflow-bundle, CLI-skill, and deterministic answer-file setup flow, hardens upgrade/CI release workflows, and publishes the public best-practice guides from canonical repository docs.

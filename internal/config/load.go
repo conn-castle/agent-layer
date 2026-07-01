@@ -88,6 +88,9 @@ func ParseConfig(data []byte, source string) (*Config, error) {
 		return nil, fmt.Errorf("%w: "+messages.ConfigUnrecognizedKeysFmt+" "+messages.ConfigValidationGuidance, ErrConfigValidation, source, err)
 	}
 	if err := cfg.Validate(source); err != nil {
+		if errors.Is(err, ErrConfigNeedsUpgrade) {
+			return nil, fmt.Errorf("%w: %w", ErrConfigValidation, err)
+		}
 		return nil, fmt.Errorf("%w: %w "+messages.ConfigValidationGuidance, ErrConfigValidation, err)
 	}
 	return &cfg, nil
@@ -107,6 +110,31 @@ func HasLegacyGeminiConfig(data []byte) bool {
 		return false
 	}
 	_, ok = agents["gemini"]
+	return ok
+}
+
+// HasLegacyAntigravityAgentSpecificModel reports whether `data` contains the
+// pre-v0.11.1 Antigravity provider passthrough model key. That key is migrated
+// to the typed `agents.antigravity.model` field by `al upgrade`; repair tools
+// must not preserve it through lenient config rewrites.
+func HasLegacyAntigravityAgentSpecificModel(data []byte) bool {
+	var raw map[string]any
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return false
+	}
+	agents, ok := raw["agents"].(map[string]any)
+	if !ok {
+		return false
+	}
+	antigravity, ok := agents["antigravity"].(map[string]any)
+	if !ok {
+		return false
+	}
+	agentSpecific, ok := antigravity["agent_specific"].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = agentSpecific["model"]
 	return ok
 }
 

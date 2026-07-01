@@ -10,10 +10,13 @@ mode = "all"
 
 [agents.antigravity]
 enabled = false
-# The agy CLI does not accept model or reasoning_effort flags, so Agent Layer
-# does not surface those keys for Antigravity. Use agent_specific to inject
-# arbitrary JSON keys into .agy/antigravity-cli/settings.json (deep-merged with
-# Agent Layer-managed permissions).
+# Antigravity model selection is projected into .agy/antigravity-cli/settings.json.
+# Run `agy models` for the current CLI surface; some agy model names include
+# effort in the display string.
+# model = "Gemini 3.5 Flash (High)"
+# Use agent_specific to inject unmanaged JSON keys into settings.json
+# (deep-merged with Agent Layer-managed permissions). Do not put model here;
+# use agents.antigravity.model above.
 # Optional default target when `al dispatch` is invoked from Antigravity without --agent.
 # [agents.antigravity.dispatch]
 # default_agent = "random" # random | codex | claude | antigravity
@@ -45,7 +48,7 @@ enabled = true
 # .claude/claude-statusline.sh and statusLine is wired into .claude/settings.json.
 # Absent means disabled. Requires jq on PATH at runtime.
 # statusline = true
-# Optional agent-specific passthrough config for Claude (arbitrary JSON keys).
+# Optional `agent_specific` passthrough for Claude (arbitrary JSON keys).
 # Object values are deep-merged into .claude/settings.json; arrays and scalar values are replaced at their key.
 # Overlapping managed keys, such as permissions.allow, override Agent Layer-managed
 # values and trigger a sync warning. permissions.deny is additive and does not warn.
@@ -73,7 +76,7 @@ enabled = true
 # seed the source once. Absent means disabled. For provider-native overrides, define
 # agents.codex.agent_specific.tui.status_line directly.
 # statusline = true
-# Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
+# Optional `agent_specific` passthrough for Codex (arbitrary TOML tables/keys).
 # These are appended to .codex/config.toml and can override top-level managed keys.
 # Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
 # Overlapping keys override Agent Layer-managed values and trigger a sync warning.

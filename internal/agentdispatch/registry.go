@@ -19,10 +19,6 @@ type targetMeta struct {
 	Binary             string
 	SkillPrefix        string
 	SharedSkillProject bool
-	ModelKey           string
-	ReasoningKey       string
-	SupportsModel      bool
-	SupportsReasoning  bool
 	AnswerText         string
 	Progress           string
 }
@@ -34,23 +30,15 @@ func targetRegistry() []targetMeta {
 			Binary:             "codex",
 			SkillPrefix:        "$",
 			SharedSkillProject: true,
-			ModelKey:           "agents.codex.model",
-			ReasoningKey:       "agents.codex.reasoning_effort",
-			SupportsModel:      true,
-			SupportsReasoning:  true,
 			AnswerText:         answerTextFinal,
 			Progress:           progressPartial,
 		},
 		{
-			Name:              AgentClaude,
-			Binary:            "claude",
-			SkillPrefix:       "/",
-			ModelKey:          "agents.claude.model",
-			ReasoningKey:      "agents.claude.reasoning_effort",
-			SupportsModel:     true,
-			SupportsReasoning: true,
-			AnswerText:        answerTextPartial,
-			Progress:          progressPartial,
+			Name:        AgentClaude,
+			Binary:      "claude",
+			SkillPrefix: "/",
+			AnswerText:  answerTextPartial,
+			Progress:    progressPartial,
 		},
 		{
 			Name:               AgentAntigravity,
@@ -113,28 +101,6 @@ func targetEnabled(cfg config.Config, target string) bool {
 		return config.IsAgentEnabled(cfg.Agents.Antigravity.Enabled)
 	default:
 		return false
-	}
-}
-
-func configuredModel(cfg config.Config, target string) string {
-	switch target {
-	case AgentCodex:
-		return cfg.Agents.Codex.Model
-	case AgentClaude:
-		return cfg.Agents.Claude.Model
-	default:
-		return ""
-	}
-}
-
-func configuredReasoning(cfg config.Config, target string) string {
-	switch target {
-	case AgentCodex:
-		return cfg.Agents.Codex.ReasoningEffort
-	case AgentClaude:
-		return cfg.Agents.Claude.ReasoningEffort
-	default:
-		return ""
 	}
 }
 

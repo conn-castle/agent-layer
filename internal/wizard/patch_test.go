@@ -192,6 +192,94 @@ model = "custom"
 	assert.Contains(t, out, "# model =")
 }
 
+func TestPatchConfig_AntigravityModelUntouchedDoesNotWriteDefault(t *testing.T) {
+	content := `
+[agents.antigravity]
+enabled = true
+`
+	out, err := PatchConfig(content, NewChoices())
+	require.NoError(t, err)
+
+	assert.NotContains(t, out, "\nmodel =")
+	assert.NotContains(t, out, "[agents.antigravity.agent_specific]")
+}
+
+func TestPatchConfig_AntigravityModelWritesModel(t *testing.T) {
+	content := `
+[agents.antigravity]
+enabled = true
+`
+	choices := NewChoices()
+	choices.AntigravityModelTouched = true
+	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, `model = "Gemini 3.5 Flash (High)"`)
+	assert.NotContains(t, out, "agent_specific.model")
+}
+
+func TestPatchConfig_AntigravityModelPreservesUnrelatedAgentSpecific(t *testing.T) {
+	content := `
+[agents.antigravity]
+enabled = true
+
+[agents.antigravity.agent_specific]
+other = true
+`
+	choices := NewChoices()
+	choices.AntigravityModelTouched = true
+	choices.AntigravityModel = "Gemini 3.1 Pro (High)"
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.antigravity.agent_specific]")
+	assert.Contains(t, out, `model = "Gemini 3.1 Pro (High)"`)
+	assert.Contains(t, out, "other = true")
+}
+
+func TestPatchConfig_AntigravityModelBlankCommentsExistingModel(t *testing.T) {
+	content := `
+[agents.antigravity]
+enabled = true
+model = "Gemini 3.1 Pro (High)"
+`
+	choices := NewChoices()
+	choices.AntigravityModelTouched = true
+	choices.AntigravityModel = ""
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	doc := parseTomlDocument(out)
+	antigravityBlock := doc.sections["agents.antigravity"]
+	require.NotNil(t, antigravityBlock)
+	modelLine, ok := findKeyLine(antigravityBlock.lines, "model")
+	require.True(t, ok)
+	assert.True(t, modelLine.commented, "blank selection should comment the typed model line")
+}
+
+func TestPatchConfig_AntigravityModelSkippedWhenAntigravityDisabled(t *testing.T) {
+	content := `
+[agents.antigravity]
+enabled = true
+`
+	choices := NewChoices()
+	choices.EnabledAgentsTouched = true
+	choices.EnabledAgents[AgentAntigravity] = false
+	choices.AntigravityModelTouched = true
+	choices.AntigravityModel = "Gemini 3.5 Flash (High)"
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "enabled = false")
+	assert.NotContains(t, out, "agent_specific.model")
+	assert.NotContains(t, out, `model = "Gemini 3.5 Flash (High)"`)
+}
+
 func TestPatchConfig_WarningsDisabledRemovesSection(t *testing.T) {
 	content := `
 [warnings]

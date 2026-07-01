@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 )
 
 func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
 	options, err := BuildOptions(OptionsRequest{
 		Root: root,
 		Env:  []string{clients.EnvDispatchCallerAgent + "=" + AgentClaude},
@@ -44,6 +45,54 @@ func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	if !claude.Model.OverrideSupported || len(claude.Model.Suggestions) == 0 || !claude.Model.AllowCustom {
 		t.Fatalf("unexpected claude model metadata: %#v", claude.Model)
 	}
+	var agy TargetOption
+	for _, target := range options.Targets {
+		if target.Agent == AgentAntigravity {
+			agy = target
+		}
+	}
+	if !agy.Model.OverrideSupported || agy.Model.Configured != "Gemini 3.1 Pro (High)" || !agy.Model.AllowCustom {
+		t.Fatalf("unexpected antigravity model metadata: %#v", agy.Model)
+	}
+	if !slices.Contains(agy.Model.Suggestions, "Gemini 3.1 Pro (High)") {
+		t.Fatalf("unexpected antigravity model suggestions: %#v", agy.Model.Suggestions)
+	}
+	if agy.ReasoningEffort.OverrideSupported {
+		t.Fatalf("antigravity reasoning_effort should remain unsupported: %#v", agy.ReasoningEffort)
+	}
+}
+
+func TestBuildOptionsUsesTargetModelSuggestionProvider(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "agy.log")
+	writeDispatchStub(t, binDir, "agy", `if [ "$1" = "models" ]; then
+  printf 'Live Antigravity Model\nBackup Antigravity Model\n'
+fi`)
+
+	options, err := BuildOptions(OptionsRequest{
+		Root: root,
+		Env: []string{
+			"PATH=" + testPath(binDir),
+			"AL_TEST_LOG=" + logPath,
+		},
+		LookPath: mockLookPath(binDir),
+	})
+	if err != nil {
+		t.Fatalf("BuildOptions error: %v", err)
+	}
+	var agy TargetOption
+	for _, target := range options.Targets {
+		if target.Agent == AgentAntigravity {
+			agy = target
+		}
+	}
+	got := strings.Join(agy.Model.Suggestions, ",")
+	if got != "Live Antigravity Model,Backup Antigravity Model" {
+		t.Fatalf("antigravity suggestions = %q", got)
+	}
+	assertFileContains(t, logPath, "ARG_0=models")
+	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
 func TestRunBlocksNestedDispatchBeforeConfigLoad(t *testing.T) {
@@ -125,14 +174,14 @@ func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
 	assertFileContains(t, promptPath, "Review this")
 }
 
-func TestRunAntigravityRejectsOverridesBeforeLaunch(t *testing.T) {
+func TestRunAntigravityRejectsReasoningEffortBeforeLaunch(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	err := Run(RunOptions{
-		Root:       root,
-		Agent:      AgentAntigravity,
-		Model:      "model",
-		PromptArgs: []string{"Review"},
-		Env:        []string{"PATH=/bin"},
+		Root:            root,
+		Agent:           AgentAntigravity,
+		ReasoningEffort: "high",
+		PromptArgs:      []string{"Review"},
+		Env:             []string{"PATH=/bin"},
 		LookPath: func(string) (string, error) {
 			return "/bin/mock", nil
 		},
@@ -141,6 +190,67 @@ func TestRunAntigravityRejectsOverridesBeforeLaunch(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitUsage {
 		t.Fatalf("expected usage exit, got %T: %v", err, err)
 	}
+}
+
+func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "agy.log")
+	writeDispatchStub(t, binDir, "agy", `printf 'agy ok'`)
+	env := []string{
+		"PATH=" + testPath(binDir),
+		"AL_TEST_LOG=" + logPath,
+	}
+	var stdout bytes.Buffer
+	err := Run(RunOptions{
+		Root:       root,
+		Agent:      AgentAntigravity,
+		PromptArgs: []string{"Review"},
+		Env:        env,
+		Stdout:     &stdout,
+		Stderr:     &bytes.Buffer{},
+		LookPath:   mockLookPath(binDir),
+	})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if stdout.String() != "agy ok" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	assertFileContains(t, logPath, "ARG_1=--model")
+	assertFileContains(t, logPath, "ARG_2=Gemini 3.1 Pro (High)")
+	assertFileContains(t, logPath, "ARG_3=--print-timeout")
+}
+
+func TestRunAntigravityUsesModelOverride(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "agy.log")
+	writeDispatchStub(t, binDir, "agy", `printf 'agy ok'`)
+	env := []string{
+		"PATH=" + testPath(binDir),
+		"AL_TEST_LOG=" + logPath,
+	}
+	var stdout bytes.Buffer
+	err := Run(RunOptions{
+		Root:       root,
+		Agent:      AgentAntigravity,
+		Model:      "Gemini 3.5 Flash (High)",
+		PromptArgs: []string{"Review"},
+		Env:        env,
+		Stdout:     &stdout,
+		Stderr:     &bytes.Buffer{},
+		LookPath:   mockLookPath(binDir),
+	})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if stdout.String() != "agy ok" {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	assertFileContains(t, logPath, "ARG_1=--model")
+	assertFileContains(t, logPath, "ARG_2=Gemini 3.5 Flash (High)")
+	assertFileDoesNotContain(t, logPath, "Gemini 3.1 Pro (High)")
 }
 
 func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
@@ -264,6 +374,7 @@ printf '{"type":"agent_message","message":"ok"}\n'
 }
 
 type dispatchRepoConfig struct {
+	AntigravityModel      string
 	ClaudeModel           string
 	ClaudeReasoningEffort string
 	ClaudeLocalConfigDir  bool
@@ -282,12 +393,17 @@ func writeDispatchRepo(t *testing.T, repoConfig dispatchRepoConfig) string {
 	if repoConfig.ClaudeLocalConfigDir {
 		localConfigLine = "local_config_dir = true\n"
 	}
+	antigravityModelLine := ""
+	if repoConfig.AntigravityModel != "" {
+		antigravityModelLine = fmt.Sprintf("model = %q\n", repoConfig.AntigravityModel)
+	}
 	configToml := fmt.Sprintf(`
 [approvals]
 mode = "all"
 
 [agents.antigravity]
 enabled = true
+%s
 
 [agents.claude]
 enabled = true
@@ -309,7 +425,7 @@ enabled = false
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 50
-`, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine)
+`, antigravityModelLine, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine)
 	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

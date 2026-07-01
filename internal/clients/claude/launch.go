@@ -25,7 +25,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	// precedence over settings, so emitting --effort would shadow the override.
 	// Trim so " max " is forwarded as "max".
 	effort := strings.TrimSpace(cfg.Config.Agents.Claude.ReasoningEffort)
-	if effort != "" && !config.HasAgentSpecificKey(cfg.Config.Agents.Claude.AgentSpecific, "effortLevel") {
+	if effort != "" && !config.HasProviderPassthroughKey(cfg.Config.Agents.Claude.AgentSpecific, "effortLevel") {
 		args = append(args, "--effort", effort)
 	}
 	if cfg.Config.Approvals.Mode == config.ApprovalModeYOLO {

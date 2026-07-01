@@ -127,6 +127,28 @@ func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 	}
 }
 
+func TestFieldOptionValues_AntigravityModelCatalog(t *testing.T) {
+	values := FieldOptionValues("agents.antigravity.model")
+	want := []string{
+		"Gemini 3.5 Flash (Medium)",
+		"Gemini 3.5 Flash (High)",
+		"Gemini 3.5 Flash (Low)",
+		"Gemini 3.1 Pro (Low)",
+		"Gemini 3.1 Pro (High)",
+		"Claude Sonnet 4.6 (Thinking)",
+		"Claude Opus 4.6 (Thinking)",
+		"GPT-OSS 120B (Medium)",
+	}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+	}
+	for i, expected := range want {
+		if values[i] != expected {
+			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+		}
+	}
+}
+
 func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.claude.reasoning_effort")
 	want := []string{"low", "medium", "high", "xhigh", "max"}

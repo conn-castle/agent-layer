@@ -80,6 +80,24 @@ func TestBuildAntigravitySettingsAgentSpecificMerges(t *testing.T) {
 	}
 }
 
+func TestBuildAntigravitySettingsModel(t *testing.T) {
+	t.Parallel()
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Antigravity: config.AntigravityConfig{
+					Model: "Gemini 3.1 Pro (High)",
+				},
+			},
+		},
+	}
+
+	settings := buildAntigravitySettings(project)
+	if settings["model"] != "Gemini 3.1 Pro (High)" {
+		t.Fatalf("model = %#v, want Gemini 3.1 Pro (High)", settings["model"])
+	}
+}
+
 func TestBuildAntigravityMCPConfig(t *testing.T) {
 	t.Parallel()
 	enabled := true

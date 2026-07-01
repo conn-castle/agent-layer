@@ -67,7 +67,7 @@ func runClaude(target targetMeta, project *config.ProjectConfig, env []string, p
 		args = append(args, "--model", model)
 	}
 	effort := strings.TrimSpace(opts.ReasoningEffort)
-	if effort == "" && !config.HasAgentSpecificKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
+	if effort == "" && !config.HasProviderPassthroughKey(project.Config.Agents.Claude.AgentSpecific, "effortLevel") {
 		effort = strings.TrimSpace(project.Config.Agents.Claude.ReasoningEffort)
 	}
 	if effort != "" {
@@ -112,6 +112,13 @@ func runAntigravity(target targetMeta, project *config.ProjectConfig, env []stri
 	args := []string{"--gemini_dir=" + geminiDir}
 	if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
 		args = append(args, "--dangerously-skip-permissions")
+	}
+	model := strings.TrimSpace(opts.Model)
+	if model == "" {
+		model = strings.TrimSpace(project.Config.Agents.Antigravity.Model)
+	}
+	if model != "" {
+		args = append(args, "--model", model)
 	}
 	args = append(args, "--print-timeout", AntigravityPrintTimeout, "--print", string(prompt))
 	env = clients.SetEnv(env, agyDisableAutoUpdateEnv, "1")

@@ -11,6 +11,9 @@ type Choices struct {
 	EnabledAgentsTouched bool
 
 	// Models
+	AntigravityModel        string
+	AntigravityModelTouched bool
+
 	ClaudeModel        string
 	ClaudeModelTouched bool
 
@@ -73,6 +76,13 @@ type Choices struct {
 	// and removes the on-disk directory for ids set false.
 	EnabledCLISkills map[string]bool
 	CLISkillsCatalog []CLISkillCatalogEntry
+
+	// Git tracking for Agent Layer-owned folders. The managed source of truth is
+	// `.agent-layer/gitignore.block`; these fields are derived from that file at
+	// wizard startup and written back to it before sync.
+	TrackAgentLayerDir     bool
+	TrackDocsAgentLayerDir bool
+	GitTrackingTouched     bool
 
 	// MCP
 	EnabledMCPServers        map[string]bool
