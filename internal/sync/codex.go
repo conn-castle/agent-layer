@@ -30,9 +30,18 @@ const codexHeaderWithStatusline = `# GENERATED FILE — MAY CONTAIN SECRETS
 
 `
 
-// WriteCodexConfig generates .codex/config.toml.
+const codexPartialHeader = `# PARTIALLY GENERATED FILE - MAY CONTAIN SECRETS
+# This file is gitignored. Do not commit or share it.
+# Agent Layer refreshes known managed entries from .agent-layer/config.toml.
+# Agent Layer-owned entries (model, approvals, statusline, feature toggles, mcp_servers, and this repo's project trust) are refreshed or replaced from source; unrelated Codex/user runtime entries are preserved.
+# Removed arbitrary passthrough entries outside known Agent Layer-owned paths may need manual cleanup.
+# Regenerate managed entries: al sync
+
+`
+
+// WriteCodexConfig patches Agent Layer-owned entries in .codex/config.toml.
 func WriteCodexConfig(sys System, root string, project *config.ProjectConfig) error {
-	content, err := buildCodexConfigWithSystem(sys, root, project)
+	managed, err := buildCodexManagedConfigWithSystem(sys, root, project)
 	if err != nil {
 		return err
 	}
@@ -42,7 +51,15 @@ func WriteCodexConfig(sys System, root string, project *config.ProjectConfig) er
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
 	}
 
-	path := filepath.Join(codexDir, "config.toml")
+	path := filepath.Join(root, ".codex", "config.toml")
+	existing, err := readExistingCodexConfig(sys, path)
+	if err != nil {
+		return err
+	}
+	content, err := mergeCodexConfig(path, existing, managed)
+	if err != nil {
+		return err
+	}
 	if err := sys.WriteFileAtomic(path, []byte(content), 0o600); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
@@ -64,23 +81,28 @@ func WriteCodexRules(sys System, root string, project *config.ProjectConfig) err
 	return nil
 }
 
+//nolint:unparam // Kept aligned with buildCodexManagedConfigWithSystem so tests can exercise source reads through System.
 func buildCodexConfigWithSystem(sys System, root string, project *config.ProjectConfig) (string, error) {
-	trustedRoot, err := codexTrustedProjectRoot(root)
+	managed, err := buildCodexManagedConfigWithSystem(sys, root, project)
 	if err != nil {
 		return "", err
 	}
+	return managed.Content, nil
+}
 
-	agentSpecific, managedStatusline, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex)
+func buildCodexManagedConfigWithSystem(sys System, root string, project *config.ProjectConfig) (codexManagedConfig, error) {
+	trustedRoot, err := codexTrustedProjectRoot(root)
 	if err != nil {
-		return "", err
+		return codexManagedConfig{}, err
+	}
+
+	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex)
+	if err != nil {
+		return codexManagedConfig{}, err
 	}
 
 	var builder strings.Builder
-	if managedStatusline {
-		builder.WriteString(codexHeaderWithStatusline)
-	} else {
-		builder.WriteString(codexHeader)
-	}
+	builder.WriteString(codexPartialHeader)
 
 	if project.Config.Agents.Codex.Model != "" && !config.HasProviderPassthroughKey(agentSpecific, config.CodexModelKey) {
 		fmt.Fprintf(&builder, "model = %q\n", project.Config.Agents.Codex.Model)
@@ -103,10 +125,12 @@ func buildCodexConfigWithSystem(sys System, root string, project *config.Project
 	// Write agent-specific root keys/tables before managed MCP tables so any
 	// scalar overrides remain at the TOML root.
 	if err := appendCodexAgentSpecific(&builder, agentSpecific); err != nil {
-		return "", err
+		return codexManagedConfig{}, err
 	}
 
-	appendCodexTrustedProject(&builder, trustedRoot, agentSpecific)
+	if err := appendCodexTrustedProject(&builder, trustedRoot, agentSpecific); err != nil {
+		return codexManagedConfig{}, err
+	}
 
 	if !config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
 		// Use placeholder syntax for initial resolution (needed for bearer_token_env_var extraction).
@@ -117,7 +141,7 @@ func buildCodexConfigWithSystem(sys System, root string, project *config.Project
 			projection.ClientPlaceholderResolver("${%s}"),
 		)
 		if err != nil {
-			return "", err
+			return codexManagedConfig{}, err
 		}
 
 		if len(resolved) > 0 {
@@ -131,19 +155,23 @@ func buildCodexConfigWithSystem(sys System, root string, project *config.Project
 			switch server.Transport {
 			case config.TransportHTTP:
 				if err := writeCodexHTTPServer(&builder, server, project.Env); err != nil {
-					return "", err
+					return codexManagedConfig{}, err
 				}
 			case config.TransportStdio:
 				if err := writeCodexStdioServer(&builder, server, project.Env); err != nil {
-					return "", err
+					return codexManagedConfig{}, err
 				}
 			default:
-				return "", fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
+				return codexManagedConfig{}, fmt.Errorf(messages.MCPServerUnsupportedTransportFmt, server.ID, server.Transport)
 			}
 		}
 	}
 
-	return builder.String(), nil
+	return codexManagedConfig{
+		Content:       builder.String(),
+		TrustedRoot:   trustedRoot,
+		AgentSpecific: agentSpecific,
+	}, nil
 }
 
 func codexTrustedProjectRoot(root string) (string, error) {
@@ -174,13 +202,18 @@ func codexTrustedProjectRoot(root string) (string, error) {
 	return absRoot, nil
 }
 
-func appendCodexTrustedProject(builder *strings.Builder, repoRoot string, agentSpecific map[string]any) {
-	if codexAgentSpecificDefinesProject(agentSpecific, repoRoot) {
-		return
+func appendCodexTrustedProject(builder *strings.Builder, repoRoot string, agentSpecific map[string]any) error {
+	definesProject, err := codexAgentSpecificDefinesProject(agentSpecific, repoRoot)
+	if err != nil {
+		return err
+	}
+	if definesProject {
+		return nil
 	}
 	appendCodexSectionBreak(builder)
 	fmt.Fprintf(builder, "[projects.%q]\n", repoRoot)
 	builder.WriteString("trust_level = \"trusted\"\n")
+	return nil
 }
 
 func appendCodexSectionBreak(builder *strings.Builder) {
@@ -195,17 +228,22 @@ func appendCodexSectionBreak(builder *strings.Builder) {
 	builder.WriteString("\n\n")
 }
 
-func codexAgentSpecificDefinesProject(agentSpecific map[string]any, repoRoot string) bool {
+func codexAgentSpecificDefinesProject(agentSpecific map[string]any, repoRoot string) (bool, error) {
 	projects, ok := agentSpecific["projects"]
 	if !ok {
-		return false
+		return false, nil
 	}
 	projectsMap, ok := projects.(map[string]any)
 	if !ok {
-		return true
+		return false, errors.New(messages.SyncCodexAgentSpecificProjectsTableConflict)
+	}
+	for projectPath, entry := range projectsMap {
+		if _, ok := entry.(map[string]any); !ok {
+			return false, fmt.Errorf(messages.SyncCodexAgentSpecificProjectEntryTableFmt, projectPath)
+		}
 	}
 	_, ok = projectsMap[repoRoot]
-	return ok
+	return ok, nil
 }
 
 func writeCodexHTTPServer(builder *strings.Builder, server projection.ResolvedMCPServer, env map[string]string) error {

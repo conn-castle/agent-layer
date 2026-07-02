@@ -43,7 +43,9 @@ explicitly labeled as a local heuristic.
   `allowed-tools` [ref 1].
 - `name` must match the directory name and pass agent-layer validation.
 - `description` must explain both what the skill does and when it should
-  trigger (max 1,024 characters [ref 1]).
+  trigger. The Agent Skills specification permits up to 1,024 characters
+  [ref 1], but Agent Layer-authored skills use a stricter hard maximum of 512
+  characters.
 - `name` must be 1-64 characters, lowercase alphanumeric and hyphens only, no
   leading/trailing/consecutive hyphens [ref 1].
 
@@ -54,6 +56,11 @@ explicitly labeled as a local heuristic.
   into `scripts/`, `references/`, and `assets`.
 - At the catalog level, each skill adds roughly 50-100 tokens (name +
   description only) [ref 1]. Full instructions load only on activation.
+- Codex starts with each skill's name, description, and file path. That initial
+  list is capped at 2% of the model context window, or 8,000 characters when
+  the context window is unknown; Codex shortens descriptions first when many
+  skills are installed [ref 3]. The 8,000-character fallback is independent of
+  large model context windows.
 - `al doctor` warns when all skill names plus descriptions (the always-loaded
   catalog metadata) exceed an estimated ~4,000-token budget.
 - `al doctor` warns when a skill source exceeds 500 lines.
@@ -102,6 +109,10 @@ trigger conditions [ref 8]. This maps directly to skill activation: the
 Authoring guidance:
 - Write the `description` for routing, not marketing. State the job, likely
   trigger phrases, and nearby non-goals.
+- Keep descriptions concise enough to survive catalog truncation. The hard
+  maximum is 512 characters, and most descriptions should fit well below that;
+  if a description approaches the limit, move examples, setup, and workflow
+  detail into the body.
 - Every description should answer two questions: **what** the skill does and
   **when** it should fire. Descriptions that answer only "what" leak into
   neighboring territory; descriptions that answer only "when" fail to help the
@@ -621,6 +632,8 @@ Before considering a skill done, verify that:
 - The `description` clearly says **what** the skill does and **when** it should
   trigger, and names at least one adjacent non-goal when a sibling skill could
   be confused for it.
+- The `description` is at most 512 characters, with any over-300-character
+  description justified by a real routing ambiguity.
 - The skill has one primary job and one primary output contract.
 - The top of the file contains the defaults, artifact rules, and hard stop
   conditions.

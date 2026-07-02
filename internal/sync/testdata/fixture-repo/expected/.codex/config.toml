@@ -1,9 +1,9 @@
-# GENERATED FILE — MAY CONTAIN SECRETS
+# PARTIALLY GENERATED FILE - MAY CONTAIN SECRETS
 # This file is gitignored. Do not commit or share it.
-# Sources:
-# - .agent-layer/config.toml
-# - .agent-layer/codex-statusline.toml
-# Regenerate: al sync
+# Agent Layer refreshes known managed entries from .agent-layer/config.toml.
+# Agent Layer-owned entries (model, approvals, statusline, feature toggles, mcp_servers, and this repo's project trust) are refreshed or replaced from source; unrelated Codex/user runtime entries are preserved.
+# Removed arbitrary passthrough entries outside known Agent Layer-owned paths may need manual cleanup.
+# Regenerate managed entries: al sync
 
 [tui]
 status_line = ['model-with-reasoning', 'context-used', 'weekly-limit', 'thread-id', 'git-branch', 'branch-changes', 'pull-request-number', 'current-dir']

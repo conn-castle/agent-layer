@@ -251,6 +251,7 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 		choices.CodexLocalConfigDir = *cfg.Config.Agents.Codex.LocalConfigDir
 	}
 	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
+	choices.CodexPlugins = readCodexPluginsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CodexDisableBrowser = readCodexBrowserDisabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CodexStatusline = true
 	if cfg.Config.Agents.Codex.Statusline != nil {
@@ -302,23 +303,31 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 // or not a bool. The wizard's default is to disable the upstream Codex apps
 // surface; absence in config is treated as opting in to that default.
 func readCodexAppsEnabled(agentSpecific map[string]any) bool {
-	apps, ok := readCodexAppsValue(agentSpecific)
+	value, ok := readCodexFeatureValue(agentSpecific, config.CodexFeatureAppsKey)
 	if !ok {
 		return false
 	}
-	return apps
+	return value
 }
 
-func readCodexAppsValue(agentSpecific map[string]any) (bool, bool) {
+func readCodexPluginsEnabled(agentSpecific map[string]any) bool {
+	value, ok := readCodexFeatureValue(agentSpecific, config.CodexFeaturePluginsKey)
+	if !ok {
+		return true
+	}
+	return value
+}
+
+func readCodexFeatureValue(agentSpecific map[string]any, key string) (bool, bool) {
 	features, ok := agentSpecific["features"].(map[string]any)
 	if !ok {
 		return false, false
 	}
-	apps, ok := features["apps"].(bool)
+	value, ok := features[key].(bool)
 	if !ok {
 		return false, false
 	}
-	return apps, true
+	return value, true
 }
 
 // Agent-specific keys the wizard's Claude disable toggles read and write. They
@@ -610,6 +619,8 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 	if !choices.EnabledAgents[AgentCodex] {
 		choices.CodexApps = false
 		choices.CodexAppsTouched = false
+		choices.CodexPlugins = false
+		choices.CodexPluginsTouched = false
 		choices.CodexDisableBrowser = false
 		choices.CodexDisableBrowserTouched = false
 		choices.CodexStatusline = false
@@ -724,6 +735,7 @@ func promptModels(ui UI, choices *Choices) error {
 		if err := promptFeatureToggles(ui, messages.WizardCodexFeaturesTitle, []featureToggle{
 			{label: messages.WizardCodexFeatureStatuslineLabel, field: &choices.CodexStatusline, touched: &choices.CodexStatuslineTouched, enabledSense: true},
 			{label: messages.WizardCodexFeatureAppsLabel, field: &choices.CodexApps, touched: &choices.CodexAppsTouched, enabledSense: true},
+			{label: messages.WizardCodexFeaturePluginsLabel, field: &choices.CodexPlugins, touched: &choices.CodexPluginsTouched, enabledSense: true},
 			{label: messages.WizardCodexFeatureBrowserLabel, field: &choices.CodexDisableBrowser, touched: &choices.CodexDisableBrowserTouched},
 		}); err != nil {
 			return err

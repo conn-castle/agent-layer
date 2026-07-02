@@ -173,11 +173,11 @@ func TestBuildCodexConfigHeaderPrecedesModelSettings(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.HasPrefix(output, codexHeader) {
-		t.Fatalf("expected codex header at top of file, got:\n%s", output)
+	if !strings.HasPrefix(output, codexPartialHeader) {
+		t.Fatalf("expected partial codex header at top of file, got:\n%s", output)
 	}
 
-	headerIndex := strings.Index(output, "# GENERATED FILE")
+	headerIndex := strings.Index(output, "# PARTIALLY GENERATED FILE")
 	modelIndex := strings.Index(output, "model = \"gpt-5.3-codex\"")
 	reasoningIndex := strings.Index(output, "model_reasoning_effort = \"high\"")
 	if modelIndex == -1 || reasoningIndex == -1 {
@@ -562,8 +562,8 @@ func TestBuildCodexConfigDefaultStatuslineIncludesWeeklyLimitOnly(t *testing.T) 
 	if containsString(items, "five-hour-limit") {
 		t.Fatalf("did not expect five-hour-limit in status line, got %#v", items)
 	}
-	if !strings.HasPrefix(output, codexHeaderWithStatusline) {
-		t.Fatalf("expected statusline-aware header, got:\n%s", output)
+	if !strings.HasPrefix(output, codexPartialHeader) {
+		t.Fatalf("expected partial codex header, got:\n%s", output)
 	}
 }
 
@@ -1237,6 +1237,7 @@ func TestBuildCodexConfigDisableBrowserFeatures(t *testing.T) {
 							"browser_use":    false,
 							"in_app_browser": false,
 							"computer_use":   false,
+							"plugins":        false,
 						},
 					},
 				},
@@ -1260,5 +1261,8 @@ func TestBuildCodexConfigDisableBrowserFeatures(t *testing.T) {
 	}
 	if !strings.Contains(output, "computer_use = false") {
 		t.Fatalf("expected computer_use=false in output:\n%s", output)
+	}
+	if !strings.Contains(output, "plugins = false") {
+		t.Fatalf("expected plugins=false in output:\n%s", output)
 	}
 }

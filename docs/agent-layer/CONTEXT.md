@@ -29,6 +29,7 @@ Do not duplicate information that belongs in other memory files:
 ## Secrets
 
 - Codex is the one exception to "never embed secrets in generated configs": it embeds secrets in URLs/env via `bearer_token_env_var`, and shell environment takes precedence over `.agent-layer/.env`. All other clients use placeholder syntax in generated configs.
+- `.codex/config.toml` is shared Codex state patched by `al sync`, not a fully generated artifact. It keeps a `PARTIALLY GENERATED FILE` warning because it may contain resolved secrets, but sync preserves unrelated Codex/user runtime entries and only refreshes known Agent Layer-owned paths.
 
 ## VS Code and editor integrations
 
@@ -39,6 +40,7 @@ Do not duplicate information that belongs in other memory files:
 ## Codex MCP headers
 
 - Codex MCP header projection accepts exactly three placeholder formats: `bearer_token_env_var` for `Authorization: Bearer ${VAR}`, `env_http_headers` for exact `${VAR}` values, and `http_headers` for literal strings. Mixed literal + env placeholder (e.g. `Token ${VAR}`) is rejected and must be restructured.
+- Codex project trust is seeded only when the exact `[projects."<absolute repo root>"]` entry is absent. Existing exact project entries are preserved so local trust edits survive. Malformed `agents.codex.agent_specific.projects` shapes fail sync loudly.
 
 ## Wizard feature-disable toggles → client keys
 

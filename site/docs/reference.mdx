@@ -83,8 +83,9 @@ enabled = true
 # When absent or false, Agent Layer does not set CODEX_HOME.
 # local_config_dir = false
 # Optional agent-specific passthrough config for Codex (arbitrary TOML tables/keys).
-# These are appended to .codex/config.toml and can override top-level managed keys.
-# Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
+# These are patched into .codex/config.toml and can override top-level managed keys.
+# Agent Layer seeds [projects."<repo root>"] trust_level = "trusted" only when
+# that exact project entry is absent.
 # Optional default when Codex calls `al dispatch` without --agent.
 # [agents.codex.dispatch]
 # default_agent = "random" # random | codex | claude | antigravity
@@ -128,7 +129,7 @@ mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
 ```
 
-Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.claude.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys. Codex project trust is managed automatically for the current absolute repo root. Claude `permissions.deny` is the one exception: it is deep-merged additively into `.claude/settings.json` and does not warn.
+Agent-specific passthrough keys in `agents.codex.agent_specific` or `agents.claude.agent_specific` override Agent Layer-managed keys when they collide. Agent Layer emits a warning on every sync if you override managed keys. `.codex/config.toml` is shared Codex state: `al sync` refreshes known Agent Layer-managed entries, preserves unrelated Codex/user runtime entries, and seeds current repo trust only when that exact project entry is absent. Claude `permissions.deny` is the one exception: it is deep-merged additively into `.claude/settings.json` and does not warn.
 
 ### Sections at a glance
 
@@ -191,14 +192,14 @@ Here is how placeholder projection works for MCP servers:
 | Claude Code (`.mcp.json`) | `${AL_TOKEN}` |
 | Antigravity (`.agy/antigravity-cli/mcp_config.json`) | `${AL_TOKEN}` |
 | VS Code (`.vscode/mcp.json`) | `${env:AL_TOKEN}` |
-| Codex (`.codex/config.toml`) | headers become env-var references; URLs/commands/args/env values are resolved because Codex does not support placeholders |
+| Codex (`.codex/config.toml`) | headers become env-var references; URLs/commands/args/env values are resolved because Codex does not support placeholders; the file is shared Codex state patched by `al sync` |
 | Copilot CLI (`.copilot/mcp-config.json`) | `${AL_TOKEN}` (env vars resolved at runtime by the client) |
 
 Practical guidance:
 
 - Prefer secrets in headers (`headers = { Authorization = "Bearer ${AL_TOKEN}" }`) over secrets in URLs.
 - For maximum portability, keep non-Authorization secret headers as exact placeholders (for example `"X-Api-Key" = "${AL_API_KEY}"`), not mixed into longer strings.
-- Some services use API keys in URLs (for example the seeded Tavily template). In that case, remember clients like Codex may require a fully resolved URL and will write it only into gitignored outputs.
+- Some services use API keys in URLs (for example the seeded Tavily template). In that case, remember clients like Codex may require a fully resolved URL and will write it into gitignored shared state.
 
 #### HTTP example
 

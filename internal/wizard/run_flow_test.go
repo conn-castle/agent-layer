@@ -647,12 +647,13 @@ func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
 
 	// Mixed starting state: IDE reading and connectors disabled (so unchecked);
 	// memory and AskUserQuestion enabled (so checked). Apps enabled (checked);
-	// browser disabled (unchecked).
+	// plugins enabled (checked); browser disabled (unchecked).
 	choices.ClaudeDisableIDEReading = true
 	choices.ClaudeDisableMemory = false
 	choices.ClaudeDisableConnectors = true
 	choices.ClaudeDisableQuestionTool = false
 	choices.CodexApps = true
+	choices.CodexPlugins = true
 	choices.CodexDisableBrowser = true
 
 	// Capture the labels pre-selected for each group, then echo them back
@@ -681,7 +682,7 @@ func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
 		preSelected[messages.WizardClaudeFeaturesTitle],
 		"only enabled Claude features should be pre-checked")
 	assert.ElementsMatch(t,
-		[]string{messages.WizardCodexFeatureAppsLabel},
+		[]string{messages.WizardCodexFeatureAppsLabel, messages.WizardCodexFeaturePluginsLabel},
 		preSelected[messages.WizardCodexFeaturesTitle],
 		"only enabled Codex features should be pre-checked")
 
@@ -692,6 +693,7 @@ func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
 	assert.True(t, choices.ClaudeDisableConnectors)
 	assert.False(t, choices.ClaudeDisableQuestionTool)
 	assert.True(t, choices.CodexApps)
+	assert.True(t, choices.CodexPlugins)
 	assert.True(t, choices.CodexDisableBrowser)
 
 	// All toggles are marked touched after the prompt.
@@ -700,6 +702,7 @@ func TestPromptModels_FeatureTogglesPreSelectAndRoundTrip(t *testing.T) {
 	assert.True(t, choices.ClaudeDisableConnectorsTouched)
 	assert.True(t, choices.ClaudeDisableQuestionToolTouched)
 	assert.True(t, choices.CodexAppsTouched)
+	assert.True(t, choices.CodexPluginsTouched)
 	assert.True(t, choices.CodexDisableBrowserTouched)
 }
 

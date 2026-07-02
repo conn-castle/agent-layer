@@ -89,7 +89,7 @@ Use them sparingly:
 - Colliding keys intentionally override Agent Layer-managed values.
 - Sync emits a warning whenever agent-specific keys overlap managed keys, with one carve-out: Claude `permissions.deny` is additive and does not warn.
 - Claude agent-specific values are deep-merged into `.claude/settings.json` for object values; arrays and scalar values are replaced at their key.
-- Codex agent-specific values are written at the TOML root before managed project trust and MCP tables so top-level overrides stay explicit.
+- Codex agent-specific values are patched into `.codex/config.toml`, which is shared Codex state. `al sync` refreshes known Agent Layer-managed entries while preserving unrelated Codex/user runtime entries.
 
 If you find yourself carrying many permanent overrides, that is usually a sign the setting should become a first-class key in `.agent-layer/config.toml`.
 
@@ -99,7 +99,7 @@ Agent Layer gives each repository its own agent configuration so work in one rep
 
 ### How it works
 
-**Codex** home isolation is opt-in. Agent Layer always generates `.codex/config.toml` with the current repo trust stanza and managed MCP config, but `al codex`, `al dispatch --agent codex`, and `al vscode` set `CODEX_HOME=<repo>/.codex` only when `local_config_dir = true` is set under `[agents.codex]` (for `al vscode`, `[agents.vscode]` must also be enabled):
+**Codex** home isolation is opt-in. Agent Layer always patches `.codex/config.toml` with known managed Codex entries from `.agent-layer/config.toml`, including MCP config and a current repo trust seed when that exact project entry is absent. `al codex`, `al dispatch --agent codex`, and `al vscode` set `CODEX_HOME=<repo>/.codex` only when `local_config_dir = true` is set under `[agents.codex]` (for `al vscode`, `[agents.vscode]` must also be enabled):
 
 ```toml
 [agents.codex]

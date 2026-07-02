@@ -161,3 +161,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Gate `CODEX_HOME=<repo>/.codex` behind `[agents.codex] local_config_dir = true` for `al codex`, Codex dispatch, and `al vscode`; absent/false preserves inherited `CODEX_HOME`.
     Reason: Agent Layer should keep generating repo-local Codex project config while leaving Codex's normal global/project config layering as the default. Users who want per-repo Codex auth, sessions, logs, and runtime state can opt in.
     Tradeoffs: Existing users who relied on automatic per-repo Codex auth must set `agents.codex.local_config_dir = true`; default mode shares Codex home state but better matches user-managed Codex workflows.
+
+- Decision 2026-07-02 codex-config-shared-state: `.codex/config.toml` is shared state patched by sync
+    Decision: `al sync` patches only known Agent Layer-owned Codex entries in `.codex/config.toml`, preserves unrelated Codex/user runtime entries, and seeds current repo project trust only when the exact project entry is absent.
+    Reason: Codex writes durable runtime/project state into the same file Agent Layer must refresh for model, approval, statusline, feature toggles, and MCP projection.
+    Tradeoffs: Invalid existing TOML and shape conflicts now block sync instead of being overwritten; arbitrary removed passthrough paths outside known Agent Layer-owned paths may require manual cleanup.

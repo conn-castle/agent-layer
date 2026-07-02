@@ -13,7 +13,7 @@ The intent is consistency without leakage: define headers once in `.agent-layer/
 | Antigravity | `.agy/antigravity-cli/mcp_config.json` | `<gemini_dir>/config/mcp_config.json` after `agy` migration | `headers` object on the server entry |
 | Claude Code | `.mcp.json` | `~/.claude.json` | `headers` object on the server entry (`type: "http"`) |
 | VS Code (Copilot Chat) | `.vscode/mcp.json` | user settings `mcp.json` | `headers` object (supports `${input:...}` indirection) |
-| Codex CLI (+ IDE extension) | `.codex/config.toml` (trusted projects) | `~/.codex/config.toml` | `bearer_token_env_var`, `env_http_headers`, `http_headers` |
+| Codex CLI (+ IDE extension) | `.codex/config.toml` (shared Codex state) | `~/.codex/config.toml` | `bearer_token_env_var`, `env_http_headers`, `http_headers` |
 | Copilot CLI | `.copilot/mcp-config.json` | `~/.copilot/mcp-config.json` | `headers` object on the server entry |
 
 ## Client details
@@ -128,10 +128,10 @@ Notes:
 
 ### 5) Codex CLI (and Codex IDE extension)
 
-**File (repo-local):** `.codex/config.toml` (trusted projects)
+**File (repo-local):** `.codex/config.toml` (shared Codex state)
 **File (user):** `~/.codex/config.toml`
 
-Agent Layer writes the current absolute repo root under `[projects."<repo root>"]` with `trust_level = "trusted"` before MCP server tables.
+Agent Layer patches known managed entries in `.codex/config.toml` and preserves unrelated Codex/user runtime entries. The `mcp_servers` namespace is Agent Layer-owned: it is fully replaced from the projection on every sync (any server hand-added directly to `.codex/config.toml` is dropped), so configure MCP servers in `.agent-layer/config.toml`, not here. It seeds the current absolute repo root under `[projects."<repo root>"]` with `trust_level = "trusted"` only when that exact project entry is absent.
 
 Codex supports three ways to send headers to HTTP MCP servers:
 
@@ -156,6 +156,7 @@ http_headers = { "X-Client" = "agent-layer" }
 Notes:
 
 * Codex also supports per-server tool filtering: `enabled_tools` and `disabled_tools`.
+* `.codex/config.toml` may contain resolved URLs, commands, args, or env values because Codex lacks placeholder support for those fields. Keep it gitignored and treat it as private shared state.
 
 ---
 

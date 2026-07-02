@@ -35,6 +35,13 @@ func buildSummary(c *Choices) string {
 			sb.WriteString(messages.WizardSummaryCodexAppsDisabled)
 		}
 	}
+	if c.CodexPluginsTouched && codexToggleVisible(c) {
+		if c.CodexPlugins {
+			sb.WriteString(messages.WizardSummaryCodexPluginsEnabled)
+		} else {
+			sb.WriteString(messages.WizardSummaryCodexPluginsDisabled)
+		}
+	}
 	if c.ClaudeStatuslineTouched && claudeToggleVisible(c) {
 		if c.ClaudeStatusline {
 			sb.WriteString(messages.WizardSummaryClaudeStatuslineEnabled)

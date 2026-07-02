@@ -21,13 +21,14 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/templates"
+	"github.com/conn-castle/agent-layer/internal/tomlpatch"
 )
 
 type tomlBlock struct {
@@ -40,6 +41,50 @@ type tomlDocument struct {
 	sections map[string]*tomlBlock
 	arrays   map[string][]*tomlBlock
 	order    []string
+}
+
+func toSharedBlock(block *tomlBlock) *tomlpatch.Block {
+	if block == nil {
+		return nil
+	}
+	return &tomlpatch.Block{Name: block.name, Lines: cloneLines(block.lines)}
+}
+
+func applySharedBlock(dst *tomlBlock, src *tomlpatch.Block) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.name = src.Name
+	dst.lines = cloneLines(src.Lines)
+}
+
+func fromSharedKeyLine(line tomlpatch.KeyLine) keyLine {
+	return keyLine{
+		raw:           line.Raw,
+		indent:        line.Indent,
+		commented:     line.Commented,
+		inlineComment: line.InlineComment,
+	}
+}
+
+func fromSharedDocument(doc tomlpatch.Document) tomlDocument {
+	sections := make(map[string]*tomlBlock, len(doc.Sections))
+	for name, block := range doc.Sections {
+		sections[name] = &tomlBlock{name: block.Name, lines: cloneLines(block.Lines)}
+	}
+	arrays := make(map[string][]*tomlBlock, len(doc.Arrays))
+	for name, blocks := range doc.Arrays {
+		arrays[name] = make([]*tomlBlock, 0, len(blocks))
+		for _, block := range blocks {
+			arrays[name] = append(arrays[name], &tomlBlock{name: block.Name, lines: cloneLines(block.Lines)})
+		}
+	}
+	return tomlDocument{
+		preamble: cloneLines(doc.Preamble),
+		sections: sections,
+		arrays:   arrays,
+		order:    cloneLines(doc.Order),
+	}
 }
 
 var preferredWizardSectionOrder = []string{
@@ -81,6 +126,9 @@ func PatchConfig(content string, choices *Choices) (string, error) {
 	currentDoc := parseTomlDocument(content)
 	normalizeLegacySectionAliases(&currentDoc)
 	if err := applyCodexAppsUpdate(&currentDoc, choices); err != nil {
+		return "", err
+	}
+	if err := applyCodexPluginsUpdate(&currentDoc, choices); err != nil {
 		return "", err
 	}
 	if err := applyCodexBrowserUpdate(&currentDoc, choices); err != nil {
@@ -420,47 +468,17 @@ type tomlLineWalkResult struct {
 }
 
 func walkTomlLinesOutsideMultiline(lines []string, fn func(i int, line string, state tomlStringState) tomlLineWalkResult) {
-	state := tomlStateNone
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if IsTomlStateInMultiline(state) {
-			_, state = ScanTomlLineForComment(line, state)
-			continue
-		}
-
-		result := fn(i, line, state)
-		if result.advanceTo < i {
-			result.advanceTo = i
-		}
-
-		for j := i; j <= result.advanceTo && j < len(lines); j++ {
-			_, state = ScanTomlLineForComment(lines[j], state)
-		}
-		if result.stop {
-			return
-		}
-		i = result.advanceTo
-	}
+	tomlpatch.WalkLinesOutsideMultiline(lines, func(i int, line string, state tomlpatch.StringState) tomlpatch.LineWalkResult {
+		result := fn(i, line, tomlStringState(state))
+		return tomlpatch.LineWalkResult{AdvanceTo: result.advanceTo, Stop: result.stop}
+	})
 }
 
 // extractMCPBlockKeyValue returns the unquoted value for a key in a TOML block.
 // lines are the raw block lines; key is the key to search for.
 // Tracks multiline string state to avoid parsing content inside multiline strings.
 func extractMCPBlockKeyValue(lines []string, key string) string {
-	value := ""
-	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			return tomlLineWalkResult{}
-		}
-		k, parsedValue, ok := parseKeyValueWithState(trimmed, key, state)
-		if ok && k == key {
-			value = strings.Trim(parsedValue, "\"'")
-			return tomlLineWalkResult{stop: true}
-		}
-		return tomlLineWalkResult{}
-	})
-	return value
+	return tomlpatch.ExtractBlockKeyValue(lines, key)
 }
 
 // removeKeyFromBlock removes all uncommented lines for the given key from a block,
@@ -469,53 +487,9 @@ func extractMCPBlockKeyValue(lines []string, key string) string {
 // block is updated in place; commented-out lines for the key are preserved.
 // Tracks multiline string state to avoid matching content inside multiline strings.
 func removeKeyFromBlock(block *tomlBlock, key string) {
-	type lineRange struct{ start, end int }
-	var ranges []lineRange
-	walkTomlLinesOutsideMultiline(block.lines, func(i int, line string, state tomlStringState) tomlLineWalkResult {
-		parsed, ok := parseKeyLineWithState(line, key, state)
-		if !ok {
-			// Check for dotted sub-key (e.g., "headers.foo = val" when key is "headers").
-			parsed, ok = parseDottedPrefixLine(line, key)
-		}
-		if ok && !parsed.commented {
-			endIdx := multilineValueEndIndex(block.lines, i)
-			ranges = append(ranges, lineRange{i, endIdx})
-			return tomlLineWalkResult{advanceTo: endIdx}
-		}
-		return tomlLineWalkResult{}
-	})
-	// Remove in reverse order to avoid index shifting.
-	for i := len(ranges) - 1; i >= 0; i-- {
-		r := ranges[i]
-		block.lines = append(block.lines[:r.start], block.lines[r.end+1:]...)
-	}
-}
-
-// parseDottedPrefixLine checks if a line defines a dotted sub-key of the given key.
-// For example, if key is "headers", matches "headers.Authorization = val"
-// or "# headers.Authorization = val" (commented).
-//
-// Limitation: this does not handle quoted TOML keys (e.g. "headers"."Content-Type").
-// The wizard templates use only bare dotted keys, so this is sufficient for now.
-func parseDottedPrefixLine(line string, key string) (keyLine, bool) {
-	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
-	indent := line[:indentLen]
-	trimmed := strings.TrimLeft(line[indentLen:], " \t")
-	commented := false
-	if strings.HasPrefix(trimmed, "#") {
-		commented = true
-		trimmed = strings.TrimLeft(strings.TrimPrefix(trimmed, "#"), " \t")
-	}
-	prefix := key + "."
-	if !strings.HasPrefix(trimmed, prefix) {
-		return keyLine{}, false
-	}
-	// Verify there's a key = value structure after the dot.
-	rest := trimmed[len(prefix):]
-	if !strings.Contains(rest, "=") {
-		return keyLine{}, false
-	}
-	return keyLine{raw: line, indent: indent, commented: commented}, true
+	shared := toSharedBlock(block)
+	tomlpatch.RemoveKeyFromBlock(shared, key)
+	applySharedBlock(block, shared)
 }
 
 // multilineValueEndIndex returns the index of the last line of a value that
@@ -523,75 +497,7 @@ func parseDottedPrefixLine(line string, key string) (keyLine, bool) {
 // Handles multiline arrays ([...]), inline tables ({...}), and triple-quoted
 // basic strings and literal strings.
 func multilineValueEndIndex(lines []string, startIdx int) int {
-	if startIdx >= len(lines) {
-		return startIdx
-	}
-	line := lines[startIdx]
-	eqIdx := strings.Index(line, "=")
-	if eqIdx < 0 {
-		return startIdx
-	}
-	valuePart := strings.TrimSpace(line[eqIdx+1:])
-
-	// Multiline basic string (""")
-	// In basic strings, \" is an escaped quote; \""" must not be treated
-	// as a closing delimiter (it is an escaped quote followed by two quotes).
-	if strings.HasPrefix(valuePart, `"""`) {
-		rest := valuePart[3:]
-		if containsUnescapedTripleQuote(rest) {
-			return startIdx // closed on same line
-		}
-		for i := startIdx + 1; i < len(lines); i++ {
-			if containsUnescapedTripleQuote(lines[i]) {
-				return i
-			}
-		}
-		return startIdx // unclosed — don't remove extra lines
-	}
-
-	// Multiline literal string (''')
-	// Literal strings have no escape sequences, so ''' always closes.
-	if strings.HasPrefix(valuePart, `'''`) {
-		rest := valuePart[3:]
-		if strings.Contains(rest, `'''`) {
-			return startIdx
-		}
-		for i := startIdx + 1; i < len(lines); i++ {
-			if strings.Contains(lines[i], `'''`) {
-				return i
-			}
-		}
-		return startIdx
-	}
-
-	// Array or inline table — track bracket depth, skipping brackets inside strings.
-	// Quote state is threaded across lines so that strings spanning multiple lines
-	// (e.g., multiline basic strings inside arrays) don't break bracket tracking.
-	var opener, closer byte
-	switch {
-	case strings.HasPrefix(valuePart, "["):
-		opener, closer = '[', ']'
-	case strings.HasPrefix(valuePart, "{"):
-		opener, closer = '{', '}'
-	default:
-		return startIdx // simple scalar value
-	}
-
-	depth := 0
-	qs := quoteState{}
-	for i := startIdx; i < len(lines); i++ {
-		from := 0
-		if i == startIdx {
-			from = eqIdx + 1
-		}
-		var delta int
-		delta, qs = countBracketDepth(lines[i][from:], opener, closer, qs)
-		depth += delta
-		if depth <= 0 {
-			return i
-		}
-	}
-	return startIdx // unbalanced — don't remove extra lines
+	return tomlpatch.MultilineValueEndIndex(lines, startIdx)
 }
 
 // quoteState tracks whether we are inside a quoted string across line boundaries.
@@ -600,17 +506,15 @@ type quoteState struct {
 	inSingle bool
 }
 
-// countBracketDepth counts the net bracket depth change in a line, skipping
-// brackets inside quoted strings and stopping at unquoted # comments.
-// qs carries quote state from previous lines so that strings spanning multiple
-// lines do not break bracket tracking. Returns updated depth and quote state.
+// countBracketDepth remains local for wizard tests that pin bracket-depth edge
+// cases. Production multiline range detection delegates to tomlpatch.
 func countBracketDepth(s string, opener, closer byte, qs quoteState) (int, quoteState) {
 	depth := 0
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
 		if qs.inDouble {
 			if ch == '\\' {
-				i++ // skip escaped character
+				i++
 				continue
 			}
 			if ch == '"' {
@@ -630,7 +534,7 @@ func countBracketDepth(s string, opener, closer byte, qs quoteState) (int, quote
 		case '\'':
 			qs.inSingle = true
 		case '#':
-			return depth, qs // rest of line is a comment
+			return depth, qs
 		case opener:
 			depth++
 		case closer:
@@ -644,22 +548,7 @@ func countBracketDepth(s string, opener, closer byte, qs quoteState) (int, quote
 // In TOML basic strings, \" is an escaped quote; an odd number of preceding
 // backslashes means the first quote is escaped, so \""" is not a closing delimiter.
 func containsUnescapedTripleQuote(s string) bool {
-	for search := s; ; {
-		idx := strings.Index(search, `"""`)
-		if idx < 0 {
-			return false
-		}
-		// Count backslashes immediately before the triple quote.
-		backslashes := 0
-		for i := idx - 1; i >= 0 && search[i] == '\\'; i-- {
-			backslashes++
-		}
-		if backslashes%2 == 0 {
-			return true // even (or zero) backslashes — unescaped delimiter
-		}
-		// Odd backslashes — first quote is escaped; advance past this match.
-		search = search[idx+1:]
-	}
+	return tomlpatch.ContainsUnescapedTripleQuote(s)
 }
 
 // updateMCPEnabled applies the enabled toggle to a server block when requested.
@@ -717,20 +606,7 @@ func extractMCPServerID(lines []string) string {
 // parseKeyValueWithState extracts a simple key/value pair from a TOML line with explicit state.
 // line is the raw line; key is the expected key name; state tracks multiline strings.
 func parseKeyValueWithState(line string, key string, state tomlStringState) (string, string, bool) {
-	commentPos, _ := ScanTomlLineForComment(line, state)
-	clean := line
-	if commentPos >= 0 {
-		clean = strings.TrimSpace(line[:commentPos])
-	}
-	if !strings.HasPrefix(clean, key) {
-		return "", "", false
-	}
-	rest := strings.TrimSpace(clean[len(key):])
-	if !strings.HasPrefix(rest, "=") {
-		return "", "", false
-	}
-	value := strings.TrimSpace(strings.TrimPrefix(rest, "="))
-	return key, value, true
+	return tomlpatch.ParseKeyValueWithState(line, key, tomlpatch.StringState(state))
 }
 
 // setOptionalKeyValue updates or comments out an optional key based on the provided value.
@@ -746,41 +622,17 @@ func setOptionalKeyValue(block *tomlBlock, templateBlock *tomlBlock, key string,
 // setCommentedKeyLine ensures the key line is commented, inserting a template line when available.
 // block is updated in place; templateBlock provides canonical formatting; afterKey controls insertion order.
 func setCommentedKeyLine(block *tomlBlock, templateBlock *tomlBlock, key string, afterKey string) {
-	if templateBlock != nil {
-		if templateLine, ok := findKeyLine(templateBlock.lines, key); ok {
-			commentedLine := ensureCommented(templateLine.raw)
-			replaceOrInsertLine(block, key, commentedLine, afterKey)
-			return
-		}
-	}
-	if existingLine, ok := findKeyLine(block.lines, key); ok {
-		commentedLine := ensureCommented(existingLine.raw)
-		replaceOrInsertLine(block, key, commentedLine, afterKey)
-	}
+	shared := toSharedBlock(block)
+	tomlpatch.SetCommentedKeyLine(shared, toSharedBlock(templateBlock), key, afterKey)
+	applySharedBlock(block, shared)
 }
 
 // setKeyValue updates or inserts a key/value line in a section block.
 // block is updated in place; templateBlock provides canonical formatting; afterKey controls insertion order.
 func setKeyValue(block *tomlBlock, templateBlock *tomlBlock, key string, value string, afterKey string) {
-	var base keyLine
-	if templateBlock != nil {
-		if templateLine, ok := findKeyLine(templateBlock.lines, key); ok {
-			base = templateLine
-		}
-	}
-	if base.raw == "" {
-		if existingLine, ok := findKeyLine(block.lines, key); ok {
-			base = existingLine
-		}
-	}
-	if base.raw == "" {
-		newLine := buildKeyLine(keyLine{indent: ""}, key, value, false)
-		replaceOrInsertLine(block, key, newLine, afterKey)
-		return
-	}
-
-	newLine := buildKeyLine(base, key, value, false)
-	replaceOrInsertLine(block, key, newLine, afterKey)
+	shared := toSharedBlock(block)
+	tomlpatch.SetKeyValue(shared, toSharedBlock(templateBlock), key, value, afterKey)
+	applySharedBlock(block, shared)
 }
 
 // keyLine holds a parsed key/value line with comment metadata.
@@ -795,206 +647,68 @@ type keyLine struct {
 // Returns false if the key is not present.
 // Tracks multiline string state to avoid parsing content inside multiline strings.
 func findKeyLine(lines []string, key string) (keyLine, bool) {
-	result := keyLine{}
-	found := false
-	walkTomlLinesOutsideMultiline(lines, func(_ int, line string, state tomlStringState) tomlLineWalkResult {
-		parsed, ok := parseKeyLineWithState(line, key, state)
-		if ok {
-			result = parsed
-			found = true
-			return tomlLineWalkResult{stop: true}
-		}
-		return tomlLineWalkResult{}
-	})
-	return result, found
+	parsed, ok := tomlpatch.FindKeyLine(lines, key)
+	if !ok {
+		return keyLine{}, false
+	}
+	return fromSharedKeyLine(parsed), true
 }
 
 // parseKeyLineWithState parses a key/value assignment line with explicit state tracking.
 // Returns false when the line does not define the requested key.
 func parseKeyLineWithState(line string, key string, state tomlStringState) (keyLine, bool) {
-	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
-	indent := line[:indentLen]
-	trimmed := strings.TrimLeft(line[indentLen:], " \t")
-	commented := false
-	if strings.HasPrefix(trimmed, "#") {
-		commented = true
-		trimmed = strings.TrimLeft(strings.TrimPrefix(trimmed, "#"), " \t")
-	}
-	if !strings.HasPrefix(trimmed, key) {
+	parsed, ok := tomlpatch.ParseKeyLineWithState(line, key, tomlpatch.StringState(state))
+	if !ok {
 		return keyLine{}, false
 	}
-	rest := strings.TrimSpace(trimmed[len(key):])
-	if !strings.HasPrefix(rest, "=") {
-		return keyLine{}, false
-	}
-	inlineComment := extractInlineCommentWithState(trimmed, state)
-	return keyLine{raw: line, indent: indent, commented: commented, inlineComment: inlineComment}, true
-}
-
-// extractInlineCommentWithState returns the inline comment portion with explicit state tracking.
-func extractInlineCommentWithState(line string, state tomlStringState) string {
-	commentPos, _ := ScanTomlLineForComment(line, state)
-	if commentPos < 0 {
-		return ""
-	}
-	return strings.TrimSpace(line[commentPos:])
+	return fromSharedKeyLine(parsed), true
 }
 
 // buildKeyLine renders a key/value line using indentation and inline comment from base.
 func buildKeyLine(base keyLine, key string, value string, commented bool) string {
-	indent := base.indent
-	prefix := ""
-	if commented {
-		prefix = "# "
-	}
-	line := fmt.Sprintf("%s%s%s = %s", indent, prefix, key, value)
-	if base.inlineComment != "" {
-		line += " " + base.inlineComment
-	}
-	return line
+	return tomlpatch.BuildKeyLine(tomlpatch.KeyLine{
+		Raw:           base.raw,
+		Indent:        base.indent,
+		Commented:     base.commented,
+		InlineComment: base.inlineComment,
+	}, key, value, commented)
 }
 
 // ensureCommented returns the line with a leading comment marker.
 func ensureCommented(line string) string {
-	trimmed := strings.TrimLeft(line, " \t")
-	if strings.HasPrefix(trimmed, "#") {
-		return line
-	}
-	indentLen := len(line) - len(strings.TrimLeft(line, " \t"))
-	indent := line[:indentLen]
-	return indent + "# " + strings.TrimLeft(line[indentLen:], " \t")
+	return tomlpatch.EnsureCommented(line)
 }
 
 // replaceOrInsertLine replaces an existing key line or inserts a new line after afterKey.
 // block is updated in place; duplicates are removed to keep a single key occurrence.
 // Tracks multiline string state to avoid matching content inside multiline strings.
 func replaceOrInsertLine(block *tomlBlock, key string, newLine string, afterKey string) {
-	var matches []int
-	uncommentedIndex := -1
-	walkTomlLinesOutsideMultiline(block.lines, func(i int, line string, state tomlStringState) tomlLineWalkResult {
-		parsed, ok := parseKeyLineWithState(line, key, state)
-		if !ok {
-			return tomlLineWalkResult{}
-		}
-		matches = append(matches, i)
-		if !parsed.commented && uncommentedIndex == -1 {
-			uncommentedIndex = i
-		}
-		return tomlLineWalkResult{}
-	})
-	if len(matches) > 0 {
-		replaceAt := matches[0]
-		if uncommentedIndex >= 0 {
-			replaceAt = uncommentedIndex
-		}
-		block.lines[replaceAt] = newLine
-		// Remove duplicate key lines in reverse order to avoid index shifting.
-		for i := len(matches) - 1; i >= 0; i-- {
-			if matches[i] == replaceAt {
-				continue
-			}
-			block.lines = append(block.lines[:matches[i]], block.lines[matches[i]+1:]...)
-		}
-		return
-	}
-	insertAt := findInsertIndex(block.lines, afterKey)
-	block.lines = append(block.lines[:insertAt], append([]string{newLine}, block.lines[insertAt:]...)...)
+	shared := toSharedBlock(block)
+	tomlpatch.ReplaceOrInsertLine(shared, key, newLine, afterKey)
+	applySharedBlock(block, shared)
 }
 
 // findInsertIndex returns the line index to insert a new key line after afterKey.
 // lines should include the section header as the first entry.
 // Tracks multiline string state to avoid matching content inside multiline strings.
 func findInsertIndex(lines []string, afterKey string) int {
-	if len(lines) == 0 {
-		return 0
-	}
-	if afterKey != "" {
-		insertAt := -1
-		walkTomlLinesOutsideMultiline(lines, func(i int, line string, state tomlStringState) tomlLineWalkResult {
-			if _, ok := parseKeyLineWithState(line, afterKey, state); ok {
-				insertAt = i + 1
-				return tomlLineWalkResult{stop: true}
-			}
-			return tomlLineWalkResult{}
-		})
-		if insertAt >= 0 {
-			return insertAt
-		}
-	}
-	if len(lines) > 0 {
-		return 1
-	}
-	return 0
+	return tomlpatch.FindInsertIndex(lines, afterKey)
 }
 
 // formatTomlValue converts a scalar value into a TOML literal string.
 func formatTomlValue(value interface{}) string {
-	switch v := value.(type) {
-	case string:
-		return strconv.Quote(v)
-	case bool:
-		return strconv.FormatBool(v)
-	case int:
-		return strconv.Itoa(v)
-	default:
-		return fmt.Sprintf("%v", v)
-	}
+	return tomlpatch.FormatValue(value)
 }
 
 // parseTomlDocument splits TOML content into preamble lines, section blocks, and array-of-table blocks.
 // Returns the parsed document with section order based on appearance.
 func parseTomlDocument(content string) tomlDocument {
-	lines := strings.Split(content, "\n")
-	sections := make(map[string]*tomlBlock)
-	arrays := make(map[string][]*tomlBlock)
-	var order []string
-	var preamble []string
-	var current *tomlBlock
-	var currentIsArray bool
-
-	flush := func() {
-		if current == nil {
-			return
-		}
-		if currentIsArray {
-			arrays[current.name] = append(arrays[current.name], current)
-		} else {
-			if _, exists := sections[current.name]; !exists {
-				sections[current.name] = current
-				order = append(order, current.name)
-			}
-		}
-		current = nil
-		currentIsArray = false
-	}
-
-	for _, line := range lines {
-		name, isArray, ok := parseTomlHeader(line)
-		if ok {
-			flush()
-			current = &tomlBlock{name: name, lines: []string{line}}
-			currentIsArray = isArray
-			continue
-		}
-		if current == nil {
-			preamble = append(preamble, line)
-			continue
-		}
-		current.lines = append(current.lines, line)
-	}
-	flush()
-
-	return tomlDocument{
-		preamble: preamble,
-		sections: sections,
-		arrays:   arrays,
-		order:    order,
-	}
+	return fromSharedDocument(tomlpatch.ParseDocument(content))
 }
 
-// codexAppsFeaturesSection is the dotted TOML path for the Codex
-// agent_specific.features table where the apps toggle lives.
-const codexAppsFeaturesSection = "agents.codex.agent_specific.features"
+// codexFeaturesSection is the dotted TOML path for the Codex
+// agent_specific.features table where Codex feature toggles live.
+const codexFeaturesSection = "agents.codex.agent_specific.features"
 
 const codexAgentSpecificSectionPrefix = "agents.codex.agent_specific"
 
@@ -1006,48 +720,62 @@ func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
 	if !choices.CodexAppsTouched {
 		return nil
 	}
+	return applyCodexBooleanFeatureUpdate(doc, choices, config.CodexFeatureAppsKey, choices.CodexApps)
+}
+
+// applyCodexPluginsUpdate writes choices.CodexPlugins into the
+// [agents.codex.agent_specific.features] section of doc when CodexPluginsTouched.
+func applyCodexPluginsUpdate(doc *tomlDocument, choices *Choices) error {
+	if !choices.CodexPluginsTouched {
+		return nil
+	}
+	return applyCodexBooleanFeatureUpdate(doc, choices, config.CodexFeaturePluginsKey, choices.CodexPlugins)
+}
+
+func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key string, enabled bool) error {
 	if choices.EnabledAgentsTouched && !choices.EnabledAgents[AgentCodex] {
 		return nil
 	}
-	if block, exists := doc.sections[codexAppsFeaturesSection]; exists {
-		setKeyValue(block, nil, "apps", formatTomlValue(choices.CodexApps), "")
+	if block, exists := doc.sections[codexFeaturesSection]; exists {
+		setKeyValue(block, nil, key, formatTomlValue(enabled), "")
 		return nil
 	}
 	if parentBlock, exists := doc.sections[codexAgentSpecificSectionPrefix]; exists {
-		if hasUncommentedKeyLine(parentBlock.lines, "features.apps") {
-			setKeyValue(parentBlock, nil, "features.apps", formatTomlValue(choices.CodexApps), "")
+		dottedKey := "features." + key
+		if hasUncommentedKeyLine(parentBlock.lines, dottedKey) {
+			setKeyValue(parentBlock, nil, dottedKey, formatTomlValue(enabled), "")
 			return nil
 		}
 		if hasUncommentedKeyLine(parentBlock.lines, "features") {
-			if apps, exists := codexAppsValueFromAgentSpecificBlock(parentBlock); exists {
-				if apps != choices.CodexApps {
+			if current, exists := codexFeatureValueFromAgentSpecificBlock(parentBlock, key); exists {
+				if current != enabled {
 					return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
 				}
 				return nil
 			}
-			if !choices.CodexApps {
+			if !enabled {
 				return nil
 			}
 			return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)
 		}
 		if hasUncommentedKeyWithPrefix(parentBlock.lines, "features.") {
-			setKeyValue(parentBlock, nil, "features.apps", formatTomlValue(choices.CodexApps), "")
+			setKeyValue(parentBlock, nil, dottedKey, formatTomlValue(enabled), "")
 			return nil
 		}
 	}
 	block := &tomlBlock{
-		name:  codexAppsFeaturesSection,
-		lines: []string{"[" + codexAppsFeaturesSection + "]"},
+		name:  codexFeaturesSection,
+		lines: []string{"[" + codexFeaturesSection + "]"},
 	}
-	doc.sections[codexAppsFeaturesSection] = block
-	doc.order = append(doc.order, codexAppsFeaturesSection)
-	setKeyValue(block, nil, "apps", formatTomlValue(choices.CodexApps), "")
+	doc.sections[codexFeaturesSection] = block
+	doc.order = append(doc.order, codexFeaturesSection)
+	setKeyValue(block, nil, key, formatTomlValue(enabled), "")
 	return nil
 }
 
 // codexBrowserFeatureKeys are the [features] keys the browser/computer-use
 // disable toggle controls. All three are set to false together when disabling.
-var codexBrowserFeatureKeys = []string{"browser_use", "in_app_browser", "computer_use"}
+var codexBrowserFeatureKeys = config.CodexBrowserFeatureKeys()
 
 // applyCodexBrowserUpdate writes the browser/computer-use feature keys into the
 // [agents.codex.agent_specific.features] table, parallel to applyCodexAppsUpdate
@@ -1061,7 +789,7 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 	if choices.EnabledAgentsTouched && !choices.EnabledAgents[AgentCodex] {
 		return nil
 	}
-	if block, exists := doc.sections[codexAppsFeaturesSection]; exists {
+	if block, exists := doc.sections[codexFeaturesSection]; exists {
 		applyCodexBrowserKeys(block, "", choices.CodexDisableBrowser)
 		return nil
 	}
@@ -1085,11 +813,11 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 		return nil
 	}
 	block := &tomlBlock{
-		name:  codexAppsFeaturesSection,
-		lines: []string{"[" + codexAppsFeaturesSection + "]"},
+		name:  codexFeaturesSection,
+		lines: []string{"[" + codexFeaturesSection + "]"},
 	}
-	doc.sections[codexAppsFeaturesSection] = block
-	doc.order = append(doc.order, codexAppsFeaturesSection)
+	doc.sections[codexFeaturesSection] = block
+	doc.order = append(doc.order, codexFeaturesSection)
 	applyCodexBrowserKeys(block, "", true)
 	return nil
 }
@@ -1097,8 +825,8 @@ func applyCodexBrowserUpdate(doc *tomlDocument, choices *Choices) error {
 // inlineFeaturesHasAnyCodexBrowserKey reports whether an inline
 // `features = {...}` table in block defines any browser/computer-use key. Used
 // to surface WizardCodexInlineFeaturesUnsupported when the line-based patcher
-// cannot edit those pins inside an inline table. Parallels
-// codexAppsValueFromAgentSpecificBlock.
+// cannot edit those pins inside an inline table. Parallels the generic Codex
+// feature reader used for apps/plugins.
 func inlineFeaturesHasAnyCodexBrowserKey(block *tomlBlock) bool {
 	if block == nil {
 		return false
@@ -1253,7 +981,7 @@ func ensureClaudeSectionBlock(doc *tomlDocument) *tomlBlock {
 	return block
 }
 
-func codexAppsValueFromAgentSpecificBlock(block *tomlBlock) (bool, bool) {
+func codexFeatureValueFromAgentSpecificBlock(block *tomlBlock, key string) (bool, bool) {
 	if block == nil {
 		return false, false
 	}
@@ -1267,7 +995,7 @@ func codexAppsValueFromAgentSpecificBlock(block *tomlBlock) (bool, bool) {
 	if err := toml.Unmarshal([]byte(strings.Join(block.lines, "\n")), &cfg); err != nil {
 		return false, false
 	}
-	return readCodexAppsValue(cfg.Agents.Codex.AgentSpecific)
+	return readCodexFeatureValue(cfg.Agents.Codex.AgentSpecific, key)
 }
 
 func isCodexAgentSpecificSection(name string) bool {
@@ -1375,24 +1103,7 @@ func applyLegacyAliasToOrder(order []string, legacyName string, canonicalName st
 // Handles inline comments like `[section] # comment`.
 // Returns the name, whether it's an array-of-table, and a match flag.
 func parseTomlHeader(line string) (string, bool, bool) {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-		return "", false, false
-	}
-	// Strip inline comment before checking brackets.
-	commentPos, _ := ScanTomlLineForComment(trimmed, tomlStateNone)
-	if commentPos >= 0 {
-		trimmed = strings.TrimSpace(trimmed[:commentPos])
-	}
-	if strings.HasPrefix(trimmed, "[[") && strings.HasSuffix(trimmed, "]]") {
-		name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "[["), "]]"))
-		return name, true, name != ""
-	}
-	if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-		name := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(trimmed, "["), "]"))
-		return name, false, name != ""
-	}
-	return "", false, false
+	return tomlpatch.ParseHeader(line)
 }
 
 // cloneBlock returns a deep copy of a block, including its lines.
@@ -1405,46 +1116,22 @@ func cloneBlock(block *tomlBlock) *tomlBlock {
 
 // cloneLines returns a copy of the provided line slice.
 func cloneLines(lines []string) []string {
-	if len(lines) == 0 {
-		return nil
-	}
-	out := make([]string, len(lines))
-	copy(out, lines)
-	return out
+	return tomlpatch.CloneLines(lines)
 }
 
 // appendBlock appends a block to the output, inserting a single blank line between blocks.
 func appendBlock(output *[]string, block []string) {
-	trimmed := trimEmptyLines(block)
-	if len(trimmed) == 0 {
-		return
-	}
-	if len(*output) > 0 && (*output)[len(*output)-1] != "" {
-		*output = append(*output, "")
-	}
-	*output = append(*output, trimmed...)
+	tomlpatch.AppendBlock(output, block)
 }
 
 // trimEmptyLines removes leading and trailing blank lines from a block.
 func trimEmptyLines(lines []string) []string {
-	start := 0
-	for start < len(lines) && strings.TrimSpace(lines[start]) == "" {
-		start++
-	}
-	end := len(lines)
-	for end > start && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	return lines[start:end]
+	return tomlpatch.TrimEmptyLines(lines)
 }
 
 // trimTrailingEmptyLines removes trailing blank lines from the output.
 func trimTrailingEmptyLines(lines []string) []string {
-	end := len(lines)
-	for end > 0 && strings.TrimSpace(lines[end-1]) == "" {
-		end--
-	}
-	return lines[:end]
+	return tomlpatch.TrimTrailingEmptyLines(lines)
 }
 
 // extraSectionBlocks returns non-template section blocks sorted by name.

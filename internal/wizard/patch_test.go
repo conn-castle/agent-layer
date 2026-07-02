@@ -2304,6 +2304,62 @@ enabled = true
 	assert.Contains(t, out, "apps = true")
 }
 
+func TestPatchConfig_CodexPluginsDisabledOnFreshConfig(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+`
+	choices := NewChoices()
+	choices.CodexPluginsTouched = true
+	choices.CodexPlugins = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific.features]")
+	assert.Contains(t, out, "plugins = false")
+}
+
+func TestPatchConfig_CodexPluginsUpdatesExistingDottedValue(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features.plugins = true
+features.multi_agent = true
+`
+	choices := NewChoices()
+	choices.CodexPluginsTouched = true
+	choices.CodexPlugins = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "[agents.codex.agent_specific]")
+	assert.Contains(t, out, "features.plugins = false")
+	assert.NotContains(t, out, "features.plugins = true")
+	assert.Contains(t, out, "features.multi_agent = true")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
+func TestPatchConfig_CodexPluginsInlineFeaturesErrors(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { plugins = true, multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexPluginsTouched = true
+	choices.CodexPlugins = false
+
+	_, err := PatchConfig(content, choices)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "inline table syntax")
+}
+
 func TestReadCodexAppsEnabled(t *testing.T) {
 	t.Run("missing agent_specific returns false", func(t *testing.T) {
 		assert.False(t, readCodexAppsEnabled(nil))
@@ -2326,6 +2382,19 @@ func TestReadCodexAppsEnabled(t *testing.T) {
 		agentSpecific := map[string]any{"features": map[string]any{"apps": false}}
 		assert.False(t, readCodexAppsEnabled(agentSpecific))
 	})
+}
+
+func TestReadCodexFeatureReaders(t *testing.T) {
+	agentSpecific := map[string]any{"features": map[string]any{"plugins": true}}
+
+	assert.True(t, readCodexPluginsEnabled(agentSpecific))
+	assert.False(t, readCodexAppsEnabled(agentSpecific))
+}
+
+func TestReadCodexPluginsEnabledDefaultsToNativeEnabled(t *testing.T) {
+	assert.True(t, readCodexPluginsEnabled(nil))
+	assert.True(t, readCodexPluginsEnabled(map[string]any{"features": map[string]any{"plugins": true}}))
+	assert.False(t, readCodexPluginsEnabled(map[string]any{"features": map[string]any{"plugins": false}}))
 }
 
 func TestPatchHelpers_EdgeCases(t *testing.T) {
