@@ -4,19 +4,65 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
-	"regexp"
+	"strings"
+	"text/template"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-var (
-	urlPattern = regexp.MustCompile(`(?m)^(\s*url\s+").*("\s*)$`)
-	shaPattern = regexp.MustCompile(`(?m)^(\s*sha256\s+").*("\s*)$`)
+const (
+	releaseAssetURL = "https://github.com/conn-castle/agent-layer/releases/download"
 )
+
+var formulaTemplate = template.Must(template.New("formula").Parse(`class AgentLayer < Formula
+  desc "Config-first CLI for keeping coding agents in sync"
+  homepage "https://github.com/conn-castle/agent-layer"
+  version "{{ .Version }}"
+  license "MIT"
+
+  on_macos do
+    depends_on arch: :arm64
+
+    url "{{ .ReleaseBaseURL }}/al-darwin-arm64", using: :nounzip
+    sha256 "{{ .DarwinARM64SHA }}"
+  end
+
+  on_linux do
+    on_arm do
+      url "{{ .ReleaseBaseURL }}/al-linux-arm64", using: :nounzip
+      sha256 "{{ .LinuxARM64SHA }}"
+    end
+
+    on_intel do
+      url "{{ .ReleaseBaseURL }}/al-linux-amd64", using: :nounzip
+      sha256 "{{ .LinuxAMD64SHA }}"
+    end
+  end
+
+  def install
+    bin.install Dir["al-*"].first => "al"
+    generate_completions_from_executable(bin/"al", "completion")
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/al --version")
+  end
+end
+`))
+
+type formulaData struct {
+	Version        string
+	ReleaseBaseURL string
+	DarwinARM64SHA string
+	LinuxARM64SHA  string
+	LinuxAMD64SHA  string
+}
 
 func main() {
 	os.Exit(run(os.Args, os.Stderr))
@@ -24,7 +70,7 @@ func main() {
 
 // run executes the Homebrew formula updater CLI.
 // args are the CLI arguments (including argv0). errOut is the error output stream.
-// It returns an exit code compatible with the original Python script.
+// It renders the binary formula for the provided release tag and checksum file.
 func run(args []string, errOut io.Writer) int {
 	if len(args) != 4 {
 		fmt.Fprintf(errOut, messages.UpdateFormulaUsageFmt, args[0])
@@ -32,8 +78,8 @@ func run(args []string, errOut io.Writer) int {
 	}
 
 	formulaPath := args[1]
-	newURL := args[2]
-	newSHA := args[3]
+	tag := args[2]
+	checksumsPath := args[3]
 
 	info, err := os.Stat(formulaPath)
 	if err != nil {
@@ -45,28 +91,47 @@ func run(args []string, errOut io.Writer) int {
 		return 1
 	}
 
-	content, err := os.ReadFile(formulaPath)
+	checksums, err := readChecksums(checksumsPath)
 	if err != nil {
-		fmt.Fprintf(errOut, messages.UpdateFormulaReadFailedFmt, formulaPath, err)
+		if os.IsNotExist(err) {
+			fmt.Fprintf(errOut, messages.UpdateFormulaFileMissingFmt, checksumsPath)
+			return 1
+		}
+		fmt.Fprintf(errOut, messages.UpdateFormulaReadFailedFmt, checksumsPath, err)
 		return 1
 	}
 
-	text := string(content)
-	urlMatches := urlPattern.FindAllStringSubmatch(text, -1)
-	if len(urlMatches) != 1 {
-		fmt.Fprintf(errOut, messages.UpdateFormulaURLCountFmt, len(urlMatches))
+	darwinARM64SHA, ok := checksums["al-darwin-arm64"]
+	if !ok {
+		fmt.Fprintf(errOut, messages.UpdateFormulaChecksumMissingFmt, "al-darwin-arm64", checksumsPath)
 		return 1
 	}
-	shaMatches := shaPattern.FindAllStringSubmatch(text, -1)
-	if len(shaMatches) != 1 {
-		fmt.Fprintf(errOut, messages.UpdateFormulaSHACountFmt, len(shaMatches))
+	linuxARM64SHA, ok := checksums["al-linux-arm64"]
+	if !ok {
+		fmt.Fprintf(errOut, messages.UpdateFormulaChecksumMissingFmt, "al-linux-arm64", checksumsPath)
+		return 1
+	}
+	linuxAMD64SHA, ok := checksums["al-linux-amd64"]
+	if !ok {
+		fmt.Fprintf(errOut, messages.UpdateFormulaChecksumMissingFmt, "al-linux-amd64", checksumsPath)
 		return 1
 	}
 
-	text = replaceLine(urlPattern, text, newURL)
-	text = replaceLine(shaPattern, text, newSHA)
+	data := formulaData{
+		Version:        strings.TrimPrefix(tag, "v"),
+		ReleaseBaseURL: releaseAssetURL + "/" + tag,
+		DarwinARM64SHA: darwinARM64SHA,
+		LinuxARM64SHA:  linuxARM64SHA,
+		LinuxAMD64SHA:  linuxAMD64SHA,
+	}
 
-	if err := fsutil.WriteFileAtomic(formulaPath, []byte(text), info.Mode()); err != nil {
+	var rendered bytes.Buffer
+	if err := formulaTemplate.Execute(&rendered, data); err != nil {
+		fmt.Fprintf(errOut, messages.UpdateFormulaRenderFailedFmt, err)
+		return 1
+	}
+
+	if err := fsutil.WriteFileAtomic(formulaPath, rendered.Bytes(), info.Mode()); err != nil {
 		fmt.Fprintf(errOut, messages.UpdateFormulaWriteFailedFmt, formulaPath, err)
 		return 1
 	}
@@ -74,14 +139,25 @@ func run(args []string, errOut io.Writer) int {
 	return 0
 }
 
-// replaceLine replaces the value inside a matched quoted line while preserving indentation.
-// pattern must capture the prefix and suffix as submatches; value is inserted between them.
-func replaceLine(pattern *regexp.Regexp, text string, value string) string {
-	return pattern.ReplaceAllStringFunc(text, func(match string) string {
-		parts := pattern.FindStringSubmatch(match)
-		if len(parts) < 3 {
-			return match
+func readChecksums(path string) (map[string]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	checksums := map[string]string{}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
 		}
-		return parts[1] + value + parts[2]
-	})
+		filename := strings.TrimPrefix(fields[1], "./")
+		checksums[filename] = fields[0]
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return checksums, nil
 }

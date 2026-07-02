@@ -3,7 +3,13 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Added
+- Darwin release binaries are now Developer ID signed with hardened runtime and notarized in the release workflow. The install script and Homebrew formula both deliver the signed macOS binary.
+
 ### Changed
+- `al claude`, `al codex`, `al copilot`, and `al agy` now replace the `al` process with the agent CLI instead of spawning a child process. Agent exit codes now pass through directly and the old `Error: <agent> exited with error: ...` wrapper line is gone, matching the behavior of running the agent directly.
+- Homebrew installs now use prebuilt release binaries for macOS and Linux instead of building from the source tarball.
+- macOS users may see one permission prompt per agent after upgrading because permissions move from `al` to the actual agent binary. Old `al` entries in Privacy & Security are cosmetic.
 - `al wizard` no longer offers a workflow-bundle refresh when Agent Layer workflow files already exist. The workflow-bundle prompt is install-only for missing bundle files and preserves existing files; use `al upgrade` when you want managed workflow updates.
 - Claude model selection now includes `fable` in the built-in catalog.
 

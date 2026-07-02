@@ -274,4 +274,4 @@ make release-dist AL_VERSION=dev DIST_DIR=dist
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+, git, gzip, tar, `sha256sum` or `shasum`
-Notes: Runs `test-release` first to validate release scripts.
+Notes: Runs `test-release` first to validate release scripts. Local builds stay unsigned unless `AL_CODESIGN_IDENTITY` is set on macOS; `AL_REQUIRE_CODESIGN=1` fails if signing cannot run.

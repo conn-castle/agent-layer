@@ -75,6 +75,37 @@ MOCK_GO
   fi
 }
 
+run_codesign_requirement_test() {
+  section "Codesign Requirement Test"
+
+  if [[ ! -d "${mock_bin:-}" ]]; then
+    warn "Skipping codesign requirement test because mock go was not initialized"
+    return
+  fi
+
+  require_dist="$tmp_dir/require-codesign-dist"
+  require_go_log="$tmp_dir/require-codesign-go.log"
+  require_log="$tmp_dir/require-codesign.log"
+
+  if (
+    export PATH="$mock_bin:$PATH"
+    export MOCK_GO_LOG="$require_go_log"
+    cd "$ROOT_DIR"
+    AL_VERSION="$expected_version" DIST_DIR="$require_dist" AL_REQUIRE_CODESIGN=1 ./scripts/build-release.sh
+  ) > "$require_log" 2>&1; then
+    fail "AL_REQUIRE_CODESIGN=1 should fail when AL_CODESIGN_IDENTITY is unset"
+  else
+    pass "AL_REQUIRE_CODESIGN=1 fails when AL_CODESIGN_IDENTITY is unset"
+  fi
+
+  if grep -q "AL_CODESIGN_IDENTITY is required" "$require_log"; then
+    pass "codesign requirement failure explains missing AL_CODESIGN_IDENTITY"
+  else
+    fail "codesign requirement failure did not explain missing AL_CODESIGN_IDENTITY"
+    cat "$require_log"
+  fi
+}
+
 run_build_invocation_details() {
   section "Build Invocation Details"
 

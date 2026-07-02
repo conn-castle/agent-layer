@@ -137,11 +137,11 @@ const (
 	ExtractChecksumReadFailedFmt  = "Error: failed to read %s: %v\n"
 	ExtractChecksumNotFoundFmt    = "Error: %s not found in %s\n"
 
-	UpdateFormulaUsageFmt       = "Usage: %s <formula-file> <new-url> <new-sha256>\n"
-	UpdateFormulaFileMissingFmt = "Error: %s not found\n"
-	UpdateFormulaStatFailedFmt  = "Error: failed to stat %s: %v\n"
-	UpdateFormulaReadFailedFmt  = "Error: failed to read %s: %v\n"
-	UpdateFormulaWriteFailedFmt = "Error: failed to write %s: %v\n"
-	UpdateFormulaURLCountFmt    = "Error: expected 1 url line, found %d\n"
-	UpdateFormulaSHACountFmt    = "Error: expected 1 sha256 line, found %d\n"
+	UpdateFormulaUsageFmt           = "Usage: %s <formula-file> <tag> <checksums-file>\n"
+	UpdateFormulaFileMissingFmt     = "Error: %s not found\n"
+	UpdateFormulaStatFailedFmt      = "Error: failed to stat %s: %v\n"
+	UpdateFormulaReadFailedFmt      = "Error: failed to read %s: %v\n"
+	UpdateFormulaWriteFailedFmt     = "Error: failed to write %s: %v\n"
+	UpdateFormulaChecksumMissingFmt = "Error: checksum for %s not found in %s\n"
+	UpdateFormulaRenderFailedFmt    = "Error: failed to render formula: %v\n"
 )

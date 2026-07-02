@@ -12,22 +12,24 @@ import (
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
+// execFunc is overridable for tests; on success it never returns.
+var execFunc = clients.ExecHandoff
+
 // Launch starts the Codex CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
 
 	env = configureCodexHome(cfg.Root, env, cfg.Config.Agents.Codex)
 
-	cmd := exec.Command("codex", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = env
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf(messages.ClientsCodexExitErrorFmt, err)
+	path, err := exec.LookPath("codex")
+	if err != nil {
+		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, "codex", err)
 	}
 
+	argv := append([]string{"codex"}, args...)
+	if err := execFunc(path, argv, env); err != nil {
+		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "codex", err)
+	}
 	return nil
 }
 

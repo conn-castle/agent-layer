@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Non-zero mock exit code propagates through al claude with a clear error message.
+# Non-zero mock exit code passes through al claude without an Agent Layer wrapper.
 
 run_scenario_error_propagation() {
   section "Error propagation"
@@ -12,7 +12,7 @@ run_scenario_error_propagation() {
   # Install mock that exits with code 1
   install_mock_claude "$repo_dir" 1
 
-  # Capture output to verify error message
+  # Capture output to verify the agent failure is not wrapped by al.
   local error_output rc=0
   error_output=$(cd "$repo_dir" && al claude 2>&1) || rc=$?
   if [[ $rc -eq 1 ]]; then
@@ -23,9 +23,10 @@ run_scenario_error_propagation() {
     fail "al claude should have propagated mock failure, but got exit 0"
   fi
 
-  # Verify the error message describes what happened
-  assert_output_contains "$error_output" "exited with error" \
-    "error message says claude exited with error"
+  # Exec handoff means the mock agent owns stderr after launch. Agent Layer
+  # must not add its old "exited with error" wrapper.
+  assert_output_not_contains "$error_output" "exited with error" \
+    "al claude does not wrap agent exit errors"
   assert_output_not_contains "$error_output" "panic" \
     "no panic in error output"
 
@@ -35,9 +36,8 @@ run_scenario_error_propagation() {
   # Verify mock received env vars even on failure path
   assert_claude_mock_env "$MOCK_CLAUDE_LOG" "AL_RUN_DIR"
 
-  # ---- Verify subprocess exit code propagation (Issue exit-code-flatten fixed):
-  # al claude should preserve the subprocess exit code in runMain when launch
-  # returns a wrapped *exec.ExitError.
+  # ---- Verify direct agent exit code passthrough:
+  # After exec handoff, the mock agent's exit status is the al process status.
   reset_mock_claude_log
   export MOCK_CLAUDE_EXIT_CODE=42
 

@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,62 @@ import (
 	"github.com/conn-castle/agent-layer/internal/run"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
+
+type execCall struct {
+	called bool
+	path   string
+	argv   []string
+	env    []string
+}
+
+func captureExec(t *testing.T, err error) *execCall {
+	t.Helper()
+	original := execFunc
+	call := &execCall{}
+	execFunc = func(path string, argv []string, env []string) error {
+		if call.called {
+			t.Fatal("execFunc called more than once")
+		}
+		call.called = true
+		call.path = path
+		call.argv = append([]string(nil), argv...)
+		call.env = append([]string(nil), env...)
+		return err
+	}
+	t.Cleanup(func() { execFunc = original })
+	return call
+}
+
+func forbidExec(t *testing.T) {
+	t.Helper()
+	original := execFunc
+	execFunc = func(string, []string, []string) error {
+		t.Fatal("execFunc should not be called")
+		return nil
+	}
+	t.Cleanup(func() { execFunc = original })
+}
+
+func writeResolvableCodex(t *testing.T) string {
+	t.Helper()
+	binDir := t.TempDir()
+	testutil.WriteStub(t, binDir, "codex")
+	t.Setenv("PATH", binDir)
+	return filepath.Join(binDir, "codex")
+}
+
+func assertExecCalled(t *testing.T, call *execCall, wantPath string, wantArgv []string) {
+	t.Helper()
+	if !call.called {
+		t.Fatal("expected execFunc to be called")
+	}
+	if call.path != wantPath {
+		t.Fatalf("expected exec path %q, got %q", wantPath, call.path)
+	}
+	if !reflect.DeepEqual(call.argv, wantArgv) {
+		t.Fatalf("unexpected argv: got %#v want %#v", call.argv, wantArgv)
+	}
+}
 
 func TestConfigureCodexHomeSetsDefaultWhenEnabled(t *testing.T) {
 	root := t.TempDir()
@@ -48,7 +105,7 @@ func TestConfigureCodexHomeNoopWhenDisabled(t *testing.T) {
 			// { return env }` early-return were removed, the unset case would
 			// gain CODEX_HOME=<root>/.codex (env assertion flips) and the
 			// elsewhere case would emit the mismatch warning (stderr assertion
-			// flips) — so this test can fail on a real defect.
+			// flips), so this test can fail on a real defect.
 			r, w, err := os.Pipe()
 			if err != nil {
 				t.Fatalf("pipe: %v", err)
@@ -79,10 +136,11 @@ func TestConfigureCodexHomeNoopWhenDisabled(t *testing.T) {
 	}
 }
 
-func TestLaunchCodex(t *testing.T) {
+func TestLaunchCodexExecHandoff(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
-	testutil.WriteStubWithExit(t, binDir, "codex", 0)
+	codexPath := writeResolvableCodex(t)
+	call := captureExec(t, nil)
+	env := []string{"PATH=" + filepath.Dir(codexPath), "CODEX_HOME=" + filepath.Join(t.TempDir(), "other")}
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -93,19 +151,47 @@ func TestLaunchCodex(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	t.Setenv("CODEX_HOME", filepath.Join(t.TempDir(), "other"))
-	env := os.Environ()
-
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, []string{"--search"}); err != nil {
 		t.Fatalf("Launch error: %v", err)
+	}
+
+	assertExecCalled(t, call, codexPath, []string{"codex", "--search"})
+	if !reflect.DeepEqual(call.env, env) {
+		t.Fatalf("expected env to pass through unchanged, got %#v want %#v", call.env, env)
 	}
 }
 
-func TestLaunchCodexError(t *testing.T) {
+func TestLaunchCodexSetsCodexHomeWhenEnabled(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
-	testutil.WriteStubWithExit(t, binDir, "codex", 1)
+	codexPath := writeResolvableCodex(t)
+	call := captureExec(t, nil)
+	localConfigDir := true
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{LocalConfigDir: &localConfigDir},
+			},
+		},
+		Root: root,
+	}
+
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{"PATH=" + filepath.Dir(codexPath)}, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	expected := filepath.Join(root, ".codex")
+	value, ok := clients.GetEnv(call.env, "CODEX_HOME")
+	if !ok || value != expected {
+		t.Fatalf("expected CODEX_HOME %s, got %#v", expected, call.env)
+	}
+}
+
+func TestLaunchCodexExecError(t *testing.T) {
+	root := t.TempDir()
+	writeResolvableCodex(t)
+	wantErr := errors.New("exec failed")
+	captureExec(t, wantErr)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -116,10 +202,35 @@ func TestLaunchCodexError(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err == nil {
-		t.Fatalf("expected error")
+	err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{}, nil)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected exec error to wrap %v, got %v", wantErr, err)
+	}
+	if !strings.Contains(err.Error(), "codex exec handoff failed") {
+		t.Fatalf("expected exec handoff context, got %v", err)
+	}
+}
+
+func TestLaunchCodexMissingBinary(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PATH", t.TempDir())
+	forbidExec(t)
+
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{},
+			},
+		},
+		Root: root,
+	}
+
+	err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{}, nil)
+	if err == nil {
+		t.Fatal("expected missing binary error")
+	}
+	if !strings.Contains(err.Error(), "codex launcher requires `codex` on PATH") {
+		t.Fatalf("expected lookup error to name codex, got %v", err)
 	}
 }
 

@@ -11,14 +11,18 @@ permissions:
 
 jobs:
   build-release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+        run: |
+          set -euo pipefail
+          if ! command -v rg >/dev/null 2>&1; then
+            brew install ripgrep
+          fi
       - name: Validate stable release tag format
         run: |
           set -euo pipefail
@@ -30,10 +34,26 @@ jobs:
         run: |
           set -euo pipefail
           make docs-upgrade-check RELEASE_TAG="${GITHUB_REF_NAME}"
+      - name: Import Developer ID cert
+        uses: Apple-Actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          p12-password: ${{ secrets.MACOS_CERT_P12_PASSWORD }}
       - name: Build release artifacts
+        env:
+          AL_CODESIGN_IDENTITY: "Developer ID Application: Hardware Breakout LLC (DQCZX59J6D)"
+          AL_REQUIRE_CODESIGN: "1"
         run: |
           set -euo pipefail
           make release-dist AL_VERSION="${GITHUB_REF_NAME}" DIST_DIR=dist
+      - name: Notarize darwin binaries
+        env:
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_API_KEY_ISSUER_ID }}
+          NOTARY_KEY_P8_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          scripts/notarize-release.sh
 
       - name: Upload dist artifacts for downstream jobs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -198,43 +218,40 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           path: homebrew-tap
 
-      - name: Verify release tarball is available
+      - name: Verify release assets are available
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           SEMVER="${TAG#v}"
-          TARBALL="agent-layer-${SEMVER}.tar.gz"
-          URL="https://github.com/conn-castle/agent-layer/releases/download/${TAG}/${TARBALL}"
+          ASSETS=(
+            "agent-layer-${SEMVER}.tar.gz"
+            "al-darwin-arm64"
+            "al-linux-arm64"
+            "al-linux-amd64"
+          )
 
-          # Retry a few times in case GitHub is briefly eventual-consistent
-          for i in 1 2 3 4 5; do
-            if curl -fsIL "$URL" >/dev/null; then
-              exit 0
-            fi
-            sleep 3
+          for asset in "${ASSETS[@]}"; do
+            URL="https://github.com/conn-castle/agent-layer/releases/download/${TAG}/${asset}"
+            # Retry a few times in case GitHub is briefly eventual-consistent
+            for i in 1 2 3 4 5; do
+              if curl -fsIL "$URL" >/dev/null; then
+                continue 2
+              fi
+              sleep 3
+            done
+
+            echo "::error::Release asset not reachable: $URL"
+            exit 1
           done
 
-          echo "::error::Release asset not reachable: $URL"
-          exit 1
-
-      - name: Update formula url + sha256
+      - name: Update binary formula
         run: |
           set -euo pipefail
 
           TAG="${GITHUB_REF_NAME}"
-          SEMVER="${TAG#v}"
-          TARBALL="agent-layer-${SEMVER}.tar.gz"
-          URL="https://github.com/conn-castle/agent-layer/releases/download/${TAG}/${TARBALL}"
 
           if [ ! -f "dist/checksums.txt" ]; then
             echo "::error::dist/checksums.txt not found in workflow artifacts"
-            exit 1
-          fi
-
-          SHA="$(go run -tags tools ./internal/tools/extractchecksum dist/checksums.txt "${TARBALL}")"
-
-          if [ -z "${SHA}" ]; then
-            echo "::error::Failed to locate sha256 for ${TARBALL} in dist/checksums.txt"
             exit 1
           fi
 
@@ -244,7 +261,7 @@ jobs:
             exit 1
           fi
 
-          go run -tags tools ./internal/tools/updateformula "${FORMULA}" "${URL}" "${SHA}"
+          go run -tags tools ./internal/tools/updateformula "${FORMULA}" "${TAG}" dist/checksums.txt
 
           git -C homebrew-tap status --porcelain
           git -C homebrew-tap diff -- Formula/agent-layer.rb

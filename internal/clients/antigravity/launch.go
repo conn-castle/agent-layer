@@ -18,6 +18,9 @@ const disableAutoUpdateEnv = "AGY_CLI_DISABLE_AUTO_UPDATE"
 // from PATH without manipulating the test process's actual PATH.
 var lookPathFunc = exec.LookPath
 
+// execFunc is overridable for tests; on success it never returns.
+var execFunc = clients.ExecHandoff
+
 // Launch starts Antigravity through agy with a repo-local --gemini_dir.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	if !filepath.IsAbs(cfg.Root) {
@@ -45,16 +48,9 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	args = append(args, passArgs...)
 	env = clients.SetEnv(env, disableAutoUpdateEnv, "1")
 
-	// #nosec G204 -- agyPath is resolved from lookPathFunc, the launcher's only entrypoint.
-	cmd := exec.Command(agyPath, args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = env
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf(messages.ClientsAntigravityExitErrorFmt, err)
+	argv := append([]string{"agy"}, args...)
+	if err := execFunc(agyPath, argv, env); err != nil {
+		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "antigravity", err)
 	}
-
 	return nil
 }
