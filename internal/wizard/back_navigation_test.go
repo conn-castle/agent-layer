@@ -1,6 +1,8 @@
 package wizard
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -61,6 +63,38 @@ func TestPromptWizardFlow_BackFromAgentsReturnsToApprovalStep(t *testing.T) {
 	require.True(t, choices.ApprovalModeTouched)
 	require.True(t, choices.EnabledAgentsTouched)
 	require.Empty(t, choices.EnabledAgents)
+}
+
+func TestPromptWizardFlow_SkipsWorkflowBundleInstallWhenBundleExists(t *testing.T) {
+	root := t.TempDir()
+	instructionPath := filepath.Join(root, ".agent-layer", "instructions", "00_rules.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(instructionPath), 0o750))
+	require.NoError(t, os.WriteFile(instructionPath, []byte("existing workflow evidence"), 0o600))
+
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+
+	ui := &MockUI{
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == messages.WizardEnableDefaultMCPServersTitle {
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			switch title {
+			case messages.WizardEnableAgentLayerPrompt:
+				t.Fatal("workflow bundle prompt should be skipped when bundle evidence exists")
+			case messages.WizardEnableWarningsPrompt:
+				*value = false
+			}
+			return nil
+		},
+	}
+
+	err := promptWizardFlow(root, ui, choices)
+	require.NoError(t, err)
+	require.False(t, choices.InstallWorkflowBundleTouched)
 }
 
 func TestPromptWizardFlow_FirstStepEscapeCancelsWhenConfirmed(t *testing.T) {

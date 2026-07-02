@@ -142,7 +142,7 @@ func TestLookupField_DispatchMaxDepth(t *testing.T) {
 
 func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 	values := FieldOptionValues("agents.claude.model")
-	want := []string{"default", "sonnet", "opus", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"}
+	want := []string{"default", "fable", "sonnet", "opus", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}

@@ -42,9 +42,9 @@ const (
 	WizardCustomOption                        = "Custom..."
 	WizardCustomPromptFmt                     = "Custom %s"
 
-	// WizardEnableAgentLayerPrompt asks whether to install or refresh the Agent
-	// Layer workflow bundle. A "no" answer leaves existing files unchanged.
-	WizardEnableAgentLayerPrompt = "Install or refresh the Agent Layer workflow bundle? (refreshes ~24 workflow skills and managed instruction files; creates missing memory docs/templates)" +
+	// WizardEnableAgentLayerPrompt asks whether to install the Agent Layer
+	// workflow bundle when it is absent. A "no" answer leaves files unchanged.
+	WizardEnableAgentLayerPrompt = "Install the Agent Layer workflow bundle? (adds missing workflow skills, managed instruction files, and memory docs/templates; existing files are left unchanged)" +
 		"\n  See https://agent-layer.dev/best-practices for what each bundle includes."
 	// WizardEnableCLISkillsTitle labels the catalog multiselect screen.
 	WizardEnableCLISkillsTitle = "Enable CLI skills (some require a CLI on PATH; doctor reports missing binaries)"

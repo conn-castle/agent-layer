@@ -107,11 +107,11 @@ Note: `make ci` includes `make tidy-check`, which fails if `go.mod` or `go.sum` 
 
 ## Managing project conventions
 
-`04_conventions.md` contains project-specific defaults (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety). Unlike other bundled instruction files, it is **user-managed**: created by the workflow bundle when missing, but never overwritten during `al wizard` refresh or `al upgrade`. Users can freely edit, add, or remove entries to match their tech stack.
+`04_conventions.md` contains project-specific defaults (frontend rules, test coverage thresholds, package policies, typing requirements, schema safety). Unlike other bundled instruction files, it is **user-managed**: created by the workflow bundle when missing, but never overwritten during `al wizard` or `al upgrade`. Users can freely edit, add, or remove entries to match their tech stack.
 
 ### Ownership model
 - **New projects** (`al wizard` workflow bundle): `04_conventions.md` is created from the template in `internal/templates/instructions/04_conventions.md` when missing.
-- **Existing projects** (`al wizard` refresh or `al upgrade`): the file is never overwritten. User edits are preserved.
+- **Existing projects** (`al wizard` or `al upgrade`): the file is never overwritten. User edits are preserved.
 - **Managed diffs**: `04_conventions.md` does not appear in `al upgrade plan` managed diffs.
 
 ### Adding a new default convention

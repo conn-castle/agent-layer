@@ -42,7 +42,7 @@ run_scenario_wizard_cli_catalog_skills() {
   },
   "confirm": {
     "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)": false,
-    "Install or refresh the Agent Layer workflow bundle? (refreshes ~24 workflow skills and managed instruction files; creates missing memory docs/templates)": true,
+    "Install the Agent Layer workflow bundle? (adds missing workflow skills, managed instruction files, and memory docs/templates; existing files are left unchanged)": true,
     "Enable warnings for performance and usage issues?": true,
     "Apply these config, secret, skills, instructions, memory-file, gitignore-source, and statusline-source changes?": true
   }

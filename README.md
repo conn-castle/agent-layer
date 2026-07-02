@@ -246,7 +246,7 @@ Run `al wizard` any time to interactively configure the most important settings:
     - Unchecking writes the matching `agent_specific` disable key; re-checking removes it, keeping the client's native default — except Codex **apps**, which defaults unchecked and always writes an explicit `features.apps`.
     - The AskUserQuestion toggle instead writes a typed `agents.claude.disable_question_tool` flag, and `al sync` injects the `permissions.deny` entry plus a `PreToolUse` hook (merged with, never replacing, your own deny/hook entries).
     - Status line checkboxes write explicit `statusline = true` or `statusline = false`; enabling one creates the missing editable source file once and never overwrites an existing source.
-- **Workflow bundle** (yes/no — installs or refreshes bundled workflow skills and managed instruction files, and creates missing memory docs/templates plus `04_conventions.md`; answering "no" leaves existing files unchanged)
+- **Workflow bundle** (yes/no when the bundle is absent — creates missing bundled workflow skills, managed instruction files, memory docs/templates, and `04_conventions.md`; existing files are left unchanged. Use `al upgrade` when you want managed workflow updates.)
 - **Git tracking** (choose whether `.agent-layer/` and `docs/agent-layer/` stay trackable or are ignored through the managed `.agent-layer/gitignore.block` source)
 - **CLI skills** (opt-in catalog: `tavily-web`, `playwright-cli`, `find-docs`, `agent-dispatch`; some require their own CLI on PATH; `al doctor` reports missing binaries without blocking agent launch)
 - **MCP Servers & Secrets** (toggle default servers; safely write secrets to `.agent-layer/.env`)
@@ -279,7 +279,7 @@ When prompted for required MCP secrets, type `skip` to disable that server for t
 
 ## What gets created in your repo
 
-Bare `al init` creates the operational scaffold. The optional workflow-bundle wizard step creates project memory and bundled workflow files, and `al sync` creates generated client files.
+Bare `al init` creates the operational scaffold. The optional workflow-bundle wizard step creates missing project memory and bundled workflow files, and `al sync` creates generated client files.
 
 ### User configuration (gitignored by default, but can be committed)
   - `.agent-layer/`
@@ -319,7 +319,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 
 ## Configuration (human-editable)
 
-You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings), `.agent-layer/.env` (secrets), and `.agent-layer/gitignore.block` (Agent Layer folder tracking). It can also install or refresh the workflow bundle and seed missing statusline source files; it does not overwrite existing statusline sources or touch `commands.allow`.
+You can edit all configuration files by hand. `al wizard` updates `config.toml` (approvals, agents/models, MCP servers, warnings), `.agent-layer/.env` (secrets), and `.agent-layer/gitignore.block` (Agent Layer folder tracking). It can also install missing workflow-bundle files and seed missing statusline source files; it does not refresh existing workflow-bundle files, overwrite existing statusline sources, or touch `commands.allow`.
 
 ### `.agent-layer/config.toml`
 
