@@ -80,6 +80,7 @@ var fields = []FieldDef{
 		AllowCustom: true,
 		Options: []FieldOption{
 			{Value: "default"},
+			{Value: "fable"},
 			{Value: "sonnet"},
 			{Value: "opus"},
 			{Value: "haiku"},

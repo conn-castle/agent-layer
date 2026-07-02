@@ -69,10 +69,9 @@ type Choices struct {
 	CopilotCLIModel        string
 	CopilotCLIModelTouched bool
 
-	// Agent Layer workflow bundle install/refresh action (Q1).
-	// InstallWorkflowBundle=true refreshes managed bundled instruction files and
-	// workflow skill dirs, then creates missing conventions and memory files.
-	// false is a no-op for workflow-bundle files.
+	// Agent Layer workflow bundle install action.
+	// InstallWorkflowBundle=true creates missing bundled workflow files without
+	// overwriting existing files. false is a no-op for workflow-bundle files.
 	InstallWorkflowBundle        bool
 	InstallWorkflowBundleTouched bool
 

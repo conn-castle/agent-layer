@@ -384,7 +384,7 @@ Typical `.agent-layer/` files include:
 
 `.agent-layer/gitignore.block` is the template file. It must contain only ignore patterns and comments (no managed markers and no template hash). Agent Layer copies it verbatim and injects the managed header and template hash only when updating the root `.gitignore`. If the template file contains managed markers or a hash line, `al sync` will error; run `al upgrade` to restore the template file.
 
-The optional workflow bundle creates typical project memory files under `docs/agent-layer/`:
+The optional workflow bundle creates missing project memory files under `docs/agent-layer/`:
 
 - `ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`
 

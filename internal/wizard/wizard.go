@@ -45,7 +45,7 @@ func RunWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io
 
 // RunAfterFreshInitWithWriter runs the wizard immediately after `al init`
 // created the bare operational layout. Provider statusline options and the
-// workflow-bundle install prompt use fresh-setup defaults in this path.
+// workflow-bundle install prompt uses fresh-setup defaults in this path.
 func RunAfterFreshInitWithWriter(root string, ui UI, runSync syncer, pinVersion string, out io.Writer) error {
 	return runWithWriter(root, ui, runSync, pinVersion, out, true)
 }
@@ -415,6 +415,10 @@ const (
 
 // promptWizardFlow drives the step-by-step prompt loop.
 func promptWizardFlow(root string, ui UI, choices *Choices) error {
+	// The workflow-bundle prompt is install-only. Once bundle evidence exists on
+	// disk, the wizard does not offer a refresh action; users who want a full
+	// refresh can reinstall explicitly.
+	skipWorkflowBundleStep := detectAgentLayerEnabledFromDisk(root)
 	// The custom-MCP step has nothing to ask when config.toml has no non-catalog
 	// servers. CustomMCPServers is set before the flow and never mutated by it, so
 	// skip the step in both directions to avoid trapping back-navigation on a
@@ -455,6 +459,9 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 				return nil
 			}
 			step++
+			if skipWorkflowBundleStep && step == wizardFlowStepEnableLayer {
+				step++
+			}
 			if skipCustomMCPStep && step == wizardFlowStepCustomMCP {
 				step++
 			}
@@ -484,6 +491,9 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 		}
 
 		step--
+		if skipWorkflowBundleStep && step == wizardFlowStepEnableLayer {
+			step--
+		}
 		if step == wizardFlowStepSecrets && !secretsStepHasPrompts(choices) {
 			step--
 		}
@@ -518,8 +528,8 @@ func secretsStepHasPrompts(choices *Choices) bool {
 	return false
 }
 
-// promptEnableAgentLayer asks whether to install or refresh the workflow bundle.
-// A no answer is a no-op for existing files.
+// promptEnableAgentLayer asks whether to install the workflow bundle. A no
+// answer is a no-op.
 func promptEnableAgentLayer(ui UI, choices *Choices) error {
 	installWorkflowBundle := choices.InstallWorkflowBundle
 	if err := ui.Confirm(messages.WizardEnableAgentLayerPrompt, &installWorkflowBundle); err != nil {

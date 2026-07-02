@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- `al wizard` no longer offers a workflow-bundle refresh when Agent Layer workflow files already exist. The workflow-bundle prompt is install-only for missing bundle files and preserves existing files; use `al upgrade` when you want managed workflow updates.
+- Claude model selection now includes `fable` in the built-in catalog.
+
 ## v0.11.1 - 2026-07-01
 
 Adds first-class Antigravity model selection across wizard, dispatch, sync, and generated config, makes Agent Dispatch depth configurable, and lets the wizard choose which Agent Layer folders stay trackable in Git.

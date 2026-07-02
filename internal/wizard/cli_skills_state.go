@@ -29,8 +29,9 @@ func catalogSkillExistsOnDisk(root string, id string) bool {
 // The function defaults to true when scans fail or the root is unset; an empty
 // `.agent-layer/skills/` directory with no managed bundle files maps to false.
 //
-// The result is a hint for the default value of the Q1 prompt and is overridden
-// by the user's actual selection.
+// The result controls whether the install-only workflow-bundle prompt is shown.
+// Existing bundle evidence suppresses the prompt because the wizard no longer
+// performs workflow-bundle refreshes.
 func detectAgentLayerEnabledFromDisk(root string) bool {
 	if root == "" {
 		return true

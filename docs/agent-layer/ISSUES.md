@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-02 lint-ci-local-goconst-false-negative-darwin: `make lint-ci-local` misses goconst violations on macOS
+    Priority: Medium. Area: Makefile (`lint-ci-local`) / CI-parity lint tooling; COMMANDS.md guidance
+    Description: `make lint-ci-local` runs golangci-lint with GOOS=linux GOARCH=amd64 on a darwin host; cross-GOOS package loading drops the package's `_test.go` files from the analyzed fileset, so goconst's per-package string-occurrence counts fall below the threshold and real violations do not fire. This caused a false negative during PR #128: local `make dev` and `make lint-ci-local` both passed, but CI's `verify` (`make ci` -> `make lint`) failed on `goconst` in internal/sync/codex_config_merge.go. The documented "CI-parity" command is not faithful for occurrence-counting linters.
+    Next step: Run lint on native/containerized linux for true parity, or document that native `golangci-lint run ./...` (or `--enable-only=goconst ./<pkg>/...`) is the faithful local reproducer and update the `lint-ci-local` note in COMMANDS.md accordingly.
+    Notes: Discovered during ship-pr of PR #128; native goconst-only run reproduces CI's exact diagnostic. Cost a failed CI cycle before the parity gap was understood.
+
 - Issue 2026-07-02 codex-merge-root-scalar-leading-comment: Seeding a managed root scalar before the first table can detach that table's leading comment
     Priority: Low. Area: internal/sync/codex_config_merge.go (`insertRootLine` / `setPath` fresh-insert path)
     Description: When a managed root scalar (e.g. `model`) is absent and gets inserted just before the first table header via `insertRootLine`, a `# comment` that documented that first table ends up above the newly inserted scalar (separated by a blank), so it reads as documenting the scalar. In-place updates of existing managed keys are unaffected (they now preserve position and inline comments); only the first-time fresh insert of a root scalar in front of a commented first table is affected. No data loss; valid TOML.
