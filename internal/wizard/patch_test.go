@@ -2041,6 +2041,8 @@ reasoning_effort = "high"
 			statuslineIdx = i
 		}
 	}
+	require.NotEqual(t, -1, enabledIdx, "enabled line missing:\n%s", strings.Join(lines, "\n"))
+	require.NotEqual(t, -1, reasoningIdx, "reasoning_effort line missing:\n%s", strings.Join(lines, "\n"))
 	require.NotEqual(t, -1, statuslineIdx, "statusline line missing:\n%s", strings.Join(lines, "\n"))
 	assert.Greater(t, statuslineIdx, enabledIdx, "statusline must not be reordered above enabled")
 	assert.Greater(t, statuslineIdx, reasoningIdx, "statusline should follow reasoning_effort")
