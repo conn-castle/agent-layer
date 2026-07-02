@@ -10,6 +10,9 @@ run_scenario_codex_launch() {
 
   assert_exit_zero_in "$repo_dir" "al init --no-wizard" al init --no-wizard
 
+  # Opt into repo-local Codex home so `al codex` sets CODEX_HOME=<repo>/.codex.
+  enable_codex_local_config_dir "$repo_dir"
+
   install_mock_agent "$repo_dir" "codex"
 
   local output rc=0
