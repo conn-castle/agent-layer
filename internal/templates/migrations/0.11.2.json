@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "target_version": "0.11.2",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "j-set-default-agents-codex-local-config-dir",
+      "kind": "config_set_default",
+      "key": "agents.codex.local_config_dir",
+      "value": false,
+      "rationale": "Agent Layer now sets CODEX_HOME=<repo>/.codex only when agents.codex.local_config_dir is true. Defaults to false, so a non-interactive upgrade switches to Codex's normal global/project config layering. Choose true to retain repo-local Codex auth, sessions, logs, and runtime state.",
+      "source_agnostic": true
+    }
+  ]
+}

@@ -38,6 +38,18 @@ func TestBuildSummaryIncludesAntigravityModel(t *testing.T) {
 	assert.Contains(t, summary, "- antigravity: Gemini 3.5 Flash (High)")
 }
 
+func TestBuildSummaryIncludesCodexLocalConfigDir(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+	choices.EnabledAgents[AgentCodex] = true
+	choices.CodexLocalConfigDir = true
+	choices.CodexLocalConfigDirTouched = true
+
+	summary := buildSummary(choices)
+
+	assert.Contains(t, summary, "Codex local home: enabled")
+}
+
 func TestApprovalModeLabelForValue_NotFound(t *testing.T) {
 	label, ok := approvalModeLabelForValue("unknown")
 	assert.False(t, ok)
@@ -444,6 +456,8 @@ func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	choices.ClaudeDisableQuestionToolTouched = true
 	choices.CodexDisableBrowser = true
 	choices.CodexDisableBrowserTouched = true
+	choices.CodexLocalConfigDir = true
+	choices.CodexLocalConfigDirTouched = true
 
 	ui := &MockUI{
 		MultiSelectFunc: func(_ string, _ []string, selected *[]string) error {
@@ -468,6 +482,8 @@ func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	assert.False(t, choices.AntigravityModelTouched)
 	assert.False(t, choices.CodexDisableBrowser)
 	assert.False(t, choices.CodexDisableBrowserTouched)
+	assert.False(t, choices.CodexLocalConfigDir)
+	assert.False(t, choices.CodexLocalConfigDirTouched)
 }
 
 // TestPatchConfig_EndToEndDisableToggles confirms the prompt choices flow

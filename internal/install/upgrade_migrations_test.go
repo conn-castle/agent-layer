@@ -888,6 +888,42 @@ func TestLoadUpgradeMigrationManifest_0_10_2_MigratesGeminiToAntigravity(t *test
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_11_2_HasCodexLocalConfigDirDefault(t *testing.T) {
+	// Locks the semantic contract of the shipped 0.11.2 migration: a
+	// non-interactive upgrade must default agents.codex.local_config_dir to
+	// false (switching to Codex's normal config layering), and the op must be
+	// source-agnostic so unpinned upgrades still receive the default. A wrong
+	// value:true would flip the documented default; a missing source_agnostic
+	// would skip the default for unresolved-source upgrades — either flips an
+	// assertion here.
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.11.2")
+	if err != nil {
+		t.Fatalf("load 0.11.2 manifest: %v", err)
+	}
+	if len(manifest.Operations) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
+	}
+	op := manifest.Operations[0]
+	if op.ID != "j-set-default-agents-codex-local-config-dir" {
+		t.Fatalf("op ID = %q, want %q", op.ID, "j-set-default-agents-codex-local-config-dir")
+	}
+	if op.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("op kind = %q, want %q", op.Kind, upgradeMigrationKindConfigSetDefault)
+	}
+	if op.Key != "agents.codex.local_config_dir" {
+		t.Fatalf("op key = %q, want %q", op.Key, "agents.codex.local_config_dir")
+	}
+	if string(op.Value) != "false" {
+		t.Fatalf("op value = %q, want %q", string(op.Value), "false")
+	}
+	if !op.SourceAgnostic {
+		t.Fatal("expected source_agnostic = true")
+	}
+	if manifest.MinPriorVersion != "0.10.2" {
+		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.10.2")
+	}
+}
+
 func TestMigration_0_10_2_MigratesGeminiConfigToAntigravity(t *testing.T) {
 	tests := []struct {
 		name        string

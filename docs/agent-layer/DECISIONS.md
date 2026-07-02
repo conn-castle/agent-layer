@@ -156,3 +156,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `agents.antigravity.model` is the only supported Antigravity model field. Sync projects it to generated Antigravity `settings.json`; runtime validation rejects `agents.antigravity.agent_specific.model`. The v0.11.1 upgrade migration moves that passthrough key to the typed field before validation.
     Reason: Wizard, dispatch, field catalog, docs, and defaults all treat Antigravity model selection as an Agent Layer-owned concept. Keeping it under `agent_specific` made a known field look like unmanaged passthrough and created two possible sources of truth.
     Tradeoffs: Fresh hand-authored configs that put `model` under `agent_specific` fail loudly and must move the value to `agents.antigravity.model`; upgrading repos get the automatic move first.
+
+- Decision 2026-07-01 codex-local-home-opt-in: Repo-local Codex home requires explicit opt-in
+    Decision: Gate `CODEX_HOME=<repo>/.codex` behind `[agents.codex] local_config_dir = true` for `al codex`, Codex dispatch, and `al vscode`; absent/false preserves inherited `CODEX_HOME`.
+    Reason: Agent Layer should keep generating repo-local Codex project config while leaving Codex's normal global/project config layering as the default. Users who want per-repo Codex auth, sessions, logs, and runtime state can opt in.
+    Tradeoffs: Existing users who relied on automatic per-repo Codex auth must set `agents.codex.local_config_dir = true`; default mode shares Codex home state but better matches user-managed Codex workflows.

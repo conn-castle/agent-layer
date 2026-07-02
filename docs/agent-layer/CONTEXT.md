@@ -32,7 +32,7 @@ Do not duplicate information that belongs in other memory files:
 
 ## VS Code and editor integrations
 
-- The Codex VS Code extension reads `CODEX_HOME` only at process startup. The generated repo-specific launchers exist to set `CODEX_HOME` before launch — there is no in-extension reload path.
+- The Codex VS Code extension reads `CODEX_HOME` only at process startup. Agent Layer launchers set repo-local `CODEX_HOME` only when `agents.codex.local_config_dir = true`; absent/false preserves inherited `CODEX_HOME`.
 - The Claude VS Code extension shares MCP scope with Claude CLI: both read the same `.mcp.json`/`.claude/settings.json`. Configuring separate MCP server sets for the two surfaces is not possible. `[agents.claude_vscode]` is config-only.
 - `.vscode/settings.json` updates only validate JSONC content inside the managed markers. Invalid JSONC outside the markers is not detected once the markers are present.
 

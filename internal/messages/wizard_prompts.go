@@ -15,6 +15,7 @@ const (
 	WizardClaudeLocalConfigDirPrompt          = "Isolate Claude settings and caches per repo? (auth remains shared globally — upstream limitation)"
 	WizardCodexModelTitle                     = "Codex Model"
 	WizardCodexReasoningEffortTitle           = "Codex Reasoning Effort"
+	WizardCodexLocalConfigDirPrompt           = "Use repo-local Codex home for auth, sessions, logs, and runtime state?"
 	WizardCopilotCLIModelTitle                = "Copilot CLI Model"
 	WizardSecretAlreadySetPromptFmt           = "Secret %s is already set. Overwrite?"
 	WizardEnvSecretFoundPromptFmt             = "Found %s in your environment. Write it to .agent-layer/.env?"

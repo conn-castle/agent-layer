@@ -247,6 +247,9 @@ func initializeChoices(cfg *config.ProjectConfig) (*Choices, error) {
 	}
 	choices.CodexModel = agentoptions.ConfiguredValue(cfg.Config, AgentCodex, agentoptions.KindModel)
 	choices.CodexReasoning = agentoptions.ConfiguredValue(cfg.Config, AgentCodex, agentoptions.KindReasoningEffort)
+	if cfg.Config.Agents.Codex.LocalConfigDir != nil {
+		choices.CodexLocalConfigDir = *cfg.Config.Agents.Codex.LocalConfigDir
+	}
 	choices.CodexApps = readCodexAppsEnabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CodexDisableBrowser = readCodexBrowserDisabled(cfg.Config.Agents.Codex.AgentSpecific)
 	choices.CodexStatusline = true
@@ -598,6 +601,8 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 		choices.AntigravityModelTouched = false
 	}
 	if !choices.EnabledAgents[AgentCodex] {
+		choices.CodexLocalConfigDir = false
+		choices.CodexLocalConfigDirTouched = false
 		choices.CodexApps = false
 		choices.CodexAppsTouched = false
 		choices.CodexDisableBrowser = false
@@ -693,6 +698,13 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.CodexReasoningTouched = true
+
+		codexLocalConfigDir := choices.CodexLocalConfigDir
+		if err := ui.Confirm(messages.WizardCodexLocalConfigDirPrompt, &codexLocalConfigDir); err != nil {
+			return err
+		}
+		choices.CodexLocalConfigDir = codexLocalConfigDir
+		choices.CodexLocalConfigDirTouched = true
 
 		// Codex per-feature toggles as one multi-select. Built-in apps store
 		// enabled-sense (true = apps on); browser/computer-use stores disable-sense

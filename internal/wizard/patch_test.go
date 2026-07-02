@@ -1946,8 +1946,10 @@ enabled = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "local_config_dir = true")
-	assert.NotContains(t, out, "# local_config_dir")
+	doc := parseTomlDocument(out)
+	section := strings.Join(doc.sections["agents.claude"].lines, "\n")
+	assert.Contains(t, section, "local_config_dir = true")
+	assert.NotContains(t, section, "# local_config_dir")
 }
 
 func TestPatchConfig_ClaudeLocalConfigDirDisabled(t *testing.T) {
@@ -1963,8 +1965,48 @@ local_config_dir = true
 	out, err := PatchConfig(content, choices)
 	require.NoError(t, err)
 
-	assert.Contains(t, out, "# local_config_dir")
-	assert.NotContains(t, out, "local_config_dir = true")
+	doc := parseTomlDocument(out)
+	section := strings.Join(doc.sections["agents.claude"].lines, "\n")
+	assert.Contains(t, section, "# local_config_dir")
+	assert.NotContains(t, section, "local_config_dir = true")
+}
+
+func TestPatchConfig_CodexLocalConfigDirEnabled(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+# local_config_dir = false
+`
+	choices := NewChoices()
+	choices.CodexLocalConfigDirTouched = true
+	choices.CodexLocalConfigDir = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	doc := parseTomlDocument(out)
+	section := strings.Join(doc.sections["agents.codex"].lines, "\n")
+	assert.Contains(t, section, "local_config_dir = true")
+	assert.NotContains(t, section, "# local_config_dir")
+}
+
+func TestPatchConfig_CodexLocalConfigDirDisabled(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+local_config_dir = true
+`
+	choices := NewChoices()
+	choices.CodexLocalConfigDirTouched = true
+	choices.CodexLocalConfigDir = false
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	doc := parseTomlDocument(out)
+	section := strings.Join(doc.sections["agents.codex"].lines, "\n")
+	assert.Contains(t, section, "# local_config_dir")
+	assert.NotContains(t, section, "local_config_dir = true")
 }
 
 func TestPatchConfig_CodexAppsDisabledOnFreshConfig(t *testing.T) {

@@ -33,6 +33,7 @@ run_scenario_statusline_enabled() {
   sed \
     -e '/^\[agents\.claude\]/,/^\[/ s/^# statusline = true/statusline = true/' \
     -e '/^\[agents\.codex\]/,/^\[/ s/^# statusline = true/statusline = true/' \
+    -e '/^\[agents\.codex\]/,/^\[/ s/^# local_config_dir = false/local_config_dir = true/' \
     "$E2E_DEFAULTS_TOML" > "$profile"
 
   local missing_source_output missing_source_rc=0

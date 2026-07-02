@@ -176,7 +176,7 @@ func TestRunWithOverwrite(t *testing.T) {
 
 	// Modify user-owned files to differ from templates.
 	configPath := filepath.Join(root, ".agent-layer", "config.toml")
-	customConfig := "[agents.antigravity]\nenabled = false\n\n[agents.claude]\nstatusline = false\n\n[agents.codex]\nstatusline = false\n"
+	customConfig := "[agents.antigravity]\nenabled = false\n\n[agents.claude]\nstatusline = false\n\n[agents.codex]\nstatusline = false\nlocal_config_dir = false\n"
 	if err := os.WriteFile(configPath, []byte(customConfig), 0o600); err != nil {
 		t.Fatalf("write custom config: %v", err)
 	}

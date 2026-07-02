@@ -64,53 +64,7 @@ func TestLaunchVSCode_NoCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 	}
 }
 
-func TestLaunchVSCode_ClearsInheritedCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
-	origLookPath := lookPath
-	origReadFile := readFile
-	t.Cleanup(func() {
-		lookPath = origLookPath
-		readFile = origReadFile
-	})
-
-	root := t.TempDir()
-	binDir := t.TempDir()
-
-	envFile := filepath.Join(t.TempDir(), "env.txt")
-	stubPath := filepath.Join(binDir, "code")
-	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
-
-	vscodeDisabled := false
-	claudeVSCodeEnabled := true
-	cfg := &config.ProjectConfig{
-		Config: config.Config{
-			Agents: config.AgentsConfig{
-				VSCode:       config.EnableOnlyConfig{Enabled: &vscodeDisabled},
-				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &claudeVSCodeEnabled},
-			},
-		},
-		Root: root,
-	}
-
-	t.Setenv("PATH", binDir)
-	// Inject a stale CODEX_HOME into the environment to simulate inheritance.
-	env := append(os.Environ(), "CODEX_HOME=/stale/path")
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
-		t.Fatalf("Launch error: %v", err)
-	}
-
-	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read env file: %v", err)
-	}
-	if strings.Contains(string(got), "CODEX_HOME=") {
-		t.Fatal("expected inherited CODEX_HOME to be cleared when agents.vscode is disabled")
-	}
-}
-
-func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeEnabled(t *testing.T) {
+func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeAndCodexLocalConfigEnabled(t *testing.T) {
 	origLookPath := lookPath
 	origReadFile := readFile
 	t.Cleanup(func() {
@@ -130,9 +84,11 @@ func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeEnabled(t *testing.T) {
 	}
 
 	vscodeEnabled := true
+	codexLocalConfigDir := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
+				Codex:  config.CodexConfig{LocalConfigDir: &codexLocalConfigDir},
 				VSCode: config.EnableOnlyConfig{Enabled: &vscodeEnabled},
 			},
 		},
@@ -158,6 +114,97 @@ func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeEnabled(t *testing.T) {
 	expected := "CODEX_HOME=" + filepath.Join(root, ".codex")
 	if !strings.Contains(string(got), expected) {
 		t.Fatalf("expected CODEX_HOME to be set to %s, got env:\n%s", filepath.Join(root, ".codex"), string(got))
+	}
+}
+
+func TestLaunchVSCode_DoesNotSetCODEXHOMEWhenCodexLocalConfigDisabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
+		t.Fatalf("write stub: %v", err)
+	}
+
+	vscodeEnabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				VSCode: config.EnableOnlyConfig{Enabled: &vscodeEnabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	var env []string
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "CODEX_HOME=") {
+			env = append(env, e)
+		}
+	}
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if strings.Contains(string(got), "CODEX_HOME=") {
+		t.Fatalf("expected CODEX_HOME to remain unset when codex local_config_dir is disabled, got env:\n%s", string(got))
+	}
+}
+
+func TestLaunchVSCode_PreservesInheritedCODEXHOMEWhenCodexLocalConfigDisabled(t *testing.T) {
+	origLookPath := lookPath
+	origReadFile := readFile
+	t.Cleanup(func() {
+		lookPath = origLookPath
+		readFile = origReadFile
+	})
+
+	root := t.TempDir()
+	binDir := t.TempDir()
+
+	envFile := filepath.Join(t.TempDir(), "env.txt")
+	stubPath := filepath.Join(binDir, "code")
+	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
+	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
+		t.Fatalf("write stub: %v", err)
+	}
+
+	vscodeEnabled := true
+	cfg := &config.ProjectConfig{
+		Config: config.Config{
+			Agents: config.AgentsConfig{
+				VSCode: config.EnableOnlyConfig{Enabled: &vscodeEnabled},
+			},
+		},
+		Root: root,
+	}
+
+	t.Setenv("PATH", binDir)
+	env := append(os.Environ(), "CODEX_HOME=/user/codex-home")
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+		t.Fatalf("Launch error: %v", err)
+	}
+
+	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	if !strings.Contains(string(got), "CODEX_HOME=/user/codex-home") {
+		t.Fatalf("expected inherited CODEX_HOME to be preserved when codex local_config_dir is disabled, got env:\n%s", string(got))
 	}
 }
 
@@ -332,12 +379,14 @@ func TestLaunchVSCode_BothVarsWhenBothEnabled(t *testing.T) {
 	vscodeEnabled := true
 	claudeVSCodeEnabled := true
 	localConfigDir := true
+	codexLocalConfigDir := true
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
 				VSCode:       config.EnableOnlyConfig{Enabled: &vscodeEnabled},
 				Claude:       config.ClaudeConfig{LocalConfigDir: &localConfigDir},
 				ClaudeVSCode: config.EnableOnlyConfig{Enabled: &claudeVSCodeEnabled},
+				Codex:        config.CodexConfig{LocalConfigDir: &codexLocalConfigDir},
 			},
 		},
 		Root: root,

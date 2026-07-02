@@ -31,9 +31,9 @@ If VS Code is enabled, Agent Layer also generates repo-local launchers under `.a
 For full detail, see [/docs/reference#sync](/docs/reference#sync).
 
 ## Why does Codex ask me to sign in again per repo?
-The Codex VS Code extension reads `CODEX_HOME` at startup. Agent Layer sets a repo-specific value via its launchers, so Codex authentication state is stored per repository. When you open VS Code in a different repository, reauthentication is expected.
+The Codex VS Code extension reads `CODEX_HOME` at startup. Agent Layer sets a repo-specific value via `al codex`, Codex dispatch, and its VS Code launchers only when `local_config_dir = true` is enabled under `[agents.codex]`. In that opt-in mode, Codex authentication state is stored per repository and reauthentication in a different repository is expected.
 
-If you prefer to avoid the VS Code launcher for Codex, use the global MCP fallback so VS Code can continue to discover your MCP servers. See [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
+By default (`agents.codex.local_config_dir` absent or `false`), Agent Layer does not set `CODEX_HOME`; Codex uses its normal global/project config layering and any inherited `CODEX_HOME` remains user-owned. If you prefer global Codex MCP config in VS Code, see [/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex](/docs/troubleshooting#global-mcp-server-fallback-for-vs-code-codex).
 
 ## Why doesn't Claude keep separate sign-ins per repo?
 Claude per-repo settings and caches isolation is opt-in. If you set `local_config_dir = true` under `[agents.claude]` in `config.toml`, Agent Layer sets `CLAUDE_CONFIG_DIR` to a repo-local directory, isolating settings and caches per repository.

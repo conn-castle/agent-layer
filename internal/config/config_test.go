@@ -46,6 +46,7 @@ enabled = true
 enabled = true
 model = "gpt-5.3-codex"
 reasoning_effort = "high"
+local_config_dir = true
 [agents.codex.dispatch]
 default_agent = "antigravity"
 
@@ -84,6 +85,9 @@ command = "tool"
 	}
 	if cfg.Agents.Codex.Dispatch.DefaultAgent != "antigravity" {
 		t.Fatalf("unexpected codex dispatch default: %q", cfg.Agents.Codex.Dispatch.DefaultAgent)
+	}
+	if cfg.Agents.Codex.LocalConfigDir == nil || !*cfg.Agents.Codex.LocalConfigDir {
+		t.Fatalf("expected codex local_config_dir true")
 	}
 	if cfg.Dispatch.MaxDepth == nil || *cfg.Dispatch.MaxDepth != 2 {
 		t.Fatalf("unexpected dispatch max_depth: %#v", cfg.Dispatch.MaxDepth)

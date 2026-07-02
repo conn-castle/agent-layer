@@ -200,13 +200,24 @@ func TestConfigureTargetEnvironment(t *testing.T) {
 	}
 
 	codexExpected := root + "/.codex"
-	env = configureCodexEnv(root, nil, nil)
+	env = configureCodexEnv(root, nil, config.CodexConfig{}, nil)
+	if _, ok := clients.GetEnv(env, "CODEX_HOME"); ok {
+		t.Fatalf("expected CODEX_HOME to stay unset when codex local_config_dir is false: %#v", env)
+	}
+
+	env = configureCodexEnv(root, []string{"CODEX_HOME=/custom-codex"}, config.CodexConfig{}, nil)
+	if got, _ := clients.GetEnv(env, "CODEX_HOME"); got != "/custom-codex" {
+		t.Fatalf("expected custom CODEX_HOME to be preserved when codex local_config_dir is false, got %q", got)
+	}
+
+	localCodex := true
+	env = configureCodexEnv(root, nil, config.CodexConfig{LocalConfigDir: &localCodex}, nil)
 	if got, ok := clients.GetEnv(env, "CODEX_HOME"); !ok || got != codexExpected {
 		t.Fatalf("CODEX_HOME = %q, %t; want %q", got, ok, codexExpected)
 	}
 
 	stderr.Reset()
-	env = configureCodexEnv(root, []string{"CODEX_HOME=/custom-codex"}, &stderr)
+	env = configureCodexEnv(root, []string{"CODEX_HOME=/custom-codex"}, config.CodexConfig{LocalConfigDir: &localCodex}, &stderr)
 	if got, _ := clients.GetEnv(env, "CODEX_HOME"); got != "/custom-codex" {
 		t.Fatalf("expected custom CODEX_HOME to be preserved, got %q", got)
 	}
@@ -245,11 +256,17 @@ func TestRunCodexUsesModelAndReasoningOverrides(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "codex.log")
 	promptPath := filepath.Join(t.TempDir(), "codex.prompt")
 	writeDispatchStub(t, binDir, "codex", `printf '{"type":"agent_message","message":"ok"}\n'`)
+	localCodex := true
 
 	var stdout bytes.Buffer
 	err := runCodex(
 		targetMeta{Name: AgentCodex, Binary: filepath.Join(binDir, "codex")},
-		&config.ProjectConfig{Root: root},
+		&config.ProjectConfig{
+			Root: root,
+			Config: config.Config{Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{LocalConfigDir: &localCodex},
+			}},
+		},
 		[]string{"AL_TEST_LOG=" + logPath, "AL_TEST_PROMPT=" + promptPath},
 		[]byte("Prompt"),
 		RunOptions{Model: "gpt-5", ReasoningEffort: "high", Stdout: &stdout, Stderr: &bytes.Buffer{}},
@@ -268,6 +285,27 @@ func TestRunCodexUsesModelAndReasoningOverrides(t *testing.T) {
 	assertFileContains(t, logPath, "ARG_5=model_reasoning_effort=high")
 	assertFileContains(t, logPath, "CODEX_HOME="+filepath.Join(root, ".codex"))
 	assertFileContains(t, promptPath, "Prompt")
+}
+
+func TestRunCodexPreservesEnvironmentWhenLocalConfigDirDisabled(t *testing.T) {
+	root := t.TempDir()
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "codex.log")
+	writeDispatchStub(t, binDir, "codex", `printf '{"type":"agent_message","message":"ok"}\n'`)
+
+	var stdout bytes.Buffer
+	err := runCodex(
+		targetMeta{Name: AgentCodex, Binary: filepath.Join(binDir, "codex")},
+		&config.ProjectConfig{Root: root},
+		[]string{"AL_TEST_LOG=" + logPath},
+		[]byte("Prompt"),
+		RunOptions{Stdout: &stdout, Stderr: &bytes.Buffer{}},
+		defaultCommandFactory,
+	)
+	if err != nil {
+		t.Fatalf("runCodex error: %v", err)
+	}
+	assertFileDoesNotContain(t, logPath, "CODEX_HOME=")
 }
 
 func TestRunClaudeUsesOverridesAndYoloFlag(t *testing.T) {
