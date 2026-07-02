@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
 	"github.com/conn-castle/agent-layer/internal/run"
 )
@@ -45,12 +46,7 @@ func TestLaunchVSCode_NoCODEXHOMEWhenVSCodeDisabled(t *testing.T) {
 	t.Setenv("PATH", binDir)
 	// Filter out CODEX_HOME from the environment so the test only detects
 	// additions made by the launcher itself.
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "CODEX_HOME=") {
-			env = append(env, e)
-		}
-	}
+	env := clients.UnsetEnv(os.Environ(), "CODEX_HOME")
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -97,12 +93,7 @@ func TestLaunchVSCode_SetsCODEXHOMEWhenVSCodeAndCodexLocalConfigEnabled(t *testi
 
 	t.Setenv("PATH", binDir)
 	// Filter out CODEX_HOME from the environment.
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "CODEX_HOME=") {
-			env = append(env, e)
-		}
-	}
+	env := clients.UnsetEnv(os.Environ(), "CODEX_HOME")
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -146,12 +137,7 @@ func TestLaunchVSCode_DoesNotSetCODEXHOMEWhenCodexLocalConfigDisabled(t *testing
 	}
 
 	t.Setenv("PATH", binDir)
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "CODEX_HOME=") {
-			env = append(env, e)
-		}
-	}
+	env := clients.UnsetEnv(os.Environ(), "CODEX_HOME")
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -194,7 +180,7 @@ func TestLaunchVSCode_PreservesInheritedCODEXHOMEWhenCodexLocalConfigDisabled(t 
 	}
 
 	t.Setenv("PATH", binDir)
-	env := append(os.Environ(), "CODEX_HOME=/user/codex-home")
+	env := clients.SetEnv(os.Environ(), "CODEX_HOME", "/user/codex-home")
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -239,12 +225,7 @@ func TestLaunchVSCode_SetsCLAUDECONFIGDIRWhenClaudeVSCodeEnabled(t *testing.T) {
 	}
 
 	t.Setenv("PATH", binDir)
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") && !strings.HasPrefix(e, "CODEX_HOME=") {
-			env = append(env, e)
-		}
-	}
+	env := clients.UnsetEnv(clients.UnsetEnv(os.Environ(), "CODEX_HOME"), "CLAUDE_CONFIG_DIR")
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
@@ -393,12 +374,7 @@ func TestLaunchVSCode_BothVarsWhenBothEnabled(t *testing.T) {
 	}
 
 	t.Setenv("PATH", binDir)
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "CODEX_HOME=") && !strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
-			env = append(env, e)
-		}
-	}
+	env := clients.UnsetEnv(clients.UnsetEnv(os.Environ(), "CODEX_HOME"), "CLAUDE_CONFIG_DIR")
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}

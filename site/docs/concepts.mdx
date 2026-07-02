@@ -99,7 +99,7 @@ Agent Layer gives each repository its own agent configuration so work in one rep
 
 ### How it works
 
-**Codex** home isolation is opt-in. Agent Layer always generates `.codex/config.toml` with the current repo trust stanza and managed MCP config, but `al codex`, `al dispatch --agent codex`, and `al vscode` set `CODEX_HOME=<repo>/.codex` only when `local_config_dir = true` is set under `[agents.codex]`:
+**Codex** home isolation is opt-in. Agent Layer always generates `.codex/config.toml` with the current repo trust stanza and managed MCP config, but `al codex`, `al dispatch --agent codex`, and `al vscode` set `CODEX_HOME=<repo>/.codex` only when `local_config_dir = true` is set under `[agents.codex]` (for `al vscode`, `[agents.vscode]` must also be enabled):
 
 ```toml
 [agents.codex]

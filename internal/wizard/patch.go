@@ -263,7 +263,15 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 			}
 		}
 		if choices.CodexStatuslineTouched {
-			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.CodexStatusline), "local_config_dir")
+			// Anchor statusline after local_config_dir when that line exists,
+			// otherwise fall back to reasoning_effort (the pre-local_config_dir
+			// anchor). This keeps statusline in place instead of reordering it to
+			// the top of a block that has no local_config_dir line.
+			statuslineAnchor := "local_config_dir"
+			if _, ok := findKeyLine(block.lines, "local_config_dir"); !ok {
+				statuslineAnchor = "reasoning_effort"
+			}
+			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.CodexStatusline), statuslineAnchor)
 		}
 	case "agents.vscode":
 		if choices.EnabledAgentsTouched {

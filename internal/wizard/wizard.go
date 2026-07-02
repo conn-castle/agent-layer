@@ -600,9 +600,14 @@ func promptEnabledAgents(ui UI, choices *Choices) error {
 		choices.AntigravityModel = ""
 		choices.AntigravityModelTouched = false
 	}
-	if !choices.EnabledAgents[AgentCodex] {
+	if !choices.EnabledAgents[AgentCodex] && !choices.EnabledAgents[AgentVSCode] {
+		// local_config_dir drives CODEX_HOME for both the Codex CLI (agents.codex)
+		// and the Codex VS Code extension (agents.vscode), so only clear it when
+		// neither is enabled.
 		choices.CodexLocalConfigDir = false
 		choices.CodexLocalConfigDirTouched = false
+	}
+	if !choices.EnabledAgents[AgentCodex] {
 		choices.CodexApps = false
 		choices.CodexAppsTouched = false
 		choices.CodexDisableBrowser = false
@@ -698,18 +703,24 @@ func promptModels(ui UI, choices *Choices) error {
 			return err
 		}
 		choices.CodexReasoningTouched = true
-
+	}
+	if choices.EnabledAgents[AgentCodex] || choices.EnabledAgents[AgentVSCode] {
+		// local_config_dir sets CODEX_HOME to a repo-local .codex directory. It is
+		// consumed by both the Codex CLI (agents.codex) and the Codex VS Code
+		// extension (agents.vscode via `al vscode`), so offer it whenever either is
+		// enabled.
 		codexLocalConfigDir := choices.CodexLocalConfigDir
 		if err := ui.Confirm(messages.WizardCodexLocalConfigDirPrompt, &codexLocalConfigDir); err != nil {
 			return err
 		}
 		choices.CodexLocalConfigDir = codexLocalConfigDir
 		choices.CodexLocalConfigDirTouched = true
-
+	}
+	if choices.EnabledAgents[AgentCodex] {
 		// Codex per-feature toggles as one multi-select. Built-in apps store
 		// enabled-sense (true = apps on); browser/computer-use stores disable-sense
 		// like the Claude fields. Both are inverted at the prompt boundary so the
-		// checkbox always means "keep enabled".
+		// checkbox always means "keep enabled". Intentionally left CLI-gated for now.
 		if err := promptFeatureToggles(ui, messages.WizardCodexFeaturesTitle, []featureToggle{
 			{label: messages.WizardCodexFeatureStatuslineLabel, field: &choices.CodexStatusline, touched: &choices.CodexStatuslineTouched, enabledSense: true},
 			{label: messages.WizardCodexFeatureAppsLabel, field: &choices.CodexApps, touched: &choices.CodexAppsTouched, enabledSense: true},

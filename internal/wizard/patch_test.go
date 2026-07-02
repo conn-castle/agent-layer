@@ -2009,6 +2009,43 @@ local_config_dir = true
 	assert.NotContains(t, section, "local_config_dir = true")
 }
 
+// TestPatchConfig_CodexStatuslineFallsBackToReasoningAnchor guards against a
+// reordering regression: when an existing [agents.codex] block has no
+// local_config_dir line and only the statusline toggle is touched, statusline
+// must stay in place (after reasoning_effort) rather than being inserted at the
+// top of the section because the local_config_dir anchor is missing.
+func TestPatchConfig_CodexStatuslineFallsBackToReasoningAnchor(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+reasoning_effort = "high"
+`
+	choices := NewChoices()
+	choices.CodexStatuslineTouched = true
+	choices.CodexStatusline = true
+	// CodexLocalConfigDirTouched intentionally left false: no local_config_dir
+	// line is inserted, so the statusline anchor must fall back.
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	lines := parseTomlDocument(out).sections["agents.codex"].lines
+	enabledIdx, reasoningIdx, statuslineIdx := -1, -1, -1
+	for i, l := range lines {
+		switch trimmed := strings.TrimSpace(l); {
+		case strings.HasPrefix(trimmed, "enabled"):
+			enabledIdx = i
+		case strings.HasPrefix(trimmed, "reasoning_effort"):
+			reasoningIdx = i
+		case strings.HasPrefix(trimmed, "statusline"):
+			statuslineIdx = i
+		}
+	}
+	require.NotEqual(t, -1, statuslineIdx, "statusline line missing:\n%s", strings.Join(lines, "\n"))
+	assert.Greater(t, statuslineIdx, enabledIdx, "statusline must not be reordered above enabled")
+	assert.Greater(t, statuslineIdx, reasoningIdx, "statusline should follow reasoning_effort")
+}
+
 func TestPatchConfig_CodexAppsDisabledOnFreshConfig(t *testing.T) {
 	content := `
 [agents.codex]

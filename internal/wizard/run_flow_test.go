@@ -549,6 +549,92 @@ enabled = false
 	assert.Contains(t, string(data), "local_config_dir = true")
 }
 
+// TestRun_CodexVSCodeOnlyLocalConfigDir drives the full wizard with only the
+// Codex VS Code extension (agents.vscode) enabled and the Codex CLI disabled.
+// Because `al vscode` sets CODEX_HOME from agents.codex.local_config_dir, the
+// wizard must still present the Codex local_config_dir confirm and persist the
+// choice. Against the old single-AgentCodex prompt gating the confirm never
+// rendered and no local_config_dir line was written, so this fails.
+func TestRun_CodexVSCodeOnlyLocalConfigDir(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+
+	initialConfig := `[approvals]
+mode = "all"
+[agents.antigravity]
+enabled = false
+[agents.claude]
+enabled = false
+[agents.claude_vscode]
+enabled = false
+[agents.codex]
+enabled = false
+# local_config_dir = false
+[agents.vscode]
+enabled = true
+[agents.copilot_cli]
+enabled = false
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	sawCodexLocalConfigDirPrompt := false
+	var summaryBody string
+	ui := &MockUI{
+		NoteFunc: func(title, body string) error {
+			if title == messages.WizardSummaryTitle {
+				summaryBody = body
+			}
+			return nil
+		},
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == messages.WizardApprovalModeTitle {
+				label, ok := approvalModeLabelForValue(config.ApprovalModeAll)
+				require.True(t, ok)
+				*current = label
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == messages.WizardEnableAgentsTitle {
+				*selected = []string{AgentVSCode}
+			}
+			if title == messages.WizardEnableDefaultMCPServersTitle {
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardCodexLocalConfigDirPrompt {
+				sawCodexLocalConfigDirPrompt = true
+				*value = true
+			}
+			if title == messages.WizardApplyChangesPrompt {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+
+	err := Run(root, ui, mockSync, "")
+	require.NoError(t, err)
+
+	assert.True(t, sawCodexLocalConfigDirPrompt, "enabling only the Codex VS Code extension must still prompt for local_config_dir")
+
+	// The pre-apply confirmation summary the user reviews must report the enabled
+	// setting. codexToggleVisible is CLI-only, so gating the summary line on it
+	// would silently omit "Codex local home: enabled" for a VS Code-only repo even
+	// though local_config_dir = true is written below.
+	assert.Contains(t, summaryBody, messages.WizardSummaryCodexLocalConfigDir,
+		"VS Code-only Codex local home must be shown in the confirmation summary")
+
+	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	assert.Contains(t, string(data), "local_config_dir = true")
+}
+
 // TestPromptModels_FeatureTogglesPreSelectAndRoundTrip proves the checkbox->
 // disable inversion at the prompt boundary: a mixed enabled/disabled config
 // pre-checks exactly the enabled features, and a no-edit re-run (the user leaves
@@ -641,6 +727,61 @@ func TestPromptModels_CodexDisabledRendersNoCodexMultiSelect(t *testing.T) {
 	}
 
 	assert.False(t, sawCodexFeatures, "Codex feature multi-select must not render when Codex is disabled")
+	assert.False(t, choices.CodexAppsTouched)
+	assert.False(t, choices.CodexDisableBrowserTouched)
+}
+
+// TestPromptModels_VSCodeOnlyPromptsCodexLocalConfigDir pins the prompt gating
+// fix. With only the Codex VS Code extension (agents.vscode) enabled and the
+// Codex CLI off, promptModels must present the local_config_dir confirm (it sets
+// CODEX_HOME for the extension via `al vscode`) while the CLI-only Codex model,
+// reasoning, and feature prompts stay hidden. Against the old single-AgentCodex
+// gating the confirm never rendered, so CodexLocalConfigDirTouched stays false
+// and this fails.
+func TestPromptModels_VSCodeOnlyPromptsCodexLocalConfigDir(t *testing.T) {
+	choices := NewChoices()
+	choices.EnabledAgents[AgentVSCode] = true // Codex VS Code extension only; CLI off
+
+	var sawCodexLocalConfigDirPrompt bool
+	var sawCodexModel, sawCodexReasoning, sawCodexFeatures bool
+	ui := &MockUI{
+		SelectFunc: func(title string, _ []string, _ *string) error {
+			switch title {
+			case messages.WizardCodexModelTitle:
+				sawCodexModel = true
+			case messages.WizardCodexReasoningEffortTitle:
+				sawCodexReasoning = true
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, _ []string, _ *[]string) error {
+			if title == messages.WizardCodexFeaturesTitle {
+				sawCodexFeatures = true
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardCodexLocalConfigDirPrompt {
+				sawCodexLocalConfigDirPrompt = true
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	if err := promptModels(ui, choices); err != nil {
+		t.Fatalf("promptModels error: %v", err)
+	}
+
+	assert.True(t, sawCodexLocalConfigDirPrompt, "VS Code-only repos must be offered the Codex local_config_dir confirm")
+	assert.True(t, choices.CodexLocalConfigDir, "confirming the prompt must record the choice")
+	assert.True(t, choices.CodexLocalConfigDirTouched, "confirming the prompt must mark the choice touched")
+
+	assert.False(t, sawCodexModel, "Codex model prompt is CLI-gated and must not render for VS Code-only repos")
+	assert.False(t, sawCodexReasoning, "Codex reasoning prompt is CLI-gated and must not render for VS Code-only repos")
+	assert.False(t, sawCodexFeatures, "Codex feature toggles are CLI-gated and must not render for VS Code-only repos")
+	assert.False(t, choices.CodexModelTouched)
+	assert.False(t, choices.CodexReasoningTouched)
 	assert.False(t, choices.CodexAppsTouched)
 	assert.False(t, choices.CodexDisableBrowserTouched)
 }

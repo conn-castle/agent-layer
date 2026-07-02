@@ -28,7 +28,7 @@ const (
 	WizardSummaryGitIgnoredFmt                   = "- %s: gitignored\n"
 	WizardSummaryClaudeLocalConfigDir            = "\nClaude config isolation: enabled (per-repo settings and caches; auth shared globally — upstream limitation)\n"
 	WizardSummaryCodexLocalConfigDir             = "\nCodex local home: enabled (per-repo auth, sessions, logs, and runtime state)\n"
-	WizardSummaryCodexAppsDisabled               = "\nCodex built-in apps: disabled (suppresses Github/Gmail/etc. tool surface)\n"
+	WizardSummaryCodexAppsDisabled               = "\nCodex built-in apps: disabled (suppresses GitHub/Gmail/etc. tool surface)\n"
 	WizardSummaryCodexAppsEnabled                = "\nCodex built-in apps: enabled\n"
 	WizardSummaryClaudeStatuslineEnabled         = "\nClaude statusline: enabled\n"
 	WizardSummaryClaudeStatuslineDisabled        = "\nClaude statusline: disabled\n"
