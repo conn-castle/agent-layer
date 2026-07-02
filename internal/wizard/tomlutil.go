@@ -21,11 +21,6 @@ func ScanTomlLineForComment(line string, state tomlStringState) (commentPos int,
 	return commentPos, tomlStringState(next)
 }
 
-// IsTomlStateInMultiline returns true if the state indicates we're inside a multiline string.
-func IsTomlStateInMultiline(state tomlStringState) bool {
-	return tomlpatch.StateInMultiline(tomlpatch.StringState(state))
-}
-
 // inlineCommentForLine extracts a TOML inline comment on a specific line, tracking multiline strings.
 // lines is the full TOML content split by line; lineIndex is the target line (0-based).
 func inlineCommentForLine(lines []string, lineIndex int) string {
