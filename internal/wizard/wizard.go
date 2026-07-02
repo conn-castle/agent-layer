@@ -417,7 +417,7 @@ const (
 func promptWizardFlow(root string, ui UI, choices *Choices) error {
 	// The workflow-bundle prompt is install-only. Once bundle evidence exists on
 	// disk, the wizard does not offer a refresh action; users who want a full
-	// refresh can reinstall explicitly.
+	// managed workflow update can use `al upgrade`.
 	skipWorkflowBundleStep := detectAgentLayerEnabledFromDisk(root)
 	// The custom-MCP step has nothing to ask when config.toml has no non-catalog
 	// servers. CustomMCPServers is set before the flow and never mutated by it, so
