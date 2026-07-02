@@ -93,7 +93,7 @@ func runCodex(target targetMeta, project *config.ProjectConfig, env []string, pr
 		args = append(args, "-c", "model_reasoning_effort="+effort)
 	}
 	args = append(args, "-")
-	env = configureCodexEnv(project.Root, env, opts.Stderr)
+	env = configureCodexEnv(project.Root, env, project.Config.Agents.Codex, opts.Stderr)
 	cmd := factory(target.Binary, args...)
 	cmd.Dir = project.Root
 	cmd.Env = env
@@ -153,7 +153,11 @@ func configureClaudeEnv(root string, env []string, cfg config.ClaudeConfig, stde
 	return env
 }
 
-func configureCodexEnv(root string, env []string, stderr io.Writer) []string {
+func configureCodexEnv(root string, env []string, cfg config.CodexConfig, stderr io.Writer) []string {
+	if !config.CodexLocalConfigDirEnabled(cfg) {
+		return env
+	}
+
 	expected := filepath.Join(root, ".codex")
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	if !ok || current == "" {

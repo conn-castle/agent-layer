@@ -30,13 +30,9 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		return err
 	}
 
-	if config.IsAgentEnabled(cfg.Config.Agents.VSCode.Enabled) {
+	if config.IsAgentEnabled(cfg.Config.Agents.VSCode.Enabled) && config.CodexLocalConfigDirEnabled(cfg.Config.Agents.Codex) {
 		codexHome := filepath.Join(cfg.Root, ".codex")
 		env = clients.SetEnv(env, "CODEX_HOME", codexHome)
-	} else {
-		// Clear any inherited CODEX_HOME so the Codex extension does not pick up
-		// stale config when only claude_vscode is enabled.
-		env = clients.UnsetEnv(env, "CODEX_HOME")
 	}
 
 	localConfigDir := cfg.Config.Agents.Claude.LocalConfigDir != nil && *cfg.Config.Agents.Claude.LocalConfigDir

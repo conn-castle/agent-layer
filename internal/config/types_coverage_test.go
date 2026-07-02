@@ -69,6 +69,28 @@ func TestCodexStatuslineEnabled(t *testing.T) {
 	}
 }
 
+func TestCodexLocalConfigDirEnabled(t *testing.T) {
+	trueVal := true
+	falseVal := false
+	tests := []struct {
+		name string
+		ptr  *bool
+		want bool
+	}{
+		{"nil defaults off", nil, false},
+		{"explicit true", &trueVal, true},
+		{"explicit false", &falseVal, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := CodexLocalConfigDirEnabled(CodexConfig{LocalConfigDir: tt.ptr})
+			if got != tt.want {
+				t.Fatalf("CodexLocalConfigDirEnabled(%v) = %v, want %v", tt.ptr, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSharedAgentSkillsEnabled(t *testing.T) {
 	on := true
 	tests := []struct {

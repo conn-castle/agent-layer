@@ -16,7 +16,7 @@ import (
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
 
-	env = ensureCodexHome(cfg.Root, env)
+	env = configureCodexHome(cfg.Root, env, cfg.Config.Agents.Codex)
 
 	cmd := exec.Command("codex", args...)
 	cmd.Stdin = os.Stdin
@@ -31,7 +31,11 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	return nil
 }
 
-func ensureCodexHome(root string, env []string) []string {
+func configureCodexHome(root string, env []string, cfg config.CodexConfig) []string {
+	if !config.CodexLocalConfigDirEnabled(cfg) {
+		return env
+	}
+
 	expected := filepath.Join(root, ".codex")
 	current, ok := clients.GetEnv(env, "CODEX_HOME")
 	if !ok || current == "" {

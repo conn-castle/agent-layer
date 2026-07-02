@@ -139,6 +139,7 @@ var fields = []FieldDef{
 		Type:    FieldEnum,
 		Options: dispatchDefaultAgentOptions(),
 	},
+	{Key: "agents.codex.local_config_dir", Type: FieldBool},
 	// statusline is explicit opt-in and is surfaced in the wizard. It remains in
 	// the field catalog so upgrade migrations render clean true/false prompts.
 	{Key: "agents.codex.statusline", Type: FieldBool},

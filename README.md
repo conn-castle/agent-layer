@@ -14,7 +14,7 @@ Key properties:
 - Local-first, no telemetry
 - Deterministic outputs from canonical inputs
 - Explicit approvals and command allowlists
-- Per-repo credential isolation (Codex logins per repository; Claude settings and caches isolation with auth pending upstream fix)
+- Optional per-repo runtime isolation (Codex auth/sessions/logs; Claude settings and caches with auth pending upstream fix)
 
 Comparison:
 
@@ -23,7 +23,7 @@ Comparison:
 | duplicate instructions across multiple formats | one canonical source under `.agent-layer/` |
 | inconsistent approvals and command policies | consistent approvals and allowlists |
 | MCP servers added in one client and forgotten in another | generated MCP config for supported MCP clients |
-| shared global credentials across repos | per-repo credential isolation for Codex; per-repo settings and caches isolation for Claude |
+| shared global state across repos | opt-in per-repo Codex auth/sessions/logs; opt-in Claude settings and caches isolation |
 | no single place to review or audit changes | audit in version control |
 
 If Agent Layer improves your workflow, please consider starring the repository. Stars help new users discover the project.
@@ -374,6 +374,10 @@ enabled = true
 # model = "gpt-5.3-codex"
 # reasoning_effort is optional; when omitted, the client uses its default.
 # reasoning_effort = "xhigh" # codex only
+# local_config_dir sets CODEX_HOME=<repo>/.codex for per-repo auth, sessions,
+# logs, and other Codex runtime state. When absent or false, Agent Layer does
+# not set CODEX_HOME, so Codex uses its normal global/project config layering.
+# local_config_dir = false
 # statusline writes Codex's native status line from the editable
 # .agent-layer/codex-statusline.toml fragment. Run `al wizard` or interactive
 # `al upgrade` to enable it and seed the source once. Absent means disabled.
@@ -576,7 +580,7 @@ Dispatch writes target answer text to stdout and wrapper status/errors to stderr
 
 `al vscode` is the single command for launching VS Code with both Codex and Claude extension support. It is enabled when either `[agents.vscode]` or `[agents.claude_vscode]` is set to `enabled = true` in `config.toml`.
 
-- When `[agents.vscode]` is enabled, `CODEX_HOME` is set for the Codex extension.
+- When `[agents.vscode]` is enabled and `[agents.codex] local_config_dir = true` is set, `CODEX_HOME=<repo>/.codex` is set for the Codex extension. Otherwise Agent Layer preserves any inherited `CODEX_HOME`.
 - When `[agents.claude_vscode]` is enabled, Claude files (`.mcp.json`, `.claude/settings.json`) are generated. YOLO mode sets `claudeCode.allowDangerouslySkipPermissions` in `.vscode/settings.json`.
 - When `[agents.claude] local_config_dir = true` is set, `al claude` sets `CLAUDE_CONFIG_DIR` for per-repo settings and caches isolation. For `al vscode`, `CLAUDE_CONFIG_DIR` is set only when **both** `local_config_dir = true` and `[agents.claude_vscode]` is enabled; otherwise `al vscode` clears only stale repo-local values and preserves user-defined non-repo values. This is opt-in; when disabled (the default), Claude uses your global `~/.claude/` configuration. For `al claude` only, a user-set `CLAUDE_CONFIG_DIR` pointing outside the repo is preserved even when `local_config_dir` is disabled. Note: auth credentials are stored globally in Claude Code's OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of this setting (upstream limitation).
 - VS Code settings are generated when either agent is enabled.
@@ -584,7 +588,7 @@ Dispatch writes target answer text to stdout and wrapper status/errors to stderr
 
 The Codex VS Code extension reads `CODEX_HOME` and the Claude extension reads `CLAUDE_CONFIG_DIR` from the VS Code process environment at startup.
 
-Agent Layer provides repo-specific launchers in `.agent-layer/` that set `CODEX_HOME` (and `CLAUDE_CONFIG_DIR` when both `local_config_dir` and `agents.claude_vscode` are enabled) correctly for this repo:
+Agent Layer provides repo-specific launchers in `.agent-layer/` that invoke `al vscode`; they set `CODEX_HOME` only when `[agents.codex] local_config_dir = true` is enabled, and set `CLAUDE_CONFIG_DIR` when both `local_config_dir` and `agents.claude_vscode` are enabled:
 
 Launchers:
 - macOS: `open-vscode.app` (recommended; VS Code in `/Applications` or `~/Applications`) or `open-vscode.command` (uses `code` CLI)
@@ -597,7 +601,7 @@ If you use the CLI-based launchers, install the `code` command from inside VS Co
 - macOS: Cmd+Shift+P -> "Shell Command: Install 'code' command in PATH"
 - Linux: Ctrl+Shift+P -> "Shell Command: Install 'code' command in PATH"
 
-**Note:** Codex authentication is per repo because each repo uses its own `CODEX_HOME`. When you open VS Code with a different repo, you will need to reauthenticate with Codex. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude settings and caches are isolated per repo (via `CLAUDE_CONFIG_DIR`). **Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally until this is fixed upstream.
+**Note:** Codex authentication is per repo only when `local_config_dir = true` is enabled under `[agents.codex]`; in that mode each repo uses its own `CODEX_HOME` and may require reauthentication. If `local_config_dir = true` is enabled under `[agents.claude]`, Claude settings and caches are isolated per repo (via `CLAUDE_CONFIG_DIR`). **Known upstream limitation:** Claude Code currently stores auth credentials in the OS credential store (macOS Keychain service `"Claude Code-credentials"`; Linux libsecret/gnome-keyring) regardless of `CLAUDE_CONFIG_DIR`, so authentication is always shared globally until this is fixed upstream.
 
 For contributor-level implementation details, see `docs/architecture/vscode-launch.md`.
 

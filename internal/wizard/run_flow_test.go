@@ -486,6 +486,69 @@ enabled = false
 	assert.Contains(t, string(data), "local_config_dir = true")
 }
 
+func TestRun_CodexLocalConfigDir(t *testing.T) {
+	root := t.TempDir()
+	setupRepo(t, root)
+	configDir := filepath.Join(root, ".agent-layer")
+
+	initialConfig := `[approvals]
+mode = "all"
+[agents.antigravity]
+enabled = false
+[agents.claude]
+enabled = false
+[agents.claude_vscode]
+enabled = false
+[agents.codex]
+enabled = true
+# local_config_dir = false
+[agents.vscode]
+enabled = false
+[agents.copilot_cli]
+enabled = false
+`
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, "config.toml"), []byte(initialConfig), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(configDir, ".env"), []byte(""), 0600))
+
+	ui := &MockUI{
+		NoteFunc: func(title, body string) error { return nil },
+		SelectFunc: func(title string, options []string, current *string) error {
+			if title == messages.WizardApprovalModeTitle {
+				label, ok := approvalModeLabelForValue(config.ApprovalModeAll)
+				require.True(t, ok)
+				*current = label
+			}
+			return nil
+		},
+		MultiSelectFunc: func(title string, options []string, selected *[]string) error {
+			if title == messages.WizardEnableAgentsTitle {
+				*selected = []string{AgentCodex}
+			}
+			if title == messages.WizardEnableDefaultMCPServersTitle {
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			if title == messages.WizardCodexLocalConfigDirPrompt {
+				*value = true
+			}
+			if title == messages.WizardApplyChangesPrompt {
+				*value = true
+			}
+			return nil
+		},
+	}
+
+	mockSync := func(r string) (*alsync.Result, error) { return &alsync.Result{}, nil }
+
+	err := Run(root, ui, mockSync, "")
+	require.NoError(t, err)
+
+	data, _ := os.ReadFile(filepath.Join(configDir, "config.toml"))
+	assert.Contains(t, string(data), "local_config_dir = true")
+}
+
 // TestPromptModels_FeatureTogglesPreSelectAndRoundTrip proves the checkbox->
 // disable inversion at the prompt boundary: a mixed enabled/disabled config
 // pre-checks exactly the enabled features, and a no-edit re-run (the user leaves

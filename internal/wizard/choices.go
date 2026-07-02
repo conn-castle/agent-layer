@@ -48,6 +48,9 @@ type Choices struct {
 	CodexReasoning        string
 	CodexReasoningTouched bool
 
+	CodexLocalConfigDir        bool
+	CodexLocalConfigDirTouched bool
+
 	CodexApps        bool
 	CodexAppsTouched bool
 

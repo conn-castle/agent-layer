@@ -25,6 +25,9 @@ func buildSummary(c *Choices) string {
 	if c.ClaudeLocalConfigDirTouched && c.ClaudeLocalConfigDir {
 		sb.WriteString(messages.WizardSummaryClaudeLocalConfigDir)
 	}
+	if c.CodexLocalConfigDirTouched && codexToggleVisible(c) && c.CodexLocalConfigDir {
+		sb.WriteString(messages.WizardSummaryCodexLocalConfigDir)
+	}
 	if c.CodexAppsTouched && codexToggleVisible(c) {
 		if c.CodexApps {
 			sb.WriteString(messages.WizardSummaryCodexAppsEnabled)
