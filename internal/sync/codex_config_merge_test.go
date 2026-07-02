@@ -288,6 +288,117 @@ func TestCodexTomlEditor_SetPathReplacesInPlaceDroppingDuplicates(t *testing.T) 
 	assertValidTOML(t, out)
 }
 
+// A multiline string may contain a line that looks like a table header. The
+// namespace scan (run on every sync to refresh mcp_servers) must treat that as
+// string content, not a real header, so unrelated user config is preserved.
+func TestCodexTomlEditor_RemoveNamespaceIgnoresMultilineStringHeaders(t *testing.T) {
+	t.Parallel()
+	editor := newCodexTomlEditor(`notes = """
+Example server config you can copy:
+[mcp_servers.example]
+command = "demo"
+"""
+
+[mcp_servers.real]
+command = "real-tool"
+
+[hooks]
+x = 1
+`)
+
+	editor.removeNamespace([]string{config.CodexMCPServersKey})
+	out := editor.render()
+
+	if strings.Contains(out, "real-tool") {
+		t.Fatalf("expected real mcp_servers table removed, got:\n%s", out)
+	}
+	parsed := parseCodexConfig(t, out)
+	notes, _ := parsed["notes"].(string)
+	if !strings.Contains(notes, "[mcp_servers.example]") || !strings.Contains(notes, `command = "demo"`) {
+		t.Fatalf("expected multiline string body preserved, got notes=%q\n%s", notes, out)
+	}
+	if _, ok := parsed["hooks"].(map[string]any); !ok {
+		t.Fatalf("expected unrelated [hooks] table preserved, got %#v\n%s", parsed["hooks"], out)
+	}
+}
+
+// firstTableIndex picks where root scalars are inserted; it must skip header-
+// looking lines inside a leading multiline string so the value lands at root.
+func TestCodexTomlEditor_RootInsertSkipsMultilineStringHeaders(t *testing.T) {
+	t.Parallel()
+	editor := newCodexTomlEditor(`notes = """
+[mcp_servers.example]
+command = "demo"
+"""
+
+[hooks]
+x = 1
+`)
+
+	editor.setPath([]string{config.CodexModelKey}, `"gpt-5"`)
+	out := editor.render()
+
+	parsed := parseCodexConfig(t, out)
+	if parsed["model"] != "gpt-5" {
+		t.Fatalf("expected model set as a real root key, got %#v\n%s", parsed["model"], out)
+	}
+	notes, _ := parsed["notes"].(string)
+	if !strings.Contains(notes, "[mcp_servers.example]") || !strings.Contains(notes, `command = "demo"`) {
+		t.Fatalf("expected multiline string body preserved intact, got notes=%q\n%s", notes, out)
+	}
+}
+
+// ensureTable locates or creates a managed table; it must not match a header-
+// looking line inside a multiline string when adding a nested key.
+func TestCodexTomlEditor_EnsureTableSkipsMultilineStringHeaders(t *testing.T) {
+	t.Parallel()
+	editor := newCodexTomlEditor(`notes = """
+[tui]
+status_line = ["from-string"]
+"""
+`)
+
+	editor.setPath([]string{"tui", "status_line"}, `["real"]`)
+	out := editor.render()
+
+	parsed := parseCodexConfig(t, out)
+	tui, ok := parsed["tui"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected a real [tui] table, got %#v\n%s", parsed["tui"], out)
+	}
+	assertStringList(t, tui["status_line"], []string{"real"})
+	notes, _ := parsed["notes"].(string)
+	if !strings.Contains(notes, "[tui]") || !strings.Contains(notes, "from-string") {
+		t.Fatalf("expected multiline string body preserved, got notes=%q\n%s", notes, out)
+	}
+}
+
+// Rewriting a root inline table must keep its leading indentation and any
+// single-line trailing comment, matching the PR's preserve-user-formatting goal.
+func TestCodexTomlEditor_MutateRootInlineTablePreservesIndentAndComment(t *testing.T) {
+	t.Parallel()
+	editor := newCodexTomlEditor("  features = { apps = true, custom = true } # keep me\n")
+
+	editor.setPath([]string{"features", "apps"}, "false")
+	out := editor.render()
+
+	firstLine := strings.SplitN(out, "\n", 2)[0]
+	if !strings.HasPrefix(firstLine, "  features = {") {
+		t.Fatalf("expected leading indentation preserved, got:\n%s", out)
+	}
+	if !strings.HasSuffix(strings.TrimRight(firstLine, " "), "# keep me") {
+		t.Fatalf("expected inline comment preserved, got:\n%s", out)
+	}
+	parsed := parseCodexConfig(t, out)
+	features, ok := parsed["features"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected features table, got %#v\n%s", parsed["features"], out)
+	}
+	if features["apps"] != false || features["custom"] != true {
+		t.Fatalf("expected apps=false and custom=true, got %#v\n%s", features, out)
+	}
+}
+
 func TestWriteCodexConfig_StatuslineUsesInjectedFragmentAndPreservesTUISiblings(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

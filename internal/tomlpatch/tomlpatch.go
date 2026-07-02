@@ -644,19 +644,34 @@ func ParseDocument(content string) Document {
 		currentIsArray = false
 	}
 
+	state := StateNone
 	for _, line := range lines {
+		// A header-looking line inside a multiline string body (e.g. a
+		// "[mcp_servers.x]" line embedded in a triple-quoted value) must be treated
+		// as string content, not a real table header, so it stays in its block.
+		if StateInMultiline(state) {
+			if current == nil {
+				preamble = append(preamble, line)
+			} else {
+				current.Lines = append(current.Lines, line)
+			}
+			_, state = ScanLineForComment(line, state)
+			continue
+		}
 		name, isArray, ok := ParseHeader(line)
 		if ok {
 			flush()
 			current = &Block{Name: name, Lines: []string{line}}
 			currentIsArray = isArray
+			_, state = ScanLineForComment(line, state)
 			continue
 		}
 		if current == nil {
 			preamble = append(preamble, line)
-			continue
+		} else {
+			current.Lines = append(current.Lines, line)
 		}
-		current.Lines = append(current.Lines, line)
+		_, state = ScanLineForComment(line, state)
 	}
 	flush()
 

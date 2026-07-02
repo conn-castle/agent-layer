@@ -153,6 +153,24 @@ func TestParseDocument_PreservesCommentsAndRootBeforeTables(t *testing.T) {
 	}
 }
 
+func TestParseDocument_IgnoresHeadersInsideMultilineStrings(t *testing.T) {
+	t.Parallel()
+	content := "notes = \"\"\"\n[hooks.state]\nlast = \"x\"\n\"\"\"\n\n[real]\nkeep = true\n"
+
+	doc := ParseDocument(content)
+
+	if _, embedded := doc.Sections["hooks.state"]; embedded {
+		t.Fatalf("header-looking line inside a multiline string must not become a section: %#v", doc.Sections)
+	}
+	if doc.Sections["real"] == nil {
+		t.Fatalf("expected real section, got %#v", doc.Sections)
+	}
+	joinedPreamble := strings.Join(doc.Preamble, "\n")
+	if !strings.Contains(joinedPreamble, "[hooks.state]") || !strings.Contains(joinedPreamble, `last = "x"`) {
+		t.Fatalf("expected multiline string body kept intact, got:\n%s", joinedPreamble)
+	}
+}
+
 func TestCommentHelpers_RespectMultilineStringsAndBounds(t *testing.T) {
 	t.Parallel()
 	lines := []string{

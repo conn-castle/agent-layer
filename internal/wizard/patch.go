@@ -716,11 +716,20 @@ const codexAgentSpecificSectionPrefix = "agents.codex.agent_specific"
 // [agents.codex.agent_specific.features] section of doc when CodexAppsTouched.
 // Creates the section when missing so the extra-section preservation flow in
 // assembleCanonicalConfig renders it. Mutates doc in place.
+// Codex's native defaults when a features key is absent: apps is off (Agent
+// Layer also always writes it explicitly), plugins is on. These drive whether a
+// requested state is already satisfied by an inline features table that omits
+// the key.
+const (
+	codexFeatureDefaultApps    = false
+	codexFeatureDefaultPlugins = true
+)
+
 func applyCodexAppsUpdate(doc *tomlDocument, choices *Choices) error {
 	if !choices.CodexAppsTouched {
 		return nil
 	}
-	return applyCodexBooleanFeatureUpdate(doc, choices, config.CodexFeatureAppsKey, choices.CodexApps)
+	return applyCodexBooleanFeatureUpdate(doc, choices, config.CodexFeatureAppsKey, choices.CodexApps, codexFeatureDefaultApps)
 }
 
 // applyCodexPluginsUpdate writes choices.CodexPlugins into the
@@ -729,10 +738,10 @@ func applyCodexPluginsUpdate(doc *tomlDocument, choices *Choices) error {
 	if !choices.CodexPluginsTouched {
 		return nil
 	}
-	return applyCodexBooleanFeatureUpdate(doc, choices, config.CodexFeaturePluginsKey, choices.CodexPlugins)
+	return applyCodexBooleanFeatureUpdate(doc, choices, config.CodexFeaturePluginsKey, choices.CodexPlugins, codexFeatureDefaultPlugins)
 }
 
-func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key string, enabled bool) error {
+func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key string, enabled, defaultEnabled bool) error {
 	if choices.EnabledAgentsTouched && !choices.EnabledAgents[AgentCodex] {
 		return nil
 	}
@@ -753,7 +762,11 @@ func applyCodexBooleanFeatureUpdate(doc *tomlDocument, choices *Choices, key str
 				}
 				return nil
 			}
-			if !enabled {
+			// The key is absent from the inline table, so Codex applies its native
+			// default. A no-op is correct only when the desired state already matches
+			// that default; otherwise the inline table would need editing, which the
+			// line patcher cannot do, so surface the limitation.
+			if enabled == defaultEnabled {
 				return nil
 			}
 			return fmt.Errorf(messages.WizardCodexInlineFeaturesUnsupported)

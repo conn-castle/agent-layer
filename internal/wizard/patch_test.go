@@ -2360,6 +2360,50 @@ features = { plugins = true, multi_agent = true }
 	assert.Contains(t, err.Error(), "inline table syntax")
 }
 
+// Plugins default to enabled, so an inline features table that omits plugins
+// still leaves them on; a requested disable therefore requires editing the
+// inline table and must surface the unsupported error rather than be silently
+// dropped.
+func TestPatchConfig_CodexPluginsInlineFeaturesWithoutPluginsDisableErrors(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexPluginsTouched = true
+	choices.CodexPlugins = false
+
+	_, err := PatchConfig(content, choices)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "inline table syntax")
+}
+
+// Keeping plugins enabled already matches the native default, so an inline
+// features table that omits plugins needs no change and must be preserved
+// without a spurious unsupported error.
+func TestPatchConfig_CodexPluginsInlineFeaturesWithoutPluginsKeepEnabledPreserved(t *testing.T) {
+	content := `
+[agents.codex]
+enabled = true
+
+[agents.codex.agent_specific]
+features = { multi_agent = true }
+`
+	choices := NewChoices()
+	choices.CodexPluginsTouched = true
+	choices.CodexPlugins = true
+
+	out, err := PatchConfig(content, choices)
+	require.NoError(t, err)
+
+	assert.Contains(t, out, "features = { multi_agent = true }")
+	assert.NotContains(t, out, "plugins = true")
+	assert.NotContains(t, out, "[agents.codex.agent_specific.features]")
+}
+
 func TestReadCodexAppsEnabled(t *testing.T) {
 	t.Run("missing agent_specific returns false", func(t *testing.T) {
 		assert.False(t, readCodexAppsEnabled(nil))

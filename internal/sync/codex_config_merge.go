@@ -298,24 +298,47 @@ func (e *codexTomlEditor) insertRootLine(line string) {
 	e.lines = append(e.lines[:insertAt], append([]string{line}, e.lines[insertAt:]...)...)
 }
 
-func (e *codexTomlEditor) firstTableIndex() int {
-	for i, line := range e.lines {
-		if _, _, ok := tomlpatch.ParseHeader(line); ok {
-			return i
+// codexHeaderLine is a real TOML table header line (outside any multiline
+// string) with its parsed dotted path.
+type codexHeaderLine struct {
+	index   int
+	path    []string
+	parsed  bool
+	isArray bool
+}
+
+// headerLines returns every real table-header line in order. Header-looking
+// lines inside multiline string bodies are skipped so shared user config that
+// embeds such text (e.g. a "[mcp_servers.x]" line in a triple-quoted value) is
+// not misparsed as a table and corrupted on sync.
+func (e *codexTomlEditor) headerLines() []codexHeaderLine {
+	var out []codexHeaderLine
+	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(i int, line string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
+		name, isArray, ok := tomlpatch.ParseHeader(line)
+		if !ok {
+			return tomlpatch.LineWalkResult{}
 		}
+		path, parsed := tomlpatch.ParseKeyPath(name)
+		out = append(out, codexHeaderLine{index: i, path: path, parsed: parsed, isArray: isArray})
+		return tomlpatch.LineWalkResult{}
+	})
+	return out
+}
+
+func (e *codexTomlEditor) firstTableIndex() int {
+	if headers := e.headerLines(); len(headers) > 0 {
+		return headers[0].index
 	}
 	return len(e.lines)
 }
 
 func (e *codexTomlEditor) ensureTable(path []string) int {
-	for i, line := range e.lines {
-		name, isArray, ok := tomlpatch.ParseHeader(line)
-		if !ok || isArray {
+	for _, header := range e.headerLines() {
+		if header.isArray || !header.parsed {
 			continue
 		}
-		headerPath, ok := tomlpatch.ParseKeyPath(name)
-		if ok && slices.Equal(headerPath, path) {
-			return i
+		if slices.Equal(header.path, path) {
+			return header.index
 		}
 	}
 	header := "[" + tomlpatch.FormatDottedKeyPath(path) + "]"
@@ -335,24 +358,19 @@ func (e *codexTomlEditor) rangesForExactPath(path []string) []lineRange {
 
 func (e *codexTomlEditor) rangesForNamespace(path []string) []lineRange {
 	var ranges []lineRange
-	for i := 0; i < len(e.lines); i++ {
-		name, _, ok := tomlpatch.ParseHeader(e.lines[i])
-		if !ok {
+	headers := e.headerLines()
+	for k, header := range headers {
+		if !header.parsed || !pathHasPrefix(header.path, path) {
 			continue
 		}
-		headerPath, ok := tomlpatch.ParseKeyPath(name)
-		if !ok || !pathHasPrefix(headerPath, path) {
-			continue
-		}
+		// The block runs from this header to the line before the next real header
+		// (or end of file). Using the multiline-aware header list means a
+		// header-looking line inside a string body cannot truncate the block early.
 		end := len(e.lines)
-		for j := i + 1; j < len(e.lines); j++ {
-			if _, _, next := tomlpatch.ParseHeader(e.lines[j]); next {
-				end = j
-				break
-			}
+		if k+1 < len(headers) {
+			end = headers[k+1].index
 		}
-		ranges = append(ranges, lineRange{start: i, end: end - 1})
-		i = end - 1
+		ranges = append(ranges, lineRange{start: header.index, end: end - 1})
 	}
 	e.walkAssignments(func(info assignmentInfo) {
 		if pathHasPrefix(info.fullPath, path) {
@@ -429,7 +447,17 @@ func (e *codexTomlEditor) mutateRootInlineTable(top string, mutate func(map[stri
 	mutate(table)
 	replacement := []string{}
 	if len(table) > 0 {
-		replacement = []string{tomlpatch.FormatKey(top) + " = " + formatInlineValue(table)}
+		startLine := e.lines[target.start]
+		indent := startLine[:len(startLine)-len(strings.TrimLeft(startLine, " \t"))]
+		newLine := indent + tomlpatch.FormatKey(top) + " = " + formatInlineValue(table)
+		// Preserve a single-line inline table's trailing comment; a multiline inline
+		// table has no single unambiguous comment line to carry over.
+		if target.start == target.end {
+			if comment := inlineCommentOf(startLine); comment != "" {
+				newLine += " " + comment
+			}
+		}
+		replacement = []string{newLine}
 	}
 	e.lines = replaceLineRange(e.lines, target.start, target.end+1, replacement)
 	return true
