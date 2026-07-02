@@ -41,6 +41,19 @@ func TestLookupField_BoolField(t *testing.T) {
 	}
 }
 
+func TestLookupField_CodexLocalConfigDirOptionalBool(t *testing.T) {
+	f, ok := LookupField("agents.codex.local_config_dir")
+	if !ok {
+		t.Fatal("expected agents.codex.local_config_dir to be in catalog")
+	}
+	if f.Type != FieldBool {
+		t.Errorf("expected FieldBool, got %s", f.Type)
+	}
+	if f.Required {
+		t.Error("expected agents.codex.local_config_dir to be optional")
+	}
+}
+
 func TestLookupField_EnumWithCustom(t *testing.T) {
 	f, ok := LookupField("agents.claude.model")
 	if !ok {

@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-02 codex-feature-toggles-cli-only-in-wizard: Codex feature toggles (statusline/apps/browser) not offered to VS Code-only repos
+    Priority: Low. Area: internal/wizard/wizard.go (Codex prompt block)
+    Description: PR #127 unified the Codex `local_config_dir` prompt so it appears when `agents.codex` (CLI) OR `agents.vscode` (Codex VS Code extension) is enabled, mirroring Claude. The Codex feature toggles (statusline, apps, browser) were deliberately left gated on `agents.codex` (CLI) only. If the Codex VS Code extension reads these from `.codex/config.toml` (it does when CODEX_HOME=<repo>/.codex is set), a VS Code-only repo cannot configure statusline/apps/browser via the wizard, unlike the Claude side which offers its shared feature toggles whenever either surface is enabled.
+    Next step: Determine which Codex feature toggles actually apply to the Codex VS Code extension, then move those under the combined `AgentCodex || AgentVSCode` gate (mirroring Claude's shared-feature block); keep any CLI-only features gated on `AgentCodex`.
+    Notes: Deferred from PR #127 to keep that PR scoped to the flagged `local_config_dir` gap. Per-feature applicability to the extension is a product question, not a mechanical move.
+
 - Issue 2026-07-01 dispatch-concurrent-sync-temp-rename: Concurrent dispatch sync can fail during generated skill writes
     Priority: Low. Area: al dispatch / sync generated-file writes
     Description: A parallel `al dispatch` reviewer attempt failed before the target started with `al dispatch sync failed: failed to write .agents/skills/audit-memory/SKILL.md: rename temp file ... no such file or directory`. Sequential dispatch succeeded, so this appears to be a concurrent sync/write reliability edge rather than a deterministic target-agent failure.

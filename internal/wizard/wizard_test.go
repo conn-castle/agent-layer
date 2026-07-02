@@ -38,6 +38,18 @@ func TestBuildSummaryIncludesAntigravityModel(t *testing.T) {
 	assert.Contains(t, summary, "- antigravity: Gemini 3.5 Flash (High)")
 }
 
+func TestBuildSummaryIncludesCodexLocalConfigDir(t *testing.T) {
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+	choices.EnabledAgents[AgentCodex] = true
+	choices.CodexLocalConfigDir = true
+	choices.CodexLocalConfigDirTouched = true
+
+	summary := buildSummary(choices)
+
+	assert.Contains(t, summary, "Codex local home: enabled")
+}
+
 func TestApprovalModeLabelForValue_NotFound(t *testing.T) {
 	label, ok := approvalModeLabelForValue("unknown")
 	assert.False(t, ok)
@@ -444,10 +456,16 @@ func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	choices.ClaudeDisableQuestionToolTouched = true
 	choices.CodexDisableBrowser = true
 	choices.CodexDisableBrowserTouched = true
+	choices.CodexLocalConfigDir = true
+	choices.CodexLocalConfigDirTouched = true
 
 	ui := &MockUI{
 		MultiSelectFunc: func(_ string, _ []string, selected *[]string) error {
-			*selected = []string{AgentVSCode} // none of Claude/ClaudeVSCode/Codex
+			// Copilot CLI only: none of Antigravity/Claude/ClaudeVSCode/Codex/VSCode.
+			// VSCode is excluded because it now preserves CodexLocalConfigDir (both
+			// the Codex CLI and the Codex VS Code extension consume it); this case
+			// pins the reset that fires when no Codex-home consumer is enabled.
+			*selected = []string{AgentCopilotCLI}
 			return nil
 		},
 	}
@@ -468,6 +486,34 @@ func TestPromptEnabledAgents_ResetsDisableToggles(t *testing.T) {
 	assert.False(t, choices.AntigravityModelTouched)
 	assert.False(t, choices.CodexDisableBrowser)
 	assert.False(t, choices.CodexDisableBrowserTouched)
+	assert.False(t, choices.CodexLocalConfigDir)
+	assert.False(t, choices.CodexLocalConfigDirTouched)
+}
+
+// TestPromptEnabledAgents_VSCodeOnlyPreservesCodexLocalConfigDir pins the reset
+// gating: enabling only the Codex VS Code extension (agents.vscode) must NOT
+// clear a CodexLocalConfigDir choice, because the extension consumes CODEX_HOME
+// too (via `al vscode`). Under the old `!AgentCodex` reset this value would be
+// wiped, defaulting the confirm to "no" and silently disabling an existing
+// repo-local Codex home for a VS Code-only repo.
+func TestPromptEnabledAgents_VSCodeOnlyPreservesCodexLocalConfigDir(t *testing.T) {
+	choices := NewChoices()
+	choices.CodexLocalConfigDir = true
+	choices.CodexLocalConfigDirTouched = true
+
+	ui := &MockUI{
+		MultiSelectFunc: func(_ string, _ []string, selected *[]string) error {
+			*selected = []string{AgentVSCode} // Codex VS Code extension, no Codex CLI
+			return nil
+		},
+	}
+
+	if err := promptEnabledAgents(ui, choices); err != nil {
+		t.Fatalf("promptEnabledAgents error: %v", err)
+	}
+
+	assert.True(t, choices.CodexLocalConfigDir, "VSCode consumes CODEX_HOME, so its local_config_dir choice must survive")
+	assert.True(t, choices.CodexLocalConfigDirTouched)
 }
 
 // TestPatchConfig_EndToEndDisableToggles confirms the prompt choices flow

@@ -41,6 +41,11 @@ run_scenario_agent_dispatch() {
   repo_dir="$(setup_scenario_dir)"
 
   assert_exit_zero_in "$repo_dir" "al init --no-wizard" al init --no-wizard
+
+  # Opt into repo-local Codex home so the dispatch child receives
+  # CODEX_HOME=<repo>/.codex (asserted below).
+  enable_codex_local_config_dir "$repo_dir"
+
   install_dispatch_mock_codex "$repo_dir"
 
   local skill_dir="$repo_dir/.agent-layer/skills/e2e-skill"

@@ -186,7 +186,7 @@ func TestRunUnknownCallerRequiresAgent(t *testing.T) {
 }
 
 func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	root := writeDispatchRepo(t, dispatchRepoConfig{CodexLocalConfigDir: true})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
 	promptPath := filepath.Join(t.TempDir(), "codex.prompt")
@@ -441,6 +441,7 @@ type dispatchRepoConfig struct {
 	ClaudeModel           string
 	ClaudeReasoningEffort string
 	ClaudeLocalConfigDir  bool
+	CodexLocalConfigDir   bool
 	DispatchMaxDepth      int
 }
 
@@ -456,6 +457,10 @@ func writeDispatchRepo(t *testing.T, repoConfig dispatchRepoConfig) string {
 	localConfigLine := ""
 	if repoConfig.ClaudeLocalConfigDir {
 		localConfigLine = "local_config_dir = true\n"
+	}
+	codexLocalConfigLine := ""
+	if repoConfig.CodexLocalConfigDir {
+		codexLocalConfigLine = "local_config_dir = true\n"
 	}
 	antigravityModelLine := ""
 	if repoConfig.AntigravityModel != "" {
@@ -486,6 +491,7 @@ enabled = false
 
 [agents.codex]
 enabled = true
+%s
 
 [agents.vscode]
 enabled = false
@@ -496,7 +502,7 @@ enabled = false
 [warnings]
 instruction_token_threshold = 50000
 mcp_server_threshold = 50
-`, dispatchBlock, antigravityModelLine, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine)
+`, dispatchBlock, antigravityModelLine, repoConfig.ClaudeModel, repoConfig.ClaudeReasoningEffort, localConfigLine, codexLocalConfigLine)
 	if err := os.WriteFile(paths.ConfigPath, []byte(configToml), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

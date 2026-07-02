@@ -95,11 +95,19 @@ If you find yourself carrying many permanent overrides, that is usually a sign t
 
 ## Per-repo isolation {#per-repo-credential-isolation}
 
-Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex credential isolation is fully supported. Claude settings and caches isolation is supported, but Claude auth credential isolation is blocked by an upstream limitation (see below).
+Agent Layer gives each repository its own agent configuration so work in one repo never leaks into another. Codex home isolation is opt-in. Claude settings and caches isolation is supported, but Claude auth credential isolation is blocked by an upstream limitation (see below).
 
 ### How it works
 
-**Codex** isolation is automatic. `al codex` and repos that enable `[agents.vscode]` use a repo-local `CODEX_HOME`. The generated `.codex/config.toml` also includes a trust stanza for the current absolute repo root, so Codex authentication and trust are per-repo with no extra configuration.
+**Codex** home isolation is opt-in. Agent Layer always generates `.codex/config.toml` with the current repo trust stanza and managed MCP config, but `al codex`, `al dispatch --agent codex`, and `al vscode` set `CODEX_HOME=<repo>/.codex` only when `local_config_dir = true` is set under `[agents.codex]` (for `al vscode`, `[agents.vscode]` must also be enabled):
+
+```toml
+[agents.codex]
+enabled = true
+local_config_dir = true
+```
+
+When `agents.codex.local_config_dir` is absent or false, Agent Layer does not set or clear `CODEX_HOME`; Codex uses its normal global/project config layering and any inherited `CODEX_HOME` remains user-owned.
 
 **Claude** isolation is opt-in. Set `local_config_dir = true` under `[agents.claude]` in `.agent-layer/config.toml`:
 
@@ -117,17 +125,17 @@ Claude Code currently stores auth credentials in the OS credential store (macOS 
 
 ### Trade-offs
 
-Enabling per-repo isolation means settings and caches are scoped to the repository. Auth remains shared globally due to the upstream limitation above.
+Enabling Codex home isolation means auth, sessions, logs, and other Codex runtime state are scoped to the repository. Enabling Claude isolation means settings and caches are scoped to the repository; auth remains shared globally due to the upstream limitation above.
 
-Claude isolation is opt-in (default `false`) because always-on isolation would duplicate config state in every existing repo. Teams that want settings and caches isolation can enable it per-repo; teams that prefer shared global config keep the default.
+Codex and Claude isolation are opt-in (default `false`) because always-on isolation duplicates config and runtime state in every existing repo. Teams that want per-repo state can enable it per repo; teams that prefer shared global config keep the default.
 
 ### When to enable it
 
-- You want per-repo settings and caches isolation
-- You want different Claude non-auth defaults or cache state per repository
-- You want repo-specific Claude settings and caches profiles without affecting other repositories
+- You want per-repo Codex auth, sessions, logs, or runtime state
+- You want per-repo Claude settings and caches isolation
+- You want different provider defaults or cache state per repository
 
-If none of these apply, the default (shared global `~/.claude/`) works fine and keeps one shared settings and caches profile across repositories.
+If none of these apply, the default shared provider config works fine and keeps one shared profile across repositories.
 
 ## Approvals and safety
 

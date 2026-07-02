@@ -97,6 +97,7 @@ type CodexConfig struct {
 	Model           string         `toml:"model"`
 	ReasoningEffort string         `toml:"reasoning_effort"`
 	Dispatch        DispatchConfig `toml:"dispatch"`
+	LocalConfigDir  *bool          `toml:"local_config_dir"`
 	// Statusline controls whether Agent Layer reads the editable
 	// .agent-layer/codex-statusline.toml source and injects its native
 	// tui.status_line list into .codex/config.toml on sync. It is explicit
@@ -152,6 +153,13 @@ func ClaudeStatuslineEnabled(c ClaudeConfig) bool {
 // It is explicit opt-in: only true enables it.
 func CodexStatuslineEnabled(c CodexConfig) bool {
 	return c.Statusline != nil && *c.Statusline
+}
+
+// CodexLocalConfigDirEnabled reports whether Agent Layer should set CODEX_HOME
+// to the repo-local .codex directory. It is explicit opt-in: only true enables
+// it.
+func CodexLocalConfigDirEnabled(c CodexConfig) bool {
+	return c.LocalConfigDir != nil && *c.LocalConfigDir
 }
 
 // DispatchMaxDepth returns the configured Agent Dispatch maximum depth.

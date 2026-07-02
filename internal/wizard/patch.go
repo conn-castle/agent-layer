@@ -255,8 +255,23 @@ func applySectionUpdates(name string, block *tomlBlock, templateBlock *tomlBlock
 		if choices.CodexReasoningTouched {
 			setOptionalKeyValue(block, templateBlock, "reasoning_effort", choices.CodexReasoning, "model")
 		}
+		if choices.CodexLocalConfigDirTouched {
+			if choices.CodexLocalConfigDir {
+				setKeyValue(block, templateBlock, "local_config_dir", formatTomlValue(true), "reasoning_effort")
+			} else {
+				setCommentedKeyLine(block, templateBlock, "local_config_dir", "reasoning_effort")
+			}
+		}
 		if choices.CodexStatuslineTouched {
-			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.CodexStatusline), "reasoning_effort")
+			// Anchor statusline after local_config_dir when that line exists,
+			// otherwise fall back to reasoning_effort (the pre-local_config_dir
+			// anchor). This keeps statusline in place instead of reordering it to
+			// the top of a block that has no local_config_dir line.
+			statuslineAnchor := "local_config_dir"
+			if _, ok := findKeyLine(block.lines, "local_config_dir"); !ok {
+				statuslineAnchor = "reasoning_effort"
+			}
+			setKeyValue(block, templateBlock, "statusline", formatTomlValue(choices.CodexStatusline), statuslineAnchor)
 		}
 	case "agents.vscode":
 		if choices.EnabledAgentsTouched {

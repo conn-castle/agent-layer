@@ -149,13 +149,15 @@ This creates a stable non-managed tail position for extension writes.
 
 ### Global MCP server fallback for VS Code (Codex)
 
-This is primarily a VS Code fallback.
+This is primarily a VS Code fallback for repos that opt into repo-local Codex home with `agents.codex.local_config_dir = true`.
 
-Continue using `al codex` on the CLI. `al codex` sets a repo-local `CODEX_HOME`, so Codex uses the repo-local `.codex/config.toml` (which Agent Layer generates from `.agent-layer/config.toml`, including the current repo trust stanza and MCP servers).
+When `agents.codex.local_config_dir` is absent or false, Agent Layer does not set `CODEX_HOME` for `al codex`, Codex dispatch, or `al vscode`. Codex uses its normal global/project config layering, and any inherited `CODEX_HOME` remains user-owned.
 
-If you launch VS Code without Agent Layer's repo-local launcher, the Codex VS Code extension will not receive the repo-local `CODEX_HOME`. In that case, the extension continues to use repo-local instructions and skills, but it uses MCP servers from your global Codex config instead.
+When `agents.codex.local_config_dir = true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex`. The generated `.codex/config.toml` includes config projected from `.agent-layer/config.toml`, including the current repo trust stanza and MCP servers.
 
-Tradeoffs (VS Code without launcher):
+If you launch VS Code without Agent Layer's repo-local launcher while `agents.codex.local_config_dir = true`, the Codex VS Code extension will not receive the repo-local `CODEX_HOME`. In that case, the extension continues to use repo-local instructions and skills, but it uses MCP servers from your global Codex config instead.
+
+Tradeoffs (global Codex home):
 
 - You are no longer using `.agent-layer/config.toml` as the single source of truth for Codex MCP servers.
 - Codex auth/state is shared across repos (which can be convenient, but is less isolated).
@@ -177,10 +179,10 @@ Workflow (best-effort; depends on your Codex client version):
    ```
 
    Note: for servers that require API keys, prefer environment variables and avoid hardcoding secrets into your global config. If you intentionally prefer floating dependencies, switch to `@latest`/unpinned args explicitly.
-2. Launch VS Code without Agent Layer's `CODEX_HOME` launcher so the extension uses the global config.
+2. Leave `agents.codex.local_config_dir` absent/false, or launch VS Code without Agent Layer's repo-local launcher when that setting is true, so the extension uses the global config.
 3. Keep using Agent Layer for repo-local prompts and skills.
 
-If you want the fully managed setup in VS Code, use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CODEX_HOME` and uses MCP servers projected from `.agent-layer/config.toml`.
+If you want the fully managed repo-local Codex setup in VS Code, set `agents.codex.local_config_dir = true` and use `al vscode` (or the generated `open-vscode` launcher) so VS Code starts with the repo-local `CODEX_HOME` and uses MCP servers projected from `.agent-layer/config.toml`.
 
 ### Global config fallback for VS Code (Claude)
 

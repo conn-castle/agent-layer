@@ -78,6 +78,25 @@ cleanup_scenario_dir() {
   fi
 }
 
+# enable_codex_local_config_dir <dir> — opt into repo-local Codex home by
+# setting agents.codex.local_config_dir = true in the scenario's config.toml,
+# so `al codex` / dispatch set CODEX_HOME=<repo>/.codex. Uncomments the
+# template default line; fails loudly if that line is not present.
+enable_codex_local_config_dir() {
+  local dir="$1"
+  local config="$dir/.agent-layer/config.toml"
+  if [[ ! -f "$config" ]]; then
+    fail "enable_codex_local_config_dir: config.toml not found at $config"
+    return 1
+  fi
+  sed '/^\[agents\.codex\]/,/^\[/ s/^# local_config_dir = false/local_config_dir = true/' \
+    "$config" > "$config.tmp" && mv "$config.tmp" "$config"
+  if ! sed -n '/^\[agents\.codex\]/,/^\[/p' "$config" | grep -q '^local_config_dir = true'; then
+    fail "enable_codex_local_config_dir: '# local_config_dir = false' not found under [agents.codex] in $config"
+    return 1
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Mock management
 # ---------------------------------------------------------------------------
