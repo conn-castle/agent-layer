@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -637,10 +638,7 @@ func formatInlineValue(value any) string {
 	case string:
 		return fmt.Sprintf("%q", v)
 	case bool:
-		if v {
-			return "true"
-		}
-		return "false"
+		return strconv.FormatBool(v)
 	case int64:
 		return fmt.Sprintf("%d", v)
 	case float64:
