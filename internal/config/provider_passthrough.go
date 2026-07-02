@@ -20,7 +20,13 @@ const (
 	CodexSandboxModeKey = "sandbox_mode"
 	// CodexWebSearchKey is the top-level Codex config key for web search.
 	CodexWebSearchKey = "web_search"
+	// CodexFeatureAppsKey is the Codex [features] key controlling built-in apps.
+	CodexFeatureAppsKey = "apps"
+	// CodexFeaturePluginsKey is the Codex [features] key controlling plugins.
+	CodexFeaturePluginsKey = "plugins"
 )
+
+var codexBrowserFeatureKeys = []string{"browser_use", "in_app_browser", "computer_use"}
 
 // CodexManagedTopLevelKeys returns top-level .codex/config.toml keys managed by
 // Agent Layer. The returned slice is caller-owned.
@@ -34,6 +40,22 @@ func CodexManagedTopLevelKeys() []string {
 		CodexSandboxModeKey,
 		CodexWebSearchKey,
 	}
+}
+
+// CodexBrowserFeatureKeys returns the Codex [features] keys controlled by the
+// browser/computer-use wizard toggle.
+func CodexBrowserFeatureKeys() []string {
+	return append([]string(nil), codexBrowserFeatureKeys...)
+}
+
+// CodexKnownManagedFeatureKeys returns Codex [features] keys Agent Layer knows
+// how to remove when absent from the current projection.
+func CodexKnownManagedFeatureKeys() []string {
+	keys := make([]string, 0, 2+len(codexBrowserFeatureKeys))
+	keys = append(keys, CodexFeatureAppsKey)
+	keys = append(keys, CodexFeaturePluginsKey)
+	keys = append(keys, codexBrowserFeatureKeys...)
+	return keys
 }
 
 // HasProviderPassthroughKey returns true when passthrough defines a top-level key.

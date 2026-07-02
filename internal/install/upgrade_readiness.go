@@ -590,7 +590,6 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			enabled: cfg.Agents.Codex.Enabled,
 			files: []disabledArtifactFileSpec{
 				{path: filepath.Join(inst.root, ".codex", "AGENTS.md"), evidence: hasGeneratedFileMarker},
-				{path: filepath.Join(inst.root, ".codex", "config.toml"), evidence: hasGeneratedFileMarker},
 				{path: filepath.Join(inst.root, ".codex", "rules", "default.rules"), evidence: hasGeneratedFileMarker},
 			},
 		},

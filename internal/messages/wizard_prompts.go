@@ -81,6 +81,7 @@ const (
 	WizardClaudeFeatureQuestionToolLabel = "AskUserQuestion tool"
 	WizardCodexFeatureStatuslineLabel    = "Codex statusline"
 	WizardCodexFeatureAppsLabel          = "Built-in apps (GitHub, Gmail, etc.)"
+	WizardCodexFeaturePluginsLabel       = "Plugins and plugin skills"
 	WizardCodexFeatureBrowserLabel       = "Browser / computer-use"
 	WizardGitTrackAgentLayerLabel        = ".agent-layer/"
 	WizardGitTrackDocsAgentLayerLabel    = "docs/agent-layer/"
@@ -99,9 +100,11 @@ const (
 	// WizardCodexFeaturesTitle labels the Codex feature multi-select. Checked =
 	// keep the feature enabled; unchecking disables it. Built-in apps default to
 	// unchecked (Agent Layer disables Codex's app surface by default and always
-	// writes an explicit features.apps).
+	// writes an explicit features.apps). Plugins default checked, matching
+	// Codex's native default when features.plugins is absent.
 	WizardCodexFeaturesTitle = "Codex features (checked = keep enabled; uncheck to disable)" +
 		"\n  Codex statusline: use .agent-layer/codex-statusline.toml for [tui].status_line." +
 		"\n  Built-in apps (GitHub, Gmail, etc.): Codex's built-in app integrations add extra tools to every session." +
+		"\n  Plugins and plugin skills: Codex plugins can add skills, app integrations, and MCP servers to sessions." +
 		"\n  Browser / computer-use: these tools let Codex drive a browser and control the screen."
 )

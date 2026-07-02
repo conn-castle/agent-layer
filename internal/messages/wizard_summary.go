@@ -30,6 +30,8 @@ const (
 	WizardSummaryCodexLocalConfigDir             = "\nCodex local home: enabled (per-repo auth, sessions, logs, and runtime state)\n"
 	WizardSummaryCodexAppsDisabled               = "\nCodex built-in apps: disabled (suppresses GitHub/Gmail/etc. tool surface)\n"
 	WizardSummaryCodexAppsEnabled                = "\nCodex built-in apps: enabled\n"
+	WizardSummaryCodexPluginsDisabled            = "\nCodex plugins: disabled (suppresses plugin skills and plugin tool surfaces)\n"
+	WizardSummaryCodexPluginsEnabled             = "\nCodex plugins: enabled\n"
 	WizardSummaryClaudeStatuslineEnabled         = "\nClaude statusline: enabled\n"
 	WizardSummaryClaudeStatuslineDisabled        = "\nClaude statusline: disabled\n"
 	WizardSummaryCodexStatuslineEnabled          = "\nCodex statusline: enabled\n"

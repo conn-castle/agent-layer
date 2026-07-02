@@ -250,22 +250,27 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("promptModels codex apps multi-select inverts enabled state", func(t *testing.T) {
+	t.Run("promptModels codex apps and plugins multi-select inverts enabled state", func(t *testing.T) {
 		choices := NewChoices()
 		choices.EnabledAgents[AgentCodex] = true
 		choices.CodexApps = true // apps currently enabled
+		choices.CodexPlugins = true
 		var appsPreChecked bool
+		var pluginsPreChecked bool
 		err := promptModels(&MockUI{
 			SelectFunc: func(string, []string, *string) error { return nil },
 			MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
 				if title == messages.WizardCodexFeaturesTitle {
-					// Enabled apps must arrive pre-checked.
+					// Enabled apps/plugins must arrive pre-checked.
 					for _, label := range *selected {
 						if label == messages.WizardCodexFeatureAppsLabel {
 							appsPreChecked = true
 						}
+						if label == messages.WizardCodexFeaturePluginsLabel {
+							pluginsPreChecked = true
+						}
 					}
-					// User unchecks apps (drops the label) to disable them.
+					// User unchecks apps/plugins (drops the labels) to disable them.
 					*selected = []string{messages.WizardCodexFeatureBrowserLabel}
 				}
 				return nil
@@ -278,12 +283,21 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 		if !appsPreChecked {
 			t.Fatal("expected the apps checkbox to be pre-selected when apps are enabled")
 		}
+		if !pluginsPreChecked {
+			t.Fatal("expected the plugins checkbox to be pre-selected when plugins are enabled")
+		}
 		// Removing the apps label flips CodexApps to enabled-state false.
 		if choices.CodexApps {
 			t.Fatal("expected CodexApps to be disabled after unchecking the apps label")
 		}
+		if choices.CodexPlugins {
+			t.Fatal("expected CodexPlugins to be disabled after unchecking the plugins label")
+		}
 		if !choices.CodexAppsTouched {
 			t.Fatal("expected CodexAppsTouched to be set")
+		}
+		if !choices.CodexPluginsTouched {
+			t.Fatal("expected CodexPluginsTouched to be set")
 		}
 	})
 

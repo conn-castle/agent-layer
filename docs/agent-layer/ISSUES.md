@@ -27,6 +27,18 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-02 codex-merge-root-scalar-leading-comment: Seeding a managed root scalar before the first table can detach that table's leading comment
+    Priority: Low. Area: internal/sync/codex_config_merge.go (`insertRootLine` / `setPath` fresh-insert path)
+    Description: When a managed root scalar (e.g. `model`) is absent and gets inserted just before the first table header via `insertRootLine`, a `# comment` that documented that first table ends up above the newly inserted scalar (separated by a blank), so it reads as documenting the scalar. In-place updates of existing managed keys are unaffected (they now preserve position and inline comments); only the first-time fresh insert of a root scalar in front of a commented first table is affected. No data loss; valid TOML.
+    Next step: Decide placement policy for fresh root-scalar inserts relative to a first table's leading comment block (insert above the comment block, or leave as-is), then implement; this is a formatting/UX tradeoff, not a correctness bug.
+    Notes: Deferred from resolve-findings 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
+
+- Issue 2026-07-02 wizard-dead-countbracketdepth-duplicate: Dead wizard countBracketDepth/quoteState duplicate kept alive only by tests
+    Priority: Low. Area: internal/wizard/patch.go (`countBracketDepth`, `quoteState`, `containsUnescapedTripleQuote`) + patch_test.go
+    Description: Production wizard multiline detection delegates to `tomlpatch.MultilineValueEndIndex`; the local `countBracketDepth`/`quoteState` copy (and the `containsUnescapedTripleQuote` shim) in patch.go is referenced only by patch_test.go. Unlike the live `tomlpatch` copy (fixed in this pass to be triple-quote-aware), the wizard copy is the old single-quote-only version — dead but still test-pinned, so it is a stale duplicate and a maintenance trap.
+    Next step: Delete the wizard-local `countBracketDepth`/`quoteState` and their pinning tests (and inline the `containsUnescapedTripleQuote` shim), leaving `tomlpatch` as the single source of truth.
+    Notes: Left in place by resolve-findings 20260702 (F3) to avoid deleting committed-test-covered code out of scope.
+
 - Issue 2026-07-02 codex-feature-toggles-cli-only-in-wizard: Codex feature toggles (statusline/apps/browser) not offered to VS Code-only repos
     Priority: Low. Area: internal/wizard/wizard.go (Codex prompt block)
     Description: PR #127 unified the Codex `local_config_dir` prompt so it appears when `agents.codex` (CLI) OR `agents.vscode` (Codex VS Code extension) is enabled, mirroring Claude. The Codex feature toggles (statusline, apps, browser) were deliberately left gated on `agents.codex` (CLI) only. If the Codex VS Code extension reads these from `.codex/config.toml` (it does when CODEX_HOME=<repo>/.codex is set), a VS Code-only repo cannot configure statusline/apps/browser via the wizard, unlike the Claude side which offers its shared feature toggles whenever either surface is enabled.
@@ -104,12 +116,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: `go list -m -u all` shows charmbracelet/huh v0.8.0 -> v1.0.0 and charmbracelet/bubbles (pinned pseudo-version) -> v1.0.0 — both MAJOR bumps with breaking APIs in the bubbletea/huh v1 line (the v2 charm stack reworks lipgloss/x-ansi). Per CLAUDE.md, major/breaking bumps need confirmation + compatibility work and were NOT applied. Separately, golangci-lint/v2 v2.10.1 -> v2.12.2 was attempted but REVERTED: v2.12.2 pulls charm.land/lipgloss/v2 which forces charmbracelet/x/ansi v0.11.7 module-wide, and x/ansi v0.11.7 breaks the pinned x/cellbuf v0.0.13 used by our huh/bubbletea (the `ansi.Style` Italic/Underline/SlowBlink API changed). The golangci-lint bump is therefore coupled to the charm v1/v2 migration and cannot land independently.
     Next step: Human to schedule a charmbracelet stack migration (huh/bubbles/bubbletea v1 -> the unified charm v2 line) as one coordinated change; the golangci-lint bump can ride along once x/ansi can move to v0.11.x without breaking cellbuf. Until then keep huh/bubbles/golangci-lint pinned.
     Notes: Deferred per "breaking dep bumps need confirmation". Not a defect; a coordinated upgrade-planning task.
-
-- Issue 2026-06-23 codex-malformed-projects-silent-trust-skip: Malformed `agent_specific.projects` silently suppresses the managed Codex trust block
-    Priority: Low. Area: internal/sync/codex.go (`codexAgentSpecificDefinesProject`, line ~184)
-    Description: `agent_specific` is raw passthrough with no value-shape validation (the `projects` key is recognized by the Codex collision-warning policy but its value type is unchecked). When a user writes `projects = "foo"` (scalar) or `projects = ["a"]` (array) under `[agents.codex.agent_specific]`, `codexAgentSpecificDefinesProject` hits `return true` (the non-table branch), so `appendCodexTrustedProject` skips emitting the managed `[projects."<root>"] trust_level = "trusted"` block. The repo silently loses Codex project trust, while the malformed `projects` is still emitted verbatim — a hidden-default/silent-fallback that degrades a security-adjacent control with no error. Reachable, not dead.
-    Next step: Human to choose the disposition: (A) fail loud — change `codexAgentSpecificDefinesProject` to return an error so a non-table `projects` aborts sync with an actionable message; (B) write managed trust defensively (`return false`) — but this risks a TOML key conflict (`projects` as both scalar and table) that Codex would reject; (C) leave as-is and document that `agent_specific.projects` must be a table. Option A is the cleanest fail-loud fit but changes the function signature and call site.
-    Notes: Deferred because the safest behavior is a genuine tradeoff (fail-loud vs defensive-write vs document) on a trust control, not a mechanical fix.
 
 - Issue 2026-06-23 completion-windows-build-tag-misleading: `//go:build !windows` on cmd/al/completion.go implies Windows support the project cannot provide
     Priority: Low. Area: cmd/al (completion.go build constraint; platform story)

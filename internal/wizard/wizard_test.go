@@ -408,6 +408,8 @@ func TestPromptModels_SetsDisableToggles(t *testing.T) {
 	assert.True(t, choices.ClaudeDisableQuestionToolTouched)
 	assert.True(t, choices.CodexDisableBrowser)
 	assert.True(t, choices.CodexDisableBrowserTouched)
+	assert.False(t, choices.CodexPlugins)
+	assert.True(t, choices.CodexPluginsTouched)
 }
 
 func TestPromptModels_AntigravityModelOptions(t *testing.T) {

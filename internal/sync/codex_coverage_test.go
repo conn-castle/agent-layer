@@ -225,7 +225,9 @@ func TestCodexTrustedProjectRoot_AcceptsPrintablePath(t *testing.T) {
 	}
 
 	var builder strings.Builder
-	appendCodexTrustedProject(&builder, resolved, nil)
+	if err := appendCodexTrustedProject(&builder, resolved, nil); err != nil {
+		t.Fatalf("append trusted project: %v", err)
+	}
 	out := builder.String()
 	if !strings.Contains(out, "trust_level = \"trusted\"") {
 		t.Fatalf("expected managed trust block, got:\n%s", out)

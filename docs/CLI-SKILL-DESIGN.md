@@ -107,6 +107,20 @@ The description should not include:
 - setup steps
 - prose that belongs in the body
 
+Length budget:
+
+- 512 characters is the hard maximum for Agent Layer-authored skill
+  descriptions, even though the cross-client Agent Skills specification permits
+  up to 1,024 characters.
+- Prefer 200-260 characters for CLI skills. This range is a repo-local budget,
+  not an external standard: Codex's unknown-context fallback is 8,000
+  characters for the whole initial skill list, including names, descriptions,
+  and paths. A 25-30 skill catalog only has about 260-320 characters per skill
+  before names, paths, and formatting, so descriptions need to stay below that
+  to leave routing headroom.
+- Descriptions over 300 characters need a concrete routing reason. Use that
+  space only for trigger boundaries, not extra examples or workflow steps.
+
 Preferred shape:
 
 ```yaml
@@ -544,6 +558,8 @@ Before accepting a CLI skill:
 
 - The description names the CLI, task domain, trigger conditions, and nearby
   non-goals.
+- The description is at most 512 characters, preferably 200-260 characters, and
+  any over-300-character description has an explicit routing reason.
 - System instructions do not duplicate this CLI's specific routing or workflow.
 - The body tells the agent to run live root help and subcommand help.
 - The body avoids copied flag lists and full command reference material.

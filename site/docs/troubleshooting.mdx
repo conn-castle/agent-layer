@@ -80,7 +80,7 @@ Generated client outputs are meant to be disposable. If you see generated files 
 Run `al sync` (or `al <client>`) to reinstall the managed ignore rules. If the files were already committed, you will also need to stop tracking them in git (and ensure `.agent-layer/.env` stays untracked, since it contains secrets).
 
 :::caution
-`.codex/config.toml` may contain resolved values for MCP server URLs, commands, or environment variables. Treat it as private and keep it gitignored.
+`.codex/config.toml` is shared Codex state patched by `al sync`, not a disposable generated file. It may contain resolved values for MCP server URLs, commands, or environment variables. Treat it as private and keep it gitignored.
 :::
 
 ### "gitignore block must not include managed markers or template hash"
@@ -153,7 +153,7 @@ This is primarily a VS Code fallback for repos that opt into repo-local Codex ho
 
 When `agents.codex.local_config_dir` is absent or false, Agent Layer does not set `CODEX_HOME` for `al codex`, Codex dispatch, or `al vscode`. Codex uses its normal global/project config layering, and any inherited `CODEX_HOME` remains user-owned.
 
-When `agents.codex.local_config_dir = true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex`. The generated `.codex/config.toml` includes config projected from `.agent-layer/config.toml`, including the current repo trust stanza and MCP servers.
+When `agents.codex.local_config_dir = true`, `al codex`, Codex dispatch, and `al vscode` set `CODEX_HOME=<repo>/.codex`. `.codex/config.toml` is shared Codex state patched by `al sync`; known Agent Layer-managed entries are refreshed from `.agent-layer/config.toml`, including MCP servers and a current repo trust seed when that exact project entry is absent.
 
 If you launch VS Code without Agent Layer's repo-local launcher while `agents.codex.local_config_dir = true`, the Codex VS Code extension will not receive the repo-local `CODEX_HOME`. In that case, the extension continues to use repo-local instructions and skills, but it uses MCP servers from your global Codex config instead.
 

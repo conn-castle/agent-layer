@@ -383,8 +383,9 @@ enabled = true
 # `al upgrade` to enable it and seed the source once. Absent means disabled.
 # statusline = true
 # Optional `agent_specific` passthrough for Codex (arbitrary TOML tables/keys).
-# These are appended to .codex/config.toml and can override top-level managed keys.
-# Agent Layer already writes [projects."<repo root>"] trust_level = "trusted".
+# These are patched into .codex/config.toml and can override top-level managed keys.
+# Agent Layer seeds [projects."<repo root>"] trust_level = "trusted" only when
+# that exact project entry is absent.
 # [agents.codex.agent_specific]
 # [agents.codex.agent_specific.features]
 # apps = false              # disable built-in Codex apps (GitHub, Gmail, etc.) to reduce tool surface
@@ -440,7 +441,7 @@ mcp_schema_tokens_total_threshold = 30000
 mcp_schema_tokens_server_threshold = 20000
 ```
 
-`agent_specific` passthrough keys are copied into provider-native settings. Codex and Claude warn when supported passthrough keys collide with Agent Layer-managed keys; Antigravity rejects `agents.antigravity.agent_specific.model` because `agents.antigravity.model` is the only model source. Codex project trust is managed automatically for the current absolute repo root.
+`agent_specific` passthrough keys are copied into provider-native settings. Codex and Claude warn when supported passthrough keys collide with Agent Layer-managed keys; Antigravity rejects `agents.antigravity.agent_specific.model` because `agents.antigravity.model` is the only model source. `.codex/config.toml` is shared Codex state: `al sync` refreshes known Agent Layer-managed entries, preserves unrelated Codex/user runtime entries, and seeds current repo trust only when that exact project entry is absent.
 
 #### Built-in placeholders
 

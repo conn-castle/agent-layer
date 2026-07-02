@@ -330,7 +330,6 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 	// Codex/antigravity disabled artifacts should be flagged.
 	for _, expected := range []string{
 		".codex/AGENTS.md",
-		".codex/config.toml",
 		".codex/rules/default.rules",
 		".codex/skills/alpha/SKILL.md",
 		".agent/skills/beta/SKILL.md",
@@ -338,6 +337,9 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("expected detail %q, got %q", expected, joined)
 		}
+	}
+	if strings.Contains(joined, ".codex/config.toml") {
+		t.Fatalf("unexpected shared Codex config in disabled details, got %q", joined)
 	}
 	// .vscode/settings.json is shared (generated when either agent is enabled),
 	// so it should NOT be flagged when claude_vscode is enabled.

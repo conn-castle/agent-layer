@@ -91,10 +91,6 @@ run_scenario_statusline_enabled() {
   assert_file_contains "$repo_dir/.claude/settings.json" "claude-statusline.sh" \
     "Claude settings points at projected statusline script"
 
-  assert_file_contains "$repo_dir/.codex/config.toml" "Sources:" \
-    "Codex config uses statusline-aware generated header"
-  assert_file_contains "$repo_dir/.codex/config.toml" ".agent-layer/codex-statusline.toml" \
-    "Codex config records statusline source"
   assert_file_contains "$repo_dir/.codex/config.toml" "status_line = [" \
     "Codex config has native status_line block"
   assert_file_contains "$repo_dir/.codex/config.toml" "weekly-limit" \
