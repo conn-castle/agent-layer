@@ -888,68 +888,53 @@ func TestLoadUpgradeMigrationManifest_0_10_2_MigratesGeminiToAntigravity(t *test
 	}
 }
 
-func TestLoadUpgradeMigrationManifest_0_11_2_HasCodexLocalConfigDirDefault(t *testing.T) {
-	// Locks the semantic contract of the shipped 0.11.2 migration: a
-	// non-interactive upgrade must default agents.codex.local_config_dir to
-	// false (switching to Codex's normal config layering), and the op must be
-	// source-agnostic so unpinned upgrades still receive the default. A wrong
-	// value:true would flip the documented default; a missing source_agnostic
-	// would skip the default for unresolved-source upgrades — either flips an
-	// assertion here.
-	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.11.2")
+func TestLoadUpgradeMigrationManifest_0_12_0_ConsolidatesUnreleasedContracts(t *testing.T) {
+	// Locks the semantic contract of the shipped 0.12.0 migration: it
+	// collapses unreleased patch-line work into one release, preserves the
+	// 0.10.2 supported floor for unpinned legacy upgrades, migrates the
+	// Antigravity model key, and defaults new opt-in settings off for
+	// non-interactive runs.
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.12.0")
 	if err != nil {
-		t.Fatalf("load 0.11.2 manifest: %v", err)
-	}
-	if len(manifest.Operations) != 1 {
-		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
-	}
-	op := manifest.Operations[0]
-	if op.ID != "j-set-default-agents-codex-local-config-dir" {
-		t.Fatalf("op ID = %q, want %q", op.ID, "j-set-default-agents-codex-local-config-dir")
-	}
-	if op.Kind != upgradeMigrationKindConfigSetDefault {
-		t.Fatalf("op kind = %q, want %q", op.Kind, upgradeMigrationKindConfigSetDefault)
-	}
-	if op.Key != "agents.codex.local_config_dir" {
-		t.Fatalf("op key = %q, want %q", op.Key, "agents.codex.local_config_dir")
-	}
-	if string(op.Value) != "false" {
-		t.Fatalf("op value = %q, want %q", string(op.Value), "false")
-	}
-	if !op.SourceAgnostic {
-		t.Fatal("expected source_agnostic = true")
+		t.Fatalf("load 0.12.0 manifest: %v", err)
 	}
 	if manifest.MinPriorVersion != "0.10.2" {
 		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.10.2")
 	}
-}
+	if len(manifest.Operations) != 3 {
+		t.Fatalf("expected 3 operations, got %d", len(manifest.Operations))
+	}
 
-func TestLoadUpgradeMigrationManifest_0_11_3_HasNotificationsChimeDefault(t *testing.T) {
-	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.11.3")
-	if err != nil {
-		t.Fatalf("load 0.11.3 manifest: %v", err)
+	byID := make(map[string]upgradeMigrationOperation, len(manifest.Operations))
+	for _, op := range manifest.Operations {
+		byID[op.ID] = op
+		if !op.SourceAgnostic {
+			t.Fatalf("op %s expected source_agnostic = true", op.ID)
+		}
 	}
-	if len(manifest.Operations) != 1 {
-		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
+
+	modelOp := byID["i-rename-antigravity-agent-specific-model"]
+	if modelOp.Kind != upgradeMigrationKindConfigRenameKey {
+		t.Fatalf("model op kind = %q, want %q", modelOp.Kind, upgradeMigrationKindConfigRenameKey)
 	}
-	op := manifest.Operations[0]
-	if op.ID != "k-set-default-notifications-chime" {
-		t.Fatalf("op ID = %q, want %q", op.ID, "k-set-default-notifications-chime")
+	if modelOp.From != "agents.antigravity.agent_specific.model" || modelOp.To != "agents.antigravity.model" {
+		t.Fatalf("model op from/to = %q/%q", modelOp.From, modelOp.To)
 	}
-	if op.Kind != upgradeMigrationKindConfigSetDefault {
-		t.Fatalf("op kind = %q, want %q", op.Kind, upgradeMigrationKindConfigSetDefault)
+
+	codexOp := byID["j-set-default-agents-codex-local-config-dir"]
+	if codexOp.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("codex op kind = %q, want %q", codexOp.Kind, upgradeMigrationKindConfigSetDefault)
 	}
-	if op.Key != "notifications.chime" {
-		t.Fatalf("op key = %q, want %q", op.Key, "notifications.chime")
+	if codexOp.Key != "agents.codex.local_config_dir" || string(codexOp.Value) != "false" {
+		t.Fatalf("codex op key/value = %q/%q", codexOp.Key, string(codexOp.Value))
 	}
-	if string(op.Value) != "false" {
-		t.Fatalf("op value = %q, want %q", string(op.Value), "false")
+
+	chimeOp := byID["k-set-default-notifications-chime"]
+	if chimeOp.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("chime op kind = %q, want %q", chimeOp.Kind, upgradeMigrationKindConfigSetDefault)
 	}
-	if !op.SourceAgnostic {
-		t.Fatal("expected source_agnostic = true")
-	}
-	if manifest.MinPriorVersion != "0.11.2" {
-		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.11.2")
+	if chimeOp.Key != "notifications.chime" || string(chimeOp.Value) != "false" {
+		t.Fatalf("chime op key/value = %q/%q", chimeOp.Key, string(chimeOp.Value))
 	}
 }
 
@@ -1564,9 +1549,9 @@ func TestPlanUpgradeMigrations_UnpinnedLegacyAntigravityModelRunsLatestManifest(
 		"enabled = false",
 	}, "\n"))
 	withMigrationManifestChainOverride(t, map[string]string{
-		"0.11.1": `{
+		"0.12.0": `{
   "schema_version": 1,
-  "target_version": "0.11.1",
+  "target_version": "0.12.0",
   "min_prior_version": "0.11.0",
   "operations": [
     {
@@ -1586,8 +1571,8 @@ func TestPlanUpgradeMigrations_UnpinnedLegacyAntigravityModelRunsLatestManifest(
 	if err != nil {
 		t.Fatalf("planUpgradeMigrations: %v", err)
 	}
-	if plan.report.TargetVersion != "0.11.1" {
-		t.Fatalf("target version = %q, want 0.11.1", plan.report.TargetVersion)
+	if plan.report.TargetVersion != "0.12.0" {
+		t.Fatalf("target version = %q, want 0.12.0", plan.report.TargetVersion)
 	}
 	if len(plan.executable) != 1 || plan.executable[0].ID != "rename-antigravity-model" {
 		t.Fatalf("executable migrations = %#v, want rename-antigravity-model", plan.executable)
@@ -2315,7 +2300,7 @@ func TestMigration_0_9_0_ProducesValidConfig(t *testing.T) {
 	}
 }
 
-func TestMigration_0_11_1_MigratesAntigravityAgentSpecificModelToTypedField(t *testing.T) {
+func TestMigration_0_12_0_MigratesAntigravityAgentSpecificModelToTypedField(t *testing.T) {
 	legacyConfig := strings.Join([]string{
 		"[approvals]",
 		`mode = "all"`,
@@ -2347,7 +2332,7 @@ func TestMigration_0_11_1_MigratesAntigravityAgentSpecificModelToTypedField(t *t
 	cfgPath := writeMigrationConfigForTest(t, root, legacyConfig)
 
 	var warn bytes.Buffer
-	inst := &installer{root: root, pinVersion: "0.11.1", sys: RealSystem{}, warnWriter: &warn}
+	inst := &installer{root: root, pinVersion: "0.12.0", sys: RealSystem{}, warnWriter: &warn}
 	if err := inst.prepareUpgradeMigrations(); err != nil {
 		t.Fatalf("prepareUpgradeMigrations: %v", err)
 	}
@@ -2367,7 +2352,7 @@ func TestMigration_0_11_1_MigratesAntigravityAgentSpecificModelToTypedField(t *t
 	}
 	cfg, err := config.ParseConfig(data, cfgPath)
 	if err != nil {
-		t.Fatalf("strict config parse failed after v0.11.1 migration: %v", err)
+		t.Fatalf("strict config parse failed after v0.12.0 migration: %v", err)
 	}
 	if cfg.Agents.Antigravity.Model != "Gemini 3.5 Flash (High)" {
 		t.Fatalf("agents.antigravity.model = %q, want migrated model", cfg.Agents.Antigravity.Model)

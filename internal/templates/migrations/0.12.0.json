@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "target_version": "0.12.0",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "i-rename-antigravity-agent-specific-model",
+      "kind": "config_rename_key",
+      "from": "agents.antigravity.agent_specific.model",
+      "to": "agents.antigravity.model",
+      "rationale": "Promote Antigravity model selection from provider passthrough to Agent Layer's typed agents.antigravity.model field before runtime validation rejects the passthrough key.",
+      "source_agnostic": true
+    },
+    {
+      "id": "j-set-default-agents-codex-local-config-dir",
+      "kind": "config_set_default",
+      "key": "agents.codex.local_config_dir",
+      "value": false,
+      "rationale": "Agent Layer now sets CODEX_HOME=<repo>/.codex only when agents.codex.local_config_dir is true. Defaults to false, so a non-interactive upgrade switches to Codex's normal global/project config layering. Choose true to retain repo-local Codex auth, sessions, logs, and runtime state.",
+      "source_agnostic": true
+    },
+    {
+      "id": "k-set-default-notifications-chime",
+      "kind": "config_set_default",
+      "key": "notifications.chime",
+      "value": false,
+      "rationale": "Agent Layer can now project a local turn-stop chime into supported provider hooks. Non-interactive upgrades keep chime disabled unless the user explicitly opts in.",
+      "source_agnostic": true
+    }
+  ]
+}

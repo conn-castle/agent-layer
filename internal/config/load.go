@@ -114,7 +114,7 @@ func HasLegacyGeminiConfig(data []byte) bool {
 }
 
 // HasLegacyAntigravityAgentSpecificModel reports whether `data` contains the
-// pre-v0.11.1 Antigravity provider passthrough model key. That key is migrated
+// pre-v0.12.0 Antigravity provider passthrough model key. That key is migrated
 // to the typed `agents.antigravity.model` field by `al upgrade`; repair tools
 // must not preserve it through lenient config rewrites.
 func HasLegacyAntigravityAgentSpecificModel(data []byte) bool {

@@ -153,7 +153,7 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Tradeoffs: Patch releases may carry empty migration manifests and duplicate-looking release artifacts, but historical upgrade behavior remains auditable and byte-stable.
 
 - Decision 2026-06-30 antigravity-model-first-class: Antigravity model uses typed config, not agent_specific
-    Decision: `agents.antigravity.model` is the only supported Antigravity model field. Sync projects it to generated Antigravity `settings.json`; runtime validation rejects `agents.antigravity.agent_specific.model`. The v0.11.1 upgrade migration moves that passthrough key to the typed field before validation.
+    Decision: `agents.antigravity.model` is the only supported Antigravity model field. Sync projects it to generated Antigravity `settings.json`; runtime validation rejects `agents.antigravity.agent_specific.model`. The v0.12.0 upgrade migration moves that passthrough key to the typed field before validation.
     Reason: Wizard, dispatch, field catalog, docs, and defaults all treat Antigravity model selection as an Agent Layer-owned concept. Keeping it under `agent_specific` made a known field look like unmanaged passthrough and created two possible sources of truth.
     Tradeoffs: Fresh hand-authored configs that put `model` under `agent_specific` fail loudly and must move the value to `agents.antigravity.model`; upgrading repos get the automatic move first.
 

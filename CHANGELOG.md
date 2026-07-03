@@ -1,38 +1,63 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v0.12.0 - 2026-07-03
+
+Consolidates all unreleased work since `v0.11.0` into one coherent release. Adds typed Antigravity model selection, configurable Agent Dispatch depth, repo-local Codex home opt-in, shared Codex TOML patching, provider turn-stop chimes, serialized sync writes, new workflow skills, signed/notarized macOS binaries, and binary Homebrew delivery.
 
 ### Added
-- Darwin release binaries are now Developer ID signed with hardened runtime and notarized in the release workflow. The install script and Homebrew formula both deliver the signed macOS binary.
+- Antigravity model selection is now a first-class Agent Layer setting. `agents.antigravity.model` is projected into generated Antigravity settings, `al wizard` can discover choices from live `agy models` output with catalog fallback, and `al dispatch --model` plus `al dispatch options` now report and accept Antigravity model overrides. Antigravity reasoning level remains encoded in the selected model display string; `--reasoning-effort` is still unsupported for Antigravity.
+- `dispatch.max_depth` allows nested `al dispatch` chains beyond the default depth of `1`. `AL_DISPATCH_ACTIVE` now carries the current dispatch depth, invalid or empty values fail loudly, and config validation rejects non-positive depths.
+- `agents.codex.local_config_dir` controls whether Agent Layer sets `CODEX_HOME=<repo>/.codex` for `al codex`, Codex dispatch, and `al vscode`. The default is `false`, preserving Codex's normal global/project config layering; set it to `true` to keep repo-local Codex auth, sessions, logs, and runtime state.
+- `notifications.chime` is a global opt-in for provider turn-stop chimes. Sync projects provider-native stop hooks for Claude and Codex and an Agent Layer-owned Antigravity plugin, while preserving user-owned hooks and plugin content.
+- `al sync` now serializes concurrent writes for the same project with a repo-local lock, preventing overlapping generated-file updates during parallel launches or dispatches.
+- `.codex/config.toml` is now treated as shared state. Agent Layer patches only managed Codex keys, MCP projection, project trust, feature toggles, and statusline entries while preserving unrelated user or Codex runtime TOML, comments, multiline strings, and plugin settings.
+- `al wizard` adds a Git tracking step for `.agent-layer/` and `docs/agent-layer/`, implemented by rewriting the managed `.agent-layer/gitignore.block` source before sync.
+- New built-in workflow skills: `auto-skill-loop`, `full-workflow`, `interface-audit`, and `multi-agent-plan-review`. `ship-pr` also gained a bundled `monitor-pr.sh` helper for polling pull request readiness and filtering review-bot noise.
+- Release builds now sign Darwin binaries with Developer ID, enable hardened runtime, notarize them with Apple, and write checksums after signing. The release workflow also documents the required signing and notarization secrets.
+- Homebrew delivery now uses prebuilt macOS and Linux release binaries with per-platform checksums instead of building from the source tarball.
+- Shared provider option catalogs now back wizard and dispatch option suggestions for supported agents, with corrected Codex model/reasoning suggestions and `fable` in the Claude model catalog.
 
 ### Changed
-- `al claude`, `al codex`, `al copilot`, and `al agy` now replace the `al` process with the agent CLI instead of spawning a child process. Agent exit codes now pass through directly and the old `Error: <agent> exited with error: ...` wrapper line is gone, matching the behavior of running the agent directly.
-- Homebrew installs now use prebuilt release binaries for macOS and Linux instead of building from the source tarball.
-- macOS users may see one permission prompt per agent after upgrading because permissions move from `al` to the actual agent binary. Old `al` entries in Privacy & Security are cosmetic.
-- `al wizard` no longer offers a workflow-bundle refresh when Agent Layer workflow files already exist. The workflow-bundle prompt is install-only for missing bundle files and preserves existing files; use `al upgrade` when you want managed workflow updates.
-- Claude model selection now includes `fable` in the built-in catalog.
-
-## v0.11.1 - 2026-07-01
-
-Adds first-class Antigravity model selection across wizard, dispatch, sync, and generated config, makes Agent Dispatch depth configurable, and lets the wizard choose which Agent Layer folders stay trackable in Git.
-
-### Added
-- Antigravity model choices in `al wizard`, backed by live `agy models` discovery with static catalog fallback.
-- Antigravity `--model` support for `al dispatch`, plus model metadata in `al dispatch options`.
-- Wizard Git tracking step for `.agent-layer/` and `docs/agent-layer/`, implemented by rewriting the managed `.agent-layer/gitignore.block` source before sync.
-- `agents.antigravity.model` typed config and generated Antigravity settings projection.
-- `dispatch.max_depth` config field to allow nested `al dispatch` chains beyond the default depth of 1. The default stays `1` (a dispatched target cannot call `al dispatch` again); set it to `2` for one nested level, `3` for two, and so on. `AL_DISPATCH_ACTIVE` now carries the active dispatch depth instead of a fixed `1`, and config validation rejects a non-positive `dispatch.max_depth`.
-
-### Changed
-- Antigravity reasoning level is encoded in the selected agy model display string; `--reasoning-effort` remains unsupported for Antigravity.
-- Provider passthrough config now uses the `ProviderPassthrough` alias, and Agent Layer-owned Antigravity model config is rejected under `agents.antigravity.agent_specific.model`.
-- `approvals.mode = "yolo"` no longer emits the VS Code `chat.tools.global.autoApprove` setting; yolo still sends full-auto flags to the other supported clients (Claude, Codex, Copilot CLI, Antigravity).
-- The Claude status line now rounds the weekly-limit reset time up to the next whole day/hour so a partial remaining unit stays visible, and drops the `#` prefix on the session id.
+- `al claude`, `al codex`, `al copilot`, and `al agy` now replace the `al` process with the target agent CLI instead of spawning a child process. Agent exit codes now pass through directly and the old `Error: <agent> exited with error: ...` wrapper line is gone.
+- macOS permission prompts are now attributed to the actual signed Agent Layer binary that launches the agent. Users may see one prompt per agent after upgrading; old `al` entries in Privacy & Security are cosmetic.
+- `approvals.mode = "yolo"` no longer emits the VS Code `chat.tools.global.autoApprove` setting. YOLO still sends full-auto controls to Claude, Codex, Copilot CLI, and Antigravity.
+- `al wizard` no longer offers a workflow-bundle refresh when Agent Layer workflow files already exist. The workflow-bundle prompt is install-only for missing bundle files and preserves existing files; use `al upgrade` for managed workflow updates.
+- Agent-specific passthrough config now uses the shared `ProviderPassthrough` type, and Agent Layer-owned Antigravity model config is rejected under `agents.antigravity.agent_specific.model`.
+- The Claude status line now rounds weekly-limit reset time up to the next whole day/hour so a partial remaining unit stays visible, drops the `#` prefix on the session id, and avoids per-untracked-file `git diff --no-index` processes when counting untracked line changes.
+- Agent Dispatch target metadata now uses the shared provider option catalog, reports Antigravity model override support, preserves inherited `CODEX_HOME` unless Codex local config is enabled, and wraps stdout write failures with target-specific dispatch exit errors.
+- Release tooling now verifies published binary assets before opening the Homebrew tap PR and renders the full binary formula from release checksums.
+- CI/local workflow documentation now notes that `make ci` includes `make test-race`, and release docs clarify that tagged migration and ownership manifests are immutable release artifacts.
 
 ### Fixed
-- Upgrades move `agents.antigravity.agent_specific.model` to `agents.antigravity.model` before runtime validation rejects the passthrough key.
-- Wizard gitignore tracking recognizes managed patterns with inline comments and avoids duplicating them.
+- Upgrades move `agents.antigravity.agent_specific.model` to `agents.antigravity.model` before strict runtime validation rejects the passthrough key.
+- Wizard Git tracking recognizes managed patterns with inline comments and avoids duplicating them.
+- Antigravity wizard model options are prefetched before prompting, so the wizard can show live model choices rather than a stale or empty catalog.
+- Codex reasoning suggestions and restored shared agent option suggestions now stay valid across CLI, wizard, and dispatch surfaces.
+- Codex TOML patching now preserves multiline strings, plugin defaults, inline comments on managed keys, and unrelated shared config while updating Agent Layer-owned entries.
+- Strict config validation now fails loudly on malformed nested `AskUserQuestion` overrides and invalid `AL_DISPATCH_ACTIVE` depth values.
+- Gitignore management was hardened to prevent managed block data loss and handle inline-comment tracking defaults correctly.
+- `al doctor` diagnostics and CI dead-code enforcement were corrected, including loader-error handling that previously weakened the dead-code gate.
+- The hidden deprecated `al mcp-prompts` path is now a no-op stub instead of a live prompt delivery surface.
+- Release and formula update tests now cover signed binary build outputs, checksum extraction, notarization hooks, and binary Homebrew formula rendering.
+
+### Security
+- The Go toolchain/dependency floor was updated to address reachable Go standard-library vulnerabilities found by local vulnerability analysis.
+- Codex trust-block generation now rejects invalid UTF-8 repository roots before writing project trust entries.
+- The release workflow now checks out code with persisted credentials disabled in the release build job.
+
+### Documentation
+- README, site docs, troubleshooting, concepts, reference, FAQ, and security pages were refreshed for current Antigravity, MCP, Codex, upgrade, and release behavior.
+- `docs/RELEASE.md` now documents Developer ID signing, notarization, binary Homebrew delivery, release asset verification, and the complete set of required release secrets.
+- Agent instruction templates were tightened: production code should validate inputs and returned errors defensively, repeated failed fixes should trigger research before another attempt, and memory files are described as living records of the current working tree.
+- Skill design and CLI skill design docs were tightened, and generated workflow skills now include clearer subagent/review constraints.
+
+### Internal
+- Shared semver parsing/comparison moved into `internal/version`, and release message helpers were consolidated.
+- A reusable TOML patching engine (`internal/tomlpatch`) now powers safer shared-config edits.
+- Upgrade migration logic was split to keep skill migration code separate from the main migration coordinator.
+- Markdown heading slug generation now avoids quadratic suffix deduplication on large documents.
+- Test coverage was expanded across dispatch depth, Antigravity model discovery, Codex shared-config patching, chime cleanup, sync locking, release tooling, wizard option discovery, gitignore tracking, and upgrade migration contracts.
 
 ## v0.11.0 - 2026-06-03
 
