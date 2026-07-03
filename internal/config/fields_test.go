@@ -216,7 +216,7 @@ func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
 
 func TestFieldOptionValues_CodexReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues(CodexReasoningEffortFieldKey)
-	want := []string{"minimal", "low", "medium", "high", "xhigh"}
+	want := []string{"low", "medium", "high", "xhigh"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
