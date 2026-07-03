@@ -29,8 +29,10 @@ var formulaTemplate = template.Must(template.New("formula").Parse(`class AgentLa
   on_macos do
     depends_on arch: :arm64
 
-    url "{{ .ReleaseBaseURL }}/al-darwin-arm64", using: :nounzip
-    sha256 "{{ .DarwinARM64SHA }}"
+    on_arm do
+      url "{{ .ReleaseBaseURL }}/al-darwin-arm64", using: :nounzip
+      sha256 "{{ .DarwinARM64SHA }}"
+    end
   end
 
   on_linux do

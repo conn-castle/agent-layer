@@ -42,8 +42,10 @@ func TestRunRendersBinaryFormula(t *testing.T) {
   on_macos do
     depends_on arch: :arm64
 
-    url "https://github.com/conn-castle/agent-layer/releases/download/v1.2.3/al-darwin-arm64", using: :nounzip
-    sha256 "1111111111111111111111111111111111111111111111111111111111111111"
+    on_arm do
+      url "https://github.com/conn-castle/agent-layer/releases/download/v1.2.3/al-darwin-arm64", using: :nounzip
+      sha256 "1111111111111111111111111111111111111111111111111111111111111111"
+    end
   end
 
   on_linux do
