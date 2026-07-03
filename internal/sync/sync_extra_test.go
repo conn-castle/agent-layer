@@ -102,22 +102,7 @@ func TestRunWithProject_AppliesWarningNoiseControl(t *testing.T) {
 
 	setupFixture := func(t *testing.T) (string, *config.ProjectConfig) {
 		t.Helper()
-		fixtureRoot := filepath.Join("testdata", "fixture-repo")
-		root := t.TempDir()
-		if err := copyFixtureRepo(fixtureRoot, root); err != nil {
-			t.Fatalf("copy fixture: %v", err)
-		}
-		envPath := filepath.Join(root, ".agent-layer", ".env")
-		if err := os.WriteFile(envPath, []byte("AL_EXAMPLE_TOKEN=token123\n"), 0o600); err != nil {
-			t.Fatalf("write env: %v", err)
-		}
-		writeTemplateToFixtureSource(t, root, "claude-statusline.sh", filepath.Join(".agent-layer", "claude-statusline.sh"), 0o755)
-		writeTemplateToFixtureSource(t, root, "codex-statusline.toml", filepath.Join(".agent-layer", "codex-statusline.toml"), 0o644)
-		project, err := config.LoadProjectConfig(root)
-		if err != nil {
-			t.Fatalf("load project: %v", err)
-		}
-		return root, project
+		return loadSyncFixtureProject(t)
 	}
 
 	t.Run("invalid mode surfaces critical warning under default", func(t *testing.T) {
@@ -224,6 +209,43 @@ func TestRunWithProject_CleansNotificationsChimeWhenProvidersDisabled(t *testing
 	}
 	if _, err := os.Lstat(antigravityChimePluginDir(root)); !os.IsNotExist(err) {
 		t.Fatalf("expected Antigravity chime plugin removed, lstat err=%v", err)
+	}
+}
+
+func TestRunWithProject_CleansNotificationsChimeWhenProvidersStayEnabled(t *testing.T) {
+	root, project := loadSyncFixtureProject(t)
+	enabled := true
+	project.Config.Notifications.Chime = &enabled
+
+	if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
+		t.Fatalf("RunWithProject chime enabled: %v", err)
+	}
+
+	paths := []string{
+		filepath.Join(root, ".claude", "settings.json"),
+		filepath.Join(root, ".codex", "config.toml"),
+		filepath.Join(root, ".agents", "plugins", "agent-layer-chime", "hooks.json"),
+	}
+	for _, path := range paths {
+		content := readFileForTest(t, path)
+		if !strings.Contains(content, agentLayerChimeMarker) {
+			t.Fatalf("test setup error: expected %s to contain chime marker, got:\n%s", path, content)
+		}
+	}
+
+	disabled := false
+	project.Config.Notifications.Chime = &disabled
+	if _, err := RunWithProject(RealSystem{}, root, project); err != nil {
+		t.Fatalf("RunWithProject chime disabled: %v", err)
+	}
+	for _, path := range paths[:2] {
+		content := readFileForTest(t, path)
+		if strings.Contains(content, agentLayerChimeMarker) {
+			t.Fatalf("expected stale chime marker removed from %s, got:\n%s", path, content)
+		}
+	}
+	if _, err := os.Lstat(antigravityChimePluginDir(root)); !os.IsNotExist(err) {
+		t.Fatalf("expected Antigravity chime plugin removed while provider stays enabled, lstat err=%v", err)
 	}
 }
 

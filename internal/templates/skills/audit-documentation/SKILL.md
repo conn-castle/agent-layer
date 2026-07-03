@@ -55,7 +55,8 @@ When docs and code differ:
 - Required: ask before choosing between plausible product behaviors or when code should change to match better docs.
 - Optional: ask when the requested scope is ambiguous enough that the audit target itself is unclear.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
-- Stay autonomous for doc corrections that make docs accurate and complete, including stale paths, incorrect commands, outdated config references, wrong version numbers, missing implementation details, and implementation claims contradicted by the code.
+- Stay autonomous for doc corrections that make docs accurate and complete when the repo evidence shows the docs are stale, incomplete, or imprecise.
+- If the docs appear to describe intended/better behavior than the implementation, surface the code gap instead of editing the docs.
 
 ## Audit workflow
 

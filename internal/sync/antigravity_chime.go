@@ -52,6 +52,9 @@ func WriteAntigravityChimePlugin(sys System, root string, project *config.Projec
 // Antigravity chime plugin, preserving any other user plugins or .agents state.
 func CleanAntigravityChimePlugin(sys System, root string) error {
 	dir := antigravityChimePluginDir(root)
+	if err := ensureAntigravityChimePathContained(sys, root, dir); err != nil {
+		return err
+	}
 	info, err := sys.Lstat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -61,9 +64,6 @@ func CleanAntigravityChimePlugin(sys System, root string) error {
 	}
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return fmt.Errorf(messages.SyncAntigravityChimePluginConflictFmt, dir)
-	}
-	if err := ensureAntigravityChimePathContained(sys, root, dir); err != nil {
-		return err
 	}
 	if err := antigravityChimePluginIsManaged(sys, dir); err != nil {
 		return err

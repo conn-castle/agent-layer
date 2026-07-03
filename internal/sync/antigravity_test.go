@@ -597,6 +597,20 @@ func TestCleanAntigravityChimePluginNoopWhenMissing(t *testing.T) {
 	}
 }
 
+func TestCleanAntigravityChimePluginRejectsSymlinkAgentsParentWhenPluginMissing(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, ".agents")); err != nil {
+		t.Fatalf("seed .agents symlink: %v", err)
+	}
+
+	err := CleanAntigravityChimePlugin(RealSystem{}, root)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected symlink parent cleanup conflict, got %v", err)
+	}
+}
+
 func TestCleanAntigravityChimePluginRejectsUserOwnedPluginDir(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
