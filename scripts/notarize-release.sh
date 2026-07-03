@@ -56,7 +56,11 @@ chmod 600 "$key_path"
 
 for binary in "${binaries[@]}"; do
   archive="${tmp_dir}/$(basename "$binary").zip"
+  # Keep notarytool's JSON on stdout and its human-readable progress/errors on
+  # stderr in separate files. Mixing them corrupts the JSON that the status/id
+  # parsers read, so only log_path (stdout) is ever parsed.
   log_path="${tmp_dir}/$(basename "$binary").notarytool.json"
+  err_path="${tmp_dir}/$(basename "$binary").notarytool.err"
 
   echo "Notarizing $(basename "$binary")..."
   ditto -c -k --keepParent "$binary" "$archive"
@@ -67,8 +71,8 @@ for binary in "${binaries[@]}"; do
     --issuer "$NOTARY_ISSUER_ID" \
     --wait \
     --timeout 30m \
-    --output-format json >"$log_path" 2>&1; then
-    cat "$log_path" >&2
+    --output-format json >"$log_path" 2>"$err_path"; then
+    cat "$log_path" "$err_path" >&2
     submission_id="$(submission_id_from_output "$log_path")"
     if [[ -n "$submission_id" ]]; then
       xcrun notarytool log "$submission_id" \
@@ -82,7 +86,7 @@ for binary in "${binaries[@]}"; do
   status="$(notary_status_from_output "$log_path")"
   if [[ "$status" != "Accepted" ]]; then
     echo "notarize-release: notarization for $(basename "$binary") returned status ${status:-unknown}; expected Accepted." >&2
-    cat "$log_path" >&2
+    cat "$log_path" "$err_path" >&2
     exit 1
   fi
 done

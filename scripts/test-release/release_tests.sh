@@ -94,6 +94,9 @@ run_codesign_requirement_test() {
     AL_VERSION="$expected_version" DIST_DIR="$require_dist" AL_REQUIRE_CODESIGN=1 ./scripts/build-release.sh
   ) > "$require_log" 2>&1; then
     fail "AL_REQUIRE_CODESIGN=1 should fail when AL_CODESIGN_IDENTITY is unset"
+    echo "--- Build Log ---"
+    head -n 10 "$require_log"
+    echo "-----------------"
   else
     pass "AL_REQUIRE_CODESIGN=1 fails when AL_CODESIGN_IDENTITY is unset"
   fi

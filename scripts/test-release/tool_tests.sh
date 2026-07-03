@@ -209,6 +209,19 @@ EOF
   fi
 }
 
+run_go_tool_tests_updateformula_unit() {
+  section "Go Tool Tests: updateformula (unit)"
+
+  # The updateformula package (and its tests) are guarded by the `tools` build
+  # tag, so `go test ./...` (used by make coverage) skips them. Run them
+  # explicitly here so the formula renderer's unit tests actually execute in CI.
+  if (cd "$ROOT_DIR" && go test -tags tools ./internal/tools/updateformula/); then
+    pass "updateformula unit tests passed"
+  else
+    fail "updateformula unit tests failed"
+  fi
+}
+
 run_go_tool_tests_gentemplatemanifest() {
   section "Go Tool Tests: gentemplatemanifest"
 

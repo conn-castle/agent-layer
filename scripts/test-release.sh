@@ -6,6 +6,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# These tests drive build-release.sh with a mock `go` and must never invoke real
+# code signing. `make release-dist` runs this suite as its `test-release`
+# prerequisite while exporting AL_CODESIGN_IDENTITY/AL_REQUIRE_CODESIGN for the
+# actual build, so clear them here to keep the codesign-requirement test
+# deterministic regardless of the caller's environment.
+unset AL_CODESIGN_IDENTITY AL_REQUIRE_CODESIGN
+
 # Colors for output (disabled if not a terminal)
 if [[ -t 1 ]]; then
   RED='\033[0;31m'
@@ -151,6 +158,7 @@ run_codesign_requirement_test
 run_upgrade_docs_script_tests
 run_go_tool_tests_extractchecksum
 run_go_tool_tests_updateformula
+run_go_tool_tests_updateformula_unit
 run_go_tool_tests_gentemplatemanifest
 
 # -----------------------------------------------------------------------------

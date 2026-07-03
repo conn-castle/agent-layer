@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-02 launcher-exec-capture-test-harness-duplication: Exec-capture test harness duplicated across four launcher packages
+    Priority: Low. Area: internal/clients/{claude,codex,copilotcli,antigravity}/launch_test.go
+    Description: `execCall`/`captureExec`/`forbidExec`/`assertExecCalled` (all over the identical `func(string, []string, []string) error` execFunc seam) are copied near-verbatim into each launcher's launch_test.go, ~50 lines per package. Flagged as CodeRabbit nitpicks on PR #130. Not a defect — the tests pass and cover behavior — but a maintainability trap: a change to the mock's behavior must be made in four places.
+    Next step: Extract a shared helper into `internal/testutil` (e.g. `CaptureExec(t, target *func(...)error, err error) *ExecCall`) that takes a pointer to the package-local execFunc var, and update the four launcher suites to use it.
+    Notes: Deferred from PR #130 (macOS signing / exec-handoff) as a cross-package test refactor outside that PR's scope.
+
 - Issue 2026-07-02 lint-ci-local-goconst-false-negative-darwin: `make lint-ci-local` misses goconst violations on macOS
     Priority: Medium. Area: Makefile (`lint-ci-local`) / CI-parity lint tooling; COMMANDS.md guidance
     Description: `make lint-ci-local` runs golangci-lint with GOOS=linux GOARCH=amd64 on a darwin host; cross-GOOS package loading drops the package's `_test.go` files from the analyzed fileset, so goconst's per-package string-occurrence counts fall below the threshold and real violations do not fire. This caused a false negative during PR #128: local `make dev` and `make lint-ci-local` both passed, but CI's `verify` (`make ci` -> `make lint`) failed on `goconst` in internal/sync/codex_config_merge.go. The documented "CI-parity" command is not faithful for occurrence-counting linters.
