@@ -984,6 +984,46 @@ func TestBuildClaudeSettings_ChimeRejectsLegacyAgentSpecificHook(t *testing.T) {
 	}
 }
 
+func TestBuildClaudeSettings_ChimeAppendsAfterMalformedStopEntries(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+			Agents: config.AgentsConfig{
+				Claude: config.ClaudeConfig{AgentSpecific: map[string]any{
+					"hooks": map[string]any{
+						"Stop": []any{
+							"keep scalar entry",
+							map[string]any{"hooks": "keep malformed hooks value"},
+						},
+					},
+				}},
+			},
+		},
+	}
+
+	settings, err := buildClaudeSettings("/repo", project)
+	if err != nil {
+		t.Fatalf("buildClaudeSettings error: %v", err)
+	}
+	hooks := settings["hooks"].(map[string]any)
+	stop := hooks["Stop"].([]any)
+	if len(stop) != 3 {
+		t.Fatalf("expected two user entries plus managed chime hook, got %#v", stop)
+	}
+	if stop[0] != "keep scalar entry" {
+		t.Fatalf("expected scalar user Stop entry preserved, got %#v", stop[0])
+	}
+	second, ok := stop[1].(map[string]any)
+	if !ok || second["hooks"] != "keep malformed hooks value" {
+		t.Fatalf("expected malformed user Stop entry preserved, got %#v", stop[1])
+	}
+	if got := claudeStopChimeHookCount(settings); got != 1 {
+		t.Fatalf("expected exactly one managed chime handler appended, got %d (%#v)", got, stop)
+	}
+}
+
 func TestCleanClaudeChimeHookRemovesOnlyManagedHandler(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1099,6 +1139,205 @@ func TestCleanClaudeChimeHookIgnoresMalformedSettingsWithoutChime(t *testing.T) 
 	}
 }
 
+func TestCleanClaudeChimeHookReadErrorFailsLoud(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"note":"`+agentLayerClaudeChimeCommand+`"}`), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+	readErr := errors.New("read denied")
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		ReadFileFunc: func(name string) ([]byte, error) {
+			if name == settingsPath {
+				return nil, readErr
+			}
+			return RealSystem{}.ReadFile(name)
+		},
+	}
+
+	err := CleanClaudeChimeHook(sys, root)
+	if err == nil || !strings.Contains(err.Error(), "read denied") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestCleanClaudeChimeHookRejectsMalformedSettingsWithChime(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	content := `{"note":"` + agentLayerClaudeChimeCommand + `","hooks":`
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	err := CleanClaudeChimeHook(RealSystem{}, root)
+	if err == nil || !strings.Contains(err.Error(), "invalid Claude settings") {
+		t.Fatalf("expected malformed chime-bearing settings to fail, got %v", err)
+	}
+	if got := readFileForTest(t, settingsPath); got != content {
+		t.Fatalf("expected malformed settings preserved after cleanup failure, got:\n%s", got)
+	}
+}
+
+func TestCleanClaudeChimeHookRejectsMalformedHooksWithChime(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	content := `{"hooks":"bad","note":"` + agentLayerClaudeChimeCommand + `"}`
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	err := CleanClaudeChimeHook(RealSystem{}, root)
+	if err == nil || !strings.Contains(err.Error(), "hooks must be a table") {
+		t.Fatalf("expected malformed hooks cleanup error, got %v", err)
+	}
+	if got := readFileForTest(t, settingsPath); got != content {
+		t.Fatalf("expected malformed hooks preserved after cleanup failure, got:\n%s", got)
+	}
+}
+
+func TestCleanClaudeChimeHookRejectsMalformedStopWithChime(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	content := `{"hooks":{"Stop":"bad"},"note":"` + agentLayerClaudeChimeCommand + `"}`
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	err := CleanClaudeChimeHook(RealSystem{}, root)
+	if err == nil || !strings.Contains(err.Error(), "hooks.Stop must be a list") {
+		t.Fatalf("expected malformed Stop cleanup error, got %v", err)
+	}
+	if got := readFileForTest(t, settingsPath); got != content {
+		t.Fatalf("expected malformed Stop preserved after cleanup failure, got:\n%s", got)
+	}
+}
+
+func TestCleanClaudeChimeHookRejectsMalformedHandlerListWithChime(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	content := `{"hooks":{"Stop":[{"hooks":"bad"}]},"note":"` + agentLayerClaudeChimeCommand + `"}`
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	err := CleanClaudeChimeHook(RealSystem{}, root)
+	if err == nil || !strings.Contains(err.Error(), "hooks.Stop.hooks must be a list") {
+		t.Fatalf("expected malformed handler-list cleanup error, got %v", err)
+	}
+	if got := readFileForTest(t, settingsPath); got != content {
+		t.Fatalf("expected malformed handler list preserved after cleanup failure, got:\n%s", got)
+	}
+}
+
+func TestCleanClaudeChimeHookNoopWhenChimeTextIsOutsideHooks(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"no hooks":          `{"note":"` + agentLayerClaudeChimeCommand + `","theme":"keep"}`,
+		"no Stop":           `{"hooks":{},"note":"` + agentLayerClaudeChimeCommand + `"}`,
+		"scalar Stop entry": `{"hooks":{"Stop":["keep scalar entry"]},"note":"` + agentLayerClaudeChimeCommand + `"}`,
+		"group without hooks": `{"hooks":{"Stop":[{"matcher":"keep group"}]},"note":"` +
+			agentLayerClaudeChimeCommand + `"}`,
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			settingsPath := filepath.Join(root, ".claude", "settings.json")
+			if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+				t.Fatalf("mkdir .claude: %v", err)
+			}
+			if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+				t.Fatalf("write settings: %v", err)
+			}
+
+			if err := CleanClaudeChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("CleanClaudeChimeHook should preserve no-op %q: %v", name, err)
+			}
+			if got := readFileForTest(t, settingsPath); got != content {
+				t.Fatalf("expected no-op settings preserved for %q, got:\n%s", name, got)
+			}
+		})
+	}
+}
+
+func TestCleanClaudeChimeHookMarshalErrorPreservesSettings(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	content := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"` + agentLayerClaudeChimeCommand + `","timeout":5}]}]}}`
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		MarshalIndentFunc: func(v any, prefix, indent string) ([]byte, error) {
+			return nil, errors.New("marshal denied")
+		},
+	}
+
+	err := CleanClaudeChimeHook(sys, root)
+	if err == nil || !strings.Contains(err.Error(), "marshal denied") {
+		t.Fatalf("expected marshal error, got %v", err)
+	}
+	if got := readFileForTest(t, settingsPath); got != content {
+		t.Fatalf("expected settings preserved after marshal error, got:\n%s", got)
+	}
+}
+
+func TestCleanClaudeChimeHookWriteErrorPreservesSettings(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	settingsPath := filepath.Join(root, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	content := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"` + agentLayerClaudeChimeCommand + `","timeout":5}]}]}}`
+	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			if filename == settingsPath {
+				return errors.New("write denied")
+			}
+			return RealSystem{}.WriteFileAtomic(filename, data, perm)
+		},
+	}
+
+	err := CleanClaudeChimeHook(sys, root)
+	if err == nil || !strings.Contains(err.Error(), "write denied") {
+		t.Fatalf("expected write error, got %v", err)
+	}
+	if got := readFileForTest(t, settingsPath); got != content {
+		t.Fatalf("expected settings preserved after write error, got:\n%s", got)
+	}
+}
+
 func TestCleanClaudeChimeHookPreservesAugmentedMatchingHandler(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -1140,6 +1379,35 @@ func TestCleanClaudeChimeHookPreservesAugmentedMatchingHandler(t *testing.T) {
 	}
 	if strings.Count(updated, agentLayerChimeMarker) != 1 {
 		t.Fatalf("expected only the augmented matching handler to remain, got:\n%s", updated)
+	}
+}
+
+func TestChimeHandlerMatchesAnyRequiresExactManagedHandler(t *testing.T) {
+	t.Parallel()
+	commands := map[string]struct{}{agentLayerClaudeChimeCommand: {}}
+	for name, handler := range map[string]any{
+		"non-map":         "not a hook",
+		"extra key":       map[string]any{"type": "command", "command": agentLayerClaudeChimeCommand, "timeout": agentLayerChimeTimeout, "description": "user-owned"},
+		"missing command": map[string]any{"type": "command", "timeout": agentLayerChimeTimeout, "note": "not generated"},
+		"wrong type":      map[string]any{"type": "prompt", "command": agentLayerClaudeChimeCommand, "timeout": agentLayerChimeTimeout},
+		"wrong command":   map[string]any{"type": "command", "command": "echo user", "timeout": agentLayerChimeTimeout},
+		"string timeout":  map[string]any{"type": "command", "command": agentLayerClaudeChimeCommand, "timeout": "5"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if chimeHandlerMatchesAny(handler, commands) {
+				t.Fatalf("handler %q must not be treated as Agent Layer-owned: %#v", name, handler)
+			}
+		})
+	}
+	for name, timeout := range map[string]any{"int": 5, "int64": int64(5), "float64": float64(5)} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			handler := map[string]any{"type": "command", "command": agentLayerClaudeChimeCommand, "timeout": timeout}
+			if !chimeHandlerMatchesAny(handler, commands) {
+				t.Fatalf("generated handler with %s timeout should match ownership detector: %#v", name, handler)
+			}
+		})
 	}
 }
 
