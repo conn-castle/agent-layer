@@ -136,12 +136,138 @@ func TestPromptModelsAntigravityFallsBackWithoutWaitingForPendingAsyncPrefetch(t
 		if err != nil {
 			t.Fatalf("promptModels error: %v", err)
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(time.Second):
 		t.Fatal("promptModels blocked waiting for pending Antigravity model prefetch")
 	}
 
 	releaseDiscovery()
 	waitForAntigravityModelDiscoveryReady(t, cache)
+}
+
+func TestPromptModelsScriptedAntigravityWaitsForPendingAsyncPrefetch(t *testing.T) {
+	orig := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = orig })
+
+	binDir := t.TempDir()
+	agyPath := filepath.Join(binDir, "agy")
+	script := "#!/bin/sh\nif [ \"$1\" = \"models\" ]; then\n  printf 'Live Scripted Model\\n'\nfi\n"
+	if err := os.WriteFile(agyPath, []byte(script), 0o700); err != nil { // #nosec G306 -- test writes an executable mock agy stub; the executable bit is required.
+		t.Fatalf("write agy stub: %v", err)
+	}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var startedOnce sync.Once
+	var releaseOnce sync.Once
+	releaseDiscovery := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseDiscovery()
+
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		return agentoptions.DiscoveryRequest{
+			LookPath: func(name string) (string, error) {
+				if name != "agy" {
+					return "", errors.New("unexpected binary lookup")
+				}
+				startedOnce.Do(func() { close(started) })
+				<-release
+				return agyPath, nil
+			},
+			Live:    true,
+			Timeout: 30 * time.Second,
+		}
+	}
+
+	cache := &wizardOptionDiscoveryCache{}
+	cache.prefetchAntigravityModels()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async Antigravity model prefetch to start")
+	}
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		releaseDiscovery()
+	}()
+
+	choices := NewChoices()
+	choices.EnabledAgents[AgentAntigravity] = true
+	ui := &ScriptedUI{
+		answers: scriptedAnswers{
+			Select: map[string]string{messages.WizardAntigravityModelTitle: "Live Scripted Model"},
+		},
+		used: make(map[string]struct{}),
+	}
+
+	if err := promptModels(ui, choices, cache); err != nil {
+		t.Fatalf("promptModels error: %v", err)
+	}
+	if choices.AntigravityModel != "Live Scripted Model" {
+		t.Fatalf("AntigravityModel = %q, want live scripted selection", choices.AntigravityModel)
+	}
+}
+
+func TestAntigravityModelOptionsReturnsCachedCopy(t *testing.T) {
+	cache := &wizardOptionDiscoveryCache{
+		antigravityModelValues: []string{"Cached Model"},
+		antigravityModelsReady: true,
+	}
+
+	values := cache.antigravityModelOptions(false)
+	values[0] = "Mutated Model"
+
+	again := cache.antigravityModelOptions(false)
+	if !slices.Equal(again, []string{"Cached Model"}) {
+		t.Fatalf("cached values = %v, want immutable cached model", again)
+	}
+}
+
+func TestPrefetchAntigravityModelsStartsOnlyOnce(t *testing.T) {
+	orig := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = orig })
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var requestCalls int
+	var startedOnce sync.Once
+	var releaseOnce sync.Once
+	releaseDiscovery := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseDiscovery()
+
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		requestCalls++
+		return agentoptions.DiscoveryRequest{
+			LookPath: func(name string) (string, error) {
+				if name != "agy" {
+					return "", errors.New("unexpected binary lookup")
+				}
+				startedOnce.Do(func() { close(started) })
+				<-release
+				return "", errors.New("released pending discovery")
+			},
+			Live:    true,
+			Timeout: 30 * time.Second,
+		}
+	}
+
+	cache := &wizardOptionDiscoveryCache{}
+	cache.prefetchAntigravityModels()
+	cache.prefetchAntigravityModels()
+	if requestCalls != 1 {
+		t.Fatalf("discovery requests = %d, want one idempotent prefetch", requestCalls)
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for async Antigravity model prefetch to start")
+	}
+
+	releaseDiscovery()
+	waitForAntigravityModelDiscoveryReady(t, cache)
+	cache.prefetchAntigravityModels()
+	if requestCalls != 1 {
+		t.Fatalf("discovery requests after completion = %d, want one idempotent prefetch", requestCalls)
+	}
 }
 
 func TestPromptWizardFlowPrefetchesAntigravityModelsOnceAcrossModelRevisit(t *testing.T) {
@@ -207,6 +333,43 @@ func TestPromptWizardFlowPrefetchesAntigravityModelsOnceAcrossModelRevisit(t *te
 	}
 	if discoveryRequests != 1 {
 		t.Fatalf("discovery requests = %d, want exactly one flow-owned prefetch", discoveryRequests)
+	}
+}
+
+func TestPromptWizardFlowSkipsAntigravityPrefetchWhenAgentDisabled(t *testing.T) {
+	orig := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = orig })
+
+	var discoveryRequests int
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		discoveryRequests++
+		return agentoptions.DiscoveryRequest{}
+	}
+
+	choices := NewChoices()
+	choices.ApprovalMode = config.ApprovalModeAll
+	ui := &MockUI{
+		MultiSelectFunc: func(title string, _ []string, selected *[]string) error {
+			switch title {
+			case messages.WizardEnableAgentsTitle, messages.WizardEnableDefaultMCPServersTitle:
+				*selected = []string{}
+			}
+			return nil
+		},
+		ConfirmFunc: func(title string, value *bool) error {
+			switch title {
+			case messages.WizardEnableAgentLayerPrompt, messages.WizardEnableWarningsPrompt:
+				*value = false
+			}
+			return nil
+		},
+	}
+
+	if err := promptWizardFlow(t.TempDir(), ui, choices); err != nil {
+		t.Fatalf("promptWizardFlow error: %v", err)
+	}
+	if discoveryRequests != 0 {
+		t.Fatalf("discovery requests = %d, want none when Antigravity stays disabled", discoveryRequests)
 	}
 }
 
