@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "target_version": "0.11.3",
+  "min_prior_version": "0.11.2",
+  "operations": [
+    {
+      "id": "k-set-default-notifications-chime",
+      "kind": "config_set_default",
+      "key": "notifications.chime",
+      "value": false,
+      "rationale": "Agent Layer can now project a local turn-stop chime into supported provider hooks. Non-interactive upgrades keep chime disabled unless the user explicitly opts in.",
+      "source_agnostic": true
+    }
+  ]
+}

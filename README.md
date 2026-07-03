@@ -312,6 +312,7 @@ Generated outputs are written into the repo in client-specific formats (examples
 - Instruction shims: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`
 - MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`
 - Shared skills: `.agents/skills/`
+- Antigravity notification plugin: `.agents/plugins/agent-layer-chime/`
 - Claude skills: `.claude/skills/`
 - VS Code integration: `.vscode/mcp.json` and an Agent Layer-managed block in `.vscode/settings.json`
 
@@ -331,6 +332,12 @@ Example:
 [approvals]
 # one of: "all", "mcp", "commands", "none", "yolo"
 mode = "all"
+
+[notifications]
+# Optional local chime when supported providers fire their Stop lifecycle hook.
+# Absent or false disables it. The default command uses macOS afplay.
+# This is a lifecycle signal, not proof that the turn was correct.
+chime = false
 
 [agents.antigravity]
 enabled = true
@@ -442,6 +449,12 @@ mcp_schema_tokens_server_threshold = 20000
 ```
 
 `agent_specific` passthrough keys are copied into provider-native settings. Codex and Claude warn when supported passthrough keys collide with Agent Layer-managed keys; Antigravity rejects `agents.antigravity.agent_specific.model` because `agents.antigravity.model` is the only model source. `.codex/config.toml` is shared Codex state: `al sync` refreshes known Agent Layer-managed entries, preserves unrelated Codex/user runtime entries, and seeds current repo trust only when that exact project entry is absent.
+
+#### Notifications (`[notifications]`)
+
+Set `chime = true` to project a local turn-stop chime into enabled Claude, Codex, and Antigravity clients. The generated hooks use each provider's native `Stop` lifecycle event. `Stop` means the provider says the assistant turn stopped; it is not a correctness or task-completion signal.
+
+The managed command uses macOS `/usr/bin/afplay` with the system Blow sound. On non-macOS systems, leave the setting disabled until platform-specific sound support is added. Codex project hooks also require trusted project config and enabled hooks. Claude hooks can be disabled by `--bare`, `--safe-mode`, or policy settings. Codex and Antigravity hook commands must print valid JSON, which Agent Layer's managed commands do. Gemini CLI is not projected because Antigravity is Agent Layer's supported Google client.
 
 #### Built-in placeholders
 

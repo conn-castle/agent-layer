@@ -66,7 +66,21 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 		}
 	}
 
+	if err := ensureNoLegacyAgentSpecificChime(
+		"agents.claude.agent_specific.hooks",
+		project.Config.Agents.Claude.AgentSpecific["hooks"],
+		agentLayerClaudeChimeCommand,
+	); err != nil {
+		return nil, err
+	}
+
 	mergeAgentSpecificSettings(settings, project.Config.Agents.Claude.AgentSpecific)
+
+	if config.NotificationsChimeEnabled(project.Config) {
+		if err := injectClaudeChimeHook(settings); err != nil {
+			return nil, err
+		}
+	}
 
 	// Inject the AskUserQuestion block last so it unions with (rather than is
 	// replaced by) any user-supplied agent_specific deny / PreToolUse entries.

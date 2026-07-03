@@ -64,8 +64,10 @@ work the current agent can perform directly with local shell commands.
 - Do not use `al dispatch` to bypass the caller's restrictions, approvals, or
   sandbox expectations.
 - After starting a dispatch, let the running `al dispatch` command finish.
-  Use progress and the final result from that process; do not poll, inspect, or
-  read dispatch artifacts with separate commands while it is active.
+  Do not wrap it in a command timeout or use a tool-level timeout intended to
+  stop it early; dispatch is allowed to run as long as the target needs. Use
+  progress and the final result from that process; do not poll, inspect, or read
+  dispatch artifacts with separate commands while it is active.
 - Do not retry failed target launches by guessing flags, targets, models, or
   reasoning-effort values. Re-check help and options, then report the mismatch
   if it remains unresolved.

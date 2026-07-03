@@ -14,11 +14,12 @@ const DefaultDispatchMaxDepth = 1
 
 // Config is the root configuration loaded from .agent-layer/config.toml.
 type Config struct {
-	Approvals ApprovalsConfig `toml:"approvals"`
-	Agents    AgentsConfig    `toml:"agents"`
-	Dispatch  DispatchLimits  `toml:"dispatch"`
-	MCP       MCPConfig       `toml:"mcp"`
-	Warnings  WarningsConfig  `toml:"warnings"`
+	Approvals     ApprovalsConfig     `toml:"approvals"`
+	Agents        AgentsConfig        `toml:"agents"`
+	Dispatch      DispatchLimits      `toml:"dispatch"`
+	MCP           MCPConfig           `toml:"mcp"`
+	Notifications NotificationsConfig `toml:"notifications"`
+	Warnings      WarningsConfig      `toml:"warnings"`
 }
 
 // ApprovalsConfig controls auto-approval behavior per client.
@@ -44,6 +45,11 @@ type DispatchConfig struct {
 // DispatchLimits controls Agent Dispatch recursion limits.
 type DispatchLimits struct {
 	MaxDepth *int `toml:"max_depth"`
+}
+
+// NotificationsConfig controls user-visible local notification behavior.
+type NotificationsConfig struct {
+	Chime *bool `toml:"chime"`
 }
 
 // AgentConfig is for agents that support enablement and model selection.
@@ -160,6 +166,12 @@ func CodexStatuslineEnabled(c CodexConfig) bool {
 // it.
 func CodexLocalConfigDirEnabled(c CodexConfig) bool {
 	return c.LocalConfigDir != nil && *c.LocalConfigDir
+}
+
+// NotificationsChimeEnabled reports whether Agent Layer should project a local
+// turn-stop chime into supported provider-native hook systems.
+func NotificationsChimeEnabled(c Config) bool {
+	return c.Notifications.Chime != nil && *c.Notifications.Chime
 }
 
 // DispatchMaxDepth returns the configured Agent Dispatch maximum depth.
