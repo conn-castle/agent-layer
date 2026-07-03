@@ -472,6 +472,88 @@ timeout = 2
 	assertValidTOML(t, first)
 }
 
+func TestWriteCodexConfig_ChimeConvertsInlineStopAssignmentAndPreservesUserHooks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExistingCodexConfig(t, root, codexPartialHeader+`
+[hooks]
+state = { last_seen = "keep" }
+Stop = [
+  { hooks = [{ type = "command", command = "echo user", timeout = 2 }] },
+  { name = "no hooks yet", hooks = [] },
+]
+
+[notices]
+read = true
+`)
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	first := readCodexConfig(t, root)
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second WriteCodexConfig: %v", err)
+	}
+	second := readCodexConfig(t, root)
+	if first != second {
+		t.Fatalf("expected idempotent chime merge\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+	if strings.Contains(first, "Stop = [") {
+		t.Fatalf("expected inline Stop assignment converted before appending chime, got:\n%s", first)
+	}
+	for _, want := range []string{
+		`[hooks]`,
+		`state = { last_seen = "keep" }`,
+		`[notices]`,
+		`command = "echo user"`,
+		codexChimeBeginMarker,
+		agentLayerChimeMarker,
+	} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("expected %q in Codex config:\n%s", want, first)
+		}
+	}
+	parsed := parseCodexConfig(t, first)
+	hooks, ok := parsed["hooks"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected hooks table, got %#v\n%s", parsed["hooks"], first)
+	}
+	stop, ok := hooks["Stop"].([]any)
+	if !ok || len(stop) != 3 {
+		t.Fatalf("expected user Stop hook and managed chime hook, got %#v\n%s", hooks["Stop"], first)
+	}
+	userStop, ok := stop[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first Stop entry to be a table, got %#v\n%s", stop[0], first)
+	}
+	userStopHooks, ok := userStop["hooks"].([]any)
+	if !ok || len(userStopHooks) != 1 {
+		t.Fatalf("expected first user Stop hooks preserved, got %#v\n%s", userStop["hooks"], first)
+	}
+	userHook, ok := userStopHooks[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first user hook to be a table, got %#v\n%s", userStopHooks[0], first)
+	}
+	if userHook["type"] != "command" || userHook["command"] != "echo user" || userHook["timeout"] != int64(2) {
+		t.Fatalf("expected user hook fields preserved, got %#v\n%s", userHook, first)
+	}
+	emptyStop, ok := stop[1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected second Stop entry to be a table, got %#v\n%s", stop[1], first)
+	}
+	emptyHooks, ok := emptyStop["hooks"].([]any)
+	if !ok || len(emptyHooks) != 0 || emptyStop["name"] != "no hooks yet" {
+		t.Fatalf("expected empty user hook list preserved, got %#v\n%s", emptyStop, first)
+	}
+}
+
 func TestWriteCodexConfig_ChimePreservesAgentSpecificStopHooks(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

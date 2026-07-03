@@ -81,8 +81,17 @@ type antigravityChimePluginFile struct {
 
 func antigravityChimePluginFiles() []antigravityChimePluginFile {
 	return []antigravityChimePluginFile{
-		{name: "plugin.json", data: []byte("{\n  \"name\": \"agent-layer-chime\"\n}\n")},
-		{name: "hooks.json", data: []byte("{\n  \"agent-layer-chime\": {\n    \"enabled\": true,\n    \"Stop\": [\n      {\n        \"type\": \"command\",\n        \"command\": " + fmt.Sprintf("%q", agentLayerAntigravityChimeCommand) + ",\n        \"timeout\": 5\n      }\n    ]\n  }\n}\n")},
+		{name: "plugin.json", data: []byte(fmt.Sprintf("{\n  \"name\": %q\n}\n", antigravityChimePluginName))},
+		{name: "hooks.json", data: []byte(fmt.Sprintf(
+			"{\n  %q: {\n    \"enabled\": true,\n    \"Stop\": [\n      {\n        %q: %q,\n        %q: %q,\n        %q: %d\n      }\n    ]\n  }\n}\n",
+			antigravityChimePluginName,
+			chimeHandlerTypeKey,
+			chimeHandlerCommandType,
+			chimeHandlerCommandKey,
+			agentLayerAntigravityChimeCommand,
+			chimeHandlerTimeoutKey,
+			agentLayerChimeTimeout,
+		))},
 	}
 }
 
