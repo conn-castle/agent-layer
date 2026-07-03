@@ -171,3 +171,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: Interactive CLI launchers (`al claude`, `al codex`, `al copilot`, `al agy`) replace `al` with the target agent via `syscall.Exec`; darwin release binaries are Developer ID signed/notarized as `com.conncastle.agent-layer`; Homebrew renders a binary formula for release assets instead of building from source.
     Reason: macOS TCC/keychain prompts must attribute protected access to the actual agent binary, and grants should survive Agent Layer upgrades for install-script and Homebrew users.
     Tradeoffs: Agent exit codes and stderr now pass through without Agent Layer's wrapper; users get a one-time permission prompt under each agent identity, while stale `al` grants remain cosmetic.
+
+- Decision 2026-07-03 global-notifications-chime: One notification toggle projects provider-native Stop hooks
+    Decision: `notifications.chime` is a global typed opt-in. Sync projects it to Claude `Stop`, a marked managed Codex `[[hooks.Stop]]` region, and an Agent Layer-owned Antigravity `.agents/plugins/agent-layer-chime` plugin.
+    Reason: A single source of truth avoids per-agent hook drift while preserving user-owned provider hooks and shared config.
+    Tradeoffs: The default sound command is macOS-specific, and the chime signals lifecycle stop only; Codex needs marked shared-config ownership while Antigravity needs a dedicated plugin directory.

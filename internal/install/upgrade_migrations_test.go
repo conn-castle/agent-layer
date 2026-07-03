@@ -924,6 +924,35 @@ func TestLoadUpgradeMigrationManifest_0_11_2_HasCodexLocalConfigDirDefault(t *te
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_11_3_HasNotificationsChimeDefault(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.11.3")
+	if err != nil {
+		t.Fatalf("load 0.11.3 manifest: %v", err)
+	}
+	if len(manifest.Operations) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
+	}
+	op := manifest.Operations[0]
+	if op.ID != "k-set-default-notifications-chime" {
+		t.Fatalf("op ID = %q, want %q", op.ID, "k-set-default-notifications-chime")
+	}
+	if op.Kind != upgradeMigrationKindConfigSetDefault {
+		t.Fatalf("op kind = %q, want %q", op.Kind, upgradeMigrationKindConfigSetDefault)
+	}
+	if op.Key != "notifications.chime" {
+		t.Fatalf("op key = %q, want %q", op.Key, "notifications.chime")
+	}
+	if string(op.Value) != "false" {
+		t.Fatalf("op value = %q, want %q", string(op.Value), "false")
+	}
+	if !op.SourceAgnostic {
+		t.Fatal("expected source_agnostic = true")
+	}
+	if manifest.MinPriorVersion != "0.11.2" {
+		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.11.2")
+	}
+}
+
 func TestMigration_0_10_2_MigratesGeminiConfigToAntigravity(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1373,12 +1402,12 @@ func TestUpgradeTransactionRunsMigrationsBeforePinBump(t *testing.T) {
 	}
 }
 
-func TestRun_DevUpgradeRunsLatestMigrationsWithoutWritingPin(t *testing.T) {
+func TestRun_DevUpgradeRunsLatestSourceAgnosticMigrationsWithoutWritingPin(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	cfgPath := writeMigrationConfigForTest(t, root, antigravityMigrationConfigWithClients(
-		[]string{"[agents.gemini]", "enabled = true", ""},
-		`["gemini"]`,
+		nil,
+		`["antigravity"]`,
 	))
 
 	if err := Run(root, Options{System: RealSystem{}, Overwrite: true, Prompter: autoApprovePrompter()}); err != nil {
@@ -1389,24 +1418,15 @@ func TestRun_DevUpgradeRunsLatestMigrationsWithoutWritingPin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read migrated config: %v", err)
 	}
-	if strings.Contains(string(data), "gemini") {
-		t.Fatalf("expected dev upgrade to apply latest Gemini migration, got:\n%s", string(data))
-	}
 	cfg, err := config.ParseConfig(data, cfgPath)
 	if err != nil {
 		t.Fatalf("strict parse after dev upgrade migration: %v\n%s", err, string(data))
 	}
-	if cfg.Agents.Antigravity.Enabled == nil || !*cfg.Agents.Antigravity.Enabled {
-		t.Fatalf("expected agents.antigravity.enabled = true after dev upgrade, got %v", cfg.Agents.Antigravity.Enabled)
+	if cfg.Agents.Codex.LocalConfigDir == nil || *cfg.Agents.Codex.LocalConfigDir {
+		t.Fatalf("expected agents.codex.local_config_dir = false after dev upgrade, got %v", cfg.Agents.Codex.LocalConfigDir)
 	}
-	// The 0.11.0 manifest writes explicit status line defaults. The default is
-	// disabled, so a non-interactive (auto-approve) upgrade must keep both off
-	// and seed no sources rather than silently enabling the status lines.
-	if cfg.Agents.Claude.Statusline == nil || *cfg.Agents.Claude.Statusline {
-		t.Fatalf("expected agents.claude.statusline = false after dev upgrade, got %v", cfg.Agents.Claude.Statusline)
-	}
-	if cfg.Agents.Codex.Statusline == nil || *cfg.Agents.Codex.Statusline {
-		t.Fatalf("expected agents.codex.statusline = false after dev upgrade, got %v", cfg.Agents.Codex.Statusline)
+	if cfg.Notifications.Chime == nil || *cfg.Notifications.Chime {
+		t.Fatalf("expected notifications.chime = false after dev upgrade, got %v", cfg.Notifications.Chime)
 	}
 	if _, statErr := os.Stat(filepath.Join(root, ".agent-layer", "al.version")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("dev upgrade should not write al.version, statErr=%v", statErr)

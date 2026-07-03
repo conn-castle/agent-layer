@@ -54,6 +54,19 @@ func TestLookupField_CodexLocalConfigDirOptionalBool(t *testing.T) {
 	}
 }
 
+func TestLookupField_NotificationsChimeOptionalBool(t *testing.T) {
+	f, ok := LookupField("notifications.chime")
+	if !ok {
+		t.Fatal("expected notifications.chime to be in catalog")
+	}
+	if f.Type != FieldBool {
+		t.Errorf("expected FieldBool, got %s", f.Type)
+	}
+	if f.Required {
+		t.Error("expected notifications.chime to be optional")
+	}
+}
+
 func TestLookupField_EnumWithCustom(t *testing.T) {
 	f, ok := LookupField("agents.claude.model")
 	if !ok {

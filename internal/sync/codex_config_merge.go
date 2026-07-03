@@ -27,6 +27,7 @@ type codexManagedConfig struct {
 	Content       string
 	TrustedRoot   string
 	AgentSpecific map[string]any
+	ChimeEnabled  bool
 }
 
 type codexTomlEditor struct {
@@ -126,6 +127,9 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	if err := editor.appendMissingProjects(path, existingMap, managedMap); err != nil {
 		return "", err
 	}
+	if _, err := editor.applyCodexChimeHook(path, managed.ChimeEnabled); err != nil {
+		return "", err
+	}
 	if fragment := extractNamespaceLines(managed.Content, []string{config.CodexMCPServersKey}); len(fragment) > 0 {
 		editor.appendBlock(fragment)
 	}
@@ -136,6 +140,43 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 		return "", fmt.Errorf("merged Codex config is invalid TOML: %w", err)
 	}
 	return out, nil
+}
+
+// CleanCodexChimeHook removes only Agent Layer-owned Codex chime hooks from
+// .codex/config.toml. It is used when Codex is disabled, so the normal Codex
+// config merge path will not run.
+func CleanCodexChimeHook(sys System, root string) error {
+	path, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	existing, err := readExistingCodexConfig(sys, path)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(existing) == "" {
+		return nil
+	}
+	editor := newCodexTomlEditor(existing)
+	changed, err := editor.applyCodexChimeHook(path, false)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	out := editor.render()
+	var renderCheck map[string]any
+	if err := toml.Unmarshal([]byte(out), &renderCheck); err != nil {
+		return fmt.Errorf("merged Codex config is invalid TOML: %w", err)
+	}
+	if err := sys.WriteFileAtomic(path, []byte(out), 0o600); err != nil {
+		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
+	}
+	return nil
 }
 
 func validateCodexExistingShapes(path string, existing map[string]any, managed map[string]any, trustedRoot string) error {
@@ -287,6 +328,141 @@ func (e *codexTomlEditor) appendBlock(block []string) {
 		e.lines = append(e.lines, "")
 	}
 	e.lines = append(e.lines, block...)
+}
+
+func (e *codexTomlEditor) applyCodexChimeHook(path string, enabled bool) (bool, error) {
+	changed, err := e.removeCodexChimeHook(path)
+	if err != nil {
+		return false, err
+	}
+	if !enabled {
+		return changed, nil
+	}
+	if e.rootInlineTableExists("hooks") {
+		return false, fmt.Errorf(messages.SyncCodexExistingConfigShapeConflictFmt, path, "hooks")
+	}
+	var builder strings.Builder
+	appendCodexChimeBlock(&builder)
+	e.appendBlock(strings.Split(strings.TrimSuffix(builder.String(), "\n"), "\n"))
+	return true, nil
+}
+
+func (e *codexTomlEditor) removeCodexChimeHook(path string) (bool, error) {
+	ranges, err := e.managedCodexChimeRegions(path)
+	if err != nil {
+		return false, err
+	}
+	changed := false
+	if len(ranges) > 0 {
+		e.removeRanges(ranges)
+		changed = true
+	}
+	unmarked := e.unmarkedCodexChimeStopGroupRanges()
+	if len(unmarked) > 0 {
+		e.removeRanges(unmarked)
+		changed = true
+	}
+	return changed, nil
+}
+
+func (e *codexTomlEditor) managedCodexChimeRegions(path string) ([]lineRange, error) {
+	var ranges []lineRange
+	open := -1
+	var invalid bool
+	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(i int, line string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
+		trimmed := strings.TrimSpace(line)
+		switch trimmed {
+		case codexChimeBeginMarker:
+			if open >= 0 {
+				invalid = true
+				return tomlpatch.LineWalkResult{Stop: true}
+			}
+			open = i
+		case codexChimeEndMarker:
+			if open < 0 {
+				invalid = true
+				return tomlpatch.LineWalkResult{Stop: true}
+			}
+			if e.codexChimeRegionHasTrailingContent(i + 1) {
+				invalid = true
+				return tomlpatch.LineWalkResult{Stop: true}
+			}
+			ranges = append(ranges, lineRange{start: open, end: i})
+			open = -1
+		}
+		return tomlpatch.LineWalkResult{}
+	})
+	if invalid || open >= 0 || len(ranges) > 1 {
+		return nil, fmt.Errorf(messages.SyncCodexChimeMarkerConflictFmt, path)
+	}
+	return ranges, nil
+}
+
+func (e *codexTomlEditor) codexChimeRegionHasTrailingContent(start int) bool {
+	for i := start; i < len(e.lines); i++ {
+		line := e.lines[i]
+		if _, _, ok := tomlpatch.ParseHeader(line); ok {
+			return false
+		}
+		trimmed := strings.TrimSpace(stripLineComment(line))
+		if trimmed == "" {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func (e *codexTomlEditor) unmarkedCodexChimeStopGroupRanges() []lineRange {
+	headers := e.headerLines()
+	var ranges []lineRange
+	for i, header := range headers {
+		if !header.parsed || !header.isArray || !slices.Equal(header.path, []string{"hooks", "Stop"}) {
+			continue
+		}
+		end := len(e.lines)
+		for j := i + 1; j < len(headers); j++ {
+			next := headers[j]
+			if !next.parsed {
+				end = next.index
+				break
+			}
+			if slices.Equal(next.path, []string{"hooks", "Stop"}) || !pathHasPrefix(next.path, []string{"hooks", "Stop"}) {
+				end = next.index
+				break
+			}
+		}
+		r := lineRange{start: header.index, end: end - 1}
+		if e.codexStopGroupIsExactChimeOnly(r) {
+			ranges = append(ranges, r)
+		}
+	}
+	return ranges
+}
+
+func (e *codexTomlEditor) codexStopGroupIsExactChimeOnly(r lineRange) bool {
+	fragment := strings.Join(e.lines[r.start:r.end+1], "\n")
+	var parsed map[string]any
+	if err := toml.Unmarshal([]byte(fragment), &parsed); err != nil {
+		return false
+	}
+	hooks, ok := parsed["hooks"].(map[string]any)
+	if !ok || len(hooks) != 1 {
+		return false
+	}
+	stop, ok := hooks["Stop"].([]any)
+	if !ok || len(stop) != 1 {
+		return false
+	}
+	stopEntry, ok := stop[0].(map[string]any)
+	if !ok || len(stopEntry) != 1 {
+		return false
+	}
+	stopHooks, ok := stopEntry["hooks"].([]any)
+	if !ok || len(stopHooks) != 1 {
+		return false
+	}
+	return chimeHandlerMatchesAny(stopHooks[0], legacyChimeCommandVariants(agentLayerCodexChimeCommand))
 }
 
 func (e *codexTomlEditor) insertRootLine(line string) {

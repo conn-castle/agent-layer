@@ -432,6 +432,328 @@ notifications = true
 	}
 }
 
+func TestWriteCodexConfig_ChimeAppendsManagedBlockAndPreservesUserStopHooks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExistingCodexConfig(t, root, codexPartialHeader+`
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "echo user"
+timeout = 2
+`)
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	first := readCodexConfig(t, root)
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second WriteCodexConfig: %v", err)
+	}
+	second := readCodexConfig(t, root)
+	if first != second {
+		t.Fatalf("expected idempotent chime merge\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+	for _, want := range []string{codexChimeBeginMarker, agentLayerChimeMarker, `command = "echo user"`} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("expected %q in Codex config:\n%s", want, first)
+		}
+	}
+	if got := strings.Count(first, codexChimeBeginMarker); got != 1 {
+		t.Fatalf("expected one managed chime block, got %d:\n%s", got, first)
+	}
+	assertValidTOML(t, first)
+}
+
+func TestWriteCodexConfig_ChimePreservesAgentSpecificStopHooks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{AgentSpecific: map[string]any{
+					"hooks": map[string]any{
+						"Stop": []any{
+							map[string]any{"hooks": []any{map[string]any{"type": "command", "command": "echo user", "timeout": int64(2)}}},
+						},
+					},
+				}},
+			},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	merged := readCodexConfig(t, root)
+	for _, want := range []string{codexChimeBeginMarker, agentLayerChimeMarker, `command = 'echo user'`} {
+		if !strings.Contains(merged, want) {
+			t.Fatalf("expected %q in Codex config:\n%s", want, merged)
+		}
+	}
+	assertValidTOML(t, merged)
+}
+
+func TestWriteCodexConfig_ChimeDisabledRemovesOnlyManagedBlock(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExistingCodexConfig(t, root, codexPartialHeader+`
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "echo user"
+timeout = 2
+
+`+codexChimeBlockForTest())
+	project := &config.ProjectConfig{
+		Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
+		Env:    map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	merged := readCodexConfig(t, root)
+	if strings.Contains(merged, codexChimeBeginMarker) || strings.Contains(merged, agentLayerChimeMarker) {
+		t.Fatalf("expected managed chime block removed, got:\n%s", merged)
+	}
+	if !strings.Contains(merged, `command = "echo user"`) {
+		t.Fatalf("expected user Stop hook preserved, got:\n%s", merged)
+	}
+	assertValidTOML(t, merged)
+}
+
+func TestWriteCodexConfig_ChimeRejectsManagedBlockWithTrailingAssignment(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	existing := codexPartialHeader + codexChimeBlockForTest() + `user_key = "would-move"
+
+[notices]
+read = true
+`
+	writeExistingCodexConfig(t, root, existing)
+	project := &config.ProjectConfig{
+		Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
+		Env:    map[string]string{},
+	}
+
+	err := WriteCodexConfig(RealSystem{}, root, project)
+	if err == nil || !strings.Contains(err.Error(), "markers are incomplete or ambiguous") {
+		t.Fatalf("expected ambiguous chime marker error, got %v", err)
+	}
+	if got := readCodexConfig(t, root); got != existing {
+		t.Fatalf("expected ambiguous file left untouched, got:\n%s", got)
+	}
+}
+
+func TestCleanCodexChimeHookRemovesManagedBlockWhenCodexDisabled(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExistingCodexConfig(t, root, codexPartialHeader+`
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "echo user"
+timeout = 2
+
+`+codexChimeBlockForTest())
+
+	if err := CleanCodexChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanCodexChimeHook: %v", err)
+	}
+	merged := readCodexConfig(t, root)
+	if strings.Contains(merged, codexChimeBeginMarker) || strings.Contains(merged, agentLayerChimeMarker) {
+		t.Fatalf("expected managed chime block removed, got:\n%s", merged)
+	}
+	if !strings.Contains(merged, `command = "echo user"`) {
+		t.Fatalf("expected user Stop hook preserved, got:\n%s", merged)
+	}
+	assertValidTOML(t, merged)
+}
+
+func TestCleanCodexChimeHookRejectsSymlinkConfigDir(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	outsideConfig := filepath.Join(outside, "config.toml")
+	if err := os.WriteFile(outsideConfig, []byte(codexPartialHeader+codexChimeBlockForTest()), 0o600); err != nil {
+		t.Fatalf("write outside config: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, ".codex")); err != nil {
+		t.Fatalf("seed .codex symlink: %v", err)
+	}
+
+	err := CleanCodexChimeHook(RealSystem{}, root)
+	if err == nil || !strings.Contains(err.Error(), "must be a real file") {
+		t.Fatalf("expected symlink cleanup error, got %v", err)
+	}
+	if got := readFileForTest(t, outsideConfig); !strings.Contains(got, agentLayerChimeMarker) {
+		t.Fatalf("outside config must not be rewritten, got:\n%s", got)
+	}
+}
+
+func TestCleanCodexChimeHookRejectsSymlinkConfigFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	codexDir := filepath.Join(root, ".codex")
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	outsideConfig := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(outsideConfig, []byte(codexPartialHeader+codexChimeBlockForTest()), 0o600); err != nil {
+		t.Fatalf("write outside config: %v", err)
+	}
+	if err := os.Symlink(outsideConfig, filepath.Join(codexDir, "config.toml")); err != nil {
+		t.Fatalf("seed config symlink: %v", err)
+	}
+
+	err := CleanCodexChimeHook(RealSystem{}, root)
+	if err == nil || !strings.Contains(err.Error(), "must be a real file") {
+		t.Fatalf("expected symlink cleanup error, got %v", err)
+	}
+	if got := readFileForTest(t, outsideConfig); !strings.Contains(got, agentLayerChimeMarker) {
+		t.Fatalf("outside config must not be rewritten, got:\n%s", got)
+	}
+}
+
+func TestCleanCodexChimeHookIgnoresMalformedConfigWithoutChime(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	content := `model = [`
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if err := CleanCodexChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanCodexChimeHook should ignore malformed no-chime config: %v", err)
+	}
+	if got := readFileForTest(t, configPath); got != content {
+		t.Fatalf("expected malformed no-chime config untouched, got:\n%s", got)
+	}
+}
+
+func TestWriteCodexConfig_ChimeMigratesExactUnmarkedStopGroup(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExistingCodexConfig(t, root, codexPartialHeader+`
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "/usr/bin/afplay /System/Library/Sounds/Blow.aiff >/dev/null 2>&1 & printf '{\"continue\":true}\\n'"
+timeout = 5
+`)
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	merged := readCodexConfig(t, root)
+	if got := strings.Count(merged, "[[hooks.Stop]]"); got != 1 {
+		t.Fatalf("expected exact unmarked chime group replaced by one managed Stop group, got %d:\n%s", got, merged)
+	}
+	if !strings.Contains(merged, codexChimeBeginMarker) || !strings.Contains(merged, agentLayerChimeMarker) {
+		t.Fatalf("expected managed marker after migration, got:\n%s", merged)
+	}
+	assertValidTOML(t, merged)
+}
+
+func TestWriteCodexConfig_ChimeIgnoresMarkersInsideMultilineStrings(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	writeExistingCodexConfig(t, root, codexPartialHeader+`notes = """
+`+codexChimeBeginMarker+`
+[[hooks.Stop]]
+`+codexChimeEndMarker+`
+"""
+`)
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	merged := readCodexConfig(t, root)
+	parsed := parseCodexConfig(t, merged)
+	notes, _ := parsed["notes"].(string)
+	if !strings.Contains(notes, codexChimeBeginMarker) || !strings.Contains(notes, codexChimeEndMarker) {
+		t.Fatalf("expected multiline marker text preserved in notes, got %q\n%s", notes, merged)
+	}
+	if got := strings.Count(merged, codexChimeBeginMarker); got != 2 {
+		t.Fatalf("expected one marker in notes and one managed marker, got %d:\n%s", got, merged)
+	}
+	assertValidTOML(t, merged)
+}
+
+func TestWriteCodexConfig_ChimeRootInlineHooksConflictFails(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	existing := codexPartialHeader + `hooks = { state = { last_seen = "keep" } }
+`
+	writeExistingCodexConfig(t, root, existing)
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+		},
+		Env: map[string]string{},
+	}
+
+	err := WriteCodexConfig(RealSystem{}, root, project)
+	if err == nil || !strings.Contains(err.Error(), "incompatible shape at hooks") {
+		t.Fatalf("expected root inline hooks conflict, got %v", err)
+	}
+	if got := readCodexConfig(t, root); got != existing {
+		t.Fatalf("expected conflicting file left untouched, got:\n%s", got)
+	}
+}
+
+func TestWriteCodexConfig_ChimeRejectsLegacyAgentSpecificHook(t *testing.T) {
+	t.Parallel()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+			Agents: config.AgentsConfig{
+				Codex: config.CodexConfig{AgentSpecific: map[string]any{
+					"hooks": map[string]any{
+						"Stop": []any{map[string]any{"hooks": []any{chimeHandler(agentLayerCodexChimeCommand)}}},
+					},
+				}},
+			},
+		},
+		Env: map[string]string{},
+	}
+	err := WriteCodexConfig(RealSystem{}, t.TempDir(), project)
+	if err == nil || !strings.Contains(err.Error(), "agents.codex.agent_specific.hooks") {
+		t.Fatalf("expected legacy agent_specific chime error, got %v", err)
+	}
+}
+
 func TestWriteCodexConfig_CleansKnownFeatureAndStatuslineForms(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -825,4 +1147,10 @@ func parseCodexConfig(t *testing.T, content string) map[string]any {
 func assertValidTOML(t *testing.T, content string) {
 	t.Helper()
 	_ = parseCodexConfig(t, content)
+}
+
+func codexChimeBlockForTest() string {
+	var builder strings.Builder
+	appendCodexChimeBlock(&builder)
+	return builder.String()
 }

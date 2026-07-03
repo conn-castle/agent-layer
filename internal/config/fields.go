@@ -52,6 +52,7 @@ var fields = []FieldDef{
 		},
 	},
 	{Key: "dispatch.max_depth", Type: FieldPositiveInt},
+	{Key: "notifications.chime", Type: FieldBool},
 	{Key: "agents.antigravity.enabled", Type: FieldBool, Required: true},
 	{
 		Key:         AntigravityModelFieldKey,

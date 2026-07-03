@@ -13,6 +13,13 @@ mode = "all"
 # 1 means a dispatched target cannot call `al dispatch` again.
 max_depth = 1
 
+[notifications]
+# chime plays a macOS local sound when a supported provider fires its Stop hook.
+# It signals provider lifecycle stop only, not that the turn was correct.
+# Absent or false disables it. True projects hooks for enabled Claude, Codex,
+# and Antigravity clients.
+chime = false
+
 [agents.antigravity]
 enabled = false
 # Antigravity model selection is projected into .agy/antigravity-cli/settings.json.

@@ -350,6 +350,9 @@ func TestLoadTemplateConfig(t *testing.T) {
 	if cfg.Approvals.Mode == "" {
 		t.Fatalf("expected approvals.mode to be present in template config")
 	}
+	if cfg.Notifications.Chime == nil || *cfg.Notifications.Chime {
+		t.Fatalf("expected template notifications.chime=false, got %#v", cfg.Notifications.Chime)
+	}
 	// AskUserQuestion is allowed by default now: the shipped template sets no
 	// disable_question_tool flag and carries no permissions.deny. The opt-in
 	// `al wizard` toggle sets disable_question_tool = true, after which sync

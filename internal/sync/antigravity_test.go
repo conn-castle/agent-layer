@@ -1,7 +1,9 @@
 package sync
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -480,6 +482,151 @@ func TestCleanAntigravityOutputsRejectsEscapedMigratedParent(t *testing.T) {
 	}
 	if _, err := os.Stat(outsideConfig); err != nil {
 		t.Fatalf("outside config must survive cleanup: %v", err)
+	}
+}
+
+func TestWriteAntigravityChimePluginWritesManagedFiles(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
+	}
+
+	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	}
+	dir := antigravityChimePluginDir(root)
+	plugin := readFileForTest(t, filepath.Join(dir, "plugin.json"))
+	hooks := readFileForTest(t, filepath.Join(dir, "hooks.json"))
+	if !strings.Contains(plugin, `"name": "agent-layer-chime"`) {
+		t.Fatalf("expected plugin name, got:\n%s", plugin)
+	}
+	for _, want := range []string{`"agent-layer-chime"`, `"Stop"`, agentLayerChimeMarker, `"timeout": 5`, `\"decision\":\"allow\"`} {
+		if !strings.Contains(hooks, want) {
+			t.Fatalf("expected %q in hooks.json, got:\n%s", want, hooks)
+		}
+	}
+	var pluginConfig map[string]string
+	if err := json.Unmarshal([]byte(plugin), &pluginConfig); err != nil {
+		t.Fatalf("plugin.json must be valid JSON: %v\n%s", err, plugin)
+	}
+	if pluginConfig["name"] != antigravityChimePluginName {
+		t.Fatalf("plugin name = %q, want %q", pluginConfig["name"], antigravityChimePluginName)
+	}
+	var hooksConfig map[string]struct {
+		Enabled bool `json:"enabled"`
+		Stop    []struct {
+			Type    string `json:"type"`
+			Command string `json:"command"`
+			Timeout int    `json:"timeout"`
+		} `json:"Stop"`
+	}
+	if err := json.Unmarshal([]byte(hooks), &hooksConfig); err != nil {
+		t.Fatalf("hooks.json must be valid JSON: %v\n%s", err, hooks)
+	}
+	chimeConfig := hooksConfig[antigravityChimePluginName]
+	if !chimeConfig.Enabled || len(chimeConfig.Stop) != 1 {
+		t.Fatalf("unexpected chime hook config: %#v", chimeConfig)
+	}
+	if got := chimeConfig.Stop[0]; got.Type != "command" || got.Command != agentLayerAntigravityChimeCommand || got.Timeout != agentLayerChimeTimeout {
+		t.Fatalf("unexpected Stop hook: %#v", got)
+	}
+}
+
+func TestCleanAntigravityChimePluginRemovesOnlyManagedPlugin(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
+	}
+	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	}
+	otherPlugin := filepath.Join(root, ".agents", "plugins", "user-plugin", "plugin.json")
+	if err := os.MkdirAll(filepath.Dir(otherPlugin), 0o700); err != nil {
+		t.Fatalf("mkdir user plugin: %v", err)
+	}
+	if err := os.WriteFile(otherPlugin, []byte(`{"name":"user-plugin"}`), 0o600); err != nil {
+		t.Fatalf("write user plugin: %v", err)
+	}
+
+	if err := CleanAntigravityChimePlugin(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanAntigravityChimePlugin: %v", err)
+	}
+	if _, err := os.Lstat(antigravityChimePluginDir(root)); !os.IsNotExist(err) {
+		t.Fatalf("expected chime plugin removed, lstat err=%v", err)
+	}
+	if _, err := os.Stat(otherPlugin); err != nil {
+		t.Fatalf("expected unrelated plugin preserved: %v", err)
+	}
+}
+
+func TestWriteAntigravityChimePluginRejectsUserOwnedPluginDir(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := antigravityChimePluginDir(root)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("mkdir plugin dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.json"), []byte(`{"name":"mine"}`), 0o600); err != nil {
+		t.Fatalf("write plugin: %v", err)
+	}
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
+	}
+
+	err := WriteAntigravityChimePlugin(RealSystem{}, root, project)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected user-owned plugin conflict, got %v", err)
+	}
+}
+
+func TestWriteAntigravityChimePluginRejectsSymlinkPluginDir(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	outside := t.TempDir()
+	dir := antigravityChimePluginDir(root)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		t.Fatalf("mkdir plugins dir: %v", err)
+	}
+	if err := os.Symlink(outside, dir); err != nil {
+		t.Fatalf("seed plugin symlink: %v", err)
+	}
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
+	}
+
+	err := WriteAntigravityChimePlugin(RealSystem{}, root, project)
+	if err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("expected symlink plugin conflict, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "plugin.json")); !os.IsNotExist(err) {
+		t.Fatalf("outside plugin must not be written, stat err=%v", err)
+	}
+}
+
+func TestAntigravityChimePluginValidateWhenAgyAvailable(t *testing.T) {
+	t.Parallel()
+	agy, err := exec.LookPath("agy")
+	if err != nil {
+		t.Skip("agy not available on PATH")
+	}
+	root := t.TempDir()
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
+	}
+	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	}
+	cmd := exec.Command(agy, "plugin", "validate", antigravityChimePluginDir(root))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("agy plugin validate failed: %v\n%s", err, string(out))
 	}
 }
 

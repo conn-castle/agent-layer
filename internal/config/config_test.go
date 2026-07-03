@@ -29,6 +29,9 @@ mode = "all"
 [dispatch]
 max_depth = 2
 
+[notifications]
+chime = true
+
 [agents.antigravity]
 enabled = true
 [agents.antigravity.dispatch]
@@ -95,11 +98,24 @@ command = "tool"
 	if got := DispatchMaxDepth(*cfg); got != 2 {
 		t.Fatalf("DispatchMaxDepth = %d, want 2", got)
 	}
+	if !NotificationsChimeEnabled(*cfg) {
+		t.Fatal("expected notifications chime to be enabled")
+	}
 }
 
 func TestDispatchMaxDepthDefaultsToOne(t *testing.T) {
 	if got := DispatchMaxDepth(Config{}); got != DefaultDispatchMaxDepth {
 		t.Fatalf("DispatchMaxDepth = %d, want %d", got, DefaultDispatchMaxDepth)
+	}
+}
+
+func TestNotificationsChimeEnabledDefaultsDisabled(t *testing.T) {
+	if NotificationsChimeEnabled(Config{}) {
+		t.Fatal("expected absent notifications.chime to be disabled")
+	}
+	disabled := false
+	if NotificationsChimeEnabled(Config{Notifications: NotificationsConfig{Chime: &disabled}}) {
+		t.Fatal("expected notifications.chime=false to be disabled")
 	}
 }
 

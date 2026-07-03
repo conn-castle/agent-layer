@@ -106,9 +106,13 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		steps = append(steps,
 			func() error { return WriteAntigravitySettings(sys, root, project) },
 			func() error { return WriteAntigravityMCPConfig(sys, root, project) },
+			func() error { return WriteAntigravityChimePlugin(sys, root, project) },
 		)
 	} else {
-		steps = append(steps, func() error { return CleanAntigravityOutputs(sys, root) })
+		steps = append(steps,
+			func() error { return CleanAntigravityOutputs(sys, root) },
+			func() error { return CleanAntigravityChimePlugin(sys, root) },
+		)
 	}
 
 	// Claude files (.mcp.json, .claude/settings.json, .claude/skills/) fire when claude OR claude_vscode enabled.
@@ -120,6 +124,8 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 			func() error { return WriteMCPConfig(sys, root, project) },
 			func() error { return WriteClaudeSkills(sys, root, project.Skills) },
 		)
+	} else {
+		steps = append(steps, func() error { return CleanClaudeChimeHook(sys, root) })
 	}
 
 	if config.IsAgentEnabled(agents.Codex.Enabled) {
@@ -127,6 +133,8 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 			func() error { return WriteCodexConfig(sys, root, project) },
 			func() error { return WriteCodexRules(sys, root, project) },
 		)
+	} else {
+		steps = append(steps, func() error { return CleanCodexChimeHook(sys, root) })
 	}
 
 	if err := runSteps(steps); err != nil {

@@ -96,6 +96,15 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		return codexManagedConfig{}, err
 	}
 
+	chimeEnabled := config.NotificationsChimeEnabled(project.Config)
+	if err := ensureNoLegacyAgentSpecificChime(
+		"agents.codex.agent_specific.hooks",
+		project.Config.Agents.Codex.AgentSpecific["hooks"],
+		agentLayerCodexChimeCommand,
+	); err != nil {
+		return codexManagedConfig{}, err
+	}
+
 	agentSpecific, _, err := codexAgentSpecificForOutput(sys, root, project.Config.Agents.Codex)
 	if err != nil {
 		return codexManagedConfig{}, err
@@ -130,6 +139,11 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 
 	if err := appendCodexTrustedProject(&builder, trustedRoot, agentSpecific); err != nil {
 		return codexManagedConfig{}, err
+	}
+
+	if chimeEnabled {
+		appendCodexSectionBreak(&builder)
+		appendCodexChimeBlock(&builder)
 	}
 
 	if !config.HasProviderPassthroughKey(agentSpecific, config.CodexMCPServersKey) {
@@ -171,6 +185,7 @@ func buildCodexManagedConfigWithSystem(sys System, root string, project *config.
 		Content:       builder.String(),
 		TrustedRoot:   trustedRoot,
 		AgentSpecific: agentSpecific,
+		ChimeEnabled:  chimeEnabled,
 	}, nil
 }
 
@@ -226,6 +241,18 @@ func appendCodexSectionBreak(builder *strings.Builder) {
 		return
 	}
 	builder.WriteString("\n\n")
+}
+
+func appendCodexChimeBlock(builder *strings.Builder) {
+	builder.WriteString(codexChimeBeginMarker)
+	builder.WriteByte('\n')
+	builder.WriteString("[[hooks.Stop]]\n")
+	builder.WriteString("[[hooks.Stop.hooks]]\n")
+	builder.WriteString("type = \"command\"\n")
+	fmt.Fprintf(builder, "command = %q\n", agentLayerCodexChimeCommand)
+	fmt.Fprintf(builder, "timeout = %d\n", agentLayerChimeTimeout)
+	builder.WriteString(codexChimeEndMarker)
+	builder.WriteByte('\n')
 }
 
 func codexAgentSpecificDefinesProject(agentSpecific map[string]any, repoRoot string) (bool, error) {
