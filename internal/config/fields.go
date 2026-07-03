@@ -65,10 +65,13 @@ var (
 		"opus",
 		"haiku",
 		"fable",
+		"sonnet[1m]",
+		"opus[1m]",
+		"opusplan",
 	)
 	claudeReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max")
 	codexModelOptions            = fieldOptions("gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-mini")
-	codexReasoningEffortOptions  = fieldOptions("low", "medium", "high", "xhigh")
+	codexReasoningEffortOptions  = fieldOptions("minimal", "low", "medium", "high", "xhigh")
 	copilotCLIModelOptions       = fieldOptions("claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro")
 )
 

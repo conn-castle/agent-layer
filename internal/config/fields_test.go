@@ -155,7 +155,7 @@ func TestLookupField_DispatchMaxDepth(t *testing.T) {
 
 func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
 	values := FieldOptionValues(ClaudeModelFieldKey)
-	want := []string{"default", "sonnet", "opus", "haiku", "fable"}
+	want := []string{"default", "sonnet", "opus", "haiku", "fable", "sonnet[1m]", "opus[1m]", "opusplan"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
@@ -204,6 +204,19 @@ func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
 	values := FieldOptionValues(CodexModelFieldKey)
 	want := []string{"gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-mini"}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+	}
+	for i, expected := range want {
+		if values[i] != expected {
+			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+		}
+	}
+}
+
+func TestFieldOptionValues_CodexReasoningCatalog(t *testing.T) {
+	values := FieldOptionValues(CodexReasoningEffortFieldKey)
+	want := []string{"minimal", "low", "medium", "high", "xhigh"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
