@@ -105,6 +105,9 @@ func TestRunBlocksNestedDispatchAtDefaultDepth(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {
 		t.Fatalf("expected nested exit, got %T: %v", err, err)
 	}
+	if !strings.Contains(exitErr.Error(), "built-in subagent tool") {
+		t.Fatalf("expected nested-dispatch error to mention the built-in subagent tool, got %q", exitErr.Error())
+	}
 }
 
 func TestRunAllowsNestedDispatchWithinConfiguredDepth(t *testing.T) {

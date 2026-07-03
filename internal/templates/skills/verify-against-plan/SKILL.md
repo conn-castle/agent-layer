@@ -62,6 +62,10 @@ Inputs the reviewer receives alongside the prompt:
 - `git status --porcelain`, the staged/unstaged/untracked file list, and the post-implementation content of the touched files.
 - Nothing else. No implementer report (`implement-plan.<run-id>.report.md`), no chat transcript, no deviation justifications.
 
+## Context Discipline
+
+You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+
 ## Global constraints
 
 - Produce a report only. Do not modify the implementation or the plan artifacts.

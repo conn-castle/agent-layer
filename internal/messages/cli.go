@@ -263,7 +263,7 @@ const (
 	DispatchOptionsJSONFlag               = "Emit stable machine-readable JSON"
 	DispatchTargetImplicitFmt             = "Dispatch target: %s (from agents.%s.dispatch.default_agent)"
 	DispatchTargetRandomFmt               = "Dispatch target: %s (random selection)"
-	DispatchNestedActiveFmt               = "nested dispatch is blocked at depth %d by dispatch.max_depth = %d"
+	DispatchNestedActiveFmt               = "nested dispatch is blocked at depth %d by dispatch.max_depth = %d; this agent is already running inside `al dispatch`, use the built-in subagent tool instead"
 	DispatchActiveDepthInvalidFmt         = "invalid %s value %q; expected a non-negative integer dispatch depth"
 	DispatchUnknownCallerRequiresAgent    = "`al dispatch` caller is unknown; pass --agent codex, claude, antigravity, or random"
 	DispatchEmptyRandomPool               = "no agents are eligible for `al dispatch` random selection"

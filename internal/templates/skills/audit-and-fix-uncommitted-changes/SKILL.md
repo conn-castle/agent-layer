@@ -68,6 +68,10 @@ Delegated skill outputs are handled one way:
 
 Sub-skill returns are intermediate, not terminal. After every delegation, continue to the next numbered step in the same turn — the sub-skill's closing summary is not audit-and-fix's closeout. The loop exits only at the end of Phase 5, a listed human checkpoint, or a sub-skill that halts on its own human checkpoint without applying its changes.
 
+## Context Discipline
+
+You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+
 ## Global constraints
 
 - Treat the working tree as input from any author or process. Do not assume a human made the changes.

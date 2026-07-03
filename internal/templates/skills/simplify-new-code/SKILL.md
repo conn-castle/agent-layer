@@ -83,6 +83,10 @@ Inputs the reviewer receives alongside the prompt:
 - Nothing else. No plan, no task list, no context file, no user prompt,
   no implementer rationale.
 
+## Context Discipline
+
+You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+
 ## Global constraints
 
 - Preserve the user-requested behavior. If a proposed simplification

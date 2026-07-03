@@ -76,6 +76,10 @@ Inputs the reviewer receives alongside the prompt:
 - Nothing else. No plan, no task list, no context file, no implementer
   rationale, no prior reviewer output.
 
+## Context Discipline
+
+You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+
 ## Global constraints
 
 - Operate only on tests **added** in the current uncommitted diff. Modified

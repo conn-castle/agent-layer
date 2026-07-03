@@ -2,9 +2,9 @@
 name: ship-pr
 description: >-
   Run completed local work through PR delivery: audit changes, verify locally,
-  commit, push, open PR, monitor CI, handle review comments, finish green,
-  then merge after approval and clean up the branch. Use `fix-ci` for failing
-  PR checks.
+  commit, push, open PR, monitor CI and PR feedback with
+  the bundled script, handle review comments, finish green, then merge after
+  approval and clean up the branch. Use `fix-ci` for failing PR checks.
 ---
 
 # ship-pr
@@ -13,8 +13,7 @@ This is the PR lifecycle orchestrator.
 It should:
 - audit and commit any uncommitted changes
 - push and create a PR
-- monitor CI and fix failures
-- wait for review comments
+- monitor CI and PR feedback with the bundled script
 - address every feedback comment
 - ensure CI passes at the end
 
@@ -22,7 +21,8 @@ It should:
 
 - Default base branch is the repository's default branch (usually `main`).
 - Default PR title and body are auto-generated from the branch name, commit history, and the work that was done.
-- Default comment wait time is 15 minutes from PR creation.
+- Default minimum ready observation time is 5 minutes for each pushed head SHA.
+- Default monitor timeout is 30 minutes per script run.
 - If explicit PR title, body, or base branch instructions are provided, use those instead of auto-generating.
 
 ## Inputs
@@ -31,8 +31,7 @@ Accept any combination of:
 - explicit PR title
 - explicit PR body or description instructions
 - explicit base branch
-- explicit comment wait time (default 15 minutes)
-- whether to skip the comment wait period
+- explicit minimum ready observation time (default 5 minutes)
 
 ## Required behavior
 
@@ -48,12 +47,19 @@ Sub-skill returns are intermediate, not terminal. This also applies when `ship-p
 
 The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored sub-skill checkpoint (e.g., `fix-ci` halting without pushing — Phase 3 step 3c, Phase 6 step 1c).
 
+## Context Discipline
+
+You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+
 ## Global constraints
 
 - Do not create a PR if the current branch is the default branch and there is nothing to ship.
 - Run the repo's local check lane in parallel with remote CI rather than before the push: push early to start CI, then reconcile the local lane's result in Phase 3. Do not push commits that fail the commit-time fast lane (e.g. pre-commit lint and tests).
 - Do not let ship-pr push CI-fix commits unless `fix-ci` found a local reproducer and observed it pass after the fix, or `fix-ci` hit a human checkpoint without pushing.
 - The local lane must use the repo-documented CI-equivalent lane when one exists; do not skip it or silently downgrade to only the fast lane.
+- Use `bash <skill_dir>/scripts/monitor-pr.sh` for PR check and PR feedback polling. Do not hand-roll a polling loop for those phases.
+- The bundled monitor script supports GitHub PR repositories through authenticated `gh`, `git`, and `jq`. If those prerequisites are missing or the project is not a GitHub PR repository, stop and report that `ship-pr` monitoring is unsupported instead of improvising a different monitor.
+- Before any repair commit or push, re-fetch live PR feedback and batch new actionable comments when feasible; pass this requirement to `fix-ci`, `repair-checks`, and `address-pr-comments`.
 - Do not skip CI checks.
 - PR feedback handling must pass the `address-pr-comments` definition of done before this skill completes.
 - The skill must end with CI passing.
@@ -94,44 +100,53 @@ The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored 
    b. Auto-generate the PR body summarizing what was done, unless explicit body was provided.
    c. Create the PR: `gh pr create --title "<title>" --body "<body>" --base <base-branch>`
 3. If a PR already exists, use that PR.
-4. Record the PR number/URL and the current time as `start_time`.
+4. Record the PR number/URL and the current head SHA.
 5. Start the repo-defined local check lane in parallel (run it or delegate to `repair-checks`), unless the current session already observed it passing after the latest changes. Do not wait on it here; Phase 3 reconciles it with remote CI.
 
-### Phase 3: Wait for CI and fix failures (CI monitor)
+### Phase 3: Monitor CI and PR feedback (Monitor script)
 
-1. Poll CI status using `gh pr checks <pr-number>`.
-2. Wait for all remote CI checks and the parallel local check lane to complete.
-3. If any CI check failed:
-   a. Use the `fix-ci` skill, passing the PR number.
-   b. The fix-ci skill handles the internal loop of diagnose, fix, audit, commit, push, re-check.
-   c. Confirm `fix-ci` satisfied its local-reproducer definition of done; if it stopped at a human checkpoint, stop here too.
-4. Reconcile the local check lane once it finishes:
+The monitor exits on CI failure, feedback, merge conflict, closed PR, timeout, or green checks after the minimum ready window. The ready window is a short quiet floor for fast CI, not a fixed comment wait.
+
+1. Run:
+
+   ```bash
+   bash <skill_dir>/scripts/monitor-pr.sh \
+     --pr <pr-number> \
+     --state-file .agent-layer/tmp/ship-pr-monitor-<pr-number>.json \
+     --minimum-ready-seconds <minimum_ready_seconds> \
+     --timeout-seconds 1800
+   ```
+
+   Use 300 seconds unless the user supplied a different minimum ready time. If the script exits non-zero before emitting JSON, stop and report stdout/stderr.
+2. React to the JSON `.action`:
+   a. `feedback_changed`: proceed to Phase 5. The script intentionally omits comment bodies; `address-pr-comments` and Phase 7 own per-comment reply coverage.
+   b. `ci_failed`: re-fetch live PR feedback first. If actionable feedback exists, go to Phase 5 before CI repair. Otherwise delegate to `fix-ci` with the PR number and require it to re-fetch feedback before committing, batching new comments when feasible or returning without push if batching needs broader scope. If `fix-ci` hits a human checkpoint, stop here too. After any push, restart the local lane and return to Phase 3.
+   c. `merge_conflict`: trigger a human checkpoint unless the conflict is mechanically resolvable without changing product behavior. Do not guess through substantive conflicts.
+   d. `pr_not_open`: stop and report the PR state.
+   e. `timeout`: rerun if checks are pending or `.remaining_minimum_ready_seconds > 0`. If `.statuses` is empty, run `gh pr checks <pr-number>` once and rerun only if it reports pending checks. Otherwise report that no PR checks appeared within 30 minutes; do not treat the PR as green.
+   f. `ready`: remote checks are terminal and the current head passed the minimum ready window; continue to step 3.
+3. Reconcile the parallel local check lane before leaving this phase:
    a. If it surfaced a failure, fix the cause — `repair-checks` for a local-only failure, or `fix-ci` when it overlaps a failing remote check.
-   b. If the fix (or the lane itself) changed files: use `audit-and-fix-uncommitted-changes` to stabilize, stage with `git add -A`, commit, push, and re-run the lane.
-5. Remote CI and the local lane must both be passing before proceeding.
+   b. If the fix or lane changed files, re-fetch live feedback, batch actionable comments when feasible, then audit, commit, push, and re-run the lane.
+   c. If the local lane is still running when the script returns `ready`, wait for it to complete.
+4. Remote CI and the local lane must both be passing before proceeding.
 
-### Phase 4: Wait for review comments (Timer)
+### Phase 4: No standalone comment wait
 
-The review-comment wait timer starts at PR creation (`start_time` from Phase 2). Time spent waiting for CI in Phase 3 counts toward this timer.
-
-1. Calculate elapsed time since `start_time`.
-2. If less than 15 minutes (or the configured wait time) have elapsed, wait for the remaining time.
-3. If the wait time has already elapsed (e.g., CI took longer than the wait period), proceed immediately.
+Do not manually sleep for comments. Phase 3 owns feedback polling and the minimum-ready floor.
 
 ### Phase 5: Address PR comments (Comment handler)
 
 1. Use the `address-pr-comments` skill, passing the PR number.
 2. If it reports no feedback comments, proceed.
-3. If it addressed comments, continue with CI verification before closing.
+3. Tell `address-pr-comments` to re-fetch feedback before committing and batch newly arrived actionable feedback when feasible.
+4. If it addressed comments or pushed changes, return to Phase 3.
 
 ### Phase 6: Final CI verification (CI monitor)
 
-1. If changes were pushed in Phase 5:
-   a. Wait for CI to complete.
-   b. If CI fails, use the `fix-ci` skill again.
-   c. Confirm `fix-ci` satisfied its local-reproducer definition of done; if it stopped at a human checkpoint, stop here too.
-   d. Repeat until CI passes.
-2. Confirm CI is green.
+1. Confirm the latest Phase 3 monitor result was `ready` for the current head SHA.
+2. If any commit was pushed after that monitor result, return to Phase 3 instead of doing a manual CI wait.
+3. Confirm CI is green.
 
 ### Phase 7: Audit comment coverage (Comment auditor)
 
@@ -140,7 +155,7 @@ Do not trust the sub-skill output alone — re-fetch the PR state and validate.
 
 1. Re-fetch PR comments, review comments, and review bodies.
 2. Verify the `address-pr-comments` definition of done against the fetched PR state.
-3. If any feedback comment fails that definition, run `address-pr-comments` again with the flagged comments, then repeat this audit.
+3. If any feedback comment fails that definition, run `address-pr-comments` again with the flagged comments. If that pushes changes, return to Phase 3; otherwise repeat this audit.
 4. Only proceed when every feedback comment passes the `address-pr-comments` definition of done.
 
 ### Phase 8: Close the run (Reporter)
@@ -193,6 +208,7 @@ This phase does not run automatically. After Phase 8 the skill stops and waits.
 ## Definition of done
 
 - A PR exists for the current branch and `gh pr checks` shows every required CI check passing on the final pushed commit.
+- `monitor-pr.sh` was used for remote PR check and PR feedback polling; it returned `ready` for the final head SHA after the minimum ready observation window.
 - The repo-defined local check lane passed (run in parallel with remote CI), and CI-fix commits were not pushed without a local reproducer and passing post-fix local verification.
 - `address-pr-comments` reached its definition of done, and Phase 7 independently verified that result by re-fetching the PR state.
 - The skill did not force-push, did not create a duplicate PR, and did not end with CI failing.

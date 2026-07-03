@@ -55,6 +55,10 @@ Recommended roles:
 6. `Verifier`: runs the repo-defined checks.
 7. `Reporter`: writes the final resolution report.
 
+## Context Discipline
+
+You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+
 ## Global constraints
 
 - Keep scope to the selected issue batch plus directly blocking prerequisites.

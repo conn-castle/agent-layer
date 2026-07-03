@@ -41,6 +41,10 @@ Use judgement before committing:
 - Do not call `audit-and-fix-uncommitted-changes` for non-substantive changes such as docs-only updates, typo fixes, obvious bug fixes, metadata-only edits, or reply-only outcomes.
 - Always run verification appropriate to the actual change.
 
+## Context Discipline
+
+You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+
 ## Global constraints
 
 - Every feedback comment must receive a reply. No exceptions.
