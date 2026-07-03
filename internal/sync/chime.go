@@ -17,6 +17,10 @@ const (
 	agentLayerChimeTimeout            = 5
 	codexChimeBeginMarker             = "# BEGIN Agent Layer-managed chime hook. Source: .agent-layer/config.toml [notifications].chime."
 	codexChimeEndMarker               = "# END Agent Layer-managed chime hook."
+	chimeHandlerTypeKey               = "type"
+	chimeHandlerCommandKey            = "command"
+	chimeHandlerCommandType           = "command" //nolint:goconst // The type value is independent from the same-named field key.
+	chimeHandlerTimeoutKey            = "timeout"
 )
 
 func legacyChimeCommandVariants(command string) map[string]struct{} {
@@ -41,7 +45,7 @@ func containsExactChimeCommand(value any, commands map[string]struct{}) bool {
 	switch typed := value.(type) {
 	case map[string]any:
 		for key, nested := range typed {
-			if key == "command" {
+			if key == chimeHandlerCommandKey {
 				if command, ok := nested.(string); ok {
 					if _, match := commands[command]; match {
 						return true
@@ -73,9 +77,9 @@ func containsChimeCommandText(content string, command string) bool {
 
 func chimeHandler(command string) map[string]any {
 	return map[string]any{
-		"type":    "command",
-		"command": command,
-		"timeout": agentLayerChimeTimeout,
+		chimeHandlerTypeKey:    chimeHandlerCommandType,
+		chimeHandlerCommandKey: command,
+		chimeHandlerTimeoutKey: agentLayerChimeTimeout,
 	}
 }
 
@@ -87,17 +91,17 @@ func chimeHandlerMatchesAny(value any, commands map[string]struct{}) bool {
 	if len(handler) != 3 {
 		return false
 	}
-	command, ok := handler["command"].(string)
+	command, ok := handler[chimeHandlerCommandKey].(string)
 	if !ok {
 		return false
 	}
-	if handler["type"] != "command" {
+	if handler[chimeHandlerTypeKey] != chimeHandlerCommandType {
 		return false
 	}
 	if _, ok := commands[command]; !ok {
 		return false
 	}
-	return numericEquals(handler["timeout"], agentLayerChimeTimeout)
+	return numericEquals(handler[chimeHandlerTimeoutKey], agentLayerChimeTimeout)
 }
 
 func numericEquals(value any, want int) bool {
