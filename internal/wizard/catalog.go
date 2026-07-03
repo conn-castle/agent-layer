@@ -1,6 +1,8 @@
 package wizard
 
 import (
+	"sync"
+
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -61,6 +63,61 @@ func ApprovalModeFieldOptions() []config.FieldOption {
 }
 
 var wizardOptionDiscoveryRequestFunc = agentoptions.DefaultDiscoveryRequest
+
+type wizardOptionDiscoveryCache struct {
+	mu                       sync.Mutex
+	antigravityModelValues   []string
+	antigravityModelsReady   bool
+	antigravityModelsStarted bool
+	antigravityModelsDone    chan struct{}
+}
+
+func (c *wizardOptionDiscoveryCache) prefetchAntigravityModels() {
+	c.mu.Lock()
+	if c.antigravityModelsStarted {
+		c.mu.Unlock()
+		return
+	}
+	c.antigravityModelsStarted = true
+	done := make(chan struct{})
+	c.antigravityModelsDone = done
+	c.mu.Unlock()
+
+	req := wizardOptionDiscoveryRequestFunc()
+	go func() {
+		values := agentoptions.Values(AgentAntigravity, agentoptions.KindModel, req)
+		c.mu.Lock()
+		c.antigravityModelValues = values
+		c.antigravityModelsReady = true
+		close(done)
+		c.mu.Unlock()
+	}()
+}
+
+func (c *wizardOptionDiscoveryCache) antigravityModelOptions(waitForPrefetch bool) []string {
+	c.mu.Lock()
+	if c.antigravityModelsReady {
+		values := append([]string(nil), c.antigravityModelValues...)
+		c.mu.Unlock()
+		return values
+	}
+	done := c.antigravityModelsDone
+	started := c.antigravityModelsStarted
+	c.mu.Unlock()
+
+	if waitForPrefetch {
+		if started {
+			<-done
+			c.mu.Lock()
+			values := append([]string(nil), c.antigravityModelValues...)
+			c.mu.Unlock()
+			return values
+		}
+		return agentoptions.Values(AgentAntigravity, agentoptions.KindModel, wizardOptionDiscoveryRequestFunc())
+	}
+
+	return agentoptions.Values(AgentAntigravity, agentoptions.KindModel, agentoptions.DiscoveryRequest{})
+}
 
 func modelOptions(agent string) []string {
 	return agentoptions.Values(agent, agentoptions.KindModel, wizardOptionDiscoveryRequestFunc())

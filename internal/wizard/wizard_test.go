@@ -394,7 +394,7 @@ func TestPromptModels_SetsDisableToggles(t *testing.T) {
 		},
 	}
 
-	if err := promptModels(ui, choices); err != nil {
+	if err := promptModels(ui, choices, &wizardOptionDiscoveryCache{}); err != nil {
 		t.Fatalf("promptModels error: %v", err)
 	}
 
@@ -433,7 +433,7 @@ func TestPromptModels_AntigravityModelOptions(t *testing.T) {
 		},
 	}
 
-	if err := promptModels(ui, choices); err != nil {
+	if err := promptModels(ui, choices, &wizardOptionDiscoveryCache{}); err != nil {
 		t.Fatalf("promptModels error: %v", err)
 	}
 	assert.True(t, sawAntigravityModel)
