@@ -135,6 +135,7 @@ EOF
       formula_checksums="$tmp_dir/formula-checksums.txt"
       cat > "$formula_checksums" << 'EOF'
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  ./al-darwin-arm64
+eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee  al-darwin-amd64
 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  al-linux-arm64
 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  al-linux-amd64
 dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  agent-layer-1.2.3.tar.gz
@@ -144,6 +145,8 @@ EOF
         if grep -q 'version "1.2.3"' "$valid_formula" && \
            grep -q 'al-darwin-arm64", using: :nounzip' "$valid_formula" && \
            grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$valid_formula" && \
+           grep -q 'al-darwin-amd64", using: :nounzip' "$valid_formula" && \
+           grep -q 'sha256 "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"' "$valid_formula" && \
            grep -q 'al-linux-arm64", using: :nounzip' "$valid_formula" && \
            grep -q 'sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$valid_formula" && \
            grep -q 'al-linux-amd64", using: :nounzip' "$valid_formula" && \
@@ -157,7 +160,9 @@ EOF
       fi
 
       # Test 2: Verify the formula keeps required Homebrew shape.
-      if grep -q 'depends_on arch: :arm64' "$valid_formula" && \
+      if grep -q 'on_macos do' "$valid_formula" && \
+         grep -q 'on_arm do' "$valid_formula" && \
+         grep -q 'on_intel do' "$valid_formula" && \
          grep -q 'generate_completions_from_executable(bin/"al", "completion")' "$valid_formula" && \
          grep -q 'test do' "$valid_formula"; then
         pass "updateformula: keeps required arch, completion, and test blocks"

@@ -18,6 +18,7 @@ func TestRunRendersBinaryFormula(t *testing.T) {
 		t.Fatalf("write formula: %v", err)
 	}
 	if err := os.WriteFile(checksumsPath, []byte(`1111111111111111111111111111111111111111111111111111111111111111  ./al-darwin-arm64
+4444444444444444444444444444444444444444444444444444444444444444  al-darwin-amd64
 2222222222222222222222222222222222222222222222222222222222222222  al-linux-arm64
 3333333333333333333333333333333333333333333333333333333333333333  al-linux-amd64
 `), 0o644); err != nil {
@@ -40,11 +41,14 @@ func TestRunRendersBinaryFormula(t *testing.T) {
   license "MIT"
 
   on_macos do
-    depends_on arch: :arm64
-
     on_arm do
       url "https://github.com/conn-castle/agent-layer/releases/download/v1.2.3/al-darwin-arm64", using: :nounzip
       sha256 "1111111111111111111111111111111111111111111111111111111111111111"
+    end
+
+    on_intel do
+      url "https://github.com/conn-castle/agent-layer/releases/download/v1.2.3/al-darwin-amd64", using: :nounzip
+      sha256 "4444444444444444444444444444444444444444444444444444444444444444"
     end
   end
 
@@ -83,6 +87,7 @@ func TestRunFailsWhenChecksumIsMissing(t *testing.T) {
 		t.Fatalf("write formula: %v", err)
 	}
 	if err := os.WriteFile(checksumsPath, []byte(`1111111111111111111111111111111111111111111111111111111111111111  al-darwin-arm64
+4444444444444444444444444444444444444444444444444444444444444444  al-darwin-amd64
 2222222222222222222222222222222222222222222222222222222222222222  al-linux-arm64
 `), 0o644); err != nil {
 		t.Fatalf("write checksums: %v", err)

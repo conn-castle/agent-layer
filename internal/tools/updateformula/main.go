@@ -27,11 +27,14 @@ var formulaTemplate = template.Must(template.New("formula").Parse(`class AgentLa
   license "MIT"
 
   on_macos do
-    depends_on arch: :arm64
-
     on_arm do
       url "{{ .ReleaseBaseURL }}/al-darwin-arm64", using: :nounzip
       sha256 "{{ .DarwinARM64SHA }}"
+    end
+
+    on_intel do
+      url "{{ .ReleaseBaseURL }}/al-darwin-amd64", using: :nounzip
+      sha256 "{{ .DarwinAMD64SHA }}"
     end
   end
 
@@ -62,6 +65,7 @@ type formulaData struct {
 	Version        string
 	ReleaseBaseURL string
 	DarwinARM64SHA string
+	DarwinAMD64SHA string
 	LinuxARM64SHA  string
 	LinuxAMD64SHA  string
 }
@@ -108,6 +112,11 @@ func run(args []string, errOut io.Writer) int {
 		fmt.Fprintf(errOut, messages.UpdateFormulaChecksumMissingFmt, "al-darwin-arm64", checksumsPath)
 		return 1
 	}
+	darwinAMD64SHA, ok := checksums["al-darwin-amd64"]
+	if !ok {
+		fmt.Fprintf(errOut, messages.UpdateFormulaChecksumMissingFmt, "al-darwin-amd64", checksumsPath)
+		return 1
+	}
 	linuxARM64SHA, ok := checksums["al-linux-arm64"]
 	if !ok {
 		fmt.Fprintf(errOut, messages.UpdateFormulaChecksumMissingFmt, "al-linux-arm64", checksumsPath)
@@ -123,6 +132,7 @@ func run(args []string, errOut io.Writer) int {
 		Version:        strings.TrimPrefix(tag, "v"),
 		ReleaseBaseURL: releaseAssetURL + "/" + tag,
 		DarwinARM64SHA: darwinARM64SHA,
+		DarwinAMD64SHA: darwinAMD64SHA,
 		LinuxARM64SHA:  linuxARM64SHA,
 		LinuxAMD64SHA:  linuxAMD64SHA,
 	}
