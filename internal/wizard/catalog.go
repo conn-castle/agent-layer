@@ -1,6 +1,8 @@
 package wizard
 
 import (
+	"sync"
+
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
 )
@@ -61,6 +63,34 @@ func ApprovalModeFieldOptions() []config.FieldOption {
 }
 
 var wizardOptionDiscoveryRequestFunc = agentoptions.DefaultDiscoveryRequest
+
+type wizardOptionDiscoveryCache struct {
+	mu                     sync.Mutex
+	antigravityModelValues []string
+	antigravityModelsReady bool
+}
+
+func (c *wizardOptionDiscoveryCache) prefetchAntigravityModels() {
+	req := wizardOptionDiscoveryRequestFunc()
+	go func() {
+		values := agentoptions.Values(AgentAntigravity, agentoptions.KindModel, req)
+		c.mu.Lock()
+		c.antigravityModelValues = values
+		c.antigravityModelsReady = true
+		c.mu.Unlock()
+	}()
+}
+
+func (c *wizardOptionDiscoveryCache) antigravityModelOptions() []string {
+	c.mu.Lock()
+	if c.antigravityModelsReady {
+		values := c.antigravityModelValues
+		c.mu.Unlock()
+		return values
+	}
+	c.mu.Unlock()
+	return agentoptions.Values(AgentAntigravity, agentoptions.KindModel, agentoptions.DiscoveryRequest{})
+}
 
 func modelOptions(agent string) []string {
 	return agentoptions.Values(agent, agentoptions.KindModel, wizardOptionDiscoveryRequestFunc())

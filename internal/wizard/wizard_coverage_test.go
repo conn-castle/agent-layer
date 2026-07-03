@@ -244,7 +244,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 			ConfirmFunc: func(string, *bool) error {
 				return errors.New("confirm failed")
 			},
-		}, choices)
+		}, choices, &wizardOptionDiscoveryCache{})
 		if err == nil || !strings.Contains(err.Error(), "confirm failed") {
 			t.Fatalf("expected confirm error, got %v", err)
 		}
@@ -275,7 +275,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 				}
 				return nil
 			},
-		}, choices)
+		}, choices, &wizardOptionDiscoveryCache{})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -312,7 +312,7 @@ func TestPromptWizardAndHelpers_ErrorBranches(t *testing.T) {
 				}
 				return nil
 			},
-		}, choices)
+		}, choices, &wizardOptionDiscoveryCache{})
 		if err == nil || !strings.Contains(err.Error(), "codex features failed") {
 			t.Fatalf("expected codex features error, got %v", err)
 		}

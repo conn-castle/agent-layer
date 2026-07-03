@@ -415,6 +415,8 @@ const (
 
 // promptWizardFlow drives the step-by-step prompt loop.
 func promptWizardFlow(root string, ui UI, choices *Choices) error {
+	optionCache := &wizardOptionDiscoveryCache{}
+	optionCache.prefetchAntigravityModels()
 	// The workflow-bundle prompt is install-only. Once bundle evidence exists on
 	// disk, the wizard does not offer a refresh action; users who want a full
 	// managed workflow update can use `al upgrade`.
@@ -435,7 +437,7 @@ func promptWizardFlow(root string, ui UI, choices *Choices) error {
 		case wizardFlowStepAgents:
 			err = promptEnabledAgents(ui, choices)
 		case wizardFlowStepModels:
-			err = promptModels(ui, choices)
+			err = promptModels(ui, choices, optionCache)
 		case wizardFlowStepEnableLayer:
 			err = promptEnableAgentLayer(ui, choices)
 		case wizardFlowStepGitTracking:
@@ -672,9 +674,9 @@ func confirmWizardExitOnFirstStepEscape(ui UI) (bool, error) {
 	return exit, nil
 }
 
-func promptModels(ui UI, choices *Choices) error {
+func promptModels(ui UI, choices *Choices, optionCache *wizardOptionDiscoveryCache) error {
 	if choices.EnabledAgents[AgentAntigravity] {
-		if err := selectOptionalValue(ui, messages.WizardAntigravityModelTitle, modelOptions(AgentAntigravity), &choices.AntigravityModel); err != nil {
+		if err := selectOptionalValue(ui, messages.WizardAntigravityModelTitle, optionCache.antigravityModelOptions(), &choices.AntigravityModel); err != nil {
 			return err
 		}
 		choices.AntigravityModelTouched = true
