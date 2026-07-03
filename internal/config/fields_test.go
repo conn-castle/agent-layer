@@ -68,7 +68,7 @@ func TestLookupField_NotificationsChimeOptionalBool(t *testing.T) {
 }
 
 func TestLookupField_EnumWithCustom(t *testing.T) {
-	f, ok := LookupField("agents.claude.model")
+	f, ok := LookupField(ClaudeModelFieldKey)
 	if !ok {
 		t.Fatal("expected agents.claude.model to be in catalog")
 	}
@@ -154,8 +154,8 @@ func TestLookupField_DispatchMaxDepth(t *testing.T) {
 }
 
 func TestFieldOptionValues_ClaudeModelCatalog(t *testing.T) {
-	values := FieldOptionValues("agents.claude.model")
-	want := []string{"default", "fable", "sonnet", "opus", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"}
+	values := FieldOptionValues(ClaudeModelFieldKey)
+	want := []string{"default", "sonnet", "opus", "haiku", "fable", "sonnet[1m]", "opus[1m]", "opusplan"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
@@ -189,7 +189,7 @@ func TestFieldOptionValues_AntigravityModelCatalog(t *testing.T) {
 }
 
 func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
-	values := FieldOptionValues("agents.claude.reasoning_effort")
+	values := FieldOptionValues(ClaudeReasoningEffortFieldKey)
 	want := []string{"low", "medium", "high", "xhigh", "max"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
@@ -202,8 +202,21 @@ func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 }
 
 func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
-	values := FieldOptionValues("agents.codex.model")
+	values := FieldOptionValues(CodexModelFieldKey)
 	want := []string{"gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-mini"}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
+	}
+	for i, expected := range want {
+		if values[i] != expected {
+			t.Fatalf("value at index %d = %q, want %q", i, values[i], expected)
+		}
+	}
+}
+
+func TestFieldOptionValues_CodexReasoningCatalog(t *testing.T) {
+	values := FieldOptionValues(CodexReasoningEffortFieldKey)
+	want := []string{"low", "medium", "high", "xhigh"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
@@ -237,7 +250,7 @@ func TestFieldOptionValues_DispatchDefaultAgentCatalog(t *testing.T) {
 }
 
 func TestFieldOptionValues_CopilotCliModelCatalog(t *testing.T) {
-	values := FieldOptionValues("agents.copilot_cli.model")
+	values := FieldOptionValues(CopilotCLIModelFieldKey)
 	want := []string{"claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)

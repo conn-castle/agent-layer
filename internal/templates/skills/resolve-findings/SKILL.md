@@ -67,6 +67,7 @@ Recommended roles:
 - Required: ask before editing only when the user explicitly limited the run to triage or report review.
 - Required: ask when no valid review report can be found and explicit report selection is needed.
 - Required: ask when an accepted fix would require materially broader scope or a real behavior change beyond the reviewed target.
+- Required: ask when an accepted finding has multiple valid fixes and the choice would affect user-facing behavior, architecture, ownership boundaries, data semantics, migration strategy, long-term platform policy, or materially larger scope.
 - When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during verdicting and in-scope fixes when the request includes fixes.
 
@@ -114,6 +115,7 @@ Choose exactly one verdict for the accepted finding set:
 If the verdict is `revise`, update the plan or task list and repeat Phase 2.
 If the verdict is `escalate`, ask the smallest question that unblocks a trustworthy fix set.
 If the verdict is `rewrite-because-out-of-scope`, rewrite the accepted set to the largest still-in-scope subset, defer the rest explicitly, and repeat Phase 2.
+Do not treat an accepted finding as settling the implementation approach when the approach itself contains a substantive product or architecture decision.
 
 ### Phase 4: Implement accepted findings (Fixer)
 

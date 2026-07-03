@@ -7,7 +7,7 @@ effects.
 
 ## Time-sensitive verification (knowledge cutoff)
 - **Don't rely on training for anything that can change:** Treat internal knowledge as a hint, not a source. Verify with a retrieval tool before acting whenever the answer could have shifted — versions, prices, policies, schedules, specs, library/API surfaces, CLI flags, package availability, deprecations, error messages and their known fixes. Don't rely on memory for version-dependent details.
-- **Failed attempts trigger an immediate lookup:** When an approach you tried fails, search for the exact symptom plus the relevant tech before iterating. Don't loop on guesses — known causes and solutions usually exist, and finding them is faster than re-deriving them.
+- **Failed fixes trigger research:** When a fix attempt does not resolve an error or failure mode, stop guessing before trying another approach. Research up-to-date online information, compare plausible fixes, and implement the best-supported root-cause fix.
 - When you verify: include an as-of date, prefer primary/official sources, and cross-check independently when high impact.
 - If verification is impossible, state what could not be verified and why, describe the risk, and ask for confirmation before proceeding.
 

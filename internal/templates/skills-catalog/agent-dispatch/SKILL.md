@@ -50,11 +50,15 @@ work the current agent can perform directly with local shell commands.
 1. Inspect `al dispatch --help`.
 2. Follow live help to inspect target metadata before a real run.
 3. Choose the smallest target path that matches the user's intent.
-4. Verify any requested skill exists in the current project's Agent Layer skill
+4. Before starting a real dispatch, choose an execution mode that will not kill
+   the command while the target agent is still working. Use a persistent or
+   long-running shell/tool session, and avoid command wrappers or tool settings
+   that enforce a hard timeout.
+5. Verify any requested skill exists in the current project's Agent Layer skill
    source, or let `al dispatch` validation fail clearly. Do not invent a skill name.
-5. Send the focused prompt to one target. Omit unrelated conversation
+6. Send the focused prompt to one target. Omit unrelated conversation
    history and information that could bias the target.
-6. If a prompt file is needed, write it under `.agent-layer/tmp/`.
+7. If a prompt file is needed, write it under `.agent-layer/tmp/`.
 
 ## Guardrails
 
@@ -64,10 +68,11 @@ work the current agent can perform directly with local shell commands.
 - Do not use `al dispatch` to bypass the caller's restrictions, approvals, or
   sandbox expectations.
 - After starting a dispatch, let the running `al dispatch` command finish.
-  Do not wrap it in a command timeout or use a tool-level timeout intended to
-  stop it early; dispatch is allowed to run as long as the target needs. Use
-  progress and the final result from that process; do not poll, inspect, or read
-  dispatch artifacts with separate commands while it is active.
+  If the host tool separates output wait/yield duration from process lifetime,
+  only the output wait/yield duration may be bounded; keep the same dispatch
+  session alive until the original process exits. Use progress and the final
+  result from that process, and do not inspect dispatch artifacts with separate
+  commands while it is active.
 - Do not retry failed target launches by guessing flags, targets, models, or
   reasoning-effort values. Re-check help and options, then report the mismatch
   if it remains unresolved.

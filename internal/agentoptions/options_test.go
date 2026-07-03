@@ -57,6 +57,30 @@ func TestValuesFallsBackToCatalogWhenLiveDisabled(t *testing.T) {
 	}
 }
 
+func TestValuesUsesSharedStaticFieldCatalog(t *testing.T) {
+	tests := []struct {
+		name  string
+		agent string
+		kind  Kind
+		key   string
+	}{
+		{name: "claude model", agent: "claude", kind: KindModel, key: config.ClaudeModelFieldKey},
+		{name: "claude reasoning", agent: "claude", kind: KindReasoningEffort, key: config.ClaudeReasoningEffortFieldKey},
+		{name: "codex model", agent: "codex", kind: KindModel, key: config.CodexModelFieldKey},
+		{name: "codex reasoning", agent: "codex", kind: KindReasoningEffort, key: config.CodexReasoningEffortFieldKey},
+		{name: "copilot cli model", agent: "copilot_cli", kind: KindModel, key: config.CopilotCLIModelFieldKey},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Values(tt.agent, tt.kind, DiscoveryRequest{Live: true})
+			want := config.FieldOptionValues(tt.key)
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("values = %v, want shared catalog %v", got, want)
+			}
+		})
+	}
+}
+
 func TestConfiguredValueTrimsKnownAgentFields(t *testing.T) {
 	cfg := config.Config{
 		Agents: config.AgentsConfig{

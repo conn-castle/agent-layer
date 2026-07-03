@@ -222,6 +222,26 @@ func TestAntigravityModelOptionsReturnsCachedCopy(t *testing.T) {
 	}
 }
 
+func TestClaudeModelOptionsUsesSharedFieldCatalog(t *testing.T) {
+	orig := wizardOptionDiscoveryRequestFunc
+	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = orig })
+	wizardOptionDiscoveryRequestFunc = func() agentoptions.DiscoveryRequest {
+		return agentoptions.DiscoveryRequest{
+			Live: true,
+			LookPath: func(string) (string, error) {
+				t.Fatal("Claude model options must not run live discovery without an authoritative CLI source")
+				return "", errors.New("unexpected lookup")
+			},
+		}
+	}
+
+	got := modelOptions(AgentClaude)
+	want := config.FieldOptionValues(config.ClaudeModelFieldKey)
+	if !slices.Equal(got, want) {
+		t.Fatalf("Claude model options = %v, want shared catalog %v", got, want)
+	}
+}
+
 func TestPrefetchAntigravityModelsStartsOnlyOnce(t *testing.T) {
 	orig := wizardOptionDiscoveryRequestFunc
 	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = orig })
