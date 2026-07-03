@@ -82,7 +82,7 @@ func CheckPolicy(project *config.ProjectConfig) []Warning {
 
 func claudeReasoningEffortUnknownWarning(effort string) *Warning {
 	trimmed := strings.TrimSpace(effort)
-	known := config.FieldOptionValues("agents.claude.reasoning_effort")
+	known := config.FieldOptionValues(config.ClaudeReasoningEffortFieldKey)
 	if trimmed == "" || slices.Contains(known, trimmed) {
 		return nil
 	}

@@ -31,10 +31,46 @@ type FieldDef struct {
 	AllowCustom bool // when true, enum fields also accept freetext values
 }
 
-// AntigravityModelFieldKey is the canonical config path for agy's model display
-// string. Sync projects this typed Agent Layer setting into Antigravity's
-// generated settings.json.
-const AntigravityModelFieldKey = "agents.antigravity.model"
+const (
+	// AntigravityModelFieldKey is the canonical config path for agy's model display
+	// string. Sync projects this typed Agent Layer setting into Antigravity's
+	// generated settings.json.
+	AntigravityModelFieldKey = "agents.antigravity.model"
+	// ClaudeModelFieldKey is the canonical config path for Claude Code model aliases.
+	ClaudeModelFieldKey = "agents.claude.model"
+	// ClaudeReasoningEffortFieldKey is the canonical config path for Claude Code effort.
+	ClaudeReasoningEffortFieldKey = "agents.claude.reasoning_effort"
+	// CodexModelFieldKey is the canonical config path for Codex model selection.
+	CodexModelFieldKey = "agents.codex.model"
+	// CodexReasoningEffortFieldKey is the canonical config path for Codex reasoning effort.
+	CodexReasoningEffortFieldKey = "agents.codex.reasoning_effort"
+	// CopilotCLIModelFieldKey is the canonical config path for Copilot CLI model selection.
+	CopilotCLIModelFieldKey = "agents.copilot_cli.model"
+)
+
+var (
+	antigravityModelOptions = fieldOptions(
+		"Gemini 3.5 Flash (Medium)",
+		"Gemini 3.5 Flash (High)",
+		"Gemini 3.5 Flash (Low)",
+		"Gemini 3.1 Pro (Low)",
+		"Gemini 3.1 Pro (High)",
+		"Claude Sonnet 4.6 (Thinking)",
+		"Claude Opus 4.6 (Thinking)",
+		"GPT-OSS 120B (Medium)",
+	)
+	claudeModelOptions = fieldOptions(
+		"default",
+		"sonnet",
+		"opus",
+		"haiku",
+		"fable",
+	)
+	claudeReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max")
+	codexModelOptions            = fieldOptions("gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-mini")
+	codexReasoningEffortOptions  = fieldOptions("low", "medium", "high", "xhigh")
+	copilotCLIModelOptions       = fieldOptions("claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro")
+)
 
 // fields is the canonical ordered registry of all config fields with constrained values.
 // Order matches the wizard UI flow (approval → agents → models).
@@ -58,16 +94,7 @@ var fields = []FieldDef{
 		Key:         AntigravityModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options: []FieldOption{
-			{Value: "Gemini 3.5 Flash (Medium)"},
-			{Value: "Gemini 3.5 Flash (High)"},
-			{Value: "Gemini 3.5 Flash (Low)"},
-			{Value: "Gemini 3.1 Pro (Low)"},
-			{Value: "Gemini 3.1 Pro (High)"},
-			{Value: "Claude Sonnet 4.6 (Thinking)"},
-			{Value: "Claude Opus 4.6 (Thinking)"},
-			{Value: "GPT-OSS 120B (Medium)"},
-		},
+		Options:     antigravityModelOptions,
 	},
 	{
 		Key:     "agents.antigravity.dispatch.default_agent",
@@ -76,31 +103,16 @@ var fields = []FieldDef{
 	},
 	{Key: "agents.claude.enabled", Type: FieldBool, Required: true},
 	{
-		Key:         "agents.claude.model",
+		Key:         ClaudeModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options: []FieldOption{
-			{Value: "default"},
-			{Value: "fable"},
-			{Value: "sonnet"},
-			{Value: "opus"},
-			{Value: "haiku"},
-			{Value: "sonnet[1m]"},
-			{Value: "opus[1m]"},
-			{Value: "opusplan"},
-		},
+		Options:     claudeModelOptions,
 	},
 	{
-		Key:         "agents.claude.reasoning_effort",
+		Key:         ClaudeReasoningEffortFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options: []FieldOption{
-			{Value: "low"},
-			{Value: "medium"},
-			{Value: "high"},
-			{Value: "xhigh"},
-			{Value: "max"},
-		},
+		Options:     claudeReasoningEffortOptions,
 	},
 	{
 		Key:     "agents.claude.dispatch.default_agent",
@@ -113,28 +125,16 @@ var fields = []FieldDef{
 	{Key: "agents.claude_vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.codex.enabled", Type: FieldBool, Required: true},
 	{
-		Key:         "agents.codex.model",
+		Key:         CodexModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options: []FieldOption{
-			{Value: "gpt-5.4"},
-			{Value: "gpt-5.3-codex-spark"},
-			{Value: "gpt-5.3-codex"},
-			{Value: "gpt-5.2"},
-			{Value: "gpt-5.2-mini"},
-		},
+		Options:     codexModelOptions,
 	},
 	{
-		Key:         "agents.codex.reasoning_effort",
+		Key:         CodexReasoningEffortFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options: []FieldOption{
-			{Value: "minimal"},
-			{Value: "low"},
-			{Value: "medium"},
-			{Value: "high"},
-			{Value: "xhigh"},
-		},
+		Options:     codexReasoningEffortOptions,
 	},
 	{
 		Key:     "agents.codex.dispatch.default_agent",
@@ -148,18 +148,19 @@ var fields = []FieldDef{
 	{Key: "agents.vscode.enabled", Type: FieldBool, Required: true},
 	{Key: "agents.copilot_cli.enabled", Type: FieldBool, Required: true},
 	{
-		Key:         "agents.copilot_cli.model",
+		Key:         CopilotCLIModelFieldKey,
 		Type:        FieldEnum,
 		AllowCustom: true,
-		Options: []FieldOption{
-			{Value: "claude-opus-4.6"},
-			{Value: "claude-sonnet-4.6"},
-			{Value: "claude-haiku-4.5"},
-			{Value: "gpt-5.4"},
-			{Value: "gpt-5.3-codex"},
-			{Value: "gemini-3-pro"},
-		},
+		Options:     copilotCLIModelOptions,
 	},
+}
+
+func fieldOptions(values ...string) []FieldOption {
+	options := make([]FieldOption, len(values))
+	for i, value := range values {
+		options[i] = FieldOption{Value: value}
+	}
+	return options
 }
 
 func dispatchDefaultAgentOptions() []FieldOption {

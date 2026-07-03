@@ -55,13 +55,13 @@ var providers = map[string]map[Kind]fieldProvider{
 	},
 	"claude": {
 		KindModel: {
-			key: "agents.claude.model",
+			key: config.ClaudeModelFieldKey,
 			configured: func(cfg config.Config) string {
 				return cfg.Agents.Claude.Model
 			},
 		},
 		KindReasoningEffort: {
-			key: "agents.claude.reasoning_effort",
+			key: config.ClaudeReasoningEffortFieldKey,
 			configured: func(cfg config.Config) string {
 				return cfg.Agents.Claude.ReasoningEffort
 			},
@@ -69,13 +69,13 @@ var providers = map[string]map[Kind]fieldProvider{
 	},
 	"codex": {
 		KindModel: {
-			key: "agents.codex.model",
+			key: config.CodexModelFieldKey,
 			configured: func(cfg config.Config) string {
 				return cfg.Agents.Codex.Model
 			},
 		},
 		KindReasoningEffort: {
-			key: "agents.codex.reasoning_effort",
+			key: config.CodexReasoningEffortFieldKey,
 			configured: func(cfg config.Config) string {
 				return cfg.Agents.Codex.ReasoningEffort
 			},
@@ -83,7 +83,7 @@ var providers = map[string]map[Kind]fieldProvider{
 	},
 	"copilot_cli": {
 		KindModel: {
-			key: "agents.copilot_cli.model",
+			key: config.CopilotCLIModelFieldKey,
 			configured: func(cfg config.Config) string {
 				return cfg.Agents.CopilotCLI.Model
 			},

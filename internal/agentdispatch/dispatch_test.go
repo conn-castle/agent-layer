@@ -45,6 +45,9 @@ func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	if !claude.Model.OverrideSupported || len(claude.Model.Suggestions) == 0 || !claude.Model.AllowCustom {
 		t.Fatalf("unexpected claude model metadata: %#v", claude.Model)
 	}
+	if want := config.FieldOptionValues(config.ClaudeModelFieldKey); !slices.Equal(claude.Model.Suggestions, want) {
+		t.Fatalf("claude model suggestions = %v, want shared catalog %v", claude.Model.Suggestions, want)
+	}
 	var agy TargetOption
 	for _, target := range options.Targets {
 		if target.Agent == AgentAntigravity {
