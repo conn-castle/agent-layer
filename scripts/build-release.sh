@@ -36,10 +36,37 @@ build() {
     go build -o "${dist_dir}/${output}" -ldflags "-s -w -X main.Version=${version}" ./cmd/al
 }
 
+sign_darwin_binaries() {
+  local identity="${AL_CODESIGN_IDENTITY:-}"
+  local require_codesign="${AL_REQUIRE_CODESIGN:-0}"
+
+  if [[ -z "$identity" ]]; then
+    if [[ "$require_codesign" == "1" ]]; then
+      echo "ERROR: AL_CODESIGN_IDENTITY is required when AL_REQUIRE_CODESIGN=1" >&2
+      exit 1
+    fi
+    return 0
+  fi
+
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    if [[ "$require_codesign" == "1" ]]; then
+      echo "ERROR: AL_REQUIRE_CODESIGN=1 requires running release signing on macOS" >&2
+      exit 1
+    fi
+    echo "Skipping codesign: host is not macOS." >&2
+    return 0
+  fi
+
+  ./scripts/codesign-release.sh "${dist_dir}/al-darwin-arm64"
+  ./scripts/codesign-release.sh "${dist_dir}/al-darwin-amd64"
+}
+
 build darwin arm64 al-darwin-arm64
 build darwin amd64 al-darwin-amd64
 build linux arm64 al-linux-arm64
 build linux amd64 al-linux-amd64
+
+sign_darwin_binaries
 
 git archive --format=tar --prefix="${source_name}/" HEAD > "$source_tar"
 gzip -n -f "$source_tar"

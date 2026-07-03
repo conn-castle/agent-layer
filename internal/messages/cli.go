@@ -301,10 +301,8 @@ const (
 	McpPromptsShort      = "Start the MCP prompt server (deprecated)"
 	McpPromptsDeprecated = "al mcp-prompts is deprecated: skills are now synced natively. Run 'al sync' to update."
 
-	ClientsClaudeExitErrorFmt            = "claude exited with error: %w"
-	ClientsCodexExitErrorFmt             = "codex exited with error: %w"
-	ClientsAntigravityExitErrorFmt       = "antigravity exited with error: %w"
-	ClientsCopilotExitErrorFmt           = "copilot exited with error: %w"
+	ClientsExecLookupErrorFmt            = "%[1]s launcher requires `%[1]s` on PATH: %w"
+	ClientsExecHandoffErrorFmt           = "%s exec handoff failed: %w"
 	ClientsVSCodeExitErrorFmt            = "vscode exited with error: %w"
 	ClientsVSCodeCodeNotFoundFmt         = "vscode preflight failed: 'code' command not found on PATH: %w"
 	ClientsVSCodeManagedBlockConflictFmt = "vscode preflight failed: managed settings block conflict in %s (%s); run `al sync` to repair `.vscode/settings.json`"

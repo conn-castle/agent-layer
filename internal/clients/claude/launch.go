@@ -13,6 +13,9 @@ import (
 	"github.com/conn-castle/agent-layer/internal/run"
 )
 
+// execFunc is overridable for tests; on success it never returns.
+var execFunc = clients.ExecHandoff
+
 // Launch starts the Claude Code CLI with the configured options.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := []string{}
@@ -39,16 +42,15 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		env = clearStaleClaudeConfigDir(cfg.Root, env)
 	}
 
-	cmd := exec.Command("claude", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = env
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf(messages.ClientsClaudeExitErrorFmt, err)
+	path, err := exec.LookPath("claude")
+	if err != nil {
+		return fmt.Errorf(messages.ClientsExecLookupErrorFmt, "claude", err)
 	}
 
+	argv := append([]string{"claude"}, args...)
+	if err := execFunc(path, argv, env); err != nil {
+		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "claude", err)
+	}
 	return nil
 }
 

@@ -166,3 +166,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `al sync` patches only known Agent Layer-owned Codex entries in `.codex/config.toml`, preserves unrelated Codex/user runtime entries, and seeds current repo project trust only when the exact project entry is absent.
     Reason: Codex writes durable runtime/project state into the same file Agent Layer must refresh for model, approval, statusline, feature toggles, and MCP projection.
     Tradeoffs: Invalid existing TOML and shape conflicts now block sync instead of being overwritten; arbitrary removed passthrough paths outside known Agent Layer-owned paths may require manual cleanup.
+
+- Decision 2026-07-02 cli-exec-handoff-signing: Agent launch exec handoff plus signed binary delivery
+    Decision: Interactive CLI launchers (`al claude`, `al codex`, `al copilot`, `al agy`) replace `al` with the target agent via `syscall.Exec`; darwin release binaries are Developer ID signed/notarized as `com.conncastle.agent-layer`; Homebrew renders a binary formula for release assets instead of building from source.
+    Reason: macOS TCC/keychain prompts must attribute protected access to the actual agent binary, and grants should survive Agent Layer upgrades for install-script and Homebrew users.
+    Tradeoffs: Agent exit codes and stderr now pass through without Agent Layer's wrapper; users get a one-time permission prompt under each agent identity, while stale `al` grants remain cosmetic.

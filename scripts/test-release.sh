@@ -6,6 +6,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# These tests drive build-release.sh with a mock `go` and must never invoke real
+# code signing. `make release-dist` runs this suite as its `test-release`
+# prerequisite while exporting AL_CODESIGN_IDENTITY/AL_REQUIRE_CODESIGN for the
+# actual build, so clear them here to keep the codesign-requirement test
+# deterministic regardless of the caller's environment.
+unset AL_CODESIGN_IDENTITY AL_REQUIRE_CODESIGN
+
 # Colors for output (disabled if not a terminal)
 if [[ -t 1 ]]; then
   RED='\033[0;31m'
@@ -53,6 +60,8 @@ section "Static Analysis & Setup"
 
 required_files=(
   "scripts/build-release.sh"
+  "scripts/codesign-release.sh"
+  "scripts/notarize-release.sh"
   "scripts/check-upgrade-docs.sh"
   "al-install.sh"
 )
@@ -65,14 +74,16 @@ for file in "${required_files[@]}"; do
   fi
 done
 
-if [[ -x "$ROOT_DIR/scripts/build-release.sh" ]]; then
-  pass "build-release.sh is executable"
-else
-  fail "build-release.sh is not executable"
-fi
+for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh"; do
+  if [[ -x "$ROOT_DIR/$script" ]]; then
+    pass "$script is executable"
+  else
+    fail "$script is not executable"
+  fi
+done
 
 # Shell syntax validation
-for script in "scripts/build-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
+for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
   if bash -n "$ROOT_DIR/$script" 2>/dev/null; then
     pass "$script has valid bash syntax"
   else
@@ -82,7 +93,7 @@ done
 
 # Optional: shellcheck
 if command -v shellcheck >/dev/null 2>&1; then
-  for script in "scripts/build-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
+  for script in "scripts/build-release.sh" "scripts/codesign-release.sh" "scripts/notarize-release.sh" "scripts/check-upgrade-docs.sh" "al-install.sh"; do
     if shellcheck -S error "$ROOT_DIR/$script" 2>/dev/null; then
       pass "$script passes shellcheck"
     else
@@ -143,9 +154,11 @@ run_build_invocation_details
 run_artifact_verification
 run_source_tarball_verification
 run_checksum_integrity
+run_codesign_requirement_test
 run_upgrade_docs_script_tests
 run_go_tool_tests_extractchecksum
 run_go_tool_tests_updateformula
+run_go_tool_tests_updateformula_unit
 run_go_tool_tests_gentemplatemanifest
 
 # -----------------------------------------------------------------------------

@@ -124,126 +124,101 @@ run_go_tool_tests_updateformula() {
     if [[ "$update_ok" -ne 1 ]]; then
       warn "Skipping updateformula tests because build failed"
     else
-      # Test 1: Successfully update a valid formula
+      # Test 1: Successfully render the binary formula
       valid_formula="$tmp_dir/valid-formula.rb"
       cat > "$valid_formula" << 'EOF'
 class AgentLayer < Formula
-  desc "Agent Layer CLI"
-  homepage "https://github.com/conn-castle/agent-layer"
   url "https://example.com/old-url.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  license "MIT"
-
-  def install
-    bin.install "al"
-  end
 end
 EOF
 
-      new_url="https://example.com/new-url.tar.gz"
-      new_sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      formula_checksums="$tmp_dir/formula-checksums.txt"
+      cat > "$formula_checksums" << 'EOF'
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  ./al-darwin-arm64
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  al-linux-arm64
+cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  al-linux-amd64
+dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd  agent-layer-1.2.3.tar.gz
+EOF
 
-      if run_update_formula "$valid_formula" "$new_url" "$new_sha" 2>/dev/null; then
-        # Verify the update
-        if grep -q "url \"$new_url\"" "$valid_formula" && grep -q "sha256 \"$new_sha\"" "$valid_formula"; then
-          pass "updateformula: successfully updates url and sha256"
+      if run_update_formula "$valid_formula" "v1.2.3" "$formula_checksums" 2>/dev/null; then
+        if grep -q 'version "1.2.3"' "$valid_formula" && \
+           grep -q 'al-darwin-arm64", using: :nounzip' "$valid_formula" && \
+           grep -q 'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$valid_formula" && \
+           grep -q 'al-linux-arm64", using: :nounzip' "$valid_formula" && \
+           grep -q 'sha256 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' "$valid_formula" && \
+           grep -q 'al-linux-amd64", using: :nounzip' "$valid_formula" && \
+           grep -q 'sha256 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"' "$valid_formula"; then
+          pass "updateformula: renders binary asset urls and sha256 values"
         else
-          fail "updateformula: file not updated correctly"
+          fail "updateformula: binary formula content is missing expected asset urls or sha256 values"
         fi
       else
-        fail "updateformula: failed on valid formula"
+        fail "updateformula: failed on valid formula render"
       fi
 
-      # Test 2: Verify formatting is preserved (indentation)
-      if grep -q '^  url "' "$valid_formula" && grep -q '^  sha256 "' "$valid_formula"; then
-        pass "updateformula: preserves indentation"
+      # Test 2: Verify the formula keeps required Homebrew shape.
+      if grep -q 'depends_on arch: :arm64' "$valid_formula" && \
+         grep -q 'generate_completions_from_executable(bin/"al", "completion")' "$valid_formula" && \
+         grep -q 'test do' "$valid_formula"; then
+        pass "updateformula: keeps required arch, completion, and test blocks"
       else
-        fail "updateformula: did not preserve indentation"
+        fail "updateformula: missing required arch, completion, or test block"
       fi
 
-      # Test 3: Verify surrounding content is preserved
-      if grep -q 'class AgentLayer < Formula' "$valid_formula" && \
-         grep -q 'def install' "$valid_formula" && \
-         grep -q 'license "MIT"' "$valid_formula"; then
-        pass "updateformula: preserves surrounding content"
+      # Test 3: Verify removed source-build formula features stay removed.
+      if ! grep -q 'depends_on "go"' "$valid_formula" && ! grep -q 'bottle do' "$valid_formula" && ! grep -q 'agent-layer-1.2.3.tar.gz' "$valid_formula"; then
+        pass "updateformula: drops source-build dependency, bottle block, and tarball url"
       else
-        fail "updateformula: did not preserve surrounding content"
+        fail "updateformula: rendered formula still contains source-build-only content"
       fi
 
-      # Test 4: Exit code 1 when multiple url lines exist
-      multi_url_formula="$tmp_dir/multi-url-formula.rb"
-      cat > "$multi_url_formula" << 'EOF'
-class Test < Formula
-  url "https://example.com/one.tar.gz"
-  url "https://example.com/two.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-end
+      # Test 4: Exit code 1 when a required checksum is missing
+      missing_checksum_file="$tmp_dir/missing-checksums.txt"
+      cat > "$missing_checksum_file" << 'EOF'
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  al-darwin-arm64
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  al-linux-arm64
 EOF
 
-      if run_update_formula "$multi_url_formula" "$new_url" "$new_sha" >/dev/null 2>&1; then
-        fail "updateformula: should exit 1 with multiple url lines"
+      if run_update_formula "$valid_formula" "v1.2.3" "$missing_checksum_file" >/dev/null 2>&1; then
+        fail "updateformula: should exit 1 when a required checksum is missing"
       else
-        pass "updateformula: exits 1 with multiple url lines"
+        pass "updateformula: exits 1 when a required checksum is missing"
       fi
 
-      # Test 5: Exit code 1 when multiple sha256 lines exist
-      multi_sha_formula="$tmp_dir/multi-sha-formula.rb"
-      cat > "$multi_sha_formula" << 'EOF'
-class Test < Formula
-  url "https://example.com/test.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  sha256 "1111111111111111111111111111111111111111111111111111111111111111"
-end
-EOF
-
-      if run_update_formula "$multi_sha_formula" "$new_url" "$new_sha" >/dev/null 2>&1; then
-        fail "updateformula: should exit 1 with multiple sha256 lines"
-      else
-        pass "updateformula: exits 1 with multiple sha256 lines"
-      fi
-
-      # Test 6: Exit code 1 when formula file doesn't exist
-      if run_update_formula "$tmp_dir/no-such-formula.rb" "$new_url" "$new_sha" >/dev/null 2>&1; then
+      # Test 5: Exit code 1 when formula file doesn't exist
+      if run_update_formula "$tmp_dir/no-such-formula.rb" "v1.2.3" "$formula_checksums" >/dev/null 2>&1; then
         fail "updateformula: should exit 1 when formula file missing"
       else
         pass "updateformula: exits 1 when formula file missing"
       fi
 
+      # Test 6: Exit code 1 when checksums file doesn't exist
+      if run_update_formula "$valid_formula" "v1.2.3" "$tmp_dir/no-such-checksums.txt" >/dev/null 2>&1; then
+        fail "updateformula: should exit 1 when checksums file missing"
+      else
+        pass "updateformula: exits 1 when checksums file missing"
+      fi
+
       # Test 7: Exit code 1 when wrong number of arguments
-      if run_update_formula "$valid_formula" "$new_url" >/dev/null 2>&1; then
+      if run_update_formula "$valid_formula" "v1.2.3" >/dev/null 2>&1; then
         fail "updateformula: should exit 1 with wrong argument count"
       else
         pass "updateformula: exits 1 with wrong argument count"
       fi
-
-      # Test 8: Exit code 1 when no url line exists
-      no_url_formula="$tmp_dir/no-url-formula.rb"
-      cat > "$no_url_formula" << 'EOF'
-class Test < Formula
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-end
-EOF
-
-      if run_update_formula "$no_url_formula" "$new_url" "$new_sha" >/dev/null 2>&1; then
-        fail "updateformula: should exit 1 with no url line"
-      else
-        pass "updateformula: exits 1 with no url line"
-      fi
-
-      # Test 9: Exit code 1 when no sha256 line exists
-      no_sha_formula="$tmp_dir/no-sha-formula.rb"
-      cat > "$no_sha_formula" << 'EOF'
-class Test < Formula
-  url "https://example.com/test.tar.gz"
-end
-EOF
-
-      if run_update_formula "$no_sha_formula" "$new_url" "$new_sha" >/dev/null 2>&1; then
-        fail "updateformula: should exit 1 with no sha256 line"
-      else
-        pass "updateformula: exits 1 with no sha256 line"
-      fi
     fi
+  fi
+}
+
+run_go_tool_tests_updateformula_unit() {
+  section "Go Tool Tests: updateformula (unit)"
+
+  # The updateformula package (and its tests) are guarded by the `tools` build
+  # tag, so `go test ./...` (used by make coverage) skips them. Run them
+  # explicitly here so the formula renderer's unit tests actually execute in CI.
+  if (cd "$ROOT_DIR" && go test -tags tools ./internal/tools/updateformula/); then
+    pass "updateformula unit tests passed"
+  else
+    fail "updateformula unit tests failed"
   fi
 }
 

@@ -1,9 +1,11 @@
 package claude
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,10 +16,67 @@ import (
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
-func TestLaunchClaude(t *testing.T) {
-	root := t.TempDir()
+type execCall struct {
+	called bool
+	path   string
+	argv   []string
+	env    []string
+}
+
+func captureExec(t *testing.T, err error) *execCall {
+	t.Helper()
+	original := execFunc
+	call := &execCall{}
+	execFunc = func(path string, argv []string, env []string) error {
+		if call.called {
+			t.Fatal("execFunc called more than once")
+		}
+		call.called = true
+		call.path = path
+		call.argv = append([]string(nil), argv...)
+		call.env = append([]string(nil), env...)
+		return err
+	}
+	t.Cleanup(func() { execFunc = original })
+	return call
+}
+
+func forbidExec(t *testing.T) {
+	t.Helper()
+	original := execFunc
+	execFunc = func(string, []string, []string) error {
+		t.Fatal("execFunc should not be called")
+		return nil
+	}
+	t.Cleanup(func() { execFunc = original })
+}
+
+func writeResolvableClaude(t *testing.T) string {
+	t.Helper()
 	binDir := t.TempDir()
 	testutil.WriteStub(t, binDir, "claude")
+	t.Setenv("PATH", binDir)
+	return filepath.Join(binDir, "claude")
+}
+
+func assertExecCalled(t *testing.T, call *execCall, wantPath string, wantArgv []string) {
+	t.Helper()
+	if !call.called {
+		t.Fatal("expected execFunc to be called")
+	}
+	if call.path != wantPath {
+		t.Fatalf("expected exec path %q, got %q", wantPath, call.path)
+	}
+	if !reflect.DeepEqual(call.argv, wantArgv) {
+		t.Fatalf("unexpected argv: got %#v want %#v", call.argv, wantArgv)
+	}
+}
+
+func TestLaunchClaudeExecHandoff(t *testing.T) {
+	root := t.TempDir()
+	claudePath := writeResolvableClaude(t)
+	call := captureExec(t, nil)
+	env := []string{"PATH=" + filepath.Dir(claudePath), "CUSTOM=1"}
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -28,17 +87,21 @@ func TestLaunchClaude(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, []string{"--print", "hello"}); err != nil {
 		t.Fatalf("Launch error: %v", err)
+	}
+
+	assertExecCalled(t, call, claudePath, []string{"claude", "--model", "test-model", "--print", "hello"})
+	if !reflect.DeepEqual(call.env, env) {
+		t.Fatalf("expected env to pass through unchanged, got %#v want %#v", call.env, env)
 	}
 }
 
-func TestLaunchClaudeError(t *testing.T) {
+func TestLaunchClaudeExecError(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
-	testutil.WriteStubWithExit(t, binDir, "claude", 1)
+	writeResolvableClaude(t)
+	wantErr := errors.New("exec failed")
+	captureExec(t, wantErr)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -49,173 +112,103 @@ func TestLaunchClaudeError(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err == nil {
-		t.Fatalf("expected error")
+	err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{}, nil)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected exec error to wrap %v, got %v", wantErr, err)
+	}
+	if !strings.Contains(err.Error(), "claude exec handoff failed") {
+		t.Fatalf("expected exec handoff context, got %v", err)
 	}
 }
 
-func TestLaunchClaudeEffort(t *testing.T) {
+func TestLaunchClaudeMissingBinary(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
-
-	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
+	t.Setenv("PATH", t.TempDir())
+	forbidExec(t)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
-				Claude: config.ClaudeConfig{
-					Model:           "opus",
-					ReasoningEffort: "max",
+				Claude: config.ClaudeConfig{Model: "test-model"},
+			},
+		},
+		Root: root,
+	}
+
+	err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{}, nil)
+	if err == nil {
+		t.Fatal("expected missing binary error")
+	}
+	if !strings.Contains(err.Error(), "claude launcher requires `claude` on PATH") {
+		t.Fatalf("expected lookup error to name claude, got %v", err)
+	}
+}
+
+func TestLaunchClaudeEffortArgs(t *testing.T) {
+	root := t.TempDir()
+	cases := []struct {
+		name  string
+		agent config.ClaudeConfig
+		argv  []string
+	}{
+		{
+			name: "max effort is passed",
+			agent: config.ClaudeConfig{
+				Model:           "opus",
+				ReasoningEffort: "max",
+			},
+			argv: []string{"claude", "--model", "opus", "--effort", "max"},
+		},
+		{
+			name: "non-max effort is passed",
+			agent: config.ClaudeConfig{
+				Model:           "opus",
+				ReasoningEffort: "high",
+			},
+			argv: []string{"claude", "--model", "opus", "--effort", "high"},
+		},
+		{
+			name:  "empty effort is omitted",
+			agent: config.ClaudeConfig{Model: "opus"},
+			argv:  []string{"claude", "--model", "opus"},
+		},
+		{
+			name: "agent_specific effortLevel suppresses CLI effort",
+			agent: config.ClaudeConfig{
+				Model:           "opus",
+				ReasoningEffort: "high",
+				AgentSpecific: map[string]any{
+					"effortLevel": "low",
 				},
 			},
+			argv: []string{"claude", "--model", "opus"},
 		},
-		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
-		t.Fatalf("Launch error: %v", err)
-	}
-
-	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read args file: %v", err)
-	}
-	args := string(got)
-	if !strings.Contains(args, "--effort max") {
-		t.Fatalf("expected --effort max in args, got: %s", args)
-	}
-	if !strings.Contains(args, "--model opus") {
-		t.Fatalf("expected --model opus in args, got: %s", args)
-	}
-}
-
-func TestLaunchClaudeEffortNonMax(t *testing.T) {
-	root := t.TempDir()
-	binDir := t.TempDir()
-
-	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
-
-	cfg := &config.ProjectConfig{
-		Config: config.Config{
-			Agents: config.AgentsConfig{
-				Claude: config.ClaudeConfig{
-					Model:           "opus",
-					ReasoningEffort: "high",
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			claudePath := writeResolvableClaude(t)
+			call := captureExec(t, nil)
+			cfg := &config.ProjectConfig{
+				Config: config.Config{
+					Agents: config.AgentsConfig{Claude: tc.agent},
 				},
-			},
-		},
-		Root: root,
-	}
+				Root: root,
+			}
 
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
-		t.Fatalf("Launch error: %v", err)
-	}
+			if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{}, nil); err != nil {
+				t.Fatalf("Launch error: %v", err)
+			}
 
-	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read args file: %v", err)
-	}
-	if !strings.Contains(string(got), "--effort high") {
-		t.Fatalf("expected --effort high in args, got: %s", string(got))
-	}
-}
-
-func TestLaunchClaudeNoEffortWhenEmpty(t *testing.T) {
-	root := t.TempDir()
-	binDir := t.TempDir()
-
-	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
-
-	cfg := &config.ProjectConfig{
-		Config: config.Config{
-			Agents: config.AgentsConfig{
-				Claude: config.ClaudeConfig{Model: "opus"},
-			},
-		},
-		Root: root,
-	}
-
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
-		t.Fatalf("Launch error: %v", err)
-	}
-
-	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read args file: %v", err)
-	}
-	if strings.Contains(string(got), "--effort") {
-		t.Fatalf("expected no --effort flag when effort is empty, got: %s", string(got))
-	}
-}
-
-func TestLaunchClaudeEffortSkippedWithAgentSpecificOverride(t *testing.T) {
-	root := t.TempDir()
-	binDir := t.TempDir()
-
-	argsFile := filepath.Join(t.TempDir(), "args.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\necho \"$@\" > %s\n", argsFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
-
-	cfg := &config.ProjectConfig{
-		Config: config.Config{
-			Agents: config.AgentsConfig{
-				Claude: config.ClaudeConfig{
-					Model:           "opus",
-					ReasoningEffort: "high",
-					AgentSpecific: map[string]any{
-						"effortLevel": "low",
-					},
-				},
-			},
-		},
-		Root: root,
-	}
-
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
-		t.Fatalf("Launch error: %v", err)
-	}
-
-	got, err := os.ReadFile(argsFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read args file: %v", err)
-	}
-	if strings.Contains(string(got), "--effort") {
-		t.Fatalf("expected --effort to be skipped when agent_specific.effortLevel is set, got: %s", string(got))
+			assertExecCalled(t, call, claudePath, tc.argv)
+		})
 	}
 }
 
 func TestLaunchClaudeYOLO(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
-	testutil.WriteStubExpectArg(t, binDir, "claude", "--dangerously-skip-permissions")
+	claudePath := writeResolvableClaude(t)
+	call := captureExec(t, nil)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -227,11 +220,11 @@ func TestLaunchClaudeYOLO(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	env := os.Environ()
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{}, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
+
+	assertExecCalled(t, call, claudePath, []string{"claude", "--model", "test-model", "--dangerously-skip-permissions"})
 }
 
 func TestEnsureClaudeConfigDirSetsDefault(t *testing.T) {
@@ -297,18 +290,11 @@ func TestEnsureClaudeConfigDirWarnsOnMismatch(t *testing.T) {
 	}
 }
 
-func TestLaunchClaude_NoLocalConfigDir(t *testing.T) {
+func TestLaunchClaudeNoLocalConfigDir(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
+	claudePath := writeResolvableClaude(t)
+	call := captureExec(t, nil)
 
-	envFile := filepath.Join(t.TempDir(), "env.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
-
-	// LocalConfigDir is nil (default) — CLAUDE_CONFIG_DIR should NOT be set.
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
 			Agents: config.AgentsConfig{
@@ -318,36 +304,19 @@ func TestLaunchClaude_NoLocalConfigDir(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
-			env = append(env, e)
-		}
-	}
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{"PATH=" + filepath.Dir(claudePath)}, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read env file: %v", err)
-	}
-	if strings.Contains(string(got), "CLAUDE_CONFIG_DIR=") {
+	if _, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR"); ok {
 		t.Fatal("expected CLAUDE_CONFIG_DIR to NOT be set when local_config_dir is nil")
 	}
 }
 
-func TestLaunchClaude_SetsClaudeConfigDirWhenEnabled(t *testing.T) {
+func TestLaunchClaudeSetsClaudeConfigDirWhenEnabled(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
-
-	envFile := filepath.Join(t.TempDir(), "env.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
+	claudePath := writeResolvableClaude(t)
+	call := captureExec(t, nil)
 
 	localConfigDir := true
 	cfg := &config.ProjectConfig{
@@ -362,41 +331,22 @@ func TestLaunchClaude_SetsClaudeConfigDirWhenEnabled(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	var env []string
-	for _, e := range os.Environ() {
-		if !strings.HasPrefix(e, "CLAUDE_CONFIG_DIR=") {
-			env = append(env, e)
-		}
-	}
-	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
+	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, []string{"PATH=" + filepath.Dir(claudePath)}, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read env file: %v", err)
-	}
-	expected := "CLAUDE_CONFIG_DIR=" + filepath.Join(root, ".claude-config")
-	if !strings.Contains(string(got), expected) {
-		t.Fatalf("expected CLAUDE_CONFIG_DIR=%s, got env:\n%s", filepath.Join(root, ".claude-config"), string(got))
+	expected := filepath.Join(root, ".claude-config")
+	value, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR")
+	if !ok || value != expected {
+		t.Fatalf("expected CLAUDE_CONFIG_DIR=%s, got %#v", expected, call.env)
 	}
 }
 
-func TestLaunchClaude_ClearsStaleClaudeConfigDir(t *testing.T) {
+func TestLaunchClaudeClearsStaleClaudeConfigDir(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
+	claudePath := writeResolvableClaude(t)
+	call := captureExec(t, nil)
 
-	envFile := filepath.Join(t.TempDir(), "env.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
-
-	// local_config_dir is nil (disabled). Simulate stale inherited
-	// CLAUDE_CONFIG_DIR that matches the repo-local path Agent Layer
-	// would have set — it must be cleared.
 	stale := filepath.Join(root, ".claude-config")
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -407,34 +357,21 @@ func TestLaunchClaude_ClearsStaleClaudeConfigDir(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	env := []string{"PATH=" + binDir, "CLAUDE_CONFIG_DIR=" + stale}
+	env := []string{"PATH=" + filepath.Dir(claudePath), "CLAUDE_CONFIG_DIR=" + stale}
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read env file: %v", err)
-	}
-	if strings.Contains(string(got), "CLAUDE_CONFIG_DIR=") {
+	if _, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR"); ok {
 		t.Fatal("expected stale CLAUDE_CONFIG_DIR to be cleared when local_config_dir is disabled")
 	}
 }
 
-func TestLaunchClaude_PreservesUserClaudeConfigDir(t *testing.T) {
+func TestLaunchClaudePreservesUserClaudeConfigDir(t *testing.T) {
 	root := t.TempDir()
-	binDir := t.TempDir()
+	claudePath := writeResolvableClaude(t)
+	call := captureExec(t, nil)
 
-	envFile := filepath.Join(t.TempDir(), "env.txt")
-	stubPath := filepath.Join(binDir, "claude")
-	stubContent := fmt.Sprintf("#!/bin/sh\n/usr/bin/env > %s\n", envFile)
-	if err := os.WriteFile(stubPath, []byte(stubContent), 0o755); err != nil { // #nosec G306 -- test writes an executable shell stub (PATH-shadowed) for subprocess invocation.
-		t.Fatalf("write stub: %v", err)
-	}
-
-	// local_config_dir is nil (disabled). A user-set CLAUDE_CONFIG_DIR
-	// pointing elsewhere (not the repo-local path) must be preserved.
 	userDir := filepath.Join(t.TempDir(), "my-custom-claude")
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -445,18 +382,13 @@ func TestLaunchClaude_PreservesUserClaudeConfigDir(t *testing.T) {
 		Root: root,
 	}
 
-	t.Setenv("PATH", binDir)
-	env := []string{"PATH=" + binDir, "CLAUDE_CONFIG_DIR=" + userDir}
+	env := []string{"PATH=" + filepath.Dir(claudePath), "CLAUDE_CONFIG_DIR=" + userDir}
 	if err := Launch(cfg, &run.Info{ID: "id", Dir: root}, env, nil); err != nil {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	got, err := os.ReadFile(envFile) // #nosec G304 -- path is constructed from test-controlled inputs.
-	if err != nil {
-		t.Fatalf("read env file: %v", err)
-	}
-	want := "CLAUDE_CONFIG_DIR=" + userDir
-	if !strings.Contains(string(got), want) {
-		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got env:\n%s", string(got))
+	value, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR")
+	if !ok || value != userDir {
+		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got %#v", call.env)
 	}
 }
