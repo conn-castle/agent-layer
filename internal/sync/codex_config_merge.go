@@ -449,9 +449,10 @@ func (e *codexTomlEditor) removeCodexChimeHook(path string) (bool, error) {
 }
 
 func (e *codexTomlEditor) managedCodexChimeRegions(path string) ([]lineRange, error) {
-	var ranges []lineRange
 	open := -1
 	var invalid bool
+	markerCount := 0
+	var ranges []lineRange
 	tomlpatch.WalkLinesOutsideMultiline(e.lines, func(i int, line string, _ tomlpatch.StringState) tomlpatch.LineWalkResult {
 		trimmed := strings.TrimSpace(line)
 		switch trimmed {
@@ -470,15 +471,71 @@ func (e *codexTomlEditor) managedCodexChimeRegions(path string) ([]lineRange, er
 				invalid = true
 				return tomlpatch.LineWalkResult{Stop: true}
 			}
-			ranges = append(ranges, lineRange{start: open, end: i})
+			removalRanges, ok := e.codexChimeRegionRemovalRanges(lineRange{start: open, end: i})
+			if !ok {
+				invalid = true
+				return tomlpatch.LineWalkResult{Stop: true}
+			}
+			markerCount++
+			ranges = append(ranges, removalRanges...)
 			open = -1
 		}
 		return tomlpatch.LineWalkResult{}
 	})
-	if invalid || open >= 0 || len(ranges) > 1 {
+	if invalid || open >= 0 || markerCount > 1 {
 		return nil, fmt.Errorf(messages.SyncCodexChimeMarkerConflictFmt, path)
 	}
 	return ranges, nil
+}
+
+func (e *codexTomlEditor) codexChimeRegionRemovalRanges(marker lineRange) ([]lineRange, bool) {
+	ranges := []lineRange{
+		{start: marker.start, end: marker.start},
+		{start: marker.end, end: marker.end},
+	}
+	removedChimeGroup := false
+	headers := e.headerLines()
+	for i, header := range headers {
+		if header.index <= marker.start || header.index >= marker.end {
+			continue
+		}
+		if !header.parsed {
+			return nil, false
+		}
+		if !header.isArray || !slices.Equal(header.path, []string{"hooks", "Stop"}) {
+			continue
+		}
+		if removedChimeGroup {
+			return nil, false
+		}
+		groupEnd := marker.end - 1
+		for j := i + 1; j < len(headers); j++ {
+			next := headers[j]
+			if next.index >= marker.end {
+				break
+			}
+			if next.index <= header.index {
+				continue
+			}
+			if !next.parsed {
+				return nil, false
+			}
+			if slices.Equal(next.path, []string{"hooks", "Stop"}) || !pathHasPrefix(next.path, []string{"hooks", "Stop"}) {
+				groupEnd = next.index - 1
+				break
+			}
+		}
+		group := lineRange{start: header.index, end: groupEnd}
+		if !e.codexStopGroupIsExactChimeOnly(group) {
+			return nil, false
+		}
+		ranges = append(ranges, group)
+		removedChimeGroup = true
+	}
+	if !removedChimeGroup {
+		return nil, false
+	}
+	return ranges, true
 }
 
 func (e *codexTomlEditor) codexChimeRegionHasTrailingContent(start int) bool {

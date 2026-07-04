@@ -15,16 +15,6 @@ Write clear, concise responses that give the user enough context to act.
 - Use bullets when they make the response easier to scan.
 - Do not introduce acronyms to save words; spell them out unless the acronym is widely known or the user already used it.
 
-## Question Style
-When asking the user to decide, use the response style above. State the decision in plain language, explain why it matters, and ask only the smallest question that unblocks the work.
-
-For substantive tradeoffs, provide at least two concrete options. For each option, include:
-- **Pros:** What this option improves or preserves.
-- **Cons:** What this option costs, risks, or limits.
-
-Then include:
-- **Recommendation:** Which option you recommend and why.
-
 ---
 
 ## Workflow & Safety

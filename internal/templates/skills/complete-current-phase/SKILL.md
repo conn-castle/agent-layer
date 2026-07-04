@@ -75,7 +75,6 @@ When compaction is needed, retain this section verbatim and also preserve: curre
 - Required: ask only when the current phase cannot be decomposed into safe ordered work packages without high-risk sequencing or guesswork.
 - Required: ask when review or audit loops stop converging and escalation is the higher-value move.
 - Required: ask only when the roadmap and phase-completion plan are not clear enough to proceed without guessing.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous within normal plan-review, implementation, and audit loops when the selected phase and current work package are clear.
 
 ## Orchestration loop

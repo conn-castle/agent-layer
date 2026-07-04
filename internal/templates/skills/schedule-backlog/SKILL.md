@@ -50,7 +50,6 @@ Recommended roles:
 
 - Required: ask when a proposed placement would require renumbering a completed phase or making a non-obvious sequencing tradeoff.
 - Optional: ask after the proposal only when the requested apply step would commit to a non-obvious prioritization or sequencing choice.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous while reading, triaging, and drafting the proposal itself.
 
 ## Roadmap workflow

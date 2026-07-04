@@ -72,7 +72,6 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 
 - Required: ask when fixing a selected issue would require a breaking change, broad architectural refactor, or materially larger scope.
 - Required: ask when issue wording and repo evidence still leave the intended fix ambiguous after planning and gating.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous while planning, gating, implementing, auditing, and verifying a clear issue batch.
 
 ## Issue workflow

@@ -759,6 +759,54 @@ timeout = 5
 	assertValidTOML(t, merged)
 }
 
+func TestWriteCodexConfig_ChimePreservesHookTrustStateInsideManagedMarkers(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	trustKey := filepath.Join(root, ".codex", "config.toml") + ":stop:0:0"
+	trustState := "\n[hooks.state." + tomlpatch.FormatKey(trustKey) + "]\ntrusted_hash = \"sha256:keep\"\n"
+	chimeBlock := strings.Replace(codexChimeBlockForTest(), "\n"+codexChimeEndMarker+"\n", trustState+codexChimeEndMarker+"\n", 1)
+	if !strings.Contains(chimeBlock, trustState) {
+		t.Fatalf("test fixture did not insert trust state into managed chime block:\n%s", chimeBlock)
+	}
+	writeExistingCodexConfig(t, root, codexPartialHeader+"\n"+chimeBlock)
+	enabled := true
+	project := &config.ProjectConfig{
+		Config: config.Config{
+			Notifications: config.NotificationsConfig{Chime: &enabled},
+		},
+		Env: map[string]string{},
+	}
+
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("WriteCodexConfig: %v", err)
+	}
+	first := readCodexConfig(t, root)
+	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second WriteCodexConfig: %v", err)
+	}
+	second := readCodexConfig(t, root)
+	if first != second {
+		t.Fatalf("expected idempotent chime trust-state merge\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+	for _, want := range []string{
+		"[hooks.state." + tomlpatch.FormatKey(trustKey) + "]",
+		`trusted_hash = "sha256:keep"`,
+		codexChimeBeginMarker,
+		agentLayerChimeMarker,
+	} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("expected %q in Codex config:\n%s", want, first)
+		}
+	}
+	if got := strings.Count(first, `trusted_hash = "sha256:keep"`); got != 1 {
+		t.Fatalf("expected one trusted hash entry, got %d:\n%s", got, first)
+	}
+	if got := strings.Count(first, codexChimeBeginMarker); got != 1 {
+		t.Fatalf("expected one managed chime block, got %d:\n%s", got, first)
+	}
+	assertValidTOML(t, first)
+}
+
 func TestWriteCodexConfig_ChimeIgnoresMarkersInsideMultilineStrings(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

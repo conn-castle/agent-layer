@@ -67,7 +67,6 @@ Recommended roles:
 - Required: ask when the coverage command set or domain model is ambiguous enough that the results would be untrustworthy.
 - Required: ask when no threshold is documented.
 - Required: ask before installing missing tooling.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous for normal test-writing and re-run iterations once the coverage contract is clear.
 
 ## Coverage workflow

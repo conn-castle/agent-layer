@@ -186,19 +186,13 @@ Write `.agent-layer/tmp/simplify-new-code.<run-id>.report.md` with:
 
 ## Guardrails
 
-- Do not change user-requested behavior. The skill reverts agent additions
-  beyond the request, not the request itself.
-- Do not redesign module structure, file layout, public APIs, or naming
-  — that is `simplify-codebase`'s domain.
-- Do not look for cross-file duplication or codebase-wide consolidation
-  — that is `simplify-codebase`'s domain.
+- Do not redesign module structure, file layout, public APIs, or naming as
+  a cleanup shortcut; use `simplify-codebase` for broader redesign.
 - Do not optimize for performance.
 - Do not enforce stylistic preferences where the existing code is
   acceptably clear.
 - Do not "improve" pre-existing code outside the diff scope, even when
   smells are visible nearby. Note them as out-of-scope observations.
-- Do not consolidate two added items into a shared abstraction. Cleanup
-  that introduces new abstractions is itself agent scope creep.
 - Do not lower coverage thresholds or skip checks to clear failures.
 
 ## Definition of done

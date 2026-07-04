@@ -18,8 +18,7 @@ It should run a systematic survey that:
 - populates `ISSUES.md` with anything deferred
 - reports each chunk's findings and fixes to the human
 
-Use this skill for deep, independent codebase-wide quality sweeps.
-Use `audit-and-fix-uncommitted-changes` instead when the target is working-tree diffs only.
+Use this for deep codebase-wide sweeps; use `audit-and-fix-uncommitted-changes` when the target is working-tree diffs only.
 
 ## Scope default
 
@@ -100,7 +99,6 @@ When compaction is needed, retain this section verbatim and also preserve: curre
 - Required: ask when an accepted finding requires a breaking change, broad architectural refactor, or user-visible behavior change.
 - Required: ask when a finding cannot be verified with available code, tests, or docs.
 - Required: ask before any destructive or irreversible action.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal survey, audit, fix, and re-audit cycles when findings and fixes are clear.
 
 ## Orchestration loop
@@ -161,7 +159,7 @@ Copy the fix summary into the master report under `## Chunk N: <name> Fixes`.
 If a fix exposes obvious local complexity:
 - use the `simplify-codebase` skill on the affected area
 
-After fixes are applied, run one explicit re-audit pass on the chunk using a **fresh-context reviewer subagent**, not a continuation of the fixer's context. The fixer just rationalized each change as correct; re-grading from the same context inherits that bias and produces sunk-cost "we just fixed that" agreement. The fresh-context reviewer sees only the post-fix chunk and the originating findings, never the fix narrative.
+After fixes are applied, run one explicit re-audit pass on the chunk using a **fresh-context reviewer subagent**, not a continuation of the fixer's context. The reviewer sees only the post-fix chunk and originating findings, never the fix narrative.
 
 Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the reviewer subagent verbatim — do not paraphrase, summarize, or modify the rubric.
 
@@ -197,15 +195,10 @@ Record delegation outcomes in the master report under `## Complementary Skill Re
 
 ### Phase 6: Close the run (Reporter)
 
-When all chunks and cross-cutting reviews are complete:
-1. Add `## Final Summary` to the master report
-2. Summarize:
-   - chunks audited and their status
-   - total findings by severity
-   - findings fixed vs. deferred
-   - complementary skills invoked and their outcomes
-   - overall codebase health assessment
-3. Add `## Residual Risk` for any systemic concerns that remain
+When all chunks and cross-cutting reviews are complete, add `## Final Summary`
+with chunks audited, finding counts by severity, fixes vs. deferrals,
+complementary skill outcomes, and overall health. Add `## Residual Risk` for
+any systemic concerns that remain.
 
 ## Required master report structure
 
@@ -225,20 +218,13 @@ Write `.agent-layer/tmp/improve-codebase.<run-id>.report.md` with:
 
 ## Minimal status protocol
 
-At each major stage, echo the master report path, identify the current chunk, and state one of:
-- preflighting the repository
-- surveying and decomposing
-- auditing chunk N: <name>
-- fixing chunk N findings
-- running cross-cutting review
-- delegating to <skill-name>
-- closing the run
+At each major stage, echo the master report path, current chunk when relevant,
+and current stage: preflight, survey/decompose, audit/fix chunk N,
+cross-cutting review, delegation, or closeout.
 
 ## Guardrails
 
-- Do not attempt to review every line. Prioritize by risk.
 - Do not silently skip chunks that were in the plan.
-- Do not carry unresolved deferred findings without logging them to `ISSUES.md`.
 - Do not expand a chunk review into unrelated areas.
 - Do not treat the cross-cutting review as optional.
 - Do not claim a clean codebase without evidence from the audit rounds.

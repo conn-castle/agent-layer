@@ -1,7 +1,7 @@
 ---
 name: tavily-web
 description: |
-  Use the Tavily CLI for web search, URL extraction, site URL discovery, and cited research. Trigger when the user needs current web information, asks to search or read a webpage, provides URLs to inspect, or wants a sourced research report. Do not use for browser automation, local docs, or Tavily setup.
+  Use Tavily CLI for web search, URL extraction, site mapping, and cited research. Trigger when the user needs current web info, asks to search/read a page, provides URLs, or wants a sourced report. Do not use for browser automation, local docs, or Tavily setup.
 compatibility: Requires the Tavily CLI (`tvly`), authentication, and network access.
 allowed-tools: Bash(tvly:*)
 ---
@@ -20,7 +20,10 @@ Use the Tavily CLI as Agent Layer's web retrieval path. Route the request to the
 
 ## Global constraints
 
-- Run `tvly --status` before the first Tavily command in a session.
+- Run `tvly --help` before the first Tavily command in a session, then run
+  `tvly --status` to verify readiness.
+- Treat installed CLI help as the source of truth for commands, arguments,
+  flags, output modes, and defaults.
 - If `tvly` is missing, unauthenticated, or exits non-zero, stop and tell the user to install or authenticate the Tavily CLI.
 - Do not install Tavily from this skill. Do not run `curl | bash`, package managers, or login commands unless the user explicitly asks for setup help.
 - Do not use Tavily MCP or Fetch MCP as a fallback.
@@ -66,7 +69,8 @@ Use `tvly research` when:
 
 ## Workflow
 
-1. Confirm CLI readiness with `tvly --status`.
+1. Inspect root help with `tvly --help`, then confirm CLI readiness with
+   `tvly --status`.
 2. Select the smallest command that matches the request.
 3. Run command-specific help if flags matter:
    - `tvly search --help`

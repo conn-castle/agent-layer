@@ -58,7 +58,6 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 
 - Required: ask when a comment requests a change that would require a materially broader scope or architectural decision.
 - Required: ask when a comment's intent is ambiguous and could be interpreted multiple ways.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous when the feedback is clear and the fix or justification is straightforward.
 
 ## Comment resolution workflow

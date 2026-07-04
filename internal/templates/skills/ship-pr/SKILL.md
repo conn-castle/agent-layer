@@ -71,7 +71,6 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 - If the working tree has no uncommitted changes but the current branch is not the default branch, proceed — the user is asking for a PR of the branch's commits.
 - Required: ask when PR creation fails due to an existing PR or branch conflict.
 - Required: ask when CI failures persist after 3 fix-ci iterations.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal commit, push, PR creation, CI monitoring, and comment handling.
 
 ## Orchestration loop

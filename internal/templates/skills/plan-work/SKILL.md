@@ -74,7 +74,6 @@ If subagents are unavailable, do these passes inline and label them clearly.
 - Substantive questions are questions where the answer changes user-facing behavior, architecture, scope, sequencing, risk, or cost.
 - Required: ask when ambiguity would materially change scope, behavior, or architecture.
 - Required: ask when repo context reveals multiple valid approaches with real user-facing or sequencing tradeoffs.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Do not save substantive questions for the execution gatekeeper. The gatekeeper catches questions discovered late; it is not a holding area for known decisions.
 - After the user answers, incorporate the decision into the draft and record the chosen direction in the plan's assumptions, approach, or risks as appropriate.
 - Decide non-substantive details autonomously using repo conventions, documented defaults, and the smallest coherent scope.

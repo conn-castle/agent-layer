@@ -68,7 +68,6 @@ Recommended roles:
 - Required: ask when no valid review report can be found and explicit report selection is needed.
 - Required: ask when an accepted fix would require materially broader scope or a real behavior change beyond the reviewed target.
 - Required: ask when an accepted finding has multiple valid fixes and the choice would affect user-facing behavior, architecture, ownership boundaries, data semantics, migration strategy, long-term platform policy, or materially larger scope.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during verdicting and in-scope fixes when the request includes fixes.
 
 ## Triage workflow

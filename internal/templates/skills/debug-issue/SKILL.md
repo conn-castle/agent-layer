@@ -65,7 +65,6 @@ Recommended roles:
 - Required: ask when the symptom description is too vague to form any testable hypothesis.
 - Required: ask when investigation reveals that the fix requires a breaking change, broad refactor, or architectural decision.
 - Required: ask when multiple plausible root causes remain after investigation and the correct one depends on intended behavior that is not documented.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous through reproduction, hypothesis testing, narrowing, test writing, and fixing when the cause is clear.
 
 ## Investigation workflow

@@ -80,7 +80,6 @@ Recommended roles:
   negative-value or duplicate finding.
 - Required: ask when a finding would require changes to production code
   for testability.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous for: dead tests, clear negative-value tests, clear duplicates,
   and mechanical assertion fixes.
 

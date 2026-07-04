@@ -1,6 +1,6 @@
 ---
 name: agent-dispatch
-description: Use `al dispatch` only for human-requested focused headless second-agent work, or when another active skill's written workflow explicitly requires subagent/fresh-context delegation. Do not use for discretionary/background second opinions, ordinary shell commands, local test runs, web search, browser automation, or multi-agent orchestration.
+description: Use `al dispatch` for human-requested headless second-agent work, or when an active skill explicitly requires subagent/fresh-context delegation. Do not use for ordinary shell commands, tests, web search, browser automation, or discretionary second opinions.
 compatibility: Requires the Agent Layer CLI (`al`) from the project environment and at least one configured target for actual al dispatch runs.
 allowed-tools: Bash(al:*) Bash(cat:*)
 ---

@@ -52,7 +52,6 @@ Delegate to:
 - Required: ask when the same CI failure persists after 3 fix attempts.
 - Required: ask when fixing the CI failure would require a materially broader scope change.
 - Required: ask when no credible local reproducer can be built after inspecting logs, artifacts, CI config, environmental differences, and relevant code.
-- When a checkpoint involves a genuine tradeoff between substantive alternatives, present at least two options with brief pros and cons, state which you recommend and why, and let the human decide.
 - Stay autonomous during normal diagnose, fix, audit, commit, push, re-check cycles.
 
 ## Fix workflow

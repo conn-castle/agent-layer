@@ -2,7 +2,7 @@
 
 - **Frontend is presentation, not business rules:** The frontend must not contain business rules, authoritative computations, or metric derivations. Allowed: presentation formatting, input validation, view-state management, and sorting for display.
 
-- **Packages (latest compatible stable versions):** Determine package versions using the package manager and official tooling/docs, not memory. Prefer the latest stable compatible versions. Avoid unstable or pre-release versions. If the latest stable version introduces breaking changes, ask for confirmation and then do the compatibility work.
+- **Packages (latest compatible stable versions):** Determine package versions using the package manager and official tooling/docs, not memory. Prefer the latest stable compatible versions. Avoid unstable or pre-release versions.
 
 - **Schema safety:** Never modify the database schema via raw SQL or direct tool access. Always generate a proper migration file using the project's migration system, and ask the user to apply it.
 
