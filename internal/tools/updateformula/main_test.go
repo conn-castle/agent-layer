@@ -66,6 +66,7 @@ func TestRunRendersBinaryFormula(t *testing.T) {
 
   def install
     bin.install Dir["al-*"].first => "al"
+    chmod 0555, bin/"al" # generate_completions_from_executable fails otherwise
     generate_completions_from_executable(bin/"al", "completion")
   end
 

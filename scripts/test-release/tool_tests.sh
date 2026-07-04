@@ -163,11 +163,12 @@ EOF
       if grep -q 'on_macos do' "$valid_formula" && \
          grep -q 'on_arm do' "$valid_formula" && \
          grep -q 'on_intel do' "$valid_formula" && \
+         grep -q 'chmod 0555, bin/"al"' "$valid_formula" && \
          grep -q 'generate_completions_from_executable(bin/"al", "completion")' "$valid_formula" && \
          grep -q 'test do' "$valid_formula"; then
-        pass "updateformula: keeps required arch, completion, and test blocks"
+        pass "updateformula: keeps required arch, executable mode, completion, and test blocks"
       else
-        fail "updateformula: missing required arch, completion, or test block"
+        fail "updateformula: missing required arch, executable mode, completion, or test block"
       fi
 
       # Test 3: Verify removed source-build formula features stay removed.
