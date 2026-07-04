@@ -1,6 +1,24 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.12.1 - 2026-07-04
+
+Patch release for the v0.12 line. Fixes binary Homebrew publishing, preserves Codex hook trust state across chime refreshes, and retires the generated `.codex/AGENTS.md` shim that duplicated root `AGENTS.md` when Codex used repo-local config.
+
+### Changed
+- `al sync` no longer writes `.codex/AGENTS.md`. Codex reads root `AGENTS.md` as project instructions, and repo-local `CODEX_HOME` caused `.codex/AGENTS.md` to be loaded as home-level instructions as well.
+- Workflow instruction and skill templates were tightened for tradeoff handling, full-workflow spec approval, and prune-new-tests reviewer output.
+- Release documentation now clarifies binary Homebrew tap PR handling.
+
+### Fixed
+- Codex chime refresh now preserves existing hook trust state stored inside the managed chime markers and remains idempotent across repeated syncs.
+- Homebrew formula generation now includes both macOS ARM64 and macOS Intel release assets.
+- Homebrew binary formula installs now mark `al` executable before generating shell completions.
+- The release workflow now verifies all binary assets needed by the Homebrew tap, including `al-darwin-amd64`.
+
+### Internal
+- Added v0.12.1 migration and template ownership manifests. The migration deletes only Agent Layer-generated `.codex/AGENTS.md` files; hand-authored files at that path are left untouched.
+
 ## v0.12.0 - 2026-07-03
 
 Consolidates all unreleased work since `v0.11.0` into one coherent release. Adds typed Antigravity model selection, configurable Agent Dispatch depth, repo-local Codex home opt-in, shared Codex TOML patching, provider turn-stop chimes, serialized sync writes, new workflow skills, signed/notarized macOS binaries, and binary Homebrew delivery.
