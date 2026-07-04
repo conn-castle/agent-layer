@@ -120,6 +120,63 @@ func TestToolInstructionsKeepSkillOwnedRoutingOutOfBaseInstructions(t *testing.T
 	}
 }
 
+// TestAutoLoopSkillContractsDoNotDeferForPointFixScope enforces the
+// autonomous-loop contract that accepted findings stay actionable unless they
+// cross a real human-review gate. The prompt text is the runtime behavior here,
+// so these assertions guard against reintroducing "too broad for a point fix"
+// as a deferral reason.
+func TestAutoLoopSkillContractsDoNotDeferForPointFixScope(t *testing.T) {
+	required := map[string][]string{
+		"skills/auto-skill-loop/references/blocker-classification.md": {
+			"Fix size, multi-file scope, or \"broader scope than a point fix\" is not a user-only blocker by itself.",
+		},
+		"skills/audit-and-fix-uncommitted-changes/SKILL.md": {
+			"A broad-but-clear fix is still in scope when it resolves an accepted finding against the working-tree target and does not trigger a human checkpoint.",
+		},
+		"skills/resolve-findings/SKILL.md": {
+			"Fix size alone is not scope: broad, multi-file, or non-point fixes remain in scope when they resolve accepted findings against the reviewed target.",
+		},
+	}
+	for path, snippets := range required {
+		data, err := Read(path)
+		if err != nil {
+			t.Fatalf("Read(%q) error: %v", path, err)
+		}
+		content := strings.Join(strings.Fields(string(data)), " ")
+		for _, snippet := range snippets {
+			if !strings.Contains(content, snippet) {
+				t.Fatalf("expected %s to contain %q", path, snippet)
+			}
+		}
+	}
+
+	for _, forbidden := range []struct {
+		path    string
+		snippet string
+	}{
+		{
+			path:    "skills/resolve-findings/SKILL.md",
+			snippet: "If the finding is technically true but out of scope for this run, mark it `defer`.",
+		},
+		{
+			path:    "skills/audit-and-fix-uncommitted-changes/SKILL.md",
+			snippet: "Required: ask when an accepted finding requires materially broader scope",
+		},
+		{
+			path:    "skills/resolve-findings/SKILL.md",
+			snippet: "Required: ask when an accepted fix would require materially broader scope",
+		},
+	} {
+		data, err := Read(forbidden.path)
+		if err != nil {
+			t.Fatalf("Read(%q) error: %v", forbidden.path, err)
+		}
+		if strings.Contains(string(data), forbidden.snippet) {
+			t.Fatalf("expected %s not to contain stale deferral rule %q", forbidden.path, forbidden.snippet)
+		}
+	}
+}
+
 func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 	for _, path := range []string{
 		"skills/continue-roadmap/SKILL.md",

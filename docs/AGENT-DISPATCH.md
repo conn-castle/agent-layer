@@ -178,4 +178,6 @@ Headless target runs must be launched with non-interactive target CLI modes. Dis
 
 For final-answer-only targets such as Codex v1, callers should expect sparse stderr output while the answer text remains unavailable until the target run completes. Dispatch forwards target stream events as compact stderr lines when they arrive and stays silent otherwise; it does not synthesize heartbeats. Genuine target silence is reported as silence — dispatch cannot distinguish a long inference from a frozen subprocess.
 
+Callers must wait for the original `al dispatch` process to exit, even when output is quiet or the run appears stalled. Do not poll dispatch artifacts or launch separate status checks while the process is active; that wastes context tokens and can mistake ordinary target silence for failure.
+
 Dispatch forwards cancellation signals to the target process and waits for it to exit before returning.

@@ -18,3 +18,5 @@ The normal PR gate applies. A batch may ship below the gate only for a
 high-severity fix or the final autonomous tail.
 
 Resolved issues must be removed from `ISSUES.md`.
+Deferred issues must not be annotated in `ISSUES.md`; record the deferral only
+in worker output, run artifacts, or the auto-skill-loop ledger.

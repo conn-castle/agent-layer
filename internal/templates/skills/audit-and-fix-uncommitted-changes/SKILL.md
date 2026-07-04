@@ -88,12 +88,13 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 ## Human checkpoints
 
 - Required: ask when the target is empty and no credible review scope exists.
-- Required: ask when an accepted finding requires materially broader scope, an architectural decision, or a user-visible behavior change beyond the current target.
+- Required: ask when an accepted finding requires an architectural decision, a user-visible behavior change beyond the current target, or another human-only decision.
 - Required: ask when a finding cannot be verified with the available code, tests, or docs.
 - Required: ask when a deferred finding blocks convergence.
 - Required: ask when the same unresolved finding recurs after two fix attempts or the loop is no longer converging.
 - Required: ask before any destructive or irreversible action would be required.
 - Stay autonomous during normal audit/fix/re-audit cycles when the target and accepted fixes are clear.
+- A broad-but-clear fix is still in scope when it resolves an accepted finding against the working-tree target and does not trigger a human checkpoint.
 
 ## Orchestration loop
 
@@ -133,7 +134,7 @@ For each round, copy the high-signal findings summary into the master report und
 
 ### Phase 3: Verify and fix Round N findings (Fixers)
 
-Use the `resolve-findings` skill on the Round N review report with authority to fix accepted findings. Fix every accepted finding regardless of severity. Do not treat `defer` as a clean outcome; escalate instead when a valid issue cannot be resolved in scope.
+Use the `resolve-findings` skill on the Round N review report with authority to fix accepted findings. Fix every accepted finding regardless of severity. Do not treat `defer` as a clean outcome; escalate instead when a valid issue cannot be resolved for a human-checkpoint reason. "Broader scope than a point fix" is not a valid deferral reason.
 
 Copy the fix summary into the master report under `## Round N Fixes` (title, severity, fix description, files touched) and `## Round N Status` (accepted/rejected/deferred counts, unresolved Critical and High counts).
 

@@ -8,14 +8,10 @@ description: >-
 
 # resolve-findings
 
-Treat review reports as inputs, not truth.
-Your job is to:
-1. verify each finding
-2. decide whether it is correct
-3. fix accepted findings within scope
-4. document why any finding was not fixed
+Treat review reports as inputs, not truth. Verify each finding before fixing it,
+and preserve a concrete verdict for anything not fixed.
 
-## Defaults
+## Input selection
 
 - Default input discovery is deterministic. If the user does not provide a report path:
   1. list `.agent-layer/tmp/*.report.md`
@@ -29,8 +25,10 @@ Your job is to:
      - `verify-against-plan`
      - `review-plan`
      - `review-scope`
-- If no valid report artifact exists, ask the user for a report path or rerun the review workflow.
-- If the user asked only for triage or report review, stop after triage and ask before editing code.
+- If no valid report artifact exists, ask the user for a report path or rerun
+  the review workflow.
+- If the user asked only for triage or report review, stop after verdicting and
+  ask before editing code.
 
 ## Required artifacts
 
@@ -39,98 +37,82 @@ Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 Always create:
 - `.agent-layer/tmp/resolve-findings.<run-id>.report.md`
 
-Create these only when at least one finding is accepted and fixes are in scope for the request:
+Create these only when at least one finding is accepted and fixes are in scope:
 - `.agent-layer/tmp/resolve-findings.<run-id>.plan.md`
 - `.agent-layer/tmp/resolve-findings.<run-id>.task.md`
 - `.agent-layer/tmp/resolve-findings.<run-id>.context.md`
 
-The final report is the resolution log.
 Create each file with `touch` before writing.
 
 ## Multi-agent pattern
 
 Recommended roles:
 1. `Verifier`: checks whether each reported finding is actually valid.
-2. `Execution gatekeeper`: decides whether the accepted finding set should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
+2. `Execution gatekeeper`: decides whether the accepted finding set should
+   `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
 3. `Fixer`: implements accepted findings.
 4. `Auditor`: reviews the resulting changes for regressions or overreach.
 
-## Global constraints
+## Constraints
 
 - Treat the report as input, not authority.
-- Preserve an explicit verdict for every finding. Do not silently drop any.
-- Apply accepted fixes to the actual reviewed target, which may be plan artifacts, code, docs, or tests.
-- Do not expand the scope beyond accepted findings without asking.
+- Every finding must receive exactly one verdict: `accept`, `reject`, `defer`,
+  or `already-resolved`.
+- Apply accepted fixes to the actual reviewed target, which may be plan artifacts,
+  code, docs, or tests.
+- Keep scope to accepted findings. Fix size alone is not scope: broad,
+  multi-file, or non-point fixes remain in scope when they resolve accepted
+  findings against the reviewed target.
+- Mark a finding `defer` when it is blocked by a human checkpoint. Do not defer
+  just because the fix is large, as long as it stays within scope and does not
+  need a human checkpoint.
 
 ## Human checkpoints
 
-- Required: ask before editing only when the user explicitly limited the run to triage or report review.
-- Required: ask when no valid review report can be found and explicit report selection is needed.
-- Required: ask when an accepted fix would require materially broader scope or a real behavior change beyond the reviewed target.
-- Required: ask when an accepted finding has multiple valid fixes and the choice would affect user-facing behavior, architecture, ownership boundaries, data semantics, migration strategy, long-term platform policy, or materially larger scope.
+- Ask before editing only when the user explicitly limited the run to triage or
+  report review.
+- Ask when no valid review report can be found and explicit report selection is
+  needed.
+- Ask when an accepted fix would require a real behavior change beyond the
+  reviewed target.
+- Ask when choosing among valid fixes would affect user-facing behavior,
+  architecture, ownership boundaries, data semantics, migration strategy, or
+  long-term platform policy.
 - Stay autonomous during verdicting and in-scope fixes when the request includes fixes.
 
-## Triage workflow
+## Workflow
 
-### Phase 1: Parse and verify findings (Verifier)
+1. Parse and verify each finding.
+   - Reproduce or inspect the claim directly in code, plan artifacts, or diffs.
+   - Do not assume the report is correct because it sounds plausible.
+2. If zero findings are accepted, write `No accepted findings` in the resolution
+   report and stop without editing code.
+3. For accepted findings, write a focused plan and task list covering:
+   - objective
+   - accepted findings in scope
+   - rejected or deferred findings out of scope
+   - implementation approach
+   - verification commands
+   - risk notes
+4. Gate the accepted fix set with exactly one verdict:
+   - `proceed`: the fix set is ready to implement as written
+   - `revise`: the plan or task list needs updates first
+   - `escalate`: a human checkpoint is actually required
+   - `rewrite-because-out-of-scope`: rewrite to the largest subset allowed by
+     the scope and checkpoint rules, defer excluded findings, and repeat the gate
+5. Implement accepted findings.
+   - Prefer root-cause fixes over surface patches.
+   - If a fix reveals a human checkpoint, hand it back to the execution
+     gatekeeper.
+   - If two accepted findings are duplicates, fix once and note both as resolved
+     by the same change.
+6. Audit the fix set.
+   - Re-read each accepted finding and confirm the change resolves it.
+   - Review touched code for regressions or overreach.
+   - Fix any issue caused by the resolution or record it in the report.
 
-For each finding, assign exactly one verdict:
-- `accept`
-- `reject`
-- `defer`
-- `already-resolved`
-
-Verification rules:
-- Reproduce or inspect the claim directly in code, plan artifacts, or diffs.
-- Do not assume the report is correct because it sounds plausible.
-- If the finding depends on a missing fact, mark it `defer` and explain what is missing.
-- If the finding is technically true but out of scope for this run, mark it `defer`.
-
-### Phase 2: Write the plan and task list (Planner)
-
-For accepted findings only, create a focused plan with:
-- objective
-- accepted findings in scope
-- rejected or deferred findings out of scope
-- implementation approach
-- verification commands
-- risk notes
-
-Create a compact task list that matches the accepted findings.
-
-If zero findings are accepted:
-- do not create plan, task, or context artifacts
-- record `No accepted findings` in the resolution report
-- stop without editing code
-
-### Phase 3: Gate the accepted fix set (Execution gatekeeper)
-
-Choose exactly one verdict for the accepted finding set:
-- `proceed`: the fix set is ready to implement as written
-- `revise`: the plan or task list needs updates first
-- `escalate`: a human checkpoint is actually required
-- `rewrite-because-out-of-scope`: the accepted set should be rewritten to the largest still-in-scope subset before coding
-
-If the verdict is `revise`, update the plan or task list and repeat Phase 2.
-If the verdict is `escalate`, ask the smallest question that unblocks a trustworthy fix set.
-If the verdict is `rewrite-because-out-of-scope`, rewrite the accepted set to the largest still-in-scope subset, defer the rest explicitly, and repeat Phase 2.
-Do not treat an accepted finding as settling the implementation approach when the approach itself contains a substantive product or architecture decision.
-
-### Phase 4: Implement accepted findings (Fixer)
-
-Execution rules:
-- keep scope tight to accepted findings
-- prefer root-cause fixes over surface patches
-- if a fix requires a materially larger refactor than the finding suggests, hand it back to the execution gatekeeper
-- if two accepted findings are duplicates, fix once and note both as resolved by the same change
-
-### Phase 5: Audit the fix set (Auditor)
-
-After implementation:
-- re-read each accepted finding
-- confirm the change actually resolves it
-- review touched code for regressions
-- if you discover a new issue caused by the fix, either fix it immediately or record it in the resolution report
+Do not treat an accepted finding as settling the implementation approach when
+the approach itself contains a substantive product or architecture decision.
 
 ## Resolution report format
 
@@ -145,25 +127,17 @@ Write `.agent-layer/tmp/resolve-findings.<run-id>.report.md` with:
 7. `## Residual Risk`
 
 For every non-fixed finding, explain why in concrete terms.
+If a Critical or High finding remains unresolved, say so prominently.
 
 ## Guardrails
 
-- Do not silently ignore findings.
 - Do not "fix" a finding you do not agree with just to clear the report.
-- Do not rewrite the report author's conclusion without preserving the actual verdict.
 - Do not let a Medium or Low finding pull in unrelated opportunistic work.
-- If a Critical or High finding remains unresolved, say so prominently in the final report.
 
 ## Definition of done
 
-- The resolution report exists at `.agent-layer/tmp/resolve-findings.<run-id>.report.md` with every required section (`Summary`, `Accepted and Fixed`, `Rejected`, `Deferred`, `Already Resolved`, `Verification`, `Residual Risk`).
-- Every finding from the input review report has exactly one explicit verdict of accept, reject, defer, or already-resolved — none silently dropped.
-- When at least one finding is accepted, the plan/task/context artifacts also exist at the documented paths; when zero are accepted, they are absent and the report says `No accepted findings`.
-- Every non-fixed finding carries a concrete explanation, and any unresolved Critical or High finding is surfaced prominently in the report and handoff.
-
-## Final handoff
-
-After the run:
-1. Echo the report path, plus the plan/task/context paths only if they were created.
-2. Summarize what was fixed.
-3. Call out any unresolved High/Critical findings.
+- Required artifacts were created according to the artifact rules.
+- Every finding from the input review report has an explicit verdict.
+- Accepted findings were fixed or the report records the checkpoint/risk that
+  prevented fixing them.
+- Verification ran, or the report explains why it could not.

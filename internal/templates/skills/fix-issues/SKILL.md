@@ -116,7 +116,7 @@ After writing the artifacts:
 - `proceed` (batch ready to implement): continue to Phase 4.
 - `revise` (plan or task list needs updates): repeat from Phase 2.
 - `escalate` (human checkpoint required): ask the smallest question that unblocks a trustworthy fix.
-- `rewrite-because-out-of-scope` (batch too broad): rewrite to the largest still-in-scope subset, record deferred issues, and return to the earliest affected phase.
+- `rewrite-because-out-of-scope` (batch too broad): rewrite to the largest still-in-scope subset, record deferred issues in the run artifacts/report, and return to the earliest affected phase.
 
 ### Phase 4: Implement the current batch (Implementer)
 
@@ -170,13 +170,14 @@ If it reveals incomplete issue resolution or stale memory/docs, jump back to the
 - Do not leave issue dispositions implicit.
 - Do not weaken checks or lower thresholds to “finish” an issue batch.
 - Do not close issues that were only partially addressed.
-- Do not treat `rewrite-because-out-of-scope` as permission to silently drop selected issues; record the deferrals explicitly.
+- Do not treat `rewrite-because-out-of-scope` as permission to silently drop selected issues; record the deferrals explicitly in the run artifacts/report, not in `ISSUES.md`.
 - Do not stop after the first batch if unprocessed batches remain.
 
 ## Definition of done
 
 - The four artifacts exist at `.agent-layer/tmp/fix-issues.<run-id>.{plan,task,context,report}.md`, and the report lists every selected issue with a disposition of fixed, deferred, rejected, or reclassified.
 - Every resolved issue is removed from `ISSUES.md`; reclassified items moved to `BACKLOG.md`; newly discovered out-of-scope issues are logged as fresh `ISSUES.md` entries.
+- Deferred selected issues are not annotated in `ISSUES.md`; they remain as open issues unless separately reclassified or resolved.
 - The repo-defined verification command ran at least once per batch and its result is recorded in the report.
 - The run processed every selected batch in order — no early stop with unprocessed batches, unless a human checkpoint blocked progress and the report names it.
 

@@ -44,6 +44,8 @@ Record current step, branches, PRs, dispatch agent roles, normalized dispatch
 flags, merged PRs, blocked branches, blocked PRs, recent touched paths,
 exhausted lenses, worker questions and answers, user-only blockers, manual
 gates, PR-gate status, and verification evidence.
+Record worker deferrals in this ledger or worker artifacts, not as deferral
+notes in `ISSUES.md`.
 
 ## Loop
 
