@@ -33,11 +33,9 @@ run_scenario_codex_launch() {
   assert_mock_agent_env "$MOCK_AGENT_LOG" "AL_DISPATCH_CALLER_AGENT" "codex"
   assert_mock_agent_env "$MOCK_AGENT_LOG" "CODEX_HOME" "$repo_dir/.codex"
 
-  # Verify sync generated the codex-specific output. Bare init has no
-  # instruction sources, so the codex instruction shim is intentionally empty.
-  assert_file_exists "$repo_dir/.codex/AGENTS.md" "codex AGENTS.md generated"
-  assert_file_empty "$repo_dir/.codex/AGENTS.md" \
-    "codex AGENTS.md is empty without instruction sources"
+  # Verify sync generated the codex-specific output.
+  assert_file_not_exists "$repo_dir/.codex/AGENTS.md" \
+    ".codex/AGENTS.md is not generated after Codex AGENTS.md retirement"
   assert_file_contains "$repo_dir/.codex/config.toml" "GENERATED FILE" \
     "codex config has managed marker"
   assert_file_contains "$repo_dir/.codex/config.toml" 'trust_level = "trusted"' \
