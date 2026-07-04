@@ -938,6 +938,59 @@ func TestLoadUpgradeMigrationManifest_0_12_0_ConsolidatesUnreleasedContracts(t *
 	}
 }
 
+func TestLoadUpgradeMigrationManifest_0_12_1_RemovesCodexAgentsShim(t *testing.T) {
+	manifest, _, err := loadUpgradeMigrationManifestByVersion("0.12.1")
+	if err != nil {
+		t.Fatalf("load 0.12.1 manifest: %v", err)
+	}
+	if manifest.MinPriorVersion != "0.10.2" {
+		t.Fatalf("min_prior_version = %q, want %q", manifest.MinPriorVersion, "0.10.2")
+	}
+	if len(manifest.Operations) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(manifest.Operations))
+	}
+
+	op := manifest.Operations[0]
+	if op.ID != "l-delete-codex-agents-home-shim" {
+		t.Fatalf("operation id = %q, want l-delete-codex-agents-home-shim", op.ID)
+	}
+	if op.Kind != upgradeMigrationKindDeleteGeneratedArtifact {
+		t.Fatalf("operation kind = %q, want %q", op.Kind, upgradeMigrationKindDeleteGeneratedArtifact)
+	}
+	if op.Path != ".codex/AGENTS.md" {
+		t.Fatalf("operation path = %q, want .codex/AGENTS.md", op.Path)
+	}
+	if !op.SourceAgnostic {
+		t.Fatal("expected source_agnostic = true")
+	}
+}
+
+func TestMigration_0_12_1_DeletesGeneratedCodexAgentsShim(t *testing.T) {
+	root := t.TempDir()
+	codexAgentsPath := filepath.Join(root, ".codex", "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(codexAgentsPath), 0o700); err != nil {
+		t.Fatalf("mkdir codex dir: %v", err)
+	}
+	if err := os.WriteFile(codexAgentsPath, []byte("<!--\n  GENERATED FILE\n-->\n"), 0o600); err != nil {
+		t.Fatalf("write codex agents shim: %v", err)
+	}
+
+	var warn bytes.Buffer
+	inst := &installer{root: root, pinVersion: "0.12.1", sys: RealSystem{}, warnWriter: &warn}
+	if err := inst.prepareUpgradeMigrations(); err != nil {
+		t.Fatalf("prepareUpgradeMigrations: %v", err)
+	}
+	if err := inst.runMigrations(); err != nil {
+		t.Fatalf("runMigrations: %v", err)
+	}
+	if _, err := os.Stat(codexAgentsPath); !os.IsNotExist(err) {
+		t.Fatalf("expected generated .codex/AGENTS.md to be removed, got %v", err)
+	}
+	if entry, ok := migrationReportEntryByID(inst.migrationReport.Entries, "l-delete-codex-agents-home-shim"); !ok || entry.Status != UpgradeMigrationStatusApplied {
+		t.Fatalf("expected applied Codex shim deletion entry, got %#v ok=%v", entry, ok)
+	}
+}
+
 func TestMigration_0_10_2_MigratesGeminiConfigToAntigravity(t *testing.T) {
 	tests := []struct {
 		name        string

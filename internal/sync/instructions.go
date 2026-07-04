@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -37,15 +38,6 @@ func WriteInstructionShims(sys System, root string, instructions []config.Instru
 	return nil
 }
 
-// WriteCodexInstructions generates the Codex-specific instruction shim.
-func WriteCodexInstructions(sys System, root string, instructions []config.InstructionFile) error {
-	codexDir := filepath.Join(root, ".codex")
-	if err := sys.MkdirAll(codexDir, 0o755); err != nil {
-		return fmt.Errorf(messages.SyncCreateDirFailedFmt, codexDir, err)
-	}
-	return writeInstructionFile(sys, filepath.Join(codexDir, "AGENTS.md"), instructions)
-}
-
 func writeInstructionFile(sys System, path string, instructions []config.InstructionFile) error {
 	content := buildInstructionShim(instructions)
 	if err := sys.WriteFileAtomic(path, []byte(content), 0o644); err != nil {
@@ -74,4 +66,23 @@ func buildInstructionShim(instructions []config.InstructionFile) string {
 		builder.WriteString(" -->\n\n")
 	}
 	return strings.TrimRight(builder.String(), "\n") + "\n"
+}
+
+// CleanCodexInstructions removes the retired Codex-specific instruction shim.
+// Codex reads root AGENTS.md as project instructions. When CODEX_HOME points at
+// repo-local .codex, .codex/AGENTS.md is loaded as home-level instructions and
+// duplicates the project document.
+func CleanCodexInstructions(sys System, root string) error {
+	path := filepath.Join(root, ".codex", "AGENTS.md")
+	isGenerated, err := hasGeneratedMarker(sys, path)
+	if err != nil {
+		return err
+	}
+	if !isGenerated {
+		return nil
+	}
+	if err := sys.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf(messages.SyncRemoveFailedFmt, path, err)
+	}
+	return nil
 }

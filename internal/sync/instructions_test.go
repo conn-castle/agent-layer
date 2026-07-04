@@ -50,15 +50,47 @@ func TestWriteInstructionShims(t *testing.T) {
 	}
 }
 
-func TestWriteCodexInstructions(t *testing.T) {
+func TestCleanCodexInstructionsRemovesGeneratedShim(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
-	if err := WriteCodexInstructions(RealSystem{}, root, instructions); err != nil {
-		t.Fatalf("WriteCodexInstructions error: %v", err)
+	path := filepath.Join(root, ".codex", "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".codex", "AGENTS.md")); err != nil {
-		t.Fatalf("expected codex instructions: %v", err)
+	if err := os.WriteFile(path, []byte(buildInstructionShim(instructions)), 0o600); err != nil {
+		t.Fatalf("write generated shim: %v", err)
+	}
+
+	if err := CleanCodexInstructions(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanCodexInstructions error: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected generated codex instructions to be removed, got %v", err)
+	}
+}
+
+func TestCleanCodexInstructionsPreservesUserAuthoredFile(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".codex", "AGENTS.md")
+	content := []byte("# Personal Codex home instructions\n")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write user instructions: %v", err)
+	}
+
+	if err := CleanCodexInstructions(RealSystem{}, root); err != nil {
+		t.Fatalf("CleanCodexInstructions error: %v", err)
+	}
+	got, err := os.ReadFile(path) // #nosec G304 -- path is test-controlled.
+	if err != nil {
+		t.Fatalf("read preserved user instructions: %v", err)
+	}
+	if string(got) != string(content) {
+		t.Fatalf("unexpected content after cleanup: %q", string(got))
 	}
 }
 
@@ -71,19 +103,6 @@ func TestWriteInstructionShimsError(t *testing.T) {
 	}
 	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
 	if err := WriteInstructionShims(RealSystem{}, file, instructions); err == nil {
-		t.Fatalf("expected error")
-	}
-}
-
-func TestWriteCodexInstructionsError(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	file := filepath.Join(root, "file")
-	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
-	if err := WriteCodexInstructions(RealSystem{}, file, instructions); err == nil {
 		t.Fatalf("expected error")
 	}
 }

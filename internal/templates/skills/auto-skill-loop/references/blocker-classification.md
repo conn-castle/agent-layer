@@ -17,5 +17,4 @@ choices, normal refactors, local test strategy, or PR merge approval after the
 merge-readiness contract is satisfied.
 
 When deferring, preserve the branch remotely, leave any PR open, record the
-smallest question that unblocks the work, return to `primary_branch`, and keep
-looping.
+smallest question that unblocks the work, and keep looping.

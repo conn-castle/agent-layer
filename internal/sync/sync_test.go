@@ -21,6 +21,13 @@ func TestRunGolden(t *testing.T) {
 	}
 	writeTemplateToFixtureSource(t, root, "claude-statusline.sh", filepath.Join(".agent-layer", "claude-statusline.sh"), 0o755)
 	writeTemplateToFixtureSource(t, root, "codex-statusline.toml", filepath.Join(".agent-layer", "codex-statusline.toml"), 0o644)
+	staleCodexInstructions := filepath.Join(root, ".codex", "AGENTS.md")
+	if err := os.MkdirAll(filepath.Dir(staleCodexInstructions), 0o700); err != nil {
+		t.Fatalf("mkdir stale codex instructions dir: %v", err)
+	}
+	if err := os.WriteFile(staleCodexInstructions, []byte(generatedMarkerFixture), 0o600); err != nil {
+		t.Fatalf("write stale codex instructions: %v", err)
+	}
 	result, err := Run(root)
 	if err != nil {
 		t.Fatalf("sync run: %v", err)
@@ -35,7 +42,6 @@ func TestRunGolden(t *testing.T) {
 		"AGENTS.md",
 		"CLAUDE.md",
 		".github/copilot-instructions.md",
-		".codex/AGENTS.md",
 		".codex/config.toml",
 		".codex/rules/default.rules",
 		".agents/skills/alpha/SKILL.md",
@@ -57,6 +63,7 @@ func TestRunGolden(t *testing.T) {
 	assertFileMatchesTemplate(t, "claude-statusline.sh", filepath.Join(root, ".claude", "claude-statusline.sh"))
 
 	absent := []string{
+		".codex/AGENTS.md",
 		".codex/skills",
 		".agent/skills",
 		".gemini/skills",

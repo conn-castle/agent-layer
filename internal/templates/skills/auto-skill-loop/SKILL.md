@@ -15,7 +15,6 @@ Fail before side effects unless all are present:
 - `implementer`: dispatch agent role
 - `reviewer`: dispatch agent role
 - `helper`: dispatch agent role
-- `primary_branch`
 - explicit standing authorization for this orchestrator to merge ready PRs
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
@@ -48,23 +47,22 @@ gates, PR-gate status, and verification evidence.
 
 ## Loop
 
-1. Start from `primary_branch` with a clean working tree. Do not stash,
-   discard, or preserve work only locally.
+1. Start with a clean working tree. Do not stash, discard, or preserve work
+   only locally.
 2. Create or reuse one batch branch for autonomous, non-blocked work.
 3. Dispatch the implementer with the selected worker skill and the current
    ledger context.
 4. Answer worker checkpoints as the human proxy when no user-only decision is
    required. If user input is required, commit and push the branch, leave any
-   PR open, record the blocker, return to `primary_branch`, and start a new
-   attempt.
+   PR open, record the blocker, and start a new attempt.
 5. After every worker iteration, commit and push the branch before continuing.
 6. Do not create a PR until the work is substantive, unless an exception in the
    worker contract applies.
 7. Use the reviewer dispatch agent role for `/ship-pr`, PR feedback, final
    readiness review, and merge execution.
 8. If repository policy, PR automation, or any external gate requires manual
-   approval, leave the PR open, record the gate, return to `primary_branch`,
-   and continue with a new attempt.
+   approval, leave the PR open, record the gate, and continue with a new
+   attempt.
 9. Merge ready PRs under this skill's standing authorization.
 10. Continue until interrupted or no autonomous work remains. When only a final
     small autonomous tail remains, ship it even if it misses the normal size
@@ -88,4 +86,4 @@ unless they are the substance of the work.
 - Never close or delete a blocked PR or branch.
 - Never weaken checks, tests, or skill definitions to keep the loop moving.
 - Never treat low-value churn as progress.
-- Keep the checkout clean when returning to `primary_branch`.
+- Keep the checkout clean between attempts.

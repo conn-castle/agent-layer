@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "target_version": "0.12.1",
+  "min_prior_version": "0.10.2",
+  "operations": [
+    {
+      "id": "l-delete-codex-agents-home-shim",
+      "kind": "delete_generated_artifact",
+      "path": ".codex/AGENTS.md",
+      "rationale": "Remove the retired Codex-specific instruction shim. Codex now reads root AGENTS.md as the project document, and when CODEX_HOME points at repo-local .codex this file is loaded as home-level instructions, duplicating the project document.",
+      "source_agnostic": true
+    }
+  ]
+}

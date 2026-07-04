@@ -122,9 +122,9 @@ func TestDetectDisabledAgentArtifacts_FlagsClaudeSettings(t *testing.T) {
 
 func TestDetectDisabledAgentArtifacts_CodexStatError(t *testing.T) {
 	root := t.TempDir()
-	codexAgentsPath := filepath.Join(root, ".codex", "AGENTS.md")
+	codexRulesPath := filepath.Join(root, ".codex", "rules", "default.rules")
 	sys := newFaultSystem(RealSystem{})
-	sys.statErrs[normalizePath(codexAgentsPath)] = errors.New("stat boom")
+	sys.statErrs[normalizePath(codexRulesPath)] = errors.New("stat boom")
 	inst := &installer{root: root, sys: sys}
 
 	cfg := config.Config{Agents: config.AgentsConfig{
@@ -268,7 +268,6 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 	root := t.TempDir()
 
 	codexFiles := map[string]string{
-		filepath.Join(root, ".codex", "AGENTS.md"):                   "GENERATED FILE\n",
 		filepath.Join(root, ".codex", "config.toml"):                 "# GENERATED FILE\n",
 		filepath.Join(root, ".codex", "rules", "default.rules"):      "# GENERATED FILE\n",
 		filepath.Join(root, ".codex", "skills", "alpha", "SKILL.md"): "<!--\n  GENERATED FILE\n-->\n",
@@ -329,7 +328,6 @@ func TestDetectDisabledAgentArtifacts_FindsManagedArtifacts(t *testing.T) {
 	joined := strings.Join(check.Details, "\n")
 	// Codex/antigravity disabled artifacts should be flagged.
 	for _, expected := range []string{
-		".codex/AGENTS.md",
 		".codex/rules/default.rules",
 		".codex/skills/alpha/SKILL.md",
 		".agent/skills/beta/SKILL.md",

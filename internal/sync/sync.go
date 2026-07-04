@@ -61,13 +61,8 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 		func() error {
 			return WriteInstructionShims(sys, root, project.Instructions)
 		},
+		func() error { return CleanCodexInstructions(sys, root) },
 		func() error { return CleanLegacySkillOutputs(sys, root) },
-	}
-
-	if config.IsAgentEnabled(agents.Codex.Enabled) {
-		steps = append(steps,
-			func() error { return WriteCodexInstructions(sys, root, project.Instructions) },
-		)
 	}
 
 	if config.SharedAgentSkillsEnabled(agents) {

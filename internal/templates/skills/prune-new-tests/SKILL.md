@@ -3,20 +3,21 @@ name: prune-new-tests
 description: >-
   Burden-of-proof review of tests added in the current uncommitted diff:
   auto-delete any new test that can't justify itself with a production-code
-  mutation that would flip its assertion. Use `audit-tests` for full-suite
-  health; use `boost-coverage` to add tests.
+  mutation that would flip its assertion given the test's actual input. Use
+  `audit-tests` for full-suite health; use `boost-coverage` to add tests.
 ---
 
 # prune-new-tests
 
 This skill prunes low-value tests that the implementing agent added as a side
 effect of implementation. Each newly added test must defend its existence with
-a **concrete mutation in production code that would flip the assertion**.
-Tests that cannot are auto-deleted.
+a **concrete mutation in production code that would flip the assertion given
+the test's actual input**. Tests that cannot are auto-deleted. Tests that
+target real behavior but pass for the wrong reason are also deleted in this
+prune-only pass and reported as surviving coverage gaps, not hardened in place.
 
 Use `audit-tests` instead when the target is the full existing suite. Use
 `boost-coverage` instead when the goal is to **add** tests to raise coverage.
-This skill never touches pre-existing tests.
 
 ## Defaults
 
@@ -48,28 +49,20 @@ Create the file with `touch` before writing.
 
 Required roles:
 1. `Diff scout`: enumerates every test added in the current uncommitted diff
-   (added test files + new test functions inside existing files).
-2. `Burden-of-proof reviewer` (fresh-context subagent): receives **only** the
-   added test code, the production code it exercises, and the rubric below.
-   It does **not** receive the implementer's narrative, the plan, the task
-   list, or the prior conversation. Its job is to apply the rubric without
-   inheriting the author's rationalizations.
-3. `Applier`: deletes tests marked `delete`, runs the project test command
-   afterward to confirm nothing unrelated broke, and writes the report.
-
-The reviewer is invoked once per batch of added tests. If the batch is large,
-split into chunks of related test files; each chunk gets its own fresh-context
-invocation so the reviewer never accumulates context across chunks.
+   (added test files + new test cases inside existing files).
+2. `Burden-of-proof reviewer` (fresh-context subagent): applies the rubric to
+   each review chunk without inheriting the implementer's rationalizations.
+3. `Applier`: deletes tests marked `delete` and writes the report.
 
 ### Reviewer subagent prompt
 
 Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the
 reviewer subagent verbatim — do not paraphrase, summarize, or modify the
-rubric. Send no prior conversation, no plan, no implementer notes.
+rubric.
 
 Inputs the reviewer receives alongside the prompt:
-- The added test code (full text of new test files; for new functions in
-  existing files, the function bodies plus minimal surrounding context).
+- The added test code (full text of new test files; for new test cases in
+  existing files, the test bodies plus minimal surrounding context).
 - The production code each test exercises (named imports/symbols followed to
   their definitions; enough to judge what assertion would flip under what
   mutation).
@@ -78,7 +71,10 @@ Inputs the reviewer receives alongside the prompt:
 
 ## Context Discipline
 
-You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+You are the orchestrator. Delegate only the `Burden-of-proof reviewer` role to
+a fresh-context subagent. Perform the `Diff scout` and `Applier` roles yourself:
+enumerate added tests, apply authoritative `delete` verdicts, run verification,
+and write the report.
 
 ## Global constraints
 
@@ -112,9 +108,8 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 1. Run `git status --porcelain` and `git diff --cached`, `git diff`, and
    `git ls-files --others --exclude-standard` to find:
    - new test files (untracked or staged)
-   - new test functions inside otherwise-pre-existing test files (diff
-     hunks that add `func TestX`, `test('...')`, `it('...')`, `def test_*`,
-     etc., according to the project's discovered test conventions)
+   - new test cases inside otherwise-pre-existing test files, according to
+     the project's discovered test conventions
 2. Read `COMMANDS.md` to identify the test command for the verification
    step.
 3. List each added test by file path, test name, and line range in the
@@ -128,15 +123,17 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
    `reviewer-prompt.md` and the chunk inputs above. The subagent must be a
    fresh invocation with no carryover from this conversation.
 3. Collect the JSON-line verdicts into the report under `## Verdicts` as a
-   table with columns `Location`, `Name`, `Verdict`, `Justification`. The
-   `Justification` column shows the `mutation` for `keep` and the `reason`
-   for `delete`.
+   table with columns `Location`, `Name`, `Verdict`, `Justification`,
+   `Coverage Gap`. The `Justification` column shows the `mutation` for
+   `keep` and the `reason` for `delete`. The `Coverage Gap` column shows
+   the reviewer's `coverage_gap` for deleted tests that were trying to cover
+   real behavior, or `None` when the deleted test targeted no real behavior.
 
 ### Phase 3: Apply deletions (Applier)
 
 1. Delete each `delete`-verdict test:
    - if a whole test file becomes empty, delete the file
-   - if a function within a larger file is deleted, remove the function
+   - if a test case within a larger file is deleted, remove the test case
      and any imports/fixtures that become unused as a result
 2. Run the project's test command (from `COMMANDS.md`). Record the actual
    command and the observed result in the report.
@@ -153,10 +150,13 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 
 ### Phase 5: Report surviving coverage gaps (Applier)
 
-For every deleted test, name the production behavior it nominally targeted
-(from the reviewer's deletion `reason` and the test's original assertion).
-List these under `## Surviving Coverage Gaps` so a follow-up `boost-coverage`
-run can address them deliberately. Do **not** fabricate replacement
+For every deleted test with a non-null reviewer `coverage_gap`, list the
+intended production behavior and the missing discriminating signal under
+`## Surviving Coverage Gaps` so a follow-up `boost-coverage` run can address it
+deliberately. For deleted tests with a null `coverage_gap`, record no surviving
+gap; the verdict already records that the test targeted no real behavior. If a
+null `coverage_gap` conflicts with the reviewer `reason`, surface the
+inconsistency instead of inventing a gap. Do **not** fabricate replacement
 assertions in this run.
 
 ## Required report structure
@@ -167,9 +167,9 @@ Write `.agent-layer/tmp/prune-new-tests.<run-id>.report.md` with:
 2. `## Scope`
 3. `## Added Tests`
 4. `## Verdicts`
-   - table: `| Location | Name | Verdict | Justification |`
+   - table: `| Location | Name | Verdict | Justification | Coverage Gap |`
 5. `## Deletions Applied`
-   - one bullet per file or function actually removed
+   - one bullet per file or test case actually removed
 6. `## Test Run`
    - the exact command, observed exit status, and any unexpected breakage
 7. `## Survival Check`
@@ -190,8 +190,6 @@ Write `.agent-layer/tmp/prune-new-tests.<run-id>.report.md` with:
   That re-introduces agent-authored speculative coverage.
 - Do not skip Phase 3 verification. A green test command is part of the
   contract.
-- Do not silently widen scope to modified or pre-existing tests; surface
-  them as out-of-scope observations instead.
 
 ## Definition of done
 
@@ -200,9 +198,9 @@ Write `.agent-layer/tmp/prune-new-tests.<run-id>.report.md` with:
   `Deletions Applied`, `Test Run`, `Survival Check`, `Surviving Coverage
   Gaps`).
 - Every added test in scope appears in the `Verdicts` table with one
-  verdict and the required justification field populated.
+  verdict, required justification field, and coverage-gap field populated.
 - Every `delete` verdict is reflected by a matching entry under `Deletions
-  Applied` and the corresponding test/function is gone from the working
+  Applied` and the corresponding test file or test case is gone from the working
   tree.
 - `Test Run` records the exact command and its observed result; deletions
   did not introduce unrelated test failures.
