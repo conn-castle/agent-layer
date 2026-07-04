@@ -1,16 +1,16 @@
 ---
 name: multi-agent-plan-review
 description: >-
-  Review a plan/task/context artifact set with required dispatched review
-  agents, synthesize suspect feedback, revise accepted issues, and repeat until
-  the plan is implementation-ready.
+  Review and repair a plan/task/context artifact set with required dispatched
+  review agents, synthesize suspect feedback, revise accepted issues, and repeat
+  until the plan is implementation-ready.
 ---
 
 # multi-agent-plan-review
 
-Cross-agent pre-implementation plan review. Dispatch review agents for independent
-critique; keep judgment, synthesis, artifact revision, and readiness decisions
-with the current orchestrator.
+Cross-agent pre-implementation plan review and repair. Dispatch review agents
+for independent critique; keep judgment, synthesis, artifact revision, and
+readiness decisions with the current orchestrator.
 
 ## Required inputs
 
@@ -44,9 +44,11 @@ Create both before writing. Store review agent prompt/output artifacts under
 - Use `review-plan` only for dispatched review agent runs. Do not ask review agents to
   edit artifacts.
 - Treat review agent output as suspect. Accept a suggestion only when you agree with
-  its evidence and impact.
+  it.
 - Classify each finding as `accepted`, `rejected`, `duplicate`, or
   `substantive-user-decision`; record a one-line reason.
+- This is not a report-only review: revise the plan/task/context artifacts for
+  accepted findings and resolved user decisions.
 - Revise artifacts only for accepted findings and resolved user decisions.
 - Ask the user before applying a substantive change or tradeoff not settled by
   the spec or plan. Use concrete options with brief pros, cons, and a

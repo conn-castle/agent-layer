@@ -17,6 +17,9 @@ and preserve a concrete verdict for anything not fixed.
 or one cannot be inferred, ask the user for a report path or rerun the review workflow.
 - If the user asked only for triage or report review, stop after verdicting and
   ask before editing code.
+- When the request includes fixes, fail before invoking `plan-work` unless
+  `review_agents` is present. They may be terse (`codex high`, `claude opus xhigh`,
+  `antigravity`). Infer the agent only when unambiguous.
 
 ## Required artifacts
 
@@ -25,14 +28,21 @@ Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 Always create:
 - `.agent-layer/tmp/resolve-findings.<run-id>.report.md`
 
+Create files with `touch` before writing.
+When fixes are implemented, record the delegated `plan-work` and
+`multi-agent-plan-review` artifact paths in the report.
+
 ## Multi-agent pattern
 
 Recommended roles:
 1. `Verifier`: checks whether each reported finding is actually valid.
-2. `Execution gatekeeper`: decides whether the accepted finding set should
+2. `Planner`: invokes `plan-work` for the accepted fix set.
+3. `Plan review agents`: handled through `multi-agent-plan-review`.
+4. `Execution gatekeeper`: decides whether the accepted finding set should
    `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
-3. `Fixer`: implements accepted findings.
-4. `Auditor`: reviews the resulting changes for regressions or overreach.
+5. `Fixer`: implements accepted findings.
+6. `Auditor`: reviews the resulting changes for regressions or overreach.
+7. `Reporter`: writes the final resolution report.
 
 ## Constraints
 
@@ -56,9 +66,8 @@ Recommended roles:
   needed.
 - Ask when an accepted fix would require a real behavior change beyond the
   reviewed target.
-- Ask when choosing among valid fixes would affect end-user-facing behavior,
-  architecture, ownership boundaries, data semantics, migration strategy, or
-  long-term platform policy.
+- When escalating, ask the smallest decision question that unblocks the fix,
+  present concrete options with pros/cons, and include a recommendation.
 - Stay autonomous during verdicting and in-scope fixes when the request includes fixes.
 
 ## Workflow
@@ -68,32 +77,39 @@ Recommended roles:
    - Do not assume the report is correct because it sounds plausible.
 2. If zero findings are accepted, write `No accepted findings` in the resolution
    report and stop without editing code.
-3. For accepted findings, write a focused plan and task list covering:
-   - objective
-   - accepted findings in scope
-   - rejected or deferred findings out of scope
-   - implementation approach
-   - verification commands
-   - risk notes
-4. Gate the accepted fix set with exactly one verdict:
+3. Use `plan-work` for the accepted fix set. Pass the input report path,
+   finding verdicts, reviewed targets, and scope constraints; do not duplicate
+   `plan-work` artifact instructions here.
+4. Use `multi-agent-plan-review` with `review_agents` and the plan, task, and
+   context artifact paths returned by `plan-work`.
+   Do not send plan-review findings back to this skill; `multi-agent-plan-review`
+   owns review agent synthesis, accepted artifact revisions, and repeat review
+   rounds. If final readiness is `blocked-for-user-decision`, ask the smallest
+   question that unblocks the plan. Continue only when final readiness is
+   `implementation-ready`.
+5. Gate the accepted fix set with exactly one verdict:
    - `proceed`: the fix set is ready to implement as written
-   - `revise`: the plan or task list needs updates first
+   - `revise`: return to Step 3 with the needed adjustment
    - `escalate`: a human checkpoint is actually required
    - `rewrite-because-out-of-scope`: rewrite to the largest subset allowed by
-     the scope and checkpoint rules, defer excluded findings, and repeat the gate
-5. Implement accepted findings.
+     the scope and checkpoint rules, defer excluded findings, and return to Step 3
+   Use `escalate` when the selected implementation path depends on a
+   substantive user or architecture decision, even if every candidate fix is
+   otherwise in scope.
+6. Implement accepted findings.
    - Prefer root-cause fixes over surface patches.
    - If a fix reveals a human checkpoint, hand it back to the execution
      gatekeeper.
    - If two accepted findings are duplicates, fix once and note both as resolved
      by the same change.
-6. Audit the fix set.
+7. Audit the fix set.
    - Re-read each accepted finding and confirm the change resolves it.
    - Review touched code for regressions or overreach.
    - Fix any issue caused by the resolution or record it in the report.
 
 Do not treat an accepted finding as settling the implementation approach when
-the approach itself contains a substantive product or architecture decision.
+the approach itself contains a substantive product or architecture decision;
+escalate that decision before implementing.
 
 ## Resolution report format
 
@@ -104,8 +120,9 @@ Write `.agent-layer/tmp/resolve-findings.<run-id>.report.md` with:
 3. `## Rejected`
 4. `## Deferred`
 5. `## Already Resolved`
-6. `## Verification`
-7. `## Residual Risk`
+6. `## Plan Review`
+7. `## Verification`
+8. `## Residual Risk`
 
 For every non-fixed finding, explain why in concrete terms.
 If a Critical or High finding remains unresolved, say so prominently.
@@ -119,6 +136,9 @@ If a Critical or High finding remains unresolved, say so prominently.
 
 - Required artifacts were created according to the artifact rules.
 - Every finding from the input review report has an explicit verdict.
+- When accepted findings were fixed, the `plan-work` artifact set went through
+  `multi-agent-plan-review` and reached `implementation-ready` before the
+  execution gate proceeded.
 - Accepted findings were fixed or the report records the checkpoint/risk that
   prevented fixing them.
 - Verification ran, or the report explains why it could not.
