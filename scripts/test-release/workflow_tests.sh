@@ -45,11 +45,25 @@ run_workflow_consistency_tests() {
     fail "workflow-consistency: stable tag validation must run before publish release"
   fi
 
-  local import_cert_line build_release_line notarize_line upload_line
+  local import_cert_line build_release_line notarize_line upload_line ci_checks_line
   import_cert_line=$(grep -n 'name: Import Developer ID cert' "$release_workflow" | head -n1 | cut -d: -f1 || true)
   build_release_line=$(grep -n 'name: Build release artifacts' "$release_workflow" | head -n1 | cut -d: -f1 || true)
   notarize_line=$(grep -n 'name: Notarize darwin binaries' "$release_workflow" | head -n1 | cut -d: -f1 || true)
   upload_line=$(grep -n 'name: Upload dist artifacts for downstream jobs' "$release_workflow" | head -n1 | cut -d: -f1 || true)
+  ci_checks_line=$(grep -n 'name: CI checks' "$release_workflow" | head -n1 | cut -d: -f1 || true)
+
+  if [[ -n "$ci_checks_line" && -n "$build_release_line" && "$ci_checks_line" -lt "$build_release_line" ]]; then
+    pass "workflow-consistency: CI checks run before release build"
+  else
+    fail "workflow-consistency: CI checks must run before release build"
+  fi
+
+  if grep -q 'run: make ci' "$release_workflow" && \
+     grep -q 'GITHUB_TOKEN: ${{ github.token }}' "$release_workflow"; then
+    pass "workflow-consistency: release CI checks invoke make ci with GitHub token"
+  else
+    fail "workflow-consistency: release CI checks must invoke make ci with GitHub token"
+  fi
 
   if [[ -n "$import_cert_line" && -n "$build_release_line" && "$import_cert_line" -lt "$build_release_line" ]]; then
     pass "workflow-consistency: Developer ID cert imports before release build"

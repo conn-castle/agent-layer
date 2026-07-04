@@ -49,12 +49,12 @@ git commit -m "release: add manifests for $VERSION"
 make release-preflight RELEASE_TAG="$VERSION"
 ```
 
-CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging to catch issues early.
+CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging to run CI, release-script checks, and upgrade-doc validation before publishing.
 
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
 2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists, blocking placeholder migration text when changelog notes breaking/manual migration impact, verifying the migration manifest and template ownership manifest exist, and enforcing upgrade CTA syntax drift checks in core docs/message surfaces.
-3. The workflow imports the Developer ID certificate, builds release artifacts on macOS, signs the darwin binaries, writes checksums after signing, notarizes the darwin binaries, and publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
+3. The workflow runs `make ci` on macOS before importing signing credentials, then imports the Developer ID certificate, builds release artifacts, signs the darwin binaries, writes checksums after signing, notarizes the darwin binaries, and publishes `al-install.sh`, macOS/Linux platform binaries, `agent-layer-<version>.tar.gz` (source tarball; version without leading `v`), and `checksums.txt`.
 4. The workflow opens a PR against `conn-castle/homebrew-tap` to render `Formula/agent-layer.rb` as a binary formula using the published macOS/Linux release assets and their SHA256 values.
 5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing, or if the published Docusaurus site does not build.
 6. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.

@@ -225,6 +225,7 @@ Run from: repo root
 Prerequisites: Go 1.26.0+, `make tools` has been run
 Notes: Includes `make tidy-check`, `make test-race` (race detector on concurrency-critical packages), `make test-release`, `make test-e2e-ci` (online e2e with required upgrade scenarios), and `make docs-cta-check`; requires a clean working tree and network access for upgrade binary downloads.
 GitHub Actions also runs a separate website build job using `make website-build-check` against `conn-castle/agent-layer-web`.
+The release workflow runs this target on macOS before importing signing credentials.
 
 ### Release
 
@@ -241,8 +242,8 @@ Notes: Writes `internal/templates/manifests/X.Y.Z.json`. Run for each new releas
 make release-preflight RELEASE_TAG=vX.Y.Z
 ```
 Run from: repo root
-Prerequisites: `rg` (ripgrep) available on PATH, both manifests committed
-Notes: Runs `test-release` (workflow consistency + release script tests) then validates upgrade-contract docs for the tag. Catches issues that would fail the release workflow.
+Prerequisites: Go 1.26.0+, `make tools` has been run, `rg` (ripgrep) available on PATH, both manifests committed
+Notes: Runs `make ci` and then validates upgrade-contract docs for the tag. Catches issues that would fail the release workflow. Requires a clean working tree and network access for upgrade binary downloads.
 
 - Validate upgrade-contract docs for a target release tag
 ```bash

@@ -197,7 +197,7 @@ website-build-check: ## Publish site into a website checkout and run Docusaurus 
 	@npm --prefix "$${WEBSITE_REPO_DIR}" run build
 
 .PHONY: release-preflight
-release-preflight: test-release ## Validate release readiness (set RELEASE_TAG=vX.Y.Z)
+release-preflight: ci test-release ## Validate release readiness (set RELEASE_TAG=vX.Y.Z)
 	@if [[ -z "$${RELEASE_TAG:-}" ]]; then \
 	  echo "RELEASE_TAG is required (example: make release-preflight RELEASE_TAG=v0.8.0)" >&2; \
 	  exit 1; \
