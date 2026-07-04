@@ -1,16 +1,17 @@
 ---
 name: review-plan
 description: >-
-  Review a plan/task/context artifact set before execution, reporting scope
-  gaps, sequencing problems, weak verification, and missing docs/tests/memory
-  updates.
+  Single-agent plan/task/context artifact reviewer. Use only when a human
+  explicitly requests review-plan or when another skill explicitly dispatches it.
 ---
 
 # review-plan
 
-This is the dedicated pre-execution plan review skill.
-Use it when the target is a workflow plan, matching task list, and context file,
-not source code or a diff.
+This is the pre-execution plan review skill for a single dispatched
+reviewer. Use it only when the human explicitly asks for `review-plan` or when
+another skill explicitly dispatches a reviewer to critique a workflow plan,
+matching task list, and context file. Use `multi-agent-plan-review` for
+top-level plan reviews unless the human specifically requested this skill.
 
 ## Defaults
 

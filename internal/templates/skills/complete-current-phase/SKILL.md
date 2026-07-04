@@ -33,6 +33,9 @@ Roadmap phases should normally be distinct enough that this decomposition is str
 
 ## Inputs
 
+Fail before side effects unless `review_agents` is present. They may be terse (`codex high`, `claude opus xhigh`,
+`antigravity`). Infer the agent only when unambiguous.
+
 Read in this order when they exist:
 1. `ROADMAP.md`
 2. `DECISIONS.md`
@@ -47,7 +50,7 @@ If the user specifies a phase number, use that phase instead of the first incomp
 
 At minimum, use:
 - a scout/planner subagent
-- a review subagent
+- review agent dispatch roles through `multi-agent-plan-review`
 - an execution gatekeeper subagent that decides `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`
 - one or more implementation subagents when the work spans distinct files or subsystems
 
@@ -99,17 +102,18 @@ If Phase 1 shows that the current phase is not reasonably decomposable:
 Use the `plan-work` skill to plan completion of the selected phase (not just the next work package).
 The plan must also define all remaining in-phase tasks, ordered internal work packages when more than one is needed, and phase-level done criteria that identify which work package should execute first.
 
-### Phase 3: Review the plan (Plan reviewers)
+### Phase 3: Review the plan (Plan review agents)
 
-Use the `review-plan` skill on the plan and task artifacts.
+Use `multi-agent-plan-review` with:
+- `review_agents`: the review agent dispatch roles
+- the plan, task, and context artifact paths
 
-If findings exist:
-- use the `resolve-findings` skill to triage them
-- revise the plan or task list as needed
+Do not send plan-review findings to `resolve-findings`; `multi-agent-plan-review`
+owns review agent synthesis, accepted artifact revisions, and repeat review rounds.
 
-Loop back to plan review when either is true:
-- an unresolved Critical or High finding remains
-- the plan changed materially
+If final readiness is `blocked-for-user-decision`, ask the smallest question
+that unblocks the plan. Continue only when final readiness is
+`implementation-ready`.
 
 ### Phase 4: Gate the next execution step (Execution gatekeeper + Reporter)
 
@@ -129,14 +133,14 @@ Use the `implement-plan` skill with the current plan and task list. Stay inside 
 
 If implementation leaves obvious local complexity that can be improved without broadening scope, use the `simplify-new-code` skill, then continue to Phase 6.
 
-### Phase 6: Review against the plan (Completeness reviewers)
+### Phase 6: Review against the plan (Completeness review agents)
 
 Use the `verify-against-plan` skill.
 
 If the verdict is `incomplete`, return to implementation.
 Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires human input.
 
-### Phase 7: Broad audit of the delivered work package (Audit reviewers)
+### Phase 7: Broad audit of the delivered work package (Audit review agents)
 
 Use the `review-scope` skill on the touched files, surrounding modules, and changed tests/docs.
 
@@ -199,7 +203,7 @@ At each major stage, echo the current artifact path(s), identify the active phas
 ## Definition of done
 
 - Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
-- Each internal work package ran the full plan / review-plan / implement / verify-against-plan / review-scope / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
+- Each internal work package ran the full plan / multi-agent-plan-review / implement / verify-against-plan / review-scope / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
 - The `finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
 - The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.
 

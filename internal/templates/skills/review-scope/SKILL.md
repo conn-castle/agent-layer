@@ -3,17 +3,16 @@ name: review-scope
 description: >-
   Review explicit files, directories, diffs, uncommitted changes, or proactive
   hotspots for correctness, gaps, risks, architecture, tests, docs, performance,
-  reliability, and maintainability. Use `review-plan` for plans.
+  reliability, and maintainability. Not used to review plans.
 ---
 
 # review-scope
 
 Run a targeted review or proactive hotspot audit and write a findings report.
 This skill is broader than a code review.
-It can review plan/task artifacts when explicitly targeted, but `review-plan`
-is the dedicated pre-execution plan-review path.
+Do not use it for pre-execution plan/task artifact critique. Use
+`multi-agent-plan-review` for plan-review paths.
 Use it for:
-- explicit plan/task artifacts
 - staged or unstaged diffs
 - all uncommitted changes
 - specific files or directories
@@ -41,7 +40,6 @@ Create the file with `touch` before writing.
 ## Target selection
 
 Supported targets:
-- explicit plan file and optional task file
 - explicit files or directories from the user
 - staged changes: `git diff --cached`
 - unstaged changes: `git diff`
@@ -80,7 +78,7 @@ Recommended review lenses:
    - future support burden
    - safety or migration risk
 
-Run at least two reviewers in parallel for non-trivial scopes, then synthesize their findings.
+Run at least two review agents in parallel for non-trivial scopes, then synthesize their findings.
 
 ## Review standards
 
@@ -99,13 +97,11 @@ If a likely issue is already tracked in `ISSUES.md`, do not present it as a nove
 - Do not modify code or docs in this workflow.
 - Do not silently widen the review target beyond what the user asked for.
 - Keep findings evidence-backed and tied to the actual reviewed scope.
-- Use the `review-plan` skill instead of this one for pre-execution plan/task critique.
 
 ## Human checkpoints
 
 - Required: ask when no credible review target can be established from the explicit scope, proactive-audit request, or documented defaults.
 - Required: ask before turning findings into code edits, doc edits, or issue logging.
-- Optional: ask when the requested target is nominally a plan/task/context set but the desired outcome is ambiguous between `review-plan` and a broader audit.
 - Stay autonomous during the review itself.
 
 ## Review workflow
@@ -115,11 +111,10 @@ If a likely issue is already tracked in `ISSUES.md`, do not present it as a nove
 1. Determine the review target using the defaults resolution order.
 2. Read only the minimum surrounding context needed to understand the target.
 3. Apply the target-appropriate review focus:
-   - **Plan/task artifacts**: scope coverage, dependency ordering, risk coverage, verification credibility, missing docs/tests/memory updates.
    - **Proactive hotspot mode**: select a small hotspot set, state the selection signals, keep the audit reviewable rather than repo-wide.
    - **Code or diffs**: correctness first, then architecture and operability, then tests/docs and maintainability.
 
-### Phase 2: Evaluate with multiple lenses (Parallel reviewers)
+### Phase 2: Evaluate with multiple lenses (Parallel review agents)
 
 Use an adversarial posture: actively try to falsify the change or target,
 challenge assumptions, and look for hidden coupling, edge cases, and failure

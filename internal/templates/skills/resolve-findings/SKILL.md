@@ -13,20 +13,8 @@ and preserve a concrete verdict for anything not fixed.
 
 ## Input selection
 
-- Default input discovery is deterministic. If the user does not provide a report path:
-  1. list `.agent-layer/tmp/*.report.md`
-  2. keep only files matching `<workflow>.<run-id>.report.md`
-  3. keep only reports from workflows that normally produce actionable findings:
-     - `verify-against-plan`
-     - `review-plan`
-     - `review-scope`
-  4. group by workflow and sort each group by `run-id` descending
-  5. choose the newest report from the highest-precedence workflow in this order:
-     - `verify-against-plan`
-     - `review-plan`
-     - `review-scope`
-- If no valid report artifact exists, ask the user for a report path or rerun
-  the review workflow.
+- Default input discovery is deterministic. If the user does not provide a report path
+or one cannot be inferred, ask the user for a report path or rerun the review workflow.
 - If the user asked only for triage or report review, stop after verdicting and
   ask before editing code.
 
@@ -36,13 +24,6 @@ Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
 Always create:
 - `.agent-layer/tmp/resolve-findings.<run-id>.report.md`
-
-Create these only when at least one finding is accepted and fixes are in scope:
-- `.agent-layer/tmp/resolve-findings.<run-id>.plan.md`
-- `.agent-layer/tmp/resolve-findings.<run-id>.task.md`
-- `.agent-layer/tmp/resolve-findings.<run-id>.context.md`
-
-Create each file with `touch` before writing.
 
 ## Multi-agent pattern
 

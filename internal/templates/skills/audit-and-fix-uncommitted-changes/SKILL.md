@@ -37,7 +37,7 @@ Do not interpret this skill as permission to review old commits, sweep the whole
 ## Required behavior
 
 At minimum, use:
-- parallel audit reviewers with different lenses
+- parallel audit review agents with different lenses
 - a findings resolver/fixer
 - a synthesizer that keeps the round-by-round report current
 
@@ -126,7 +126,7 @@ Record each report path and one-line outcome under `## Pre-pass Cleanup`. If a p
 3. Call out any overlapping existing known issues from `ISSUES.md` instead of presenting them as novel findings.
 4. Record important assumptions in the master report before starting Round 1.
 
-### Phase 2: Run audit Round N (Audit reviewers)
+### Phase 2: Run audit Round N (Audit review agents)
 
 Use the `review-scope` skill on the current target.
 
@@ -230,6 +230,6 @@ Required chat output:
 Example summary:
 ```
 - 2 rounds to converge (Round 2 applied zero Critical/High fixes)
-- 12 findings from 5 parallel reviewers
+- 12 findings from 5 parallel review agents
 - 5 accepted and fixed, 6 rejected, 1 deferred
 ```

@@ -13,14 +13,16 @@ This is a parent orchestrator skill. Do not implement code yourself.
 Fail before side effects unless all are present:
 - `worker_skill`: exactly `fix-issues` or `improve-codebase`
 - `implementer`: dispatch agent role
-- `reviewer`: dispatch agent role
-- `helper`: dispatch agent role
+- `shipper`: dispatch agent role
+- `review_agents`: one or more dispatch agent roles
 - explicit standing authorization for this orchestrator to merge ready PRs
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
 `antigravity`). Infer the agent only when unambiguous from the model; otherwise
 fail. Before dispatching, follow `agent-dispatch`, inspect live options, and
 fail if a requested override is unsupported.
+
+Pass `review_agents` to any delegated skill that uses `multi-agent-plan-review`.
 
 ## References
 
@@ -41,9 +43,9 @@ and after dispatches, branch switches, pushes, PR actions, blockers, and
 merges.
 
 Record current step, branches, PRs, dispatch agent roles, normalized dispatch
-flags, merged PRs, blocked branches, blocked PRs, recent touched paths,
-exhausted lenses, worker questions and answers, user-only blockers, manual
-gates, PR-gate status, and verification evidence.
+flags, review agent dispatch roles, merged PRs, blocked branches, blocked PRs,
+recent touched paths, exhausted lenses, worker questions and answers,
+user-only blockers, manual gates, PR-gate status, and verification evidence.
 Record worker deferrals in this ledger or worker artifacts, not as deferral
 notes in `ISSUES.md`.
 
@@ -52,16 +54,16 @@ notes in `ISSUES.md`.
 1. Start with a clean working tree. Do not stash, discard, or preserve work
    only locally.
 2. Create or reuse one batch branch for autonomous, non-blocked work.
-3. Dispatch the implementer with the selected worker skill and the current
-   ledger context.
+3. Dispatch the implementer with the selected worker skill, the current ledger
+   context, and the review agents to any delegated `multi-agent-plan-review` run.
 4. Answer worker checkpoints as the human proxy when no user-only decision is
    required. If user input is required, commit and push the branch, leave any
    PR open, record the blocker, and start a new attempt.
 5. After every worker iteration, commit and push the branch before continuing.
 6. Do not create a PR until the work is substantive, unless an exception in the
    worker contract applies.
-7. Use the reviewer dispatch agent role for `/ship-pr`, PR feedback, final
-   readiness review, and merge execution.
+7. Use the shipper dispatch agent role for `/ship-pr`. Perform
+   final readiness review yourself when `/ship-pr` is done.
 8. If repository policy, PR automation, or any external gate requires manual
    approval, leave the PR open, record the gate, and continue with a new
    attempt.

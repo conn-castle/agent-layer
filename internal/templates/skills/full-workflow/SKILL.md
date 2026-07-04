@@ -31,7 +31,7 @@ Example invocation:
 planner is codex xhigh
 implementer is codex high
 shipper is claude opus xhigh
-review agents are codex high, opus xhigh, antigravity
+review_agents are codex high, opus xhigh, antigravity
 ```
 
 ## Required artifacts
@@ -132,7 +132,7 @@ Record the returned artifact paths in the state file.
 ### Phase 7: Cross-agent plan review
 
 Use `multi-agent-plan-review` with:
-- the reviewer dispatch agent roles
+- `review_agents`: the review agent dispatch roles
 - the plan/task/context artifact paths
 - the spec path as the review contract
 

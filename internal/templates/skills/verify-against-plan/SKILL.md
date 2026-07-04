@@ -3,7 +3,7 @@ name: verify-against-plan
 description: >-
   Read-only check of current implementation and working tree against a
   plan/task/context set, reporting completeness gaps, regressions, missing
-  tests/docs, and scope drift. Use `review-plan` to critique the plan.
+  tests/docs, and scope drift.
 ---
 
 # verify-against-plan
@@ -13,7 +13,9 @@ The main question is:
 
 Did the implementation deliver what the plan promised, without missing critical verification, docs, or cleanup?
 
-Use `review-plan` instead when the target is the plan itself, not the implementation against it. Use `implement-plan` instead when gaps should be closed rather than just reported.
+Use `multi-agent-plan-review` instead when the target is the plan itself, not
+the implementation against it. Use `implement-plan` instead when gaps should be
+closed rather than just reported.
 
 ## Defaults
 

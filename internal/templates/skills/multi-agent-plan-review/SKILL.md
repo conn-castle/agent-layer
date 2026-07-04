@@ -1,14 +1,14 @@
 ---
 name: multi-agent-plan-review
 description: >-
-  Review a plan/task/context artifact set with required dispatched reviewer
+  Review a plan/task/context artifact set with required dispatched review
   agents, synthesize suspect feedback, revise accepted issues, and repeat until
   the plan is implementation-ready.
 ---
 
 # multi-agent-plan-review
 
-Cross-agent pre-implementation plan review. Dispatch reviewers for independent
+Cross-agent pre-implementation plan review. Dispatch review agents for independent
 critique; keep judgment, synthesis, artifact revision, and readiness decisions
 with the current orchestrator.
 
@@ -34,16 +34,16 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`:
 - `.agent-layer/tmp/multi-agent-plan-review.<run-id>.state.md`
 - `.agent-layer/tmp/multi-agent-plan-review.<run-id>.report.md`
 
-Create both before writing. Store reviewer prompt/output artifacts under
+Create both before writing. Store review agent prompt/output artifacts under
 `.agent-layer/tmp/` with the same prefix and record each path in state.
 
 ## Rules
 
 - Review against the spec when a spec path is supplied; otherwise review against
   the plan's stated objective and scope.
-- Use `review-plan` for dispatched reviewer runs. Do not ask reviewers to edit
-  artifacts.
-- Treat reviewer output as suspect. Accept a suggestion only when you agree with
+- Use `review-plan` only for dispatched review agent runs. Do not ask review agents to
+  edit artifacts.
+- Treat review agent output as suspect. Accept a suggestion only when you agree with
   its evidence and impact.
 - Classify each finding as `accepted`, `rejected`, `duplicate`, or
   `substantive-user-decision`; record a one-line reason.
@@ -53,8 +53,8 @@ Create both before writing. Store reviewer prompt/output artifacts under
   recommendation.
 - Iterate until no accepted unresolved findings remain and no substantive user
   decision is pending.
-- Dispatch reviewers one at a time unless the dispatch implementation is known
-  to be safe for concurrent reviewer launches in the current repo.
+- Dispatch review agents one at a time unless the dispatch implementation is known
+  to be safe for concurrent review agent launches in the current repo.
 
 ## Workflow
 
@@ -68,9 +68,9 @@ Create both before writing. Store reviewer prompt/output artifacts under
 5. Record artifact paths, dispatch agent roles, normalized dispatch flags, and
    current round in the state file.
 
-### Phase 2: Dispatch reviewers
+### Phase 2: Dispatch review agents
 
-For each reviewer dispatch agent role, dispatch `review-plan` with a focused
+For each review agent dispatch role, dispatch `review-plan` with a focused
 prompt containing:
 - plan, task, context, and optional spec paths
 - instruction to review only the artifact set
@@ -78,11 +78,11 @@ prompt containing:
   gaps, hidden assumptions, and docs/tests/memory gaps
 - instruction to avoid rewriting the plan
 
-Capture the useful reviewer result or report path in the state file.
+Capture the useful review agent result or report path in the state file.
 
 ### Phase 3: Synthesize
 
-For every reviewer finding:
+For every review agent finding:
 1. Validate it against the artifacts and repo context.
 2. Classify it under `Rules`.
 3. Ignore speculative, unsupported, out-of-scope, or merely stylistic findings.
@@ -108,7 +108,7 @@ After any artifact revision, repeat Phases 2-4.
 Write the final report with these sections:
 1. `# Multi-Agent Plan Review Summary`
 2. `## Inputs`
-3. `## Reviewer Rounds`
+3. `## Review Agent Rounds`
 4. `## Accepted Changes`
 5. `## Rejected Suggestions`
 6. `## User Decisions`
@@ -120,15 +120,15 @@ Write the final report with these sections:
 
 ## Guardrails
 
-- Do not treat reviewer consensus as truth or hide rejected suggestions.
+- Do not treat review agent consensus as truth or hide rejected suggestions.
 - Do not widen implementation scope or weaken verification to satisfy a
-  reviewer preference.
+  review agent preference.
 
 ## Definition of done
 
 - All required artifacts and dispatch agent roles were validated.
-- Every reviewer dispatch agent role ran through `review-plan`.
-- Every reviewer finding was classified with a reason.
+- Every review agent dispatch role ran through `review-plan`.
+- Every review agent finding was classified with a reason.
 - Accepted findings were resolved in the artifacts or escalated through a human
   checkpoint.
 - The final report exists and declares `implementation-ready` or
@@ -136,6 +136,6 @@ Write the final report with these sections:
 
 ## Final handoff
 
-Echo the report path, the reviewed plan/task/context paths, the reviewer
-dispatch agent roles used, accepted changes made, rejected suggestions, and
+Echo the report path, the reviewed plan/task/context paths, the review agent
+dispatch roles used, accepted changes made, rejected suggestions, and
 final readiness.

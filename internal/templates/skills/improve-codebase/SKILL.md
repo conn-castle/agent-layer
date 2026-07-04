@@ -11,7 +11,7 @@ description: >-
 This is the whole-repository audit and improvement orchestrator.
 It should run a systematic survey that:
 - decomposes the codebase into reviewable chunks by module/package/subsystem
-- audits each chunk with parallel multi-lens reviewers
+- audits each chunk with parallel multi-lens review agents
 - runs cross-cutting reviews (architecture, consistency, security)
 - fixes accepted findings iteratively
 - delegates to complementary skills where they add value
@@ -63,7 +63,7 @@ Delegated skill outputs are handled one way:
 
 At minimum, use:
 - a survey scout that maps the repository structure
-- parallel audit reviewers with different lenses per chunk
+- parallel audit review agents with different lenses per chunk
 - a findings resolver/fixer
 - a cross-cutting reviewer for architecture and consistency
 - a synthesizer that maintains the master report
@@ -136,7 +136,7 @@ When compaction is needed, retain this section verbatim and also preserve: curre
 3. State the chunk list, priority order, and rationale in the master report.
 4. If the total scope is clearly too large for one session, propose the highest-value subset and ask before proceeding.
 
-### Phase 2: Audit chunk N (Audit reviewers)
+### Phase 2: Audit chunk N (Audit review agents)
 
 Use the `review-scope` skill on the current chunk with proactive hotspot mode.
 
