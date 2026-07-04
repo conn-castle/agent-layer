@@ -96,9 +96,11 @@ jobs:
           fi
 
           # Write to output using heredoc delimiter
-          echo "notes<<CHANGELOG_EOF" >> "$GITHUB_OUTPUT"
-          echo "$NOTES" >> "$GITHUB_OUTPUT"
-          echo "CHANGELOG_EOF" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<CHANGELOG_EOF"
+            echo "$NOTES"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
       - name: Publish release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
@@ -228,6 +230,7 @@ jobs:
           ASSETS=(
             "agent-layer-${SEMVER}.tar.gz"
             "al-darwin-arm64"
+            "al-darwin-amd64"
             "al-linux-arm64"
             "al-linux-amd64"
           )
@@ -235,7 +238,7 @@ jobs:
           for asset in "${ASSETS[@]}"; do
             URL="https://github.com/conn-castle/agent-layer/releases/download/${TAG}/${asset}"
             # Retry a few times in case GitHub is briefly eventual-consistent
-            for i in 1 2 3 4 5; do
+            for _ in 1 2 3 4 5; do
               if curl -fsIL "$URL" >/dev/null; then
                 continue 2
               fi

@@ -59,6 +59,11 @@ CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>
 5. The workflow publishes website content by pushing directly to `conn-castle/agent-layer-web` on `main`. This is mandatory; the release fails if `cmd/publish-site/main.go` or `site/` is missing, or if the published Docusaurus site does not build.
 6. Release notes are automatically extracted from `CHANGELOG.md` by the workflow.
 
+## Homebrew tap PR handling
+`agent-layer` is published to Homebrew as a binary formula that points at the signed and notarized release assets produced by this repository's release workflow. The tap does not build, sign, notarize, or bottle `agent-layer`.
+
+After the release workflow opens the `conn-castle/homebrew-tap` PR, the tap's binary-formula auto-merge workflow should merge it after `brew test-bot` validates the formula on macOS and Linux. Do not add the `pr-pull` label and do not run `brew pr-pull` for `agent-layer` PRs; that path is only for formulae that produce Homebrew bottle artifacts.
+
 ## Website publish details (agent-layer-web)
 The `publish-website-and-tap` job publishes website content by running `go run ./cmd/publish-site --tag vX.Y.Z --repo-b-dir agent-layer-web`, then runs `npm run build` in `agent-layer-web`.
 Release publishing currently supports stable tags only (`vX.Y.Z`); prerelease tags are intentionally unsupported.
