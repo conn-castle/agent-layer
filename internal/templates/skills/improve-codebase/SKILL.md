@@ -16,7 +16,7 @@ It should run a systematic survey that:
 - fixes accepted findings iteratively
 - delegates to complementary skills where they add value
 - populates `ISSUES.md` with anything deferred
-- reports each chunk's findings and fixes to the human
+- reports each chunk's findings and fixes to the user
 
 Use this for deep codebase-wide sweeps; use `audit-and-fix-uncommitted-changes` when the target is working-tree diffs only.
 
@@ -52,7 +52,7 @@ Always create:
 
 Create the file with `touch` before writing.
 
-The master report is the human-facing ledger and the single place to preserve orchestrator state.
+The master report is the human-readable ledger and the single place to preserve orchestrator state.
 
 Delegated skill outputs are handled one way:
 - Use `review-scope` report artifacts as findings input to `resolve-findings`.
@@ -96,7 +96,7 @@ When compaction is needed, retain this section verbatim and also preserve: curre
 ## Human checkpoints
 
 - Required: ask when the repository is too large to audit meaningfully in one session and the user has not scoped it down.
-- Required: ask when an accepted finding requires a breaking change, broad architectural refactor, or user-visible behavior change.
+- Required: ask when an accepted finding requires a breaking change, broad architectural refactor, or end-user-visible behavior change.
 - Required: ask when a finding cannot be verified with available code, tests, or docs.
 - Required: ask before any destructive or irreversible action.
 - Stay autonomous during normal survey, audit, fix, and re-audit cycles when findings and fixes are clear.

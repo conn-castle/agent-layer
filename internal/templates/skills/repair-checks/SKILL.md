@@ -92,7 +92,7 @@ If a reusable command was discovered and repo rules allow it, update `COMMANDS.m
 2. Continue until:
    - the lane passes
    - the iteration cap is hit
-   - or a blocker requires human input
+   - or a blocker requires user input
 
 ## Guardrails
 

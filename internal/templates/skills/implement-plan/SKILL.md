@@ -160,7 +160,7 @@ If simplifications change the diff materially, verification commands in Phase 6 
 ### Phase 6: Verify against the plan (Verifier)
 
 Before wrapping up, confirm:
-- every planned user-visible or maintainer-visible outcome exists
+- every planned end-user-visible or maintainer-visible outcome exists
 - every required test/doc/memory update was handled
 - verification commands were actually run
 - no major task list item was skipped silently

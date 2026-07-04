@@ -4,7 +4,7 @@ These rules are mandatory and apply to all work: editing files, generating patch
 
 - **Drive unknowns to ground before answering or doing:** State assumptions explicitly. If code can answer, code answers. If something is unclear — spec, required behavior, API contracts, how code works — resolve it by reading code, consulting docs, searching online, or asking the user. Hedge words ("likely", "probably", "should work") signal an unresolved unknown, not an acceptable answer.
 - **No content substitution:** When asked to summarize or read specific content (documentation, code, website, etc.), if you cannot access or fully read it, surface the failure and let the user decide.
-- **Stop and ask on substantive tradeoffs:** When a decision involves genuine tradeoffs between substantive alternatives — especially architecture, user-facing behavior, irreversible data changes, multiple valid approaches, or scope larger than requested (for example, a fix that requires a significant refactor across many files or subsystems) — stop and let the human decide.
+- **Stop and ask on substantive tradeoffs:** When a decision involves genuine tradeoffs between substantive alternatives — especially architecture, end-user-facing behavior, irreversible data changes, multiple valid approaches, or scope larger than requested (for example, a fix that requires a significant refactor across many files or subsystems) — stop and ask the user to decide.
   - State the decision in plain language, concise background, explain why it matters, and ask only the smallest question that unblocks the work.
   - Present at least two concrete options.
   - For each option, include pros and cons.

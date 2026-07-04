@@ -2,7 +2,7 @@
 
 ## Memory files (authoritative, user-editable, agent-maintained)
 - `docs/agent-layer/ISSUES.md` — deferred defects, maintainability refactors, technical debt, risks.
-- `docs/agent-layer/BACKLOG.md` — unscheduled user-visible features and tasks (distinct from issues; not refactors).
+- `docs/agent-layer/BACKLOG.md` — unscheduled end-user-visible features and tasks (distinct from issues; not refactors).
 - `docs/agent-layer/ROADMAP.md` — numbered phases; guides architecture and sequencing.
 - `docs/agent-layer/DECISIONS.md` — rolling log of important, non-obvious decisions (brief).
 - `docs/agent-layer/COMMANDS.md` — canonical, repeatable development workflow commands for this repository (build, test, lint/format, typecheck, coverage, migrations, scripts).
@@ -29,6 +29,6 @@ Do not persist information that is derivable, ephemeral, or generic:
 - **Decision hygiene:** Only log non-obvious decisions that are not apparent from code or docs. Do not log routine choices or best-practice adherence; when in doubt, skip logging. When a decision is superseded, replace the old entry with the new one and fold valuable tradeoff context into the replacement. Remove entries that become self-evident from the codebase. A compact decision log is more useful than a comprehensive one.
 - **Write down deferred work:** If you discover something worth doing and are not fixing it now, or have not already captured the plan in ROADMAP.md:
   - add it to ISSUES.md if it is a bug, maintainability refactor, technical debt, reliability/security concern, test coverage gap, performance concern, or other engineering risk;
-  - add it to BACKLOG.md only if it is a new user-visible capability.
+  - add it to BACKLOG.md only if it is a new end-user-visible capability.
 - **Keep files living:** ISSUES.md and BACKLOG.md reflect the current working tree, not deployed state. Remove fixed issues and implemented backlog items alongside the code change; move scheduled backlog items into ROADMAP.md. Keep DECISIONS.md, CONTEXT.md, and COMMANDS.md current — when completing a task, remove or update entries that the change made stale.
 - **Memory budget:** Memory files consume context tokens when read (~4 characters ≈ 1 token). When any single memory file's content below the insertion marker exceeds roughly 8,000 characters (~2,000 tokens), proactively consolidate: merge related entries, tighten verbose descriptions, and remove entries now derivable from code or docs. When the aggregate content across all memory files is large, prioritize pruning the biggest files first. Prefer concise entries with clear keywords — the agent can always read the code for full details.

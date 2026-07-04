@@ -100,7 +100,7 @@ Recommended roles:
      external dependencies
    - **Integration**: tests interaction between multiple components, may use
      real databases or services
-   - **E2E**: tests complete user-facing workflows or API paths
+   - **E2E**: tests complete end-user-facing workflows or API paths
    - **Unclassified**: does not clearly fit a single tier
 3. Record the classification rationale for each file or group.
 4. Note any tests that appear misclassified relative to their actual behavior
@@ -162,7 +162,7 @@ For each tier, the conclusion must be one of:
 
 **Integration test gaps:** untested component interactions and interface boundaries; data-layer operations tested only via mocks; configuration/wiring never tested with real components.
 
-**E2E test gaps:** untested user-facing workflows or API paths; critical business flows relying solely on lower-tier coverage; deployment-sensitive paths (migrations, startup, health checks) with no e2e coverage.
+**E2E test gaps:** untested end-user-facing workflows or API paths; critical business flows relying solely on lower-tier coverage; deployment-sensitive paths (migrations, startup, health checks) with no e2e coverage.
 
 **Additional tiers** (when discovered): apply the same gap analysis to any project-specific tier (contract, smoke, performance, etc.) and note when a tier is expected by conventions but has no tests.
 

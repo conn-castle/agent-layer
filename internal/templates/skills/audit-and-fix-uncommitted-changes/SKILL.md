@@ -15,7 +15,7 @@ It should run an iterative loop that:
 - verifies and fixes accepted findings
 - re-audits after each fix pass
 - repeats until a confirming review finds no remaining actionable findings
-- reports each round's findings and fixes to the human with severities
+- reports each round's findings and fixes to the user with severities
 
 Use this skill only for the full audit-and-fix loop over all uncommitted changes. For report-only review or single-report remediation, use the dedicated lower-level skills instead.
 
@@ -57,7 +57,7 @@ Always create:
 
 Create the file with `touch` before writing.
 
-The master report is the human-facing round ledger and the single place to preserve orchestrator state.
+The master report is the human-readable round ledger and the single place to preserve orchestrator state.
 
 Delegated skill outputs are handled one way:
 - Use `review-scope` report artifacts as findings input to `resolve-findings`.
@@ -88,7 +88,7 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 ## Human checkpoints
 
 - Required: ask when the target is empty and no credible review scope exists.
-- Required: ask when an accepted finding requires an architectural decision, a user-visible behavior change beyond the current target, or another human-only decision.
+- Required: ask when an accepted finding requires an architectural decision, an end-user-visible behavior change beyond the current target, or another user-only decision.
 - Required: ask when a finding cannot be verified with the available code, tests, or docs.
 - Required: ask when a deferred finding blocks convergence.
 - Required: ask when the same unresolved finding recurs after two fix attempts or the loop is no longer converging.

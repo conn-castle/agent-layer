@@ -10,7 +10,7 @@ description: >-
 # simplify-codebase
 
 Simplify by removing concepts, not polishing syntax. A successful run leaves
-fewer moving parts for future readers while preserving user-facing behavior and
+fewer moving parts for future readers while preserving end-user-facing behavior and
 external APIs.
 
 ## Defaults and inputs
@@ -41,7 +41,7 @@ recurring burden. Do not create a small "something changed" diff.
 
 ## Hard constraints
 
-- Preserve user-facing behavior, observable output, data shape, and stable
+- Preserve end-user-facing behavior, observable output, data shape, and stable
   external APIs.
 - Internal contracts may change when all callers, tests, docs, and references
   are updated in the same pass.

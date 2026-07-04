@@ -166,7 +166,7 @@ Do not trust the sub-skill output alone — re-fetch the PR state and validate.
 2. Summarize the PR lifecycle outcome.
 3. Tell the user the exact PR number and ask them to authorize the merge (Phase 9).
 
-### Phase 9: Merge — only on explicit human authorization
+### Phase 9: Merge — only on explicit user authorization
 
 This phase does not run automatically. After Phase 8 the skill stops and waits.
 
@@ -219,7 +219,7 @@ After the run:
 1. Echo the PR URL.
 2. Summarize: what was committed, the local check lane run in parallel with CI, CI status, comments addressed.
 3. For any CI fixes, summarize the `fix-ci` local-reproducer evidence.
-4. State whether all comments passed the Phase 7 audit or if any require further human attention.
+4. State whether all comments passed the Phase 7 audit or if any require further user attention.
 5. If any comments were re-addressed during the audit, list them and explain what was corrected.
 6. Request user authorization to merge, explicitly stating this PR's number. If the user has not issued approval, do not merge.
 7. If a merge was performed, report the merge outcome and confirm both local and remote branch deletion succeeded.

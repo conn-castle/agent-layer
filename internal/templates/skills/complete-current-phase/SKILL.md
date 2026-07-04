@@ -8,7 +8,7 @@ description: >-
 
 # complete-current-phase
 
-This is the orchestrator skill for roadmap execution. It iteratively plans, implements, reviews, audits, and fixes one roadmap phase until every task in the selected phase is complete or a real blocker requires human input.
+This is the orchestrator skill for roadmap execution. It iteratively plans, implements, reviews, audits, and fixes one roadmap phase until every task in the selected phase is complete or a real blocker requires user input.
 
 Use the current active roadmap phase (the first incomplete phase) by default.
 Do not jump ahead to a later phase unless the user explicitly names it.
@@ -138,7 +138,7 @@ If implementation leaves obvious local complexity that can be improved without b
 Use the `verify-against-plan` skill.
 
 If the verdict is `incomplete`, return to implementation.
-Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires human input.
+Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires user input.
 
 ### Phase 7: Broad audit of the delivered work package (Audit review agents)
 

@@ -56,7 +56,7 @@ Recommended roles:
   needed.
 - Ask when an accepted fix would require a real behavior change beyond the
   reviewed target.
-- Ask when choosing among valid fixes would affect user-facing behavior,
+- Ask when choosing among valid fixes would affect end-user-facing behavior,
   architecture, ownership boundaries, data semantics, migration strategy, or
   long-term platform policy.
 - Stay autonomous during verdicting and in-scope fixes when the request includes fixes.

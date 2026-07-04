@@ -4,7 +4,7 @@ Use when `worker_skill=fix-issues`.
 
 Dispatch the implementer with `/fix-issues`. Instruct it to pick 1-5 coherent
 `ISSUES.md` items for one batch, excluding items already recorded as
-human-blocked unless the user has since answered them.
+user-blocked unless the user has since answered them.
 
 The implementer must return:
 - selected issue IDs/titles

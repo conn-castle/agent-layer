@@ -45,13 +45,13 @@ they appear.
 
 ## Rules
 
-- Treat the question and spec phases as human discussion, not automation.
+- Treat the question and spec phases as user discussion, not automation.
   Planning starts only after explicit final spec approval.
 - Assume the user will not read artifact files. Keep every question, decision,
   spec summary, and approval request self-contained in chat.
 - Use initial questions only to learn enough for a first draft. Put unresolved
   gaps in the spec, then resolve them with the user one at a time.
-- Ask only for decisions affecting user-facing behavior, architecture, scope,
+- Ask only for decisions affecting end-user-facing behavior, architecture, scope,
   sequencing, risk, cost, or shipping; include options, tradeoffs, and a
   recommendation when useful.
 - Separate facts from choices: repo reading may resolve facts, constraints, and
@@ -78,7 +78,7 @@ they appear.
 
 Clarify only enough to write the first draft:
 - read focused repo context for facts
-- record facts separately from human decisions
+- record facts separately from user decisions
 - ask the smallest blocking question when the request is too ambiguous to draft
 
 Proceed when a useful draft can capture remaining gaps.

@@ -101,7 +101,7 @@ When asking, provide:
 - the proposed commands
 - the domain scope
 - the missing threshold or tooling detail
-- the smallest decision the human needs to make
+- the smallest decision the user needs to make
 
 ### Phase 3: Build the current coverage table (Coverage runner)
 

@@ -17,6 +17,8 @@ intentionally separates:
 - evidence-backed authoring guidance
 - repo heuristics used to keep skills maintainable
 
+Participant-terminology sources were checked on 2026-07-04.
+
 ## Evidence model
 
 - Standards and platform behavior: Agent Skills specification, OpenAI Codex
@@ -419,7 +421,7 @@ actions [ref 3].
   that the model cannot mistake when to ask.
 
 Authoring guidance:
-- Name the exact ambiguity trigger that requires human input.
+- Name the exact ambiguity trigger that requires user input.
 - Keep the normal path autonomous.
 - Prefer concrete checkpoint rules such as `ask before creating a missing
   memory file` or `ask before applying destructive deletes`.
@@ -427,7 +429,40 @@ Authoring guidance:
 - Limit the number of distinct checkpoint conditions. Each one is an
   instruction the model must carry, competing for attention with the workflow.
 
-### 9. Make the workflow measurable from day one
+### 9. Use participant terminology precisely
+
+Skills should distinguish who is interacting with the agent from who is using
+the software being changed. Current platform and prompt specifications use
+`user` as the standard message role for the person providing instructions to
+the model, and `assistant` for model messages [ref 20, 22, 23]. OpenAI's
+current prompt-engineering guide also distinguishes `developer` messages from
+`user` messages, with `user` messages carrying the model-facing application's
+per-request input [ref 20].
+
+Use these terms consistently:
+
+- **user**: the person talking to the agent in this session. Use this for
+  skill triggers, scope, approvals, and handoff wording such as `when the user
+  asks`, `user-supplied paths`, and `ask the user`.
+- **end user**: the person who uses the software, product, API, or workflow the
+  agent is helping build. Use this for product impact language such as
+  `end-user-facing behavior`, `end-user-visible feature`, and `end-user
+  workflow`.
+- **human**: a person as distinct from an agent, automation, or programmatic
+  consumer. Use this for human-in-the-loop concepts such as `human checkpoint`,
+  `human review`, or `human confirmation`, and for model-spec distinctions
+  between real-time human interaction and programmatic output [ref 21].
+
+Authoring guidance:
+
+- Do not use `the human` as a generic synonym for `the user`.
+- Prefer `ask the user` when the skill must ask the person in this chat.
+- Prefer `end-user-visible` or `end-user-facing` when the skill is evaluating
+  product impact.
+- Keep `human checkpoint` as the term for an explicit gate that requires a
+  person rather than an autonomous agent.
+
+### 10. Make the workflow measurable from day one
 
 OpenAI's prompting guide recommends evals for prompt changes [ref 4], and their
 skill-evals guide [ref 7] is even more direct: define success before writing
@@ -460,7 +495,7 @@ Authoring guidance:
   implicit invocation (describes the scenario), contextual (adds domain noise),
   and negative control (should not trigger).
 
-### 10. Treat skills as privileged instructions and code
+### 11. Treat skills as privileged instructions and code
 
 OpenAI's skills docs explicitly warn that skills can influence planning, tool
 usage, and command execution, and should be treated as privileged
@@ -491,7 +526,7 @@ Authoring guidance:
 - Review skills with the same rigor as code reviews — they have equivalent
   impact on agent behavior.
 
-### 11. Manage context budget across the skill lifecycle
+### 12. Manage context budget across the skill lifecycle
 
 Skills do not operate in isolation. They are loaded into a context window that
 already contains system prompts, instructions, conversation history, tool
@@ -529,7 +564,7 @@ Authoring guidance:
   fraction of the window, but a 300-line skill loaded after 180K tokens of
   prior conversation is competing for the model's remaining attention.
 
-### 12. Design for error recovery and convergence
+### 13. Design for error recovery and convergence
 
 Agent workflows fail. Skills should be designed so that failures are
 recoverable, progress is visible, and the workflow converges toward completion
@@ -560,7 +595,7 @@ Authoring guidance:
 - Design phases so each one can be re-run independently if the previous
   attempt failed.
 
-### 13. Retire skills that base models have absorbed
+### 14. Retire skills that base models have absorbed
 
 A skill that no longer changes behavior is pure context tax. Philipp Schmid
 [ref 19] observes that capability skills especially become obsolete as base
@@ -710,7 +745,7 @@ is directly related to input length alone, regardless of where the relevant
 evidence is positioned."
 
 **Implication for skills:** Every additional line in a skill carries a reasoning
-cost, even if the content is relevant. Principles 3 and 11.
+cost, even if the content is relevant. Principles 3 and 12.
 
 ### Context is used non-uniformly
 
@@ -773,7 +808,7 @@ of tokens.
 
 **Implication for skills:** Skills are a context engineering artifact. Every
 design decision about length, structure, and delegation is a context engineering
-decision. Principle 11.
+decision. Principle 12.
 
 ### Distractors degrade performance even at quantity one
 
@@ -850,3 +885,14 @@ instructions. Principle 3.
 19. Schmid, Philipp. `8 Tips for Writing Better Agent Skills`. 2026.
     https://www.philschmid.de/agent-skills-tips. Companion: `Testing Agent
     Skills`. https://www.philschmid.de/testing-skills
+
+### Participant terminology sources
+
+20. OpenAI. `Prompt engineering`.
+    https://developers.openai.com/api/docs/guides/prompt-engineering
+21. OpenAI. `Model Spec`. 2025-02-12.
+    https://model-spec.openai.com/2025-02-12.html
+22. Microsoft. `Prompt engineering concepts - .NET`.
+    https://learn.microsoft.com/en-us/dotnet/ai/conceptual/prompt-engineering-dotnet
+23. Model Context Protocol. `Prompts`.
+    https://modelcontextprotocol.io/specification/2025-06-18/server/prompts

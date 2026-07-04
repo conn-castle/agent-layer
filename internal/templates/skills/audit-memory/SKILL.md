@@ -162,7 +162,7 @@ Write `.agent-layer/tmp/audit-memory.<run-id>.report.md` with:
 5. `## Fixes Applied`
    - what was changed and why
 6. `## Deferred Findings`
-   - findings that required human judgment and were skipped
+   - findings that required user judgment and were skipped
 7. `## Recommendations`
    - remaining actions the user should consider
 

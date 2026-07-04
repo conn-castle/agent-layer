@@ -27,7 +27,7 @@ Use `audit-tests` instead when the target is the full existing suite. Use
 - Default disposition is **delete unless justified**. The implementing agent
   did not earn a test's place by writing it; the test must demonstrate it can
   catch a defect.
-- Tests are auto-deleted in place — no human approval per test. Surviving
+- Tests are auto-deleted in place — no user approval per test. Surviving
   coverage gaps are reported, never backfilled with replacement assertions.
 
 ## Inputs

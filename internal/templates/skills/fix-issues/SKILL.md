@@ -93,7 +93,7 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 1. If the user specified issue IDs or a count, use that as the issue set.
 2. Otherwise select all open issues from `ISSUES.md`.
 3. For each issue, decide whether it is actually an issue or a misplaced backlog feature:
-   - If an issue describes a new user-visible capability rather than a bug, defect, debt, or risk, move it to `BACKLOG.md` and remove it from `ISSUES.md`.
+   - If an issue describes a new end-user-visible capability rather than a bug, defect, debt, or risk, move it to `BACKLOG.md` and remove it from `ISSUES.md`.
    - Record every reclassification in the report.
 4. Organize the remaining issue set into coherent execution batches by:
    - shared area or module

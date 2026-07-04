@@ -44,7 +44,7 @@ Recommended roles:
 - Do not implement backlog items in this workflow.
 - Do not invent requirements that are not in `BACKLOG.md`, `ROADMAP.md`, `ISSUES.md`, `DECISIONS.md`, or `README.md`.
 - Keep the proposal reviewable and coherent.
-- Treat non-user-visible engineering work as issue-ledger material unless the roadmap explicitly needs a separate engineering phase.
+- Treat non-end-user-visible engineering work as issue-ledger material unless the roadmap explicitly needs a separate engineering phase.
 
 ## Human checkpoints
 
@@ -108,7 +108,7 @@ The proposal summary must contain:
 3. `## Backlog Hygiene Notes`
    - duplicates or misclassified items
 4. `## Open Questions`
-   - only when a sequencing decision truly needs the human
+   - only when a sequencing decision truly needs the user
 5. `## Approval Options`
    - how the user can approve, reject, or modify each suggestion
 
@@ -117,7 +117,7 @@ The proposal summary must contain:
 - Do not schedule a huge backlog sweep in one proposal.
 - Do not bury prerequisites or sequencing risk.
 - Do not mutate roadmap files in the same step as drafting the proposal unless the request already includes applying a clear, low-ambiguity proposal.
-- Do not present engineering refactors as user-visible roadmap work unless the roadmap truly needs them there.
+- Do not present engineering refactors as end-user-visible roadmap work unless the roadmap truly needs them there.
 
 ## Definition of done
 

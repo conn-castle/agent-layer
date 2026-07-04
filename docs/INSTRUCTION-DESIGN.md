@@ -9,6 +9,8 @@ intentionally separates:
 - practical authoring guidance
 - repo heuristics used to keep instructions maintainable
 
+Participant-terminology sources were checked on 2026-07-04.
+
 This guide is the instruction-file counterpart to `docs/SKILL-DESIGN.md`,
 which covers skill authoring. The two documents share several foundational
 references (context engineering, instruction density, primacy effects) but
@@ -245,6 +247,40 @@ same rigor.
 - Do not make speculative instruction changes without a clear motivation and
   verification plan.
 
+### 8. Use participant terminology precisely
+
+Instruction files should distinguish the agent conversation from the software
+being built. Current platform and prompt specifications use `user` as the
+standard message role for the person providing instructions to the model, and
+`assistant` for the model's messages [ref 17, 19, 20]. OpenAI's current
+prompt-engineering guide also distinguishes `developer` messages from `user`
+messages, with `user` messages carrying the model-facing application's
+per-request input [ref 17].
+
+Use these terms consistently:
+
+- **user**: the person talking to the agent in this session. Use this for
+  instruction-following rules such as `ask the user`, `the user requested`,
+  and `user-supplied files`.
+- **end user**: the person who uses the software, product, API, or workflow the
+  agent is helping build. Use this for product impact language such as
+  `end-user-facing behavior`, `end-user-visible feature`, and `end-user
+  workflow`.
+- **human**: a person as distinct from an agent, automation, or programmatic
+  consumer. Use this for human-in-the-loop concepts such as `human checkpoint`,
+  `human review`, or `human confirmation`, and for model-spec distinctions
+  between real-time human interaction and programmatic output [ref 18].
+
+Authoring guidance:
+
+- Do not use `the human` as a generic synonym for `the user`.
+- Prefer `ask the user` when the instruction means "ask the person in this
+  chat."
+- Prefer `end-user-visible` or `end-user-facing` when the instruction concerns
+  the people affected by the product being changed.
+- Keep `human checkpoint` as the term for an explicit gate that requires a
+  person rather than an autonomous agent.
+
 ---
 
 ## Recommended instruction file structure
@@ -428,3 +464,14 @@ constraints.
     https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus
 16. Addy Osmani. "My LLM coding workflow going into 2026." Dec 2025.
     https://addyosmani.com/blog/ai-coding-workflow/
+
+### Participant terminology sources
+
+17. OpenAI. "Prompt engineering."
+    https://developers.openai.com/api/docs/guides/prompt-engineering
+18. OpenAI. "Model Spec." 2025-02-12.
+    https://model-spec.openai.com/2025-02-12.html
+19. Microsoft. "Prompt engineering concepts - .NET."
+    https://learn.microsoft.com/en-us/dotnet/ai/conceptual/prompt-engineering-dotnet
+20. Model Context Protocol. "Prompts."
+    https://modelcontextprotocol.io/specification/2025-06-18/server/prompts
