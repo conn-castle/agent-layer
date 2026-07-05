@@ -93,10 +93,22 @@ func TestPromptRouter_DeleteUnknownTmpAll_LegacyWithoutValidatorRoutes(t *testin
 
 func TestPromptRouter_StatuslineSource_FallbackNeverOverwrites(t *testing.T) {
 	// A prompter that does not implement the statusline capability must never
-	// authorize overwriting a customized statusline source.
+	// authorize overwriting a customized statusline source. A zero PromptFuncs
+	// also has the method set, but the router must not advertise the capability
+	// unless the callback is wired; callers use that gate to avoid building the
+	// statusline diff preview.
 	router := newPromptRouter(plainPrompter{})
 	if router.hasStatuslineSource() {
 		t.Fatal("plain prompter must not advertise the statusline capability")
+	}
+	if newPromptRouter(PromptFuncs{}).hasStatuslineSource() {
+		t.Fatal("PromptFuncs without a wired statusline callback must not advertise the capability")
+	}
+	wired := newPromptRouter(PromptFuncs{
+		StatuslineSourcePreviewFunc: func(DiffPreview) (bool, error) { return true, nil },
+	})
+	if !wired.hasStatuslineSource() {
+		t.Fatal("PromptFuncs with a wired statusline callback must advertise the capability")
 	}
 	resp, err := router.route(promptRequest{kind: promptKindStatuslineSource})
 	if err != nil {

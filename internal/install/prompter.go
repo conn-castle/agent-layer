@@ -235,6 +235,10 @@ func (p PromptFuncs) hasDeleteUnknownTmpAll() bool {
 	return p.DeleteUnknownTmpAllFunc != nil
 }
 
+func (p PromptFuncs) hasStatuslineSource() bool {
+	return p.StatuslineSourcePreviewFunc != nil
+}
+
 // unifiedOverwritePrompter is an optional interface a Prompter can implement to
 // resolve the managed and memory overwrite-all decisions in a single pass. The
 // router only selects it when the prompter also implements promptValidator and
@@ -243,6 +247,10 @@ func (p PromptFuncs) hasDeleteUnknownTmpAll() bool {
 // and memory overwrite-all prompts.
 type unifiedOverwritePrompter interface {
 	OverwriteAllUnified(managed []DiffPreview, memory []DiffPreview) (bool, bool, error)
+}
+
+type statuslineSourceValidator interface {
+	hasStatuslineSource() bool
 }
 
 // promptKind identifies which prompt category a promptRequest represents.
@@ -338,7 +346,13 @@ func newPromptRouter(prompter Prompter) *promptRouter {
 		}
 	}
 	if statusline, ok := prompter.(statuslineSourcePrompter); ok {
-		r.statusline = statusline
+		wired := true
+		if validator, vok := prompter.(statuslineSourceValidator); vok && !validator.hasStatuslineSource() {
+			wired = false
+		}
+		if wired {
+			r.statusline = statusline
+		}
 	}
 	if configDefault, ok := prompter.(configSetDefaultPrompter); ok {
 		r.configDefault = configDefault
