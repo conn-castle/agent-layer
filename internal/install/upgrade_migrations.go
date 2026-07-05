@@ -795,17 +795,21 @@ func (inst *installer) executeConfigSetDefaultMigration(op upgradeMigrationOpera
 	if unmarshalErr := json.Unmarshal(rawValue, &decoded); unmarshalErr != nil {
 		return false, fmt.Errorf("decode default value for key %s: %w", keyPath, unmarshalErr)
 	}
-	if prompter, ok := inst.prompter.(configSetDefaultPrompter); ok {
-		var fieldPtr *config.FieldDef
-		if f, found := config.LookupField(keyPath); found {
-			fieldPtr = &f
-		}
-		prompted, promptErr := prompter.ConfigSetDefault(keyPath, decoded, op.Rationale, fieldPtr)
-		if promptErr != nil {
-			return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
-		}
-		decoded = prompted
+	var fieldPtr *config.FieldDef
+	if f, found := config.LookupField(keyPath); found {
+		fieldPtr = &f
 	}
+	resp, promptErr := inst.promptRouter().route(promptRequest{
+		kind:          promptKindConfigSetDefault,
+		configKey:     keyPath,
+		manifestValue: decoded,
+		rationale:     op.Rationale,
+		field:         fieldPtr,
+	})
+	if promptErr != nil {
+		return false, fmt.Errorf("prompt for config key %s: %w", keyPath, promptErr)
+	}
+	decoded = resp.value
 	if setErr := setNestedConfigValue(cfg, parts, decoded, true); setErr != nil {
 		return false, setErr
 	}

@@ -264,27 +264,14 @@ func validatePrompter(prompter Prompter, overwrite bool) error {
 	if !overwrite {
 		return nil
 	}
-	if prompter == nil {
-		return fmt.Errorf(messages.InstallOverwritePromptRequired)
-	}
-	if validator, ok := prompter.(promptValidator); ok {
-		if !validator.hasOverwriteAll() {
-			return fmt.Errorf(messages.InstallOverwritePromptRequired)
-		}
-		if !validator.hasOverwriteAllMemory() {
-			return fmt.Errorf(messages.InstallOverwritePromptRequired)
-		}
-		if !validator.hasOverwrite() {
-			return fmt.Errorf(messages.InstallOverwritePromptRequired)
-		}
-		if !validator.hasDeleteUnknownAll() {
-			return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
-		}
-		if !validator.hasDeleteUnknown() {
-			return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
-		}
-	}
-	return nil
+	return newPromptRouter(prompter).validateRequiredOverwrite()
+}
+
+// promptRouter returns a prompt router bound to the installer's prompter. The
+// router is stateless and cheap to build, so it is constructed per call rather
+// than cached; this keeps it correct for tests that reassign inst.prompter.
+func (inst *installer) promptRouter() *promptRouter {
+	return newPromptRouter(inst.prompter)
 }
 
 func (inst upgradeOrchestrator) ensureBaseDirs() error {

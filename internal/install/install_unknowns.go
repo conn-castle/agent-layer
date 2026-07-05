@@ -109,21 +109,22 @@ func (inst *installer) handleNonTmpUnknowns(tmpUnknowns, otherUnknowns []string)
 	if len(otherUnknowns) == 0 {
 		return nil
 	}
+	router := inst.promptRouter()
 	rel := inst.collapsedRelativePathList(tmpUnknowns, otherUnknowns)
-	deleteAll, err := inst.prompter.DeleteUnknownAll(rel)
+	deleteAll, err := router.route(promptRequest{kind: promptKindDeleteUnknownAll, paths: rel})
 	if err != nil {
 		return err
 	}
-	if deleteAll {
+	if deleteAll.approved {
 		return inst.deleteUnknowns(otherUnknowns)
 	}
 	for _, path := range otherUnknowns {
 		relPath := inst.relativePath(path)
-		deletePath, err := inst.prompter.DeleteUnknown(relPath)
+		deletePath, err := router.route(promptRequest{kind: promptKindDeleteUnknown, path: relPath})
 		if err != nil {
 			return err
 		}
-		if deletePath {
+		if deletePath.approved {
 			if err := inst.sys.RemoveAll(path); err != nil {
 				return fmt.Errorf(messages.InstallDeleteUnknownFailedFmt, relPath, err)
 			}
@@ -135,30 +136,21 @@ func (inst *installer) handleNonTmpUnknowns(tmpUnknowns, otherUnknowns []string)
 // handleTmpUnknowns asks one grouped yes/no question for every unknown path
 // under `.agent-layer/tmp/`. Tmp deletion is destructive (it can wipe
 // in-progress agent run artifacts) so it requires an affirmative grouped
-// answer; if the prompter does not implement tmpUnknownsPrompter (or has the
-// method defined but not wired in a PromptFuncs), tmp paths are left
-// untouched rather than falling back to per-file prompts. This guarantees no
-// code path can delete tmp content without going through the dedicated
-// destructive-action confirmation in the grouped prompt.
+// answer; when the router reports the grouped tmp capability as unavailable
+// (see newPromptRouter) the routed prompt returns "not approved" and tmp paths
+// are left untouched rather than falling back to per-file prompts. This
+// guarantees no code path can delete tmp content without going through the
+// dedicated destructive-action confirmation in the grouped prompt.
 func (inst *installer) handleTmpUnknowns(tmpUnknowns []string) error {
 	if len(tmpUnknowns) == 0 {
 		return nil
 	}
-	grouped, ok := inst.prompter.(tmpUnknownsPrompter)
-	if ok {
-		if validator, vok := inst.prompter.(promptValidator); vok && !validator.hasDeleteUnknownTmpAll() {
-			ok = false
-		}
-	}
-	if !ok {
-		return nil
-	}
 	rel := inst.relativePathList(tmpUnknowns)
-	deleteTmp, err := grouped.DeleteUnknownTmpAll(rel)
+	deleteTmp, err := inst.promptRouter().route(promptRequest{kind: promptKindDeleteUnknownTmpAll, paths: rel})
 	if err != nil {
 		return err
 	}
-	if !deleteTmp {
+	if !deleteTmp.approved {
 		return nil
 	}
 	return inst.deleteUnknowns(tmpUnknowns)

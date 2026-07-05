@@ -125,14 +125,16 @@ func (inst *installer) preflightAndConfirmSkillsMigration() error {
 	}
 
 	// Prompt for confirmation (before any mutations happen).
-	if prompter, ok := inst.prompter.(skillsMigrationPrompter); ok {
-		proceed, promptErr := prompter.ConfirmSkillsMigration(flatSkills, conflicts)
-		if promptErr != nil {
-			return fmt.Errorf(messages.InstallSkillsMigrationPromptErrFmt, promptErr)
-		}
-		if !proceed {
-			return fmt.Errorf(messages.InstallSkillsMigrationDeclinedErr)
-		}
+	resp, promptErr := inst.promptRouter().route(promptRequest{
+		kind:       promptKindConfirmSkillsMigration,
+		flatSkills: flatSkills,
+		conflicts:  conflicts,
+	})
+	if promptErr != nil {
+		return fmt.Errorf(messages.InstallSkillsMigrationPromptErrFmt, promptErr)
+	}
+	if !resp.approved {
+		return fmt.Errorf(messages.InstallSkillsMigrationDeclinedErr)
 	}
 
 	inst.skillsMigrationConfirmed = true
@@ -174,14 +176,16 @@ func (inst *installer) executeMigrateSkillsFormat(relSkillsDir string) (bool, er
 		if len(conflicts) > 0 {
 			return false, fmt.Errorf(messages.InstallSkillsMigrationBlockedErrFmt, len(conflicts))
 		}
-		if prompter, ok := inst.prompter.(skillsMigrationPrompter); ok {
-			proceed, promptErr := prompter.ConfirmSkillsMigration(flatSkills, conflicts)
-			if promptErr != nil {
-				return false, fmt.Errorf(messages.InstallSkillsMigrationPromptErrFmt, promptErr)
-			}
-			if !proceed {
-				return false, fmt.Errorf(messages.InstallSkillsMigrationDeclinedErr)
-			}
+		resp, promptErr := inst.promptRouter().route(promptRequest{
+			kind:       promptKindConfirmSkillsMigration,
+			flatSkills: flatSkills,
+			conflicts:  conflicts,
+		})
+		if promptErr != nil {
+			return false, fmt.Errorf(messages.InstallSkillsMigrationPromptErrFmt, promptErr)
+		}
+		if !resp.approved {
+			return false, fmt.Errorf(messages.InstallSkillsMigrationDeclinedErr)
 		}
 	}
 

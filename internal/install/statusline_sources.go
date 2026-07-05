@@ -96,15 +96,17 @@ func (inst *installer) writeStatuslineSource(source StatuslineSourceTemplate) er
 		return nil
 	}
 	overwrite := false
-	if prompt, ok := inst.prompter.(statuslineSourcePrompter); ok {
+	router := inst.promptRouter()
+	if router.hasStatuslineSource() {
 		preview, previewErr := inst.buildStatuslineSourceDiffPreview(source)
 		if previewErr != nil {
 			return previewErr
 		}
-		overwrite, err = prompt.StatuslineSource(preview)
-		if err != nil {
-			return err
+		resp, routeErr := router.route(promptRequest{kind: promptKindStatuslineSource, preview: preview})
+		if routeErr != nil {
+			return routeErr
 		}
+		overwrite = resp.approved
 	}
 	if !overwrite {
 		return nil
