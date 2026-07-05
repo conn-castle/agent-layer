@@ -107,11 +107,15 @@ Notes:
 
 ---
 
-## Best practice guides
+## Documentation sets
 
+Universal best practices:
 - [Skill Design](https://agent-layer.dev/skill-design) (canonical source: `docs/SKILL-DESIGN.md`)
 - [CLI Skill Design](https://agent-layer.dev/cli-skill-design) (canonical source: `docs/CLI-SKILL-DESIGN.md`)
 - [Instruction Design](https://agent-layer.dev/instruction-design) (canonical source: `docs/INSTRUCTION-DESIGN.md`)
+
+Agent Layer approach:
+- [Skills approach](https://agent-layer.dev/docs/skills-approach) (canonical source: `site/docs/skills-approach.mdx`)
 
 ---
 

@@ -1,7 +1,7 @@
 # Skill Design Guide
 
-This document is the canonical skill-authoring guide for repo-local skill
-sources such as `.agent-layer/skills/<name>/SKILL.md`.
+This document is the canonical skill-authoring guide for portable agent skill
+sources such as `skills/<name>/SKILL.md`.
 
 This guide is the skill-authoring counterpart to `docs/INSTRUCTION-DESIGN.md`,
 which covers instruction-file authoring. The two documents share several
@@ -13,16 +13,16 @@ For skills that route agents to installed command line tools, use
 
 Research and standards in this guide were re-verified on 2026-04-18. The guide
 intentionally separates:
-- specification or product requirements
+- specification or client requirements
 - evidence-backed authoring guidance
-- repo heuristics used to keep skills maintainable
+- authoring heuristics used to keep skills maintainable
 
 Participant-terminology sources were checked on 2026-07-04.
 
 ## Evidence model
 
 - Standards and platform behavior: Agent Skills specification, OpenAI Codex
-  skills docs, and agent-layer's own validator/README.
+  skills docs, and client validation behavior.
 - Official prompting guidance: Anthropic and OpenAI agent/prompting docs.
 - Empirical studies: long-context, instruction-following, constraint-
   composition, and context-rot papers.
@@ -30,24 +30,24 @@ Participant-terminology sources were checked on 2026-07-04.
   skills.
 
 When this guide gives a numeric limit, it is either a published limit or
-explicitly labeled as a local heuristic.
+explicitly labeled as an authoring heuristic.
 
 ---
 
-## Specification and product requirements
+## Specification and client requirements
 
 ### Canonical source format
 
-- Author skills in directory format: `.agent-layer/skills/<name>/SKILL.md`
-  [ref 1].
+- Author portable skills in directory format: `skills/<name>/SKILL.md`, or the
+  equivalent directory format required by the target client [ref 1].
 - Required frontmatter fields: `name`, `description` [ref 1].
 - Optional frontmatter fields: `license`, `compatibility`, `metadata`,
   `allowed-tools` [ref 1].
-- `name` must match the directory name and pass agent-layer validation.
+- `name` must match the directory name and pass the target client's validation.
 - `description` must explain both what the skill does and when it should
   trigger. The Agent Skills specification permits up to 1,024 characters
-  [ref 1], but Agent Layer-authored skills use a stricter hard maximum of 512
-  characters.
+  [ref 1]. This guide recommends a more conservative 512-character internal
+  budget so descriptions stay useful in large catalogs.
 - `name` must be 1-64 characters, lowercase alphanumeric and hyphens only, no
   leading/trailing/consecutive hyphens [ref 1].
 
@@ -63,9 +63,9 @@ explicitly labeled as a local heuristic.
   the context window is unknown; Codex shortens descriptions first when many
   skills are installed [ref 3]. The 8,000-character fallback is independent of
   large model context windows.
-- `al doctor` warns when all skill names plus descriptions (the always-loaded
-  catalog metadata) exceed an estimated ~4,000-token budget.
-- `al doctor` warns when a skill source exceeds 500 lines.
+- Validation tooling should warn when all skill names plus descriptions (the
+  always-loaded catalog metadata) exceed the product's catalog budget.
+- Validation tooling should warn when a skill source exceeds 500 lines.
 - Treat 500 lines as a warning threshold, not a design target.
 
 ### Experimental surfaces
@@ -74,11 +74,11 @@ explicitly labeled as a local heuristic.
 - `compatibility` should only be used for real environment requirements such as
   tools, network access, or intended runtime.
 
-### Current agent-layer implementation
+### Portability expectation
 
-- Agent Layer syncs skills natively to each client's skill directory with full
-  subdirectory support (`scripts/`, `references/`, `assets/`).
-- Companion files are available to agents alongside `SKILL.md` during execution.
+- Clients differ in how they project and load skill directories.
+- Companion files may be available to agents alongside `SKILL.md` during
+  execution.
 - Skills should still be understandable from `SKILL.md` alone for maximum
   portability across clients.
 
@@ -111,10 +111,10 @@ trigger conditions [ref 8]. This maps directly to skill activation: the
 Authoring guidance:
 - Write the `description` for routing, not marketing. State the job, likely
   trigger phrases, and nearby non-goals.
-- Keep descriptions concise enough to survive catalog truncation. The hard
-  maximum is 512 characters, and most descriptions should fit well below that;
-  if a description approaches the limit, move examples, setup, and workflow
-  detail into the body.
+- Keep descriptions concise enough to survive catalog truncation. This guide
+  recommends a 512-character internal budget, and most descriptions should fit
+  well below that; if a description approaches the budget, move examples, setup,
+  and workflow detail into the body.
 - Every description should answer two questions: **what** the skill does and
   **when** it should fire. Descriptions that answer only "what" leak into
   neighboring territory; descriptions that answer only "when" fail to help the
@@ -137,8 +137,8 @@ Authoring guidance:
 | --- | --- | --- |
 | `Helps with documents` | No domain, no trigger, no negative | `Create, edit, and analyze .docx files. Use for tracked changes, comments, formatting, or text extraction. Do not use for PDFs or plain text.` |
 | `API helper` | Fires on anything API-shaped | `Use when writing code that calls an external model API. Covers authentication, request construction, and streaming responses.` |
-| `Fix code quality` | Overlaps with every quality skill | `Assess code complexity, remove dead code, simplify complex functions. Scoped to uncommitted changes when they exist, otherwise full codebase. Use audit-tests for test suite health; use boost-coverage to add missing tests.` |
-| `Review things` | Router cannot disambiguate review-scope vs review-plan | `Review explicit files, directories, diffs, or uncommitted changes and produce a findings report. Use review-plan instead when the target is a plan/task/context artifact set.` |
+| `Fix code quality` | Overlaps with every quality skill | `Assess code complexity, remove dead code, and simplify complex functions. Use a test-audit skill for test-suite health; use a coverage skill to add missing behavior coverage.` |
+| `Review things` | Router cannot disambiguate code review vs plan review | `Review explicit files, directories, diffs, or uncommitted changes and produce a findings report. Use plan-review instead when the target is a design or implementation plan.` |
 
 Philipp Schmid reports "50% improvements just by improving the description"
 [ref 19] — refining a vague description is often the highest-leverage change
@@ -177,9 +177,9 @@ Authoring guidance:
   decision rules.
 - Avoid mode-switching sections like `if mode X` / `if mode Y` unless the
   branches are tiny and inseparable.
-- Prefer separate skills for separate targets, such as `review-plan` versus
-  `review-scope`.
-- Local heuristic: if a skill needs the same branching explanation more than
+- Prefer separate skills for separate targets, such as plan review versus code
+  review.
+- Authoring heuristic: if a skill needs the same branching explanation more than
   once, it is a strong candidate for splitting.
 - When two skills share structural similarity (e.g., both use an audit loop),
   accept the duplication until there are at least three real consumers of the
@@ -234,7 +234,7 @@ Authoring guidance:
 - Every token in `SKILL.md` should change the model's behavior. If removing a
   sentence would not change what the model does, the sentence should not be
   there.
-- Repo heuristic: most healthy skills should stay roughly in the 150-300 line
+- Authoring heuristic: most healthy skills should stay roughly in the 150-300 line
   range; cross 300 only with a clear reason. The validator warning at 500 lines
   is the hard backstop.
 
@@ -423,8 +423,8 @@ actions [ref 3].
 Authoring guidance:
 - Name the exact ambiguity trigger that requires user input.
 - Keep the normal path autonomous.
-- Prefer concrete checkpoint rules such as `ask before creating a missing
-  memory file` or `ask before applying destructive deletes`.
+- Prefer concrete checkpoint rules such as `ask before creating a required
+  missing artifact` or `ask before applying destructive deletes`.
 - Avoid generic instructions like `ask when uncertain`.
 - Limit the number of distinct checkpoint conditions. Each one is an
   instruction the model must carry, competing for attention with the workflow.
@@ -499,8 +499,8 @@ Authoring guidance:
 
 OpenAI's skills docs explicitly warn that skills can influence planning, tool
 usage, and command execution, and should be treated as privileged
-instructions/code [ref 3]. This matters even for repo-local skills: the skill
-author is defining what the agent is allowed to believe is the intended
+instructions/code [ref 3]. This matters even for locally installed skills: the
+skill author is defining what the agent is allowed to believe is the intended
 workflow.
 
 **Evidence — context is trusted by default:**
@@ -558,8 +558,8 @@ Authoring guidance:
 - When a skill delegates to sub-agents, expect summaries (1,000-2,000 tokens)
   rather than full transcripts.
 - Prefer file-based artifacts over in-context accumulation for multi-step
-  workflows. Write intermediate results to `.agent-layer/tmp/` and reference
-  them by path.
+  workflows. Write intermediate results to a documented scratch or artifact
+  directory and reference them by path.
 - Be aware that a 300-line skill loaded into a 200K-token context is a small
   fraction of the window, but a 300-line skill loaded after 180K tokens of
   prior conversation is competing for the model's remaining attention.
@@ -626,7 +626,7 @@ Authoring guidance:
 
 ---
 
-## Recommended section order for agent-layer skills
+## Recommended section order for agent skills
 
 | Section | Purpose | Why it belongs there |
 | --- | --- | --- |
@@ -705,22 +705,21 @@ Before considering a skill done, verify that:
 
 ---
 
-## Repo heuristics that are intentionally not universal
+## Implementation-specific conventions
 
-These are local preferences for this repository, not claims about the wider
-ecosystem:
+These examples are intentionally not universal. Product-specific skill systems
+may adopt conventions like these, but they should be documented outside the
+portable best-practice guide when they are normative for one product:
 - Aim for skills that are comfortably below the 500-line validator warning;
-  150-300 lines is the healthy default range here.
+  150-300 lines is a reasonable default range for many workflow skills.
 - Prefer separate skills over wrapper/base-skill patterns until there are at
   least three real consumers of the shared structure.
-- Use repo-local artifact naming under
-  `.agent-layer/tmp/<skill-name>.<run-id>.<type>.md` when the workflow produces
-  reviewable intermediate files.
+- Use a documented artifact naming pattern when the workflow produces reviewable
+  intermediate files.
 - Favor stable section names (`Defaults`, `Global constraints`,
   `Human checkpoints`, `Guardrails`, `Final handoff`) so reviewers can compare
   skills quickly.
-- Accept structural duplication between skills with similar audit-loop shapes
-  (e.g., `audit-and-fix-uncommitted-changes` and `improve-codebase`) rather
+- Accept structural duplication between skills with similar loop shapes rather
   than extracting a shared abstraction prematurely.
 
 ---

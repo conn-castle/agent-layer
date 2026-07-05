@@ -248,28 +248,28 @@ func TestShouldOverwrite_MissingPrompter(t *testing.T) {
 func TestHasUnifiedOverwritePrompter(t *testing.T) {
 	t.Run("nil prompter", func(t *testing.T) {
 		inst := &installer{prompter: nil}
-		if inst.hasUnifiedOverwritePrompter() {
+		if inst.promptRouter().hasUnifiedOverwrite() {
 			t.Fatalf("expected false for nil prompter")
 		}
 	})
 
 	t.Run("prompter without unified callback", func(t *testing.T) {
 		inst := &installer{prompter: plainPrompter{}}
-		if inst.hasUnifiedOverwritePrompter() {
+		if inst.promptRouter().hasUnifiedOverwrite() {
 			t.Fatalf("expected false for prompter without unified support")
 		}
 	})
 
 	t.Run("unified prompter without validator", func(t *testing.T) {
 		inst := &installer{prompter: unifiedOnlyPrompter{}}
-		if inst.hasUnifiedOverwritePrompter() {
+		if inst.promptRouter().hasUnifiedOverwrite() {
 			t.Fatalf("expected false for unified prompter without validator")
 		}
 	})
 
 	t.Run("validator exists but unified callback disabled", func(t *testing.T) {
 		inst := &installer{prompter: PromptFuncs{}}
-		if inst.hasUnifiedOverwritePrompter() {
+		if inst.promptRouter().hasUnifiedOverwrite() {
 			t.Fatalf("expected false when unified callback is not configured")
 		}
 	})
@@ -282,7 +282,7 @@ func TestHasUnifiedOverwritePrompter(t *testing.T) {
 				},
 			},
 		}
-		if !inst.hasUnifiedOverwritePrompter() {
+		if !inst.promptRouter().hasUnifiedOverwrite() {
 			t.Fatalf("expected true when unified callback is configured")
 		}
 	})

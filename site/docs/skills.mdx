@@ -41,7 +41,7 @@ You do not pay the context cost of every skill on every request.
 
 ### Skill structure
 
-The recommended section order is informed by research on how language models process instructions (primacy and recency effects). Critical rules go early; guardrails go at the end. For the full research basis, see [Skill Design Guide](/skill-design). For skills that route agents to installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design).
+The recommended section order is informed by research on how language models process instructions (primacy and recency effects). Critical rules go early; guardrails go at the end. For the full research basis, see [Skill Design Guide](/skill-design). For skills that route agents to installed command-line tools, use the [CLI Skill Design Guide](/cli-skill-design). For Agent Layer's root-skill model and current-to-target skill mapping, see [Skills approach](./skills-approach).
 
 1. **Opening contract** — one sentence stating what the skill does
 2. **Defaults** — what happens with no inputs
@@ -58,7 +58,7 @@ The recommended section order is informed by research on how language models pro
 
 The skill standard defines the format. Agent Layer builds on it with:
 
-- **A built-in library of 24 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available after `al init` with no setup.
+- **A workflow-bundle library of 28 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available when the workflow bundle is installed through the wizard and refreshed through upgrade flows for repos that already have it.
 - **Client projection** — Skills are authored once under `.agent-layer/skills/` and projected during `al sync` to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
 - **Artifact conventions** — Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention (`<skill-name>.<run-id>.<type>.md`). Planning workflows produce a trio of artifacts — a plan, a task list, and a context file — so that any agent can pick up the work cold without re-discovering what the planner already found.
@@ -100,7 +100,7 @@ Skills accept flexible inputs: plain-language descriptions, file paths, constrai
 
 ## Built-in skill library
 
-Agent Layer ships 24 skills. They are organized here by how you typically use them.
+The Agent Layer workflow bundle includes 28 skills. They are organized here by how you typically use them. Agent Layer also ships optional CLI catalog skills for installed tools; those are listed separately below.
 
 ### Orchestrator skills
 
@@ -109,6 +109,8 @@ These are the top-level workflows you invoke directly. They delegate to supporti
 | Skill | What it does |
 | --- | --- |
 | `complete-current-phase` | Drives a roadmap phase through planning, implementation, verification, auditing, and cleanup loops until the phase is complete. The primary orchestrator for roadmap execution. |
+| `full-workflow` | Orchestrates a feature workflow from questions and spec alignment through planning, multi-agent plan review, implementation, and PR shipping. |
+| `auto-skill-loop` | Runs an explicitly authorized autonomous loop for `fix-issues` or `improve-codebase`, dispatching workers, preserving blocked work, and shipping ready PRs until interrupted or exhausted. |
 | `ship-pr` | Full PR lifecycle: audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes. Delegates to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments`. |
 | `improve-codebase` | Deep autonomous codebase audit: decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills. |
 | `fix-issues` | Works through `ISSUES.md`: organizes open issues into coherent batches, plans, implements, audits, and keeps the issue ledger current. |
@@ -134,6 +136,7 @@ These are used by orchestrators or available for fine-grained control when you n
 | --- | --- |
 | `review-scope` | Reviews files, directories, diffs, or uncommitted changes. Produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
 | `review-plan` | Pre-execution review of a plan and its artifacts. Identifies scope gaps, sequencing problems, missing context, and weak verification before code is written. |
+| `multi-agent-plan-review` | Reviews and repairs a plan/task/context artifact set with dispatched review agents until the plan is implementation-ready. |
 | `verify-against-plan` | Post-implementation completeness check. Compares what was actually built against what the plan promised, reporting gaps, regressions, missing tests or docs, and scope drift. |
 | `resolve-findings` | Triages review findings, verifies each independently, implements accepted fixes, and records why findings were rejected, deferred, or resolved. |
 
@@ -162,12 +165,26 @@ These are used by orchestrators or available for fine-grained control when you n
 | `audit-documentation` | Audits documentation for static accuracy and cross-document consistency against the repository. Optionally applies fixes for accepted findings. |
 | `audit-tests` | Test suite health audit: discovers conventions, classifies tests by tier, identifies redundancy, quality gaps, and coverage gaps — without modifying tests. |
 | `audit-memory` | Audits agent memory files for structure compliance, staleness, misplacement, and consistency. |
+| `interface-audit` | Audits product interfaces as component boundaries, scores complexity and debt, and produces interface cleanup recommendations without implementing changes. |
 
 **Task management**
 
 | Skill | What it does |
 | --- | --- |
 | `finish-task` | Task closeout: checks plan alignment, updates project memory files, runs verification, and summarizes outcomes after implementation is complete. |
+
+### Optional CLI catalog skills
+
+These skills are installed only when selected through the CLI catalog. They route
+agents to installed local tools and require the corresponding command to be
+available on `PATH`.
+
+| Skill | What it does |
+| --- | --- |
+| `agent-dispatch` | Uses `al dispatch` only when the user names an external dispatch target or another skill explicitly requires dispatch. |
+| `find-docs` | Uses Context7 for current API and library documentation when local docs or CLI help are insufficient. |
+| `playwright-cli` | Uses `playwright-cli` for browser automation, screenshots, user interface inspection, and Playwright test work. |
+| `tavily-web` | Uses Tavily CLI for web search, URL extraction, site mapping, and cited research. |
 
 ## Writing your own skills
 
@@ -194,14 +211,10 @@ Run `al sync` to project the new skill into all enabled clients.
 
 For the complete research-backed authoring guide — including empirical studies on instruction-following, context length effects, and constraint composition — see [Skill Design Guide](/skill-design). For command-line tool workflows, use [CLI Skill Design Guide](/cli-skill-design) so live `--help` stays the source of truth for syntax.
 
-## Design philosophy
+## Skills approach
 
-The built-in skills reflect several deliberate choices:
-
-**Investigation before action** — Skills like `debug-issue` refuse to guess. They require reproduction, evidence, and a failing test before any fix. This mirrors how experienced developers work.
-
-**Autonomous by default, checkpoints for real ambiguity** — Skills run autonomously through their normal workflow. Human checkpoints trigger only for genuine ambiguity — scope decisions, breaking changes, or competing approaches. Vague escalation like "ask when uncertain" is deliberately avoided.
-
-**Composition over monoliths** — Skills delegate to each other. `ship-pr` delegates to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments`. `complete-current-phase` orchestrates planning, implementation, and verification. This keeps each skill focused while enabling complex workflows.
-
-**Evidence-backed structure** — The skill format is informed by research on how language models process instructions. Critical rules go early (primacy effect), guardrails go at the end (recency effect), and lean bodies minimize reasoning degradation from context length. See [Skill Design Guide](/skill-design) for the research basis.
+The built-in skills follow an Agent Layer-specific model: deterministic root
+skills with stable input/output contracts, composed by workflow skills that own
+loops and orchestration. See [Skills approach](./skills-approach) for the
+canonical ethos, target root modules, and mapping to the current bundled skill
+names.

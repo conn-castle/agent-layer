@@ -1,13 +1,13 @@
 # Instruction Design Guide
 
-This document is the canonical instruction-authoring guide for repo-local
-instruction sources such as `.agent-layer/instructions/*.md`.
+This document is the canonical instruction-authoring guide for always-loaded
+agent instruction sources.
 
 Research and sources in this guide were verified on 2026-03-16. The guide
 intentionally separates:
 - evidence-backed design principles
 - practical authoring guidance
-- repo heuristics used to keep instructions maintainable
+- authoring heuristics used to keep instructions maintainable
 
 Participant-terminology sources were checked on 2026-07-04.
 
@@ -26,7 +26,7 @@ apply them to different authoring surfaces.
   ComplexBench.
 
 When this guide gives a numeric limit, it is either a published finding or
-explicitly labeled as a local heuristic.
+explicitly labeled as an authoring heuristic.
 
 ---
 
@@ -191,7 +191,8 @@ wastes the model's attention budget on redundant content.
 - Anthropic [ref 1]: "Find the smallest set of high-signal tokens."
 
 **Authoring guidance:**
-- If a rule appears in `00_rules.md`, do not restate it in `01_base.md`.
+- If a rule appears in one always-loaded instruction file, do not restate it in
+  another always-loaded instruction file.
 - If a behavior is fully specified in a skill file, do not re-specify it in
   the base instruction files.
 - When two instruction files need to reference the same concept, have one
@@ -315,7 +316,7 @@ in practice.
 | Overly detailed prompts vs simple | 4.0% vs 10.0% Task Success | [ref 10] |
 | Minimal agent (~100 lines) | >74% SWE-bench Verified | [ref 11] |
 
-**Repo heuristics (local, not universal):**
+**Authoring heuristics (local examples, not universal standards):**
 - Each instruction file should aim for the minimum content needed to prevent
   observed failure modes.
 - If an instruction file exceeds 50 lines, audit it for duplication,

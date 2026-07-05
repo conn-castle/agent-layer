@@ -118,11 +118,12 @@ func (p PromptFuncs) DeleteUnknown(path string) (bool, error) {
 // DeleteUnknownTmpAll prompts the user to confirm deleting all unknown paths
 // under .agent-layer/tmp/ as a group. Returns an error when no
 // DeleteUnknownTmpAllFunc is configured, mirroring the no-silent-fallback
-// behavior of the other prompt callbacks. Per-file fallback for callers that
-// construct a PromptFuncs without wiring DeleteUnknownTmpAllFunc — and for
-// legacy Prompter implementations that don't implement tmpUnknownsPrompter at
-// all — is provided in handleTmpUnknowns, which probes promptValidator before
-// invoking this method.
+// behavior of the other prompt callbacks. The grouped-vs-untouched fallback for
+// callers that construct a PromptFuncs without wiring DeleteUnknownTmpAllFunc —
+// and for legacy Prompter implementations that don't implement
+// tmpUnknownsPrompter at all — is owned by the promptRouter, which probes
+// promptValidator (see newPromptRouter) and leaves tmp paths untouched rather
+// than invoking this method.
 func (p PromptFuncs) DeleteUnknownTmpAll(paths []string) (bool, error) {
 	if p.DeleteUnknownTmpAllFunc == nil {
 		return false, fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
@@ -133,7 +134,8 @@ func (p PromptFuncs) DeleteUnknownTmpAll(paths []string) (bool, error) {
 // configSetDefaultPrompter is an optional interface that a Prompter can
 // implement to interactively confirm or customize config_set_default
 // migration values. When the Prompter does not implement this interface (or
-// returns nil), the migration uses the manifest value directly.
+// PromptFuncs has no callback wired), the migration uses the manifest value
+// directly.
 type configSetDefaultPrompter interface {
 	ConfigSetDefault(key string, manifestValue any, rationale string, field *config.FieldDef) (any, error)
 }
@@ -199,8 +201,8 @@ type promptValidator interface {
 // hasDeleteUnknownTmpAll() == true. The second step exists because PromptFuncs
 // always satisfies this interface (the method is defined on the struct), so
 // callers that build a PromptFuncs without wiring DeleteUnknownTmpAllFunc
-// would otherwise hit the "prompt required" error instead of falling back to
-// the per-file DeleteUnknown loop. handleTmpUnknowns performs both probes.
+// would otherwise hit the "prompt required" error instead of leaving tmp paths
+// untouched. newPromptRouter performs both probes.
 type tmpUnknownsPrompter interface {
 	DeleteUnknownTmpAll(paths []string) (bool, error)
 }
@@ -231,4 +233,227 @@ func (p PromptFuncs) hasDeleteUnknown() bool {
 
 func (p PromptFuncs) hasDeleteUnknownTmpAll() bool {
 	return p.DeleteUnknownTmpAllFunc != nil
+}
+
+func (p PromptFuncs) hasStatuslineSource() bool {
+	return p.StatuslineSourcePreviewFunc != nil
+}
+
+// unifiedOverwritePrompter is an optional interface a Prompter can implement to
+// resolve the managed and memory overwrite-all decisions in a single pass. The
+// router only selects it when the prompter also implements promptValidator and
+// reports the unified callback as wired (see newPromptRouter); a prompter that
+// implements this interface without promptValidator keeps the separate managed
+// and memory overwrite-all prompts.
+type unifiedOverwritePrompter interface {
+	OverwriteAllUnified(managed []DiffPreview, memory []DiffPreview) (bool, bool, error)
+}
+
+type statuslineSourceValidator interface {
+	hasStatuslineSource() bool
+}
+
+// promptKind identifies which prompt category a promptRequest represents.
+type promptKind int
+
+const (
+	promptKindOverwriteAll promptKind = iota
+	promptKindOverwriteAllMemory
+	promptKindOverwriteAllUnified
+	promptKindOverwrite
+	promptKindStatuslineSource
+	promptKindDeleteUnknownAll
+	promptKindDeleteUnknown
+	promptKindDeleteUnknownTmpAll
+	promptKindConfigSetDefault
+	promptKindConfirmSkillsMigration
+)
+
+// promptRequest carries the data a single prompt category needs. Only the
+// fields relevant to kind are populated by the caller.
+type promptRequest struct {
+	kind promptKind
+
+	previews       []DiffPreview // overwrite-all managed batch (also unified managed batch)
+	memoryPreviews []DiffPreview // unified memory batch
+	preview        DiffPreview   // single overwrite / statusline source
+
+	paths []string // delete-unknown-all / delete-unknown-tmp-all
+	path  string   // single delete-unknown
+
+	configKey     string
+	manifestValue any
+	rationale     string
+	field         *config.FieldDef
+
+	flatSkills []string
+	conflicts  []SkillsMigrationConflict
+}
+
+// promptResponse carries a prompt outcome. Which fields are meaningful depends
+// on the request kind: approved is the primary yes/no decision, approvedMemory
+// is the second unified overwrite-all decision, and value is the resolved
+// config default.
+type promptResponse struct {
+	approved       bool
+	approvedMemory bool
+	value          any
+}
+
+// promptRouter is the single place install/upgrade prompt decisions flow
+// through. It wraps a Prompter, resolves the optional prompt capabilities once
+// under the fixed capability policy, and applies the fallback for each optional
+// prompt category so callers no longer repeat optional-interface probing.
+type promptRouter struct {
+	prompter      Prompter
+	unified       unifiedOverwritePrompter
+	tmpUnknowns   tmpUnknownsPrompter
+	statusline    statuslineSourcePrompter
+	configDefault configSetDefaultPrompter
+	skills        skillsMigrationPrompter
+}
+
+// newPromptRouter resolves prompter's optional prompt capabilities under the
+// current capability policy. It accepts a nil prompter so validation can run
+// before an installer exists.
+func newPromptRouter(prompter Prompter) *promptRouter {
+	r := &promptRouter{prompter: prompter}
+	if prompter == nil {
+		return r
+	}
+	// Unified overwrite requires the unified interface AND a promptValidator
+	// that reports the unified callback as wired. A prompter that implements
+	// the interface but not promptValidator does NOT get unified overwrite,
+	// preserving the separate managed and memory overwrite-all prompts.
+	if unified, ok := prompter.(unifiedOverwritePrompter); ok && unified != nil {
+		if validator, vok := prompter.(promptValidator); vok && validator.hasOverwriteAllUnified() {
+			r.unified = unified
+		}
+	}
+	// Tmp grouped deletion requires the tmp interface and, when the prompter
+	// also implements promptValidator, the tmp callback reported as wired. A
+	// prompter without promptValidator keeps the capability (legacy Prompter
+	// implementations). PromptFuncs always satisfies the interface, so the
+	// validator probe distinguishes a wired callback from a zero value; when it
+	// is unwired, tmp paths are left untouched rather than routed elsewhere.
+	if grouped, ok := prompter.(tmpUnknownsPrompter); ok {
+		wired := true
+		if validator, vok := prompter.(promptValidator); vok && !validator.hasDeleteUnknownTmpAll() {
+			wired = false
+		}
+		if wired {
+			r.tmpUnknowns = grouped
+		}
+	}
+	if statusline, ok := prompter.(statuslineSourcePrompter); ok {
+		wired := true
+		if validator, vok := prompter.(statuslineSourceValidator); vok && !validator.hasStatuslineSource() {
+			wired = false
+		}
+		if wired {
+			r.statusline = statusline
+		}
+	}
+	if configDefault, ok := prompter.(configSetDefaultPrompter); ok {
+		r.configDefault = configDefault
+	}
+	if skills, ok := prompter.(skillsMigrationPrompter); ok {
+		r.skills = skills
+	}
+	return r
+}
+
+// hasUnifiedOverwrite reports whether the wrapped prompter resolves the managed
+// and memory overwrite-all decisions in one unified pass.
+func (r *promptRouter) hasUnifiedOverwrite() bool { return r.unified != nil }
+
+// hasStatuslineSource reports whether the wrapped prompter can prompt for a
+// user-owned statusline source replacement. Callers gate the (file-reading)
+// diff-preview build on this when the prompter lacks the optional interface.
+func (r *promptRouter) hasStatuslineSource() bool { return r.statusline != nil }
+
+// validateRequiredOverwrite enforces that a Prompter used in overwrite mode
+// wires the required core overwrite and delete callbacks before any overwrite
+// work begins. It preserves the historical early-error messages.
+func (r *promptRouter) validateRequiredOverwrite() error {
+	if r.prompter == nil {
+		return fmt.Errorf(messages.InstallOverwritePromptRequired)
+	}
+	validator, ok := r.prompter.(promptValidator)
+	if !ok {
+		return nil
+	}
+	if !validator.hasOverwriteAll() {
+		return fmt.Errorf(messages.InstallOverwritePromptRequired)
+	}
+	if !validator.hasOverwriteAllMemory() {
+		return fmt.Errorf(messages.InstallOverwritePromptRequired)
+	}
+	if !validator.hasOverwrite() {
+		return fmt.Errorf(messages.InstallOverwritePromptRequired)
+	}
+	if !validator.hasDeleteUnknownAll() {
+		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
+	}
+	if !validator.hasDeleteUnknown() {
+		return fmt.Errorf(messages.InstallDeleteUnknownPromptRequired)
+	}
+	return nil
+}
+
+// route dispatches a prompt request to the wrapped prompter, applying the fixed
+// fallback policy for the optional prompt categories. It is the single entry
+// point for every install/upgrade prompt decision.
+func (r *promptRouter) route(req promptRequest) (promptResponse, error) {
+	switch req.kind {
+	case promptKindOverwriteAll:
+		approved, err := r.prompter.OverwriteAll(req.previews)
+		return promptResponse{approved: approved}, err
+	case promptKindOverwriteAllMemory:
+		approved, err := r.prompter.OverwriteAllMemory(req.previews)
+		return promptResponse{approved: approved}, err
+	case promptKindOverwriteAllUnified:
+		managed, memory, err := r.unified.OverwriteAllUnified(req.previews, req.memoryPreviews)
+		return promptResponse{approved: managed, approvedMemory: memory}, err
+	case promptKindOverwrite:
+		approved, err := r.prompter.Overwrite(req.preview)
+		return promptResponse{approved: approved}, err
+	case promptKindStatuslineSource:
+		// Missing statusline prompt keeps an existing customized source.
+		if r.statusline == nil {
+			return promptResponse{}, nil
+		}
+		approved, err := r.statusline.StatuslineSource(req.preview)
+		return promptResponse{approved: approved}, err
+	case promptKindDeleteUnknownAll:
+		approved, err := r.prompter.DeleteUnknownAll(req.paths)
+		return promptResponse{approved: approved}, err
+	case promptKindDeleteUnknown:
+		approved, err := r.prompter.DeleteUnknown(req.path)
+		return promptResponse{approved: approved}, err
+	case promptKindDeleteUnknownTmpAll:
+		// Missing grouped tmp prompt leaves tmp paths untouched; tmp deletion
+		// only ever happens through this dedicated destructive confirmation.
+		if r.tmpUnknowns == nil {
+			return promptResponse{}, nil
+		}
+		approved, err := r.tmpUnknowns.DeleteUnknownTmpAll(req.paths)
+		return promptResponse{approved: approved}, err
+	case promptKindConfigSetDefault:
+		// Missing config-default prompt uses the migration manifest value.
+		if r.configDefault == nil {
+			return promptResponse{value: req.manifestValue}, nil
+		}
+		value, err := r.configDefault.ConfigSetDefault(req.configKey, req.manifestValue, req.rationale, req.field)
+		return promptResponse{value: value}, err
+	case promptKindConfirmSkillsMigration:
+		// Missing skills-migration prompt proceeds (headless default).
+		if r.skills == nil {
+			return promptResponse{approved: true}, nil
+		}
+		approved, err := r.skills.ConfirmSkillsMigration(req.flatSkills, req.conflicts)
+		return promptResponse{approved: approved}, err
+	default:
+		return promptResponse{}, fmt.Errorf("install: unknown prompt kind %d", req.kind)
+	}
 }

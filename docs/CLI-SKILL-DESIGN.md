@@ -2,15 +2,15 @@
 
 This document is the CLI-specific companion to `docs/SKILL-DESIGN.md`. It does
 not replace the general skill-authoring guide. Use this document when creating
-or reviewing Agent Layer skills that teach agents how to use an installed
-command line interface.
+or reviewing skills that teach agents how to use an installed command line
+interface.
 
 Research and standards in this guide were verified on 2026-05-26. The guide
 separates:
 
 - specification and client behavior
 - evidence-backed guidance for agent performance
-- Agent Layer heuristics for maintainable CLI skills
+- authoring heuristics for maintainable CLI skills
 
 The central rule is simple: **a CLI skill is a router and operating contract,
 not a copied manual**. The skill description routes the agent to the tool; the
@@ -30,9 +30,9 @@ installed CLI's help output supplies the current command reference.
 - Context-performance research: long-context degradation, lost-in-the-middle,
   instruction density, constraint composition, and context engineering.
 
-When this guide says "must", it is an Agent Layer authoring rule. When it says
-"should", it is the default recommendation unless a local product constraint
-requires a different design.
+When this guide says "must", it names a requirement for the CLI-skill authoring
+model described here. When it says "should", it is the default recommendation
+unless a local product constraint requires a different design.
 
 ---
 
@@ -109,15 +109,15 @@ The description should not include:
 
 Length budget:
 
-- 512 characters is the hard maximum for Agent Layer-authored skill
-  descriptions, even though the cross-client Agent Skills specification permits
-  up to 1,024 characters.
-- Prefer 200-260 characters for CLI skills. This range is a repo-local budget,
-  not an external standard: Codex's unknown-context fallback is 8,000
-  characters for the whole initial skill list, including names, descriptions,
-  and paths. A 25-30 skill catalog only has about 260-320 characters per skill
-  before names, paths, and formatting, so descriptions need to stay below that
-  to leave routing headroom.
+- The cross-client Agent Skills specification permits descriptions up to 1,024
+  characters. This guide recommends a more conservative 512-character internal
+  budget.
+- Prefer 200-260 characters for CLI skills. This range is an authoring
+  heuristic, not an external standard: Codex's unknown-context fallback is
+  8,000 characters for the whole initial skill list, including names,
+  descriptions, and paths. A 25-30 skill catalog only has about 260-320
+  characters per skill before names, paths, and formatting, so descriptions
+  need to stay below that to leave routing headroom.
 - Descriptions over 300 characters need a concrete routing reason. Use that
   space only for trigger boundaries, not extra examples or workflow steps.
 
@@ -479,7 +479,8 @@ routing, safety, and workflow rules; installed CLI help provides command syntax.
 
 ## Required Artifacts
 
-- Put agent-only scratch files under `.agent-layer/tmp/`.
+- Put agent-only scratch files under the project's documented scratch or
+  artifact directory.
 - Report every artifact path created.
 
 ## Global Constraints

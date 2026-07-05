@@ -1,0 +1,119 @@
+---
+title: Skills approach
+description: Agent Layer's skill ethos, conceptual root skill model, and mapping to the current bundled skills.
+sidebar_position: 5
+---
+
+Agent Layer skills are meant to be deterministic, reusable workflow modules
+with stable input and output contracts. A root skill should do one kind of work
+well, produce a predictable handoff, and avoid owning orchestration loops that
+belong in higher-level workflows.
+
+For the evidence behind this shape, use the universal best-practice guides:
+[Skill Design](/skill-design), [CLI Skill Design](/cli-skill-design), and
+[Instruction Design](/instruction-design). This page is Agent Layer-specific:
+it describes the ethos and target model for the bundled skill system.
+
+## Design ethos
+
+**Deterministic modules, not improvisation.** A skill should make the same
+contract available every time: accepted inputs, required artifacts, stop
+conditions, verification expectations, and final handoff shape. The agent still
+uses judgment inside the task, but the module boundary should be stable.
+
+**Root skills own one step.** Planning, review, implementation, fixing, and
+verification are different jobs. Keeping them separate improves activation,
+reviewability, and reuse.
+
+**Root skills are hermetic.** A root skill must not call, route to, or depend
+on another skill, and its body should not reference other skills as next steps,
+alternatives, or implementation dependencies. Cross-skill composition belongs
+only in workflow skills. A root skill may reference Agent Layer system sources
+of truth, such as `COMMANDS.md`, only when that source is necessary to execute
+its own contract.
+
+**Workflows own loops.** Iteration, delegation, retry policy, multi-agent
+coordination, and phase-to-phase orchestration belong in workflow skills. Root
+skills should be callable by many workflows without smuggling in a full
+lifecycle.
+
+**Evidence over assertion.** Skills should push agents toward observable
+evidence: read the code, inspect the diff, run documented checks, write or use
+real artifacts, and state what was verified.
+
+**Checkpoints for real decisions.** Human checkpoints should be narrow and
+explicit: architecture tradeoffs, destructive operations, external writes,
+scope changes, or missing required input. The normal path should be
+autonomous.
+
+## Target root skill model
+
+These names are the conceptual target root modules. They are not all current
+bundled skill names yet.
+
+| Target root module | Stable contract | Current implementation mapping |
+| --- | --- | --- |
+| `write-plan` | Turn a requested change into implementation-ready plan, task list, and context artifacts. | `plan-work` |
+| `review-plan` | Review plan artifacts before implementation and report blocking gaps, weak assumptions, and missing verification. | `review-plan` |
+| `implement-plan` | Execute an approved plan against the codebase and verify the result. | `implement-plan` |
+| `review-code` | Review explicit files, diffs, directories, or uncommitted changes and produce prioritized findings. | `review-scope` |
+| `fix-code` | Triage accepted findings or open issues, implement root-cause fixes, and record what changed or remains deferred. | `resolve-findings`; issue-led repair currently lives in the broader `fix-issues` workflow |
+| `verify-work` | Compare completed work against the plan or request and report completeness, regressions, missing checks, and scope drift. | `verify-against-plan` |
+
+The current names are the truth for invocation today. The target names describe
+the desired stable module boundaries as the skill library evolves.
+
+## Workflow skills
+
+Workflow skills compose root skills and own loops. They decide sequencing,
+delegation, retry behavior, and when to move between phases.
+
+Current examples:
+
+- `complete-current-phase` orchestrates roadmap work through planning,
+  implementation, verification, auditing, and cleanup.
+- `ship-pr` owns the pull request lifecycle, including audit, commit, push,
+  CI monitoring, reviewer feedback, and final status checks.
+- `improve-codebase` decomposes broad quality work into reviewable chunks,
+  runs review and fix loops, and delegates to narrower skills when useful.
+- `fix-issues` works through `ISSUES.md` by batching, planning, implementing,
+  auditing, and keeping the ledger current.
+
+Because workflows own orchestration, root skills should stay boring and
+portable. A workflow can call `review-code` several times with different
+scopes; `review-code` should not decide the whole project lifecycle.
+
+## Contract expectations
+
+A root skill should define:
+
+- Inputs it accepts, including file paths, artifacts, issue identifiers, or
+  plain-language scope.
+- Output artifact or report shape, so another skill or workflow can consume it.
+- Any required system source of truth, with a reason the root skill cannot do
+  its own job without it.
+- Stop conditions for missing required input, incompatible state, or user
+  decisions.
+- Verification expectations appropriate to its job.
+- Final handoff fields that are stable enough for follow-up automation.
+
+A root skill should avoid:
+
+- Hidden mode switches that change the main output contract.
+- Calling or naming other skills as part of its own procedure.
+- Product-wide orchestration loops.
+- Broad "ask when uncertain" fallbacks.
+- Duplicating evidence and best-practice rationale already maintained in the
+  universal guides.
+
+## Relationship to universal guides
+
+The universal guides are the evidence base. This page is the Agent Layer design
+choice built on top of that evidence.
+
+- Use [Skill Design](/skill-design) for portable guidance on routing,
+  progressive disclosure, section ordering, evaluation, and context budget.
+- Use [CLI Skill Design](/cli-skill-design) when a skill routes agents to an
+  installed command-line tool.
+- Use [Instruction Design](/instruction-design) to keep always-loaded
+  instructions separate from workflow-specific skill behavior.
