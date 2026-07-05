@@ -117,6 +117,13 @@ func TestPromptRouter_StatuslineSource_FallbackNeverOverwrites(t *testing.T) {
 	if resp.approved {
 		t.Fatal("missing statusline prompt must keep the existing source (not approved)")
 	}
+	resp, err = newPromptRouter(PromptFuncs{}).route(promptRequest{kind: promptKindStatuslineSource})
+	if err != nil {
+		t.Fatalf("route zero-value PromptFuncs statusline: %v", err)
+	}
+	if resp.approved {
+		t.Fatal("zero-value PromptFuncs statusline prompt must keep the existing source (not approved)")
+	}
 }
 
 func TestPromptRouter_ConfigSetDefault_FallbackUsesManifestValue(t *testing.T) {
@@ -129,6 +136,13 @@ func TestPromptRouter_ConfigSetDefault_FallbackUsesManifestValue(t *testing.T) {
 	}
 	if resp.value != "manifest" {
 		t.Fatalf("expected manifest value fallback, got %v", resp.value)
+	}
+	resp, err = newPromptRouter(PromptFuncs{}).route(promptRequest{kind: promptKindConfigSetDefault, manifestValue: "manifest"})
+	if err != nil {
+		t.Fatalf("route zero-value PromptFuncs config default: %v", err)
+	}
+	if resp.value != "manifest" {
+		t.Fatalf("zero-value PromptFuncs expected manifest value fallback, got %v", resp.value)
 	}
 }
 
@@ -157,6 +171,13 @@ func TestPromptRouter_ConfirmSkillsMigration_FallbackProceeds(t *testing.T) {
 	}
 	if !resp.approved {
 		t.Fatal("missing skills-migration prompt must proceed (approved)")
+	}
+	resp, err = newPromptRouter(PromptFuncs{}).route(promptRequest{kind: promptKindConfirmSkillsMigration})
+	if err != nil {
+		t.Fatalf("route zero-value PromptFuncs skills migration: %v", err)
+	}
+	if !resp.approved {
+		t.Fatal("zero-value PromptFuncs skills-migration prompt must proceed (approved)")
 	}
 
 	declined := newPromptRouter(PromptFuncs{
