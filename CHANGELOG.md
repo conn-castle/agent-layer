@@ -1,6 +1,31 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.12.2 - 2026-07-06
+
+Patch release for the v0.12 line. Tightens bundled skill and instruction contracts, fixes installer prompt routing edge cases, adds public skill-architecture documentation, and hardens the release workflow before signing.
+
+### Added
+- Added the Agent Layer-specific Skills approach documentation page, including the target root-skill model, workflow-skill boundaries, and the mapping from target modules to current bundled skills.
+- Added template tests covering bundled skill and instruction contract expectations so future wording changes are checked automatically.
+
+### Changed
+- Bundled skill templates now state scope, deferral, review, and orchestration rules more precisely across planning, review, issue fixing, PR handling, verification, and autonomous-loop workflows.
+- Multi-agent plan review instructions now make reviewer orchestration and synthesis responsibilities clearer, while participant terminology is standardized across skill and instruction docs.
+- The Agent Dispatch catalog skill now activates only for explicit external dispatch targets or skill-directed dispatch, leaving generic subagent work to built-in subagent behavior.
+- Universal skill, CLI-skill, and instruction design guides were generalized for portable authoring guidance and now separate client/specification requirements from Agent Layer-specific conventions.
+- Release preflight documentation now reflects that CI, release-script checks, and upgrade-doc validation run before tagging.
+- The release workflow now runs `make ci` before importing signing credentials.
+
+### Fixed
+- Installer and upgrade prompt routing now flow through a shared prompt router, preserving required overwrite/delete prompt validation while centralizing optional prompt fallbacks.
+- Statusline source replacement prompting is now gated on the actual optional prompt capability, preventing zero-value prompt implementations from being treated as wired callbacks.
+- Zero-value prompt fallback behavior is covered for unified overwrite, grouped tmp deletion, statusline source, config defaults, and skills migration prompts.
+- End-to-end assertions were updated for the retired generated Codex `.codex/AGENTS.md` shim.
+
+### Internal
+- Added v0.12.2 migration and template ownership manifests. The migration has no operations; the release updates managed templates and docs only.
+
 ## v0.12.1 - 2026-07-04
 
 Patch release for the v0.12 line. Fixes binary Homebrew publishing, preserves Codex hook trust state across chime refreshes, and retires the generated `.codex/AGENTS.md` shim that duplicated root `AGENTS.md` when Codex used repo-local config.
