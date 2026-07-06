@@ -1,6 +1,6 @@
 # Interface Audit Update Workflow
 
-Use this file only when `interface-audit` is invoked with `--update`.
+Use this file only when `/interface-audit` is invoked with `--update`.
 
 Update one report in place, then return to the parent skill's final
 recommendation gate.
@@ -17,7 +17,7 @@ find .agent-layer/tmp -maxdepth 1 -type f -name 'interface-audit.[0-9]*.md' -pri
 ```
 
 If the command returns no path, stop. Tell the user no existing interface audit
-report was found and ask whether to run a fresh `interface-audit`.
+report was found and ask whether to run a fresh `/interface-audit`.
 
 Before editing, read enough of the selected report to preserve its structure.
 Do not create a parallel update report.

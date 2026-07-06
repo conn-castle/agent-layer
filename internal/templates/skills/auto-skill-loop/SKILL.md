@@ -1,7 +1,7 @@
 ---
 name: auto-skill-loop
 description: >-
-  Run an explicitly authorized autonomous loop for fix-issues or improve-codebase: dispatch worker agents, preserve blocked work on pushed branches, ship and merge ready PRs, and continue until interrupted or autonomous work is exhausted.
+  Run an explicitly authorized autonomous loop for /fix-issues or /improve-codebase: dispatch worker agents, preserve blocked work on pushed branches, ship and merge ready PRs, and continue until interrupted or autonomous work is exhausted.
 ---
 
 # auto-skill-loop
@@ -11,7 +11,7 @@ This is a parent orchestrator skill. Do not implement or ship code yourself.
 ## Required inputs
 
 Fail before side effects unless all are present:
-- `worker_skill`: exactly `fix-issues` or `improve-codebase`
+- `worker_skill`: exactly `/fix-issues` or `/improve-codebase`
 - `implementer`: dispatch agent role
 - `shipper`: dispatch agent role
 - `review_agents`: one or more dispatch agent roles
@@ -19,16 +19,16 @@ Fail before side effects unless all are present:
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
 `antigravity`). Infer the agent only when unambiguous from the model; otherwise
-fail. Before dispatching, follow `agent-dispatch`, inspect live options, and
+fail. Before dispatching, follow `/agent-dispatch`, inspect live options, and
 fail if a requested override is unsupported.
 
-Pass `review_agents` to any delegated skill that uses `multi-agent-plan-review`.
+Pass `review_agents` to any delegated skill that uses `/review-plan`.
 
 ## References
 
 Read the one selected worker skill contract. Do not read both.
-- `fix-issues`: [references/fix-issues-loop.md](references/fix-issues-loop.md)
-- `improve-codebase`: [references/improve-codebase-loop.md](references/improve-codebase-loop.md)
+- `/fix-issues`: [references/fix-issues-loop.md](references/fix-issues-loop.md)
+- `/improve-codebase`: [references/improve-codebase-loop.md](references/improve-codebase-loop.md)
 
 Read [references/blocker-classification.md](references/blocker-classification.md)
 only when a worker returns a checkpoint or blocker candidate.
@@ -55,7 +55,7 @@ notes in `ISSUES.md`.
    or discard work; if leaving an attempt, commit and push its branch first.
 2. Create or reuse one batch branch for autonomous, non-blocked work.
 3. Dispatch the implementer with the selected worker skill, the current ledger
-   context, and the review agents to any delegated `multi-agent-plan-review` run.
+   context, and the review agents to any delegated `/review-plan` run.
 4. Answer worker checkpoints as the human proxy when no user-only decision is
    required. If user input is required, commit and push the branch, leave any
    PR open, record the blocker, and checkout the primary branch. Then start a

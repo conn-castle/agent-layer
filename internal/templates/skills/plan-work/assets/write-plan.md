@@ -1,11 +1,3 @@
----
-name: write-plan
-description: >-
-  Write a scoped implementation plan, task list, and context file for a
-  requested change, roadmap slice, execution strategy, task breakdown, or
-  pre-implementation design artifact.
----
-
 # write-plan
 
 Write a plan that is clear enough for a fresh agent or junior developer to
@@ -59,15 +51,26 @@ before writing.
 ### Phase 1: Preflight
 
 1. Restate the objective in one sentence.
-2. Identify the exact planning target: feature, bug fix, refactor, roadmap
-   slice, issue batch, or execution strategy.
-3. Read only the files needed to understand the target area. Avoid broad repo
+2. Identify the input source type: freeform request, issue, backlog item,
+   roadmap slice, error report, failing check, existing artifact set, or other
+   explicit source.
+3. Normalize the source into the planning contract:
+   - planning target: feature, bug fix, refactor, roadmap slice, issue batch,
+     or execution strategy
+   - objective and desired outcome
+   - acceptance criteria or observable success signals
+   - explicit constraints, non-goals, and user-provided requirements
+   - source evidence or references the plan must preserve
+   - unknowns that must be resolved before the plan can be implementation-ready
+4. Read only the files needed to understand the target area. Avoid broad repo
    scans unless the request truly demands it.
-4. For architectural, roadmap, issue, or backlog work, read the relevant memory
+5. For architectural, roadmap, issue, or backlog work, read the relevant memory
    files before committing to a plan.
-5. Drive substantive unknowns to ground by reading code/docs, running small
+6. Drive substantive unknowns to ground by reading code/docs, running small
    experiments in `.agent-layer/tmp/`, checking current external docs when
-   needed, or asking the user.
+   needed, or asking the user. If the source needs a larger investigation
+   before planning can be honest, narrow the plan to that investigation or use
+   the `escalate` handoff verdict.
 
 ### Phase 2: Draft the plan
 
@@ -83,6 +86,7 @@ Write the plan file with these sections:
    - assumptions
 3. `## Context`
    - key files, modules, or docs involved
+   - source type and source evidence or references
    - any relevant roadmap or decision constraints
    - user-confirmed decisions that settled substantive choices, if any
 4. `## Approach`
@@ -153,6 +157,9 @@ Context requirements:
 Before presenting the artifacts, check:
 
 - scope matches the user request exactly
+- the source type, objective, constraints, acceptance criteria, and unresolved
+  unknowns were normalized before drafting
+- source evidence or references are preserved in the plan when supplied
 - non-goals are explicit
 - dependencies are ordered before dependents
 - verification is credible for the risk level

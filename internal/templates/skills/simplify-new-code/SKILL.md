@@ -4,7 +4,7 @@ description: >-
   Scan the current uncommitted diff for agent-added scope creep — speculative
   flexibility, premature abstractions, dead branches, defensive scaffolding,
   half-finished work — and auto-apply simplifications, preserving
-  user-requested behavior. Use `simplify-codebase` for full-codebase
+  user-requested behavior. Use `/simplify-codebase` for full-codebase
   complexity sweeps.
 ---
 
@@ -19,14 +19,14 @@ It reviews both individual hunks and the changed structure they create,
 asking whether added abstraction, indirection, or complexity is justified
 by the current behavior.
 
-Use `simplify-codebase` instead when the goal is a codebase-wide complexity
+Use `/simplify-codebase` instead when the goal is a codebase-wide complexity
 sweep over committed code. This skill never operates outside the current diff
 and never touches pre-existing code adjacent to the diff.
 
 ## Defaults
 
 - Default scope is the **current uncommitted diff only** (staged, unstaged,
-  and untracked production code; tests are out of scope — `prune-new-tests`
+  and untracked production code; tests are out of scope — `/prune-new-tests`
   handles them).
 - Default disposition is **preserve requested behavior; remove what the agent
   added beyond it**. Removal is one tool among several — inline, flatten,
@@ -124,7 +124,7 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 
 1. Run `git status --porcelain`, `git diff --cached`, `git diff`, and
    `git ls-files --others --exclude-standard` to find changed production
-   files (excluding test files — those are `prune-new-tests`'s domain).
+   files (excluding test files — those are `/prune-new-tests`'s domain).
 2. Read `COMMANDS.md` to identify the test command for verification.
 3. Record the changed files and the diff scope in the report under
    `## Scope`.
@@ -182,12 +182,12 @@ Write `.agent-layer/tmp/simplify-new-code.<run-id>.report.md` with:
    - number of re-scan passes, findings per pass, and convergence note
 8. `## Out-of-Scope Observations`
    - smells noticed in pre-existing code adjacent to the diff (not
-     applied); recommend `simplify-codebase` if material
+     applied); recommend `/simplify-codebase` if material
 
 ## Guardrails
 
 - Do not redesign module structure, file layout, public APIs, or naming as
-  a cleanup shortcut; use `simplify-codebase` for broader redesign.
+  a cleanup shortcut; use `/simplify-codebase` for broader redesign.
 - Do not optimize for performance.
 - Do not enforce stylistic preferences where the existing code is
   acceptably clear.
@@ -217,4 +217,4 @@ After writing the report:
 2. State total findings, applied count, reverted count, and re-scan
    iterations.
 3. If `Out-of-Scope Observations` is non-empty, recommend a follow-up
-   `simplify-codebase` run scoped to the named files.
+   `/simplify-codebase` run scoped to the named files.

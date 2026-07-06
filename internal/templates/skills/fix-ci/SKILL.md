@@ -3,7 +3,7 @@ name: fix-ci
 description: >-
   Diagnose and fix failing CI/checks on an open PR: inspect logs/artifacts,
   create a local reproducer when possible, patch, audit, commit, push, and
-  re-check. Use `repair-checks` for local failures.
+  re-check. Use `/repair-checks` for local failures.
 ---
 
 # fix-ci
@@ -34,7 +34,7 @@ Accept any combination of:
 ## Required behavior
 
 Delegate to:
-- `audit-and-fix-uncommitted-changes` before every commit
+- `/audit-and-fix-uncommitted-changes` before every commit
 
 ## Global constraints
 
@@ -84,7 +84,7 @@ Delegate to:
 
 ### Phase 3: Audit and commit (Auditor + Committer)
 
-1. Use the `audit-and-fix-uncommitted-changes` skill to review and stabilize the fix.
+1. Use the `/audit-and-fix-uncommitted-changes` skill to review and stabilize the fix.
 2. Stage all changes: `git add -A`
 3. Craft a commit message describing the CI fix.
 4. Commit and push.
@@ -113,7 +113,7 @@ Delegate to:
 - `gh pr checks <pr-number>` shows every required CI check passing on the latest pushed commit.
 - Logs and any available artifacts for each failed run were inspected; missing or unavailable artifacts were called out explicitly.
 - Each fix cycle recorded the local reproducer command, initial red result, fix, and final green result before committing.
-- Each fix cycle committed through the `audit-and-fix-uncommitted-changes` skill before push; no check was disabled, skipped, weakened, or had its threshold lowered.
+- Each fix cycle committed through the `/audit-and-fix-uncommitted-changes` skill before push; no check was disabled, skipped, weakened, or had its threshold lowered.
 - The fix iteration count is recorded and stayed below the 3-attempt escalation threshold for any single recurring failure.
 - Scope of the changes is confined to what the CI failures required, with no opportunistic edits.
 

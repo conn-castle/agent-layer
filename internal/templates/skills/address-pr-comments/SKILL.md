@@ -3,7 +3,7 @@ name: address-pr-comments
 description: >-
   Handle reviewer feedback on an open PR: evaluate comments, implement agreed
   fixes, justify or track deferrals, reply to every comment, audit substantive
-  changes when warranted, then commit and push. Use `fix-ci` for failing checks.
+  changes when warranted, then commit and push. Use `/fix-ci` for failing checks.
 ---
 
 # address-pr-comments
@@ -37,8 +37,8 @@ Accept any combination of:
 ## Required behavior
 
 Use judgement before committing:
-- Delegate to `audit-and-fix-uncommitted-changes` when the implemented changes are substantive, touch more than 500 lines of code, or touch more than 10 files excluding docs.
-- Do not call `audit-and-fix-uncommitted-changes` for non-substantive changes such as docs-only updates, typo fixes, obvious bug fixes, metadata-only edits, or reply-only outcomes.
+- Delegate to `/audit-and-fix-uncommitted-changes` when the implemented changes are substantive, touch more than 500 lines of code, or touch more than 10 files excluding docs.
+- Do not call `/audit-and-fix-uncommitted-changes` for non-substantive changes such as docs-only updates, typo fixes, obvious bug fixes, metadata-only edits, or reply-only outcomes.
 - Always run verification appropriate to the actual change.
 
 ## Context Discipline
@@ -99,8 +99,8 @@ Evaluation rules:
 ### Phase 4: Audit decision and commit (Auditor + Committer)
 
 1. Decide whether the implemented changes are substantive using the Required behavior rules above.
-2. For substantive changes, use the `audit-and-fix-uncommitted-changes` skill to review and stabilize them.
-3. For non-substantive changes, do not call `audit-and-fix-uncommitted-changes`; record the judgement in your working notes and run targeted verification appropriate to the change.
+2. For substantive changes, use the `/audit-and-fix-uncommitted-changes` skill to review and stabilize them.
+3. For non-substantive changes, do not call `/audit-and-fix-uncommitted-changes`; record the judgement in your working notes and run targeted verification appropriate to the change.
 4. Stage all changes: `git add -A`
 5. Craft a commit message summarizing the comment-driven changes.
 6. Commit and push.
@@ -172,8 +172,8 @@ it must be fixed, not deferred.
 - Do not disagree with a comment just to avoid work or defer the issue.
 - Do not defer a comment without first recording the item in the named location.
 - Do not implement changes that conflict with the project's established patterns without justification.
-- Do not call `audit-and-fix-uncommitted-changes` reflexively for non-substantive changes.
-- Do not skip `audit-and-fix-uncommitted-changes` when the changes are substantive.
+- Do not call `/audit-and-fix-uncommitted-changes` reflexively for non-substantive changes.
+- Do not skip `/audit-and-fix-uncommitted-changes` when the changes are substantive.
 - Do not reply to comments before the changes are committed and pushed.
 - If a previously declined suggestion is subsequently implemented, the follow-up reply must acknowledge the reversal.
 
@@ -185,7 +185,7 @@ it must be fixed, not deferred.
 - For every disagreed comment, the reply contains a specific technical justification.
 - For every deferred comment, the named tracking location exists and the deferral is legitimate.
 - The Phase 6 reply audit was performed by a fresh-context reviewer subagent (not by the agent that wrote the replies) and every comment came back with a `pass` verdict — no `missing_reply`, `missing_verdict`, `hollow_fix`, `unjustified_decline`, `lazy_deferral`, or `generic_dismissal`.
-- Substantive changes were reviewed with `audit-and-fix-uncommitted-changes`; for non-substantive changes, the final handoff states why it was not called and what verification ran.
+- Substantive changes were reviewed with `/audit-and-fix-uncommitted-changes`; for non-substantive changes, the final handoff states why it was not called and what verification ran.
 
 ## Final handoff
 

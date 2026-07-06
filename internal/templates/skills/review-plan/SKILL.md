@@ -1,192 +1,143 @@
 ---
 name: review-plan
 description: >-
-  Review a plan/task/context artifact set before implementation, reporting
-  missing scope, weak assumptions, sequencing risks, and verification gaps.
+  Review and repair a plan/task/context artifact set with required dispatched
+  review agents, synthesize suspect feedback, revise accepted issues, and repeat
+  until the plan is implementation-ready.
 ---
 
 # review-plan
 
-Review a plan/task/context artifact set before implementation. This is a
-report-only review of explicitly supplied artifacts, not a code audit and not
-an implementation pass.
+Cross-agent pre-implementation plan review and repair. Dispatch review agents
+for independent critique; keep judgment, synthesis, artifact revision, and
+readiness decisions with the current orchestrator.
 
 ## Required inputs
 
-The caller must provide paths to all three artifacts:
+Fail before side effects unless all are present:
+- `review_agents`: one or more dispatch agent roles
+- plan artifact path
+- task artifact path
+- context artifact path
 
-- a plan file
-- a task file
-- a context file
+Optional input:
+- spec artifact path, used as the review contract when present
 
-If any artifact path is missing, stop and ask for the missing path. Do not
-discover, infer, or auto-select artifacts from `.agent-layer/tmp/`.
+Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
+`antigravity`). Infer the agent only when unambiguous. Before dispatching, follow
+`/agent-dispatch`, inspect live options, and fail if a requested override is
+unsupported.
 
-## Defaults
+## Required artifacts
 
-- Produce a report only. Do not modify implementation files, plan artifacts,
-  task artifacts, or context artifacts.
-- Treat the supplied artifact set as the review contract.
-- Surface missing user decisions as findings or open questions; do not ask the
-  user to resolve them during this report-only review.
-- If any artifact path does not exist or cannot be read, stop and ask for a
-  corrected path.
-
-## Decision checkpoint standard
-
-Use this standard for user-owned decisions:
-
-- A user decision is required when repo evidence leaves multiple viable
-  approaches and choosing one would commit the user to materially different
-  behavior, public API, CLI behavior, compatibility, architecture, ownership
-  boundaries, sequencing, rollout, scope, risk, cost, data migration, security
-  or privacy posture, or destructive or irreversible work.
-- A user decision is not required for routine implementation details,
-  mechanical choices, verification selection, context gathering, or choices
-  already settled by the user request, roadmap, DECISIONS.md, repo conventions,
-  or supplied artifacts.
-
-A plan satisfies this standard by recording the user-confirmed decision, citing
-the source that already settles it, or narrowing scope so the decision is no
-longer needed.
-
-## Required artifact
-
-Write the report to:
-
+Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`:
+- `.agent-layer/tmp/review-plan.<run-id>.state.md`
 - `.agent-layer/tmp/review-plan.<run-id>.report.md`
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create the file before writing.
+Create both before writing. Store review agent prompt/output artifacts under
+`.agent-layer/tmp/` with the same prefix and record each path in state.
 
-## Multi-agent pattern
+## Rules
 
-Use built-in subagents as independent review lenses when available. Keep
-artifact loading, artifact summary extraction, final judgment, and report
-synthesis with the current agent.
+- Review against the spec when a spec path is supplied; otherwise review against
+  the plan's stated objective and scope.
+- Use `assets/agent-review-prompt.md` for dispatched review agent runs. Do not
+  ask review agents to edit artifacts.
+- Treat review agent output as suspect. Accept a suggestion only when you agree with
+  it.
+- Classify each finding as `accepted`, `rejected`, `duplicate`, or
+  `substantive-user-decision`; record a one-line reason.
+- This is not a report-only review: revise the plan/task/context artifacts for
+  accepted findings and resolved user decisions.
+- Revise artifacts only for accepted findings and resolved user decisions.
+- Ask the user before applying a substantive change or tradeoff not settled by
+  the spec or plan. Use concrete options with brief pros, cons, and a
+  recommendation.
+- Iterate until no accepted unresolved findings remain and no substantive user
+  decision is pending.
+- Dispatch review agents one at a time unless the dispatch implementation is known
+  to be safe for concurrent review agent launches in the current repo.
 
-Recommended roles:
+## Workflow
 
-1. `Artifact alignment reviewer`: checks whether the plan, task list, and
-   context file agree on objective, scope, non-goals, dependencies, sequencing,
-   and exit criteria.
-2. `Assumption reviewer`: looks for claims the artifacts treat as true without
-   evidence, including API behavior, repo conventions, existing coverage,
-   architecture constraints, command availability, migration safety, and
-   compatibility.
-3. `Decision reviewer`: looks for user-owned decisions under the decision
-   checkpoint standard that have not actually been made.
-4. `Experience reviewer`: looks for ways the plan could harm end-user
-   experience, developer experience, operator experience, support burden, or
-   maintenance paths.
-5. `Verification reviewer`: stress-tests the test, docs, memory, and update
-   expectations.
+### Phase 1: Preflight
 
-## Review workflow
+1. Read the plan, task, and context artifacts fully.
+2. Read the spec if one was supplied.
+3. Confirm the artifacts describe the same objective, scope, and execution
+   contract.
+4. Normalize dispatch agent roles through live `al dispatch` options.
+5. Record artifact paths, dispatch agent roles, normalized dispatch flags, and
+   current round in the state file.
 
-Use an adversarial but evidence-backed posture: try to falsify the plan against
-its stated objective, artifact set, and relevant repo constraints. Challenge
-assumptions and look for plan-level hidden coupling, edge cases, and failure
-modes.
+### Phase 2: Dispatch review agents
 
-### Phase 1: Extract artifact intent
+For each review agent dispatch role, dispatch a focused prompt using
+`assets/agent-review-prompt.md` and containing:
+- plan, task, context, and optional spec paths
+- instruction to review only the artifact set
+- instruction to report blockers, weak verification, missing scope, sequencing
+  gaps, hidden assumptions, and docs/tests/memory gaps
+- instruction to avoid rewriting the plan
 
-From the plan, task, and context artifacts, extract:
+Capture the useful review agent result or report path in the state file.
 
-- objective
-- in-scope items
-- explicit non-goals
-- sequencing and dependencies
-- promised tests or verification
-- promised docs or memory updates
-- user-confirmed decisions and still-open decision points
-- exit criteria
-- key files and entry point from the context file
+### Phase 3: Synthesize
 
-### Phase 2: Evaluate with independent review lenses
+For every review agent finding:
+1. Validate it against the artifacts and repo context.
+2. Classify it under `Rules`.
+3. Ignore speculative, unsupported, out-of-scope, or merely stylistic findings.
+4. Merge duplicates before revising artifacts.
 
-Use the recommended review roles as independent lenses. Use repository and
-memory files to validate concrete artifact claims, such as paths, sequencing,
-roadmap constraints, or verification commands. Do not use that context to hunt
-for unrelated implementation issues.
+### Phase 4: Revise accepted findings
 
-Check for:
+Keep revisions scoped to implementation readiness:
+- clarify scope or non-goals
+- fix sequencing
+- strengthen verification
+- add missing docs/tests/memory steps
+- update context paths, entry point, or constraints
 
-- missing requirements or non-goals
-- hidden large refactors
-- dependencies ordered after dependents
-- risky assumptions presented as settled
-- user-owned decisions presented as settled, omitted entirely, or lacking a
-  recorded user-confirmed choice under the decision checkpoint standard
-- end-user, developer, operator, support, or maintenance experience risks
-- roadmap, issue, backlog, or decision constraints that were missed
-- context file gaps: missing key files, stale paths, invalid paths, or missing
-  entry point
-- weak or missing verification commands
-- missing test work for risky changes
-- missing docs or memory updates
-- exit criteria that are subjective or not testable
-- task list items that are too large or vague to execute safely
+Do not convert rejected suggestions into churn.
 
-### Phase 3: Synthesize actionable findings
+### Phase 5: Repeat to alignment
 
-Each finding must include:
+After any artifact revision, repeat Phases 2-4.
 
-- `Title`
-- `Severity`: Critical | High | Medium | Low
-- `Confidence`: High | Medium | Low
-- `Location`: exact artifact path and section
-- `Why it matters`
-- `Evidence`
-- `Recommendation`
+### Phase 6: Report
 
-Every finding must be tied to the artifact set under review.
+Write the final report with these sections:
+1. `# Multi-Agent Plan Review Summary`
+2. `## Inputs`
+3. `## Review Agent Rounds`
+4. `## Accepted Changes`
+5. `## Rejected Suggestions`
+6. `## User Decisions`
+7. `## Final Readiness`
 
-## Required report structure
-
-The report must contain:
-
-1. `# Plan Review Summary`
-   - plan path
-   - task path
-   - context path
-   - short outcome summary
-2. `## Findings`
-   - findings first, ordered by severity
-3. `## Open Questions`
-   - only unresolved items that block confidence
-4. `## Strengths`
-   - short list of what the plan does well
-5. `## Recommendation`
-   - `approve`
-   - `approve-with-changes`
-   - `revise`
+`Final Readiness` must be exactly one of:
+- `implementation-ready`
+- `blocked-for-user-decision`
 
 ## Guardrails
 
-- Do not report vague "needs more detail" complaints without naming what is
-  missing.
-- Do not invent implementation problems or preferred alternatives that are not
-  implied by the artifacts.
-- If the plan is ambiguous, say so explicitly in findings or open questions
-  instead of guessing intent.
-- Do not ask the user to make plan decisions during review; report missing
-  decision checkpoints as findings or open questions.
-- Do not widen this into a code review.
-- If a finding depends on an assumption, say so explicitly.
+- Do not treat review agent consensus as truth or hide rejected suggestions.
+- Do not widen implementation scope or weaken verification to satisfy a
+  review agent preference.
 
 ## Definition of done
 
-- The report exists with every required section.
-- Every finding names artifact path, section, severity, confidence, evidence,
-  and specific recommendation.
-- The report ends with exactly one recommendation: `approve`,
-  `approve-with-changes`, or `revise`.
-- Plan, task, and context artifacts were not modified.
+- All required artifacts and dispatch agent roles were validated.
+- Every review agent dispatch role ran with `assets/agent-review-prompt.md`.
+- Every review agent finding was classified with a reason.
+- Accepted findings were resolved in the artifacts or escalated through a human
+  checkpoint.
+- The final report exists and declares `implementation-ready` or
+  `blocked-for-user-decision`.
 
 ## Final handoff
 
-After writing the report:
-
-1. Echo the report path.
-2. Summarize the top findings in chat.
-3. State the recommendation clearly.
+Echo the report path, the reviewed plan/task/context paths, the review agent
+dispatch roles used, accepted changes made, rejected suggestions, and
+final readiness.

@@ -131,7 +131,7 @@ If the root cause is ambiguous after investigation, escalate with the competing 
 4. If diagnosis-only mode was requested, stop here:
    - log the finding to `ISSUES.md` with the root cause, test location, and next step
    - write the report
-   - when no broader orchestrator already owns closeout, use the `finish-task` skill
+   - when no broader orchestrator already owns closeout, use the `/finish-task` skill
    - hand off
 
 ### Phase 5: Fix the root cause (Fixer)
@@ -141,7 +141,7 @@ If the root cause is ambiguous after investigation, escalate with the competing 
 3. If the correct fix is materially larger than a targeted change, escalate before proceeding.
 
 If the fix touches scope that accumulates obvious local complexity or dead scaffolding:
-- use the `simplify-new-code` skill
+- use the `/simplify-new-code` skill
 - then continue to Phase 6
 
 ### Phase 6: Verify (Verifier)
@@ -150,7 +150,7 @@ If the fix touches scope that accumulates obvious local complexity or dead scaff
 2. Run the repo's documented check lane to confirm no regressions.
 3. If checks fail for reasons unrelated to the fix, log them and do not mask them.
 
-When no broader orchestrator already owns closeout, use the `finish-task` skill here.
+When no broader orchestrator already owns closeout, use the `/finish-task` skill here.
 If it reveals stale memory or incomplete verification, jump back to the earliest affected phase.
 
 ## Required report structure

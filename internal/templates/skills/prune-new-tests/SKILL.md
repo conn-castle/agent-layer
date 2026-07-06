@@ -4,7 +4,7 @@ description: >-
   Burden-of-proof review of tests added in the current uncommitted diff:
   auto-delete any new test that can't justify itself with a production-code
   mutation that would flip its assertion given the test's actual input. Use
-  `audit-tests` for full-suite health; use `boost-coverage` to add tests.
+  `/audit-tests` for full-suite health; use `/boost-coverage` to add tests.
 ---
 
 # prune-new-tests
@@ -16,8 +16,8 @@ the test's actual input**. Tests that cannot are auto-deleted. Tests that
 target real behavior but pass for the wrong reason are also deleted in this
 prune-only pass and reported as surviving coverage gaps, not hardened in place.
 
-Use `audit-tests` instead when the target is the full existing suite. Use
-`boost-coverage` instead when the goal is to **add** tests to raise coverage.
+Use `/audit-tests` instead when the target is the full existing suite. Use
+`/boost-coverage` instead when the goal is to **add** tests to raise coverage.
 
 ## Defaults
 
@@ -86,7 +86,7 @@ and write the report.
   (consult `COMMANDS.md`) and observe the output. Record what ran and the
   outcome.
 - Do not replace deleted tests with "stronger" tests in the same run. Report
-  the resulting gap so a separate `boost-coverage` invocation can address it
+  the resulting gap so a separate `/boost-coverage` invocation can address it
   deliberately.
 - Do not lower coverage thresholds or skip checks to clear failures. If a
   deletion causes a real coverage shortfall, surface it in the report.
@@ -152,7 +152,7 @@ and write the report.
 
 For every deleted test with a non-null reviewer `coverage_gap`, list the
 intended production behavior and the missing discriminating signal under
-`## Surviving Coverage Gaps` so a follow-up `boost-coverage` run can address it
+`## Surviving Coverage Gaps` so a follow-up `/boost-coverage` run can address it
 deliberately. For deleted tests with a null `coverage_gap`, record no surviving
 gap; the verdict already records that the test targeted no real behavior. If a
 null `coverage_gap` conflicts with the reviewer `reason`, surface the
@@ -175,12 +175,12 @@ Write `.agent-layer/tmp/prune-new-tests.<run-id>.report.md` with:
 7. `## Survival Check`
    - kept / total, ratio, and the suspect flag if `> 0.90`
 8. `## Surviving Coverage Gaps`
-   - behaviors that lost coverage and warrant a `boost-coverage` follow-up
+   - behaviors that lost coverage and warrant a `/boost-coverage` follow-up
 
 ## Guardrails
 
 - Do not delete pre-existing tests, even when they look low-value. That is
-  `audit-tests`'s domain and requires explicit opt-in.
+  `/audit-tests`'s domain and requires explicit opt-in.
 - Do not preserve a test on the strength of the implementer's narrative.
   The reviewer never saw that narrative, and the orchestrator must not
   reintroduce it.
@@ -214,4 +214,4 @@ After writing the report:
 2. State the total added tests and the kept/deleted counts.
 3. Name the survival ratio and whether the suspect flag fired.
 4. If `Surviving Coverage Gaps` is non-empty, recommend running
-   `boost-coverage` against the listed behaviors.
+   `/boost-coverage` against the listed behaviors.

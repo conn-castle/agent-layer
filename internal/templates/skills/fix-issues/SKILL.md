@@ -2,8 +2,8 @@
 name: fix-issues
 description: >-
   Fix open `ISSUES.md` items: plan a batch, implement, audit, verify, and keep
-  the ledger current. Use `debug-issue` for one unexplained symptom or
-  `resolve-findings` for review reports.
+  the ledger current. Use `/debug-issue` for one unexplained symptom or
+  `/resolve-findings` for review reports.
 ---
 
 # fix-issues
@@ -32,8 +32,7 @@ Create:
 - `.agent-layer/tmp/fix-issues.<run-id>.report.md`
 
 Create files with `touch` before writing.
-Record delegated `write-plan` and `multi-agent-plan-review` artifact paths in the
-report as they appear.
+Record delegated `/plan-work` artifact paths in the report as they appear.
 
 ## Inputs
 
@@ -42,7 +41,7 @@ Accept any combination of:
 - whether this run is plan-only or allowed to execute after readiness gating
 - a verification depth preference
 - a scope preference such as targeted or all-selected
-- `review_agents`: one or more dispatch agent roles for `multi-agent-plan-review`
+- `review_agents`: one or more dispatch agent roles for `/plan-work`
 
 Fail before side effects unless `review_agents` is present. They may be terse (`codex high`, `claude opus xhigh`,
 `antigravity`). Infer the agent only when unambiguous.
@@ -51,8 +50,8 @@ Fail before side effects unless `review_agents` is present. They may be terse (`
 
 Recommended roles:
 1. `Issue triage lead`: selects the issue batch.
-2. `Planner`: invokes `write-plan` for the selected issue batch.
-3. `Plan review agents`: handled through `multi-agent-plan-review`.
+2. `Planner`: invokes `/plan-work` for the selected issue batch.
+3. `Plan review agents`: handled through `/plan-work`.
 4. `Execution gatekeeper`: decides whether the current batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
 5. `Implementer`: owns the code changes.
 6. `Auditor`: reviews touched areas for regressions and missed fixes.
@@ -106,21 +105,17 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 5. Order the batches so that prerequisite fixes land first.
 6. State the full issue set, any reclassifications, the batch breakdown, and the execution order before proceeding.
 
-### Phase 2: Draft the plan and task list (Planner)
+### Phase 2: Draft And Review The Plan (Planner)
 
-Use the `write-plan` skill for the current issue batch. Pass the selected issues,
-excluded issues, rollback or recovery notes, and parent report path; do not
-duplicate `write-plan` artifact instructions here.
+Use the `/plan-work` skill for the current issue batch. Pass the selected issues,
+excluded issues, rollback or recovery notes, parent report path, and
+`review_agents`; do not duplicate plan artifact instructions here.
 
-### Phase 3: Review the current issue batch plan (Plan review agents)
+### Phase 3: Confirm Plan Readiness (Plan review agents)
 
-Use `multi-agent-plan-review` with:
-- `review_agents`: the review agent dispatch roles
-- the plan, task, and context artifact paths returned by `write-plan`
-
-If final readiness is `blocked-for-user-decision`, ask the smallest question
-that unblocks the plan. Continue only when final readiness is
-`implementation-ready`.
+If `/plan-work` returns final readiness `blocked-for-user-decision`, ask the
+smallest question that unblocks the plan and rerun the smallest necessary step.
+Continue only when final readiness is `implementation-ready`.
 
 ### Phase 4: Gate the current issue batch (Execution gatekeeper + Reporter)
 
@@ -142,7 +137,7 @@ After writing and reviewing the artifacts:
 4. If a selected issue proves materially broader than planned, hand it back to the execution gatekeeper instead of freelancing.
 
 If the touched scope accumulates obvious local complexity or dead scaffolding that can be fixed without broadening scope:
-- use the `simplify-new-code` skill
+- use the `/simplify-new-code` skill
 - then continue to Phase 6
 
 ### Phase 6: Audit the touched area (Auditor)
@@ -174,11 +169,11 @@ If all batches are complete:
    - all issues fixed (by batch)
    - issues reclassified and moved to `BACKLOG.md`
    - issues deferred or rejected
-   - delegated `write-plan` and `multi-agent-plan-review` artifact paths
+   - delegated `/plan-work` artifact paths
    - verification performed
    - remaining follow-up
 
-When no broader orchestrator already owns closeout, use the `finish-task` skill here.
+When no broader orchestrator already owns closeout, use the `/finish-task` skill here.
 If it reveals incomplete issue resolution or stale memory/docs, jump back to the earliest affected phase.
 
 ## Guardrails
@@ -193,7 +188,8 @@ If it reveals incomplete issue resolution or stale memory/docs, jump back to the
 ## Definition of done
 
 - The parent report exists at `.agent-layer/tmp/fix-issues.<run-id>.report.md` and lists every selected issue with a disposition of fixed, deferred, rejected, or reclassified.
-- Every implemented batch used `write-plan`, and the returned plan/task/context artifacts went through `multi-agent-plan-review` and reached `implementation-ready` before the execution gate proceeded.
+- Every implemented batch used `/plan-work`, and the returned plan/task/context
+  artifacts reached `implementation-ready` before the execution gate proceeded.
 - Every resolved issue is removed from `ISSUES.md`; reclassified items moved to `BACKLOG.md`; newly discovered out-of-scope issues are logged as fresh `ISSUES.md` entries.
 - Deferred selected issues are not annotated in `ISSUES.md`; they remain as open issues unless separately reclassified or resolved.
 - The repo-defined verification command ran at least once per batch and its result is recorded in the report.

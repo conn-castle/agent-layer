@@ -3,7 +3,7 @@ name: audit-tests
 description: >-
   Audit the existing test suite for redundancy, quality gaps, and
   organization: duplicate or self-confirming tests, coverage gaps metrics
-  miss, and safe cleanup fixes. Use `prune-new-tests` instead when the target
+  miss, and safe cleanup fixes. Use `/prune-new-tests` instead when the target
   is tests added in the current uncommitted diff.
 ---
 
@@ -18,8 +18,8 @@ Audit the health of the existing test suite and fix what can be fixed safely:
 - remove dead tests and strengthen weak assertions where mechanical
 - report all findings and fixes
 
-Use `boost-coverage` when the goal is to write new tests to raise coverage.
-Use `prune-new-tests` when the goal is to prune speculative tests added in the
+Use `/boost-coverage` when the goal is to write new tests to raise coverage.
+Use `/prune-new-tests` when the goal is to prune speculative tests added in the
 current uncommitted diff (burden-of-proof, diff-scoped only).
 Use this skill when the goal is to assess and clean up the existing test suite.
 
@@ -191,7 +191,7 @@ Each finding across all phases must include:
 - `Tier`: unit | integration | e2e | cross-tier (for redundancy/quality findings that span tiers)
 - `Location`: test file(s) and function(s)
 - `Evidence`: concrete observation
-- `What was done`: fixed | needs human decision | recommendation for `boost-coverage`
+- `What was done`: fixed | needs human decision | recommendation for `/boost-coverage`
 
 ## Required report structure
 
@@ -218,7 +218,7 @@ Write `.agent-layer/tmp/audit-tests.<run-id>.report.md` with:
    - well-tested areas, good patterns worth preserving
 8. `## Recommended Actions`
    - prioritized list: what still needs human decision, what to add
-   - distinguish between actions for this skill and actions for `boost-coverage`
+   - distinguish between actions for this skill and actions for `/boost-coverage`
 
 ## Guardrails
 
@@ -243,4 +243,4 @@ Write `.agent-layer/tmp/audit-tests.<run-id>.report.md` with:
 After writing the report:
 1. Echo the report path.
 2. Summarize fixes applied and the test inventory by tier.
-3. If significant gaps were found, recommend `boost-coverage` on the identified areas.
+3. If significant gaps were found, recommend `/boost-coverage` on the identified areas.

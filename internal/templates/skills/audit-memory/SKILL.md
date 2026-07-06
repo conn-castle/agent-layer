@@ -20,7 +20,7 @@ Audit and fix the agent memory files. Default behavior is audit-and-fix:
 - Validate content against the repository (code, tests, docs) to detect staleness and drift.
 - DECISIONS.md receives focused scrutiny for bloat and consolidation opportunities.
 - Optimize for current and future constraints, not historical completeness.
-- Do not audit repo documentation (README, docs/, etc.) — use `audit-documentation` for that.
+- Do not audit repo documentation (README, docs/, etc.) — use `/audit-documentation` for that.
 
 ## Inputs
 
@@ -171,7 +171,7 @@ Write `.agent-layer/tmp/audit-memory.<run-id>.report.md` with:
 - Do not turn memory file cleanup into a policy change.
 - Do not remove DECISIONS.md entries that still contain unique tradeoff information needed for future decisions, even if the decision itself is now embodied in code.
 - Do not keep DECISIONS.md entries solely because they contain unique historical rationale; the rationale must still guide future work.
-- Do not widen the audit into a code audit or documentation audit (point to `audit-documentation` for repo docs).
+- Do not widen the audit into a code audit or documentation audit (point to `/audit-documentation` for repo docs).
 - Do not add new memory entries during the audit (that would conflict with the audit's own findings).
 - Do not consolidate DECISIONS.md entries in a way that loses the reason or tradeoff information.
 - Do not modify files outside of the 6 memory files.
@@ -190,4 +190,4 @@ After writing the report:
 1. Echo the report path.
 2. Summarize the highest-value findings, especially DECISIONS.md bloat status.
 3. State what was fixed, what was deferred, and what needs user input.
-4. If repo documentation issues were noticed during the audit, recommend running `audit-documentation`.
+4. If repo documentation issues were noticed during the audit, recommend running `/audit-documentation`.

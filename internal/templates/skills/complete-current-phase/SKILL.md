@@ -2,8 +2,8 @@
 name: complete-current-phase
 description: >-
   Complete the current roadmap phase through planning, review, implementation,
-  verification, audit, cleanup, and closeout. Use `write-plan` for planning only
-  and `finish-task` for non-roadmap closeout.
+  verification, audit, cleanup, and closeout. Use `/plan-work` for planning only
+  and `/finish-task` for non-roadmap closeout.
 ---
 
 # complete-current-phase
@@ -12,7 +12,7 @@ This is the orchestrator skill for roadmap execution. It iteratively plans, impl
 
 Use the current active roadmap phase (the first incomplete phase) by default.
 Do not jump ahead to a later phase unless the user explicitly names it.
-Use `write-plan` instead when the user wants only the planning step.
+Use `/plan-work` instead when the user wants only the planning step.
 
 ## Scope default
 
@@ -42,7 +42,7 @@ unambiguous.
 
 At minimum, use:
 - a scout/planner subagent
-- review agent dispatch roles through `multi-agent-plan-review`
+- review agent dispatch roles through `/plan-work`
 - an execution gatekeeper subagent that decides `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`
 - one or more implementation subagents when the work spans distinct files or subsystems
 
@@ -104,19 +104,19 @@ If Phase 1 shows that the current phase is not reasonably decomposable:
 - ask the user the smallest question needed to split, clarify, or reframe the current phase
 - recommend tightening the phase boundary when the roadmap convention is the real problem
 
-### Phase 2: Plan the phase to completion (Planner)
+### Phase 2: Plan And Review The Phase To Completion (Planner)
 
-Use the `write-plan` skill to plan completion of the selected phase (not just the next work package).
-The plan must also define all remaining in-phase tasks, ordered internal work packages when more than one is needed, and phase-level done criteria that identify which work package should execute first.
+Use the `/plan-work` skill to plan completion of the selected phase (not just the
+next work package). Pass `review_agents`. The plan must also define all
+remaining in-phase tasks, ordered internal work packages when more than one is
+needed, and phase-level done criteria that identify which work package should
+execute first.
 
-### Phase 3: Review the plan (Plan review agents)
+### Phase 3: Confirm Plan Readiness (Plan review agents)
 
-Use `multi-agent-plan-review` with:
-- `review_agents`: the review agent dispatch roles
-- the plan, task, and context artifact paths
-
-Do not send plan-review findings to `resolve-findings`; `multi-agent-plan-review`
-owns review agent synthesis, accepted artifact revisions, and repeat review rounds.
+Do not send plan-review findings to `/resolve-findings`; `/review-plan` owns
+review agent synthesis, accepted artifact revisions, and repeat review rounds
+inside `/plan-work`.
 
 If final readiness is `blocked-for-user-decision`, ask the smallest question
 that unblocks the plan. Continue only when final readiness is
@@ -136,30 +136,30 @@ Before moving into implementation or advancing to the next package:
 
 ### Phase 5: Implement the current work package (Implementers)
 
-Use the `implement-plan` skill with the current plan and task list. Stay inside the selected roadmap phase and complete the current work package end-to-end before moving on. If the package reveals additional in-phase tasks or dependency changes, update the plan and task list before continuing.
+Use the `/implement-plan` skill with the current plan and task list. Stay inside the selected roadmap phase and complete the current work package end-to-end before moving on. If the package reveals additional in-phase tasks or dependency changes, update the plan and task list before continuing.
 
-If implementation leaves obvious local complexity that can be improved without broadening scope, use the `simplify-new-code` skill, then continue to Phase 6.
+If implementation leaves obvious local complexity that can be improved without broadening scope, use the `/simplify-new-code` skill, then continue to Phase 6.
 
 ### Phase 6: Review against the plan (Completeness review agents)
 
-Use the `verify-work` skill.
+Use the `/verify-work` skill.
 
 If the verdict is `incomplete`, return to implementation.
 Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires user input.
 
 ### Phase 7: Broad audit of the delivered work package (Audit review agents)
 
-Use the `review-code` skill on the touched files, surrounding modules, and changed tests/docs.
+Use the `/review-code` skill on the touched files, surrounding modules, and changed tests/docs.
 
 ### Phase 8: Fix audit findings (Fixers + Auditors)
 
-Use the `resolve-findings` skill.
+Use the `/resolve-findings` skill.
 
-If accepted Critical or High findings were fixed, run one more `review-code` pass on the touched scope.
+If accepted Critical or High findings were fixed, run one more `/review-code` pass on the touched scope.
 Repeat the audit/fix loop only when the new report still contains unresolved Critical or High findings.
 
 If the fixes introduce or expose local complexity that remains behavior-preserving and in-scope:
-- use the `simplify-new-code` skill
+- use the `/simplify-new-code` skill
 - then return to Phase 6
 
 Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns. Escalate if the loop is not converging.
@@ -179,7 +179,7 @@ Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered 
 
 ### Phase 10: Close the phase (Memory Curator + Reporter)
 
-Use the `finish-task` skill as the final cleanup pass, including roadmap status, memory file updates, and doc checks.
+Use the `/finish-task` skill as the final cleanup pass, including roadmap status, memory file updates, and doc checks.
 If it reveals incomplete work or stale memory/docs, jump back to the earliest affected phase instead of closing the phase.
 
 ## Minimal status protocol
@@ -210,8 +210,10 @@ At each major stage, echo the current artifact path(s), identify the active phas
 ## Definition of done
 
 - Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
-- Each internal work package ran the full plan / multi-agent-plan-review / implement / verify-work / review-code / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
-- The `finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
+- Each internal work package ran the full /plan-work, /implement-plan,
+  /verify-work, /review-code, /resolve-findings loop, and no unresolved Critical or High
+  findings remain at phase close.
+- The `/finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
 - The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.
 
 ## Final handoff

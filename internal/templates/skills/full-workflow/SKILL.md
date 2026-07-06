@@ -2,7 +2,7 @@
 name: full-workflow
 description: >-
   Orchestrate a full feature workflow from questions and spec alignment through
-  plan, multi-agent plan review, implementation, and PR shipping.
+  reviewed planning, implementation, and PR shipping.
 ---
 
 # full-workflow
@@ -21,7 +21,7 @@ Fail before side effects unless all are present:
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
 `antigravity`). Infer the agent only when unambiguous. Before dispatching, follow
-`agent-dispatch`, inspect live options, and fail if a requested override is
+`/agent-dispatch`, inspect live options, and fail if a requested override is
 unsupported.
 
 Example invocation:
@@ -57,13 +57,12 @@ they appear.
 - Separate facts from choices: repo reading may resolve facts, constraints, and
   existing behavior; inferred or recommended choices stay open until approved.
 - After the spec gate, do not perform child-stage work yourself. Use the planner
-  for `write-plan`, review agents for `multi-agent-plan-review`, implementer for
-  `implement-plan`, and shipper for `ship-pr`.
+  for `/plan-work`, implementer for `/implement-plan`, and shipper for `/ship-pr`.
 - Treat child returns as intermediate; continue orchestration after each return.
 - Ask again if later evidence would materially change the aligned spec.
 - Never replace a missing role with the current agent, widen scope beyond the
   spec, or guess alternate dispatch options after failure.
-- `ship-pr` keeps its own merge authorization gate unless the user grants a
+- `/ship-pr` keeps its own merge authorization gate unless the user grants a
   separate policy.
 
 ## Workflow
@@ -119,43 +118,36 @@ Summarize the draft spec in chat:
 Ask for approval or corrections, then stop. If the user changes the spec, update
 it and return to Phase 4 when questions or decisions remain.
 
-### Phase 6: Plan
+### Phase 6: Plan And Review
 
-Dispatch the planner role with the `write-plan` skill. The prompt must include:
+Dispatch the planner role with the `/plan-work` skill. The prompt must include:
 - the spec path
 - the state path
 - the user's original request
-- instruction to produce the standard plan/task/context artifact set
+- `review_agents`
+- instruction to produce an implementation-ready reviewed plan/task/context
+  artifact set
 
-Record the returned artifact paths in the state file.
+Record the returned plan/task/context and review report paths in the state file.
 
-### Phase 7: Cross-agent plan review
+### Phase 7: Implement
 
-Use `multi-agent-plan-review` with:
-- `review_agents`: the review agent dispatch roles
-- the plan/task/context artifact paths
-- the spec path as the review contract
-
-Record the final review report path and the reviewed artifact paths.
-
-### Phase 8: Implement
-
-Dispatch the implementer role with the `implement-plan` skill and the reviewed
+Dispatch the implementer role with the `/implement-plan` skill and the reviewed
 plan/task/context artifact paths. If implementation discovers a spec-level
 change, return to the earliest affected phase instead of continuing on stale
 alignment.
 
-### Phase 9: Ship
+### Phase 8: Ship
 
-Dispatch the shipper role with the `ship-pr` skill. Stop at any `ship-pr` human
+Dispatch the shipper role with the `/ship-pr` skill. Stop at any `/ship-pr` human
 checkpoint, including merge authorization.
 
 ## Definition of done
 
 - Required dispatch agent roles were present and normalized before dispatch.
 - The spec gate completed before planning.
-- `write-plan`, `multi-agent-plan-review`, `implement-plan`, and `ship-pr` were
-  invoked through the requested dispatch agent roles.
+- `/plan-work`, `/implement-plan`, and `/ship-pr` were invoked through the
+  requested dispatch agent roles.
 - Final status and artifact paths are recorded in the state file.
 
 ## Final handoff

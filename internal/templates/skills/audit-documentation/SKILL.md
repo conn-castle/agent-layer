@@ -3,7 +3,7 @@ name: audit-documentation
 description: >-
   Audit Markdown docs for static accuracy and cross-document consistency
   against the repo, fixing what is safe. Excludes memory files by default; use
-  `audit-memory` for those.
+  `/audit-memory` for those.
 ---
 
 # audit-documentation
@@ -13,7 +13,7 @@ Audit documentation and fix inaccuracies. Do not freelance into code or policy c
 ## Defaults
 
 - Default scope is all tracked `*.md` files unless the user gives paths or a diff-based scope.
-- Exclude agent memory files (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, CONTEXT.md) from the default scope. Use the `audit-memory` skill for those.
+- Exclude agent memory files (ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, CONTEXT.md) from the default scope. Use the `/audit-memory` skill for those.
 - Validate claims statically against the repository. Do not treat unexecuted commands as verified runtime behavior.
 - When docs and code differ, decide which side describes the better behavior based on repo evidence, project rules, safety, and maintainability.
 - Prioritize findings that would mislead a developer, operator, or future agent.
@@ -135,7 +135,7 @@ The final summary must contain:
 - Do not turn wording preferences into findings unless they materially affect correctness or usability.
 - Do not invent policy changes while fixing stale docs.
 - Do not widen a doc audit into a code audit.
-- If memory file issues are found during the audit, note them and recommend `audit-memory` rather than auditing memory files in this workflow.
+- If memory file issues are found during the audit, note them and recommend `/audit-memory` rather than auditing memory files in this workflow.
 
 ## Definition of done
 
@@ -151,4 +151,4 @@ The final summary must contain:
 
 After the audit:
 1. Summarize fixes applied and any findings that need human decision.
-2. If memory file issues were noticed, recommend running `audit-memory`.
+2. If memory file issues were noticed, recommend running `/audit-memory`.
