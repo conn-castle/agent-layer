@@ -23,6 +23,9 @@ Default scope:
 - every unchecked task inside that phase
 - plus any small prerequisite issues directly blocking phase completion
 
+If the user specifies a phase number, use that phase instead of the first
+incomplete one.
+
 If the active phase is too large to complete safely in one implementation pass:
 - decompose it into ordered internal work packages
 - keep every package inside the current phase rather than jumping ahead
@@ -31,22 +34,11 @@ If the active phase is too large to complete safely in one implementation pass:
 
 Roadmap phases should normally be distinct enough that this decomposition is straightforward and rarely needs escalation.
 
-## Inputs
-
-Fail before side effects unless `review_agents` is present. They may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous.
-
-Read in this order when they exist:
-1. `ROADMAP.md`
-2. `DECISIONS.md`
-3. `ISSUES.md`
-4. `BACKLOG.md`
-5. `COMMANDS.md`
-6. `README.md`
-
-If the user specifies a phase number, use that phase instead of the first incomplete one.
-
 ## Required behavior
+
+Fail before side effects unless `review_agents` is present. Values may be terse
+(`codex high`, `claude opus xhigh`, `antigravity`). Infer the agent only when
+unambiguous.
 
 At minimum, use:
 - a scout/planner subagent
@@ -74,15 +66,30 @@ When compaction is needed, retain this section verbatim and also preserve: curre
 
 ## Human checkpoints
 
-- Required: ask when the selected phase boundary is ambiguous, the roadmap task is ambiguous, or a required fact is unknown.
-- Required: ask only when the current phase cannot be decomposed into safe ordered work packages without high-risk sequencing or guesswork.
-- Required: ask when review or audit loops stop converging and escalation is the higher-value move.
-- Required: ask only when the roadmap and phase-completion plan are not clear enough to proceed without guessing.
-- Stay autonomous within normal plan-review, implementation, and audit loops when the selected phase and current work package are clear.
+- Ask when roadmap evidence leaves multiple viable phase boundaries or task
+  interpretations and choosing among them would change what work is considered
+  complete.
+- Ask when the selected phase cannot be decomposed into safe ordered work
+  packages without high-risk sequencing or guesswork.
+- Ask when review or audit loops stop converging and the next step depends on a
+  user-level scope, risk, or priority decision.
+- Stay autonomous within normal plan-review, implementation, and audit loops
+  when the selected phase and current work package are clear.
 
 ## Orchestration loop
 
 ### Phase 1: Select the phase and map the remaining work (Phase Scout)
+
+Read in this order when they exist:
+
+1. `ROADMAP.md`
+2. `DECISIONS.md`
+3. `ISSUES.md`
+4. `BACKLOG.md`
+5. `COMMANDS.md`
+6. `README.md`
+
+Then:
 
 1. Identify the current active roadmap phase:
    - use the first incomplete phase by default
@@ -135,7 +142,7 @@ If implementation leaves obvious local complexity that can be improved without b
 
 ### Phase 6: Review against the plan (Completeness review agents)
 
-Use the `verify-against-plan` skill.
+Use the `verify-work` skill.
 
 If the verdict is `incomplete`, return to implementation.
 Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires user input.
@@ -203,7 +210,7 @@ At each major stage, echo the current artifact path(s), identify the active phas
 ## Definition of done
 
 - Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
-- Each internal work package ran the full plan / multi-agent-plan-review / implement / verify-against-plan / review-scope / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
+- Each internal work package ran the full plan / multi-agent-plan-review / implement / verify-work / review-scope / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
 - The `finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
 - The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.
 

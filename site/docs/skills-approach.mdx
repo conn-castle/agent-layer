@@ -21,9 +21,9 @@ contract available every time: accepted inputs, required artifacts, stop
 conditions, verification expectations, and final handoff shape. The agent still
 uses judgment inside the task, but the module boundary should be stable.
 
-**Root skills own one step.** Planning, review, implementation, fixing, and
-verification are different jobs. Keeping them separate improves activation,
-reviewability, and reuse.
+**Root skills own one step.** Planning, review, implementation, and verification
+are different jobs. Keeping them separate improves activation, reviewability,
+and reuse.
 
 **Root skills are hermetic.** A root skill must not call, route to, or depend
 on another skill, and its body should not reference other skills as next steps,
@@ -55,13 +55,13 @@ bundled skill names yet.
 | --- | --- | --- |
 | `write-plan` | Turn a requested change into implementation-ready plan, task list, and context artifacts. | `plan-work` |
 | `review-plan` | Review plan artifacts before implementation and report blocking gaps, weak assumptions, and missing verification. | `review-plan` |
-| `implement-plan` | Execute an approved plan against the codebase and verify the result. | `implement-plan` |
+| `implement-plan` | Execute an approved plan against the codebase, run task-local checks, and record deviations or follow-up. | `implement-plan` |
 | `review-code` | Review explicit files, diffs, directories, or uncommitted changes and produce prioritized findings. | `review-scope` |
-| `fix-code` | Triage accepted findings or open issues, implement root-cause fixes, and record what changed or remains deferred. | `resolve-findings`; issue-led repair currently lives in the broader `fix-issues` workflow |
-| `verify-work` | Compare completed work against the plan or request and report completeness, regressions, missing checks, and scope drift. | `verify-against-plan` |
+| `verify-work` | Compare completed work against the plan or request and report completeness, regressions, missing checks, working-code evidence, and scope drift. | `verify-work` |
 
-The current names are the truth for invocation today. The target names describe
-the desired stable module boundaries as the skill library evolves.
+The current names are the truth for invocation today. Most target names still
+describe the desired stable module boundaries as the skill library evolves;
+`verify-work` has already moved to its target name.
 
 ## Workflow skills
 
@@ -74,6 +74,8 @@ Current examples:
   implementation, verification, auditing, and cleanup.
 - `ship-pr` owns the pull request lifecycle, including audit, commit, push,
   CI monitoring, reviewer feedback, and final status checks.
+- `resolve-findings` owns review-report triage, finding verdicts, accepted-fix
+  grouping, and the resolution ledger.
 - `improve-codebase` decomposes broad quality work into reviewable chunks,
   runs review and fix loops, and delegates to narrower skills when useful.
 - `fix-issues` works through `ISSUES.md` by batching, planning, implementing,

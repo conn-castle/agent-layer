@@ -3,7 +3,7 @@ name: finish-task
 description: >-
   Close out finished work by checking plan alignment, updating only necessary
   memory/docs, running credible verification, and summarizing outcome. Use
-  `ship-pr` for PR work or `verify-against-plan` for read-only checks.
+  `ship-pr` for PR work or `verify-work` for read-only checks.
 ---
 
 # finish-task
@@ -17,15 +17,6 @@ It is not a broad audit and it is not a second planning pass.
 - Use the current run's plan and task artifacts when they are already known.
 - Default verification depth is the fastest credible repo-defined check.
 - Update memory only where the completed task actually changed project truth.
-
-## Inputs
-
-Accept any combination of:
-- explicit scope paths
-- known plan or task artifact paths
-- a verification depth preference
-- whether roadmap updates should be considered
-- whether to skip specific memory files
 
 ## Multi-agent pattern
 

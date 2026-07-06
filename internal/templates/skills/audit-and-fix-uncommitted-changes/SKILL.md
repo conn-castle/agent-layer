@@ -62,7 +62,8 @@ The master report is the human-readable round ledger and the single place to pre
 Delegated skill outputs are handled one way:
 - Use `review-scope` report artifacts as findings input to `resolve-findings`.
 - Copy `resolve-findings` outcomes from its final handoff into the master report.
-- Do not require, open, echo, or cross-reference `resolve-findings` report, plan, task, or context artifacts.
+- Do not require, open, echo, or cross-reference `resolve-findings` report
+  artifacts or fixer narrative.
 
 ## Continuation rule
 

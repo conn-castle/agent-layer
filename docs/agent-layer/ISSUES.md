@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
+    Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
+    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, but historical manifests are immutable and the next release version has not been chosen, so no new migration/ownership manifest can be added in this pass.
+    Next step: When the next release version is selected, add the required skill migration entry and generate the matching template ownership manifest.
+    Notes: Do not edit already-tagged manifest files such as `0.12.1.json`.
+
 - Issue 2026-07-02 launcher-exec-capture-test-harness-duplication: Exec-capture test harness duplicated across four launcher packages
     Priority: Low. Area: internal/clients/{claude,codex,copilotcli,antigravity}/launch_test.go
     Description: `execCall`/`captureExec`/`forbidExec`/`assertExecCalled` (all over the identical `func(string, []string, []string) error` execFunc seam) are copied near-verbatim into each launcher's launch_test.go, ~50 lines per package. Flagged as CodeRabbit nitpicks on PR #130. Not a defect — the tests pass and cover behavior — but a maintainability trap: a change to the mock's behavior must be made in four places.
