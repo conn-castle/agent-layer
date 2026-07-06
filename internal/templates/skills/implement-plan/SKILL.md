@@ -28,8 +28,9 @@ discover, infer, or auto-select artifacts from `.agent-layer/tmp/`.
   that as a blocker instead of guessing.
 - Do not turn implementation into a new planning, review, or verification
   workflow.
-- Do not run tests, builds, linters, formatters, or other verification commands
-  from this skill.
+- Do not run broad project verification from this skill by default. You may run
+  narrow, task-local commands when needed to debug or confirm an implementation
+  step, but final verification belongs outside this skill.
 - Record what changed, what deviated, and what remains. Independent completion
   judgment is outside this skill.
 
@@ -112,9 +113,12 @@ sections:
      one-line reason.
    - Include task splits and any `rewrite-because-out-of-scope` rewrites here.
    - Use `None` when no deviations occurred.
-2. `## Remaining Follow-up`
-   - Plan items skipped, docs/memory updates deferred, verification commands
-     left for a verifier, and any other open threads, each with a reason.
+2. `## Implementation Checks`
+   - Narrow task-local commands run during implementation, with result.
+   - Use `None` when no commands ran.
+3. `## Remaining Follow-up`
+   - Plan items skipped, docs/memory updates deferred, final verification, and
+     any other open threads, each with a reason.
    - Use `None` when nothing is outstanding.
 
 Keep the report short. Do not re-narrate work that is already visible in the
@@ -134,8 +138,9 @@ diff.
   or remaining follow-up.
 - Docs and memory updates promised by the plan were delivered or listed under
   `## Remaining Follow-up` with reasons.
-- Verification commands are left for a separate verification workflow and are
-  not claimed here.
+- Broad or final verification is not claimed from inside this skill.
+- Any task-local implementation checks run are listed under
+  `## Implementation Checks`.
 - No major task list item was skipped silently.
 
 ## Final handoff
@@ -144,6 +149,7 @@ After execution:
 
 1. Echo the report path.
 2. Summarize completed work, including plan/task/context paths used.
-3. Name any deviations or task splits.
-4. State whether implementation is ready for independent verification or
+3. Name any task-local implementation checks run.
+4. Name any deviations or task splits.
+5. State whether implementation is ready for final verification or
    follow-up remains.

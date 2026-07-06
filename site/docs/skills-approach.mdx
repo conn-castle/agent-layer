@@ -1,6 +1,6 @@
 ---
 title: Skills approach
-description: Agent Layer's skill ethos, conceptual root skill model, and mapping to the current bundled skills.
+description: Agent Layer's skill ethos and bundled root skill model.
 sidebar_position: 5
 ---
 
@@ -12,7 +12,7 @@ belong in higher-level workflows.
 For the evidence behind this shape, use the universal best-practice guides:
 [Skill Design](/skill-design), [CLI Skill Design](/cli-skill-design), and
 [Instruction Design](/instruction-design). This page is Agent Layer-specific:
-it describes the ethos and target model for the bundled skill system.
+it describes the ethos and root model for the bundled skill system.
 
 ## Design ethos
 
@@ -21,52 +21,56 @@ contract available every time: accepted inputs, required artifacts, stop
 conditions, verification expectations, and final handoff shape. The agent still
 uses judgment inside the task, but the module boundary should be stable.
 
-**Root skills own one step.** Planning, review, implementation, and verification
-are different jobs. Keeping them separate improves activation, reviewability,
-and reuse.
+**Root skills own one bounded job.** Planning, review, implementation, and
+verification are different jobs. Keeping them separate improves activation,
+reviewability, and reuse.
 
-**Root skills are hermetic.** A root skill must not call, route to, or depend
-on another skill, and its body should not reference other skills as next steps,
-alternatives, or implementation dependencies. Cross-skill composition belongs
-only in workflow skills. A root skill may reference Agent Layer system sources
-of truth, such as `COMMANDS.md`, only when that source is necessary to execute
-its own contract.
+**Root skills are hermetic across skills.** A root skill must not call, route
+to, or depend on another skill, and its body should not reference other skills
+as next steps, alternatives, or implementation dependencies. A root skill may
+coordinate tools or subagents when that coordination is part of its own output
+contract. Cross-skill composition belongs only in workflow skills. A root skill
+may reference Agent Layer system sources of truth, such as `COMMANDS.md`, only
+when that source is necessary to execute its own contract.
 
-**Workflows own loops.** Iteration, delegation, retry policy, multi-agent
-coordination, and phase-to-phase orchestration belong in workflow skills. Root
-skills should be callable by many workflows without smuggling in a full
-lifecycle.
+**Workflows own lifecycle loops.** Cross-skill sequencing, retry policy, and
+phase-to-phase orchestration belong in workflow skills. Root skills should be
+callable by many workflows without smuggling in a full project lifecycle.
 
 **Evidence over assertion.** Skills should push agents toward observable
 evidence: read the code, inspect the diff, run documented checks, write or use
 real artifacts, and state what was verified.
+
+**Verification is intentionally placed.** Implementation skills may use narrow
+task-local checks when they need feedback, but final verification is its own
+boundary. `verify-work` owns the final verification pass for completed work:
+it runs the smallest credible checks or accepts current evidence only when that
+evidence clearly covers the final working tree. Workflow skills should call
+that boundary intentionally instead of rerunning broad checks after every step.
 
 **Checkpoints for real decisions.** Human checkpoints should be narrow and
 explicit: architecture tradeoffs, destructive operations, external writes,
 scope changes, or missing required input. The normal path should be
 autonomous.
 
-## Target root skill model
+## Root Skill Model
 
-These names are the conceptual target root modules. They are not all current
-bundled skill names yet.
+These are the bundled root skills. Each owns one bounded job and exposes a
+stable contract for workflows to compose.
 
-| Target root module | Stable contract | Current implementation mapping |
-| --- | --- | --- |
-| `write-plan` | Turn a requested change into implementation-ready plan, task list, and context artifacts. | `plan-work` |
-| `review-plan` | Review plan artifacts before implementation and report blocking gaps, weak assumptions, and missing verification. | `review-plan` |
-| `implement-plan` | Execute an approved plan against the codebase, run task-local checks, and record deviations or follow-up. | `implement-plan` |
-| `review-code` | Review explicit files, diffs, directories, or uncommitted changes and produce prioritized findings. | `review-scope` |
-| `verify-work` | Compare completed work against the plan or request and report completeness, regressions, missing checks, working-code evidence, and scope drift. | `verify-work` |
-
-The current names are the truth for invocation today. Most target names still
-describe the desired stable module boundaries as the skill library evolves;
-`verify-work` has already moved to its target name.
+| Root skill | Stable contract |
+| --- | --- |
+| `write-plan` | Turn a requested change into implementation-ready plan, task list, and context artifacts. |
+| `review-plan` | Review plan artifacts before implementation and report blocking gaps, weak assumptions, and missing verification. |
+| `implement-plan` | Execute an approved plan against the codebase, use task-local feedback checks when needed, and record deviations or follow-up. |
+| `review-code` | Review explicit files, diffs, directories, uncommitted changes, or intentionally selected hotspots and produce prioritized findings. |
+| `verify-work` | Compare completed work against the plan or request, verify the touched work, and report completeness, regressions, missing verification, docs/memory gaps, and scope drift. |
 
 ## Workflow skills
 
-Workflow skills compose root skills and own loops. They decide sequencing,
-delegation, retry behavior, and when to move between phases.
+Workflow skills compose root skills and own lifecycle loops. They decide
+cross-skill sequencing, retry behavior, verification boundaries, and when to
+move between phases.
 
 Current examples:
 
@@ -81,9 +85,10 @@ Current examples:
 - `fix-issues` works through `ISSUES.md` by batching, planning, implementing,
   auditing, and keeping the ledger current.
 
-Because workflows own orchestration, root skills should stay boring and
-portable. A workflow can call `review-code` several times with different
-scopes; `review-code` should not decide the whole project lifecycle.
+Because workflows own lifecycle orchestration, root skills should stay boring
+and portable. A workflow can call `review-code` several times with different
+scopes; `review-code` should not decide the whole project lifecycle or call
+other skills.
 
 ## Contract expectations
 
@@ -96,7 +101,10 @@ A root skill should define:
   its own job without it.
 - Stop conditions for missing required input, incompatible state, or user
   decisions.
-- Verification expectations appropriate to its job.
+- Verification expectations appropriate to its job. Implementation skills may
+  run narrow feedback checks, verification skills own completion evidence, and
+  workflows should avoid duplicating broad checks without an explicit phase,
+  release, or CI boundary.
 - Final handoff fields that are stable enough for follow-up automation.
 
 A root skill should avoid:

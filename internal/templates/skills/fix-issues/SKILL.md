@@ -32,7 +32,7 @@ Create:
 - `.agent-layer/tmp/fix-issues.<run-id>.report.md`
 
 Create files with `touch` before writing.
-Record delegated `plan-work` and `multi-agent-plan-review` artifact paths in the
+Record delegated `write-plan` and `multi-agent-plan-review` artifact paths in the
 report as they appear.
 
 ## Inputs
@@ -51,7 +51,7 @@ Fail before side effects unless `review_agents` is present. They may be terse (`
 
 Recommended roles:
 1. `Issue triage lead`: selects the issue batch.
-2. `Planner`: invokes `plan-work` for the selected issue batch.
+2. `Planner`: invokes `write-plan` for the selected issue batch.
 3. `Plan review agents`: handled through `multi-agent-plan-review`.
 4. `Execution gatekeeper`: decides whether the current batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
 5. `Implementer`: owns the code changes.
@@ -108,15 +108,15 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 
 ### Phase 2: Draft the plan and task list (Planner)
 
-Use the `plan-work` skill for the current issue batch. Pass the selected issues,
+Use the `write-plan` skill for the current issue batch. Pass the selected issues,
 excluded issues, rollback or recovery notes, and parent report path; do not
-duplicate `plan-work` artifact instructions here.
+duplicate `write-plan` artifact instructions here.
 
 ### Phase 3: Review the current issue batch plan (Plan review agents)
 
 Use `multi-agent-plan-review` with:
 - `review_agents`: the review agent dispatch roles
-- the plan, task, and context artifact paths returned by `plan-work`
+- the plan, task, and context artifact paths returned by `write-plan`
 
 If final readiness is `blocked-for-user-decision`, ask the smallest question
 that unblocks the plan. Continue only when final readiness is
@@ -174,7 +174,7 @@ If all batches are complete:
    - all issues fixed (by batch)
    - issues reclassified and moved to `BACKLOG.md`
    - issues deferred or rejected
-   - delegated `plan-work` and `multi-agent-plan-review` artifact paths
+   - delegated `write-plan` and `multi-agent-plan-review` artifact paths
    - verification performed
    - remaining follow-up
 
@@ -193,7 +193,7 @@ If it reveals incomplete issue resolution or stale memory/docs, jump back to the
 ## Definition of done
 
 - The parent report exists at `.agent-layer/tmp/fix-issues.<run-id>.report.md` and lists every selected issue with a disposition of fixed, deferred, rejected, or reclassified.
-- Every implemented batch used `plan-work`, and the returned plan/task/context artifacts went through `multi-agent-plan-review` and reached `implementation-ready` before the execution gate proceeded.
+- Every implemented batch used `write-plan`, and the returned plan/task/context artifacts went through `multi-agent-plan-review` and reached `implementation-ready` before the execution gate proceeded.
 - Every resolved issue is removed from `ISSUES.md`; reclassified items moved to `BACKLOG.md`; newly discovered out-of-scope issues are logged as fresh `ISSUES.md` entries.
 - Deferred selected issues are not annotated in `ISSUES.md`; they remain as open issues unless separately reclassified or resolved.
 - The repo-defined verification command ran at least once per batch and its result is recorded in the report.

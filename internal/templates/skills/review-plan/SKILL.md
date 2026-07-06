@@ -133,6 +133,7 @@ Each finding must include:
 
 - `Title`
 - `Severity`: Critical | High | Medium | Low
+- `Confidence`: High | Medium | Low
 - `Location`: exact artifact path and section
 - `Why it matters`
 - `Evidence`
@@ -176,8 +177,8 @@ The report must contain:
 ## Definition of done
 
 - The report exists with every required section.
-- Every finding names artifact path, section, severity, evidence, and specific
-  recommendation.
+- Every finding names artifact path, section, severity, confidence, evidence,
+  and specific recommendation.
 - The report ends with exactly one recommendation: `approve`,
   `approve-with-changes`, or `revise`.
 - Plan, task, and context artifacts were not modified.

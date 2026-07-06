@@ -81,7 +81,7 @@ func TestDetectAgentLayerEnabledFromDisk(t *testing.T) {
 
 	t.Run("returns true when a workflow skill directory exists", func(t *testing.T) {
 		root := t.TempDir()
-		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "review-scope"), 0o750))
+		require.NoError(t, os.MkdirAll(filepath.Join(root, ".agent-layer", "skills", "review-code"), 0o750))
 		assert.True(t, detectAgentLayerEnabledFromDisk(root))
 	})
 

@@ -87,7 +87,7 @@ the user asks to use prior audit material, stop and ask whether to switch to
    meaningfully reduces complexity, over-engineering, or debt.
 4. If the proposal changes behavior, say so and ask for explicit approval before
    planning or implementation.
-5. Stop after asking whether to run `/plan-work` for the proposed item or search
+5. Stop after asking whether to run `/write-plan` for the proposed item or search
    for another item.
 
 ## Guardrails
@@ -98,7 +98,7 @@ the user asks to use prior audit material, stop and ask whether to switch to
 - Do not create a parallel plan, summary, or scratch report.
 - Do not score from vibes. Tie every score to concrete evidence.
 - Do not treat behavior changes as cleanup.
-- Do not run `/plan-work` from this skill without asking at the final gate.
+- Do not run `/write-plan` from this skill without asking at the final gate.
 
 ## Definition of done
 

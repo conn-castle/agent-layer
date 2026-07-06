@@ -2,8 +2,8 @@
 name: verify-work
 description: >-
   Read-only check of completed work against a plan, task list, context file, or
-  explicit request, reporting completion gaps, regressions, missing checks,
-  docs/memory gaps, working-code evidence, and scope drift.
+  explicit request, reporting completion gaps, regressions, missing
+  verification, docs/memory gaps, working-code evidence, and scope drift.
 ---
 
 # verify-work
@@ -28,6 +28,9 @@ evidence that the touched code works?
   only.
 - Use the sibling `contract-verification-rubric.md` as this skill's fixed
   internal comparison rubric.
+- Own final verification for the supplied contract. Run the smallest credible
+  checks, or accept existing command evidence only when it clearly covers the
+  final working tree.
 
 ## Required inputs
 
@@ -105,16 +108,22 @@ evidence of completion.
 ### Phase 4: Verify working-code evidence
 
 Read `COMMANDS.md` before choosing project workflow commands. Run or inspect
-the checks that are credible for the touched area:
+the checks that are credible for the touched area and contract:
 
 - format, lint, typecheck, tests, build, docs checks, or targeted reproductions
   when relevant
 - plan-promised commands when the plan named them
-- focused checks when the plan is broader than the actual touched surface
+- focused checks when they prove the changed behavior
+- broader project checks only when the contract or risk requires them
+- user-supplied command output or logs
+- direct inspection of touched files and diffs when command output is not the
+  right evidence
 
-If a command cannot run, record why and assess the residual risk. Do not mark
-working-code evidence as satisfied without observed command output or direct
-inspection.
+Do not repeat a command when current, trustworthy output already covers the
+same final working tree. If a needed command cannot run, record why and assess
+the residual risk. Do not mark working-code evidence as satisfied without
+observed command output, direct inspection, or a documented reason the check is
+not applicable.
 
 ### Phase 5: Decide completion status
 
@@ -143,10 +152,13 @@ Write:
 
 For every finding, include:
 
-- severity
-- location
-- why it means the work is not fully complete or not fully trustworthy
-- the smallest corrective action
+- `Title`
+- `Severity`: Critical | High | Medium | Low
+- `Confidence`: High | Medium | Low
+- `Location`
+- `Why it matters`
+- `Evidence`
+- `Recommendation`
 
 ## Guardrails
 
@@ -157,6 +169,8 @@ For every finding, include:
 - If the implementation is better than the contract in a harmless way, note it,
   but still call out undocumented deviation.
 - Do not fix issues discovered during verification.
+- Do not run broad commands just to add evidence when a narrower check answers
+  the contract.
 
 ## Definition of done
 

@@ -55,7 +55,7 @@ Create the file with `touch` before writing.
 The master report is the human-readable ledger and the single place to preserve orchestrator state.
 
 Delegated skill outputs are handled one way:
-- Use `review-scope` report artifacts as findings input to `resolve-findings`.
+- Use `review-code` report artifacts as findings input to `resolve-findings`.
 - Copy `resolve-findings`, `simplify-codebase`, `boost-coverage`, `audit-tests`, and `fix-issues` outcomes from their final handoffs into the master report.
 - Do not require, open, echo, or cross-reference child report artifacts from `resolve-findings`, `simplify-codebase`, `boost-coverage`, `audit-tests`, or `fix-issues`.
 
@@ -69,7 +69,7 @@ At minimum, use:
 - a synthesizer that maintains the master report
 
 Prefer the dedicated skills that already exist:
-- `review-scope` for per-chunk auditing
+- `review-code` for per-chunk auditing
 - `resolve-findings` for triaging and fixing findings
 - `simplify-codebase` when complexity warrants it
 - `boost-coverage` when test gaps are significant
@@ -138,9 +138,9 @@ When compaction is needed, retain this section verbatim and also preserve: curre
 
 ### Phase 2: Audit chunk N (Audit review agents)
 
-Use the `review-scope` skill on the current chunk with proactive hotspot mode.
+Use the `review-code` skill on the current chunk with proactive hotspot mode.
 
-The `review-scope` lenses cover correctness, architecture, and quality. For this orchestrator, also assess:
+The `review-code` lenses cover correctness, architecture, and quality. For this orchestrator, also assess:
 - **Security**: input validation gaps, injection risks, credential handling
 - **Consistency**: naming conventions, error patterns, style drift across the codebase
 
@@ -229,7 +229,7 @@ cross-cutting review, delegation, or closeout.
 - Do not treat the cross-cutting review as optional.
 - Do not claim a clean codebase without evidence from the audit rounds.
 - Do not modify unrelated code just because it is nearby.
-- Keep each chunk review grounded in concrete reviewed code, review-scope findings, and observed verification.
+- Keep each chunk review grounded in concrete reviewed code, review-code findings, and observed verification.
 
 ## Definition of done
 

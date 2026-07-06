@@ -121,7 +121,7 @@ These are commonly invoked directly for specific tasks that do not need a full o
 
 | Skill | What it does |
 | --- | --- |
-| `plan-work` | Produces a plan, task list, and context file for a requested change — scoped tightly enough for a fresh agent to execute without guessing. The context file captures key file paths, current state, and constraints so the implementing agent can orient immediately. |
+| `write-plan` | Produces a plan, task list, and context file for a requested change — scoped tightly enough for a fresh agent to execute without guessing. The context file captures key file paths, current state, and constraints so the implementing agent can orient immediately. |
 | `implement-plan` | Picks up a plan/task/context set and executes it. Reads the context file first to orient, then works through the task list while keeping changes aligned to the plan, running task-local checks and recording deviations or follow-up. |
 | `debug-issue` | Investigation-first debugging: reproduces the bug, narrows the cause systematically, writes a failing test, fixes the root cause, and verifies. Refuses to guess — requires evidence at every step. |
 | `schedule-backlog` | Proposes reviewable updates by mapping backlog items into roadmap phases, cross-checking impacts, and using human checkpoints before editing memory files. |
@@ -134,10 +134,10 @@ These are used by orchestrators or available for fine-grained control when you n
 
 | Skill | What it does |
 | --- | --- |
-| `review-scope` | Reviews files, directories, diffs, or uncommitted changes. Produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
+| `review-code` | Reviews files, directories, diffs, or uncommitted changes. Produces a findings report covering correctness, gaps, risks, architecture, tests, docs, performance, and maintainability. |
 | `review-plan` | Pre-execution review of a plan and its artifacts. Identifies scope gaps, sequencing problems, missing context, and weak verification before code is written. |
 | `multi-agent-plan-review` | Reviews and repairs a plan/task/context artifact set with dispatched review agents until the plan is implementation-ready. |
-| `verify-work` | Post-implementation completeness check. Compares what was actually built against the plan or request, reporting gaps, regressions, missing tests or docs, working-code evidence, and scope drift. |
+| `verify-work` | Post-implementation completeness check. Compares what was actually built against the plan or request, reporting gaps, regressions, missing verification or docs, working-code evidence, and scope drift. |
 | `resolve-findings` | Resolves a review report by verifying each finding, assigning verdicts, grouping accepted fixes, coordinating bounded fix work, and recording why findings were fixed, rejected, deferred, or already resolved. |
 
 **Quality and maintenance**

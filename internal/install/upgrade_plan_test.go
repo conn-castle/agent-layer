@@ -44,16 +44,16 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 	}
 
 	// Simulate a rename candidate by moving one managed template file to an orphan path.
-	planWorkPath := filepath.Join(root, ".agent-layer", "skills", "plan-work", "SKILL.md")
-	if err := os.Remove(planWorkPath); err != nil {
-		t.Fatalf("remove plan-work skill: %v", err)
+	writePlanPath := filepath.Join(root, ".agent-layer", "skills", "write-plan", "SKILL.md")
+	if err := os.Remove(writePlanPath); err != nil {
+		t.Fatalf("remove write-plan skill: %v", err)
 	}
-	planWorkTemplate, err := templates.Read("skills/plan-work/SKILL.md")
+	writePlanTemplate, err := templates.Read("skills/write-plan/SKILL.md")
 	if err != nil {
 		t.Fatalf("read template skill: %v", err)
 	}
-	orphanRenamePath := filepath.Join(root, ".agent-layer", "skills", "plan-work-legacy.md")
-	if err := os.WriteFile(orphanRenamePath, planWorkTemplate, 0o600); err != nil {
+	orphanRenamePath := filepath.Join(root, ".agent-layer", "skills", "write-plan-legacy.md")
+	if err := os.WriteFile(orphanRenamePath, writePlanTemplate, 0o600); err != nil {
 		t.Fatalf("write orphan rename path: %v", err)
 	}
 
@@ -110,10 +110,10 @@ func TestBuildUpgradePlan_DetectsCategoriesOwnershipAndRename(t *testing.T) {
 		t.Fatalf("expected at least one rename")
 	}
 	rename := plan.TemplateRenames[0]
-	if rename.From != ".agent-layer/skills/plan-work-legacy.md" {
+	if rename.From != ".agent-layer/skills/write-plan-legacy.md" {
 		t.Fatalf("unexpected rename from path: %s", rename.From)
 	}
-	if rename.To != ".agent-layer/skills/plan-work/SKILL.md" {
+	if rename.To != ".agent-layer/skills/write-plan/SKILL.md" {
 		t.Fatalf("unexpected rename to path: %s", rename.To)
 	}
 	if rename.Confidence != UpgradeRenameConfidenceHigh {

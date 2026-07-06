@@ -1,23 +1,22 @@
 ---
-name: plan-work
+name: write-plan
 description: >-
   Write a scoped implementation plan, task list, and context file for a
   requested change, roadmap slice, execution strategy, task breakdown, or
   pre-implementation design artifact.
 ---
 
-# plan-work
+# write-plan
 
-Write a plan that is clear enough for a fresh agent or junior developer to execute without
-guessing. The output is three artifacts:
+Write a plan that is clear enough for a fresh agent or junior developer to
+execute without guessing. The output is three artifacts:
 
 - a narrative plan
 - a small ordered task list
 - an implementation context file
 
 The plan should be specific, testable, and tightly scoped to the user's
-request. The context file provides the orientation a fresh agent needs to begin
-implementation without re-discovering what the planner already found.
+request. The context file orients a fresh implementing agent.
 
 Scale artifact detail to the scope, risk, and ambiguity of the work. Simple,
 localized changes should produce concise artifacts with brief sections, a short
@@ -48,9 +47,9 @@ lists just to make the artifacts look substantial.
 
 Use the standard artifact naming rule under `.agent-layer/tmp/`:
 
-- `.agent-layer/tmp/plan-work.<run-id>.plan.md`
-- `.agent-layer/tmp/plan-work.<run-id>.task.md`
-- `.agent-layer/tmp/plan-work.<run-id>.context.md`
+- `.agent-layer/tmp/write-plan.<run-id>.plan.md`
+- `.agent-layer/tmp/write-plan.<run-id>.task.md`
+- `.agent-layer/tmp/write-plan.<run-id>.context.md`
 
 Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create all three files
 before writing.
@@ -94,7 +93,8 @@ Write the plan file with these sections:
    - migration or compatibility concerns
    - unclear dependencies
 6. `## Verification`
-   - exact commands to run
+   - exact verification commands or evidence required
+   - when each command should run, if timing matters
    - what each command proves
 7. `## Exit Criteria`
    - objective conditions that define completion
@@ -106,7 +106,7 @@ to an approach that requires a user decision.
 
 The task file should be a compact ordered checklist that mirrors the plan.
 
-Requirements:
+Task requirements:
 
 - keep items small and verifiable
 - include tests, docs, and memory updates when applicable
@@ -122,14 +122,10 @@ Preferred format:
 - [ ] Implement change set A
 - [ ] Add or update tests
 - [ ] Update docs/memory if affected
-- [ ] Run verification commands
+- [ ] Run verification
 ```
 
 ### Phase 4: Draft the context file
-
-The context file is the orientation document for a fresh implementing agent. It
-must contain everything needed to begin work without re-discovering what the
-planner already found.
 
 The context file must include these sections:
 
@@ -144,7 +140,7 @@ The context file must include these sections:
 5. `## Entry Point`
    - where the implementing agent should start reading and why
 
-Requirements:
+Context requirements:
 
 - all file paths must be relative to the repository root
 - every file listed must actually exist, or be explicitly marked as new
@@ -167,7 +163,7 @@ Before presenting the artifacts, check:
   decisions or the gate verdict is `escalate`
 - the plan contains no unresolved hedge words such as "likely", "probably", or
   "should work"
-- a fresh agent with only these artifacts would know where to start
+- the context file identifies a clear implementation entry point
 
 Choose one handoff verdict:
 

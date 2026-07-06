@@ -2,7 +2,7 @@
 name: complete-current-phase
 description: >-
   Complete the current roadmap phase through planning, review, implementation,
-  verification, audit, cleanup, and closeout. Use `plan-work` for planning only
+  verification, audit, cleanup, and closeout. Use `write-plan` for planning only
   and `finish-task` for non-roadmap closeout.
 ---
 
@@ -12,7 +12,7 @@ This is the orchestrator skill for roadmap execution. It iteratively plans, impl
 
 Use the current active roadmap phase (the first incomplete phase) by default.
 Do not jump ahead to a later phase unless the user explicitly names it.
-Use `plan-work` instead when the user wants only the planning step.
+Use `write-plan` instead when the user wants only the planning step.
 
 ## Scope default
 
@@ -106,7 +106,7 @@ If Phase 1 shows that the current phase is not reasonably decomposable:
 
 ### Phase 2: Plan the phase to completion (Planner)
 
-Use the `plan-work` skill to plan completion of the selected phase (not just the next work package).
+Use the `write-plan` skill to plan completion of the selected phase (not just the next work package).
 The plan must also define all remaining in-phase tasks, ordered internal work packages when more than one is needed, and phase-level done criteria that identify which work package should execute first.
 
 ### Phase 3: Review the plan (Plan review agents)
@@ -149,13 +149,13 @@ Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real b
 
 ### Phase 7: Broad audit of the delivered work package (Audit review agents)
 
-Use the `review-scope` skill on the touched files, surrounding modules, and changed tests/docs.
+Use the `review-code` skill on the touched files, surrounding modules, and changed tests/docs.
 
 ### Phase 8: Fix audit findings (Fixers + Auditors)
 
 Use the `resolve-findings` skill.
 
-If accepted Critical or High findings were fixed, run one more `review-scope` pass on the touched scope.
+If accepted Critical or High findings were fixed, run one more `review-code` pass on the touched scope.
 Repeat the audit/fix loop only when the new report still contains unresolved Critical or High findings.
 
 If the fixes introduce or expose local complexity that remains behavior-preserving and in-scope:
@@ -210,7 +210,7 @@ At each major stage, echo the current artifact path(s), identify the active phas
 ## Definition of done
 
 - Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
-- Each internal work package ran the full plan / multi-agent-plan-review / implement / verify-work / review-scope / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
+- Each internal work package ran the full plan / multi-agent-plan-review / implement / verify-work / review-code / resolve-findings loop, and no unresolved Critical or High findings remain at phase close.
 - The `finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
 - The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.
 

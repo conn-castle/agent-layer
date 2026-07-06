@@ -84,7 +84,7 @@ func TestBuildUpgradePlan_DetectUpgradeRenamesError(t *testing.T) {
 	if err := os.WriteFile(orphanPath, []byte("orphan\n"), 0o600); err != nil {
 		t.Fatalf("write orphan: %v", err)
 	}
-	evidencePath := filepath.Join(root, ".agent-layer", "skills", "review-scope", "SKILL.md")
+	evidencePath := filepath.Join(root, ".agent-layer", "skills", "review-code", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(evidencePath), 0o700); err != nil {
 		t.Fatalf("mkdir evidence dir: %v", err)
 	}

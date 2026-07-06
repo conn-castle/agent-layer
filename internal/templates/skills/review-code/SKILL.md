@@ -1,12 +1,12 @@
 ---
-name: review-scope
+name: review-code
 description: >-
   Review explicit code targets, including files, directories, diffs,
   uncommitted changes, or proactive hotspots, for correctness, gaps, risks,
   architecture, tests, docs, performance, reliability, and maintainability.
 ---
 
-# review-scope
+# review-code
 
 Run a targeted code review and write a findings report. Do not modify files.
 
@@ -25,7 +25,7 @@ Target resolution order:
 
 Write the report to:
 
-- `.agent-layer/tmp/review-scope.<run-id>.report.md`
+- `.agent-layer/tmp/review-code.<run-id>.report.md`
 
 Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create the file before writing.
 

@@ -128,7 +128,7 @@ Optional; use only when needed to defend the score.
 - `Behavior changes:` none, or explicit approval required
 - `Risks and constraints:`
 - `Why this next:`
-- `Plan-work question:` ask whether to run `/plan-work` or search for another
+- `Write-plan question:` ask whether to run `/write-plan` or search for another
   item
 
 ### `## Update Log`

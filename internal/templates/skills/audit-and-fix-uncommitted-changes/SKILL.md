@@ -44,7 +44,7 @@ At minimum, use:
 Prefer the dedicated skills that already exist:
 - `prune-new-tests` (mandatory pre-pass when the diff added test files; delegated to subagent)
 - `simplify-new-code` (mandatory pre-pass when the diff added or modified production code; delegated to subagent)
-- `review-scope`
+- `review-code`
 - `resolve-findings`
 - `simplify-new-code` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover (delegated to subagent)
 
@@ -60,7 +60,7 @@ Create the file with `touch` before writing.
 The master report is the human-readable round ledger and the single place to preserve orchestrator state.
 
 Delegated skill outputs are handled one way:
-- Use `review-scope` report artifacts as findings input to `resolve-findings`.
+- Use `review-code` report artifacts as findings input to `resolve-findings`.
 - Copy `resolve-findings` outcomes from its final handoff into the master report.
 - Do not require, open, echo, or cross-reference `resolve-findings` report
   artifacts or fixer narrative.
@@ -129,7 +129,7 @@ Record each report path and one-line outcome under `## Pre-pass Cleanup`. If a p
 
 ### Phase 2: Run audit Round N (Audit review agents)
 
-Use the `review-scope` skill on the current target.
+Use the `review-code` skill on the current target.
 
 For each round, copy the high-signal findings summary into the master report under `## Round N Findings`, recording for each finding: title, severity, confidence, location, and short why-it-matters summary.
 
@@ -206,7 +206,7 @@ At each major stage, echo the master report path and state the current phase (pr
 - Do not run an automatic confirmation round after a round with zero Critical/High applied fixes.
 - Do not count rejected findings toward the Critical/High repeat gate.
 - Do not modify unrelated code just because it is nearby.
-- Keep each round grounded in concrete reviewed diffs, review-scope findings, and observed verification.
+- Keep each round grounded in concrete reviewed diffs, review-code findings, and observed verification.
 
 ## Definition of done
 

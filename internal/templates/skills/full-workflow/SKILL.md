@@ -57,7 +57,7 @@ they appear.
 - Separate facts from choices: repo reading may resolve facts, constraints, and
   existing behavior; inferred or recommended choices stay open until approved.
 - After the spec gate, do not perform child-stage work yourself. Use the planner
-  for `plan-work`, review agents for `multi-agent-plan-review`, implementer for
+  for `write-plan`, review agents for `multi-agent-plan-review`, implementer for
   `implement-plan`, and shipper for `ship-pr`.
 - Treat child returns as intermediate; continue orchestration after each return.
 - Ask again if later evidence would materially change the aligned spec.
@@ -121,7 +121,7 @@ it and return to Phase 4 when questions or decisions remain.
 
 ### Phase 6: Plan
 
-Dispatch the planner role with the `plan-work` skill. The prompt must include:
+Dispatch the planner role with the `write-plan` skill. The prompt must include:
 - the spec path
 - the state path
 - the user's original request
@@ -154,7 +154,7 @@ checkpoint, including merge authorization.
 
 - Required dispatch agent roles were present and normalized before dispatch.
 - The spec gate completed before planning.
-- `plan-work`, `multi-agent-plan-review`, `implement-plan`, and `ship-pr` were
+- `write-plan`, `multi-agent-plan-review`, `implement-plan`, and `ship-pr` were
   invoked through the requested dispatch agent roles.
 - Final status and artifact paths are recorded in the state file.
 

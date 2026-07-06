@@ -3,7 +3,7 @@ name: schedule-backlog
 description: >-
   Map BACKLOG.md items into roadmap phases, checking issue/decision impacts and
   pausing before roadmap edits. Use when scheduling backlog work or reshaping
-  the roadmap; use `plan-work` for one implementation plan.
+  the roadmap; use `write-plan` for one implementation plan.
 ---
 
 # schedule-backlog
