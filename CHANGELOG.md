@@ -21,6 +21,7 @@ Patch release for the v0.12 line. Tightens bundled skill and instruction contrac
 - Installer and upgrade prompt routing now flow through a shared prompt router, preserving required overwrite/delete prompt validation while centralizing optional prompt fallbacks.
 - Statusline source replacement prompting is now gated on the actual optional prompt capability, preventing zero-value prompt implementations from being treated as wired callbacks.
 - Zero-value prompt fallback behavior is covered for unified overwrite, grouped tmp deletion, statusline source, config defaults, and skills migration prompts.
+- Agent Dispatch now forwards SIGINT and SIGTERM to the full dispatched process group, so shell-launched child processes terminate promptly on interruption.
 - End-to-end assertions were updated for the retired generated Codex `.codex/AGENTS.md` shim.
 
 ### Internal

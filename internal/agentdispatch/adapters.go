@@ -128,6 +128,7 @@ func runAntigravity(target targetMeta, project *config.ProjectConfig, env []stri
 	cmd.Stdin = nil
 	cmd.Stdout = opts.Stdout
 	cmd.Stderr = opts.Stderr
+	prepareCommandForSignalForwarding(cmd)
 	if err := cmd.Start(); err != nil {
 		return startError(AgentAntigravity, err)
 	}
@@ -202,6 +203,7 @@ func runStructuredCommand(cmd *exec.Cmd, target string, stdout io.Writer, stderr
 	if err != nil {
 		return wrapExitError(ExitTargetFailure, fmt.Sprintf(messages.DispatchStartTargetFailedFmt, target, err), err)
 	}
+	prepareCommandForSignalForwarding(cmd)
 	if err := cmd.Start(); err != nil {
 		return startError(target, err)
 	}
@@ -257,9 +259,28 @@ func runStructuredCommand(cmd *exec.Cmd, target string, stdout io.Writer, stderr
 	return nil
 }
 
+func prepareCommandForSignalForwarding(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
+}
+
+func signalCommand(cmd *exec.Cmd, sig os.Signal) {
+	if cmd.Process == nil {
+		return
+	}
+	if syscallSig, ok := sig.(syscall.Signal); ok {
+		if err := syscall.Kill(-cmd.Process.Pid, syscallSig); err == nil {
+			return
+		}
+	}
+	_ = cmd.Process.Signal(sig)
+}
+
 // installSignalForwarder begins forwarding SIGINT/SIGTERM received by this
-// process to cmd.Process. The returned caughtSig getter reports the first
-// signal observed (nil until one arrives). stop must be called to release
+// process to cmd's process group. The returned caughtSig getter reports the
+// first signal observed (nil until one arrives). stop must be called to release
 // signal.Notify resources and join the forwarder goroutine.
 func installSignalForwarder(cmd *exec.Cmd) (caughtSig func() os.Signal, stop func()) {
 	signals := make(chan os.Signal, 1)
@@ -275,9 +296,7 @@ func installSignalForwarder(cmd *exec.Cmd) (caughtSig func() os.Signal, stop fun
 		for {
 			select {
 			case sig := <-signals:
-				if cmd.Process != nil {
-					_ = cmd.Process.Signal(sig)
-				}
+				signalCommand(cmd, sig)
 				mu.Lock()
 				if first == nil {
 					first = sig
@@ -320,9 +339,7 @@ func waitWithSignal(cmd *exec.Cmd, target string) error {
 
 	select {
 	case sig := <-signals:
-		if cmd.Process != nil {
-			_ = cmd.Process.Signal(sig)
-		}
+		signalCommand(cmd, sig)
 		<-waitDone
 		if sig == os.Interrupt {
 			return exitError(ExitSigint, fmt.Sprintf(messages.DispatchSignalExitFmt, target, "SIGINT"))
