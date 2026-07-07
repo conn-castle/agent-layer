@@ -40,14 +40,13 @@ Do not interpret this skill as permission to review old commits, sweep the whole
 
 At minimum, use:
 - parallel audit review agents with different lenses
-- a findings resolver/fixer
+- an accepted-finding fixer
 - a synthesizer that keeps the round-by-round report current
 
-Use the cleanup assets first, then dedicated review/resolution skills:
+Use the cleanup assets first, then the review/fix loop:
 - `assets/prune-new-tests.md` (mandatory pre-pass when the diff added test files; delegated to subagent)
 - `assets/simplify-new-code.md` (mandatory pre-pass when the diff added or modified production code; delegated to subagent)
 - `/review-uncommitted-code`
-- `/resolve-findings`
 - `assets/simplify-new-code.md` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover (delegated to subagent)
 
 ## Required artifacts
@@ -62,10 +61,11 @@ Create the file with `touch` before writing.
 The master report is the human-readable round ledger and the single place to preserve orchestrator state.
 
 Delegated skill outputs are handled one way:
-- Use `/review-uncommitted-code` report artifacts as findings input to `/resolve-findings`.
-- Copy `/resolve-findings` outcomes from its final handoff into the master report.
-- Do not require, open, echo, or cross-reference `/resolve-findings` report
-  artifacts or fixer narrative.
+- Use `/review-uncommitted-code` report artifacts as the round findings input.
+- Fix only findings classified under `Recommended Accept` after verifying them
+  against the current repo state.
+- Copy accepted/rejected/deferred/already-resolved counts from the review report
+  into the master report.
 
 ## Continuation rule
 
@@ -146,7 +146,26 @@ For each round, copy the high-signal findings summary into the master report und
 
 ### Phase 3: Verify and fix Round N findings (Fixers)
 
-Use the `/resolve-findings` skill on the Round N review report with authority to fix accepted findings. Fix every accepted finding regardless of severity. Do not treat `defer` as a clean outcome; escalate instead when a valid issue cannot be resolved for a human-checkpoint reason. "Broader scope than a point fix" is not a valid deferral reason.
+Use the Round N review report as input. Fix every `Recommended Accept` finding
+regardless of severity.
+
+For accepted findings:
+- verify the finding against the current repo state before editing
+- group duplicate or tightly coupled findings into one bounded fix target
+- keep unrelated findings separate when they can be fixed independently
+- diagnose the root cause
+- implement the scoped fix and directly required test, doc, or memory updates
+- run focused verification
+- audit the final diff against the accepted finding
+
+If zero findings are accepted, record `No accepted findings` in `## Round N
+Fixes` and do not edit files in this phase.
+
+Do not treat `Recommended Defer` as a clean outcome; escalate instead when a
+valid issue cannot be resolved for a human-checkpoint reason. "Broader scope
+than a point fix" is not a valid deferral reason. Do not defer merely because
+the fix might be broad when it stays within scope and does not need a human
+checkpoint.
 
 Copy the fix summary into the master report under `## Round N Fixes` (title, severity, fix description, files touched) and `## Round N Status` (accepted/rejected/deferred counts, unresolved Critical and High counts).
 

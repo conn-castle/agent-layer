@@ -94,6 +94,44 @@ func TestSkillTemplatesAllowResourceFiles(t *testing.T) {
 	}
 }
 
+func TestReviewUncommittedCodeUsesVerdictClassificationAsset(t *testing.T) {
+	skillData, err := Read("skills/review-uncommitted-code/SKILL.md")
+	if err != nil {
+		t.Fatalf("Read skill error: %v", err)
+	}
+	skill := string(skillData)
+	for _, snippet := range []string{
+		"assets/finding-verdict-classification.md",
+		"### Recommended Accept",
+		"### Recommended Reject",
+		"### Recommended Defer",
+		"### Recommended Already Resolved",
+		"Verdicts are reviewer recommendations, not final resolution.",
+	} {
+		if !strings.Contains(skill, snippet) {
+			t.Fatalf("expected review-uncommitted-code skill to contain %q", snippet)
+		}
+	}
+
+	assetData, err := Read("skills/review-uncommitted-code/assets/finding-verdict-classification.md")
+	if err != nil {
+		t.Fatalf("Read verdict classification asset error: %v", err)
+	}
+	asset := string(assetData)
+	for _, snippet := range []string{
+		"Assign exactly one recommended verdict",
+		"`Accept`: valid now",
+		"`Reject`: not valid",
+		"`Defer`: valid, but blocked",
+		"`Already Resolved`: valid for an earlier state",
+		"Only `Accept` findings are real current findings",
+	} {
+		if !strings.Contains(asset, snippet) {
+			t.Fatalf("expected verdict classification asset to contain %q", snippet)
+		}
+	}
+}
+
 // TestToolInstructionsKeepSkillOwnedRoutingOutOfBaseInstructions enforces the
 // architectural rule that per-tool routing for skill-owned CLIs (Context7,
 // Tavily, Playwright) lives in the matching skill body, not in the base
@@ -133,8 +171,8 @@ func TestAutoLoopSkillContractsDoNotDeferForPointFixScope(t *testing.T) {
 		"skills/clean-and-fix-code/SKILL.md": {
 			"A broad-but-clear fix is still in scope when it resolves an accepted finding against the working-tree target and does not trigger a human checkpoint.",
 		},
-		"skills/resolve-findings/SKILL.md": {
-			"Fix size alone is not scope: broad, multi-file, or non-point fixes remain in scope when they resolve accepted findings against the reviewed target.",
+		"skills/improve-codebase/SKILL.md": {
+			"Do not defer merely because the fix might be broad when it stays within scope and does not need a human checkpoint.",
 		},
 	}
 	for path, snippets := range required {
@@ -155,16 +193,8 @@ func TestAutoLoopSkillContractsDoNotDeferForPointFixScope(t *testing.T) {
 		snippet string
 	}{
 		{
-			path:    "skills/resolve-findings/SKILL.md",
-			snippet: "If the finding is technically true but out of scope for this run, mark it `defer`.",
-		},
-		{
 			path:    "skills/clean-and-fix-code/SKILL.md",
 			snippet: "Required: ask when an accepted finding requires materially broader scope",
-		},
-		{
-			path:    "skills/resolve-findings/SKILL.md",
-			snippet: "Required: ask when an accepted fix would require materially broader scope",
 		},
 	} {
 		data, err := Read(forbidden.path)
@@ -189,6 +219,7 @@ func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 		"skills/simplify-new-code/SKILL.md",
 		"skills/simplify-new-code/reviewer-prompt.md",
 		"skills/simplify-code/SKILL.md",
+		"skills/resolve-findings/SKILL.md",
 	} {
 		if _, err := Read(path); err == nil {
 			t.Fatalf("expected removed skill template %s to stay absent", path)

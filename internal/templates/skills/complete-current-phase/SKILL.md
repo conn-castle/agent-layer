@@ -114,7 +114,7 @@ execute first.
 
 ### Phase 3: Confirm Plan Readiness (Plan review agents)
 
-Do not send plan-review findings to `/resolve-findings`; `/review-plan` owns
+Do not send plan-review findings into the audit-fix loop; `/review-plan` owns
 review agent synthesis, accepted artifact revisions, and repeat review rounds
 inside `/plan-work`.
 
@@ -153,7 +153,16 @@ Use the `/review-uncommitted-code` skill on the touched files, surrounding modul
 
 ### Phase 8: Fix audit findings (Fixers + Auditors)
 
-Use the `/resolve-findings` skill.
+Use the Phase 7 review report as input. Fix every `Recommended Accept` finding
+regardless of severity after verifying it against the current repo state.
+
+For accepted findings:
+- group duplicate or tightly coupled findings into one bounded fix target
+- keep unrelated findings separate when they can be fixed independently
+- diagnose the root cause
+- implement the scoped fix and directly required test, doc, or memory updates
+- run focused verification
+- audit the final diff against the accepted finding
 
 If accepted Critical or High findings were fixed, run one more `/review-uncommitted-code` pass on the touched scope.
 Repeat the audit/fix loop only when the new report still contains unresolved Critical or High findings.
@@ -211,7 +220,7 @@ At each major stage, echo the current artifact path(s), identify the active phas
 
 - Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
 - Each internal work package ran the full /plan-work, /implement-plan,
-  /verify-work, /review-uncommitted-code, /resolve-findings loop, and no unresolved Critical or High
+  /verify-work, /review-uncommitted-code, accepted-finding fix loop, and no unresolved Critical or High
   findings remain at phase close.
 - The `/finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
 - The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.

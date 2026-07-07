@@ -3,7 +3,7 @@ name: fix-issues
 description: >-
   Fix open `ISSUES.md` items: plan a batch, implement, audit, verify, and keep
   the ledger current. Use `/debug-issue` for one unexplained symptom or
-  `/resolve-findings` for review reports.
+  `/review-uncommitted-code` for report-only code review.
 ---
 
 # fix-issues

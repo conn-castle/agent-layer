@@ -55,22 +55,26 @@ Create the file with `touch` before writing.
 The master report is the human-readable ledger and the single place to preserve orchestrator state.
 
 Delegated skill outputs are handled one way:
-- Use `/review-uncommitted-code` report artifacts as findings input to `/resolve-findings`.
-- Copy `/resolve-findings`, `/simplify-codebase`, `/boost-coverage`, `/audit-tests`, and `/fix-issues` outcomes from their final handoffs into the master report.
-- Do not require, open, echo, or cross-reference child report artifacts from `/resolve-findings`, `/simplify-codebase`, `/boost-coverage`, `/audit-tests`, or `/fix-issues`.
+- Use `/review-uncommitted-code` report artifacts as the findings input for the
+  current chunk or cross-cutting review.
+- Fix only findings classified under `Recommended Accept` after verifying them
+  against the current repo state.
+- Copy `/simplify-codebase`, `/boost-coverage`, `/audit-tests`, and
+  `/fix-issues` outcomes from their final handoffs into the master report.
+- Do not require, open, echo, or cross-reference child report artifacts from
+  `/simplify-codebase`, `/boost-coverage`, `/audit-tests`, or `/fix-issues`.
 
 ## Required behavior
 
 At minimum, use:
 - a survey scout that maps the repository structure
 - parallel audit review agents with different lenses per chunk
-- a findings resolver/fixer
+- an accepted-finding fixer
 - a cross-cutting reviewer for architecture and consistency
 - a synthesizer that maintains the master report
 
 Prefer the dedicated skills that already exist:
 - `/review-uncommitted-code` for per-chunk auditing
-- `/resolve-findings` for triaging and fixing findings
 - `/simplify-codebase` when complexity warrants it
 - `/boost-coverage` when test gaps are significant
 - `/audit-tests` when test suite quality, redundancy, or organization is concerning
@@ -148,11 +152,24 @@ Copy the high-signal findings summary into the master report under `## Chunk N: 
 
 ### Phase 3: Fix chunk N findings and re-audit (Fixers + Auditors)
 
-Use the `/resolve-findings` skill on the chunk N review report.
+Use the chunk N review report as input. Fix every `Recommended Accept` finding
+regardless of severity.
 
-Fix every accepted finding regardless of severity. For findings that cannot be fixed in scope:
+For accepted findings:
+- verify the finding against the current repo state before editing
+- group duplicate or tightly coupled findings into one bounded fix target
+- keep unrelated findings separate when they can be fixed independently
+- diagnose the root cause
+- implement the scoped fix and directly required test, doc, or memory updates
+- run focused verification
+- audit the final diff against the accepted finding
+
+For accepted findings that cannot be fixed in scope:
 - log them to `ISSUES.md` with the severity, location, and next step
 - mark them as deferred in the master report
+
+Do not defer merely because the fix might be broad when it stays within scope
+and does not need a human checkpoint.
 
 Copy the fix summary into the master report under `## Chunk N: <name> Fixes`.
 
@@ -166,7 +183,8 @@ Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the reviewer 
 Inputs the reviewer receives alongside the prompt:
 - The post-fix content of every file in the chunk.
 - The originating findings list (titles, severities, locations only).
-- Nothing else. No fixer narrative, no `/resolve-findings` report, no chat history, no "we decided to ___" rationalizations.
+- Nothing else. No fixer narrative, no chat history, no "we decided to ___"
+  rationalizations.
 
 Loop rules:
 - If the fresh-context re-audit returns new Critical or High findings, fix them and re-invoke the reviewer (fresh context again, fresh inputs each time).
@@ -185,7 +203,8 @@ After all chunks have been individually audited, run a cross-cutting review cove
 
 Record cross-cutting findings in the master report under `## Cross-Cutting Findings`.
 
-Fix accepted cross-cutting findings using the same /resolve-findings workflow.
+Fix accepted cross-cutting findings using the same accepted-finding fix
+contract from Phase 3.
 
 ### Phase 5: Complementary skill delegation (Orchestrator)
 

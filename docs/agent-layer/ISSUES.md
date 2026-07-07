@@ -29,7 +29,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
     Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
-    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, and retire root `prune-new-tests` / `simplify-new-code` skills into clean-and-fix assets, but historical manifests are immutable and the next release version has not been chosen.
+    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into clean-and-fix assets, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
     Next step: When the next release version is selected, add the required skill migration entry and generate the matching template ownership manifest.
     Notes: Do not edit already-tagged manifest files such as `0.12.1.json`.
 
@@ -49,13 +49,13 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: internal/sync/codex_config_merge.go (`insertRootLine` / `setPath` fresh-insert path)
     Description: When a managed root scalar (e.g. `model`) is absent and gets inserted just before the first table header via `insertRootLine`, a `# comment` that documented that first table ends up above the newly inserted scalar (separated by a blank), so it reads as documenting the scalar. In-place updates of existing managed keys are unaffected (they now preserve position and inline comments); only the first-time fresh insert of a root scalar in front of a commented first table is affected. No data loss; valid TOML.
     Next step: Decide placement policy for fresh root-scalar inserts relative to a first table's leading comment block (insert above the comment block, or leave as-is), then implement; this is a formatting/UX tradeoff, not a correctness bug.
-    Notes: Deferred from resolve-findings 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
+    Notes: Deferred from review resolution 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
 
 - Issue 2026-07-02 wizard-dead-countbracketdepth-duplicate: Dead wizard countBracketDepth/quoteState duplicate kept alive only by tests
     Priority: Low. Area: internal/wizard/patch.go (`countBracketDepth`, `quoteState`, `containsUnescapedTripleQuote`) + patch_test.go
     Description: Production wizard multiline detection delegates to `tomlpatch.MultilineValueEndIndex`; the local `countBracketDepth`/`quoteState` copy (and the `containsUnescapedTripleQuote` shim) in patch.go is referenced only by patch_test.go. Unlike the live `tomlpatch` copy (fixed in this pass to be triple-quote-aware), the wizard copy is the old single-quote-only version — dead but still test-pinned, so it is a stale duplicate and a maintenance trap.
     Next step: Delete the wizard-local `countBracketDepth`/`quoteState` and their pinning tests (and inline the `containsUnescapedTripleQuote` shim), leaving `tomlpatch` as the single source of truth.
-    Notes: Left in place by resolve-findings 20260702 (F3) to avoid deleting committed-test-covered code out of scope.
+    Notes: Left in place by review resolution 20260702 (F3) to avoid deleting committed-test-covered code out of scope.
 
 - Issue 2026-07-02 codex-feature-toggles-cli-only-in-wizard: Codex feature toggles (statusline/apps/browser) not offered to VS Code-only repos
     Priority: Low. Area: internal/wizard/wizard.go (Codex prompt block)

@@ -79,6 +79,10 @@ Review lenses:
 Use an adversarial posture: try to falsify the reviewed code against its
 intended behavior, boundaries, and relevant repo constraints.
 
+Before synthesizing the final report, load and apply
+`assets/finding-verdict-classification.md`. The report is a reviewer's
+recommendation, not the final resolution authority.
+
 ### Phase 1: Establish target and context
 
 1. Resolve and record the target using the defaults resolution order.
@@ -100,12 +104,17 @@ target.
 
 ### Phase 3: Synthesize findings
 
+Treat review findings as candidates until they have been verified against the
+current repo state. Classify every candidate finding under exactly one
+recommended verdict from `assets/finding-verdict-classification.md`.
+
 Each finding must include:
 
 - `Title`
 - `Severity`: Critical | High | Medium | Low
 - `Confidence`: High | Medium | Low
 - `Location`: exact file/path/scope
+- `Recommended verdict`: Accept | Reject | Defer | Already Resolved
 - `Why it matters`
 - `Evidence`
 - `Recommendation`
@@ -122,7 +131,14 @@ The report must contain:
    - review mode used
    - short outcome summary
 2. `## Findings`
-   - findings first, ordered by severity
+   - start with: `Verdicts are reviewer recommendations, not final resolution.`
+   - group every candidate finding under:
+     - `### Recommended Accept`
+     - `### Recommended Reject`
+     - `### Recommended Defer`
+     - `### Recommended Already Resolved`
+   - order findings within each group by severity, then confidence
+   - use `None` for empty groups
 3. `## Open Questions`
    - only unresolved items that block confidence
 4. `## Strengths`
@@ -130,14 +146,15 @@ The report must contain:
 5. `## Suggested Next Steps`
    - a small number of coherent follow-up actions
 6. `## Self-Check`
-   - For every remaining finding, answer:
+   - For every recommended accepted finding, answer:
      - Is this a root-cause recommendation, not a band-aid?
      - Is the evidence concrete and tied to actual code?
      - Is the severity calibrated to real impact?
      - Am I recommending work outside the reviewed scope as though it were a
        finding?
 
-Demote or drop findings that fail the self-check.
+Move findings that fail the self-check to the appropriate non-accepted verdict
+group instead of dropping them silently.
 
 ## Human checkpoints
 
@@ -157,8 +174,10 @@ Demote or drop findings that fail the self-check.
 ## Definition of done
 
 - The report exists with every required section.
-- The `Self-Check` section contains written answers for every remaining
-  finding.
+- The `Findings` section includes all four recommended verdict groups and
+  states that verdicts are recommendations.
+- The `Self-Check` section contains written answers for every recommended
+  accepted finding.
 - Every finding names location, severity, confidence, evidence, and
   recommendation tied to the reviewed scope.
 
@@ -167,6 +186,6 @@ Demote or drop findings that fail the self-check.
 After writing the report:
 
 1. Echo the report path.
-2. Summarize the top findings in chat.
+2. Summarize the top recommended accepted findings in chat.
 3. Say whether you recommend `proceed`, `proceed after fixes`, or
    `revise first`.
