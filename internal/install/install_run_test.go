@@ -38,7 +38,7 @@ func TestRunCreatesStructure(t *testing.T) {
 		filepath.Join(root, "docs", "agent-layer", "BACKLOG.md"),
 		filepath.Join(root, "docs", "agent-layer", "ISSUES.md"),
 		filepath.Join(root, ".agent-layer", "instructions", "00_rules.md"),
-		filepath.Join(root, ".agent-layer", "skills", "review-code", "SKILL.md"),
+		filepath.Join(root, ".agent-layer", "skills", "review-uncommitted-code", "SKILL.md"),
 	}
 	for _, path := range expectAbsent {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {

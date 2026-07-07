@@ -1,15 +1,6 @@
----
-name: prune-new-tests
-description: >-
-  Burden-of-proof review of newly added tests: auto-delete any test that can't
-  justify itself with a production-code mutation that would flip its assertion
-  given the test's actual input. Do not use for full-suite health or for adding
-  tests.
----
-
 # prune-new-tests
 
-This skill prunes low-value tests that the implementing agent added as a side
+This asset prunes low-value tests that the implementing agent added as a side
 effect of implementation.
 
 ## Defaults
@@ -38,8 +29,9 @@ Required roles:
 
 ### Reviewer subagent prompt
 
-Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the
-reviewer subagent verbatim — do not paraphrase, summarize, or modify the
+Pass the contents of
+[`prune-new-tests-reviewer-prompt.md`](prune-new-tests-reviewer-prompt.md) to
+the reviewer subagent verbatim — do not paraphrase, summarize, or modify the
 rubric.
 
 Inputs the reviewer receives alongside the prompt:
@@ -91,8 +83,8 @@ a subagent. Perform `Diff scout` and `Applier` yourself.
 1. Group added tests into review chunks (one test file or a small cluster
    of related files per chunk).
 2. For each chunk, invoke the reviewer subagent with the contents of
-   `reviewer-prompt.md` and the chunk inputs above. The subagent must be a
-   fresh invocation with no carryover from this conversation.
+   `prune-new-tests-reviewer-prompt.md` and the chunk inputs above. The
+   subagent must be a fresh invocation with no carryover from this conversation.
 3. Track each verdict with `Location`, `Name`, `Verdict`, `Justification`,
    and `Coverage Gap`. `Justification` is the `mutation` for `keep` and the
    `reason` for `delete`; `Coverage Gap` is the reviewer's `coverage_gap` or

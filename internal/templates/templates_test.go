@@ -130,7 +130,7 @@ func TestAutoLoopSkillContractsDoNotDeferForPointFixScope(t *testing.T) {
 		"skills/auto-skill-loop/references/blocker-classification.md": {
 			"Fix size, multi-file scope, or \"broader scope than a point fix\" is not a user-only blocker by itself.",
 		},
-		"skills/audit-and-fix-uncommitted/SKILL.md": {
+		"skills/clean-and-fix-code/SKILL.md": {
 			"A broad-but-clear fix is still in scope when it resolves an accepted finding against the working-tree target and does not trigger a human checkpoint.",
 		},
 		"skills/resolve-findings/SKILL.md": {
@@ -159,7 +159,7 @@ func TestAutoLoopSkillContractsDoNotDeferForPointFixScope(t *testing.T) {
 			snippet: "If the finding is technically true but out of scope for this run, mark it `defer`.",
 		},
 		{
-			path:    "skills/audit-and-fix-uncommitted/SKILL.md",
+			path:    "skills/clean-and-fix-code/SKILL.md",
 			snippet: "Required: ask when an accepted finding requires materially broader scope",
 		},
 		{
@@ -182,7 +182,12 @@ func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 		"skills/continue-roadmap/SKILL.md",
 		"skills/find-issues/SKILL.md",
 		"skills/mechanical-cleanup/SKILL.md",
+		"skills/audit-and-fix-uncommitted/SKILL.md",
 		"skills/audit-and-fix-uncommitted-changes/SKILL.md",
+		"skills/prune-new-tests/SKILL.md",
+		"skills/prune-new-tests/reviewer-prompt.md",
+		"skills/simplify-new-code/SKILL.md",
+		"skills/simplify-new-code/reviewer-prompt.md",
 		"skills/simplify-code/SKILL.md",
 	} {
 		if _, err := Read(path); err == nil {

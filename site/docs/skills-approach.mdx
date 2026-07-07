@@ -63,7 +63,7 @@ stable contract for workflows to compose.
 | `write-plan` | Turn a requested change into implementation-ready plan, task list, and context artifacts. |
 | `review-plan` | Review plan artifacts before implementation and report blocking gaps, weak assumptions, and missing verification. |
 | `implement-plan` | Execute an approved plan against the codebase, use task-local feedback checks when needed, and record deviations or follow-up. |
-| `review-code` | Review explicit files, diffs, directories, uncommitted changes, or intentionally selected hotspots and produce prioritized findings. |
+| `review-uncommitted-code` | Review explicit files, diffs, directories, uncommitted changes, or intentionally selected hotspots and produce prioritized findings. |
 | `verify-work` | Compare completed work against the plan or request, verify the touched work, and report completeness, regressions, missing verification, docs/memory gaps, and scope drift. |
 
 ## Workflow skills
@@ -86,8 +86,8 @@ Current examples:
   auditing, and keeping the ledger current.
 
 Because workflows own lifecycle orchestration, root skills should stay boring
-and portable. A workflow can call `review-code` several times with different
-scopes; `review-code` should not decide the whole project lifecycle or call
+and portable. A workflow can call `review-uncommitted-code` several times with different
+scopes; `review-uncommitted-code` should not decide the whole project lifecycle or call
 other skills.
 
 ## Contract expectations

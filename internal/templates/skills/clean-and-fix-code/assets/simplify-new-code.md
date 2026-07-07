@@ -1,15 +1,6 @@
----
-name: simplify-new-code
-description: >-
-  Scan newly added or modified production code for agent-added scope creep —
-  speculative flexibility, premature abstractions, dead branches, defensive
-  scaffolding, half-finished work — and auto-apply simplifications, preserving
-  user-requested behavior. Do not use for full-codebase complexity sweeps.
----
-
 # simplify-new-code
 
-This skill removes complexity not justified by the user-requested behavior.
+This asset removes complexity not justified by the user-requested behavior.
 
 ## Defaults
 
@@ -37,8 +28,9 @@ Required roles:
 
 ### Reviewer subagent prompt
 
-Pass the contents of [`reviewer-prompt.md`](reviewer-prompt.md) to the
-reviewer subagent verbatim — do not paraphrase, summarize, or modify the
+Pass the contents of
+[`simplify-new-code-reviewer-prompt.md`](simplify-new-code-reviewer-prompt.md)
+to the reviewer subagent verbatim — do not paraphrase, summarize, or modify the
 rubric.
 
 Inputs the reviewer receives alongside the prompt:
@@ -97,8 +89,8 @@ and continue the parent workflow after every subagent return.
 1. Group changed files into review chunks (one file or a small cluster of
    related files per chunk).
 2. For each chunk, invoke the reviewer subagent with the contents of
-   `reviewer-prompt.md` and the chunk inputs above. The subagent must be
-   a fresh invocation with no carryover from this conversation.
+   `simplify-new-code-reviewer-prompt.md` and the chunk inputs above. The
+   subagent must be a fresh invocation with no carryover from this conversation.
 3. Track each JSON-line finding with `Location`, `Smell`, `Before`, `After`,
    and `Rationale`.
 

@@ -1,14 +1,14 @@
 ---
-name: audit-and-fix-uncommitted
+name: clean-and-fix-code
 description: >-
-  Audit and iteratively fix uncommitted working-tree changes until a confirming
+  Clean and iteratively fix uncommitted working-tree changes until a confirming
   review finds no remaining actionable issues. Use to stabilize in-progress
-  diffs and report each review/fix round with severity.
+  diffs with pruning, simplification, review, and fix rounds.
 ---
 
-# audit-and-fix-uncommitted
+# clean-and-fix-code
 
-This is the working-tree audit and fix orchestrator.
+This is the working-tree cleanup and fix orchestrator.
 It should run an iterative loop that:
 - selects the full working-tree change target
 - audits the target and the minimum necessary surrounding context
@@ -17,7 +17,9 @@ It should run an iterative loop that:
 - repeats until a confirming review finds no remaining actionable findings
 - reports each round's findings and fixes to the user with severities
 
-Use this skill only for the full audit-and-fix loop over all uncommitted changes. For report-only review or single-report remediation, use the dedicated lower-level skills instead.
+Use this skill only for the full cleanup and fix loop over all uncommitted
+changes. For report-only review or single-report remediation, use the dedicated
+lower-level skills instead.
 
 ## Scope default
 
@@ -41,37 +43,44 @@ At minimum, use:
 - a findings resolver/fixer
 - a synthesizer that keeps the round-by-round report current
 
-Prefer the dedicated skills that already exist:
-- `/prune-new-tests` (mandatory pre-pass when the diff added test files; delegated to subagent)
-- `/simplify-new-code` (mandatory pre-pass when the diff added or modified production code; delegated to subagent)
-- `/review-code`
+Use the cleanup assets first, then dedicated review/resolution skills:
+- `assets/prune-new-tests.md` (mandatory pre-pass when the diff added test files; delegated to subagent)
+- `assets/simplify-new-code.md` (mandatory pre-pass when the diff added or modified production code; delegated to subagent)
+- `/review-uncommitted-code`
 - `/resolve-findings`
-- `/simplify-new-code` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover (delegated to subagent)
+- `assets/simplify-new-code.md` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover (delegated to subagent)
 
 ## Required artifacts
 
 Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
 Always create:
-- `.agent-layer/tmp/audit-and-fix-uncommitted.<run-id>.report.md`
+- `.agent-layer/tmp/clean-and-fix-code.<run-id>.report.md`
 
 Create the file with `touch` before writing.
 
 The master report is the human-readable round ledger and the single place to preserve orchestrator state.
 
 Delegated skill outputs are handled one way:
-- Use `/review-code` report artifacts as findings input to `/resolve-findings`.
+- Use `/review-uncommitted-code` report artifacts as findings input to `/resolve-findings`.
 - Copy `/resolve-findings` outcomes from its final handoff into the master report.
 - Do not require, open, echo, or cross-reference `/resolve-findings` report
   artifacts or fixer narrative.
 
 ## Continuation rule
 
-Sub-skill returns are intermediate, not terminal. After every delegation, continue to the next numbered step in the same turn — the sub-skill's closing summary is not audit-and-fix's closeout. The loop exits only at the end of Phase 5, a listed human checkpoint, or a sub-skill that halts on its own human checkpoint without applying its changes.
+Delegation returns are intermediate, not terminal. After every delegation,
+continue to the next numbered step in the same turn — a subagent or sub-skill
+closing summary is not this skill's closeout. The loop exits only at the end of
+Phase 5, a listed human checkpoint, or a delegated workflow that halts on its
+own human checkpoint without applying changes.
 
 ## Context Discipline
 
-You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+You are the orchestrator. Do not do the child/subagent work yourself. Your job
+is to preserve your context to make strategic decisions, ensure each delegated
+workflow follows its assigned contract, reconcile outputs, enforce this
+workflow's gates, and continue after every return.
 
 ## Global constraints
 
@@ -113,12 +122,14 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 
 ### Phase 0.5: Prune agent-side scope creep before any review round (Pre-pass)
 
-Delegate each pre-pass to a subagent so its iterative loop does not register as audit-and-fix's closeout. Run in order:
+Delegate each pre-pass to a fresh-context subagent with the named asset content
+so its iterative loop does not register as this skill's closeout. Run in order:
 
-1. `/prune-new-tests` subagent — when the diff added test files or test functions. Returns master report path plus deleted-count / surviving-gap count.
-2. `/simplify-new-code` subagent — when the diff added or modified production code. Returns master report path plus applied-count / reverted-count.
+1. `assets/prune-new-tests.md` — when the diff added test files or test functions. Return deleted-count, kept-count, and surviving-gap count.
+2. `assets/simplify-new-code.md` — when the diff added or modified production code. Return applied-count, reverted-count, re-scan count, and out-of-scope count.
 
-Record each report path and one-line outcome under `## Pre-pass Cleanup`. If a pre-pass materially changes the working tree, restart Phase 0.
+Record each one-line outcome under `## Pre-pass Cleanup`. If a pre-pass
+materially changes the working tree, restart Phase 0.
 
 ### Phase 1: Gather only the needed context (Lead reviewer)
 
@@ -129,7 +140,7 @@ Record each report path and one-line outcome under `## Pre-pass Cleanup`. If a p
 
 ### Phase 2: Run audit Round N (Audit review agents)
 
-Use the `/review-code` skill on the current target.
+Use the `/review-uncommitted-code` skill on the current target.
 
 For each round, copy the high-signal findings summary into the master report under `## Round N Findings`, recording for each finding: title, severity, confidence, location, and short why-it-matters summary.
 
@@ -151,7 +162,7 @@ Severity rule:
 - A final round may contain accepted Medium or Low findings, but they still must be fixed before the run closes.
 
 If a fix exposes obvious local complexity that is behavior-preserving and in scope:
-- delegate `/simplify-new-code` to a subagent on the affected files
+- delegate `assets/simplify-new-code.md` to a subagent on the affected files
 - then apply the same Critical/High applied-fix gate to decide whether another audit round is required
 
 Escalate if the loop is not converging (same findings recurring, fix attempts not resolving issues, or complexity growing instead of shrinking).
@@ -167,14 +178,14 @@ When the loop converges:
 
 ## Required master report structure
 
-Write `.agent-layer/tmp/audit-and-fix-uncommitted.<run-id>.report.md` with:
+Write `.agent-layer/tmp/clean-and-fix-code.<run-id>.report.md` with:
 
 1. `# Audit and Fix Summary`
 2. `## Target`
 3. `## Assumptions`
 4. `## Pre-pass Cleanup`
-   - `/prune-new-tests` outcome (report path, deleted-count, surviving-gap count) or `Not applicable — no added tests`
-   - `/simplify-new-code` outcome (report path, applied-count, reverted-count, out-of-scope count) or `Not applicable — no production-code changes`
+   - prune-new-tests asset outcome (deleted-count, kept-count, surviving-gap count) or `Not applicable — no added tests`
+   - simplify-new-code asset outcome (applied-count, reverted-count, re-scan count, out-of-scope count) or `Not applicable — no production-code changes`
 5. `## Round 1 Findings`
 6. `## Round 1 Fixes`
 7. `## Round 1 Status`
@@ -206,12 +217,12 @@ At each major stage, echo the master report path and state the current phase (pr
 - Do not run an automatic confirmation round after a round with zero Critical/High applied fixes.
 - Do not count rejected findings toward the Critical/High repeat gate.
 - Do not modify unrelated code just because it is nearby.
-- Keep each round grounded in concrete reviewed diffs, /review-code findings, and observed verification.
+- Keep each round grounded in concrete reviewed diffs, /review-uncommitted-code findings, and observed verification.
 
 ## Definition of done
 
-- The master report exists at `.agent-layer/tmp/audit-and-fix-uncommitted.<run-id>.report.md` with `## Pre-pass Cleanup` populated (or marked not applicable for each sub-skill), one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round, plus `## Final Verification` and `## Residual Risk`.
-- The `## Pre-pass Cleanup` section names both `/prune-new-tests` and `/simplify-new-code` outcomes; either ran or is explicitly recorded as not applicable.
+- The master report exists at `.agent-layer/tmp/clean-and-fix-code.<run-id>.report.md` with `## Pre-pass Cleanup` populated (or marked not applicable for each cleanup asset), one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round, plus `## Final Verification` and `## Residual Risk`.
+- The `## Pre-pass Cleanup` section names both cleanup asset outcomes; each either ran or is explicitly recorded as not applicable.
 - The final round's status states `Critical/High applied fixes: 0`.
 - No accepted finding from any round remains unresolved or deferred in the final report.
 - The working tree was not staged, committed, or discarded by this skill.

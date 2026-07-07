@@ -137,7 +137,7 @@ After writing and reviewing the artifacts:
 4. If a selected issue proves materially broader than planned, hand it back to the execution gatekeeper instead of freelancing.
 
 If the touched scope accumulates obvious local complexity or dead scaffolding that can be fixed without broadening scope:
-- use the `/simplify-new-code` skill
+- use `/clean-and-fix-code`
 - then continue to Phase 6
 
 ### Phase 6: Audit the touched area (Auditor)

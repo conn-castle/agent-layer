@@ -138,7 +138,7 @@ Before moving into implementation or advancing to the next package:
 
 Use the `/implement-plan` skill with the current plan and task list. Stay inside the selected roadmap phase and complete the current work package end-to-end before moving on. If the package reveals additional in-phase tasks or dependency changes, update the plan and task list before continuing.
 
-If implementation leaves obvious local complexity that can be improved without broadening scope, use the `/simplify-new-code` skill, then continue to Phase 6.
+If implementation leaves obvious local complexity that can be improved without broadening scope, use `/clean-and-fix-code`, then continue to Phase 6.
 
 ### Phase 6: Review against the plan (Completeness review agents)
 
@@ -149,17 +149,17 @@ Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real b
 
 ### Phase 7: Broad audit of the delivered work package (Audit review agents)
 
-Use the `/review-code` skill on the touched files, surrounding modules, and changed tests/docs.
+Use the `/review-uncommitted-code` skill on the touched files, surrounding modules, and changed tests/docs.
 
 ### Phase 8: Fix audit findings (Fixers + Auditors)
 
 Use the `/resolve-findings` skill.
 
-If accepted Critical or High findings were fixed, run one more `/review-code` pass on the touched scope.
+If accepted Critical or High findings were fixed, run one more `/review-uncommitted-code` pass on the touched scope.
 Repeat the audit/fix loop only when the new report still contains unresolved Critical or High findings.
 
 If the fixes introduce or expose local complexity that remains behavior-preserving and in-scope:
-- use the `/simplify-new-code` skill
+- use `/clean-and-fix-code`
 - then return to Phase 6
 
 Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns. Escalate if the loop is not converging.
@@ -211,7 +211,7 @@ At each major stage, echo the current artifact path(s), identify the active phas
 
 - Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
 - Each internal work package ran the full /plan-work, /implement-plan,
-  /verify-work, /review-code, /resolve-findings loop, and no unresolved Critical or High
+  /verify-work, /review-uncommitted-code, /resolve-findings loop, and no unresolved Critical or High
   findings remain at phase close.
 - The `/finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
 - The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.

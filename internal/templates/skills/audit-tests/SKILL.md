@@ -3,8 +3,8 @@ name: audit-tests
 description: >-
   Audit the existing test suite for redundancy, quality gaps, and
   organization: duplicate or self-confirming tests, coverage gaps metrics
-  miss, and safe cleanup fixes. Use `/prune-new-tests` instead when the target
-  is tests added in the current uncommitted diff.
+  miss, and safe cleanup fixes. Use `/clean-and-fix-code` instead when the
+  target is tests added in the current uncommitted diff.
 ---
 
 # audit-tests
@@ -19,8 +19,8 @@ Audit the health of the existing test suite and fix what can be fixed safely:
 - report all findings and fixes
 
 Use `/boost-coverage` when the goal is to write new tests to raise coverage.
-Use `/prune-new-tests` when the goal is to prune speculative tests added in the
-current uncommitted diff (burden-of-proof, diff-scoped only).
+Use `/clean-and-fix-code` when the goal is to prune speculative tests added in
+the current uncommitted diff (burden-of-proof, diff-scoped only).
 Use this skill when the goal is to assess and clean up the existing test suite.
 
 ## Defaults

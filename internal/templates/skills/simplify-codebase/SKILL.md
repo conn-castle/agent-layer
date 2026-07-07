@@ -3,7 +3,7 @@ name: simplify-codebase
 description: >-
   Codebase-wide simplification removing real internal complexity — dead code,
   obsolete options, needless indirection, duplicate workflows, misplaced
-  boundaries — across given paths or the whole repo. Use `/simplify-new-code`
+  boundaries — across given paths or the whole repo. Use `/clean-and-fix-code`
   instead for only the current uncommitted diff.
 ---
 
@@ -18,7 +18,7 @@ external APIs.
 - Default scope: repository source tree, excluding generated files, vendor
   directories, and build artifacts.
 - Accepted inputs: explicit paths/filters, dead-code on/off, assessment-only.
-- Do not operate only on the current diff; that is `/simplify-new-code`.
+- Do not operate only on the current diff; that is `/clean-and-fix-code`.
 - Required report: `.agent-layer/tmp/simplify-codebase.<run-id>.report.md`.
   Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` and create it with `touch`.
 
