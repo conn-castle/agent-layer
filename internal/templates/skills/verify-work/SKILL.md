@@ -107,14 +107,19 @@ evidence of completion.
 
 ### Phase 4: Verify working-code evidence
 
-Read `COMMANDS.md` before choosing project workflow commands. Run or inspect
-the checks that are credible for the touched area and contract:
+Read `COMMANDS.md` before choosing project workflow commands. Choose the
+minimal credible evidence set for the touched area and contract, not every
+check or test suite the repository defines. Prefer fast, focused checks that
+cover the changed behavior and avoid long-running suites unless the contract or
+risk requires them. Run or inspect:
 
-- format, lint, typecheck, tests, build, docs checks, or targeted reproductions
-  when relevant
+- relevant format, lint, typecheck, tests, build, docs checks, or targeted
+  reproductions
 - plan-promised commands when the plan named them
-- focused checks when they prove the changed behavior
-- broader project checks only when the contract or risk requires them
+- focused test files, packages, markers, or reproductions when they prove the
+  changed behavior
+- broader project checks only when the contract or risk requires them, and only
+  as broad as needed
 - user-supplied command output or logs
 - direct inspection of touched files and diffs when command output is not the
   right evidence

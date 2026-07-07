@@ -18,7 +18,7 @@ It should run a systematic survey that:
 - populates `ISSUES.md` with anything deferred
 - reports each chunk's findings and fixes to the user
 
-Use this for deep codebase-wide sweeps; use `/audit-and-fix-uncommitted-changes` when the target is working-tree diffs only.
+Use this for deep codebase-wide sweeps; use `/audit-and-fix-uncommitted` when the target is working-tree diffs only.
 
 ## Scope default
 

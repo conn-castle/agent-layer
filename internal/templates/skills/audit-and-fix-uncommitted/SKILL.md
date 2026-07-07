@@ -1,12 +1,12 @@
 ---
-name: audit-and-fix-uncommitted-changes
+name: audit-and-fix-uncommitted
 description: >-
   Audit and iteratively fix uncommitted working-tree changes until a confirming
   review finds no remaining actionable issues. Use to stabilize in-progress
   diffs and report each review/fix round with severity.
 ---
 
-# audit-and-fix-uncommitted-changes
+# audit-and-fix-uncommitted
 
 This is the working-tree audit and fix orchestrator.
 It should run an iterative loop that:
@@ -53,7 +53,7 @@ Prefer the dedicated skills that already exist:
 Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
 Always create:
-- `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md`
+- `.agent-layer/tmp/audit-and-fix-uncommitted.<run-id>.report.md`
 
 Create the file with `touch` before writing.
 
@@ -167,7 +167,7 @@ When the loop converges:
 
 ## Required master report structure
 
-Write `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` with:
+Write `.agent-layer/tmp/audit-and-fix-uncommitted.<run-id>.report.md` with:
 
 1. `# Audit and Fix Summary`
 2. `## Target`
@@ -210,7 +210,7 @@ At each major stage, echo the master report path and state the current phase (pr
 
 ## Definition of done
 
-- The master report exists at `.agent-layer/tmp/audit-and-fix-uncommitted-changes.<run-id>.report.md` with `## Pre-pass Cleanup` populated (or marked not applicable for each sub-skill), one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round, plus `## Final Verification` and `## Residual Risk`.
+- The master report exists at `.agent-layer/tmp/audit-and-fix-uncommitted.<run-id>.report.md` with `## Pre-pass Cleanup` populated (or marked not applicable for each sub-skill), one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round, plus `## Final Verification` and `## Residual Risk`.
 - The `## Pre-pass Cleanup` section names both `/prune-new-tests` and `/simplify-new-code` outcomes; either ran or is explicitly recorded as not applicable.
 - The final round's status states `Critical/High applied fixes: 0`.
 - No accepted finding from any round remains unresolved or deferred in the final report.

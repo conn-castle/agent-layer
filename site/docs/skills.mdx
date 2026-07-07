@@ -111,7 +111,7 @@ These are the top-level workflows you invoke directly. They delegate to supporti
 | `complete-current-phase` | Drives a roadmap phase through planning, implementation, verification, auditing, and cleanup loops until the phase is complete. The primary orchestrator for roadmap execution. |
 | `full-workflow` | Orchestrates a feature workflow from questions and spec alignment through planning, multi-agent plan review, implementation, and PR shipping. |
 | `auto-skill-loop` | Runs an explicitly authorized autonomous loop for `fix-issues` or `improve-codebase`, dispatching workers, preserving blocked work, and shipping ready PRs until interrupted or exhausted. |
-| `ship-pr` | Full PR lifecycle: audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes. Delegates to `audit-and-fix-uncommitted-changes`, `fix-ci`, and `address-pr-comments`. |
+| `ship-pr` | Full PR lifecycle: audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes. Delegates to `audit-and-fix-uncommitted`, `fix-ci`, and `address-pr-comments`. |
 | `improve-codebase` | Deep autonomous codebase audit: decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills. |
 | `fix-issues` | Works through `ISSUES.md`: organizes open issues into coherent batches, plans, implements, audits, and keeps the issue ledger current. |
 
@@ -156,7 +156,7 @@ These are used by orchestrators or available for fine-grained control when you n
 | --- | --- |
 | `fix-ci` | CI failure repair for PRs. Diagnoses failures, fixes issues, audits changes, commits, pushes, and re-checks until CI passes. |
 | `address-pr-comments` | Implements fixes for agreed PR feedback, replies to every comment with justification, audits substantive changes when warranted, and commits/pushes. |
-| `audit-and-fix-uncommitted-changes` | Working-tree audit and fix orchestrator. Runs iterative review/fix loops until convergence, with round-by-round severity reporting. Used as a pre-commit quality gate. |
+| `audit-and-fix-uncommitted` | Working-tree audit and fix orchestrator. Runs iterative review/fix loops until convergence, with round-by-round severity reporting. Used as a pre-commit quality gate. |
 
 **Auditing**
 

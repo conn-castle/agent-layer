@@ -36,14 +36,14 @@ Accept any combination of:
 ## Required behavior
 
 Delegate to:
-- `/audit-and-fix-uncommitted-changes` for pre-commit quality gates
+- `/audit-and-fix-uncommitted` for pre-commit quality gates
 - `/repair-checks` for the local check lane, run in parallel with remote CI, when the current session has not already observed the repo-defined local lane passing after the latest changes
 - `/fix-ci` for CI failure diagnosis and repair
 - `/address-pr-comments` for review comment handling
 
 ## Continuation rule
 
-Sub-skill returns are intermediate, not terminal. This also applies when this skill is running inside a dispatched/headless subagent: after each sub-skill return, resume the current phase. After every delegation (`/audit-and-fix-uncommitted-changes`, `/repair-checks`, `/fix-ci`, `/address-pr-comments`), continue to the next numbered step in the same turn — the sub-skill's closing summary is not this skill's closeout. The most common failure is stopping after `/audit-and-fix-uncommitted-changes` returns, before staging and commit happen.
+Sub-skill returns are intermediate, not terminal. This also applies when this skill is running inside a dispatched/headless subagent: after each sub-skill return, resume the current phase. After every delegation (`/audit-and-fix-uncommitted`, `/repair-checks`, `/fix-ci`, `/address-pr-comments`), continue to the next numbered step in the same turn — the sub-skill's closing summary is not this skill's closeout. The most common failure is stopping after `/audit-and-fix-uncommitted` returns, before staging and commit happen.
 
 The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored sub-skill checkpoint (e.g., `/fix-ci` halting without pushing — Phase 3 step 3c, Phase 6 step 1c).
 
@@ -83,7 +83,7 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
    a. Create a new branch with a descriptive name derived from the changes (e.g., `feat/add-widget-support` or `fix/null-pointer-in-parser`).
    b. Switch to the new branch before continuing.
 4. If uncommitted changes exist:
-   a. Use the `/audit-and-fix-uncommitted-changes` skill to stabilize the working tree.
+   a. Use the `/audit-and-fix-uncommitted` skill to stabilize the working tree.
    b. Stage all changes: `git add -A`
    c. Craft a commit message that describes the work done.
    d. Commit the changes.
