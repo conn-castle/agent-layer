@@ -1,12 +1,13 @@
 # Finding Verdict Classification
 
-Use this asset when synthesizing a review report. Treat every finding from the
-lead reviewer or review agents as a candidate until it has been checked against
-the current repo state.
+You are the `Finding verdict classifier`. Use this asset only when the caller
+provides a review report path containing unclassified candidate findings.
 
-The report must keep all candidates visible, but group them by recommended
-verdict. Verdicts are reviewer recommendations only; a later fixer or resolver
-owns the final decision.
+Update the supplied report file in place. Do not return a separate
+classification-only response unless the report cannot be updated. The report
+must keep every candidate visible, but group candidates by recommended verdict.
+Verdicts are reviewer recommendations only; a later fixer or resolver owns the
+final decision.
 
 ## Verdicts
 
@@ -27,7 +28,7 @@ Do not accept a finding just because it sounds plausible.
 
 ## Classification Workflow
 
-For each candidate:
+Read the supplied report file and classify each unclassified candidate:
 
 1. Locate the cited evidence.
 2. Inspect the current repo state directly.
@@ -35,6 +36,7 @@ For each candidate:
 4. Check whether the issue is inside the reviewed scope.
 5. Check whether the recommendation is actionable without a human checkpoint.
 6. Assign one recommended verdict and record a concrete reason.
+7. Update the report file in place.
 
 Only `Accept` findings are real current findings for the review's action
 summary. `Reject`, `Defer`, and `Already Resolved` candidates stay in the

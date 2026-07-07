@@ -48,6 +48,16 @@ it runs the smallest credible checks or accepts current evidence only when that
 evidence clearly covers the final working tree. Workflow skills should call
 that boundary intentionally instead of rerunning broad checks after every step.
 
+**Fresh-context delegation is a boundary.** A workflow may invoke a whole child
+prompt in a built-in subagent when the goal is a cold-start, bias-resistant
+pass. The child should behave as the orchestrator for the prompt it receives;
+its instructions should not depend on knowing whether it was launched by a
+human or by a parent workflow. The parent owns input shaping, gates, and the
+next phase after the child handoff. When a called skill already delegates its
+bias-sensitive review or classification work to built-in subagents and only
+keeps orchestration in the current context, call that skill directly instead of
+wrapping it in another subagent.
+
 **Checkpoints for real decisions.** Human checkpoints should be narrow and
 explicit: architecture tradeoffs, destructive operations, external writes,
 scope changes, or missing required input. The normal path should be

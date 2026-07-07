@@ -31,8 +31,8 @@ Required roles:
 
 Pass the contents of
 [`prune-new-tests-reviewer-prompt.md`](prune-new-tests-reviewer-prompt.md) to
-the reviewer subagent verbatim — do not paraphrase, summarize, or modify the
-rubric.
+the built-in reviewer subagent verbatim — do not paraphrase, summarize, or
+modify the rubric.
 
 Inputs the reviewer receives alongside the prompt:
 - The added test code (full text of new test files; for new test cases in
@@ -46,7 +46,7 @@ Inputs the reviewer receives alongside the prompt:
 ## Context Discipline
 
 You are the orchestrator. Delegate only the `Burden-of-proof reviewer` role to
-a subagent. Perform `Diff scout` and `Applier` yourself.
+a built-in subagent. Perform `Diff scout` and `Applier` yourself.
 
 ## Global constraints
 
@@ -82,7 +82,7 @@ a subagent. Perform `Diff scout` and `Applier` yourself.
 
 1. Group added tests into review chunks (one test file or a small cluster
    of related files per chunk).
-2. For each chunk, invoke the reviewer subagent with the contents of
+2. For each chunk, invoke the built-in reviewer subagent with the contents of
    `prune-new-tests-reviewer-prompt.md` and the chunk inputs above. The
    subagent must be a fresh invocation with no carryover from this conversation.
 3. Track each verdict with `Location`, `Name`, `Verdict`, `Justification`,

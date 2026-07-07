@@ -90,7 +90,8 @@ and continue the parent workflow after every subagent return.
    related files per chunk).
 2. For each chunk, invoke the reviewer subagent with the contents of
    `simplify-new-code-reviewer-prompt.md` and the chunk inputs above. The
-   subagent must be a fresh invocation with no carryover from this conversation.
+   built-in subagent must be a fresh invocation with no carryover from this
+   conversation.
 3. Track each JSON-line finding with `Location`, `Smell`, `Before`, `After`,
    and `Rationale`.
 

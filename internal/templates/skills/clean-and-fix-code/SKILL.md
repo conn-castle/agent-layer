@@ -1,266 +1,96 @@
 ---
 name: clean-and-fix-code
 description: >-
-  Clean and iteratively fix uncommitted working-tree changes until a confirming
-  review finds no remaining actionable issues. Use to stabilize in-progress
-  diffs with pruning, simplification, review, and fix rounds.
+  Run a lightweight, non-iterative cleanup/fix pass over uncommitted
+  working-tree changes: prune added tests, simplify changed production code,
+  review the diff, and fix accepted review findings.
 ---
 
 # clean-and-fix-code
 
-This is the working-tree cleanup and fix orchestrator.
-It should run an iterative loop that:
-- selects the full working-tree change target
-- audits the target and the minimum necessary surrounding context
-- verifies and fixes accepted findings
-- re-audits after each fix pass
-- repeats until a confirming review finds no remaining actionable findings
-- reports each round's findings and fixes to the user with severities
+Use only for uncommitted working-tree changes. Do not sweep old commits, the
+whole repository, or unrelated known issues unless explicitly asked. Run each
+phase once, then stop.
 
-Use this skill only for the full cleanup and fix loop over all uncommitted
-changes. For report-only review or single-report remediation, use the dedicated
-lower-level skills instead.
+## Required inputs
 
-## Scope default
+- `review_agents`: one or more dispatch agent roles to pass through to
+  `/plan-work` if accepted findings need fixes.
 
-Default scope:
-- all uncommitted changes in the current working tree
-- staged changes
-- unstaged changes
-- untracked files
-- any small adjacent edits directly required to root-cause-fix accepted findings
+If `review_agents` is missing, ask for it before starting. Do not invent a
+default review agent list.
 
-Do not interpret this skill as permission to review old commits, sweep the whole repository, or fix unrelated known issues unless the user explicitly asks.
+## Scope
 
-## Inputs
+Default target is the full uncommitted working tree:
 
-- No fixed round cap. Run as many audit/fix rounds as needed while Critical or High fixes continue to be applied. After each fix pass, stop when zero applied fixes were Critical or High severity.
+- staged diff from `git diff --cached`
+- unstaged diff from `git diff`
+- untracked files from `git ls-files --others --exclude-standard` (Include
+  untracked files in the default target.)
 
-## Required behavior
+Review and fix staged, unstaged, and untracked files as one combined change set.
+If the target is empty, stop and ask instead of reviewing history.
 
-At minimum, use:
-- parallel audit review agents with different lenses
-- an accepted-finding fixer
-- a synthesizer that keeps the round-by-round report current
+## Workflow
 
-Use the cleanup assets first, then the review/fix loop:
-- `assets/prune-new-tests.md` (mandatory pre-pass when the diff added test files; delegated to subagent)
-- `assets/simplify-new-code.md` (mandatory pre-pass when the diff added or modified production code; delegated to subagent)
-- `/review-uncommitted-code`
-- `assets/simplify-new-code.md` again only if a fix exposes obvious local complexity within the diff that the initial pre-pass did not cover (delegated to subagent)
+For every subagent step, use a built-in subagent with fresh context.
 
-## Required artifacts
+1. Run a subagent with the prompt defined in `assets/prune-new-tests.md`.
+   - Run only when the diff adds test files or test cases.
+2. Run a subagent with the prompt defined in `assets/simplify-new-code.md`.
+   - Run only when the diff adds or modifies production code.
+3. Run `/review-uncommitted-code` directly (not as a subagent).
+   - Pass the combined target: staged diff, unstaged diff, and untracked files.
+4. Apply the Finding Gate.
+5. Run a subagent with `/plan-work`.
+   - Use the accepted review findings from the gate as the task source.
+   - Pass the required `review_agents`.
+   - Plan to fix all findings regardless of severity.
+   - Do not require a separate spec when the findings are concrete enough to
+     plan from.
+6. Run `write-code` by invoking `/implement-plan` with the plan, task, and
+   context paths produced by `/plan-work`.
+7. Run a subagent with `/verify-work`.
+   - Verify against the plan that fixes the findings.
 
-Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
+## Finding Gate
 
-Always create:
-- `.agent-layer/tmp/clean-and-fix-code.<run-id>.report.md`
+For this skill, "findings" means `/review-uncommitted-code` findings under
+`### Recommended Accept`.
 
-Create the file with `touch` before writing.
-
-The master report is the human-readable round ledger and the single place to preserve orchestrator state.
-
-Delegated skill outputs are handled one way:
-- Use `/review-uncommitted-code` report artifacts as the round findings input.
-- Fix only findings classified under `Recommended Accept` after verifying them
-  against the current repo state.
-- Copy accepted/rejected/deferred/already-resolved counts from the review report
-  into the master report.
-
-## Continuation rule
-
-Delegation returns are intermediate, not terminal. After every delegation,
-continue to the next numbered step in the same turn — a subagent or sub-skill
-closing summary is not this skill's closeout. The loop exits only at the end of
-Phase 5, a listed human checkpoint, or a delegated workflow that halts on its
-own human checkpoint without applying changes.
-
-## Context Discipline
-
-You are the orchestrator. Do not do the child/subagent work yourself. Your job
-is to preserve your context to make strategic decisions, ensure each delegated
-workflow follows its assigned contract, reconcile outputs, enforce this
-workflow's gates, and continue after every return.
-
-## Global constraints
-
-- Treat the working tree as input from any author or process. Do not assume a human made the changes.
-- Always review one combined target for the whole working tree.
-- Include untracked files in the default target.
-- Fix all accepted findings regardless of severity.
-- Use Critical and High applied-fix counts as the repeat gate.
-- Rejected findings do not count toward the repeat gate.
-- Do not stop a round merely because Critical and High findings reach zero if any accepted Medium or Low findings from that round remain unfixed.
-- Do not stage, commit, or discard changes unless the user explicitly asks.
-- Keep scope tight to the selected target plus directly required supporting edits.
-- If a Critical or High fix changes the relevant surface area materially, start the next audit round instead of assuming the old review still applies.
-
-## Human checkpoints
-
-- Required: ask when the target is empty and no credible review scope exists.
-- Required: ask when an accepted finding requires an architectural decision, an end-user-visible behavior change beyond the current target, or another user-only decision.
-- Required: ask when a finding cannot be verified with the available code, tests, or docs.
-- Required: ask when a deferred finding blocks convergence.
-- Required: ask when the same unresolved finding recurs after two fix attempts or the loop is no longer converging.
-- Required: ask before any destructive or irreversible action would be required.
-- Stay autonomous during normal audit/fix/re-audit cycles when the target and accepted fixes are clear.
-- A broad-but-clear fix is still in scope when it resolves an accepted finding against the working-tree target and does not trigger a human checkpoint.
-
-## Orchestration loop
-
-### Phase 0: Preflight and target selection (Repo scout)
-
-1. Run `git status --porcelain`, `git diff --stat --cached`, and `git diff --stat` to confirm there is working-tree material to review.
-2. If there are no staged, unstaged, or untracked files, stop and ask instead of reviewing unrelated history.
-3. Read in this order when they exist: `COMMANDS.md`, `README.md`, `DECISIONS.md`, `ISSUES.md`.
-4. Build the target set:
-   - staged diff: `git diff --cached`
-   - unstaged diff: `git diff`
-   - untracked files: `git ls-files --others --exclude-standard`
-5. Review staged + unstaged + untracked as one working-tree change set.
-6. State the actual target and baseline assumptions at the top of the master report.
-
-### Phase 0.5: Prune agent-side scope creep before any review round (Pre-pass)
-
-Delegate each pre-pass to a fresh-context subagent with the named asset content
-so its iterative loop does not register as this skill's closeout. Run in order:
-
-1. `assets/prune-new-tests.md` — when the diff added test files or test functions. Return deleted-count, kept-count, and surviving-gap count.
-2. `assets/simplify-new-code.md` — when the diff added or modified production code. Return applied-count, reverted-count, re-scan count, and out-of-scope count.
-
-Record each one-line outcome under `## Pre-pass Cleanup`. If a pre-pass
-materially changes the working tree, restart Phase 0.
-
-### Phase 1: Gather only the needed context (Lead reviewer)
-
-1. Read the minimum surrounding code and tests needed to understand the target.
-2. Check docs and memory files only when they matter to the touched area.
-3. Call out any overlapping existing known issues from `ISSUES.md` instead of presenting them as novel findings.
-4. Record important assumptions in the master report before starting Round 1.
-
-### Phase 2: Run audit Round N (Audit review agents)
-
-Use the `/review-uncommitted-code` skill on the current target.
-
-For each round, copy the high-signal findings summary into the master report under `## Round N Findings`, recording for each finding: title, severity, confidence, location, and short why-it-matters summary.
-
-### Phase 3: Verify and fix Round N findings (Fixers)
-
-Use the Round N review report as input. Fix every `Recommended Accept` finding
-regardless of severity.
-
-For accepted findings:
-- verify the finding against the current repo state before editing
-- group duplicate or tightly coupled findings into one bounded fix target
-- keep unrelated findings separate when they can be fixed independently
-- diagnose the root cause
-- implement the scoped fix and directly required test, doc, or memory updates
-- run focused verification
-- audit the final diff against the accepted finding
-
-If zero findings are accepted, record `No accepted findings` in `## Round N
-Fixes` and do not edit files in this phase.
-
-Do not treat `Recommended Defer` as a clean outcome; escalate instead when a
-valid issue cannot be resolved for a human-checkpoint reason. "Broader scope
-than a point fix" is not a valid deferral reason. Do not defer merely because
-the fix might be broad when it stays within scope and does not need a human
-checkpoint.
-
-Copy the fix summary into the master report under `## Round N Fixes` (title, severity, fix description, files touched) and `## Round N Status` (accepted/rejected/deferred counts, unresolved Critical and High counts).
-
-### Phase 4: Critical/High fix gate (Convergence gate)
-
-Convergence rule:
-- After fixing Round N findings, count applied fixes whose accepted finding severity was Critical or High.
-- Rejected findings never count toward this gate.
-- If the Critical/High applied-fix count is zero, close the run after recording Round N status.
-- If the Critical/High applied-fix count is greater than zero, return to Phase 2 for another full audit round on the updated target.
-
-Severity rule:
-- A final round may contain accepted Medium or Low findings, but they still must be fixed before the run closes.
-
-If a fix exposes obvious local complexity that is behavior-preserving and in scope:
-- delegate `assets/simplify-new-code.md` to a subagent on the affected files
-- then apply the same Critical/High applied-fix gate to decide whether another audit round is required
-
-Escalate if the loop is not converging (same findings recurring, fix attempts not resolving issues, or complexity growing instead of shrinking).
-
-### Phase 5: Close the run (Reporter)
-
-When the loop converges:
-1. add `## Final Verification` to the master report
-2. identify which round stopped the loop
-3. state how many rounds were required
-4. summarize whether any findings were rejected as false positives
-5. state explicitly that the stopping round applied zero Critical or High fixes
-
-## Required master report structure
-
-Write `.agent-layer/tmp/clean-and-fix-code.<run-id>.report.md` with:
-
-1. `# Audit and Fix Summary`
-2. `## Target`
-3. `## Assumptions`
-4. `## Pre-pass Cleanup`
-   - prune-new-tests asset outcome (deleted-count, kept-count, surviving-gap count) or `Not applicable — no added tests`
-   - simplify-new-code asset outcome (applied-count, reverted-count, re-scan count, out-of-scope count) or `Not applicable — no production-code changes`
-5. `## Round 1 Findings`
-6. `## Round 1 Fixes`
-7. `## Round 1 Status`
-8. Repeat the three Round sections for each additional round
-9. `## Final Verification`
-10. `## Residual Risk`
-
-Each Round section uses the format: `- <title> (<Severity>) — <file(s)>`.
-In each `## Round N Status`, include `Critical/High applied fixes: <count>`. If a finding reappears in a later round, say so explicitly.
-
-Example:
-```
-## Round 1 Findings
-- Missing nil guard in loader path (High) — pkg/foo/loader.go
-## Round 1 Status
-- Critical/High applied fixes: 1
-## Round 2 Status
-- Critical/High applied fixes: 0
-```
-
-## Minimal status protocol
-
-At each major stage, echo the master report path and state the current phase (preflight, pre-pass cleanup, auditing round N, fixing round N, repeat-gate round N, or closing).
+- If `### Recommended Accept` is `None`, finish the skill after reporting the
+  review report path and cleanup built-in subagent outcomes.
+- Continue only with `### Recommended Accept` findings.
+- If `### Recommended Defer` contains anything that blocks planning or fixing,
+  stop for the human checkpoint; do not treat the run as clean.
+- Ignore `### Recommended Reject` and `### Recommended Already Resolved` for fix
+  planning, but mention their counts in the final handoff when available.
 
 ## Guardrails
 
-- Do not carry unresolved deferred findings into a clean final report.
-- Do not collapse multiple rounds into one summary.
-- Do not run an automatic confirmation round after a round with zero Critical/High applied fixes.
-- Do not count rejected findings toward the Critical/High repeat gate.
-- Do not modify unrelated code just because it is nearby.
-- Keep each round grounded in concrete reviewed diffs, /review-uncommitted-code findings, and observed verification.
+- Do not do child workflow work yourself. Delegate the two cleanup pre-passes to
+  subagents, run `/review-uncommitted-code` directly, then let `/plan-work`,
+  `/implement-plan`, and `/verify-work` own their contracts.
+- Subagent and sub-skill returns are intermediate until this structure reaches
+  its final step or the no-findings gate exits early.
+- Do not stage, commit, discard, or destructively rewrite changes unless the
+  user explicitly asks.
+- Keep scope tight to the uncommitted target plus directly required support
+  edits for accepted findings.
+- A broad-but-clear fix is still in scope when it resolves an accepted finding
+  against the working-tree target and does not trigger a human checkpoint.
+- Do not run another review round after implementation. If `/verify-work`
+  reports incomplete work, surface that result and stop.
 
-## Definition of done
+## Handoff
 
-- The master report exists at `.agent-layer/tmp/clean-and-fix-code.<run-id>.report.md` with `## Pre-pass Cleanup` populated (or marked not applicable for each cleanup asset), one labeled `## Round N Findings` / `## Round N Fixes` / `## Round N Status` block per round, plus `## Final Verification` and `## Residual Risk`.
-- The `## Pre-pass Cleanup` section names both cleanup asset outcomes; each either ran or is explicitly recorded as not applicable.
-- The final round's status states `Critical/High applied fixes: 0`.
-- No accepted finding from any round remains unresolved or deferred in the final report.
-- The working tree was not staged, committed, or discarded by this skill.
+When the skill finishes, report:
 
-## Final handoff
-
-After the run, present the results to the user in chat so that every finding and fix is clearly attributed to the round that produced it.
-
-Required chat output:
-
-1. Echo the master report path.
-2. State total rounds, total findings, and final convergence status.
-3. Present a **Key fixes applied** table sorted by Round then Severity. The Round and Severity columns are required so every fix stays tied to the iteration that produced it. Example columns: `| Round | Severity | Fix | Files |`. If no fixes were applied, still print the table with a single `No fixes applied` row.
-4. List rejected and deferred findings (if any) with their round numbers.
-5. State which round stopped the loop and that it applied zero Critical or High fixes.
-
-Example summary:
-```
-- 2 rounds to converge (Round 2 applied zero Critical/High fixes)
-- 12 findings from 5 parallel review agents
-- 5 accepted and fixed, 6 rejected, 1 deferred
-```
+- cleanup subagent outcomes, or `not applicable`
+- `/review-uncommitted-code` report path and whether the no-findings gate exited
+- reject, defer, and already-resolved counts when available
+- `resolved_findings`: every accepted finding fixed by this run, with title,
+  severity, and files; use an empty list when no accepted findings were fixed
+- if fixes ran: plan, task, context, implementation report, and verification
+  report paths, plus final `/verify-work` verdict
