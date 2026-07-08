@@ -89,21 +89,13 @@ deviation, but it cannot make missing promised work complete.
 
 ### Phase 3: Compare contract to implementation
 
-Check item by item for:
-
-- missing deliverables
-- partial implementations presented as done
-- behavior that diverges from the agreed approach
-- missing or weak tests
-- missing docs or memory updates
-- scope creep that was not part of the contract
-- undocumented deviations
-
 Read the sibling `contract-verification-rubric.md` before comparing the
-contract to the implementation. Keep the comparison grounded in the contract
-artifacts, working-tree state, touched file content, diffs, and observed
-verification evidence. Do not use chat history or implementer rationales as
-evidence of completion.
+contract to the implementation. Use it as the fixed checklist for coverage,
+evidence, scope drift, and undocumented deviations, then translate the results
+into the required report structure below. Keep the comparison grounded in the
+contract artifacts, working-tree state, touched file content, diffs, and
+observed verification evidence. Do not use chat history or implementer
+rationales as evidence of completion.
 
 ### Phase 4: Verify working-code evidence
 

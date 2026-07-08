@@ -8,15 +8,6 @@ description: >-
 
 # fix-ci
 
-This is the CI failure repair skill.
-It should:
-- diagnose why CI is failing
-- fix the underlying issue
-- audit the fix before committing
-- commit and push
-- verify CI passes
-- repeat if CI still fails
-
 ## Defaults
 
 - Default PR is the current branch's open PR.
@@ -24,17 +15,20 @@ It should:
 - Default artifact location is `./.agent-layer/tmp/ci-artifacts/<run-id>` so downloaded reports stay in the agent temp area.
 - Default fix scope is the minimum change needed to make CI pass.
 
-## Inputs
+## Required inputs
 
-Accept any combination of:
+Fail before side effects unless all are present:
+- `review_agents`: one or more dispatch agent roles
+
+Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
+`antigravity`). Infer the agent only when unambiguous. Before passing
+`review_agents` to delegated skills, inspect live `al dispatch options` output
+and fail if a requested override is unsupported.
+
+Optional input:
 - a PR number or URL
 - a specific CI run ID
 - hints about the failure from the caller
-
-## Required behavior
-
-Delegate to:
-- `/clean-and-fix-code` before every commit
 
 ## Global constraints
 
@@ -78,13 +72,24 @@ Delegate to:
 3. If the command fails locally for the same reason, use that command as the red reproducer.
 4. If the command passes locally while CI failed, treat the mismatch as a bug: identify the environmental difference and write or adapt a local test or command that fails for the same reason.
 5. If no credible local reproducer can be built, stop at a human checkpoint instead of pushing a guess.
-6. Implement the minimum fix needed to resolve the CI failure.
-7. Re-run the local reproducer to confirm it passes, then run local verification using the same commands CI runs.
-8. Record the local reproducer command, initial red result, fix, and final green result before committing.
+6. Implement the minimum fix directly when it is small enough to handle safely
+   inside this skill.
+7. If the required fix is large, cross-cutting, behavior-changing, or complex
+   enough that direct editing would be risky, run `/plan-work`, then
+   `/fully-implement-plan`. Pass `review_agents` to both skills and resume this
+   workflow after `/fully-implement-plan` returns local working-tree changes.
+   Do not use this escalation for obvious one-file fixes, mechanical config
+   edits, or narrow test updates.
+8. Re-run the local reproducer to confirm it passes, then run local
+   verification using the same commands CI runs.
+9. Record the local reproducer command, initial red result, fix, final green
+   result, and any `/plan-work` or `/fully-implement-plan` report paths before
+   committing.
 
 ### Phase 3: Audit and commit (Auditor + Committer)
 
-1. Use the `/clean-and-fix-code` skill to review and stabilize the fix.
+1. Use the `/clean-and-fix-code` skill with `review_agents` to review and
+   stabilize the fix.
 2. Stage all changes: `git add -A`
 3. Craft a commit message describing the CI fix.
 4. Commit and push.
@@ -111,11 +116,7 @@ Delegate to:
 ## Definition of done
 
 - `gh pr checks <pr-number>` shows every required CI check passing on the latest pushed commit.
-- Logs and any available artifacts for each failed run were inspected; missing or unavailable artifacts were called out explicitly.
-- Each fix cycle recorded the local reproducer command, initial red result, fix, and final green result before committing.
-- Each fix cycle committed through the `/clean-and-fix-code` skill before push; no check was disabled, skipped, weakened, or had its threshold lowered.
-- The fix iteration count is recorded and stayed below the 3-attempt escalation threshold for any single recurring failure.
-- Scope of the changes is confined to what the CI failures required, with no opportunistic edits.
+- The final handoff contains the evidence listed below.
 
 ## Final handoff
 
@@ -123,4 +124,6 @@ After CI passes:
 1. State which CI checks were failing and what was fixed.
 2. State how many fix iterations were needed.
 3. State the local reproducer command, initial red result, and final green result for each fix cycle.
-4. Confirm all CI checks are now passing.
+4. State any `/plan-work` and `/fully-implement-plan` report paths used for
+   large or complex fixes.
+5. Confirm all CI checks are now passing.
