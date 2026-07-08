@@ -1,42 +1,45 @@
-# prune-new-tests
+# prune-uncommitted-tests
 
-This asset prunes low-value tests that the implementing agent added as a side
-effect of implementation.
+This asset prunes low-value test changes in the current uncommitted working
+tree.
 
 ## Defaults
 
-- Default scope is **tests added in the current uncommitted diff only**:
-  staged, unstaged, and untracked test files, plus new test cases inside
-  pre-existing test files. Modified pre-existing tests and deleted tests are
-  out of scope.
-- Default disposition is **delete unless justified**. Auto-delete without
-  per-test approval; surface surviving coverage gaps without backfilling
-  replacement assertions.
+- Default scope is **test changes in the current uncommitted diff**: staged,
+  unstaged, and untracked test files; new test cases inside pre-existing test
+  files; and modified test cases or assertions inside pre-existing test files.
+  Deleted tests and unchanged surrounding tests are out of scope.
+- Default disposition is **remove the uncommitted test change unless
+  justified**. Auto-apply without per-test approval. Delete newly added tests;
+  for modified pre-existing tests, remove or revert only the uncommitted test
+  change when the baseline can be reconstructed. Surface surviving coverage
+  gaps without backfilling replacement assertions.
 
 ## Inputs
 
 Accept any combination of:
-- explicit paths or test files (still must intersect the added-test set)
+- explicit paths or test files (still must intersect the changed-test set)
 - a per-test override list to keep without review
 - a dry-run flag to produce verdicts without deleting
 
 ## Multi-agent pattern
 
 Required roles:
-1. `Diff scout`: enumerates tests in scope.
+1. `Diff scout`: enumerates changed tests in scope.
 2. `Burden-of-proof reviewer`: applies the rubric to each review chunk.
 3. `Applier`: applies verdicts and prepares the final handoff.
 
 ### Reviewer subagent prompt
 
 Pass the contents of
-[`prune-new-tests-reviewer-prompt.md`](prune-new-tests-reviewer-prompt.md) to
-the built-in reviewer subagent verbatim — do not paraphrase, summarize, or
+[`prune-uncommitted-tests-reviewer-prompt.md`](prune-uncommitted-tests-reviewer-prompt.md)
+to the built-in reviewer subagent verbatim — do not paraphrase, summarize, or
 modify the rubric.
 
 Inputs the reviewer receives alongside the prompt:
-- The added test code (full text of new test files; for new test cases in
-  existing files, the test bodies plus minimal surrounding context).
+- The changed test code (full text of new test files; for new or modified test
+  cases in existing files, the changed test bodies plus minimal surrounding
+  context and enough before/after diff to apply a delete verdict safely).
 - The production code each test exercises (named imports/symbols followed to
   their definitions; enough to judge what assertion would flip under what
   mutation).
@@ -58,45 +61,53 @@ and `Applier` yourself, then reconcile the returned review.
 
 ## Human checkpoints
 
-- Required: ask when the diff contains zero added tests — the skill has no
-  work to do; confirm before exiting silently.
+- Required: ask when the diff contains zero in-scope test changes — the skill
+  has no work to do; confirm before exiting silently.
 - Required: ask when the project has no discoverable test command in
   `COMMANDS.md` and no obvious convention — applier cannot verify deletions.
-- Required: ask when applying deletions would empty a brand-new test file
-  whose presence the user clearly intended (file added by user, not agent).
+- Required: ask when applying deletions would empty a brand-new test file whose
+  presence the user explicitly requested.
 - Stay autonomous on all per-test `delete` verdicts within scope.
 
 ## Workflow
 
-### Phase 1: Enumerate added tests (Diff scout)
+### Phase 1: Enumerate uncommitted test changes (Diff scout)
 
 1. Run `git status --porcelain` and `git diff --cached`, `git diff`, and
    `git ls-files --others --exclude-standard` to find:
    - new test files (untracked or staged)
    - new test cases inside otherwise-pre-existing test files, according to
      the project's discovered test conventions
+   - modified test cases or assertions inside otherwise-pre-existing test
+     files
 2. Read `COMMANDS.md` to identify the test command for the verification
    step.
-3. Track each added test by file path, test name, and line range.
+3. Track each changed test by file path, test name, line range, and change kind
+   (`new-file`, `new-case`, or `modified-case`).
 
 ### Phase 2: Burden-of-proof review (Burden-of-proof reviewer)
 
-1. Group added tests into review chunks (one test file or a small cluster
+1. Group changed tests into review chunks (one test file or a small cluster
    of related files per chunk).
 2. For each chunk, invoke the built-in reviewer subagent with the contents of
-   `prune-new-tests-reviewer-prompt.md` and the chunk inputs above. The
+   `prune-uncommitted-tests-reviewer-prompt.md` and the chunk inputs above. The
    subagent must be a fresh invocation with no carryover from this conversation.
 3. Track each verdict with `Location`, `Name`, `Verdict`, `Justification`,
    and `Coverage Gap`. `Justification` is the `mutation` for `keep` and the
    `reason` for `delete`; `Coverage Gap` is the reviewer's `coverage_gap` or
    `None`.
 
-### Phase 3: Apply deletions (Applier)
+### Phase 3: Apply removals (Applier)
 
-1. Delete each `delete`-verdict test:
+1. Apply each `delete` verdict:
    - if a whole test file becomes empty, delete the file
    - if a test case within a larger file is deleted, remove the test case
      and any imports/fixtures that become unused as a result
+   - if a pre-existing test case was only modified, restore the pre-change
+     body/assertion for the changed portion without deleting unrelated existing
+     coverage
+   - if the pre-change content cannot be reconstructed from the diff and
+     current repo state, stop and surface the blocker
 2. Run the project's test command (from `COMMANDS.md`). Track the actual
    command and observed result.
 3. If unrelated tests break, stop and surface the failure — do not
@@ -104,7 +115,7 @@ and `Applier` yourself, then reconcile the returned review.
 
 ### Phase 4: Survival check (Applier)
 
-1. Compute `survival = keep_count / total_added_tests`.
+1. Compute `survival = keep_count / total_changed_tests`.
 2. If `survival > 0.90`, flag the run as suspect and note that the reviewer
    may be rubber-stamping. Recommend re-running with stricter rubric framing
    or splitting chunks more aggressively.
@@ -127,8 +138,8 @@ Record no gap for null values; if null conflicts with the reviewer
 ## Final handoff
 
 After completing the workflow:
-1. State the total added tests and the kept/deleted counts.
+1. State the total changed tests and the kept/deleted counts.
 2. Name the survival ratio and whether the suspect flag fired.
-3. Summarize deletions applied and the test command/result.
+3. Summarize removals applied and the test command/result.
 4. If surviving coverage gaps exist, recommend running
    follow-up coverage work against the listed behaviors.

@@ -2,8 +2,8 @@
 name: clean-and-fix-code
 description: >-
   Run a lightweight, non-iterative cleanup/fix pass over uncommitted
-  working-tree changes: prune added tests, simplify changed production code,
-  review the diff, and fix accepted review findings.
+  working-tree changes: prune uncommitted test changes, simplify changed
+  production code, review the diff, and fix accepted review findings.
 ---
 
 # clean-and-fix-code
@@ -36,9 +36,11 @@ If the target is empty, stop and ask instead of reviewing history.
 
 For every subagent step, use a built-in subagent with fresh context.
 
-1. Run a subagent with the prompt defined in `assets/prune-new-tests.md`.
-   - Run only when the diff adds test files or test cases.
-2. Run a subagent with the prompt defined in `assets/simplify-new-code.md`.
+1. Run a subagent with the prompt defined in
+   `assets/prune-uncommitted-tests.md`.
+   - Run only when the diff adds or modifies test files or test cases.
+2. Run a subagent with the prompt defined in
+   `assets/simplify-uncommitted-code.md`.
    - Run only when the diff adds or modifies production code.
 3. Run `/review-uncommitted-code` directly (not as a subagent).
    - Pass the combined target: staged diff, unstaged diff, and untracked files.
@@ -49,8 +51,8 @@ For every subagent step, use a built-in subagent with fresh context.
    - Plan to fix all findings regardless of severity.
    - Do not require a separate spec when the findings are concrete enough to
      plan from.
-6. Run `write-code` by invoking `/implement-plan` with the plan, task, and
-   context paths produced by `/plan-work`.
+6. Run `/implement-plan` with the plan, task, and context paths produced by
+   `/plan-work`.
 7. Run a subagent with `/verify-work`.
    - Verify against the plan that fixes the findings.
 

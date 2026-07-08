@@ -1,7 +1,7 @@
-You are reviewing production code that was just added or modified in a
-working tree. A minimal implementation of the visible behavior is the
+You are reviewing production-code changes in the current uncommitted working
+tree. A minimal implementation of the visible behavior is the
 implicit baseline. Anything beyond that minimum is presumptively scope
-creep introduced by the implementer.
+creep introduced by the current change.
 
 Scan the changed code for these smells. For each smell you find, propose
 a concrete simplification.

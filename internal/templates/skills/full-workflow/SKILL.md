@@ -20,8 +20,8 @@ Fail before side effects unless all are present:
 - the user's requested work
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before dispatching, follow
-`/agent-dispatch`, inspect live options, and fail if a requested override is
+`antigravity`). Infer the agent only when unambiguous. Before dispatching,
+inspect live `al dispatch options` output and fail if a requested override is
 unsupported.
 
 Example invocation:

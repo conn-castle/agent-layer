@@ -1,5 +1,5 @@
-You are reviewing tests that were just added to a working tree. For each test,
-decide `keep` or `delete`.
+You are reviewing test changes in the current uncommitted working tree. For
+each changed test, decide `keep` or `delete`.
 
 Core rule: `keep` only when you can name a **concrete mutation in production
 code** that would cause this test's assertion to fail **given the test's actual
@@ -8,7 +8,9 @@ assertion checks. Plausible mutations include changed conditions, boundaries,
 operations, early returns, field mappings, or constants. Generic statements like
 "if the behavior is broken" or "if the result is wrong" do not count.
 
-Delete any test that falls short. Common patterns:
+Delete any test change that falls short. For a modified pre-existing test, a
+`delete` verdict means remove or revert the uncommitted test change, not delete
+unrelated existing test coverage. Common patterns:
 - assertions that restate the test setup (mocked value echoed back
   unchanged, constant compared to itself)
 - assertions on static rendered output or identifiers with no behavior under

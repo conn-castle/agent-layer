@@ -18,7 +18,8 @@ Resolve targets in order:
    unstaged-only review, use `git diff --cached` or `git diff`.
 2. Proactive hotspots, only when the user asks for a codebase audit without
    exact targets.
-3. Otherwise, review all uncommitted changes: staged plus unstaged.
+3. Otherwise, review all uncommitted changes: staged, unstaged, and untracked
+   files from `git ls-files --others --exclude-standard`.
 4. If no credible target exists, stop and ask.
 
 Review the last commit only when explicitly requested:
@@ -55,7 +56,8 @@ invalid structure, rerun it with the concrete mismatch.
 ### Phase 1: Preflight
 
 1. Resolve and record the target, review mode, report path, and proactive
-   hotspot signals when applicable.
+   hotspot signals when applicable. When reviewing all uncommitted changes,
+   include staged diff, unstaged diff, and untracked file contents as one target.
 2. Read the minimum surrounding code, tests, docs, and memory files needed to
    understand the target.
 

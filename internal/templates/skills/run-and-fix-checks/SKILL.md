@@ -76,8 +76,8 @@ For every subagent step, use a built-in subagent with fresh context.
    - Plan a root-cause fix for the observed failure.
    - Do not require a separate spec when the command output is concrete enough
      to plan from.
-7. Run `write-code` by invoking `/implement-plan` with the plan, task, and
-   context paths produced by `/plan-work`.
+7. Run `/implement-plan` with the plan, task, and context paths produced by
+   `/plan-work`.
 8. Run a subagent with `/verify-work`.
    - Verify against the plan, task, and context paths produced by `/plan-work`.
    - Treat an `incomplete` verdict as active failure evidence for the next

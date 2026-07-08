@@ -24,8 +24,8 @@ Optional input:
 - spec artifact path, used as the review contract when present
 
 Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before dispatching, follow
-`/agent-dispatch`, inspect live options, and fail if a requested override is
+`antigravity`). Infer the agent only when unambiguous. Before dispatching,
+inspect live `al dispatch options` output and fail if a requested override is
 unsupported.
 
 ## Required artifacts
@@ -35,7 +35,9 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`:
 - `.agent-layer/tmp/review-plan.<run-id>.report.md`
 
 Create both before writing. Store review agent prompt/output artifacts under
-`.agent-layer/tmp/` with the same prefix and record each path in state.
+`.agent-layer/tmp/` with the same prefix and record each path in state. For
+each dispatched reviewer, assign a unique child report path:
+`.agent-layer/tmp/review-plan.<run-id>.<role-slug>.report.md`.
 
 ## Context Discipline
 
@@ -82,10 +84,13 @@ and continue this skill's workflow after every delegation returns.
 For each review agent dispatch role, dispatch a focused prompt using
 `assets/agent-review-prompt.md` and containing:
 - plan, task, context, and optional spec paths
+- the unique child report path assigned for that reviewer
 - instruction to review only the artifact set
 - instruction to report blockers, weak verification, missing scope, sequencing
   gaps, hidden assumptions, and docs/tests/memory gaps
 - instruction to avoid rewriting the plan
+- instruction not to write or modify the parent
+  `.agent-layer/tmp/review-plan.<run-id>.report.md`
 
 Capture the useful review agent result or report path in the state file.
 

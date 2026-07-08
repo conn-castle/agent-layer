@@ -1,15 +1,16 @@
-# simplify-new-code
+# simplify-uncommitted-code
 
-This asset removes complexity not justified by the user-requested behavior.
+This asset removes complexity in uncommitted production-code changes when that
+complexity is not justified by the user-requested behavior.
 
 ## Defaults
 
 - Default scope is the **current uncommitted production-code diff only**:
   staged, unstaged, and untracked files. Tests, committed code, and
   pre-existing adjacent code are out of scope.
-- Default disposition is **preserve requested behavior; remove what the agent
-  added beyond it**. Auto-apply findings without per-finding approval; inline,
-  flatten, collapse, or rewrite to straightforward code as needed.
+- Default disposition is **preserve requested behavior; remove what the current
+  change added beyond it**. Auto-apply findings without per-finding approval;
+  inline, flatten, collapse, or rewrite to straightforward code as needed.
 
 ## Inputs
 
@@ -29,9 +30,9 @@ Required roles:
 ### Reviewer subagent prompt
 
 Pass the contents of
-[`simplify-new-code-reviewer-prompt.md`](simplify-new-code-reviewer-prompt.md)
-to the reviewer subagent verbatim — do not paraphrase, summarize, or modify the
-rubric.
+[`simplify-uncommitted-code-reviewer-prompt.md`](simplify-uncommitted-code-reviewer-prompt.md)
+to the reviewer subagent verbatim — do not paraphrase, summarize, or modify
+the rubric.
 
 Inputs the reviewer receives alongside the prompt:
 - The diff hunks for production code in scope (added or modified lines,
@@ -46,7 +47,7 @@ Inputs the reviewer receives alongside the prompt:
 - Preserve the user-requested behavior. If a proposed simplification
   changes observable behavior, reject it.
 - If a simplification invalidates a test, update or remove the test as
-  normal refactor hygiene — but only within the diff scope (added tests).
+  normal refactor hygiene — but only within the uncommitted test-change scope.
   Pre-existing tests that fail are a signal the simplification changed
   behavior; revert the simplification, do not weaken the test.
 - Do not consolidate added items into shared abstractions on the cleanup
@@ -82,7 +83,7 @@ Inputs the reviewer receives alongside the prompt:
 1. Group changed files into review chunks (one file or a small cluster of
    related files per chunk).
 2. For each chunk, invoke the reviewer subagent with the contents of
-   `simplify-new-code-reviewer-prompt.md` and the chunk inputs above. The
+   `simplify-uncommitted-code-reviewer-prompt.md` and the chunk inputs above. The
    built-in subagent must be a fresh invocation with no carryover from this
    conversation.
 3. Track each JSON-line finding with `Location`, `Smell`, `Before`, `After`,

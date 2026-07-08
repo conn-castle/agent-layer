@@ -19,8 +19,8 @@ Fail before side effects unless all are present:
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
 `antigravity`). Infer the agent only when unambiguous from the model; otherwise
-fail. Before dispatching, follow `/agent-dispatch`, inspect live options, and
-fail if a requested override is unsupported.
+fail. Before dispatching, inspect live `al dispatch options` output and fail if
+a requested override is unsupported.
 
 Pass `review_agents` to any delegated skill that uses `/review-plan`.
 

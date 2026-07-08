@@ -45,11 +45,15 @@ longer needed.
 
 ## Required artifact
 
-Write the report to:
+Write the report to the child report path supplied by the orchestrator.
 
-- `.agent-layer/tmp/review-plan.<run-id>.report.md`
+If no child report path was supplied, write to:
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create the file before writing.
+- `.agent-layer/tmp/review-plan.agent-review.<run-id>.report.md`
+
+Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` only for the fallback path. Create
+the file before writing. Never write to or modify the parent
+`.agent-layer/tmp/review-plan.<run-id>.report.md`.
 
 ## Multi-agent pattern
 

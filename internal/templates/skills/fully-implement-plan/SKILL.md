@@ -20,7 +20,8 @@ Fail before side effects unless all are present:
 - task artifact path
 - context artifact path
 - `review_agents`: one or more dispatch agent roles to pass to
-  `/loop-clean-and-fix` and `/run-and-fix-checks`
+  `/loop-clean-and-fix`, `/run-and-fix-checks`, and any `/plan-work` retry for
+  verification gaps
 
 If any required input is missing, ask for it before starting. Do not invent
 defaults or auto-select artifacts from `.agent-layer/tmp/`.
@@ -51,10 +52,12 @@ and continue this skill's workflow after every delegation returns.
   `/run-and-fix-checks` fails, stops at its own checkpoint, emits unusable
   output, or cannot provide the report path or verdict this workflow needs,
   stop this workflow, record the stop reason, and surface it to the user.
-- If `/verify-work` returns `incomplete`, run `/implement-plan` again with the
-  verification report as remaining-work evidence, then repeat cleanup and
-  verification. If the same gap recurs after two implementation attempts, stop
-  and ask.
+- If `/verify-work` returns `incomplete`, run `/plan-work` with the
+  verification report as the task source and the original plan, task, and
+  context paths as source evidence. Then run `/implement-plan` with the new
+  remaining-work plan, task, and context artifacts. Repeat cleanup and verify
+  again against the original plan, task, and context. If the same gap recurs
+  after two remaining-work implementation attempts, stop and ask.
 - Accept `complete-with-follow-up` only when every follow-up is clearly outside
   the supplied plan and task list.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
@@ -71,7 +74,8 @@ and continue this skill's workflow after every delegation returns.
 3. Run `/verify-work` with the plan, task, and context artifact paths. Treat
    delegated skill reports as evidence, not contract artifacts. Record its report path,
    verdict, findings, and recommended next step. If the verdict is
-   `incomplete`, follow the repeat rule in `Rules`.
+   `incomplete`, follow the retry rule in `Rules` and record the remaining-work
+   plan, task, context, implementation report, and verification report paths.
 4. Run `/run-and-fix-checks` with `review_agents`. Record the checks report
    path, commands, round count, repair cycle count, stop reason, and final
    passing evidence or blocker.

@@ -16,9 +16,9 @@ Fail before side effects unless all are present:
 No file, directory, or diff target is required. The target is always the full
 uncommitted working tree.
 
-Dispatch agent roles may be terse. Before dispatching, follow
-`/agent-dispatch`, inspect live options, and fail if a requested role or
-override is unsupported.
+Dispatch agent roles may be terse. Before dispatching, inspect live
+`al dispatch options` output and fail if a requested role or override is
+unsupported.
 
 ## Required artifact
 
