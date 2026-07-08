@@ -3,7 +3,7 @@ name: fix-ci
 description: >-
   Diagnose and fix failing CI/checks on an open PR: inspect logs/artifacts,
   create a local reproducer when possible, patch, audit, commit, push, and
-  re-check. Use `/repair-checks` for local failures.
+  re-check. Do not use for local-only check failures.
 ---
 
 # fix-ci

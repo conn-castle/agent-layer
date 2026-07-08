@@ -3,7 +3,7 @@ name: address-pr-comments
 description: >-
   Handle reviewer feedback on an open PR: evaluate comments, implement agreed
   fixes, justify or track deferrals, reply to every comment, audit substantive
-  changes when warranted, then commit and push. Use `/fix-ci` for failing checks.
+  changes when warranted, then commit and push.
 ---
 
 # address-pr-comments

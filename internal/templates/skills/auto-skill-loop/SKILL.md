@@ -1,7 +1,7 @@
 ---
 name: auto-skill-loop
 description: >-
-  Run an explicitly authorized autonomous loop for /fix-issues or /improve-codebase: dispatch worker agents, preserve blocked work on pushed branches, ship and merge ready PRs, and continue until interrupted or autonomous work is exhausted.
+  Run an explicitly authorized autonomous loop for tracked-issue remediation or broad codebase improvement: dispatch worker agents, preserve blocked work on pushed branches, ship and merge ready PRs, and continue until interrupted or autonomous work is exhausted.
 ---
 
 # auto-skill-loop

@@ -1,6 +1,6 @@
 ---
 name: agent-dispatch
-description: Use `al dispatch` only when the user names an external dispatch target or another skill explicitly requires dispatch. Treat generic subagent, second-agent, and fresh-context requests as built-in subagent work.
+description: Use `al dispatch` only when the user names an external dispatch target or another skill explicitly requires dispatch. Do not use for generic subagent, second-agent, and fresh-context requests; use the built-in subagent instead.
 compatibility: Requires the Agent Layer CLI (`al`) from the project environment and at least one configured target for actual al dispatch runs.
 allowed-tools: Bash(al:*) Bash(cat:*)
 ---

@@ -20,8 +20,8 @@ Fail before side effects unless all are present:
 - task artifact path
 - context artifact path
 - `review_agents`: one or more dispatch agent roles to pass to
-  `/loop-clean-and-fix`, `/run-and-fix-checks`, and any `/plan-work` retry for
-  verification gaps
+  `/loop-clean-and-fix`, `/run-and-fix-all-checks`, and any `/plan-work` retry
+  for verification gaps
 
 If any required input is missing, ask for it before starting. Do not invent
 defaults or auto-select artifacts from `.agent-layer/tmp/`.
@@ -49,7 +49,7 @@ and continue this skill's workflow after every delegation returns.
 - Treat delegated skill returns as intermediate until this workflow reaches its
   final report.
 - If `/implement-plan`, `/loop-clean-and-fix`, `/verify-work`, or
-  `/run-and-fix-checks` fails, stops at its own checkpoint, emits unusable
+  `/run-and-fix-all-checks` fails, stops at its own checkpoint, emits unusable
   output, or cannot provide the report path or verdict this workflow needs,
   stop this workflow, record the stop reason, and surface it to the user.
 - If `/verify-work` returns `incomplete`, run `/plan-work` with the
@@ -76,7 +76,7 @@ and continue this skill's workflow after every delegation returns.
    verdict, findings, and recommended next step. If the verdict is
    `incomplete`, follow the retry rule in `Rules` and record the remaining-work
    plan, task, context, implementation report, and verification report paths.
-4. Run `/run-and-fix-checks` with `review_agents`. Record the checks report
+4. Run `/run-and-fix-all-checks` with `review_agents`. Record the checks report
    path, commands, round count, repair cycle count, stop reason, and final
    passing evidence or blocker.
 5. Write the final report and prepare the final message for the user.
@@ -97,7 +97,7 @@ Write `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md` with:
 10. `## Residual Risk`
 
 In `## Issue Ledger`, include one Markdown table row for every issue reported by
-`/loop-clean-and-fix` and `/run-and-fix-checks` repair cycles when available.
+`/loop-clean-and-fix` and `/run-and-fix-all-checks` repair cycles when available.
 
 Required columns:
 
@@ -115,7 +115,7 @@ issues were reported, include a single `No issues reported` row.
   delegated-skill blocker.
 - `/verify-work` reached `complete` or acceptable `complete-with-follow-up`, or
   the report names the verification blocker.
-- `/run-and-fix-checks` ran the full documented check lane and either passed or
+- `/run-and-fix-all-checks` ran the full documented check lane and either passed or
   reported a real blocker.
 
 ## Final handoff

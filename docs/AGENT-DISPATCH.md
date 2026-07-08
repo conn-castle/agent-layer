@@ -110,7 +110,7 @@ Dispatch has a repo-wide depth limit plus optional per-caller target defaults:
 
 ```toml
 [dispatch]
-max_depth = 1
+max_depth = 2
 
 [agents.claude.dispatch]
 default_agent = "random"
@@ -122,7 +122,7 @@ default_agent = "random"
 default_agent = "random"
 ```
 
-`dispatch.max_depth` is the repo-wide maximum depth, including the initial dispatch call. The default is `1`, which means a dispatched target cannot call `al dispatch` again. Set it to `2` to allow one nested dispatch level, `3` for two nested levels, and so on. Values must be positive integers.
+`dispatch.max_depth` is the repo-wide maximum depth, including the initial dispatch call. The default is `2`, which allows one nested dispatch level. Set it to `1` to block nested dispatch entirely, `3` for two nested levels, and so on. Values must be positive integers.
 
 `default_agent` accepts `random`, `codex`, `claude`, or `antigravity`. If omitted for a known caller, the built-in default is `random`.
 

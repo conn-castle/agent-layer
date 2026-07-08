@@ -3,8 +3,7 @@ name: simplify-codebase
 description: >-
   Codebase-wide simplification removing real internal complexity — dead code,
   obsolete options, needless indirection, duplicate workflows, misplaced
-  boundaries — across given paths or the whole repo. Use `/clean-and-fix-code`
-  instead for only the current uncommitted diff.
+  boundaries — across given paths or the whole repo.
 ---
 
 # simplify-codebase

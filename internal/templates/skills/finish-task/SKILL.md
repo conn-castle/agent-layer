@@ -2,8 +2,8 @@
 name: finish-task
 description: >-
   Close out finished work by checking plan alignment, updating only necessary
-  memory/docs, running credible verification, and summarizing outcome. Use
-  `/ship-pr` for PR work or `/verify-work` for read-only checks.
+  memory/docs, running credible verification, and summarizing outcome. Do not
+  use for PR delivery or read-only completion review.
 ---
 
 # finish-task

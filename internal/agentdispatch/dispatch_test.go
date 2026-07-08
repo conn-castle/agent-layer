@@ -102,7 +102,7 @@ func TestRunBlocksNestedDispatchAtDefaultDepth(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	err := Run(RunOptions{
 		Root: root,
-		Env:  []string{clients.EnvDispatchActive + "=1"},
+		Env:  []string{clients.EnvDispatchActive + "=2"},
 	})
 	var exitErr *ExitError
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitNested {

@@ -1,12 +1,12 @@
 ---
-name: run-and-fix-checks
+name: run-and-fix-all-checks
 description: >-
-  Run the repository's full documented check lane, including all tests and CI,
-  then plan, implement, verify, and repeat fixes until the lane passes or a
-  real blocker remains.
+  Run the repository's full documented check lane from COMMANDS.md, including
+  every required test and check, then plan, implement, verify, and repeat fixes
+  until the lane passes or a real blocker remains.
 ---
 
-# run-and-fix-checks
+# run-and-fix-all-checks
 
 Parent workflow for making the repo-defined full check lane green. Use the
 documented commands as the source of truth, preserve failed command evidence,
@@ -41,8 +41,8 @@ only enough to resolve the lane. If ambiguity remains, stop and ask.
 
 Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Write:
 
-- `.agent-layer/tmp/run-and-fix-checks.<run-id>.state.md`
-- `.agent-layer/tmp/run-and-fix-checks.<run-id>.report.md`
+- `.agent-layer/tmp/run-and-fix-all-checks.<run-id>.state.md`
+- `.agent-layer/tmp/run-and-fix-all-checks.<run-id>.report.md`
 
 Create both before writing. Store failed command output or distilled failure
 evidence under `.agent-layer/tmp/` with the same prefix and record each path in
@@ -120,9 +120,9 @@ For every subagent step, use a built-in subagent with fresh context.
 
 ## Required report structure
 
-Write `.agent-layer/tmp/run-and-fix-checks.<run-id>.report.md` with:
+Write `.agent-layer/tmp/run-and-fix-all-checks.<run-id>.report.md` with:
 
-1. `# Run and Fix Checks Summary`
+1. `# Run All Checks Summary`
 2. `## Inputs`
 3. `## Check Lane`
 4. `## Check Rounds`
@@ -154,7 +154,7 @@ Include:
 
 When the skill finishes, report:
 
-- run-and-fix-checks report path
+- run-and-fix-all-checks report path
 - check lane commands used
 - check round count and stop reason
 - repair cycle count

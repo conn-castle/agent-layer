@@ -2,8 +2,7 @@
 name: audit-documentation
 description: >-
   Audit Markdown docs for static accuracy and cross-document consistency
-  against the repo, fixing what is safe. Excludes memory files by default; use
-  `/audit-memory` for those.
+  against the repo, fixing what is safe. Excludes memory files by default.
 ---
 
 # audit-documentation

@@ -3,7 +3,8 @@ name: improve-codebase
 description: >-
   Run a deep autonomous quality sweep of the whole codebase or named
   subsystems: survey, split into reviewable chunks, run multi-lens reviews, fix
-  findings iteratively, and delegate to cleanup/test skills as needed.
+  findings iteratively, and coordinate follow-up cleanup or test work when
+  needed.
 ---
 
 # improve-codebase

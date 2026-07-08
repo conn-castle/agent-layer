@@ -38,8 +38,8 @@ mode = "all"
 
 [dispatch]
 # Maximum dispatch depth, including the initial `al dispatch` call.
-# 1 means a dispatched target cannot call `al dispatch` again.
-max_depth = 1
+# 2 allows one nested `al dispatch` call.
+max_depth = 2
 
 [agents.antigravity]
 enabled = true
@@ -647,7 +647,7 @@ al dispatch --agent random --skill review-plan "Review this plan."
 cat prompt.md | al dispatch --agent claude
 ```
 
-Supported target values are `codex`, `claude`, `antigravity`, and `random`. When `--agent` is omitted, Agent Layer uses the env-only caller marker (`AL_DISPATCH_CALLER_AGENT`) and the caller's optional `agents.<caller>.dispatch.default_agent`, defaulting to `random`. Dispatch writes target answer text to stdout and status/errors to stderr, limits nested calls with `dispatch.max_depth` (default `1`), and uses the selected target's generated config and permissions. See `docs/AGENT-DISPATCH.md` in the repository for the full v1 contract.
+Supported target values are `codex`, `claude`, `antigravity`, and `random`. When `--agent` is omitted, Agent Layer uses the env-only caller marker (`AL_DISPATCH_CALLER_AGENT`) and the caller's optional `agents.<caller>.dispatch.default_agent`, defaulting to `random`. Dispatch writes target answer text to stdout and status/errors to stderr, limits nested calls with `dispatch.max_depth` (default `2`), and uses the selected target's generated config and permissions. See `docs/AGENT-DISPATCH.md` in the repository for the full v1 contract.
 
 **Exit codes**
 

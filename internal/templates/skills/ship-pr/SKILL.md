@@ -4,7 +4,7 @@ description: >-
   Run completed local work through PR delivery: audit changes, verify locally,
   commit, push, open PR, monitor CI and PR feedback with
   the bundled script, handle review comments, finish green, then merge after
-  approval and clean up the branch. Use `/fix-ci` for failing PR checks.
+  approval and clean up the branch.
 ---
 
 # ship-pr
@@ -37,13 +37,13 @@ Accept any combination of:
 
 Delegate to:
 - `/clean-and-fix-code` for pre-commit quality gates
-- `/repair-checks` for the local check lane, run in parallel with remote CI, when the current session has not already observed the repo-defined local lane passing after the latest changes
+- `/run-and-fix-all-checks` for the local check lane, run in parallel with remote CI, when the current session has not already observed the repo-defined local lane passing after the latest changes
 - `/fix-ci` for CI failure diagnosis and repair
 - `/address-pr-comments` for review comment handling
 
 ## Continuation rule
 
-Sub-skill returns are intermediate, not terminal. This also applies when this skill is running inside a dispatched/headless subagent: after each sub-skill return, resume the current phase. After every delegation (`/clean-and-fix-code`, `/repair-checks`, `/fix-ci`, `/address-pr-comments`), continue to the next numbered step in the same turn — the sub-skill's closing summary is not this skill's closeout. The most common failure is stopping after `/clean-and-fix-code` returns, before staging and commit happen.
+Sub-skill returns are intermediate, not terminal. This also applies when this skill is running inside a dispatched/headless subagent: after each sub-skill return, resume the current phase. After every delegation (`/clean-and-fix-code`, `/run-and-fix-all-checks`, `/fix-ci`, `/address-pr-comments`), continue to the next numbered step in the same turn — the sub-skill's closing summary is not this skill's closeout. The most common failure is stopping after `/clean-and-fix-code` returns, before staging and commit happen.
 
 The loop exits only at end of Phase 8, a listed human checkpoint, or a mirrored sub-skill checkpoint (e.g., `/fix-ci` halting without pushing — Phase 3 step 3c, Phase 6 step 1c).
 
@@ -62,7 +62,7 @@ and continue this skill's workflow after every delegation returns.
 - The local lane must use the repo-documented CI-equivalent lane when one exists; do not skip it or silently downgrade to only the fast lane.
 - Use `bash <skill_dir>/scripts/monitor-pr.sh` for PR check and PR feedback polling. Do not hand-roll a polling loop for those phases.
 - The bundled monitor script supports GitHub PR repositories through authenticated `gh`, `git`, and `jq`. If those prerequisites are missing or the project is not a GitHub PR repository, stop and report that `/ship-pr` monitoring is unsupported instead of improvising a different monitor.
-- Before any repair commit or push, re-fetch live PR feedback and batch new actionable comments when feasible; pass this requirement to `/fix-ci`, `/repair-checks`, and `/address-pr-comments`.
+- Before any repair commit or push, re-fetch live PR feedback and batch new actionable comments when feasible; pass this requirement to `/fix-ci`, `/run-and-fix-all-checks`, and `/address-pr-comments`.
 - Do not skip CI checks.
 - PR feedback handling must pass the `/address-pr-comments` definition of done before this skill completes.
 - The skill must end with CI passing.
@@ -103,7 +103,7 @@ and continue this skill's workflow after every delegation returns.
    c. Create the PR: `gh pr create --title "<title>" --body "<body>" --base <base-branch>`
 3. If a PR already exists, use that PR.
 4. Record the PR number/URL and the current head SHA.
-5. Start the repo-defined local check lane in parallel (run it or delegate to `/repair-checks`), unless the current session already observed it passing after the latest changes. Do not wait on it here; Phase 3 reconciles it with remote CI.
+5. Start the repo-defined local check lane in parallel (run it or delegate to `/run-and-fix-all-checks`), unless the current session already observed it passing after the latest changes. Do not wait on it here; Phase 3 reconciles it with remote CI.
 
 ### Phase 3: Monitor CI and PR feedback (Monitor script)
 
@@ -128,7 +128,7 @@ The monitor exits on CI failure, feedback, merge conflict, closed PR, timeout, o
    e. `timeout`: rerun if checks are pending or `.remaining_minimum_ready_seconds > 0`. If `.statuses` is empty, run `gh pr checks <pr-number>` once and rerun only if it reports pending checks. Otherwise report that no PR checks appeared within 30 minutes; do not treat the PR as green.
    f. `ready`: remote checks are terminal and the current head passed the minimum ready window; continue to step 3.
 3. Reconcile the parallel local check lane before leaving this phase:
-   a. If it surfaced a failure, fix the cause — `/repair-checks` for a local-only failure, or `/fix-ci` when it overlaps a failing remote check.
+   a. If it surfaced a failure, fix the cause — `/run-and-fix-all-checks` for a local-only failure, or `/fix-ci` when it overlaps a failing remote check.
    b. If the fix or lane changed files, re-fetch live feedback, batch actionable comments when feasible, then audit, commit, push, and re-run the lane.
    c. If the local lane is still running when the script returns `ready`, wait for it to complete.
 4. Remote CI and the local lane must both be passing before proceeding.

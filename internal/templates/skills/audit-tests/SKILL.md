@@ -1,10 +1,9 @@
 ---
 name: audit-tests
 description: >-
-  Audit the existing test suite for redundancy, quality gaps, and
+  Audit the entire test suite for redundancy, quality gaps, and
   organization: duplicate or self-confirming tests, coverage gaps metrics
-  miss, and safe cleanup fixes. Use `/clean-and-fix-code` instead when the
-  target is tests added in the current uncommitted diff.
+  miss, and safe cleanup fixes.
 ---
 
 # audit-tests

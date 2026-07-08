@@ -2,8 +2,8 @@
 name: complete-current-phase
 description: >-
   Complete the current roadmap phase through planning, review, implementation,
-  verification, audit, cleanup, and closeout. Use `/plan-work` for planning only
-  and `/finish-task` for non-roadmap closeout.
+  verification, audit, cleanup, and closeout. Do not use for planning-only
+  requests or generic non-roadmap closeout.
 ---
 
 # complete-current-phase

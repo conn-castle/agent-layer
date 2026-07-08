@@ -2,9 +2,8 @@
 name: boost-coverage
 description: >-
   Raise coverage: find the real coverage command, select under-covered files,
-  add behavior-focused tests, iterate to target or blocker. Use `/audit-tests`
-  for full-suite cleanup; use `/clean-and-fix-code` to prune speculative tests
-  in the current uncommitted diff.
+  add behavior-focused tests, iterate to target or blocker. Do not use for
+  full-suite cleanup or pruning tests added in the current diff.
 ---
 
 # boost-coverage

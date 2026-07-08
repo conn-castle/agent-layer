@@ -175,6 +175,7 @@ var filepathWalkFunc = filepath.Walk
 const (
 	retainNewestMinorPatches = 4
 	retainRecentMinorLines   = 4
+	redirectManifestName     = "redirect-manifest.json"
 )
 
 // guidePageSpec maps a canonical Markdown guide and public header snippet to a
@@ -831,11 +832,21 @@ func selectRetainedVersions(sorted []string) (retained []string, dropped []strin
 	return retained, dropped, nil
 }
 
-// pruneDroppedVersionArtifacts removes versioned docs and sidebars for each
-// dropped version from the website repository checkout.
+type redirectManifestEntry struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// pruneDroppedVersionArtifacts records redirects for dropped docs pages, then
+// removes versioned docs and sidebars for each dropped version from the website
+// repository checkout.
 func pruneDroppedVersionArtifacts(repoB string, dropped []string) error {
 	for _, v := range dropped {
 		versionedDocsPath := filepath.Join(repoB, "versioned_docs", "version-"+v)
+		if err := recordDroppedVersionRedirects(repoB, v, versionedDocsPath); err != nil {
+			return fmt.Errorf("record redirects for dropped version %s: %w", v, err)
+		}
+
 		if err := os.RemoveAll(versionedDocsPath); err != nil {
 			return fmt.Errorf("remove versioned docs for %s: %w", v, err)
 		}
@@ -847,6 +858,187 @@ func pruneDroppedVersionArtifacts(repoB string, dropped []string) error {
 	}
 
 	return nil
+}
+
+func recordDroppedVersionRedirects(repoB, version, versionedDocsPath string) error {
+	droppedSlugs, err := collectDocSlugs(versionedDocsPath)
+	if err != nil {
+		return err
+	}
+	if len(droppedSlugs) == 0 {
+		return nil
+	}
+
+	latestSlugs, err := collectDocSlugs(filepath.Join(repoB, "docs"))
+	if err != nil {
+		return fmt.Errorf("read latest docs: %w", err)
+	}
+
+	manifestPath := filepath.Join(repoB, redirectManifestName)
+	entries, err := readRedirectManifest(manifestPath)
+	if err != nil {
+		return err
+	}
+
+	byFrom := make(map[string]redirectManifestEntry, len(entries)+len(droppedSlugs))
+	for _, entry := range entries {
+		byFrom[entry.From] = entry
+	}
+	for slug := range droppedSlugs {
+		target := docRoute("", slug)
+		if _, ok := latestSlugs[slug]; !ok {
+			target = docRoute("", "")
+		}
+		from := docRoute(version, slug)
+		byFrom[from] = redirectManifestEntry{From: from, To: target}
+	}
+
+	merged := make([]redirectManifestEntry, 0, len(byFrom))
+	for _, entry := range byFrom {
+		merged = append(merged, entry)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].From == merged[j].From {
+			return merged[i].To < merged[j].To
+		}
+		return merged[i].From < merged[j].From
+	})
+
+	data, err := json.MarshalIndent(merged, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := osWriteFileFunc(manifestPath, append(data, '\n'), 0o644); err != nil { // #nosec G306 -- generated website source must be readable by Docusaurus/static-site tooling.
+		return fmt.Errorf("write redirect manifest: %w", err)
+	}
+	return nil
+}
+
+func readRedirectManifest(path string) ([]redirectManifestEntry, error) {
+	data, err := osReadFileFunc(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read redirect manifest: %w", err)
+	}
+
+	var entries []redirectManifestEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, fmt.Errorf("parse redirect manifest: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.From == "" || entry.To == "" {
+			return nil, fmt.Errorf("redirect manifest contains an entry with empty from/to")
+		}
+	}
+	return entries, nil
+}
+
+func collectDocSlugs(root string) (map[string]struct{}, error) {
+	info, err := osStatFunc(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat docs root %s: %w", root, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("docs root is not a directory: %s", root)
+	}
+
+	slugs := make(map[string]struct{})
+	err = filepathWalkFunc(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !isDocMarkdownFile(path) {
+			return nil
+		}
+
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		data, err := osReadFileFunc(path)
+		if err != nil {
+			return err
+		}
+		slugs[docSlug(rel, data)] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return slugs, nil
+}
+
+func isDocMarkdownFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".md" || ext == ".mdx"
+}
+
+func docSlug(relPath string, data []byte) string {
+	if slug, ok := frontMatterSlug(data); ok {
+		return normalizeDocSlug(slug)
+	}
+
+	withoutExt := strings.TrimSuffix(relPath, filepath.Ext(relPath))
+	slug := filepath.ToSlash(withoutExt)
+	if slug == "index" {
+		return ""
+	}
+	slug = strings.TrimSuffix(slug, "/index")
+	return normalizeDocSlug(slug)
+}
+
+func frontMatterSlug(data []byte) (string, bool) {
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	if !strings.HasPrefix(text, "---\n") {
+		return "", false
+	}
+
+	lines := strings.Split(text, "\n")
+	for _, line := range lines[1:] {
+		if line == "---" {
+			return "", false
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok || strings.TrimSpace(key) != "slug" {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+		return value, true
+	}
+	return "", false
+}
+
+func normalizeDocSlug(slug string) string {
+	slug = filepath.ToSlash(strings.TrimSpace(slug))
+	slug = strings.Trim(slug, "/")
+	if slug == "." {
+		return ""
+	}
+	return slug
+}
+
+func docRoute(version, slug string) string {
+	parts := []string{"", "docs"}
+	if version != "" {
+		parts = append(parts, version)
+	}
+	if slug != "" {
+		parts = append(parts, strings.Split(slug, "/")...)
+	}
+	route := strings.Join(parts, "/")
+	if slug == "" {
+		route += "/"
+	}
+	return route
 }
 
 func normalizeVersionsJSON(repoB string) error {
