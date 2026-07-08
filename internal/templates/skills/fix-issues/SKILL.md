@@ -60,7 +60,10 @@ Recommended roles:
 
 ## Context Discipline
 
-You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+You are the orchestrator for this skill. Do not do work that belongs to
+subagents or delegated skills in the orchestration context. Preserve your
+context to make strategic decisions, enforce gates, reconcile returned outputs,
+and continue this skill's workflow after every delegation returns.
 
 ## Global constraints
 
@@ -108,7 +111,7 @@ You are the orchestrator. Do not do the child/subagent work yourself. Your job i
 ### Phase 2: Draft And Review The Plan (Planner)
 
 Use the `/plan-work` skill for the current issue batch. Pass the selected issues,
-excluded issues, rollback or recovery notes, parent report path, and
+excluded issues, rollback or recovery notes, report path, and
 `review_agents`; do not duplicate plan artifact instructions here.
 
 ### Phase 3: Confirm Plan Readiness (Plan review agents)
@@ -187,7 +190,7 @@ If it reveals incomplete issue resolution or stale memory/docs, jump back to the
 
 ## Definition of done
 
-- The parent report exists at `.agent-layer/tmp/fix-issues.<run-id>.report.md` and lists every selected issue with a disposition of fixed, deferred, rejected, or reclassified.
+- The report exists at `.agent-layer/tmp/fix-issues.<run-id>.report.md` and lists every selected issue with a disposition of fixed, deferred, rejected, or reclassified.
 - Every implemented batch used `/plan-work`, and the returned plan/task/context
   artifacts reached `implementation-ready` before the execution gate proceeded.
 - Every resolved issue is removed from `ISSUES.md`; reclassified items moved to `BACKLOG.md`; newly discovered out-of-scope issues are logged as fresh `ISSUES.md` entries.
@@ -198,6 +201,6 @@ If it reveals incomplete issue resolution or stale memory/docs, jump back to the
 ## Final handoff
 
 After writing the report:
-1. Echo the parent report path and delegated artifact paths.
+1. Echo the report path and delegated artifact paths.
 2. Summarize the resolved issues and any deferred ones.
 3. State the verification outcome clearly.

@@ -27,14 +27,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-07-07 clean-fix-docs-iterative-stale: Public skills docs still call clean-and-fix-code iterative
-    Priority: Low. Area: site/docs/skills.mdx
-    Description: `site/docs/skills.mdx` says `clean-and-fix-code` iterates review/fix rounds until convergence, but the template skill is now explicitly lightweight and non-iterative.
-    Next step: Update the public skills table when the non-iterative clean-and-fix-code contract is finalized.
-
 - Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
     Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
-    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into clean-and-fix assets, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
+    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into clean-and-fix assets, split `fully-implement-plan` and `loop-clean-and-fix`, add `run-and-fix-checks`, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
     Next step: When the next release version is selected, add the required skill migration entry and generate the matching template ownership manifest.
     Notes: Do not edit already-tagged manifest files such as `0.12.1.json`.
 

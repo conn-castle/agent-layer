@@ -1,9 +1,7 @@
 # Interface Audit Update Workflow
 
-Use this file only when `/interface-audit` is invoked with `--update`.
-
-Update one report in place, then return to the parent skill's final
-recommendation gate.
+Update one report in place, then stop with the inputs needed for a final
+recommendation.
 
 ## Select The Report
 
@@ -17,7 +15,7 @@ find .agent-layer/tmp -maxdepth 1 -type f -name 'interface-audit.[0-9]*.md' -pri
 ```
 
 If the command returns no path, stop. Tell the user no existing interface audit
-report was found and ask whether to run a fresh `/interface-audit`.
+report was found and ask whether to run a fresh audit.
 
 Before editing, read enough of the selected report to preserve its structure.
 Do not create a parallel update report.
@@ -96,9 +94,15 @@ change notes belong only in the update log.
 ## Required Post-Update Checks
 
 Before final handoff, re-read each changed row against current evidence and
-confirm the changed claims satisfy the parent skill's audit rules.
+confirm the changed claims are current, evidence-backed, and consistent with
+the report structure.
 
 ## Final Step
 
-Do not continue into planning or implementation. Complete the final
-recommendation gate from the parent skill.
+Do not continue into planning or implementation. Stop with:
+- the updated report path
+- the rows or sections changed
+- the highest-value remaining issue
+- whether a major architecture change appears necessary
+- the smallest coherent next improvement
+- whether that improvement changes behavior

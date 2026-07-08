@@ -69,7 +69,7 @@ For this skill, "findings" means `/review-uncommitted-code` findings under
 
 ## Guardrails
 
-- Do not do child workflow work yourself. Delegate the two cleanup pre-passes to
+- Do not do delegated workflow work yourself. Delegate the two cleanup pre-passes to
   subagents, run `/review-uncommitted-code` directly, then let `/plan-work`,
   `/implement-plan`, and `/verify-work` own their contracts.
 - Subagent and sub-skill returns are intermediate until this structure reaches

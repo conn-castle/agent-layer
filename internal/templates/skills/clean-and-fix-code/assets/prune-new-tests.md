@@ -45,8 +45,9 @@ Inputs the reviewer receives alongside the prompt:
 
 ## Context Discipline
 
-You are the orchestrator. Delegate only the `Burden-of-proof reviewer` role to
-a built-in subagent. Perform `Diff scout` and `Applier` yourself.
+You are the orchestrator for this skill. Delegate only the
+`Burden-of-proof reviewer` role to a built-in subagent. Perform `Diff scout`
+and `Applier` yourself, then reconcile the returned review.
 
 ## Global constraints
 

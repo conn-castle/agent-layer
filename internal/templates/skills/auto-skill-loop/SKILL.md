@@ -6,7 +6,7 @@ description: >-
 
 # auto-skill-loop
 
-This is a parent orchestrator skill. Do not implement or ship code yourself.
+This is an orchestrator skill. Do not implement or ship code yourself.
 
 ## Required inputs
 

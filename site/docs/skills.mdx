@@ -58,7 +58,7 @@ The recommended section order is informed by research on how language models pro
 
 The skill standard defines the format. Agent Layer builds on it with:
 
-- **A workflow-bundle library of 25 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available when the workflow bundle is installed through the wizard and refreshed through upgrade flows for repos that already have it.
+- **A workflow-bundle library of 27 skills** covering planning, implementation, review, debugging, PR lifecycle, auditing, and codebase improvement — available when the workflow bundle is installed through the wizard and refreshed through upgrade flows for repos that already have it.
 - **Client projection** — Skills are authored once under `.agent-layer/skills/` and projected during `al sync` to `.agents/skills/` for shared-skill clients and `.claude/skills/` for Claude Code.
 - **Memory integration** — Skills read from and write to project memory files (`ISSUES.md`, `BACKLOG.md`, `ROADMAP.md`, `DECISIONS.md`, `COMMANDS.md`, `CONTEXT.md`), keeping project context durable across sessions.
 - **Artifact conventions** — Skills produce structured output files under `.agent-layer/tmp/` using a standard naming convention (`<skill-name>.<run-id>.<type>.md`). Planning workflows produce a trio of artifacts — a plan, a task list, and a context file — so that any agent can pick up the work cold without re-discovering what the planner already found.
@@ -100,7 +100,7 @@ Skills accept flexible inputs: plain-language descriptions, file paths, constrai
 
 ## Built-in skill library
 
-The Agent Layer workflow bundle includes 25 skills. They are organized here by how you typically use them. Agent Layer also ships optional CLI catalog skills for installed tools; those are listed separately below.
+The Agent Layer workflow bundle includes 27 skills. They are organized here by how you typically use them. Agent Layer also ships optional CLI catalog skills for installed tools; those are listed separately below.
 
 ### Orchestrator skills
 
@@ -110,6 +110,7 @@ These are the top-level workflows you invoke directly. They delegate to supporti
 | --- | --- |
 | `complete-current-phase` | Drives a roadmap phase through planning, implementation, verification, auditing, and cleanup loops until the phase is complete. The primary orchestrator for roadmap execution. |
 | `full-workflow` | Orchestrates a feature workflow from questions and spec alignment through planning, multi-agent plan review, implementation, and PR shipping. |
+| `fully-implement-plan` | Implements a provided plan through cleanup, verification, and full local checks without opening or shipping a PR. |
 | `auto-skill-loop` | Runs an explicitly authorized autonomous loop for `fix-issues` or `improve-codebase`, dispatching workers, preserving blocked work, and shipping ready PRs until interrupted or exhausted. |
 | `ship-pr` | Full PR lifecycle: audits uncommitted changes, commits, pushes, creates the PR, monitors CI (fixing failures), waits for review comments, addresses every one, and confirms CI passes. Delegates to `clean-and-fix-code`, `fix-ci`, and `address-pr-comments`. |
 | `improve-codebase` | Deep autonomous codebase audit: decomposes the repo into reviewable chunks, runs parallel multi-lens reviews, fixes findings iteratively, and delegates to complementary skills. |
@@ -145,8 +146,10 @@ These are used by orchestrators or available for fine-grained control when you n
 | Skill | What it does |
 | --- | --- |
 | `simplify-codebase` | Codebase-wide complexity reduction: removes dead code, simplifies overly complex functions, and splits files that mix unrelated responsibilities. Operates on the whole repository or explicit paths, not the uncommitted diff. |
-| `clean-and-fix-code` | Working-tree cleanup and fix orchestrator. Runs diff-scoped test pruning and new-code simplification as internal assets, then iterates review/fix rounds until convergence. Used as a pre-commit quality gate. |
+| `loop-clean-and-fix` | Repeats `clean-and-fix-code` on the current uncommitted working tree while a cleanup round resolves Critical or High findings. |
+| `clean-and-fix-code` | Single working-tree cleanup/fix pass. Runs diff-scoped test pruning and new-code simplification as internal assets, reviews the current uncommitted diff, and fixes accepted findings once. |
 | `boost-coverage` | Raises test coverage iteratively by discovering the repo's coverage commands, selecting low-coverage files, and adding tests until thresholds are met. |
+| `run-and-fix-checks` | Runs the full documented check lane, including all tests and CI, then plans, implements, verifies, and repeats fixes until it passes or blocks. |
 | `repair-checks` | Runs the repo's documented checks in order, fixes failures in scope, and repeats until passing or a real blocker emerges. |
 
 **PR and CI lifecycle**

@@ -37,6 +37,13 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`:
 Create both before writing. Store review agent prompt/output artifacts under
 `.agent-layer/tmp/` with the same prefix and record each path in state.
 
+## Context Discipline
+
+You are the orchestrator for this skill. Do not do work that belongs to
+subagents or delegated skills in the orchestration context. Preserve your
+context to make strategic decisions, enforce gates, reconcile returned outputs,
+and continue this skill's workflow after every delegation returns.
+
 ## Rules
 
 - Review against the spec when a spec path is supplied; otherwise review against

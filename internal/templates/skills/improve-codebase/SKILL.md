@@ -61,7 +61,7 @@ Delegated skill outputs are handled one way:
   against the current repo state.
 - Copy `/simplify-codebase`, `/boost-coverage`, `/audit-tests`, and
   `/fix-issues` outcomes from their final handoffs into the master report.
-- Do not require, open, echo, or cross-reference child report artifacts from
+- Do not require, open, echo, or cross-reference delegated report artifacts from
   `/simplify-codebase`, `/boost-coverage`, `/audit-tests`, or `/fix-issues`.
 
 ## Required behavior
@@ -82,9 +82,12 @@ Prefer the dedicated skills that already exist:
 
 ## Context Discipline
 
-You are the orchestrator. Do not do the child/subagent work yourself. Your job is to preserve your context to make strategic decisions, ensure each child skill or subagent follows its assigned contract, reconcile their outputs, enforce this workflow's gates, and continue the parent workflow after every child return.
+You are the orchestrator for this skill. Do not do work that belongs to
+subagents or delegated skills in the orchestration context. Preserve your
+context to make strategic decisions, enforce gates, reconcile returned outputs,
+and continue this skill's workflow after every delegation returns.
 
-When compaction is needed, retain this section verbatim and also preserve: current phase, active artifact paths, selected scope, pending gate verdict, child skills/subagents already run, their outcomes, unresolved blockers, and the next exact step.
+When compaction is needed, retain this section verbatim and also preserve: current phase, active artifact paths, selected scope, pending gate verdict, delegated skills and subagents already run, their outcomes, unresolved blockers, and the next exact step.
 
 ## Global constraints
 

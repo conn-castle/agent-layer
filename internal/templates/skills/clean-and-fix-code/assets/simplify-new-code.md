@@ -41,13 +41,6 @@ Inputs the reviewer receives alongside the prompt:
 - Nothing else, including prior conversation, plans, task lists, context
   files, user prompts, implementer rationale, or prior reviewer output.
 
-## Context Discipline
-
-You are the orchestrator. Do not do the subagent work yourself. Your job is to
-preserve your context to make strategic decisions, ensure each subagent follows
-its assigned contract, reconcile their outputs, enforce this workflow's gates,
-and continue the parent workflow after every subagent return.
-
 ## Global constraints
 
 - Preserve the user-requested behavior. If a proposed simplification

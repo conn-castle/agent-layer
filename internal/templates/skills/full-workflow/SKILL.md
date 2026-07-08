@@ -7,7 +7,7 @@ description: >-
 
 # full-workflow
 
-Parent orchestration skill. Own question, spec, and spec-gate alignment; after
+Top-level orchestration skill. Own question, spec, and spec-gate alignment; after
 that, delegate each stage to its dedicated skill.
 
 ## Required inputs
@@ -56,9 +56,9 @@ they appear.
   recommendation when useful.
 - Separate facts from choices: repo reading may resolve facts, constraints, and
   existing behavior; inferred or recommended choices stay open until approved.
-- After the spec gate, do not perform child-stage work yourself. Use the planner
+- After the spec gate, do not perform delegated-stage work yourself. Use the planner
   for `/plan-work`, implementer for `/implement-plan`, and shipper for `/ship-pr`.
-- Treat child returns as intermediate; continue orchestration after each return.
+- Treat delegated returns as intermediate; continue orchestration after each return.
 - Ask again if later evidence would materially change the aligned spec.
 - Never replace a missing role with the current agent, widen scope beyond the
   spec, or guess alternate dispatch options after failure.
