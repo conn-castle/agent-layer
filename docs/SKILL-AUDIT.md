@@ -30,6 +30,19 @@ For each general (workflow) skill, measure and evaluate:
 9. **Verbosity** — Are there sections that could be shorter without losing clarity? Report templates, examples, and philosophy sections are common sources of bloat.
 10. **Description quality** — Does the frontmatter description clearly distinguish this skill from related skills?
 
+## Workflow skill checklist
+
+When creating or updating a general workflow skill, verify:
+
+- **Required inputs** — Required inputs are explicit, missing inputs fail before side effects, and the skill does not invent artifact paths, review agents, or defaults.
+- **Human escalation guidance** — Checkpoints name the exact condition that requires the user, the evidence gathered, and the smallest decision or input needed to continue.
+- **Context preservation** — Orchestrator skills preserve their own context for gates, reconciliation, and final reporting instead of doing delegated sub-skill work inline.
+- **Orchestration approach** — Delegated skills are called deliberately, their outputs are treated as intermediate evidence, and failures or checkpoints become this skill's stop reason.
+- **Steps, not phases** — Workflow sections use numbered steps so resumes and checkpoints can restart at a concrete point.
+- **Say things once** — Each rule, guardrail, or output requirement appears in one authoritative section; avoid repeating the same constraint in rules, workflow, guardrails, and done criteria.
+- **Skill-call examples** — Calls to other skills show the exact argument shape, including artifact paths and `review_agents` examples when required.
+- **Input handoff** — When a delegated skill requires artifacts, the parent skill states where those artifacts come from and what to do if the delegated skill does not return them.
+
 ## CLI skill criteria
 
 CLI skills are routers to an installed command line interface, not reference manuals, so they are evaluated against the **Review Checklist** in `docs/CLI-SKILL-DESIGN.md`, which is the authoritative rubric — consult it for the complete pass/fail list and the Anti-Patterns table. For each CLI skill, evaluate:

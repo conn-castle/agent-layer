@@ -2,9 +2,10 @@
 name: fully-implement-plan
 description: >-
   Implement a supplied plan, iteratively review and fix until diminishing
-  returns, verify completion, and run the repository's documented checks. Use
+  returns, and verify completion. Use
   when the caller provides plan, task, and context artifacts and wants the local
-  work finished without opening or shipping a PR.
+  work finished without opening or shipping a PR or running full-repository
+  testing.
 ---
 
 # fully-implement-plan
@@ -20,8 +21,7 @@ Fail before side effects unless all are present:
 - task artifact path
 - context artifact path
 - `review_agents`: one or more dispatch agent roles to pass to
-  `/loop-clean-and-fix`, `/run-and-fix-all-checks`, and any `/plan-work` retry
-  for verification gaps
+  `/loop-clean-and-fix` and any `/plan-work` retry for verification gaps
 
 If any required input is missing, ask for it before starting. Do not invent
 defaults or auto-select artifacts from `.agent-layer/tmp/`.
@@ -48,9 +48,9 @@ and continue this skill's workflow after every delegation returns.
   artifact paths and `review_agents` are enough.
 - Treat delegated skill returns as intermediate until this workflow reaches its
   final report.
-- If `/implement-plan`, `/loop-clean-and-fix`, `/verify-work`, or
-  `/run-and-fix-all-checks` fails, stops at its own checkpoint, emits unusable
-  output, or cannot provide the report path or verdict this workflow needs,
+- If `/implement-plan`, `/loop-clean-and-fix`, or `/verify-work` fails, stops
+  at its own checkpoint, emits unusable output, or cannot provide the report
+  path or verdict this workflow needs,
   stop this workflow, record the stop reason, and surface it to the user.
 - If `/verify-work` returns `incomplete`, run:
 
@@ -91,7 +91,8 @@ and continue this skill's workflow after every delegation returns.
    {relative path to context artifact}
    ```
 
-   Record its report path, deviations, checks, and remaining follow-up.
+   Record its report path, deviations, task-local implementation checks, and
+   remaining follow-up.
 2. Run:
 
    ```text
@@ -115,16 +116,7 @@ and continue this skill's workflow after every delegation returns.
    its report path, verdict, findings, and recommended next step. If the verdict is
    `incomplete`, follow the retry rule in `Rules` and record the remaining-work
    plan, task, context, implementation report, and verification report paths.
-4. Run:
-
-   ```text
-   /run-and-fix-all-checks
-   review_agents are {review agent 1, review agent 2, ...}
-   ```
-
-   Record the checks report path, commands, round count, repair cycle count,
-   stop reason, and final passing evidence or blocker.
-5. Write the final report and prepare the final message for the user.
+4. Write the final report and prepare the final message for the user.
 
 ## Required master report structure
 
@@ -137,12 +129,11 @@ Write `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md` with:
 5. `## Issue Ledger`
 6. `## Resolved Findings`
 7. `## Verification Results`
-8. `## Check Results`
-9. `## Stop Reason`
-10. `## Residual Risk`
+8. `## Stop Reason`
+9. `## Residual Risk`
 
 In `## Issue Ledger`, include one Markdown table row for every issue reported by
-`/loop-clean-and-fix` and `/run-and-fix-all-checks` repair cycles when available.
+`/loop-clean-and-fix` repair cycles when available.
 
 Required columns:
 
@@ -160,26 +151,23 @@ issues were reported, include a single `No issues reported` row.
   delegated-skill blocker.
 - `/verify-work` reached `complete` or acceptable `complete-with-follow-up`, or
   the report names the verification blocker.
-- `/run-and-fix-all-checks` ran the full documented check lane and either passed or
-  reported a real blocker.
 
 ## Final handoff
 
 After the run, present the results to the user in chat so that implementation,
-cleanup, verification, and check outcomes are clearly attributed to the step
-that produced them.
+cleanup, verification, and any task-local implementation checks are clearly
+attributed to the step that produced them.
 
 Required chat output:
 
 1. Echo the fully-implement-plan report path.
 2. State total implementation attempts, cleanup rounds, verification verdict,
-   check stop reason, and final status.
+   stop reason, and final status.
 3. Present a **Key fixes applied** table sorted by source, round, then
    severity. Example columns: `| Source | Round | Severity | Fix | Files |`.
    If no fixes were applied, still print the table with a single
    `No fixes applied` row.
 4. List rejected, deferred, blocking, or repeated findings with their source and
    round numbers.
-5. State which cleanup round or check round stopped the loop and whether final
-   checks passed.
+5. State which cleanup round stopped the loop.
 6. Name any blocker or residual risk.

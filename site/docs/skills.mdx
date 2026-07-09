@@ -16,7 +16,7 @@ A skill is a Markdown file (`SKILL.md`) with YAML frontmatter that lives in a na
 
 ```
 skills/
-  debug-issue/
+  debug-and-fix-issue/
     SKILL.md
   ship-pr/
     SKILL.md
@@ -90,7 +90,7 @@ Skills activate implicitly or explicitly:
 **Implicit** — Describe what you want and the agent matches the right skill:
 - "Drive Phase 3 to completion" → `complete-current-phase`
 - "Ship this as a PR" → `ship-pr`
-- "Debug why the test is flaking" → `debug-issue`
+- "Debug why the test is flaking" → `debug-and-fix-issue`
 
 **Explicit** — Name the skill directly:
 - "Use `complete-current-phase` for Phase 3"
@@ -124,7 +124,7 @@ These are commonly invoked directly for specific tasks that do not need a full o
 | --- | --- |
 | `write-plan` | Produces a plan, task list, and context file for a requested change — scoped tightly enough for a fresh agent to execute without guessing. The context file captures key file paths, current state, and constraints so the implementing agent can orient immediately. |
 | `implement-plan` | Picks up a plan/task/context set and executes it. Reads the context file first to orient, then works through the task list while keeping changes aligned to the plan, running task-local checks and recording deviations or follow-up. |
-| `debug-issue` | Investigation-first debugging: reproduces the bug, narrows the cause systematically, writes a failing test, fixes the root cause, and verifies. Refuses to guess — requires evidence at every step. |
+| `debug-and-fix-issue` | Investigation-first debugging and fixing: reproduces the bug, narrows the cause systematically, writes a failing test, then delegates planning, implementation, cleanup, and verification. Refuses to guess — requires evidence at every step. |
 | `schedule-backlog` | Proposes reviewable updates by mapping backlog items into roadmap phases, cross-checking impacts, and using human checkpoints before editing memory files. |
 
 ### Supporting skills
