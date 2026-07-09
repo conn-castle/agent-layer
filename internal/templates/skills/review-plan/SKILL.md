@@ -2,20 +2,20 @@
 name: review-plan
 description: >-
   Review and repair a plan/task/context artifact set with required dispatched
-  plan review agents, synthesize suspect feedback, revise accepted issues, and repeat
+  plan reviewers, synthesize suspect feedback, revise accepted issues, and repeat
   until the plan is implementation-ready.
 ---
 
 # review-plan
 
-Cross-agent pre-implementation plan review and repair. Dispatch plan review agents
+Cross-agent pre-implementation plan review and repair. Dispatch plan reviewers
 for independent critique; keep judgment, synthesis, artifact revision, and
 readiness decisions with the current orchestrator.
 
 ## Required inputs
 
 Fail before side effects unless all are present:
-- `plan_review_agents`: one or more dispatch agent roles
+- `plan_reviewers`: one or more dispatch agent roles
 - plan artifact path
 - task artifact path
 - context artifact path
@@ -34,7 +34,7 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`:
 - `.agent-layer/tmp/review-plan.<run-id>.state.md`
 - `.agent-layer/tmp/review-plan.<run-id>.report.md`
 
-Create both before writing. Store plan review agent prompt/output artifacts under
+Create both before writing. Store plan reviewer prompt/output artifacts under
 `.agent-layer/tmp/` with the same prefix and record each path in state. For
 each dispatched reviewer, assign a unique child report path:
 `.agent-layer/tmp/review-plan.<run-id>.<role-slug>.report.md`.
@@ -50,9 +50,9 @@ and continue this skill's workflow after every delegation returns.
 
 - Review against the spec when a spec path is supplied; otherwise review against
   the plan's stated objective and scope.
-- Use `assets/agent-review-prompt.md` for dispatched plan review agent runs. Do not
-  ask plan review agents to edit artifacts.
-- Treat plan review agent output as suspect. Accept a suggestion only when you agree with
+- Use `assets/agent-review-prompt.md` for dispatched plan reviewer runs. Do not
+  ask plan reviewers to edit artifacts.
+- Treat plan reviewer output as suspect. Accept a suggestion only when you agree with
   it.
 - Classify each finding as `accepted`, `rejected`, `duplicate`, or
   `substantive-user-decision`; record a one-line reason.
@@ -64,8 +64,8 @@ and continue this skill's workflow after every delegation returns.
   recommendation.
 - Iterate until no accepted unresolved findings remain and no substantive user
   decision is pending.
-- Dispatch plan review agents one at a time unless the dispatch implementation is known
-  to be safe for concurrent plan review agent launches in the current repo.
+- Dispatch plan reviewers one at a time unless the dispatch implementation is known
+  to be safe for concurrent plan reviewer launches in the current repo.
 
 ## Workflow
 
@@ -79,9 +79,9 @@ and continue this skill's workflow after every delegation returns.
 5. Record artifact paths, dispatch agent roles, normalized dispatch flags, and
    current round in the state file.
 
-### Phase 2: Dispatch Plan Review Agents
+### Phase 2: Dispatch Plan Reviewers
 
-For each plan review agent dispatch role, dispatch a focused prompt using
+For each plan reviewer dispatch role, dispatch a focused prompt using
 `assets/agent-review-prompt.md` and containing:
 - plan, task, context, and optional spec paths
 - the unique child report path assigned for that reviewer
@@ -92,11 +92,11 @@ For each plan review agent dispatch role, dispatch a focused prompt using
 - instruction not to write or modify the parent
   `.agent-layer/tmp/review-plan.<run-id>.report.md`
 
-Capture the useful plan review agent result or report path in the state file.
+Capture the useful plan reviewer result or report path in the state file.
 
 ### Phase 3: Synthesize
 
-For every plan review agent finding:
+For every plan reviewer finding:
 1. Validate it against the artifacts and repo context.
 2. Classify it under `Rules`.
 3. Ignore speculative, unsupported, out-of-scope, or merely stylistic findings.
@@ -134,15 +134,15 @@ Write the final report with these sections:
 
 ## Guardrails
 
-- Do not treat plan review agent consensus as truth or hide rejected suggestions.
+- Do not treat plan reviewer consensus as truth or hide rejected suggestions.
 - Do not widen implementation scope or weaken verification to satisfy a
-  plan review agent preference.
+  plan reviewer preference.
 
 ## Definition of done
 
 - All required artifacts and dispatch agent roles were validated.
-- Every plan review agent dispatch role ran with `assets/agent-review-prompt.md`.
-- Every plan review agent finding was classified with a reason.
+- Every plan reviewer dispatch role ran with `assets/agent-review-prompt.md`.
+- Every plan reviewer finding was classified with a reason.
 - Accepted findings were resolved in the artifacts or escalated through a human
   checkpoint.
 - The final report exists and declares `implementation-ready` or
@@ -150,6 +150,6 @@ Write the final report with these sections:
 
 ## Final handoff
 
-Echo the report path, the reviewed plan/task/context paths, the plan review agent
+Echo the report path, the reviewed plan/task/context paths, the plan reviewer
 dispatch roles used, accepted changes made, rejected suggestions, and
 final readiness.

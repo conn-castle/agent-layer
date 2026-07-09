@@ -15,8 +15,9 @@ that, delegate to `/plan-work`, `/fully-implement-plan`, and `/ship-pr`.
 Fail before side effects unless all are present:
 - `planner`: dispatch agent role
 - `implementer`: dispatch agent role
+- `fixer`: dispatch agent role
 - `shipper`: dispatch agent role
-- `plan_review_agents`: one or more dispatch agent roles
+- `plan_reviewers`: one or more dispatch agent roles
 - the user's requested work
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
@@ -31,8 +32,9 @@ Example invocation:
 {requested work}
 planner is codex xhigh
 implementer is codex high
+fixer is codex high
 shipper is claude opus xhigh
-plan_review_agents are codex high, opus xhigh, antigravity
+plan_reviewers are codex high, opus xhigh, antigravity
 ```
 
 ## Required artifacts
@@ -56,8 +58,9 @@ Create the spec before writing.
 - Separate facts from choices: repo reading may resolve facts, constraints, and
   existing behavior; inferred or recommended choices stay open until approved.
 - After the spec gate, do not perform delegated-stage work yourself. Use the
-  planner for `/plan-work`, implementer for `/fully-implement-plan`, and shipper
-  for `/ship-pr`.
+  planner for `/plan-work`, implementer for `/fully-implement-plan`, pass the
+  implementer and fixer roles through to `/fully-implement-plan`, and use the
+  shipper for `/ship-pr`.
 - Treat delegated returns as intermediate; continue orchestration after each return.
 - Ask again if later evidence would materially change the aligned spec.
 - Never replace a missing role with the current agent, widen scope beyond the
@@ -124,7 +127,7 @@ Dispatch the planner role with:
 ```text
 /plan-work
 {relative path to spec}
-plan_review_agents are {agent 1, agent 2, ...}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 ### Phase 7: Fully Implement
@@ -137,7 +140,9 @@ Plan artifacts:
 {relative path to reviewed plan artifact}
 {relative path to reviewed task artifact}
 {relative path to reviewed context artifact}
-plan_review_agents are {agent 1, agent 2, ...}
+implementer is {implementer}
+fixer is {fixer}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 ### Phase 8: Ship
@@ -147,7 +152,8 @@ Dispatch the shipper role with:
 ```text
 /ship-pr
 implementer is {implementer}
-plan_review_agents are {agent 1, agent 2, ...}
+fixer is {fixer}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Stop at any `/ship-pr` human checkpoint, including merge authorization.

@@ -18,12 +18,13 @@ Fail before side effects unless all are present:
 - plan artifact path
 - task artifact path
 - context artifact path
-- `implementer`: dispatch agent role to pass to `/ship-pr`
-- `plan_review_agents`: one or more dispatch agent roles to pass to both child skills
+- `implementer`: dispatch agent role to pass to both child skills
+- `fixer`: dispatch agent role to pass to both child skills
+- `plan_reviewers`: one or more dispatch agent roles to pass to both child skills
 
 If any required input is missing, ask for it before starting. Do not invent
-defaults, implementers, plan review agent lists, or auto-select artifacts from
-`.agent-layer/tmp/`.
+defaults, implementers, fixers, plan reviewer lists, or auto-select
+artifacts from `.agent-layer/tmp/`.
 
 ## Context Discipline
 
@@ -52,7 +53,9 @@ skill returns as intermediate until this workflow reaches its final handoff.
    {relative path to plan artifact}
    {relative path to task artifact}
    {relative path to context artifact}
-   plan_review_agents are {agent 1, agent 2, ...}
+   implementer is {implementer}
+   fixer is {fixer}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Record its report path, final status, stop reason, verification verdict, and
@@ -62,7 +65,8 @@ skill returns as intermediate until this workflow reaches its final handoff.
    ```text
    /ship-pr
    implementer is {implementer}
-   plan_review_agents are {agent 1, agent 2, ...}
+   fixer is {fixer}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Record its PR URL or checkpoint, comment ledger path if available, check
@@ -71,8 +75,9 @@ skill returns as intermediate until this workflow reaches its final handoff.
 
 ## Definition of done
 
-- `/fully-implement-plan` ran with the supplied plan, task, context, and
-  `plan_review_agents`, or this workflow stopped on its child-skill blocker.
+- `/fully-implement-plan` ran with the supplied plan, task, context,
+  `implementer`, `fixer`, and `plan_reviewers`, or this workflow stopped on
+  its child-skill blocker.
 - `/ship-pr` ran after `/fully-implement-plan` completed with a shippable final
   status, or this workflow stopped before shipping with the reason.
 - Final handoff reports the child skill report path, PR URL or checkpoint, and

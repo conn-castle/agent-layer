@@ -20,11 +20,14 @@ Fail before side effects unless all are present:
 - plan artifact path
 - task artifact path
 - context artifact path
-- `plan_review_agents`: one or more dispatch agent roles to pass to
+- `implementer`: dispatch agent role for `/implement-plan`
+- `fixer`: dispatch agent role for `/loop-clean-and-fix`
+- `plan_reviewers`: one or more dispatch agent roles to pass to
   `/loop-clean-and-fix` and any `/plan-work` retry for verification gaps
 
 If any required input is missing, ask for it before starting. Do not invent
-defaults or auto-select artifacts from `.agent-layer/tmp/`.
+defaults, implementers, fixers, plan reviewer lists, or auto-select
+artifacts from `.agent-layer/tmp/`.
 
 ## Required artifacts
 
@@ -45,34 +48,15 @@ and continue this skill's workflow after every delegation returns.
 ## Rules
 
 - Do not ask the user to confirm target files before starting; required
-  artifact paths and `plan_review_agents` are enough.
+  artifact paths, `implementer`, `fixer`, and `plan_reviewers` are enough.
 - Treat delegated skill returns as intermediate until this workflow reaches its
   final report.
 - If `/implement-plan`, `/loop-clean-and-fix`, or `/verify-work` fails, stops
   at its own checkpoint, emits unusable output, or cannot provide the report
   path or verdict this workflow needs,
   stop this workflow, record the stop reason, and surface it to the user.
-- If `/verify-work` returns `incomplete`, run:
-
-  ```text
-  /plan-work
-  {verification report plus original plan/task/context paths as source evidence}
-  plan_review_agents are {agent 1, agent 2, ...}
-  ```
-
-  Then run:
-
-  ```text
-  /implement-plan
-  Plan artifacts:
-  {relative path to remaining-work plan artifact}
-  {relative path to remaining-work task artifact}
-  {relative path to remaining-work context artifact}
-  ```
-
-  Repeat cleanup and verify against the original plan, task, and context. If
-  the same gap recurs after two remaining-work implementation attempts, stop and
-  ask.
+- Do not accept an `incomplete` verification verdict as a shippable final
+  status.
 - Accept `complete-with-follow-up` only when every follow-up is clearly outside
   the supplied plan and task list.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
@@ -81,7 +65,7 @@ and continue this skill's workflow after every delegation returns.
 
 ## Workflow
 
-1. Run:
+1. Dispatch the implementer role with:
 
    ```text
    /implement-plan
@@ -93,16 +77,16 @@ and continue this skill's workflow after every delegation returns.
 
    Record its report path, deviations, task-local implementation checks, and
    remaining follow-up.
-2. Run:
+2. Dispatch the fixer role with:
 
    ```text
    /loop-clean-and-fix
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Record its report path, round count, stop reason, issue ledger,
    `resolved_findings`, and any blocker or residual risk.
-3. Run:
+3. Run a built-in subagent with:
 
    ```text
    /verify-work
@@ -113,10 +97,52 @@ and continue this skill's workflow after every delegation returns.
    ```
 
    Treat delegated skill reports as evidence, not contract artifacts. Record
-   its report path, verdict, findings, and recommended next step. If the verdict is
-   `incomplete`, follow the retry rule in `Rules` and record the remaining-work
-   plan, task, context, implementation report, and verification report paths.
-4. Write the final report and prepare the final message for the user.
+   its report path, verdict, findings, and recommended next step.
+4. If the verification verdict is `incomplete`, enter the remaining-work retry
+   loop:
+
+   1. Run `/plan-work` with:
+
+      ```text
+      /plan-work
+      {verification report plus original plan/task/context paths as source evidence}
+      plan_reviewers are {agent 1, agent 2, ...}
+      ```
+
+      Record the remaining-work plan, task, context, and report paths.
+   2. Dispatch the implementer role with:
+
+      ```text
+      /implement-plan
+      Plan artifacts:
+      {relative path to remaining-work plan artifact}
+      {relative path to remaining-work task artifact}
+      {relative path to remaining-work context artifact}
+      ```
+
+      Record the implementation report path.
+   3. Dispatch the fixer role with:
+
+      ```text
+      /loop-clean-and-fix
+      plan_reviewers are {agent 1, agent 2, ...}
+      ```
+
+      Record the cleanup report path and cleanup outcome.
+   4. Run a built-in subagent with:
+
+      ```text
+      /verify-work
+      Plan artifacts:
+      {relative path to plan artifact}
+      {relative path to task artifact}
+      {relative path to context artifact}
+      ```
+
+      Record the verification report path and verdict. If the verdict remains
+      `incomplete`, repeat this remaining-work loop unless the same gap has
+      recurred after two remaining-work implementation attempts.
+5. Write the final report and prepare the final message for the user.
 
 ## Required master report structure
 

@@ -11,11 +11,16 @@ description: >-
 
 ## Required inputs
 
-- `plan_review_agents`: one or more dispatch agent roles to pass to
+- `implementer`: dispatch agent role to pass to `/fully-implement-plan` for
+  `/implement-plan`
+- `fixer`: dispatch agent role to pass to `/fully-implement-plan` for
+  `/loop-clean-and-fix`
+- `plan_reviewers`: one or more dispatch agent roles to pass to
   `/clean-and-fix-code`, `/plan-work`, and `/fully-implement-plan`.
 
-If `plan_review_agents` is missing, ask for it before starting. Do not invent a
-default plan review agent list.
+If `implementer`, `fixer`, or `plan_reviewers` is missing, ask for it
+before starting. Do not invent a default implementer, fixer, or plan review
+agent list.
 
 ## Optional inputs
 
@@ -104,15 +109,15 @@ broader scope or architecture decision.
    safely inside this skill.
 2. If a required `fix` decision is large, cross-cutting, behavior-changing, or
    complex enough that direct editing would be risky, batch related comments
-   into one scoped task and run:
+   into one scoped task and run `/plan-work` with:
 
    ```text
    /plan-work
    {scoped task from batched comments}
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
-   Then run:
+   Then with the reviewed artifacts and agent roles, call:
 
    ```text
    /fully-implement-plan
@@ -120,7 +125,9 @@ broader scope or architecture decision.
    {relative path to reviewed plan artifact}
    {relative path to reviewed task artifact}
    {relative path to reviewed context artifact}
-   plan_review_agents are {agent 1, agent 2, ...}
+   implementer is {implementer}
+   fixer is {fixer}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Resume this workflow after `/fully-implement-plan` returns local
@@ -139,7 +146,7 @@ If this skill made non-trivial local code changes, run cleanup:
 
 ```text
 /clean-and-fix-code
-plan_review_agents are {agent 1, agent 2, ...}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Then draft fixed replies.

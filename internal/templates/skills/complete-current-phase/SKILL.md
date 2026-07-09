@@ -36,13 +36,13 @@ Roadmap phases should normally be distinct enough that this decomposition is str
 
 ## Required behavior
 
-Fail before side effects unless `plan_review_agents` is present. Values may be terse
+Fail before side effects unless `plan_reviewers` is present. Values may be terse
 (`codex high`, `claude opus xhigh`, `antigravity`). Infer the agent only when
 unambiguous.
 
 At minimum, use:
 - a scout/planner subagent
-- plan review agent dispatch roles through `/plan-work`
+- plan reviewer dispatch roles through `/plan-work`
 - an execution gatekeeper subagent that decides `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`
 - one or more implementation subagents when the work spans distinct files or subsystems
 
@@ -116,13 +116,13 @@ phase-level done criteria, and which work package executes first:
 ```text
 /plan-work
 {selected roadmap phase}
-plan_review_agents are {agent 1, agent 2, ...}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
-### Phase 3: Confirm Plan Readiness (Plan Review Agents)
+### Phase 3: Confirm Plan Readiness (Plan Reviewers)
 
 Do not send plan-review findings into the audit-fix loop; `/review-plan` owns
-plan review agent synthesis, accepted artifact revisions, and repeat review rounds
+plan reviewer synthesis, accepted artifact revisions, and repeat review rounds
 inside `/plan-work`.
 
 If final readiness is `blocked-for-user-decision`, ask the smallest question
@@ -162,12 +162,12 @@ broadening scope, run:
 
 ```text
 /clean-and-fix-code
-plan_review_agents are {agent 1, agent 2, ...}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 ### Phase 6: Review against the plan (Completeness Review Agents)
 
-Run:
+Run a built-in subagent with:
 
 ```text
 /verify-work
@@ -205,7 +205,7 @@ behavior-preserving and in-scope, run:
 
 ```text
 /clean-and-fix-code
-plan_review_agents are {agent 1, agent 2, ...}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Then return to Phase 6.

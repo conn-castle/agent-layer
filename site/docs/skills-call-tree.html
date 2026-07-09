@@ -134,6 +134,10 @@
       background: rgba(36, 33, 29, 0.34);
     }
 
+    .warning-dialog {
+      width: min(820px, calc(100vw - 36px));
+    }
+
     .tips-shell {
       display: flex;
       flex-direction: column;
@@ -201,6 +205,57 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
       font-size: 11px;
       color: var(--skill);
+    }
+
+    .warning-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+    }
+
+    .warning-item {
+      display: grid;
+      gap: 7px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .warning-item:last-child {
+      border-bottom: 0;
+    }
+
+    .warning-rule {
+      color: var(--warn);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .warning-path {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .warning-step {
+      padding: 2px 5px;
+      border-radius: 4px;
+      background: #f6efe5;
+      color: var(--ink);
+    }
+
+    .warning-path-arrow {
+      color: var(--muted);
+    }
+
+    .warning-empty {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
     }
 
     .tips-footer {
@@ -313,7 +368,8 @@
     .tree {
       min-height: 0;
       flex: 1;
-      overflow: auto;
+      overflow-y: auto;
+      overflow-x: hidden;
       padding: 14px 16px 28px;
     }
 
@@ -362,13 +418,28 @@
 
     .node-row.depth-warning,
     details:not([open]) > .node-row.collapsed-depth-warning {
-      background: rgba(185, 28, 28, 0.075);
+      --row-warning-bg: rgba(185, 28, 28, 0.075);
     }
 
     details > .node-row.depth-warning:hover,
     details:not([open]) > .node-row.collapsed-depth-warning:hover,
     .node-row.depth-warning:hover {
-      background: rgba(185, 28, 28, 0.11);
+      --row-warning-bg: rgba(185, 28, 28, 0.11);
+    }
+
+    .node-row.depth-warning::before,
+    details:not([open]) > .node-row.collapsed-depth-warning::before {
+      content: "";
+      position: absolute;
+      inset: 0 -10000px;
+      z-index: 0;
+      background: var(--row-warning-bg);
+      pointer-events: none;
+    }
+
+    .node-row > * {
+      position: relative;
+      z-index: 1;
     }
 
     .depth-warning-icon {
@@ -380,9 +451,17 @@
       height: 13px;
       transform: translateY(-50%);
       background: var(--warn);
+      border: 0;
+      padding: 0;
+      min-width: 13px;
+      min-height: 13px;
       cursor: help;
       mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
       -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    .depth-warning-icon:hover {
+      background: #991b1b;
     }
 
     .collapsed-depth-warning-icon {
@@ -586,6 +665,7 @@
     .skill-line-actions {
       position: absolute;
       inset: 0;
+      z-index: 2;
       overflow: hidden;
       pointer-events: none;
     }
@@ -604,11 +684,17 @@
       min-width: 18px;
       height: 18px;
       min-height: 18px;
+      border: 0;
+      padding: 0;
       background: var(--warn);
       cursor: help;
       pointer-events: auto;
       mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
       -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    .editor-warning-icon:hover {
+      background: #991b1b;
     }
 
     .line-eye {
@@ -726,9 +812,24 @@
     </div>
   </dialog>
 
+  <dialog id="warningDialog" class="tips-dialog warning-dialog" aria-labelledby="warningTitle">
+    <div class="tips-shell">
+      <div class="tips-header">
+        <h3 id="warningTitle">Caller Depth Warning</h3>
+      </div>
+      <div class="tips-body">
+        <div id="warningList" class="warning-list"></div>
+      </div>
+      <form class="tips-footer" method="dialog">
+        <span id="warningSummary" class="copy-status" aria-live="polite"></span>
+        <button type="submit">Close</button>
+      </form>
+    </div>
+  </dialog>
+
   <script>
     const defaultYaml = String.raw`address-pr-comments:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
     - task: gather, evaluate, update the ledger, and draft replies
     - if: a fix decision is small enough to handle directly
@@ -737,13 +838,13 @@
     - if: a fix decision is large, cross-cutting, behavior-changing, or complex
       calls:
         - skill: plan-work
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
         - skill: fully-implement-plan
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers, implementer, fixer]
     - if: this skill made non-trivial local code changes
       calls:
         - skill: clean-and-fix-code
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
     - exit: return the updated ledger and local-change status
 audit-documentation:
   calls:
@@ -762,7 +863,7 @@ audit-tests:
     - task: audit test-suite health and apply safe fixes
       caller: subagent
 auto-skill-loop:
-  inputs: [implementer, shipper, plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer, shipper]
   calls:
     - while: autonomous work remains
       calls:
@@ -770,12 +871,12 @@ auto-skill-loop:
         - if: worker_skill is /fix-issues
           calls:
             - skill: fix-issues
-              inputs: [plan_review_agents]
+              inputs: [plan_reviewers]
               caller: dispatch(implementer)
         - if: worker_skill is /improve-codebase
           calls:
             - skill: improve-codebase
-              inputs: [plan_review_agents]
+              inputs: [plan_reviewers]
               caller: dispatch(implementer)
         - if: worker returns a user-only blocker
           calls:
@@ -787,7 +888,7 @@ auto-skill-loop:
         - if: PR gate is met
           calls:
             - skill: ship-pr
-              inputs: [implementer, plan_review_agents]
+              inputs: [plan_reviewers, implementer, fixer]
               caller: dispatch(shipper)
         - if: final readiness review finds a manual gate
           calls:
@@ -812,7 +913,7 @@ boost-coverage:
           calls:
             - exit: report the coverage outcome
 clean-and-fix-code:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers]
   calls:
     - if: diff adds or modifies test files or test cases
       calls:
@@ -826,13 +927,13 @@ clean-and-fix-code:
     - if: review report has Recommended Accept findings
       calls:
         - skill: plan-work
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
           caller: subagent
         - skill: implement-plan
         - skill: verify-work
           caller: subagent
 complete-current-phase:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers]
   calls:
     - task: map active roadmap phase and package boundaries
       caller: subagent
@@ -841,7 +942,7 @@ complete-current-phase:
         - if: the active package needs a new or revised plan
           calls:
             - skill: plan-work
-              inputs: [plan_review_agents]
+              inputs: [plan_reviewers]
         - task: gate the current package and next execution step
           caller: subagent
         - while: current package is not complete
@@ -856,8 +957,9 @@ complete-current-phase:
             - if: implementation leaves obvious local complexity
               calls:
                 - skill: clean-and-fix-code
-                  inputs: [plan_review_agents]
+                  inputs: [plan_reviewers]
             - skill: verify-work
+              caller: subagent
             - if: package verification is incomplete
               calls:
                 - break: return to the earliest affected planning or implementation phase
@@ -873,24 +975,25 @@ complete-current-phase:
             - if: audit fixes leave in-scope local complexity
               calls:
                 - skill: clean-and-fix-code
-                  inputs: [plan_review_agents]
+                  inputs: [plan_reviewers]
             - if: audit fixes or cleanup changed the package
               calls:
                 - skill: verify-work
+                  caller: subagent
             - break: return to the package gate
     - if: every selected phase task is complete
       calls:
         - skill: finish-task
 debug-and-fix-issue:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
     - task: reproduce, narrow, diagnose, and capture a failing test when feasible
     - if: full investigate-and-fix mode
       calls:
         - skill: plan-work
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
         - skill: fully-implement-plan
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers, implementer, fixer]
     - if: diagnosis-only mode and no broader orchestrator owns closeout
       calls:
         - skill: finish-task
@@ -899,7 +1002,7 @@ finish-task:
     - task: review scope, curate memory, verify, and summarize closeout
       caller: subagent
 fix-ci:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
     - while: CI is still failing on the PR
       calls:
@@ -914,11 +1017,11 @@ fix-ci:
         - if: the CI fix is large, cross-cutting, behavior-changing, or complex
           calls:
             - skill: plan-work
-              inputs: [plan_review_agents]
+              inputs: [plan_reviewers]
             - skill: fully-implement-plan
-              inputs: [plan_review_agents]
+              inputs: [plan_reviewers, implementer, fixer]
         - skill: clean-and-fix-code
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
         - if: all CI checks pass
           calls:
             - exit: report the passing CI evidence
@@ -926,14 +1029,14 @@ fix-ci:
           calls:
             - exit: stop at the repeated-failure checkpoint
 fix-issues:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers]
   calls:
     - task: select and batch the issue set
       caller: subagent
     - while: unprocessed issue batches remain
       calls:
         - skill: plan-work
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
         - task: gate, implement, audit, verify, and update the current batch
           caller: subagent
         - if: gate verdict is revise or rewrite-because-out-of-scope
@@ -942,12 +1045,12 @@ fix-issues:
         - if: touched scope accumulates obvious local complexity or dead scaffolding
           calls:
             - skill: clean-and-fix-code
-              inputs: [plan_review_agents]
+              inputs: [plan_reviewers]
     - if: all selected batches are complete and no broader orchestrator owns closeout
       calls:
         - skill: finish-task
 full-workflow:
-  inputs: [planner, implementer, shipper, plan_review_agents]
+  inputs: [planner, plan_reviewers, implementer, fixer, shipper]
   calls:
     - task: validate dispatch roles and draft the spec
     - while: the spec has open questions
@@ -956,29 +1059,35 @@ full-workflow:
     - if: user approves the final spec gate
       calls:
         - skill: plan-work
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
           caller: dispatch(planner)
         - skill: fully-implement-plan
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers, implementer, fixer]
           caller: dispatch(implementer)
         - skill: ship-pr
-          inputs: [implementer, plan_review_agents]
+          inputs: [plan_reviewers, implementer, fixer]
           caller: dispatch(shipper)
 fully-implement-plan:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
     - skill: implement-plan
+      caller: dispatch(implementer)
     - skill: loop-clean-and-fix
-      inputs: [plan_review_agents]
+      inputs: [plan_reviewers]
+      caller: dispatch(fixer)
     - skill: verify-work
+      caller: subagent
     - while: verification verdict is incomplete and remaining-work attempts remain
       calls:
         - skill: plan-work
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
         - skill: implement-plan
+          caller: dispatch(implementer)
         - skill: loop-clean-and-fix
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
+          caller: dispatch(fixer)
         - skill: verify-work
+          caller: subagent
     - task: write the fully-implement-plan report
 implement-plan:
   calls:
@@ -990,7 +1099,7 @@ implement-plan:
       calls:
         - exit: stop for the smallest user decision
 improve-codebase:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers]
   calls:
     - task: survey chunks and run the cross-cutting review
       caller: subagent
@@ -1018,7 +1127,7 @@ improve-codebase:
     - if: audit findings overlap existing ISSUES.md entries
       calls:
         - skill: fix-issues
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
 interface-audit:
   calls:
     - asset: interface-audit/references/report-structure
@@ -1030,27 +1139,27 @@ interface-audit:
         - task: run focused interface investigation and verification passes
           caller: subagent
 loop-clean-and-fix:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers]
   calls:
     - while: cleanup target exists and the repeat gate stays open
       calls:
         - skill: clean-and-fix-code
-          inputs: [plan_review_agents]
+          inputs: [plan_reviewers]
 plan-work:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers]
   calls:
     - asset: plan-work/assets/write-plan
     - skill: review-plan
-      inputs: [plan_review_agents]
+      inputs: [plan_reviewers]
 review-plan:
-  inputs: [plan_review_agents]
+  inputs: [plan_reviewers]
   calls:
     - while: plan review has not reached implementation-ready
       calls:
-        - for: plan_review_agent in plan_review_agents
+        - for: plan_reviewer in plan_reviewers
           calls:
             - asset: review-plan/assets/agent-review-prompt
-              caller: dispatch(plan_review_agent)
+              caller: dispatch(plan_reviewer)
         - task: synthesize findings and revise accepted plan artifacts
 review-uncommitted-code:
   calls:
@@ -1061,7 +1170,7 @@ review-uncommitted-code:
     - asset: review-uncommitted-code/assets/finding-verdict-classification
       caller: subagent
 run-and-fix-all-checks:
-  inputs: [implementer, plan_review_agents]
+  inputs: [plan_reviewers, implementer]
   calls:
     - task: resolve the full documented check lane from COMMANDS.md
     - while: full check lane has not passed after latest changes
@@ -1074,7 +1183,7 @@ run-and-fix-all-checks:
           calls:
             - task: save failure evidence as a repair artifact
             - skill: plan-work
-              inputs: [plan_review_agents]
+              inputs: [plan_reviewers]
               caller: subagent
             - skill: implement-plan
               caller: dispatch(implementer)
@@ -1085,20 +1194,20 @@ schedule-backlog:
     - task: triage backlog and draft roadmap proposal options
       caller: subagent
 ship-plan:
-  inputs: [implementer, plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
     - skill: fully-implement-plan
-      inputs: [plan_review_agents]
+      inputs: [plan_reviewers, implementer, fixer]
     - if: /fully-implement-plan final status is complete or acceptable complete-with-follow-up
       calls:
         - skill: ship-pr
-          inputs: [implementer, plan_review_agents]
+          inputs: [plan_reviewers, implementer, fixer]
 ship-pr:
-  inputs: [implementer, plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
     - task: commit, push, and prepare the PR
     - skill: run-and-fix-all-checks
-      inputs: [implementer, plan_review_agents]
+      inputs: [plan_reviewers, implementer]
       caller: subagent
     - while: PR is not ready for closeout
       calls:
@@ -1108,14 +1217,15 @@ ship-pr:
             - while: immediate comment, merge-conflict, or CI work remains
               calls:
                 - skill: address-pr-comments
-                  inputs: [plan_review_agents]
+                  inputs: [plan_reviewers, implementer, fixer]
+                  caller: subagent
                 - if: monitor reports a merge conflict that is mechanically resolvable
                   calls:
                     - task: resolve mechanical merge conflicts
                 - if: CI is red and no local check repair is already pending
                   calls:
                     - skill: fix-ci
-                      inputs: [plan_review_agents]
+                      inputs: [plan_reviewers, implementer, fixer]
                 - if: monitor minimum ready time remains after no immediate work is left
                   calls:
                     - task: wait until the minimum ready observation time elapses
@@ -1124,7 +1234,7 @@ ship-pr:
                   calls:
                     - task: commit and push local repair changes
                     - skill: run-and-fix-all-checks
-                      inputs: [implementer, plan_review_agents]
+                      inputs: [plan_reviewers, implementer]
                       caller: subagent
                     - break: restart monitoring for the new pushed head
                 - if: no local changes exist and ledger replies are eligible
@@ -1427,6 +1537,9 @@ verify-work:
     const tipsCopyButton = document.getElementById("tipsCopy");
     const tipsList = document.getElementById("tipsList");
     const tipsCopyStatus = document.getElementById("tipsCopyStatus");
+    const warningDialog = document.getElementById("warningDialog");
+    const warningList = document.getElementById("warningList");
+    const warningSummary = document.getElementById("warningSummary");
 
     const yamlAuthoringTips = [
       "Use flat top-level entries like `ship-pr:`. Do not add wrapper fields such as `skills:` or `defaultRoot:`.",
@@ -1435,7 +1548,7 @@ verify-work:
       "Focus on meaningful delegation shape, not every mechanical instruction. At one `calls:` level, prefer one coarse direct `task:` row.",
       "When a source skill gates a child call, the rendered YAML can assume that call is ready. For example, put failure evidence, `/plan-work`, `/implement-plan`, and `/verify-work` inside the same failure branch instead of rendering separate readiness checks.",
       "A reusable plan/implement/verify abstraction can be useful when it has a real source skill and stable contract. Otherwise, inline the three skill calls under the meaningful condition.",
-      "Use `caller: subagent` for built-in fresh-context subagents and `caller: dispatch(agent_name)` for named dispatch agents. Use `inputs:` only for agent-role inputs such as `implementer` or `plan_review_agents`.",
+      "Use `caller: subagent` for built-in fresh-context subagents and `caller: dispatch(agent_name)` for named dispatch agents. Use `inputs:` only for agent-role inputs, ordered as `plan_reviewers`, `implementer`, `fixer`, then `shipper` when present.",
       "Use readable conditions and loop labels. Group repeated sibling guards into one branch, then show the meaningful calls inside it."
     ];
 
@@ -1455,6 +1568,75 @@ verify-work:
         element.textContent = text;
       }
       return element;
+    }
+
+    function parseWarningMessage(warning) {
+      const match = String(warning).match(/: (Dispatch|Subagent) depth /);
+      if (!match) {
+        return {path: String(warning), rule: ""};
+      }
+      return {
+        path: String(warning).slice(0, match.index),
+        rule: String(warning).slice(match.index + 2)
+      };
+    }
+
+    function appendWarningPath(parent, path) {
+      const parts = String(path).split(/\s+->\s+/).filter(Boolean);
+      parts.forEach((part, index) => {
+        if (index > 0) {
+          parent.appendChild(makeElement("span", "warning-path-arrow", "->"));
+        }
+        parent.appendChild(makeElement("span", "warning-step", part));
+      });
+    }
+
+    function showWarningDialog(warnings) {
+      const unique = uniqueWarnings(warnings);
+      warningList.innerHTML = "";
+      warningSummary.textContent = unique.length === 1
+        ? "1 failed path"
+        : `${unique.length} failed paths`;
+
+      if (unique.length === 0) {
+        warningList.appendChild(makeElement("p", "warning-empty", "No caller-depth warning details are available."));
+      }
+
+      for (const warning of unique) {
+        const parsed = parseWarningMessage(warning);
+        const item = makeElement("div", "warning-item");
+        const path = makeElement("div", "warning-path");
+        appendWarningPath(path, parsed.path);
+        item.appendChild(path);
+        if (parsed.rule) {
+          item.appendChild(makeElement("div", "warning-rule", parsed.rule));
+        }
+        warningList.appendChild(item);
+      }
+
+      if (typeof warningDialog.showModal === "function") {
+        warningDialog.showModal();
+      } else {
+        warningDialog.setAttribute("open", "");
+      }
+    }
+
+    function makeWarningButton(className, warnings) {
+      const unique = uniqueWarnings(warnings);
+      const button = makeElement("button", className);
+      button.type = "button";
+      button.title = "Show caller-depth warning";
+      button.setAttribute("aria-label", "Show caller-depth warning");
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showWarningDialog(unique);
+      });
+      return button;
     }
 
     function appendInlineMarkdown(parent, text) {
@@ -1646,11 +1828,9 @@ verify-work:
         highlight.title = warningText;
         skillLineActions.appendChild(highlight);
 
-        const icon = makeElement("span", "editor-warning-icon");
+        const icon = makeWarningButton("editor-warning-icon", warnings);
         icon.style.top = `${lineTop + (metrics.lineHeight - warningIconSize) / 2}px`;
         icon.style.right = "9px";
-        icon.title = warningText;
-        icon.setAttribute("aria-label", warningText);
         skillLineActions.appendChild(icon);
       }
 
@@ -1695,27 +1875,65 @@ verify-work:
       return map;
     }
 
-    function nextCallerDepth(currentDepth, caller) {
-      const depth = currentDepth || {dispatch: 0, subagent: 0};
-      if (!caller || !caller.type) {
-        return {...depth};
-      }
-      if (caller.type === "dispatch") {
-        return {dispatch: depth.dispatch + 1, subagent: 0};
-      }
-      if (caller.type === "subagent") {
-        return {dispatch: depth.dispatch, subagent: depth.subagent + 1};
-      }
-      return {...depth};
+    function initialCallerState() {
+      return {dispatch: 0, subagent: 0, dispatchFrames: [], subagentFrames: []};
     }
 
-    function callerDepthWarnings(depth) {
-      const warnings = [];
-      if (depth.dispatch > maxCallerDepth) {
-        warnings.push(`Dispatch depth ${depth.dispatch} exceeds the limit of ${maxCallerDepth}. Dispatch depth increments through subagent calls.`);
+    function callerFrame(call) {
+      if (!call.caller || !call.caller.type) {
+        return null;
       }
-      if (depth.subagent > maxCallerDepth) {
-        warnings.push(`Subagent depth ${depth.subagent} exceeds the limit of ${maxCallerDepth}. Subagent depth resets on dispatch.`);
+      return {
+        type: call.caller.type,
+        lineNumber: callerDepthWarningLine(call),
+        label: callTargetLabel(call)
+      };
+    }
+
+    function nextCallerState(currentState, call) {
+      const state = currentState || initialCallerState();
+      const frame = callerFrame(call);
+      if (!frame) {
+        return {
+          dispatch: state.dispatch,
+          subagent: state.subagent,
+          dispatchFrames: state.dispatchFrames.slice(),
+          subagentFrames: state.subagentFrames.slice()
+        };
+      }
+      if (frame.type === "dispatch") {
+        return {
+          dispatch: state.dispatch + 1,
+          subagent: 0,
+          dispatchFrames: state.dispatchFrames.concat(frame),
+          subagentFrames: []
+        };
+      }
+      if (frame.type === "subagent") {
+        return {
+          dispatch: state.dispatch,
+          subagent: state.subagent + 1,
+          dispatchFrames: state.dispatchFrames.slice(),
+          subagentFrames: state.subagentFrames.concat(frame)
+        };
+      }
+      return state;
+    }
+
+    function callerDepthChainWarnings(state, context, call) {
+      const warnings = [];
+      const callerType = call.caller && call.caller.type;
+      if (callerType === "dispatch" && state.dispatch > maxCallerDepth) {
+        warnings.push({
+          message: `${context}: Dispatch depth ${state.dispatch} exceeds the limit of ${maxCallerDepth}. Dispatch depth increments through subagent calls.`,
+          frames: state.dispatchFrames
+        });
+      }
+      if (callerType === "subagent" && state.subagent > maxCallerDepth) {
+        warnings.push({
+          message: `${context}: Subagent depth ${state.subagent} exceeds the limit of ${maxCallerDepth}. Subagent depth resets on dispatch.`,
+          frames: state.subagentFrames
+        });
       }
       return warnings;
     }
@@ -1728,12 +1946,46 @@ verify-work:
       return Array.isArray(node._depthWarnings) ? node._depthWarnings : [];
     }
 
+    function nodeLineWarnings(node) {
+      return node._lineWarnings instanceof Map ? node._lineWarnings : new Map();
+    }
+
     function appendDepthWarningIcon(row, warnings, className = "") {
-      const warningText = warnings.join("\n");
-      const warningIcon = makeElement("span", `depth-warning-icon${className ? ` ${className}` : ""}`);
-      warningIcon.title = warningText;
-      warningIcon.setAttribute("aria-label", warningText);
+      const warningIcon = makeWarningButton(`depth-warning-icon${className ? ` ${className}` : ""}`, warnings);
       row.appendChild(warningIcon);
+    }
+
+    function mergeLineWarningMaps(...maps) {
+      const merged = new Map();
+      for (const map of maps) {
+        if (!(map instanceof Map)) {
+          continue;
+        }
+        for (const [lineNumber, warnings] of map.entries()) {
+          for (const warning of warnings) {
+            addLineWarning(merged, lineNumber, warning);
+          }
+        }
+      }
+      return new Map(
+        Array.from(merged.entries()).map(([lineNumber, warnings]) => [lineNumber, Array.from(warnings)])
+      );
+    }
+
+    function lineWarningsToList(map) {
+      return uniqueWarnings(Array.from(map.values()).flat());
+    }
+
+    function lineWarningsFromChains(chainWarnings) {
+      const warningsByLine = new Map();
+      for (const warning of chainWarnings) {
+        for (const frame of warning.frames) {
+          addLineWarning(warningsByLine, frame.lineNumber, warning.message);
+        }
+      }
+      return new Map(
+        Array.from(warningsByLine.entries()).map(([lineNumber, warnings]) => [lineNumber, Array.from(warnings)])
+      );
     }
 
     function callerDepthWarningLine(call) {
@@ -1763,36 +2015,38 @@ verify-work:
     function collectCallerDepthWarnings(spec, skillMap) {
       const warningsByLine = new Map();
 
-      function scanCalls(calls, callerDepth, path) {
+      function addChainWarnings(chainWarnings) {
+        for (const warning of chainWarnings) {
+          for (const frame of warning.frames) {
+            addLineWarning(warningsByLine, frame.lineNumber, warning.message);
+          }
+        }
+      }
+
+      function scanCalls(calls, callerState, path) {
         for (const call of Array.isArray(calls) ? calls : []) {
           if (logicKinds().has(call.kind)) {
-            scanCalls(call.calls, callerDepth, path);
+            scanCalls(call.calls, callerState, path);
             continue;
           }
           if (terminalKinds().has(call.kind)) {
             continue;
           }
 
-          const nextDepth = nextCallerDepth(callerDepth, call.caller);
-          const warnings = callerDepthWarnings(nextDepth);
-          if (warnings.length > 0) {
-            const context = `/${path.join(" -> /")} -> ${callTargetLabel(call)}`;
-            const lineNumber = callerDepthWarningLine(call);
-            for (const warning of warnings) {
-              addLineWarning(warningsByLine, lineNumber, `${context}: ${warning}`);
-            }
-          }
+          const nextState = nextCallerState(callerState, call);
+          const context = `/${path.join(" -> /")} -> ${callTargetLabel(call)}`;
+          addChainWarnings(callerDepthChainWarnings(nextState, context, call));
 
           if (call.kind === "skill" && call.target && skillMap.has(call.target) && !path.includes(call.target)) {
             const childSkill = skillMap.get(call.target);
-            scanCalls(childSkill.calls, nextDepth, path.concat(call.target));
+            scanCalls(childSkill.calls, nextState, path.concat(call.target));
           }
         }
       }
 
       for (const skill of skillList(spec)) {
         if (skill && skill.id) {
-          scanCalls(skill.calls, {dispatch: 0, subagent: 0}, [skill.id]);
+          scanCalls(skill.calls, initialCallerState(), [skill.id]);
         }
       }
 
@@ -1888,10 +2142,11 @@ verify-work:
       return line;
     }
 
-    function renderNode(line, children, depth, collapsible, rootTarget, rowWarnings = [], aggregateWarnings = rowWarnings) {
+    function renderNode(line, children, depth, collapsible, rootTarget, rowWarnings = [], aggregateWarnings = rowWarnings, lineWarnings = new Map()) {
       const node = makeElement(collapsible ? "details" : "div", `node ${collapsible ? "collapsible-node" : "static-node"}`);
       const aggregate = uniqueWarnings(aggregateWarnings);
       node._depthWarnings = aggregate;
+      node._lineWarnings = lineWarnings;
       if (collapsible) {
         node.open = depth < 3;
       }
@@ -1899,7 +2154,7 @@ verify-work:
       const warnings = uniqueWarnings(rowWarnings);
       if (warnings.length > 0) {
         row.classList.add("depth-warning");
-        appendDepthWarningIcon(row, aggregate);
+        appendDepthWarningIcon(row, warnings);
       } else if (collapsible && aggregate.length > 0) {
         row.classList.add("collapsed-depth-warning");
         appendDepthWarningIcon(row, aggregate, "collapsed-depth-warning-icon");
@@ -1920,26 +2175,40 @@ verify-work:
       return node;
     }
 
-    function renderCall(call, skillMap, path, depth, maxDepth, callerDepth = {dispatch: 0, subagent: 0}) {
+    function renderCall(call, skillMap, path, depth, maxDepth, callerState = initialCallerState()) {
       if (logicKinds().has(call.kind)) {
         const children = [];
         const nestedWarnings = [];
+        const nestedLineWarnings = [];
         for (const childCall of Array.isArray(call.calls) ? call.calls : []) {
-          const child = renderCall(childCall, skillMap, path, depth + 1, maxDepth, callerDepth);
+          const child = renderCall(childCall, skillMap, path, depth + 1, maxDepth, callerState);
           nestedWarnings.push(...nodeDepthWarnings(child));
+          nestedLineWarnings.push(nodeLineWarnings(child));
           children.push(child);
         }
-        return renderNode(logicLine(call.kind, call.target, true), children, depth, false, "", [], nestedWarnings);
+        const combinedLineWarnings = mergeLineWarningMaps(...nestedLineWarnings);
+        return renderNode(
+          logicLine(call.kind, call.target, true),
+          children,
+          depth,
+          false,
+          "",
+          [],
+          nestedWarnings,
+          combinedLineWarnings
+        );
       }
 
       if (terminalKinds().has(call.kind)) {
         return renderNode(logicLine(call.kind, call.target, false), [], depth, false);
       }
 
-      const nextDepth = nextCallerDepth(callerDepth, call.caller);
-      const selfWarnings = callerDepthWarnings(nextDepth);
+      const nextState = nextCallerState(callerState, call);
+      const context = `/${path.join(" -> /")} -> ${callTargetLabel(call)}`;
+      const selfLineWarnings = lineWarningsFromChains(callerDepthChainWarnings(nextState, context, call));
       const children = [];
       const nestedWarnings = [];
+      const nestedLineWarnings = [];
       let collapsible = false;
       if (call.kind === "skill" && call.target && skillMap.has(call.target)) {
         const target = call.target;
@@ -1951,8 +2220,9 @@ verify-work:
         } else if (childSkill.calls.length > 0) {
           collapsible = true;
           for (const childCall of childSkill.calls) {
-            const child = renderCall(childCall, skillMap, path.concat(target), depth + 1, maxDepth, nextDepth);
+            const child = renderCall(childCall, skillMap, path.concat(target), depth + 1, maxDepth, nextState);
             nestedWarnings.push(...nodeDepthWarnings(child));
+            nestedLineWarnings.push(nodeLineWarnings(child));
             children.push(child);
           }
         }
@@ -1961,14 +2231,18 @@ verify-work:
       const rootTarget = call.kind === "skill" && call.target && skillMap.has(call.target)
         ? call.target
         : "";
+      const combinedLineWarnings = mergeLineWarningMaps(selfLineWarnings, ...nestedLineWarnings);
+      const rowWarnings = combinedLineWarnings.get(callerDepthWarningLine(call)) || [];
+      const aggregateWarnings = uniqueWarnings(lineWarningsToList(selfLineWarnings).concat(nestedWarnings));
       return renderNode(
         callLine(call, skillMap),
         children,
         depth,
         collapsible && children.length > 0,
         rootTarget,
-        selfWarnings,
-        selfWarnings.concat(nestedWarnings)
+        rowWarnings,
+        aggregateWarnings,
+        combinedLineWarnings
       );
     }
 
@@ -2064,6 +2338,11 @@ verify-work:
     });
     tipsDialog.addEventListener("close", () => {
       tipsCopyButton.classList.remove("copied");
+    });
+    warningDialog.addEventListener("click", (event) => {
+      if (event.target === warningDialog) {
+        warningDialog.close();
+      }
     });
     tipsCopyButton.addEventListener("click", copyTipsMarkdown);
     renderButton.addEventListener("click", () => renderSpec());

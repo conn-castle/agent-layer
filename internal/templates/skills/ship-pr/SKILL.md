@@ -19,13 +19,17 @@ description: >-
 ## Required inputs
 
 - `implementer`: dispatch agent role to pass to `/run-and-fix-all-checks` for
-  `/implement-plan`
-- `plan_review_agents`: one or more dispatch agent roles to pass to
+  `/implement-plan`, and to delegated skills that may call
+  `/fully-implement-plan`
+- `fixer`: dispatch agent role to pass to delegated skills that may call
+  `/fully-implement-plan` for `/loop-clean-and-fix`
+- `plan_reviewers`: one or more dispatch agent roles to pass to
   `/address-pr-comments`, `/run-and-fix-all-checks`, and any delegated skill
-  that requires plan review agents.
+  that requires plan reviewers.
 
-If `implementer` or `plan_review_agents` is missing, ask for it before
-starting. Do not invent a default implementer or plan review agent list.
+If `implementer`, `fixer`, or `plan_reviewers` is missing, ask for it
+before starting. Do not invent a default implementer, fixer, or plan review
+agent list.
 
 ## Continuation and checkpoints
 
@@ -101,7 +105,7 @@ parallel diagnostic signal:
 ```text
 /run-and-fix-all-checks
 implementer is {implementer}
-plan_review_agents are {agent 1, agent 2, ...}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Do not treat it as a pre-commit or pre-push gate. If GitHub Actions pass for
@@ -136,7 +140,7 @@ over.
    ```text
    /run-and-fix-all-checks
    implementer is {implementer}
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
 5. Create or reuse the single comment ledger for this PR.
@@ -176,13 +180,16 @@ work.
 
 Repeat these substeps until all three have no immediate work left:
 
-1. Automatically call with the PR number and single comment ledger:
+1. Automatically call a built-in subagent with the PR number and single comment
+   ledger:
 
    ```text
    /address-pr-comments
    {PR number}
    {relative path to single comment ledger}
-   plan_review_agents are {agent 1, agent 2, ...}
+   implementer is {implementer}
+   fixer is {fixer}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    It must return the updated ledger and must not commit, push, or post GitHub
@@ -198,7 +205,9 @@ Repeat these substeps until all three have no immediate work left:
    ```text
    /fix-ci
    {PR number}
-   plan_review_agents are {agent 1, agent 2, ...}
+   implementer is {implementer}
+   fixer is {fixer}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Require it to return local repair changes plus reproducer evidence. Then

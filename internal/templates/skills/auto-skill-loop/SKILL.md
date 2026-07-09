@@ -13,8 +13,9 @@ This is an orchestrator skill. Do not implement or ship code yourself.
 Fail before side effects unless all are present:
 - `worker_skill`: exactly `/fix-issues` or `/improve-codebase`
 - `implementer`: dispatch agent role
+- `fixer`: dispatch agent role
 - `shipper`: dispatch agent role
-- `plan_review_agents`: one or more dispatch agent roles
+- `plan_reviewers`: one or more dispatch agent roles
 - explicit standing authorization for this orchestrator to merge ready PRs
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
@@ -22,7 +23,7 @@ Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
 fail. Before dispatching, inspect live `al dispatch options` output and fail if
 a requested override is unsupported.
 
-Pass `plan_review_agents` to any delegated skill that uses `/review-plan`.
+Pass `plan_reviewers` to any delegated skill that uses `/review-plan`.
 
 ## References
 
@@ -43,7 +44,7 @@ and after dispatches, branch switches, pushes, PR actions, blockers, and
 merges.
 
 Record current step, branches, PRs, dispatch agent roles, normalized dispatch
-flags, plan review agent dispatch roles, merged PRs, blocked branches, blocked PRs,
+flags, plan reviewer dispatch roles, merged PRs, blocked branches, blocked PRs,
 recent touched paths, exhausted lenses, worker questions and answers,
 user-only blockers, manual gates, PR-gate status, and verification evidence.
 Record worker deferrals in this ledger or worker artifacts, not as deferral
@@ -58,7 +59,7 @@ notes in `ISSUES.md`.
 
    ```text
    /fix-issues
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Or dispatch the implementer with `/improve-codebase`.
@@ -77,7 +78,8 @@ notes in `ISSUES.md`.
    ```text
    /ship-pr
    implementer is {implementer}
-   plan_review_agents are {agent 1, agent 2, ...}
+   fixer is {fixer}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Do not delegate merge execution.

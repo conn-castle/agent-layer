@@ -14,11 +14,11 @@ phase once, then stop.
 
 ## Required inputs
 
-- `plan_review_agents`: one or more dispatch agent roles to pass through to
+- `plan_reviewers`: one or more dispatch agent roles to pass through to
   `/plan-work` if accepted findings need fixes.
 
-If `plan_review_agents` is missing, ask for it before starting. Do not invent a
-default plan review agent list.
+If `plan_reviewers` is missing, ask for it before starting. Do not invent a
+default plan reviewer list.
 
 ## Scope
 
@@ -51,7 +51,7 @@ For every subagent step, use a built-in subagent with fresh context.
    ```text
    /plan-work
    {accepted review findings from the gate}
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
 6. Run:
@@ -64,7 +64,7 @@ For every subagent step, use a built-in subagent with fresh context.
    {relative path to context artifact}
    ```
 
-7. Run a subagent to verify against the plan that fixes the findings:
+7. Run a built-in subagent to verify against the plan that fixes the findings:
 
    ```text
    /verify-work

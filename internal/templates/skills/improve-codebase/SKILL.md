@@ -43,7 +43,7 @@ Accept any combination of:
 - a findings-per-chunk severity threshold for stopping early
 - whether to run complementary skills (/simplify-codebase, /boost-coverage, /fix-issues)
 - whether to operate in report-only mode (no fixes)
-- `plan_review_agents` for `/fix-issues` delegation
+- `plan_reviewers` for `/fix-issues` delegation
 
 ## Required artifacts
 
@@ -220,7 +220,7 @@ significant complexity, or `/fix-issues` for overlapping `ISSUES.md` entries:
 
 ```text
 /fix-issues
-plan_review_agents are {agent 1, agent 2, ...}
+plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Skip delegation when no meaningful gaps exist.

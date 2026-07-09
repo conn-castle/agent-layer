@@ -18,12 +18,16 @@ description: >-
 ## Required inputs
 
 Fail before side effects unless all are present:
-- `plan_review_agents`: one or more dispatch agent roles
+- `implementer`: dispatch agent role to pass to `/fully-implement-plan` for
+  `/implement-plan`
+- `fixer`: dispatch agent role to pass to `/fully-implement-plan` for
+  `/loop-clean-and-fix`
+- `plan_reviewers`: one or more dispatch agent roles
 
 Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before passing
-`plan_review_agents` to delegated skills, inspect live `al dispatch options` output
-and fail if a requested override is unsupported.
+`antigravity`). Infer the agent only when unambiguous. Before passing any
+dispatch role to delegated skills, inspect live `al dispatch options` output and
+fail if a requested override is unsupported.
 
 Optional input:
 - a PR number or URL
@@ -82,15 +86,15 @@ Optional input:
 6. Implement the minimum fix directly when it is small enough to handle safely
    inside this skill.
 7. If the required fix is large, cross-cutting, behavior-changing, or complex
-   enough that direct editing would be risky, run:
+   enough that direct editing would be risky, run `/plan-work` with:
 
    ```text
    /plan-work
    {CI failure reproducer and scope}
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
-   Then run:
+   Then with the reviewed artifacts and agent roles, call:
 
    ```text
    /fully-implement-plan
@@ -98,7 +102,9 @@ Optional input:
    {relative path to reviewed plan artifact}
    {relative path to reviewed task artifact}
    {relative path to reviewed context artifact}
-   plan_review_agents are {agent 1, agent 2, ...}
+   implementer is {implementer}
+   fixer is {fixer}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Resume this workflow after `/fully-implement-plan` returns local
@@ -117,7 +123,7 @@ Optional input:
 
    ```text
    /clean-and-fix-code
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Use it to review and stabilize the fix.

@@ -15,11 +15,11 @@ route code fixes through planning and verification, then rerun the lane.
 ## Required inputs
 
 - `implementer`: dispatch agent role for `/implement-plan`
-- `plan_review_agents`: one or more dispatch agent roles to pass through to
+- `plan_reviewers`: one or more dispatch agent roles to pass through to
   `/plan-work`
 
-If `implementer` or `plan_review_agents` is missing, ask for it before
-starting. Do not invent a default implementer or plan review agent list.
+If `implementer` or `plan_reviewers` is missing, ask for it before
+starting. Do not invent a default implementer or plan reviewer list.
 
 Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
 `antigravity`). Infer the agent only when unambiguous. Before dispatching,
@@ -84,7 +84,7 @@ the requested `implementer` role for `/implement-plan`.
    ```text
    /plan-work
    {relative path to failure artifact}
-   plan_review_agents are {agent 1, agent 2, ...}
+   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
 7. Dispatch the implementer role with:
@@ -97,8 +97,8 @@ the requested `implementer` role for `/implement-plan`.
    {relative path to context artifact}
    ```
 
-8. Run a subagent to verify against the plan, task, and context paths produced
-   by `/plan-work`:
+8. Run a built-in subagent to verify against the plan, task, and context paths
+   produced by `/plan-work`:
 
    ```text
    /verify-work

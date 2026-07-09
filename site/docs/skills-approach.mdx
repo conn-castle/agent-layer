@@ -69,8 +69,9 @@ Use this notation when describing how workflow skills call other skills,
 dispatch named agents, or launch built-in subagents.
 
 Parentheses show only agent-role inputs passed into the call, such as
-`plan_review_agents`. Do not include ordinary file paths, artifacts, issue numbers,
-or prose task inputs unless they are essential to the explanation.
+`implementer`, `fixer`, or `plan_reviewers`. Do not include ordinary file
+paths, artifacts, issue numbers, or prose task inputs unless they are essential
+to the explanation.
 
 ```text
 /skill-name
@@ -80,14 +81,14 @@ Use a bare skill name when the current agent calls the skill directly and no
 agent-role input is relevant.
 
 ```text
-/plan-work(plan_review_agents)
+/plan-work(plan_reviewers)
 ```
 
 Use parentheses when the current agent calls a skill directly and passes
 agent-role inputs.
 
 ```text
-dispatch(implementer) -> /fully-implement-plan(plan_review_agents)
+dispatch(implementer) -> /fully-implement-plan(plan_reviewers, implementer, fixer)
 ```
 
 Use `dispatch(agent_name) ->` when a named dispatch role launches the skill.
@@ -102,12 +103,12 @@ Use `subagent ->` when the current skill launches a built-in fresh-context
 subagent. This is not a named dispatch role.
 
 ```text
-for plan_review_agent in plan_review_agents:
-    dispatch(plan_review_agent) -> .agent-review-prompt
+for plan_reviewer in plan_reviewers:
+    dispatch(plan_reviewer) -> .agent-review-prompt
 ```
 
 Use a leading dot for bundled prompts or assets instead of skills. The example
-above means each named plan review agent is dispatched once with the
+above means each named plan reviewer is dispatched once with the
 `agent-review-prompt` asset. If the asset receives no agent-role inputs, leave
 the parentheses off.
 
@@ -141,7 +142,7 @@ Conditional calls can be shown with a short condition:
 
 ```text
 if accepted findings:
-    subagent -> /plan-work(plan_review_agents)
+    subagent -> /plan-work(plan_reviewers)
 ```
 
 In the YAML call-tree spec, logic is represented as a block node. Put `if`,
@@ -150,7 +151,7 @@ In the YAML call-tree spec, logic is represented as a block node. Put `if`,
 
 ```yaml
 ship-pr:
-  inputs: [implementer, plan_review_agents]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
     - while: PR is not ready for closeout
       calls:
@@ -158,7 +159,7 @@ ship-pr:
         - if: PR is created or a new head SHA is pushed
           calls:
             - skill: run-and-fix-all-checks
-              inputs: [implementer, plan_review_agents]
+              inputs: [plan_reviewers, implementer]
               caller: subagent
         - if: local changes exist after repair work
           calls:
