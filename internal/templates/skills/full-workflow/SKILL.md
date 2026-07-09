@@ -16,7 +16,7 @@ Fail before side effects unless all are present:
 - `planner`: dispatch agent role
 - `implementer`: dispatch agent role
 - `shipper`: dispatch agent role
-- `review_agents`: one or more dispatch agent roles
+- `plan_review_agents`: one or more dispatch agent roles
 - the user's requested work
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
@@ -32,7 +32,7 @@ Example invocation:
 planner is codex xhigh
 implementer is codex high
 shipper is claude opus xhigh
-review_agents are codex high, opus xhigh, antigravity
+plan_review_agents are codex high, opus xhigh, antigravity
 ```
 
 ## Required artifacts
@@ -124,7 +124,7 @@ Dispatch the planner role with:
 ```text
 /plan-work
 {relative path to spec}
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 ### Phase 7: Fully Implement
@@ -137,7 +137,7 @@ Plan artifacts:
 {relative path to reviewed plan artifact}
 {relative path to reviewed task artifact}
 {relative path to reviewed context artifact}
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 ### Phase 8: Ship
@@ -146,7 +146,8 @@ Dispatch the shipper role with:
 
 ```text
 /ship-pr
-review_agents are {review agent 1, review agent 2, ...}
+implementer is {implementer}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 Stop at any `/ship-pr` human checkpoint, including merge authorization.

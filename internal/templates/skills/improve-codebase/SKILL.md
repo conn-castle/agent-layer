@@ -43,7 +43,7 @@ Accept any combination of:
 - a findings-per-chunk severity threshold for stopping early
 - whether to run complementary skills (/simplify-codebase, /boost-coverage, /fix-issues)
 - whether to operate in report-only mode (no fixes)
-- `review_agents` for `/fix-issues` delegation
+- `plan_review_agents` for `/fix-issues` delegation
 
 ## Required artifacts
 
@@ -145,7 +145,7 @@ When compaction is needed, retain this section verbatim and also preserve: curre
 3. State the chunk list, priority order, and rationale in the master report.
 4. If the total scope is clearly too large for one session, propose the highest-value subset and ask before proceeding.
 
-### Phase 2: Audit chunk N (Audit review agents)
+### Phase 2: Audit chunk N (Audit Review Agents)
 
 Use the `/review-uncommitted-code` skill on the current chunk with proactive hotspot mode.
 
@@ -220,7 +220,7 @@ significant complexity, or `/fix-issues` for overlapping `ISSUES.md` entries:
 
 ```text
 /fix-issues
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 Skip delegation when no meaningful gaps exist.

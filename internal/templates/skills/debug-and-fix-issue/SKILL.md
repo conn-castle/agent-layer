@@ -18,7 +18,7 @@ Required:
 
 - Before starting: symptom description specific enough for a testable
   hypothesis
-- Before planning in full investigate-and-fix mode: `review_agents` for
+- Before planning in full investigate-and-fix mode: `plan_review_agents` for
   `/plan-work` and `/fully-implement-plan`
 
 Optional:
@@ -30,7 +30,7 @@ Optional:
 - diagnosis-only mode
 
 If a required input is missing at its boundary, checkpoint. Do not invent
-review agents.
+plan review agents.
 
 ## Artifact
 
@@ -68,7 +68,7 @@ smallest needed user input when:
 - intended behavior is undocumented and affects diagnosis
 - multiple plausible root causes remain
 - the fix requires a breaking change, broad refactor, or architecture decision
-- `review_agents` is missing before planning
+- `plan_review_agents` is missing before planning
 - `/plan-work` or `/fully-implement-plan` checkpoints, fails, omits required
   artifact paths, or omits the needed verdict
 
@@ -155,7 +155,7 @@ report proves they are the product-required root-cause response.
 If the report says the root cause is unknown, do not plan a fix. Plan only
 targeted observability/logging that captures the missing facts, and make the
 user-facing outcome explicit: diagnostic instrumentation added, issue not fixed.
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 Record the `/plan-work` report path and the returned plan, task, and context
@@ -171,7 +171,7 @@ Plan artifacts:
 {relative path to plan artifact}
 {relative path to task artifact}
 {relative path to context artifact}
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 Record the `/fully-implement-plan` report path, implementation attempts,

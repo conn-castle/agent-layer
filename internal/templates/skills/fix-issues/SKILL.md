@@ -41,9 +41,9 @@ Accept any combination of:
 - whether this run is plan-only or allowed to execute after readiness gating
 - a verification depth preference
 - a scope preference such as targeted or all-selected
-- `review_agents`: one or more dispatch agent roles for `/plan-work`
+- `plan_review_agents`: one or more dispatch agent roles for `/plan-work`
 
-Fail before side effects unless `review_agents` is present. They may be terse (`codex high`, `claude opus xhigh`,
+Fail before side effects unless `plan_review_agents` is present. They may be terse (`codex high`, `claude opus xhigh`,
 `antigravity`). Infer the agent only when unambiguous.
 
 ## Multi-agent pattern
@@ -51,7 +51,7 @@ Fail before side effects unless `review_agents` is present. They may be terse (`
 Recommended roles:
 1. `Issue triage lead`: selects the issue batch.
 2. `Planner`: invokes `/plan-work` for the selected issue batch.
-3. `Plan review agents`: handled through `/plan-work`.
+3. `Plan Review Agents`: handled through `/plan-work`.
 4. `Execution gatekeeper`: decides whether the current batch should `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`.
 5. `Implementer`: owns the code changes.
 6. `Auditor`: reviews touched areas for regressions and missed fixes.
@@ -113,10 +113,10 @@ and continue this skill's workflow after every delegation returns.
 ```text
 /plan-work
 {selected issues, excluded issues, rollback/recovery notes, report path}
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
-### Phase 3: Confirm Plan Readiness (Plan review agents)
+### Phase 3: Confirm Plan Readiness (Plan Review Agents)
 
 If `/plan-work` returns final readiness `blocked-for-user-decision`, ask the
 smallest question that unblocks the plan and rerun the smallest necessary step.
@@ -148,7 +148,7 @@ that can be fixed without broadening scope, run:
 
 ```text
 /clean-and-fix-code
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 ### Phase 6: Audit the touched area (Auditor)

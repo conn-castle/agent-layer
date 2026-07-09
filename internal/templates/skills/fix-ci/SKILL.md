@@ -18,11 +18,11 @@ description: >-
 ## Required inputs
 
 Fail before side effects unless all are present:
-- `review_agents`: one or more dispatch agent roles
+- `plan_review_agents`: one or more dispatch agent roles
 
 Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
 `antigravity`). Infer the agent only when unambiguous. Before passing
-`review_agents` to delegated skills, inspect live `al dispatch options` output
+`plan_review_agents` to delegated skills, inspect live `al dispatch options` output
 and fail if a requested override is unsupported.
 
 Optional input:
@@ -87,7 +87,7 @@ Optional input:
    ```text
    /plan-work
    {CI failure reproducer and scope}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Then run:
@@ -98,7 +98,7 @@ Optional input:
    {relative path to reviewed plan artifact}
    {relative path to reviewed task artifact}
    {relative path to reviewed context artifact}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Resume this workflow after `/fully-implement-plan` returns local
@@ -117,7 +117,7 @@ Optional input:
 
    ```text
    /clean-and-fix-code
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Use it to review and stabilize the fix.

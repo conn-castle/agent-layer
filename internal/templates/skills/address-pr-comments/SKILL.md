@@ -11,11 +11,11 @@ description: >-
 
 ## Required inputs
 
-- `review_agents`: one or more dispatch agent roles to pass to
+- `plan_review_agents`: one or more dispatch agent roles to pass to
   `/clean-and-fix-code`, `/plan-work`, and `/fully-implement-plan`.
 
-If `review_agents` is missing, ask for it before starting. Do not invent a
-default review agent list.
+If `plan_review_agents` is missing, ask for it before starting. Do not invent a
+default plan review agent list.
 
 ## Optional inputs
 
@@ -109,7 +109,7 @@ broader scope or architecture decision.
    ```text
    /plan-work
    {scoped task from batched comments}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Then run:
@@ -120,7 +120,7 @@ broader scope or architecture decision.
    {relative path to reviewed plan artifact}
    {relative path to reviewed task artifact}
    {relative path to reviewed context artifact}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Resume this workflow after `/fully-implement-plan` returns local
@@ -139,7 +139,7 @@ If this skill made non-trivial local code changes, run cleanup:
 
 ```text
 /clean-and-fix-code
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 Then draft fixed replies.

@@ -14,11 +14,17 @@ route code fixes through planning and verification, then rerun the lane.
 
 ## Required inputs
 
-- `review_agents`: one or more dispatch agent roles to pass through to
+- `implementer`: dispatch agent role for `/implement-plan`
+- `plan_review_agents`: one or more dispatch agent roles to pass through to
   `/plan-work`
 
-If `review_agents` is missing, ask for it before starting. Do not invent a
-default review agent list.
+If `implementer` or `plan_review_agents` is missing, ask for it before
+starting. Do not invent a default implementer or plan review agent list.
+
+Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
+`antigravity`). Infer the agent only when unambiguous. Before dispatching,
+inspect live `al dispatch options` output and fail if a requested override is
+unsupported.
 
 ## Scope
 
@@ -57,7 +63,8 @@ and continue this skill's workflow after every delegation returns.
 
 ## Workflow
 
-For every subagent step, use a built-in subagent with fresh context.
+For every subagent step, use a built-in subagent with fresh context. Dispatch
+the requested `implementer` role for `/implement-plan`.
 
 1. Resolve the full check lane from `COMMANDS.md` and record the commands in
    state.
@@ -77,10 +84,10 @@ For every subagent step, use a built-in subagent with fresh context.
    ```text
    /plan-work
    {relative path to failure artifact}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
-7. Run:
+7. Dispatch the implementer role with:
 
    ```text
    /implement-plan

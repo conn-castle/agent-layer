@@ -63,6 +63,119 @@ explicit: architecture tradeoffs, destructive operations, external writes,
 scope changes, or missing required input. The normal path should be
 autonomous.
 
+## Nested skill call notation
+
+Use this notation when describing how workflow skills call other skills,
+dispatch named agents, or launch built-in subagents.
+
+Parentheses show only agent-role inputs passed into the call, such as
+`plan_review_agents`. Do not include ordinary file paths, artifacts, issue numbers,
+or prose task inputs unless they are essential to the explanation.
+
+```text
+/skill-name
+```
+
+Use a bare skill name when the current agent calls the skill directly and no
+agent-role input is relevant.
+
+```text
+/plan-work(plan_review_agents)
+```
+
+Use parentheses when the current agent calls a skill directly and passes
+agent-role inputs.
+
+```text
+dispatch(implementer) -> /fully-implement-plan(plan_review_agents)
+```
+
+Use `dispatch(agent_name) ->` when a named dispatch role launches the skill.
+The name can be a workflow role such as `implementer` or one item from a
+caller-provided list.
+
+```text
+subagent -> /verify-work
+```
+
+Use `subagent ->` when the current skill launches a built-in fresh-context
+subagent. This is not a named dispatch role.
+
+```text
+for plan_review_agent in plan_review_agents:
+    dispatch(plan_review_agent) -> .agent-review-prompt
+```
+
+Use a leading dot for bundled prompts or assets instead of skills. The example
+above means each named plan review agent is dispatched once with the
+`agent-review-prompt` asset. If the asset receives no agent-role inputs, leave
+the parentheses off.
+
+```text
+subagent -> task: row-level verification
+```
+
+Use `task:` when a workflow names work that is not a skill call and is not
+backed by a named prompt or asset file. Add `caller: subagent` when that task
+runs in a built-in fresh-context subagent. Do not use a leading dot for these
+rows; dot-prefixes are reserved for real assets.
+
+Keep `task:` rows coarse. At any one `calls:` level, use at most one direct
+`task:` row to summarize local orchestration work. If several adjacent bullets
+would only describe mechanical local steps, fold them into one readable phrase
+instead of rendering each step. Prefer `task: commit, push, and prepare the PR`
+over separate rows for branch prep, PR create/reuse, ledger setup, and reply
+publishing. Use additional rows only when they are real logic blocks, skill
+calls, asset calls, dispatch/subagent boundaries, or terminal `break:`/`exit:`
+statements.
+
+Do not render readiness checks that are only internal gates of the previous
+child call. When the source workflow means "if repair is needed, capture
+evidence, plan, implement, and verify", keep those calls inside one meaningful
+condition instead of adding separate `if the plan is ready` or
+`if implementation changed files` rows. A reusable plan/implement/verify node is
+useful only when it corresponds to a real skill with a stable contract;
+otherwise inline the three skill calls.
+
+Conditional calls can be shown with a short condition:
+
+```text
+if accepted findings:
+    subagent -> /plan-work(plan_review_agents)
+```
+
+In the YAML call-tree spec, logic is represented as a block node. Put `if`,
+`while`, and `for` at the list-item level, and put the body under nested
+`calls:`. Do not attach an `if` or `while` field to a sibling call.
+
+```yaml
+ship-pr:
+  inputs: [implementer, plan_review_agents]
+  calls:
+    - while: PR is not ready for closeout
+      calls:
+        - task: run monitor-pr.sh and reconcile its action
+        - if: PR is created or a new head SHA is pushed
+          calls:
+            - skill: run-and-fix-all-checks
+              inputs: [implementer, plan_review_agents]
+              caller: subagent
+        - if: local changes exist after repair work
+          calls:
+            - task: commit and push local repair changes
+            - break: restart monitoring for the new pushed head
+        - if: PR is ready for merge authorization
+          calls:
+            - exit: stop and request authorization to merge the exact PR
+```
+
+Use `break:` for a loop exit or restart point, and `exit:` for leaving the
+current skill at a stop gate or final handoff.
+
+Keep the tree focused on delegation shape: who launches the work, whether it is
+a skill, asset, task, or terminal control statement, and which agent-role inputs
+flow into it.
+
 ## Root Skill Model
 
 These are the bundled root skills. Each owns one bounded job and exposes a

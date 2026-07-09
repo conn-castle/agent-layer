@@ -36,13 +36,13 @@ Roadmap phases should normally be distinct enough that this decomposition is str
 
 ## Required behavior
 
-Fail before side effects unless `review_agents` is present. Values may be terse
+Fail before side effects unless `plan_review_agents` is present. Values may be terse
 (`codex high`, `claude opus xhigh`, `antigravity`). Infer the agent only when
 unambiguous.
 
 At minimum, use:
 - a scout/planner subagent
-- review agent dispatch roles through `/plan-work`
+- plan review agent dispatch roles through `/plan-work`
 - an execution gatekeeper subagent that decides `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`
 - one or more implementation subagents when the work spans distinct files or subsystems
 
@@ -116,13 +116,13 @@ phase-level done criteria, and which work package executes first:
 ```text
 /plan-work
 {selected roadmap phase}
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
-### Phase 3: Confirm Plan Readiness (Plan review agents)
+### Phase 3: Confirm Plan Readiness (Plan Review Agents)
 
 Do not send plan-review findings into the audit-fix loop; `/review-plan` owns
-review agent synthesis, accepted artifact revisions, and repeat review rounds
+plan review agent synthesis, accepted artifact revisions, and repeat review rounds
 inside `/plan-work`.
 
 If final readiness is `blocked-for-user-decision`, ask the smallest question
@@ -162,10 +162,10 @@ broadening scope, run:
 
 ```text
 /clean-and-fix-code
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
-### Phase 6: Review against the plan (Completeness review agents)
+### Phase 6: Review against the plan (Completeness Review Agents)
 
 Run:
 
@@ -180,7 +180,7 @@ Plan artifacts:
 If the verdict is `incomplete`, return to implementation.
 Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires user input.
 
-### Phase 7: Broad audit of the delivered work package (Audit review agents)
+### Phase 7: Broad audit of the delivered work package (Audit Review Agents)
 
 Use the `/review-uncommitted-code` skill on the touched files, surrounding modules, and changed tests/docs.
 
@@ -205,7 +205,7 @@ behavior-preserving and in-scope, run:
 
 ```text
 /clean-and-fix-code
-review_agents are {review agent 1, review agent 2, ...}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 Then return to Phase 6.

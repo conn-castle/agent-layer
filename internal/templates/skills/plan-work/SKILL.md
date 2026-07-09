@@ -9,7 +9,7 @@ description: >-
 ## Required inputs
 
 - task source or user request
-- `review_agents` to pass to `/review-plan`
+- `plan_review_agents` to pass to `/review-plan`
 
 If either is missing, ask for it before writing artifacts or running review.
 
@@ -34,7 +34,7 @@ If either is missing, ask for it before writing artifacts or running review.
    {relative path to task artifact}
    {relative path to context artifact}
    {relative path to source/spec artifact, if supplied}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 5. If review changes artifacts, use the revised artifacts. If review blocks on a
    user decision, ask and rerun the smallest necessary step.

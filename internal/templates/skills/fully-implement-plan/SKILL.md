@@ -20,7 +20,7 @@ Fail before side effects unless all are present:
 - plan artifact path
 - task artifact path
 - context artifact path
-- `review_agents`: one or more dispatch agent roles to pass to
+- `plan_review_agents`: one or more dispatch agent roles to pass to
   `/loop-clean-and-fix` and any `/plan-work` retry for verification gaps
 
 If any required input is missing, ask for it before starting. Do not invent
@@ -45,7 +45,7 @@ and continue this skill's workflow after every delegation returns.
 ## Rules
 
 - Do not ask the user to confirm target files before starting; required
-  artifact paths and `review_agents` are enough.
+  artifact paths and `plan_review_agents` are enough.
 - Treat delegated skill returns as intermediate until this workflow reaches its
   final report.
 - If `/implement-plan`, `/loop-clean-and-fix`, or `/verify-work` fails, stops
@@ -57,7 +57,7 @@ and continue this skill's workflow after every delegation returns.
   ```text
   /plan-work
   {verification report plus original plan/task/context paths as source evidence}
-  review_agents are {review agent 1, review agent 2, ...}
+  plan_review_agents are {agent 1, agent 2, ...}
   ```
 
   Then run:
@@ -97,7 +97,7 @@ and continue this skill's workflow after every delegation returns.
 
    ```text
    /loop-clean-and-fix
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Record its report path, round count, stop reason, issue ledger,

@@ -11,7 +11,7 @@ description: >-
 
 Fail before side effects unless all are present:
 
-- `review_agents`: one or more dispatch agent roles for `/clean-and-fix-code`
+- `plan_review_agents`: one or more dispatch agent roles for `/clean-and-fix-code`
 
 No file, directory, or diff target is required. The target is always the full
 uncommitted working tree.
@@ -63,7 +63,7 @@ and continue this skill's workflow after every delegation returns.
 
    ```text
    /clean-and-fix-code
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Treat its output as one cleanup round: record the cleanup report path,

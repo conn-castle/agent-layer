@@ -18,12 +18,14 @@ description: >-
 
 ## Required inputs
 
-- `review_agents`: one or more dispatch agent roles to pass to
+- `implementer`: dispatch agent role to pass to `/run-and-fix-all-checks` for
+  `/implement-plan`
+- `plan_review_agents`: one or more dispatch agent roles to pass to
   `/address-pr-comments`, `/run-and-fix-all-checks`, and any delegated skill
-  that requires review agents.
+  that requires plan review agents.
 
-If `review_agents` is missing, ask for it before starting. Do not invent a
-default review agent list.
+If `implementer` or `plan_review_agents` is missing, ask for it before
+starting. Do not invent a default implementer or plan review agent list.
 
 ## Continuation and checkpoints
 
@@ -98,7 +100,8 @@ parallel diagnostic signal:
 
 ```text
 /run-and-fix-all-checks
-review_agents are {review agent 1, review agent 2, ...}
+implementer is {implementer}
+plan_review_agents are {agent 1, agent 2, ...}
 ```
 
 Do not treat it as a pre-commit or pre-push gate. If GitHub Actions pass for
@@ -132,7 +135,8 @@ over.
 
    ```text
    /run-and-fix-all-checks
-   review_agents are {review agent 1, review agent 2, ...}
+   implementer is {implementer}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
 5. Create or reuse the single comment ledger for this PR.
@@ -178,7 +182,7 @@ Repeat these substeps until all three have no immediate work left:
    /address-pr-comments
    {PR number}
    {relative path to single comment ledger}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    It must return the updated ledger and must not commit, push, or post GitHub
@@ -194,7 +198,7 @@ Repeat these substeps until all three have no immediate work left:
    ```text
    /fix-ci
    {PR number}
-   review_agents are {review agent 1, review agent 2, ...}
+   plan_review_agents are {agent 1, agent 2, ...}
    ```
 
    Require it to return local repair changes plus reproducer evidence. Then
