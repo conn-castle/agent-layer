@@ -52,12 +52,27 @@ and continue this skill's workflow after every delegation returns.
   `/run-and-fix-all-checks` fails, stops at its own checkpoint, emits unusable
   output, or cannot provide the report path or verdict this workflow needs,
   stop this workflow, record the stop reason, and surface it to the user.
-- If `/verify-work` returns `incomplete`, run `/plan-work` with the
-  verification report as the task source and the original plan, task, and
-  context paths as source evidence. Then run `/implement-plan` with the new
-  remaining-work plan, task, and context artifacts. Repeat cleanup and verify
-  again against the original plan, task, and context. If the same gap recurs
-  after two remaining-work implementation attempts, stop and ask.
+- If `/verify-work` returns `incomplete`, run:
+
+  ```text
+  /plan-work
+  {verification report plus original plan/task/context paths as source evidence}
+  review_agents are {review agent 1, review agent 2, ...}
+  ```
+
+  Then run:
+
+  ```text
+  /implement-plan
+  Plan artifacts:
+  {relative path to remaining-work plan artifact}
+  {relative path to remaining-work task artifact}
+  {relative path to remaining-work context artifact}
+  ```
+
+  Repeat cleanup and verify against the original plan, task, and context. If
+  the same gap recurs after two remaining-work implementation attempts, stop and
+  ask.
 - Accept `complete-with-follow-up` only when every follow-up is clearly outside
   the supplied plan and task list.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
@@ -66,19 +81,49 @@ and continue this skill's workflow after every delegation returns.
 
 ## Workflow
 
-1. Run `/implement-plan` with the plan, task, and context artifact paths.
+1. Run:
+
+   ```text
+   /implement-plan
+   Plan artifacts:
+   {relative path to plan artifact}
+   {relative path to task artifact}
+   {relative path to context artifact}
+   ```
+
    Record its report path, deviations, checks, and remaining follow-up.
-2. Run `/loop-clean-and-fix` with `review_agents`. Its input is the full
-   uncommitted working tree; record its report path, round count, stop reason,
-   issue ledger, `resolved_findings`, and any blocker or residual risk.
-3. Run `/verify-work` with the plan, task, and context artifact paths. Treat
-   delegated skill reports as evidence, not contract artifacts. Record its report path,
-   verdict, findings, and recommended next step. If the verdict is
+2. Run:
+
+   ```text
+   /loop-clean-and-fix
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Record its report path, round count, stop reason, issue ledger,
+   `resolved_findings`, and any blocker or residual risk.
+3. Run:
+
+   ```text
+   /verify-work
+   Plan artifacts:
+   {relative path to plan artifact}
+   {relative path to task artifact}
+   {relative path to context artifact}
+   ```
+
+   Treat delegated skill reports as evidence, not contract artifacts. Record
+   its report path, verdict, findings, and recommended next step. If the verdict is
    `incomplete`, follow the retry rule in `Rules` and record the remaining-work
    plan, task, context, implementation report, and verification report paths.
-4. Run `/run-and-fix-all-checks` with `review_agents`. Record the checks report
-   path, commands, round count, repair cycle count, stop reason, and final
-   passing evidence or blocker.
+4. Run:
+
+   ```text
+   /run-and-fix-all-checks
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Record the checks report path, commands, round count, repair cycle count,
+   stop reason, and final passing evidence or blocker.
 5. Write the final report and prepare the final message for the user.
 
 ## Required master report structure

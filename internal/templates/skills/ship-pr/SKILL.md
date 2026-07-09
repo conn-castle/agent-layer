@@ -56,15 +56,16 @@ repair loops, and closeout.
 `/address-pr-comments` must not commit, push, or post GitHub replies. This
 skill owns those boundaries:
 
-- Commit immediately after this skill has local changes ready to publish. Do not
-  run `/run-and-fix-all-checks` before committing.
-- Push immediately after committing.
-- Post GitHub replies only from this skill, after any required local changes
-  are committed and pushed.
-- For `fix` rows, replace `Fixed in <pending-commit>` with the actual
-  pushed short hash before posting.
-- After posting a reply, update the ledger's `GitHub reply posted` and
-  reply URL/note from fresh GitHub data.
+- When this skill has local changes ready to publish, commit immediately. Then
+  push.
+- Run `/run-and-fix-all-checks` from Background local CI, not as a pre-commit
+  step.
+- Commit and push any required local changes. Then post GitHub replies only from
+  this skill.
+- For `fix` rows, replace `Fixed in <pending-commit>` with the actual pushed
+  short hash. Then post.
+- Post a reply. Then update the ledger's `GitHub reply posted` and reply
+  URL/note from fresh GitHub data.
 
 When posting replies from the ledger:
 
@@ -88,19 +89,26 @@ When posting replies from the ledger:
 ## Background local CI
 
 Optimize for fast PR feedback by parallelizing GitHub Actions and local CI.
-Always commit, push, and create or confirm the PR before starting
+Always commit, push, and create or confirm the PR. Then start
 `/run-and-fix-all-checks`. This applies to the initial PR and every follow-up
 fix commit.
 
-Run `/run-and-fix-all-checks` in the background for each pushed head SHA after
-the PR exists. Treat it as a parallel diagnostic signal, not a pre-commit or
-pre-push gate. If GitHub Actions pass for the current head before local CI
-finishes, stop local CI immediately and continue to closeout when the other
-gates are clean. If GitHub Actions fail, keep local CI running when it can
-provide reproducer evidence for the failure. If background local CI produces
-local repair changes, route them through the repeatable workflow's local-changes
-path: commit immediately, push immediately, restart background local CI for the
-new pushed head, and start the whole process over.
+Once the PR exists, run background local CI for each pushed head SHA as a
+parallel diagnostic signal:
+
+```text
+/run-and-fix-all-checks
+review_agents are {review agent 1, review agent 2, ...}
+```
+
+Do not treat it as a pre-commit or pre-push gate. If GitHub Actions pass for
+the current head before local CI finishes, stop local CI immediately and
+continue to closeout when the other gates are clean. If GitHub Actions fail,
+keep local CI running when it can provide reproducer evidence for the failure.
+If background local CI produces local repair changes, route them through the
+repeatable workflow's local-changes path: commit immediately, push immediately,
+restart background local CI for the new pushed head, and start the whole process
+over.
 
 ## Orchestration loop
 
@@ -119,8 +127,14 @@ new pushed head, and start the whole process over.
 1. Use the existing branch PR if `gh pr view` finds one; otherwise create one using Defaults: `gh pr create --title "<title>" --body "<body>" --base <base-branch>`.
 2. If PR creation fails due to an existing PR or branch conflict, checkpoint.
 3. Record the PR number/URL and current head SHA.
-4. Start or restart background `/run-and-fix-all-checks` for the current pushed
-   head SHA now that the PR is created or confirmed.
+4. Start or restart background checks for the current pushed head SHA now that
+   the PR is created or confirmed:
+
+   ```text
+   /run-and-fix-all-checks
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
 5. Create or reuse the single comment ledger for this PR.
 6. Publish eligible ledger replies whose prerequisites are already satisfied.
 
@@ -141,8 +155,8 @@ The monitor script is the only remote check and feedback polling loop.
    so the monitor script uses its own timeout default.
 2. React to the JSON `.action`:
    a. `feedback_changed`: run Step 4. The script intentionally omits comment bodies.
-   b. `ci_failed`: run Step 4 before deciding whether CI repair is still needed.
-   c. `merge_conflict`: run Step 4 before deciding whether merge repair is still needed.
+   b. `ci_failed`: run Step 4. Then decide whether CI repair is still needed.
+   c. `merge_conflict`: run Step 4. Then decide whether merge repair is still needed.
    d. `pr_not_open`: investigate without a human checkpoint. Re-fetch PR state, branch state, and monitor state; correct stale PR selection or recoverable branch/PR state when safe. If the PR is closed or merged and cannot be acted on, stop with the evidence and do not report it as green.
    e. `timeout`: investigate without a human checkpoint. Re-fetch checks, comments, mergeability, and monitor state; run Step 4 if any actionable work exists. Rerun the monitor when checks are pending or `.remaining_minimum_ready_seconds > 0`. If no checks appear, run `gh pr checks <pr-number>` once and keep investigating based on that output; do not treat the PR as green solely because the monitor timed out.
    f. `ready`: if there are no local changes, no pending ledger replies or
@@ -158,20 +172,35 @@ work.
 
 Repeat these substeps until all three have no immediate work left:
 
-1. Automatically call `/address-pr-comments` with the PR number and the single
-   comment ledger, passing `review_agents`. It must return the updated ledger
-   and must not commit, push, or post GitHub replies.
+1. Automatically call with the PR number and single comment ledger:
+
+   ```text
+   /address-pr-comments
+   {PR number}
+   {relative path to single comment ledger}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   It must return the updated ledger and must not commit, push, or post GitHub
+   replies.
 2. Check for merge conflicts using fresh PR mergeability state and local branch
    state. Resolve mechanical conflicts when the resolution does not change
    product behavior; leave the resolution as local changes for this skill to
    commit. If a conflict requires a substantive behavior or architecture
    decision, checkpoint.
 3. Check whether CI is red using fresh PR check state. If CI is red and no local
-   CI repair is already pending for that failure, call `/fix-ci` with the PR
-   number and `review_agents`, and require it to return local repair changes
-   plus reproducer evidence before its commit/push phase. If `/fix-ci` cannot
-   honor ship-pr's commit/push boundary or reaches its own checkpoint, mirror
-   that checkpoint. If CI is red only because a local repair is already pending
+   CI repair is already pending for that failure, call with the PR number:
+
+   ```text
+   /fix-ci
+   {PR number}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Require it to return local repair changes plus reproducer evidence. Then
+   continue to this skill's commit/push phase. If `/fix-ci` cannot honor
+   ship-pr's commit/push boundary or reaches its own checkpoint, mirror that
+   checkpoint. If CI is red only because a local repair is already pending
    commit/push, treat CI as having no immediate work for this loop.
 
 After a loop pass has no immediate comment, merge-conflict, or CI repair work:

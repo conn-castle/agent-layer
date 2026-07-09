@@ -1,39 +1,11 @@
 # write-plan
 
-Write a plan that is clear enough for a fresh agent or junior developer to
-execute without guessing. The output is three artifacts:
+Write three implementation-ready artifacts: a narrative plan, a small ordered
+task list, and an implementation context file.
 
-- a narrative plan
-- a small ordered task list
-- an implementation context file
-
-The plan should be specific, testable, and tightly scoped to the user's
-request. The context file orients a fresh implementing agent.
-
-Scale artifact detail to the scope, risk, and ambiguity of the work. Simple,
-localized changes should produce concise artifacts with brief sections, a short
-checklist, and only the context needed to start. Larger, cross-cutting,
-ambiguous, or risky work needs more rationale, sequencing, risk analysis, and
-verification detail. Do not add filler, generic background, or exhaustive file
-lists just to make the artifacts look substantial.
-
-## Defaults
-
-- Default to planning only. Do not edit code unless the user explicitly asks
-  for implementation too.
-- Default scope is the smallest coherent slice that produces a reviewable
-  outcome.
-- If the request is to plan roadmap execution and no phase is named, use the
-  first incomplete roadmap phase and plan the smallest coherent slice inside
-  it.
-- If the work is architectural or cross-cutting, read the project roadmap and
-  decision context first.
-- If the request is only to execute an already-valid artifact set, do not write
-  a replacement plan unless the user asks for one.
-- If the user does not provide target files or directories, infer the smallest
-  necessary scope from the request and say what scope you chose.
-- Keep the required artifact structure, but let each section be as short or
-  detailed as the scoped work warrants.
+Use the smallest coherent reviewable scope. Scale detail to the work's risk and
+ambiguity; do not add filler, generic background, or exhaustive file lists. For
+roadmap execution without a named phase, use the first incomplete roadmap phase.
 
 ## Required artifacts
 
@@ -50,27 +22,20 @@ before writing.
 
 ### Phase 1: Preflight
 
-1. Restate the objective in one sentence.
-2. Identify the input source type: freeform request, issue, backlog item,
-   roadmap slice, error report, failing check, existing artifact set, or other
-   explicit source.
-3. Normalize the source into the planning contract:
-   - planning target: feature, bug fix, refactor, roadmap slice, issue batch,
-     or execution strategy
+1. Normalize the source into the planning contract:
+   - source type and planning target
    - objective and desired outcome
    - acceptance criteria or observable success signals
    - explicit constraints, non-goals, and user-provided requirements
    - source evidence or references the plan must preserve
-   - unknowns that must be resolved before the plan can be implementation-ready
-4. Read only the files needed to understand the target area. Avoid broad repo
+   - unknowns that must be resolved before drafting an implementation-ready
+     plan
+2. Read only the files needed to understand the target area. Avoid broad repo
    scans unless the request truly demands it.
-5. For architectural, roadmap, issue, or backlog work, read the relevant memory
+3. For architectural, roadmap, issue, or backlog work, read the relevant memory
    files before committing to a plan.
-6. Drive substantive unknowns to ground by reading code/docs, running small
-   experiments in `.agent-layer/tmp/`, checking current external docs when
-   needed, or asking the user. If the source needs a larger investigation
-   before planning can be honest, narrow the plan to that investigation or use
-   the `escalate` handoff verdict.
+4. Resolve remaining material unknowns before drafting. If an unresolved fact or
+   user decision remains, use the `escalate` handoff verdict and name it.
 
 ### Phase 2: Draft the plan
 
@@ -108,26 +73,9 @@ to an approach that requires a user decision.
 
 ### Phase 3: Draft the task list
 
-The task file should be a compact ordered checklist that mirrors the plan.
-
-Task requirements:
-
-- keep items small and verifiable
-- include tests, docs, and memory updates when applicable
-- include a final verification step
-- group by execution order, not by file count
-
-Preferred format:
-
-```md
-# Task List
-
-- [ ] Confirm scope and context
-- [ ] Implement change set A
-- [ ] Add or update tests
-- [ ] Update docs/memory if affected
-- [ ] Run verification
-```
+The task file should be a compact ordered Markdown checkbox list that mirrors
+the plan. Keep items small and verifiable, group by execution order, and include
+tests, docs, memory updates, and final verification when applicable.
 
 ### Phase 4: Draft the context file
 
@@ -144,33 +92,22 @@ The context file must include these sections:
 5. `## Entry Point`
    - where the implementing agent should start reading and why
 
-Context requirements:
-
-- all file paths must be relative to the repository root
-- every file listed must actually exist, or be explicitly marked as new
-- keep descriptions brief
-- do not duplicate the plan's narrative
-- do not include generic best practices
+Use relative paths, mark new files explicitly, keep descriptions brief, and do
+not duplicate the plan's narrative or include generic best practices.
 
 ### Phase 5: Self-review and gate
 
 Before presenting the artifacts, check:
 
-- scope matches the user request exactly
-- the source type, objective, constraints, acceptance criteria, and unresolved
-  unknowns were normalized before drafting
-- source evidence or references are preserved in the plan when supplied
-- non-goals are explicit
-- dependencies are ordered before dependents
-- verification is credible for the risk level
-- docs, tests, and memory updates are accounted for when needed
-- the context file lists every file the plan expects to touch
-- all file paths in the context file are valid or marked as new
-- choices that require a user decision are either recorded as user-confirmed
-  decisions or the gate verdict is `escalate`
-- the plan contains no unresolved hedge words such as "likely", "probably", or
-  "should work"
-- the context file identifies a clear implementation entry point
+- scope, non-goals, constraints, acceptance criteria, and source evidence match
+  the request
+- dependencies, verification, docs, tests, and memory updates are complete for
+  the risk level
+- context paths are valid or marked as new, and the entry point is clear
+- user-owned decisions are recorded as confirmed decisions or the verdict is
+  `escalate`
+- no artifact defers investigation or approach selection, and the plan contains
+  no unresolved hedge words such as "likely", "probably", or "should work"
 
 Choose one handoff verdict:
 
@@ -182,35 +119,9 @@ Choose one handoff verdict:
 
 ## Human checkpoints
 
-Use this standard for user-owned decisions:
-
-- A user decision is required when repo evidence leaves multiple viable
-  approaches and choosing one would commit the user to materially different
-  behavior, public API, CLI behavior, compatibility, architecture, ownership
-  boundaries, sequencing, rollout, scope, risk, cost, data migration, security
-  or privacy posture, or destructive or irreversible work.
-- A user decision is not required for routine implementation details,
-  mechanical choices, verification selection, context gathering, or choices
-  already settled by the user request, roadmap, DECISIONS.md, repo conventions,
-  or supplied artifacts.
-
-A plan satisfies this standard by recording the user-confirmed decision, citing
-the source that already settles it, or narrowing scope so the decision is no
-longer needed.
-
-When the plan cannot satisfy this standard without a new user decision, ask the
-smallest question that resolves the choice before committing it to the plan.
-
-## Definition of done
-
-- All three artifacts exist under one shared run id.
-- Artifact size matches the scope instead of padding simple work
-- The plan contains every required section.
-- The plan records any user-confirmed decisions that shape the approach.
-- The task file has an ordered checklist ending in verification.
-- The context file lists key files, current state, constraints, and entry point.
-- The self-review gate recorded exactly one verdict.
-
+Use the repository human-checkpoint rule for user-owned decisions. Satisfy it by
+recording the user-confirmed decision, citing the source that settles it, or
+setting the verdict to `escalate` and asking the smallest blocking question.
 
 ## Final handoff
 

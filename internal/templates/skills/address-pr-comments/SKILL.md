@@ -104,13 +104,30 @@ broader scope or architecture decision.
    safely inside this skill.
 2. If a required `fix` decision is large, cross-cutting, behavior-changing, or
    complex enough that direct editing would be risky, batch related comments
-   into one scoped task and run `/plan-work`, then `/fully-implement-plan`.
-   Pass `review_agents` to both skills and resume this workflow after
-   `/fully-implement-plan` returns local working-tree changes. Do not use this
-   escalation for ordinary reviewer nits, docs-only edits, obvious local fixes,
-   or one-file cleanup.
-3. Record `defer` items in `ISSUES.md`, `BACKLOG.md`, or a GitHub issue before
-   drafting a deferred reply.
+   into one scoped task and run:
+
+   ```text
+   /plan-work
+   {scoped task from batched comments}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Then run:
+
+   ```text
+   /fully-implement-plan
+   Plan artifacts:
+   {relative path to reviewed plan artifact}
+   {relative path to reviewed task artifact}
+   {relative path to reviewed context artifact}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Resume this workflow after `/fully-implement-plan` returns local
+   working-tree changes. Do not use this escalation for ordinary reviewer nits,
+   docs-only edits, obvious local fixes, or one-file cleanup.
+3. Record `defer` items in `ISSUES.md`, `BACKLOG.md`, or a GitHub issue. Then
+   draft the deferred reply.
 4. Update each affected ledger row:
    - fix rows: `Decision=fix`, `State=fixed_uncommitted`, `GitHub reply posted=no`
    - disagree rows: `Decision=disagree`, `State=ready_to_reply`, `GitHub reply posted=no`
@@ -118,8 +135,14 @@ broader scope or architecture decision.
 
 ### Phase 4: Clean
 
-If this skill made non-trivial local code changes, run `/clean-and-fix-code` with
-`review_agents` on the uncommitted working tree before drafting fixed replies.
+If this skill made non-trivial local code changes, run cleanup:
+
+```text
+/clean-and-fix-code
+review_agents are {review agent 1, review agent 2, ...}
+```
+
+Then draft fixed replies.
 Do not run the repo's full check lane here; `ship-pr` owns the final pre-commit
 check. Run only narrow, task-local commands when needed to debug or confirm an
 implementation step, and record cleanup notes or check results in the ledger.

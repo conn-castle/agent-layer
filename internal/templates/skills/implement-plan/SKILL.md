@@ -65,13 +65,13 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create the file before writing.
    additional code and docs needed for the first task batch.
 5. Choose one readiness verdict:
    - `proceed`: the current batch is ready to implement as written
-   - `revise`: the plan or task list needs updates before coding
+   - `revise`: update the plan or task list. Then rerun the gate
    - `escalate`: a human checkpoint is required
    - `rewrite-because-out-of-scope`: the current batch should be rewritten to
      stay inside the plan's real scope
 
-If the verdict is not `proceed`, resolve that condition before coding. Record
-any equivalent task rewrite in the execution report.
+If the verdict is not `proceed`, resolve that condition. Record any equivalent
+task rewrite in the execution report.
 
 ### Phase 2: Execute the task list
 

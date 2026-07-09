@@ -59,11 +59,16 @@ and continue this skill's workflow after every delegation returns.
 
 ## Workflow
 
-1. Run `/clean-and-fix-code` on the full uncommitted working tree with
-   `review_agents`. Treat its output as one cleanup round: record the cleanup
-   report path, accepted/rejected/deferred/already-resolved counts,
-   `resolved_findings`, blockers, residual risk, and every reported issue for
-   the final report.
+1. Run:
+
+   ```text
+   /clean-and-fix-code
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Treat its output as one cleanup round: record the cleanup report path,
+   accepted/rejected/deferred/already-resolved counts, `resolved_findings`,
+   blockers, residual risk, and every reported issue for the final report.
 2. Read the cleanup output and determine whether the round succeeded, failed, or
    stopped at a checkpoint. If it failed or stopped, write the final report with
    the failure/checkpoint as the stop reason and do not repeat. On success,

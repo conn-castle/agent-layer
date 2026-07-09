@@ -54,8 +54,17 @@ notes in `ISSUES.md`.
 1. Start each fresh attempt from a clean primary branch checkout. Do not stash
    or discard work; if leaving an attempt, commit and push its branch first.
 2. Create or reuse one batch branch for autonomous, non-blocked work.
-3. Dispatch the implementer with the selected worker skill, the current ledger
-   context, and the review agents to any delegated `/review-plan` run.
+3. Dispatch the implementer with the selected worker skill:
+
+   ```text
+   /fix-issues
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Or dispatch the implementer with `/improve-codebase`.
+
+   Provide the current ledger context needed to avoid repeating blocked or
+   exhausted work.
 4. Answer worker checkpoints as the human proxy when no user-only decision is
    required. If user input is required, commit and push the branch, leave any
    PR open, record the blocker, and checkout the primary branch. Then start a
@@ -63,8 +72,14 @@ notes in `ISSUES.md`.
 5. If the PR gate has not been met, go back to #3 and continue on the same
    batch branch with the current uncommitted work or local commits. Once the PR
    gate has been met, continue to #6.
-6. Use the shipper dispatch agent role for `/ship-pr` through its green,
-   open-PR endpoint. Do not delegate merge execution.
+6. Use the shipper dispatch agent role through its green, open-PR endpoint:
+
+   ```text
+   /ship-pr
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Do not delegate merge execution.
 7. Perform final readiness review yourself. If repository policy, PR automation,
    or any external gate requires explicit manual approval, leave the PR open,
    record the gate, and checkout the primary branch. Then continue back at #1

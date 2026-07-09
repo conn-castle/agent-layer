@@ -109,11 +109,15 @@ If Phase 1 shows that the current phase is not reasonably decomposable:
 
 ### Phase 2: Plan And Review The Phase To Completion (Planner)
 
-Use the `/plan-work` skill to plan completion of the selected phase (not just the
-next work package). Pass `review_agents`. The plan must also define all
-remaining in-phase tasks, ordered internal work packages when more than one is
-needed, and phase-level done criteria that identify which work package should
-execute first.
+Plan selected phase completion, not just the next work package. The plan must
+define remaining in-phase tasks, ordered internal work packages when needed,
+phase-level done criteria, and which work package executes first:
+
+```text
+/plan-work
+{selected roadmap phase}
+review_agents are {review agent 1, review agent 2, ...}
+```
 
 ### Phase 3: Confirm Plan Readiness (Plan review agents)
 
@@ -139,13 +143,39 @@ Before moving into implementation or advancing to the next package:
 
 ### Phase 5: Implement the current work package (Implementers)
 
-Use the `/implement-plan` skill with the current plan and task list. Stay inside the selected roadmap phase and complete the current work package end-to-end before moving on. If the package reveals additional in-phase tasks or dependency changes, update the plan and task list before continuing.
+Run:
 
-If implementation leaves obvious local complexity that can be improved without broadening scope, use `/clean-and-fix-code`, then continue to Phase 6.
+```text
+/implement-plan
+Plan artifacts:
+{relative path to current plan artifact}
+{relative path to current task artifact}
+{relative path to current context artifact}
+```
+
+Stay inside the selected roadmap phase and complete the current work package
+end-to-end before moving on. If the package reveals additional in-phase tasks or
+dependency changes, update the plan and task list before continuing.
+
+If implementation leaves obvious local complexity that can be improved without
+broadening scope, run:
+
+```text
+/clean-and-fix-code
+review_agents are {review agent 1, review agent 2, ...}
+```
 
 ### Phase 6: Review against the plan (Completeness review agents)
 
-Use the `/verify-work` skill.
+Run:
+
+```text
+/verify-work
+Plan artifacts:
+{relative path to current plan artifact}
+{relative path to current task artifact}
+{relative path to current context artifact}
+```
 
 If the verdict is `incomplete`, return to implementation.
 Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires user input.
@@ -170,9 +200,15 @@ For accepted findings:
 If accepted Critical or High findings were fixed, run one more `/review-uncommitted-code` pass on the touched scope.
 Repeat the audit/fix loop only when the new report still contains unresolved Critical or High findings.
 
-If the fixes introduce or expose local complexity that remains behavior-preserving and in-scope:
-- use `/clean-and-fix-code`
-- then return to Phase 6
+If the fixes introduce or expose local complexity that remains
+behavior-preserving and in-scope, run:
+
+```text
+/clean-and-fix-code
+review_agents are {review agent 1, review agent 2, ...}
+```
+
+Then return to Phase 6.
 
 Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns. Escalate if the loop is not converging.
 

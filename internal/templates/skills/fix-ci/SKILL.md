@@ -34,7 +34,9 @@ Optional input:
 
 - Keep fixes minimal and targeted to the CI failure.
 - Do not push speculative fixes without a local reproducer.
-- Treat GitHub-only failures as local-reproduction bugs: identify the environmental difference, then write or adapt a local test or command that fails for the same reason before fixing.
+- Treat GitHub-only failures as local-reproduction bugs: identify the
+  environmental difference, then write or adapt a local test or command that
+  fails for the same reason. Then fix it.
 - Do not make unrelated changes just because CI logs reveal other warnings.
 - Do not disable, skip, or weaken tests or CI checks to make them pass.
 - Do not lower coverage thresholds or remove failing tests.
@@ -54,8 +56,12 @@ Optional input:
 
 1. Get CI status: `gh pr checks <pr-number>` to identify which checks failed.
 2. Get failure logs: `gh run view <run-id> --log-failed` for each failed check.
-3. Download available artifacts for each failed workflow run before coding if available: `mkdir -p .agent-layer/tmp/ci-artifacts/<run-id>` then `gh run download <run-id> --dir .agent-layer/tmp/ci-artifacts/<run-id>`.
-   - Inspect artifact contents alongside logs. Prioritize test reports, coverage reports, screenshots/videos, build output, generated files, and any tool-specific diagnostic bundles.
+3. Download available artifacts for each failed workflow run when available:
+   `mkdir -p .agent-layer/tmp/ci-artifacts/<run-id>` then
+   `gh run download <run-id> --dir .agent-layer/tmp/ci-artifacts/<run-id>`.
+   Then inspect them alongside logs, prioritizing test reports, coverage
+   reports, screenshots/videos, build output, generated files, and any
+   tool-specific diagnostic bundles.
 4. Identify the root cause from logs and artifacts:
    - test failures
    - lint/format errors
@@ -68,28 +74,53 @@ Optional input:
 ### Phase 2: Fix the issue (Fixer)
 
 1. If the fix requires understanding project conventions, read `COMMANDS.md` first.
-2. Run the same failing CI command locally, or the closest repo-documented local equivalent, before changing code.
+2. Run the same failing CI command locally, or the closest repo-documented local
+   equivalent. Then change code.
 3. If the command fails locally for the same reason, use that command as the red reproducer.
 4. If the command passes locally while CI failed, treat the mismatch as a bug: identify the environmental difference and write or adapt a local test or command that fails for the same reason.
 5. If no credible local reproducer can be built, stop at a human checkpoint instead of pushing a guess.
 6. Implement the minimum fix directly when it is small enough to handle safely
    inside this skill.
 7. If the required fix is large, cross-cutting, behavior-changing, or complex
-   enough that direct editing would be risky, run `/plan-work`, then
-   `/fully-implement-plan`. Pass `review_agents` to both skills and resume this
-   workflow after `/fully-implement-plan` returns local working-tree changes.
+   enough that direct editing would be risky, run:
+
+   ```text
+   /plan-work
+   {CI failure reproducer and scope}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Then run:
+
+   ```text
+   /fully-implement-plan
+   Plan artifacts:
+   {relative path to reviewed plan artifact}
+   {relative path to reviewed task artifact}
+   {relative path to reviewed context artifact}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Resume this workflow after `/fully-implement-plan` returns local
+   working-tree changes.
    Do not use this escalation for obvious one-file fixes, mechanical config
    edits, or narrow test updates.
 8. Re-run the local reproducer to confirm it passes, then run local
    verification using the same commands CI runs.
 9. Record the local reproducer command, initial red result, fix, final green
-   result, and any `/plan-work` or `/fully-implement-plan` report paths before
-   committing.
+   result, and any `/plan-work` or `/fully-implement-plan` report paths. Then
+   commit.
 
 ### Phase 3: Audit and commit (Auditor + Committer)
 
-1. Use the `/clean-and-fix-code` skill with `review_agents` to review and
-   stabilize the fix.
+1. Run:
+
+   ```text
+   /clean-and-fix-code
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+   Use it to review and stabilize the fix.
 2. Stage all changes: `git add -A`
 3. Craft a commit message describing the CI fix.
 4. Commit and push.
@@ -104,7 +135,7 @@ Optional input:
 
 ## Guardrails
 
-- Do not skip the audit-and-fix step before committing.
+- Run the audit-and-fix step. Then commit.
 - Do not disable or weaken CI checks to make them pass.
 - Do not expand scope beyond what is needed to fix the CI failure.
 - Do not patch from CI logs alone when CI artifacts are available; logs and artifacts together are the diagnostic source of truth.

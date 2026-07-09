@@ -45,16 +45,34 @@ For every subagent step, use a built-in subagent with fresh context.
 3. Run `/review-uncommitted-code` directly (not as a subagent).
    - Pass the combined target: staged diff, unstaged diff, and untracked files.
 4. Apply the Finding Gate.
-5. Run a subagent with `/plan-work`.
-   - Use the accepted review findings from the gate as the task source.
-   - Pass the required `review_agents`.
-   - Plan to fix all findings regardless of severity.
-   - Do not require a separate spec when the findings are concrete enough to
-     plan from.
-6. Run `/implement-plan` with the plan, task, and context paths produced by
-   `/plan-work`.
-7. Run a subagent with `/verify-work`.
-   - Verify against the plan that fixes the findings.
+5. Run a subagent to plan fixes for all findings regardless of severity. Do not
+   require a separate spec when the findings are concrete enough to plan from:
+
+   ```text
+   /plan-work
+   {accepted review findings from the gate}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+6. Run:
+
+   ```text
+   /implement-plan
+   Plan artifacts:
+   {relative path to plan artifact}
+   {relative path to task artifact}
+   {relative path to context artifact}
+   ```
+
+7. Run a subagent to verify against the plan that fixes the findings:
+
+   ```text
+   /verify-work
+   Plan artifacts:
+   {relative path to plan artifact}
+   {relative path to task artifact}
+   {relative path to context artifact}
+   ```
 
 ## Finding Gate
 

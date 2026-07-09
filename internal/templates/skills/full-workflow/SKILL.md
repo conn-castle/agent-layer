@@ -2,13 +2,13 @@
 name: full-workflow
 description: >-
   Orchestrate a full feature workflow from questions and spec alignment through
-  reviewed planning, implementation, and PR shipping.
+  reviewed planning, fully implemented local work, and PR shipping.
 ---
 
 # full-workflow
 
 Top-level orchestration skill. Own question, spec, and spec-gate alignment; after
-that, delegate each stage to its dedicated skill.
+that, delegate to `/plan-work`, `/fully-implement-plan`, and `/ship-pr`.
 
 ## Required inputs
 
@@ -28,6 +28,7 @@ Example invocation:
 
 ```text
 /full-workflow
+{requested work}
 planner is codex xhigh
 implementer is codex high
 shipper is claude opus xhigh
@@ -37,11 +38,9 @@ review_agents are codex high, opus xhigh, antigravity
 ## Required artifacts
 
 Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>` for this workflow:
-- `.agent-layer/tmp/full-workflow.<run-id>.state.md`
 - `.agent-layer/tmp/full-workflow.<run-id>.spec.md`
 
-Create both before writing. Record delegated artifact paths in the state file as
-they appear.
+Create the spec before writing.
 
 ## Rules
 
@@ -56,8 +55,9 @@ they appear.
   recommendation when useful.
 - Separate facts from choices: repo reading may resolve facts, constraints, and
   existing behavior; inferred or recommended choices stay open until approved.
-- After the spec gate, do not perform delegated-stage work yourself. Use the planner
-  for `/plan-work`, implementer for `/implement-plan`, and shipper for `/ship-pr`.
+- After the spec gate, do not perform delegated-stage work yourself. Use the
+  planner for `/plan-work`, implementer for `/fully-implement-plan`, and shipper
+  for `/ship-pr`.
 - Treat delegated returns as intermediate; continue orchestration after each return.
 - Ask again if later evidence would materially change the aligned spec.
 - Never replace a missing role with the current agent, widen scope beyond the
@@ -67,11 +67,10 @@ they appear.
 
 ## Workflow
 
-### Phase 1: Initialize state
+### Phase 1: Initialize
 
-1. Validate required inputs.
-2. Record dispatch agent roles, the original request, and current phase in the
-   state file.
+Validate required inputs and dispatch roles before writing artifacts or
+dispatching child agents.
 
 ### Phase 2: Initial questions
 
@@ -104,7 +103,7 @@ choices in `Open Questions`.
 
 While the iteration queue is not empty:
 - ask exactly one open question
-- update the spec and state after the answer
+- update the spec after the answer
 - repeat
 
 ### Phase 5: Spec gate
@@ -120,38 +119,48 @@ it and return to Phase 4 when questions or decisions remain.
 
 ### Phase 6: Plan And Review
 
-Dispatch the planner role with the `/plan-work` skill. The prompt must include:
-- the spec path
-- the state path
-- the user's original request
-- `review_agents`
-- instruction to produce an implementation-ready reviewed plan/task/context
-  artifact set
+Dispatch the planner role with:
 
-Record the returned plan/task/context and review report paths in the state file.
+```text
+/plan-work
+{relative path to spec}
+review_agents are {review agent 1, review agent 2, ...}
+```
 
-### Phase 7: Implement
+### Phase 7: Fully Implement
 
-Dispatch the implementer role with the `/implement-plan` skill and the reviewed
-plan/task/context artifact paths. If implementation discovers a spec-level
-change, return to the earliest affected phase instead of continuing on stale
-alignment.
+Dispatch the implementer role with:
+
+```text
+/fully-implement-plan
+Plan artifacts:
+{relative path to reviewed plan artifact}
+{relative path to reviewed task artifact}
+{relative path to reviewed context artifact}
+review_agents are {review agent 1, review agent 2, ...}
+```
 
 ### Phase 8: Ship
 
-Dispatch the shipper role with the `/ship-pr` skill. Stop at any `/ship-pr` human
-checkpoint, including merge authorization.
+Dispatch the shipper role with:
+
+```text
+/ship-pr
+review_agents are {review agent 1, review agent 2, ...}
+```
+
+Stop at any `/ship-pr` human checkpoint, including merge authorization.
 
 ## Definition of done
 
 - Required dispatch agent roles were present and normalized before dispatch.
 - The spec gate completed before planning.
-- `/plan-work`, `/implement-plan`, and `/ship-pr` were invoked through the
+- `/plan-work`, `/fully-implement-plan`, and `/ship-pr` were invoked through the
   requested dispatch agent roles.
-- Final status and artifact paths are recorded in the state file.
+- Final status and artifact paths are reported in the final handoff.
 
 ## Final handoff
 
-Report the spec, plan/task/context, review report, implementation report, and PR
-paths or URLs. State whether the PR is open, green, merged, or blocked at a
-human checkpoint.
+Report the spec, plan/task/context, review report, fully-implement-plan report,
+and PR paths or URLs. State whether the PR is open, green, merged, or blocked at
+a human checkpoint.

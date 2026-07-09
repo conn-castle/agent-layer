@@ -43,6 +43,7 @@ Accept any combination of:
 - a findings-per-chunk severity threshold for stopping early
 - whether to run complementary skills (/simplify-codebase, /boost-coverage, /fix-issues)
 - whether to operate in report-only mode (no fixes)
+- `review_agents` for `/fix-issues` delegation
 
 ## Required artifacts
 
@@ -212,7 +213,17 @@ contract from Phase 3.
 
 ### Phase 5: Complementary skill delegation (Orchestrator)
 
-Delegate to complementary skills only when the audit surfaces systemic issues in their domain: `/boost-coverage` for significant test gaps, `/audit-tests` for widespread redundancy/misclassification, `/simplify-codebase` for significant complexity, `/fix-issues` for overlapping `ISSUES.md` entries. Skip delegation when no meaningful gaps exist.
+Delegate to complementary skills only when the audit surfaces systemic issues
+in their domain: `/boost-coverage` for significant test gaps, `/audit-tests`
+for widespread redundancy/misclassification, `/simplify-codebase` for
+significant complexity, or `/fix-issues` for overlapping `ISSUES.md` entries:
+
+```text
+/fix-issues
+review_agents are {review agent 1, review agent 2, ...}
+```
+
+Skip delegation when no meaningful gaps exist.
 
 Record delegation outcomes in the master report under `## Complementary Skill Results`.
 

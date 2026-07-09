@@ -70,18 +70,39 @@ For every subagent step, use a built-in subagent with fresh context.
 5. If a command fails, save the failing command, exit code, relevant output,
    suspected failing package/file/test when available, and any minimal
    reproduction notes as a failure artifact.
-6. Run a subagent with `/plan-work`.
-   - Use the failure artifact as the task source.
-   - Pass the required `review_agents`.
-   - Plan a root-cause fix for the observed failure.
-   - Do not require a separate spec when the command output is concrete enough
-     to plan from.
-7. Run `/implement-plan` with the plan, task, and context paths produced by
-   `/plan-work`.
-8. Run a subagent with `/verify-work`.
-   - Verify against the plan, task, and context paths produced by `/plan-work`.
-   - Treat an `incomplete` verdict as active failure evidence for the next
-     repair cycle.
+6. Run a subagent to plan a root-cause fix for the observed failure. Do not
+   require a separate spec when the command output is concrete enough to plan
+   from:
+
+   ```text
+   /plan-work
+   {relative path to failure artifact}
+   review_agents are {review agent 1, review agent 2, ...}
+   ```
+
+7. Run:
+
+   ```text
+   /implement-plan
+   Plan artifacts:
+   {relative path to plan artifact}
+   {relative path to task artifact}
+   {relative path to context artifact}
+   ```
+
+8. Run a subagent to verify against the plan, task, and context paths produced
+   by `/plan-work`:
+
+   ```text
+   /verify-work
+   Plan artifacts:
+   {relative path to plan artifact}
+   {relative path to task artifact}
+   {relative path to context artifact}
+   ```
+
+   Treat an `incomplete` verdict as active failure evidence for the next repair
+   cycle.
 9. Go back to step 2.
 
 ## Pass Gate

@@ -31,6 +31,7 @@ Accept any combination of:
 - suspect files or areas
 - a git range or commit where the bug was introduced
 - whether the run is diagnosis-only or investigate-and-fix
+- `review_agents` for cleanup escalation
 
 ## Required artifacts
 
@@ -140,9 +141,13 @@ If the root cause is ambiguous after investigation, escalate with the competing 
 2. Keep the fix minimal and focused on the diagnosed defect.
 3. If the correct fix is materially larger than a targeted change, escalate before proceeding.
 
-If the fix touches scope that accumulates obvious local complexity or dead scaffolding:
-- use `/clean-and-fix-code`
-- then continue to Phase 6
+If the fix touches scope that accumulates obvious local complexity or dead
+scaffolding, run:
+
+```text
+/clean-and-fix-code
+review_agents are {review agent 1, review agent 2, ...}
+```
 
 ### Phase 6: Verify (Verifier)
 

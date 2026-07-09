@@ -110,9 +110,11 @@ and continue this skill's workflow after every delegation returns.
 
 ### Phase 2: Draft And Review The Plan (Planner)
 
-Use the `/plan-work` skill for the current issue batch. Pass the selected issues,
-excluded issues, rollback or recovery notes, report path, and
-`review_agents`; do not duplicate plan artifact instructions here.
+```text
+/plan-work
+{selected issues, excluded issues, rollback/recovery notes, report path}
+review_agents are {review agent 1, review agent 2, ...}
+```
 
 ### Phase 3: Confirm Plan Readiness (Plan review agents)
 
@@ -135,13 +137,19 @@ After writing and reviewing the artifacts:
 ### Phase 5: Implement the current batch (Implementer)
 
 1. Fix the selected issues in plan order.
-2. For defect-oriented issues, write or identify a failing test that reproduces the defect before fixing it, when feasible. For pure debt or refactor issues, verify against existing checks instead.
+2. For defect-oriented issues, write or identify a failing test that reproduces
+   the defect when feasible. Then fix it. For pure debt or refactor issues,
+   verify against existing checks instead.
 3. Keep diffs narrow and explainable.
 4. If a selected issue proves materially broader than planned, hand it back to the execution gatekeeper instead of freelancing.
 
-If the touched scope accumulates obvious local complexity or dead scaffolding that can be fixed without broadening scope:
-- use `/clean-and-fix-code`
-- then continue to Phase 6
+If the touched scope accumulates obvious local complexity or dead scaffolding
+that can be fixed without broadening scope, run:
+
+```text
+/clean-and-fix-code
+review_agents are {review agent 1, review agent 2, ...}
+```
 
 ### Phase 6: Audit the touched area (Auditor)
 
