@@ -21,19 +21,20 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 
 - Run `al dispatch --help` before the first `al dispatch` command in a session.
 - Run relevant subcommand help before using non-obvious subcommands or flags.
-- Before resolving any role or making the first real dispatch in every session, run
+- Before resolving any role for an independent dispatch batch, run
   `al dispatch options --json` against the current project. Do not rely on
   remembered, cached, or prior-session options output.
-- Resolve each requested role to one exact invocation: target plus optional
-  full model and reasoning-effort values. Infer a target from a model only when
-  the options output makes the mapping unique.
-- Treat the selected target's non-empty `model.configured` value and exact
-  `model.suggestions` entries in that live output as the complete allowlist for
-  an explicit `--model` override. `allow_custom: true` never expands this
-  allowlist. Never shorten or reinterpret a model name, guess an unsupported
-  value, or silently substitute a fallback. Fail before launch when the
-  request is ambiguous or its model is absent from that allowlist, and report
-  the permitted model names.
+- Requested roles may be terse. Resolve each role from that live metadata to one
+  exact target plus optional full model and reasoning-effort values. Prefer
+  exact matches; otherwise accept shorthand only when it has one unambiguous
+  interpretation across the available targets and values. For example, `opus`
+  resolves to Claude model `opus`, while `terra` resolves to Codex model
+  `gpt-5.6-terra`. Ask only when there are zero or multiple matches.
+- For dispatches governed by this skill, treat the selected target's non-empty
+  `model.configured` value and exact `model.suggestions` entries as the complete
+  allowlist for an explicit `--model` override. `allow_custom: true` does not
+  expand this skill-level policy. Never pass shorthand, guess an unsupported
+  value, or silently substitute a fallback in the `al dispatch` command.
 - When no model is requested, omit `--model` and use the target's reported
   configured default; do not synthesize an override.
 - If `al`, a target CLI, authentication, source skill, or generated skill
