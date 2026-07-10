@@ -21,16 +21,21 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 
 - Run `al dispatch --help` before the first `al dispatch` command in a session.
 - Run relevant subcommand help before using non-obvious subcommands or flags.
-- Before the first real dispatch in an orchestration workflow, inspect
-  `al dispatch options --json` once. Reuse that result while dispatch
-  configuration and the target environment remain unchanged.
+- Before resolving any role or making the first real dispatch in every session, run
+  `al dispatch options --json` against the current project. Do not rely on
+  remembered, cached, or prior-session options output.
 - Resolve each requested role to one exact invocation: target plus optional
   full model and reasoning-effort values. Infer a target from a model only when
   the options output makes the mapping unique.
-- Preserve target, model, and reasoning-effort strings exactly as reported by
-  the options contract. Never shorten or reinterpret a model name, guess an
-  unsupported value, or silently substitute a fallback. Fail before launch
-  when the request is ambiguous or unsupported.
+- Treat the selected target's non-empty `model.configured` value and exact
+  `model.suggestions` entries in that live output as the complete allowlist for
+  an explicit `--model` override. `allow_custom: true` never expands this
+  allowlist. Never shorten or reinterpret a model name, guess an unsupported
+  value, or silently substitute a fallback. Fail before launch when the
+  request is ambiguous or its model is absent from that allowlist, and report
+  the permitted model names.
+- When no model is requested, omit `--model` and use the target's reported
+  configured default; do not synthesize an override.
 - If `al`, a target CLI, authentication, source skill, or generated skill
   projection is missing, stop and report the missing requirement. Do not
   install, authenticate, sync, or change configuration unless the user asked
@@ -71,7 +76,6 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 ## Definition of done
 
 - Current target metadata was inspected before any real run.
-- The requested role was normalized to exact supported values with no fallback.
 - Target selection and skill delivery if used were intentional and reported.
 - Prompt and output artifacts were stored only under `.agent-layer/tmp/` and
   every created artifact path was reported.
