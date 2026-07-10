@@ -26,11 +26,18 @@ If any required input is missing, ask for it before starting. Do not invent
 defaults, implementers, fixers, plan reviewer lists, or auto-select
 artifacts from `.agent-layer/tmp/`.
 
-## Context Discipline
+## Context preservation
 
 You are the orchestrator for this skill. Preserve your context to validate
 inputs, invoke the child skills, and relay their stop conditions. Treat child
 skill returns as intermediate until this workflow reaches its final handoff.
+
+## Compaction guidance
+
+When compaction is needed, retain this entire skill verbatim. Also preserve the
+current workflow step or phase, active artifact paths, selected scope, pending
+gate verdicts, delegated skills and subagents already run and their outcomes,
+unresolved blockers or user checkpoints, and the next exact step.
 
 ## Rules
 

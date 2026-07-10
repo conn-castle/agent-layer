@@ -40,12 +40,19 @@ checkpoint, report the current branch, PR number if one exists, latest head SHA
 if known, the blocking condition, and the smallest user decision or
 authorization needed; after the user answers, resume the same step.
 
-## Context Discipline
+## Context preservation
 
 You are the orchestrator for this skill. Do not do work that belongs to
 subagents or delegated skills in the orchestration context. Preserve your
 context to make strategic decisions, enforce gates, reconcile returned outputs,
 and continue this skill's workflow after every delegation returns.
+
+## Compaction guidance
+
+When compaction is needed, retain this entire skill verbatim. Also preserve the
+current workflow step or phase, active artifact paths, selected scope, pending
+gate verdicts, delegated skills and subagents already run and their outcomes,
+unresolved blockers or user checkpoints, and the next exact step.
 
 ## Comment ledger
 

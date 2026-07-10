@@ -46,14 +46,19 @@ At minimum, use:
 - an execution gatekeeper subagent that decides `proceed`, `revise`, `escalate`, or `rewrite-because-out-of-scope`
 - one or more implementation subagents when the work spans distinct files or subsystems
 
-## Context Discipline
+## Context preservation
 
 You are the orchestrator for this skill. Do not do work that belongs to
 subagents or delegated skills in the orchestration context. Preserve your
 context to make strategic decisions, enforce gates, reconcile returned outputs,
 and continue this skill's workflow after every delegation returns.
 
-When compaction is needed, retain this section verbatim and also preserve: current phase, active artifact paths, selected scope, pending gate verdict, delegated skills and subagents already run, their outcomes, unresolved blockers, and the next exact step.
+## Compaction guidance
+
+When compaction is needed, retain this entire skill verbatim. Also preserve the
+current workflow step or phase, active artifact paths, selected scope, pending
+gate verdicts, delegated skills and subagents already run and their outcomes,
+unresolved blockers or user checkpoints, and the next exact step.
 
 ## Global constraints
 
