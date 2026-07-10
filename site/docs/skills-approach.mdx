@@ -4,15 +4,16 @@ description: Agent Layer's skill ethos and bundled root skill model.
 sidebar_position: 5
 ---
 
-Agent Layer skills are meant to be deterministic, reusable workflow modules
-with stable input and output contracts. A root skill should do one kind of work
-well, produce a predictable handoff, and avoid owning orchestration loops that
-belong in higher-level workflows.
+This page defines Agent Layer's root-skill and workflow architecture.
 
-For the evidence behind this shape, use the universal best-practice guides:
-[Skill Design](/skill-design), [CLI Skill Design](/cli-skill-design), and
-[Instruction Design](/instruction-design). This page is Agent Layer-specific:
-it describes the ethos and root model for the bundled skill system.
+Document ownership prevents guidance drift:
+
+- [Skill Design](/skill-design) owns portable skill design guidance.
+- [CLI Skill Design](/cli-skill-design) owns CLI-skill design.
+- [Instruction Design](/instruction-design) owns the boundary between
+  always-loaded instructions and skills.
+- This page owns Agent Layer's skill architecture.
+- `docs/SKILL-AUDIT.md` owns the repository audit procedure.
 
 ## Design ethos
 
@@ -21,21 +22,10 @@ contract available every time: accepted inputs, required artifacts, stop
 conditions, verification expectations, and final handoff shape. The agent still
 uses judgment inside the task, but the module boundary should be stable.
 
-**Root skills own one bounded job.** Planning, review, implementation, and
-verification are different jobs. Keeping them separate improves activation,
-reviewability, and reuse.
-
-**Root skills are hermetic across skills.** A root skill must not call, route
-to, or depend on another skill, and its body should not reference other skills
-as next steps, alternatives, or implementation dependencies. A root skill may
-coordinate tools or subagents when that coordination is part of its own output
-contract. Cross-skill composition belongs only in workflow skills. A root skill
-may reference Agent Layer system sources of truth, such as `COMMANDS.md`, only
-when that source is necessary to execute its own contract.
-
-**Workflows own lifecycle loops.** Cross-skill sequencing, retry policy, and
-phase-to-phase orchestration belong in workflow skills. Root skills should be
-callable by many workflows without smuggling in a full project lifecycle.
+**Root skills own bounded jobs; workflow skills compose them.** Planning,
+review, implementation, and verification remain separate. A root skill may use
+tools or subagents to produce its output, but it must not call another skill.
+Workflow skills own cross-skill sequencing, retry policy, and lifecycle loops.
 
 **Evidence over assertion.** Skills should push agents toward observable
 evidence: read the code, inspect the diff, run documented checks, write or use
@@ -48,20 +38,21 @@ it runs the smallest credible checks or accepts current evidence only when that
 evidence clearly covers the final working tree. Workflow skills should call
 that boundary intentionally instead of rerunning broad checks after every step.
 
-**Fresh-context delegation is a boundary.** A workflow may invoke a whole child
-prompt in a built-in subagent when the goal is a cold-start, bias-resistant
-pass. The child should behave as the orchestrator for the prompt it receives;
-its instructions should not depend on knowing whether it was launched by a
-human or by a parent workflow. The parent owns input shaping, gates, and the
-next phase after the child handoff. When a called skill already delegates its
-bias-sensitive review or classification work to built-in subagents and only
-keeps orchestration in the current context, call that skill directly instead of
-wrapping it in another subagent.
+**Use built-in subagents only when fresh context matters.** The child must be
+able to follow its prompt without knowing whether a user or parent workflow
+launched it. The parent supplies inputs, handles the child result, and chooses
+the next phase. Call a skill directly when that skill already delegates its
+bias-sensitive review or classification work to built-in subagents.
 
-**Checkpoints for real decisions.** Human checkpoints should be narrow and
-explicit: architecture tradeoffs, destructive operations, external writes,
-scope changes, or missing required input. The normal path should be
-autonomous.
+**Parents own boundaries; children own procedures.** A parent workflow states a
+child skill's required inputs, accepted result, and response to failure or
+required user input. The child owns its internal procedure. Do not repeat child
+logic, evidence, or rationale in the parent.
+
+**Ask the user only for a named decision or approval.** Name the exact input,
+tradeoff, destructive operation, external write, scope change, or missing
+requirement that prevents progress. State where execution resumes after the
+answer. Continue automatically when no user response is required.
 
 ## Nested skill call notation
 
@@ -179,12 +170,10 @@ flow into it.
 
 ## Root Skill Model
 
-These are the bundled root skills. Each owns one bounded job and exposes a
-stable contract for workflows to compose.
+Representative stable contracts:
 
 | Root skill | Stable contract |
 | --- | --- |
-| `write-plan` | Turn a requested change into implementation-ready plan, task list, and context artifacts. |
 | `review-plan` | Review plan artifacts before implementation and report blocking gaps, weak assumptions, and missing verification. |
 | `implement-plan` | Execute an approved plan against the codebase, use task-local feedback checks when needed, and record deviations or follow-up. |
 | `review-uncommitted-code` | Review explicit files, diffs, directories, uncommitted changes, or intentionally selected hotspots and produce prioritized findings. |
@@ -192,27 +181,18 @@ stable contract for workflows to compose.
 
 ## Workflow skills
 
-Workflow skills compose root skills and own lifecycle loops. They decide
-cross-skill sequencing, retry behavior, verification boundaries, and when to
-move between phases.
-
 Current examples:
 
 - `complete-current-phase` orchestrates roadmap work through planning,
   implementation, verification, auditing, and cleanup.
 - `ship-pr` owns the pull request lifecycle, including audit, commit, push,
   CI monitoring, reviewer feedback, and final status checks.
-- `resolve-findings` owns review-report triage, finding verdicts, accepted-fix
-  grouping, and the resolution ledger.
+- `full-workflow` owns specification alignment, reviewed planning, local
+  implementation, and pull request shipping.
 - `improve-codebase` decomposes broad quality work into reviewable chunks,
   runs review and fix loops, and delegates to narrower skills when useful.
 - `fix-issues` works through `ISSUES.md` by batching, planning, implementing,
   auditing, and keeping the ledger current.
-
-Because workflows own lifecycle orchestration, root skills should stay boring
-and portable. A workflow can call `review-uncommitted-code` several times with different
-scopes; `review-uncommitted-code` should not decide the whole project lifecycle or call
-other skills.
 
 ## Contract expectations
 
@@ -223,8 +203,7 @@ A root skill should define:
 - Output artifact or report shape, so another skill or workflow can consume it.
 - Any required system source of truth, with a reason the root skill cannot do
   its own job without it.
-- Stop conditions for missing required input, incompatible state, or user
-  decisions.
+- Stop conditions for missing required input or incompatible state.
 - Verification expectations appropriate to its job. Implementation skills may
   run narrow feedback checks, verification skills own completion evidence, and
   workflows should avoid duplicating broad checks without an explicit phase,
@@ -234,20 +213,3 @@ A root skill should define:
 A root skill should avoid:
 
 - Hidden mode switches that change the main output contract.
-- Calling or naming other skills as part of its own procedure.
-- Product-wide orchestration loops.
-- Broad "ask when uncertain" fallbacks.
-- Duplicating evidence and best-practice rationale already maintained in the
-  universal guides.
-
-## Relationship to universal guides
-
-The universal guides are the evidence base. This page is the Agent Layer design
-choice built on top of that evidence.
-
-- Use [Skill Design](/skill-design) for portable guidance on routing,
-  progressive disclosure, section ordering, evaluation, and context budget.
-- Use [CLI Skill Design](/cli-skill-design) when a skill routes agents to an
-  installed command-line tool.
-- Use [Instruction Design](/instruction-design) to keep always-loaded
-  instructions separate from workflow-specific skill behavior.

@@ -106,13 +106,13 @@ TOML
 
   : > "$MOCK_DISPATCH_CODEX_LOG"
   rc=0
-  (cd "$repo_dir" && AL_DISPATCH_ACTIVE=2 al dispatch --agent codex "nested" >"$stdout_file" 2>"$stderr_file") || rc=$?
+  (cd "$repo_dir" && AL_DISPATCH_ACTIVE=3 al dispatch --agent codex "nested" >"$stdout_file" 2>"$stderr_file") || rc=$?
   if [[ $rc -eq 75 ]]; then
     pass "nested dispatch exits 75"
   else
     fail "nested dispatch exits 75 (got: $rc)"
   fi
-  assert_file_contains "$stderr_file" "dispatch.max_depth = 2" "nested dispatch explains failure"
+  assert_file_contains "$stderr_file" "dispatch.max_depth = 3" "nested dispatch explains failure"
   assert_mock_agent_not_called "$MOCK_DISPATCH_CODEX_LOG" "nested dispatch did not invoke target"
 
   cleanup_scenario_dir "$repo_dir"

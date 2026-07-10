@@ -590,7 +590,7 @@ cat prompt.md | al dispatch --agent claude
 al dispatch options --json
 ```
 
-Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It defaults to depth 2, so a dispatched child can make one nested `al dispatch` call before the depth guard blocks further nesting. Codex, Claude, and Antigravity support per-run `--model` dispatch overrides; Antigravity does not support separate `--reasoning-effort` because agy encodes effort in model display strings. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
+Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It defaults to depth 3, so a dispatched child can make two nested `al dispatch` calls before the depth guard blocks further nesting. Codex, Claude, and Antigravity support per-run `--model` dispatch overrides; Antigravity does not support separate `--reasoning-effort` because agy encodes effort in model display strings. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
 
 ---
 

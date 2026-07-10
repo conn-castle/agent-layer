@@ -7,8 +7,7 @@ description: >-
 
 # full-workflow
 
-Top-level orchestration skill. Own question, spec, and spec-gate alignment; after
-that, delegate to `/plan-work`, `/fully-implement-plan`, and `/ship-pr`.
+Own specification alignment, dispatch `/plan-work`, then dispatch `/ship-plan`.
 
 ## Required inputs
 
@@ -22,69 +21,36 @@ Fail before side effects unless all are present:
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
 `antigravity`). Infer the agent only when unambiguous. Before dispatching,
-inspect live `al dispatch options` output and fail if a requested override is
-unsupported.
+inspect live `al dispatch options` output; fail rather than substituting an
+unsupported role or override.
 
-Example invocation:
+## Required artifact
 
-```text
-/full-workflow
-{requested work}
-planner is codex xhigh
-implementer is codex high
-fixer is codex high
-shipper is claude opus xhigh
-plan_reviewers are codex high, opus xhigh, antigravity
-```
-
-## Required artifacts
-
-Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>` for this workflow:
-- `.agent-layer/tmp/full-workflow.<run-id>.spec.md`
-
-Create the spec before writing.
+Create `.agent-layer/tmp/full-workflow.<run-id>.spec.md`, where
+`run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
 ## Rules
 
-- Treat the question and spec phases as user discussion, not automation.
-  Planning starts only after explicit final spec approval.
-- Assume the user will not read artifact files. Keep every question, decision,
-  spec summary, and approval request self-contained in chat.
-- Use initial questions only to learn enough for a first draft. Put unresolved
-  gaps in the spec, then resolve them with the user one at a time.
+- Put every user-facing question, summary, and approval request in chat; do not
+  require the user to read artifacts.
 - Ask only for decisions affecting end-user-facing behavior, architecture, scope,
   sequencing, risk, cost, or shipping; include options, tradeoffs, and a
   recommendation when useful.
-- Separate facts from choices: repo reading may resolve facts, constraints, and
-  existing behavior; inferred or recommended choices stay open until approved.
-- After the spec gate, do not perform delegated-stage work yourself. Use the
-  planner for `/plan-work`, implementer for `/fully-implement-plan`, pass the
-  implementer and fixer roles through to `/fully-implement-plan`, and use the
-  shipper for `/ship-pr`.
-- Treat delegated returns as intermediate; continue orchestration after each return.
-- Ask again if later evidence would materially change the aligned spec.
-- Never replace a missing role with the current agent, widen scope beyond the
-  spec, or guess alternate dispatch options after failure.
-- `/ship-pr` keeps its own merge authorization gate unless the user grants a
-  separate policy.
+- If either called skill needs a user answer or approval, relay its exact
+  request, wait, then resume the same phase. If it fails or omits output required
+  by that phase, report the failure and end the run. Otherwise, continue.
+- If planning or shipping requires a change to the approved spec, update the
+  spec, run Phases 3-5 again, then continue with Phase 6.
+- Do not widen scope beyond the approved spec.
 
 ## Workflow
 
-### Phase 1: Initialize
+### Phase 1: Initial questions
 
-Validate required inputs and dispatch roles before writing artifacts or
-dispatching child agents.
+Read focused repo context for facts. Ask a blocking question only when the
+request is too ambiguous to draft; leave other unresolved choices for Phase 3.
 
-### Phase 2: Initial questions
-
-Clarify only enough to write the first draft:
-- read focused repo context for facts
-- record facts separately from user decisions
-- ask the smallest blocking question when the request is too ambiguous to draft
-
-Proceed when a useful draft can capture remaining gaps.
-
-### Phase 3: Draft spec
+### Phase 2: Draft spec
 
 Write a draft spec with these sections:
 1. `# Objective`
@@ -96,31 +62,29 @@ Write a draft spec with these sections:
 7. `## Shipping Expectations`
 8. `## Open Questions`
 
-Only put decisions in `User-Confirmed Decisions` when the user already answered
-them or the original request explicitly fixed them. Put inferred or recommended
-choices in `Open Questions`.
+Put facts in `Constraints`, choices fixed by the request or answered by the user
+in `User-Confirmed Decisions`, and every other choice in `Open Questions`.
 
-`Open Questions` is the iteration queue.
+### Phase 3: Spec iteration
 
-### Phase 4: Spec iteration
-
-While the iteration queue is not empty:
+While `Open Questions` is not empty:
 - ask exactly one open question
 - update the spec after the answer
 - repeat
 
-### Phase 5: Spec gate
+### Phase 4: Approve spec
 
-Summarize the draft spec in chat:
+Summarize the draft spec:
 - what will change
 - what will not change
 - the acceptance criteria
 - important constraints and decisions
 
-Ask for approval or corrections, then stop. If the user changes the spec, update
-it and return to Phase 4 when questions or decisions remain.
+Ask for approval or corrections. Apply corrections, resolve resulting open
+questions through Phase 3, and repeat this phase until the user approves the
+spec.
 
-### Phase 6: Plan And Review
+### Phase 5: Plan and review
 
 Dispatch the planner role with:
 
@@ -130,12 +94,15 @@ Dispatch the planner role with:
 plan_reviewers are {agent 1, agent 2, ...}
 ```
 
-### Phase 7: Fully Implement
+Require plan, task, context, and review report paths with final readiness
+`implementation-ready`.
 
-Dispatch the implementer role with:
+### Phase 6: Ship plan
+
+Dispatch the shipper role with:
 
 ```text
-/fully-implement-plan
+/ship-plan
 Plan artifacts:
 {relative path to reviewed plan artifact}
 {relative path to reviewed task artifact}
@@ -145,29 +112,7 @@ fixer is {fixer}
 plan_reviewers are {agent 1, agent 2, ...}
 ```
 
-### Phase 8: Ship
-
-Dispatch the shipper role with:
-
-```text
-/ship-pr
-implementer is {implementer}
-fixer is {fixer}
-plan_reviewers are {agent 1, agent 2, ...}
-```
-
-Stop at any `/ship-pr` human checkpoint, including merge authorization.
-
-## Definition of done
-
-- Required dispatch agent roles were present and normalized before dispatch.
-- The spec gate completed before planning.
-- `/plan-work`, `/fully-implement-plan`, and `/ship-pr` were invoked through the
-  requested dispatch agent roles.
-- Final status and artifact paths are reported in the final handoff.
-
 ## Final handoff
 
-Report the spec, plan/task/context, review report, fully-implement-plan report,
-and PR paths or URLs. State whether the PR is open, green, merged, or blocked at
-a human checkpoint.
+Report the spec path, all Phase 5 artifact paths and readiness, and the
+`/ship-plan` final handoff.

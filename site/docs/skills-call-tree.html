@@ -241,6 +241,18 @@
       line-height: 1.45;
     }
 
+    .warning-caller {
+      display: grid;
+      gap: 5px;
+    }
+
+    .warning-caller-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
     .warning-step {
       padding: 2px 5px;
       border-radius: 4px;
@@ -370,7 +382,7 @@
       flex: 1;
       overflow-y: auto;
       overflow-x: hidden;
-      padding: 14px 16px 28px;
+      padding: 14px 16px 28px 34px;
     }
 
     .empty,
@@ -445,19 +457,19 @@
     .depth-warning-icon {
       display: block;
       position: absolute;
-      left: -12px;
+      left: -24px;
       top: 50%;
-      width: 13px;
-      height: 13px;
+      width: 16px;
+      height: 16px;
       transform: translateY(-50%);
       background: var(--warn);
       border: 0;
       padding: 0;
-      min-width: 13px;
-      min-height: 13px;
+      min-width: 16px;
+      min-height: 16px;
       cursor: help;
-      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
-      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
     }
 
     .depth-warning-icon:hover {
@@ -689,8 +701,8 @@
       background: var(--warn);
       cursor: help;
       pointer-events: auto;
-      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
-      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5'/%3E%3Cpath d='M12 16h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='m15 9-6 6'/%3E%3Cpath d='m9 9 6 6'/%3E%3C/svg%3E") center / contain no-repeat;
     }
 
     .editor-warning-icon:hover {
@@ -1061,10 +1073,7 @@ full-workflow:
         - skill: plan-work
           inputs: [plan_reviewers]
           caller: dispatch(planner)
-        - skill: fully-implement-plan
-          inputs: [plan_reviewers, implementer, fixer]
-          caller: dispatch(implementer)
-        - skill: ship-pr
+        - skill: ship-plan
           inputs: [plan_reviewers, implementer, fixer]
           caller: dispatch(shipper)
 fully-implement-plan:
@@ -1557,7 +1566,8 @@ verify-work:
     let actionFrame = 0;
     let editorMeasure = null;
     let editorLineWarnings = new Map();
-    const maxCallerDepth = 2;
+    const maxDispatchDepth = 3;
+    const maxSubagentDepth = 2;
 
     function makeElement(tag, className, text) {
       const element = document.createElement(tag);
@@ -1571,18 +1581,31 @@ verify-work:
     }
 
     function parseWarningMessage(warning) {
-      const match = String(warning).match(/: (Dispatch|Subagent) depth /);
+      const text = String(warning);
+      const match = text.match(/: (Dispatch|Subagent) depth /);
       if (!match) {
-        return {path: String(warning), rule: ""};
+        return {path: text, callerChain: "", rule: ""};
+      }
+      const prefix = text.slice(0, match.index);
+      const callerMarker = ": Caller chain ";
+      const callerIndex = prefix.lastIndexOf(callerMarker);
+      if (callerIndex >= 0) {
+        return {
+          path: prefix.slice(0, callerIndex),
+          callerChain: prefix.slice(callerIndex + callerMarker.length),
+          rule: text.slice(match.index + 2)
+        };
       }
       return {
-        path: String(warning).slice(0, match.index),
-        rule: String(warning).slice(match.index + 2)
+        path: prefix,
+        callerChain: "",
+        rule: text.slice(match.index + 2)
       };
     }
 
     function appendWarningPath(parent, path) {
       const parts = String(path).split(/\s+->\s+/).filter(Boolean);
+      parent.setAttribute("aria-label", parts.join(" -> "));
       parts.forEach((part, index) => {
         if (index > 0) {
           parent.appendChild(makeElement("span", "warning-path-arrow", "->"));
@@ -1608,6 +1631,14 @@ verify-work:
         const path = makeElement("div", "warning-path");
         appendWarningPath(path, parsed.path);
         item.appendChild(path);
+        if (parsed.callerChain) {
+          const caller = makeElement("div", "warning-caller");
+          caller.appendChild(makeElement("div", "warning-caller-label", "Caller chain"));
+          const callerPath = makeElement("div", "warning-path");
+          appendWarningPath(callerPath, parsed.callerChain);
+          caller.appendChild(callerPath);
+          item.appendChild(caller);
+        }
         if (parsed.rule) {
           item.appendChild(makeElement("div", "warning-rule", parsed.rule));
         }
@@ -1876,7 +1907,7 @@ verify-work:
     }
 
     function initialCallerState() {
-      return {dispatch: 0, subagent: 0, dispatchFrames: [], subagentFrames: []};
+      return {dispatch: 0, subagent: 0, dispatchFrames: [], subagentFrames: [], callerFrames: []};
     }
 
     function callerFrame(call) {
@@ -1898,7 +1929,8 @@ verify-work:
           dispatch: state.dispatch,
           subagent: state.subagent,
           dispatchFrames: state.dispatchFrames.slice(),
-          subagentFrames: state.subagentFrames.slice()
+          subagentFrames: state.subagentFrames.slice(),
+          callerFrames: state.callerFrames.slice()
         };
       }
       if (frame.type === "dispatch") {
@@ -1906,7 +1938,8 @@ verify-work:
           dispatch: state.dispatch + 1,
           subagent: 0,
           dispatchFrames: state.dispatchFrames.concat(frame),
-          subagentFrames: []
+          subagentFrames: [],
+          callerFrames: state.callerFrames.concat(frame)
         };
       }
       if (frame.type === "subagent") {
@@ -1914,24 +1947,33 @@ verify-work:
           dispatch: state.dispatch,
           subagent: state.subagent + 1,
           dispatchFrames: state.dispatchFrames.slice(),
-          subagentFrames: state.subagentFrames.concat(frame)
+          subagentFrames: state.subagentFrames.concat(frame),
+          callerFrames: state.callerFrames.concat(frame)
         };
       }
       return state;
     }
 
+    function callerChainLabel(frames) {
+      return (frames || [])
+        .map((frame) => `${frame.type}(${frame.label})`)
+        .join(" -> ");
+    }
+
     function callerDepthChainWarnings(state, context, call) {
       const warnings = [];
       const callerType = call.caller && call.caller.type;
-      if (callerType === "dispatch" && state.dispatch > maxCallerDepth) {
+      const callerChain = callerChainLabel(state.callerFrames);
+      const callerChainClause = callerChain ? `: Caller chain ${callerChain}` : "";
+      if (callerType === "dispatch" && state.dispatch > maxDispatchDepth) {
         warnings.push({
-          message: `${context}: Dispatch depth ${state.dispatch} exceeds the limit of ${maxCallerDepth}. Dispatch depth increments through subagent calls.`,
+          message: `${context}${callerChainClause}: Dispatch depth ${state.dispatch} exceeds the limit of ${maxDispatchDepth}. Dispatch depth increments through subagent calls.`,
           frames: state.dispatchFrames
         });
       }
-      if (callerType === "subagent" && state.subagent > maxCallerDepth) {
+      if (callerType === "subagent" && state.subagent > maxSubagentDepth) {
         warnings.push({
-          message: `${context}: Subagent depth ${state.subagent} exceeds the limit of ${maxCallerDepth}. Subagent depth resets on dispatch.`,
+          message: `${context}${callerChainClause}: Subagent depth ${state.subagent} exceeds the limit of ${maxSubagentDepth}. Subagent depth resets on dispatch.`,
           frames: state.subagentFrames
         });
       }
@@ -1953,6 +1995,19 @@ verify-work:
     function appendDepthWarningIcon(row, warnings, className = "") {
       const warningIcon = makeWarningButton(`depth-warning-icon${className ? ` ${className}` : ""}`, warnings);
       row.appendChild(warningIcon);
+    }
+
+    function positionTreeWarningIcons() {
+      const treeRect = tree.getBoundingClientRect();
+      const gutterLeft = treeRect.left + 10;
+      for (const icon of tree.querySelectorAll(".depth-warning-icon")) {
+        const row = icon.closest(".node-row");
+        if (!row) {
+          continue;
+        }
+        const rowRect = row.getBoundingClientRect();
+        icon.style.left = `${Math.round(gutterLeft - rowRect.left)}px`;
+      }
     }
 
     function mergeLineWarningMaps(...maps) {
@@ -2302,6 +2357,7 @@ verify-work:
         inputs: Array.isArray(rootSkill.inputs) ? rootSkill.inputs : []
       };
       tree.appendChild(renderCall(rootCall, skillMap, [], 0, maxDepth));
+      positionTreeWarningIcons();
       const warningCount = Array.from(editorLineWarnings.values()).reduce((count, warnings) => count + warnings.length, 0);
       status.textContent = warningCount > 0
         ? `${skillIds.length} skills loaded · ${warningCount} caller-depth warnings`
@@ -2313,6 +2369,7 @@ verify-work:
       for (const detail of tree.querySelectorAll("details")) {
         detail.open = open;
       }
+      positionTreeWarningIcons();
     }
 
     let renderTimer = 0;
@@ -2364,7 +2421,10 @@ verify-work:
       scheduleSkillLineActions();
     });
     specInput.addEventListener("scroll", scheduleSkillLineActions);
-    window.addEventListener("resize", scheduleSkillLineActions);
+    window.addEventListener("resize", () => {
+      scheduleSkillLineActions();
+      positionTreeWarningIcons();
+    });
     renderSpec();
   </script>
 </body>

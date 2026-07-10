@@ -176,3 +176,8 @@ A rolling log of important, non-obvious decisions that materially affect future 
     Decision: `notifications.chime` is a global typed opt-in. Sync projects it to Claude `Stop`, a marked managed Codex `[[hooks.Stop]]` region, and an Agent Layer-owned Antigravity `.agents/plugins/agent-layer-chime` plugin.
     Reason: A single source of truth avoids per-agent hook drift while preserving user-owned provider hooks and shared config.
     Tradeoffs: The default sound command is macOS-specific, and the chime signals lifecycle stop only; Codex needs marked shared-config ownership while Antigravity needs a dedicated plugin directory.
+
+- Decision 2026-07-09 dispatch-depth-three: Preserve three intentional dispatch boundaries
+    Decision: Default `dispatch.max_depth` to `3`; keep the skill-call-tree subagent warning limit at `2`.
+    Reason: Shipping workflows intentionally nest shipper, fixer, and plan-reviewer dispatch roles. Replacing the shipper with a built-in subagent created deeper subagent chains and weakened context boundaries.
+    Tradeoffs: Any depth-2 agent may launch a depth-3 dispatch, but depth-3 agents remain blocked from dispatching again.

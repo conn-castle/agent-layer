@@ -14,4 +14,4 @@ Before merging, perform this readiness check yourself and do not dispatch or use
 If readiness fails, either dispatch the shipper role to continue `/ship-pr` or
 leave the PR open and start a new attempt.
 
-When readiness passes, merge using `/ship-pr` Phase 9 mechanics.
+When readiness passes, merge using `/ship-pr`'s merge mechanics.

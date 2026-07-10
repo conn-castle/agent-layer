@@ -10,8 +10,8 @@ mode = "all"
 
 [dispatch]
 # Maximum dispatch depth, including the initial `al dispatch` call.
-# 2 allows one nested `al dispatch` call.
-max_depth = 2
+# 3 allows two nested `al dispatch` calls.
+max_depth = 3
 
 [notifications]
 # chime plays a macOS local sound when a supported provider fires its Stop hook.

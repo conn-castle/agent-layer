@@ -103,7 +103,7 @@ command = "tool"
 	}
 }
 
-func TestDispatchMaxDepthDefaultsToTwo(t *testing.T) {
+func TestDispatchMaxDepthDefaultsToThree(t *testing.T) {
 	if got := DispatchMaxDepth(Config{}); got != DefaultDispatchMaxDepth {
 		t.Fatalf("DispatchMaxDepth = %d, want %d", got, DefaultDispatchMaxDepth)
 	}
