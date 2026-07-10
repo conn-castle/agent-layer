@@ -50,17 +50,12 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 3. Send the focused prompt to one target. Omit unrelated conversation
    history and information that could bias the target.
 4. If a prompt file is needed, write it under `.agent-layer/tmp/`.
-5. Run one foreground `al dispatch` call and let that original call finish,
-   even when output is quiet or the target appears stalled.
-   - Do not background the process or create a monitoring loop.
-   - Do not poll the process, send empty-input status checks, inspect partial
-     output, or read child artifacts while the call is running.
-   - Do not narrate quiet progress from the child. The blocking dispatch call
-     is the wait.
-   - End the wait only when the original call returns, the user explicitly
-     interrupts it, or the runtime reports a terminal process failure.
-6. After the call returns, inspect the final result and completed artifacts
-   once, then continue the caller's workflow.
+5. Launch one `al dispatch` command in a background terminal and yield control.
+   Let the runtime notify you when it finishes. While it runs, do not poll,
+   call wait/status tools, send empty input, inspect partial output or child
+   artifacts, or narrate progress.
+6. On the terminal completion notification, inspect the final result and
+   completed artifacts once, then continue the caller's workflow.
 
 ## Guardrails
 
@@ -72,7 +67,8 @@ allowed-tools: Bash(al:*) Bash(cat:*)
   reasoning-effort values. Re-check help and options, then report the mismatch
   if it remains unresolved.
 - When a caller launches an independent batch concurrently, apply this complete
-  blocking contract to every invocation and collect only terminal results.
+  background-notification contract to every invocation and collect only
+  terminal results.
 
 ## Definition of done
 
