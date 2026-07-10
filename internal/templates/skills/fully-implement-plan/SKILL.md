@@ -1,21 +1,19 @@
 ---
 name: fully-implement-plan
 description: >-
-  Implement a supplied plan, iteratively review and fix until diminishing
-  returns, and verify completion. Use
-  when the caller provides plan, task, and context artifacts and wants the local
-  work finished without opening or shipping a PR or running full-repository
-  testing.
+  Implement a supplied plan, clean and fix until diminishing returns, repair
+  verified gaps proportionally, and verify completion. Use when the caller
+  provides plan, task, and context artifacts and wants the local work finished
+  without opening or shipping a PR or running full-repository testing.
 ---
 
 # fully-implement-plan
 
-Orchestrate lower-level skills and keep one skill-level report. Do not do
-delegated skill work yourself.
+Coordinate lower-level skills and maintain one run ledger.
 
 ## Required inputs
 
-Fail before side effects unless all are present:
+Require all of these before side effects:
 
 - plan artifact path
 - task artifact path
@@ -25,18 +23,13 @@ Fail before side effects unless all are present:
 - `plan_reviewers`: one or more dispatch agent roles to pass to
   `/loop-clean-and-fix` and any `/plan-work` retry for verification gaps
 
-If any required input is missing, ask for it before starting. Do not invent
-defaults, implementers, fixers, plan reviewer lists, or auto-select
-artifacts from `.agent-layer/tmp/`.
+If any input is missing, ask for it. Do not invent roles, reviewer lists, or
+artifact paths, and do not auto-select artifacts from `.agent-layer/tmp/`.
 
 ## Required artifacts
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Write:
-
-- `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md`
-
-Create the report before writing. It is the skill-level ledger for all delegated skill
-results.
+Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create the run ledger before
+writing at `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md`.
 
 ## Context preservation
 
@@ -57,135 +50,112 @@ unresolved blockers or user checkpoints, and the next exact step.
 - Dispatch external roles through `/agent-dispatch`.
 - Do not ask the user to confirm target files before starting; required
   artifact paths, `implementer`, `fixer`, and `plan_reviewers` are enough.
-- Treat delegated skill returns as intermediate until this workflow reaches its
-  final report.
-- If a direct repair dispatch, `/implement-plan`, `/loop-clean-and-fix`, or
-  `/verify-work` fails, stops at its own checkpoint, emits unusable output, or
-  cannot provide the report path or verdict this workflow needs,
-  stop this workflow, record the stop reason, and surface it to the user.
-- Do not accept an `incomplete` verification verdict as a shippable final
-  status.
-- Accept `complete-with-follow-up` only when every follow-up is clearly outside
-  the supplied plan and task list.
+- The supplied plan/task/context artifacts remain the authoritative contract.
+  Treat delegated reports as evidence and resolved cleanup findings as additive
+  verification obligations; neither may weaken or replace the contract.
+- If any delegated call fails, returns blocked or checkpointed, or omits a
+  required artifact or verdict, stop, record the blocker, and surface it in the
+  final handoff.
+- Run all implementation, cleanup, and repair mutations sequentially against the
+  latest working tree.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
   user explicitly asks.
 - Do not skip, disable, weaken, or lower thresholds for checks or tests.
 
 ## Workflow
 
-1. Dispatch the implementer role with:
+### Phase 1: Implement the supplied plan
 
-   ```text
-   /implement-plan
-   Plan artifacts:
-   {relative path to plan artifact}
-   {relative path to task artifact}
-   {relative path to context artifact}
-   ```
+Dispatch the implementer role with:
 
-   Record its report path, deviations, task-local implementation checks, and
-   remaining follow-up.
-2. Dispatch the fixer role with:
+```text
+/implement-plan
+Plan artifacts:
+{relative path to plan artifact}
+{relative path to task artifact}
+{relative path to context artifact}
+```
 
-   ```text
-   /loop-clean-and-fix
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+Record its report path, deviations, task-local implementation checks, and
+remaining follow-up.
 
-   Record its review and planned artifact paths, round count, stop reason, issue
-   ledger, `resolved_findings`, focused evidence, and any blocker or residual
-   risk.
-3. Run a built-in subagent with:
+### Phase 2: Clean and fix the working tree
 
-   ```text
-   /verify-work
-   Plan artifacts:
-   {relative path to plan artifact}
-   {relative path to task artifact}
-   {relative path to context artifact}
-   Supplemental obligations:
-   {resolved cleanup findings from every cleanup round, or None}
-   ```
+Dispatch the fixer role with:
 
-   The original plan/task/context remain authoritative. Supplemental cleanup
-   obligations may add item-by-item checks but must not weaken, replace, or
-   reinterpret the original contract. Treat delegated skill reports as
-   evidence, not contract artifacts. Record the verifier report path, verdict,
-   findings, and recommended next step.
-4. If the verification verdict is `incomplete`, enter the remaining-work retry
-   loop:
+```text
+/loop-clean-and-fix
+plan_reviewers are {agent 1, agent 2, ...}
+```
 
-   1. Apply the Remaining-Work Significance Gate to the verified gaps.
-   2. For a concrete local gap, dispatch the implementer with the
-      original plan/task/context paths, verification report, exact bounded gap,
-      and focused check. Require it to write
-      `.agent-layer/tmp/fully-implement-plan.<run-id>.direct-<attempt>.report.md`,
-      but do not create a second plan artifact set solely for the local repair.
-   3. For an exceptionally significant gap, run `/plan-work` with:
+Record the cleanup outcome, review and planned artifact paths, round count, stop
+reason, issue ledger, `resolved_findings`, focused evidence, and residual risk.
+Accumulate `resolved_findings` across every Phase 2 run.
 
-      ```text
-      /plan-work
-      {verification report plus original plan/task/context paths as source evidence}
-      plan_reviewers are {agent 1, agent 2, ...}
-      ```
+### Phase 3: Verify the original contract
 
-      Record the remaining-work plan, task, context, and report paths.
-   4. For an exceptionally significant gap only, dispatch the implementer role
-      with:
+Run one fresh built-in subagent with:
 
-      ```text
-      /implement-plan
-      Plan artifacts:
-      {relative path to remaining-work plan artifact}
-      {relative path to remaining-work task artifact}
-      {relative path to remaining-work context artifact}
-      ```
+```text
+/verify-work
+Plan artifacts:
+{relative path to original plan artifact}
+{relative path to original task artifact}
+{relative path to original context artifact}
+Supplemental obligations:
+{all accumulated resolved cleanup findings, or None}
+```
 
-      Record the implementation report path. For a direct gap, skip steps 3-4
-      and use the bounded repair report from step 2.
-   5. Dispatch the fixer role with:
+Record the verifier report path, verdict, findings, and recommended next step.
 
-      ```text
-      /loop-clean-and-fix
-      plan_reviewers are {agent 1, agent 2, ...}
-      ```
+- `complete`: continue to Phase 5.
+- `complete-with-follow-up`: continue to Phase 5 only when every follow-up is
+  outside the supplied plan and task list; otherwise treat it as `incomplete`.
+- `incomplete`: continue to Phase 4.
 
-      Record the cleanup outcome, review and planned artifact paths,
-      `resolved_findings`, and focused evidence.
-   6. Run one built-in subagent with:
+### Phase 4: Repair verified gaps
 
-      ```text
-      /verify-work
-      Plan artifacts:
-      {relative path to plan artifact}
-      {relative path to task artifact}
-      {relative path to context artifact}
-      Supplemental obligations:
-      {all resolved cleanup findings accumulated on the final tree, or None}
-      ```
+Use the latest verification report. Group tightly coupled gaps, then classify
+and repair each group based on complexity and decision risk, not severity alone:
 
-      Record the verification report path and verdict. If the verdict remains
-      `incomplete`, repeat this remaining-work loop unless the same gap has
-      recurred after two remaining-work implementation attempts.
-5. Write the final report and prepare the final message for the user.
+- `direct`: use when the gap and bounded repair are concrete, local,
+  behaviorally clear, and safely checked with focused evidence. Dispatch the
+  implementer with the original artifact paths, latest verification report,
+  exact gap, and focused check. Require it to repair the gap, run that check, and
+  write
+  `.agent-layer/tmp/fully-implement-plan.<run-id>.direct-<attempt>.report.md`;
+  do not create another plan artifact set.
+- `planned`: use only when the repair is exceptionally significant:
+  cross-cutting, behavior-changing, architecture-sensitive, ambiguous, or
+  unsafe to bound directly. Run:
 
-## Remaining-Work Significance Gate
+  ```text
+  /plan-work
+  {latest verification report plus original artifact paths as source evidence}
+  plan_reviewers are {agent 1, agent 2, ...}
+  ```
 
-Choose based on fix complexity and decision risk, not gap severity alone.
+  Record the new plan/task/context and planning report paths, then dispatch the
+  implementer with:
 
-- `direct`: the verified gap and bounded repair are concrete, local,
-  behaviorally clear, and safe to check with focused evidence before the one
-  final contract verifier.
-- `planned`: create a remaining-work plan only when the repair is exceptionally
-  significant: cross-cutting, behavior-changing, architecture-sensitive,
-  ambiguous, or unsafe to bound directly.
+  ```text
+  /implement-plan
+  Plan artifacts:
+  {relative path to remaining-work plan artifact}
+  {relative path to remaining-work task artifact}
+  {relative path to remaining-work context artifact}
+  ```
 
-Record the classification and one-line reason for every gap or tightly coupled
-gap group. A human checkpoint still wins over either path.
+  Record the implementation report path.
 
-## Required master report structure
+Record each classification and one-line reason. A human checkpoint overrides
+either path. After all repair groups finish, repeat Phases 2 and 3. One repair
+attempt is one Phase 4 pass followed by cleanup and verification; stop with a
+blocker if the same verified gap remains after two attempts.
 
-Write `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md` with:
+### Phase 5: Report
+
+Write the run ledger with:
 
 1. `# Fully Implement Plan Summary`
 2. `## Inputs`
@@ -210,32 +180,24 @@ issues were reported, include a single `No issues reported` row.
 
 ## Definition of done
 
-- The skill-level report exists and records every delegated report path, stop reason,
-  issue ledger, and residual risk needed to understand the outcome.
-- `/implement-plan` and `/loop-clean-and-fix` ran, or the report names the
-  delegated-skill blocker.
-- `/verify-work` reached `complete` or acceptable `complete-with-follow-up`, or
-  the report names the verification blocker.
-- Final verification covered the original contract plus every accepted cleanup
-  obligation on the final tree.
+- The run ledger contains every delegated artifact path and the final issue,
+  repair, cleanup, and verification state.
+- The latest verification covers the original contract plus all accumulated
+  `resolved_findings` and is `complete` or acceptable
+  `complete-with-follow-up`; otherwise the ledger names the blocker.
 
 ## Final handoff
 
-After the run, present the results to the user in chat so that implementation,
-cleanup, verification, and any task-local implementation checks are clearly
-attributed to the step that produced them.
-
-Required chat output:
+Present:
 
 1. Echo the fully-implement-plan report path.
-2. State total implementation attempts, cleanup rounds, verification verdict,
-   stop reason, and final status.
+2. State total implementation attempts, cleanup rounds, verification verdict
+   and scope, stop reason, final status, and residual risk. Verification scope
+   must say whether it covered the original contract and all accumulated
+   `resolved_findings`.
 3. Present a **Key fixes applied** table sorted by source, round, then
    severity. Example columns: `| Source | Round | Severity | Fix | Files |`.
    If no fixes were applied, still print the table with a single
    `No fixes applied` row.
 4. List rejected, deferred, blocking, or repeated findings with their source and
    round numbers.
-5. State which cleanup round stopped the loop.
-6. Summarize resolved cleanup findings covered by final verification.
-7. Name any blocker or residual risk.
