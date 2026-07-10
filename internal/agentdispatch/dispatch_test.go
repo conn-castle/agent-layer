@@ -48,6 +48,24 @@ func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	if want := config.FieldOptionValues(config.ClaudeModelFieldKey); !slices.Equal(claude.Model.Suggestions, want) {
 		t.Fatalf("claude model suggestions = %v, want shared catalog %v", claude.Model.Suggestions, want)
 	}
+	var codex TargetOption
+	for _, target := range options.Targets {
+		if target.Agent == AgentCodex {
+			codex = target
+		}
+	}
+	if !codex.Model.OverrideSupported || !codex.Model.AllowCustom {
+		t.Fatalf("unexpected codex model metadata: %#v", codex.Model)
+	}
+	if want := config.FieldOptionValues(config.CodexModelFieldKey); !slices.Equal(codex.Model.Suggestions, want) {
+		t.Fatalf("codex model suggestions = %v, want shared catalog %v", codex.Model.Suggestions, want)
+	}
+	if !codex.ReasoningEffort.OverrideSupported || !codex.ReasoningEffort.AllowCustom {
+		t.Fatalf("unexpected codex reasoning effort metadata: %#v", codex.ReasoningEffort)
+	}
+	if want := config.FieldOptionValues(config.CodexReasoningEffortFieldKey); !slices.Equal(codex.ReasoningEffort.Suggestions, want) {
+		t.Fatalf("codex reasoning effort suggestions = %v, want shared catalog %v", codex.ReasoningEffort.Suggestions, want)
+	}
 	var agy TargetOption
 	for _, target := range options.Targets {
 		if target.Agent == AgentAntigravity {

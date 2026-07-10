@@ -70,9 +70,18 @@ var (
 		"opusplan",
 	)
 	claudeReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max")
-	codexModelOptions            = fieldOptions("gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-mini")
-	codexReasoningEffortOptions  = fieldOptions("low", "medium", "high", "xhigh")
-	copilotCLIModelOptions       = fieldOptions("claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro")
+	codexModelOptions            = fieldOptions(
+		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+		"gpt-5.6-luna",
+		"gpt-5.4",
+		"gpt-5.3-codex-spark",
+		"gpt-5.3-codex",
+		"gpt-5.2",
+		"gpt-5.2-mini",
+	)
+	codexReasoningEffortOptions = fieldOptions("low", "medium", "high", "xhigh", "max", "ultra")
+	copilotCLIModelOptions      = fieldOptions("claude-opus-4.6", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.4", "gpt-5.3-codex", "gemini-3-pro")
 )
 
 // fields is the canonical ordered registry of all config fields with constrained values.

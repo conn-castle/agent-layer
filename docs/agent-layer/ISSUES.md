@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-09 precommit-nested-git-index-inheritance: Nested Git test mutates the outer commit index under pre-commit
+    Priority: Medium. Area: internal/sync/claude_statusline_runtime_test.go (`runGit`) / pre-commit `go-test` hook
+    Description: When `make test` runs inside `git commit`'s pre-commit hook, the statusline test's temporary-repository Git commands inherit the outer `GIT_INDEX_FILE`; `git add tracked.txt` contaminates the real index and the nested commit re-enters pre-commit without a config, failing the outer commit.
+    Next step: Scrub repository-local Git environment variables from `runGit` before invoking Git in the temporary repository, and add a regression that supplies an external `GIT_INDEX_FILE` without mutating it.
+
 - Issue 2026-07-02 launcher-exec-capture-test-harness-duplication: Exec-capture test harness duplicated across four launcher packages
     Priority: Low. Area: internal/clients/{claude,codex,copilotcli,antigravity}/launch_test.go
     Description: `execCall`/`captureExec`/`forbidExec`/`assertExecCalled` (all over the identical `func(string, []string, []string) error` execFunc seam) are copied near-verbatim into each launcher's launch_test.go, ~50 lines per package. Flagged as CodeRabbit nitpicks on PR #130. Not a defect — the tests pass and cover behavior — but a maintainability trap: a change to the mock's behavior must be made in four places.
