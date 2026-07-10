@@ -28,6 +28,12 @@ Unscheduled user-visible features and tasks (distinct from issues; not refactors
 
 <!-- ENTRIES START -->
 
+- Backlog 2026-07-09 copilot-cli-gpt-5.6-models: Advertise GPT-5.6 models for GitHub Copilot CLI
+    Priority: Medium. Area: providers / copilot-cli / dispatch / wizard
+    Description: Add Sol, Terra, and Luna to the separate Copilot CLI model suggestion catalog after verifying the exact provider-native identifiers, so wizard and dispatch users do not need custom values.
+    Acceptance criteria: Provider-specific CLI evidence confirms the identifiers; the shared Copilot CLI catalog, exact catalog test, wizard, and dispatch suggestions expose all three models while preserving custom values.
+    Notes: GitHub's 2026-07-09 changelog confirms gradual Copilot CLI availability; deferred from PR #135 because that reviewed plan is scoped to the Codex provider catalog.
+
 - Backlog 2026-06-30 shared-live-options: Use shared live option providers for wizard and dispatch choices
     Priority: Medium. Area: providers / dispatch / wizard
     Description: Replace hard-coded model/reasoning suggestions with provider-backed discovery where a client exposes an authoritative source: Codex model and reasoning suggestions from `codex debug models`, Claude reasoning-effort choices from CLI help where available, and Antigravity models from `agy models`.

@@ -242,6 +242,46 @@ func TestClaudeModelOptionsUsesSharedFieldCatalog(t *testing.T) {
 	}
 }
 
+func TestPromptModelsCodexUsesSharedFieldCatalogs(t *testing.T) {
+	choices := NewChoices()
+	choices.EnabledAgents[AgentCodex] = true
+
+	prompted := make(map[string]bool)
+	ui := &MockUI{
+		SelectFunc: func(title string, options []string, _ *string) error {
+			var catalog []string
+			switch title {
+			case messages.WizardCodexModelTitle:
+				catalog = config.FieldOptionValues(config.CodexModelFieldKey)
+			case messages.WizardCodexReasoningEffortTitle:
+				catalog = config.FieldOptionValues(config.CodexReasoningEffortFieldKey)
+			default:
+				t.Fatalf("unexpected select title %q", title)
+			}
+			want := make([]string, 0, len(catalog)+2)
+			want = append(want, messages.WizardLeaveBlankOption)
+			want = append(want, catalog...)
+			want = append(want, messages.WizardCustomOption)
+			if !slices.Equal(options, want) {
+				t.Fatalf("%s options = %v, want shared catalog choices %v", title, options, want)
+			}
+			prompted[title] = true
+			return nil
+		},
+		ConfirmFunc:     func(string, *bool) error { return nil },
+		MultiSelectFunc: func(string, []string, *[]string) error { return nil },
+	}
+
+	if err := promptModels(ui, choices, &wizardOptionDiscoveryCache{}); err != nil {
+		t.Fatalf("promptModels error: %v", err)
+	}
+	for _, title := range []string{messages.WizardCodexModelTitle, messages.WizardCodexReasoningEffortTitle} {
+		if !prompted[title] {
+			t.Fatalf("expected Codex prompt %q", title)
+		}
+	}
+}
+
 func TestPrefetchAntigravityModelsStartsOnlyOnce(t *testing.T) {
 	orig := wizardOptionDiscoveryRequestFunc
 	t.Cleanup(func() { wizardOptionDiscoveryRequestFunc = orig })

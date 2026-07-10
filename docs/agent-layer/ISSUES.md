@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-09 precommit-nested-git-index-inheritance: Nested Git test mutates the outer commit index under pre-commit
+    Priority: Medium. Area: internal/sync/claude_statusline_runtime_test.go (`runGit`) / pre-commit `go-test` hook
+    Description: When `make test` runs inside `git commit`'s pre-commit hook, the statusline test's temporary-repository Git commands inherit the outer `GIT_INDEX_FILE`; `git add tracked.txt` contaminates the real index and the nested commit re-enters pre-commit without a config, failing the outer commit.
+    Next step: Scrub repository-local Git environment variables from `runGit` before invoking Git in the temporary repository, and add a regression that supplies an external `GIT_INDEX_FILE` without mutating it.
+
 - Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
     Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
     Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into `prune-uncommitted-tests` / `simplify-uncommitted-code` clean-and-fix assets, split `fully-implement-plan` and `loop-clean-and-fix`, add `run-and-fix-all-checks`, remove `repair-checks`, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.

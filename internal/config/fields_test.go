@@ -203,7 +203,16 @@ func TestFieldOptionValues_ClaudeReasoningCatalog(t *testing.T) {
 
 func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
 	values := FieldOptionValues(CodexModelFieldKey)
-	want := []string{"gpt-5.4", "gpt-5.3-codex-spark", "gpt-5.3-codex", "gpt-5.2", "gpt-5.2-mini"}
+	want := []string{
+		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+		"gpt-5.6-luna",
+		"gpt-5.4",
+		"gpt-5.3-codex-spark",
+		"gpt-5.3-codex",
+		"gpt-5.2",
+		"gpt-5.2-mini",
+	}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
@@ -216,7 +225,7 @@ func TestFieldOptionValues_CodexModelCatalog(t *testing.T) {
 
 func TestFieldOptionValues_CodexReasoningCatalog(t *testing.T) {
 	values := FieldOptionValues(CodexReasoningEffortFieldKey)
-	want := []string{"low", "medium", "high", "xhigh"}
+	want := []string{"low", "medium", "high", "xhigh", "max", "ultra"}
 	if len(values) != len(want) {
 		t.Fatalf("expected %d values, got %d (%v)", len(want), len(values), values)
 	}
