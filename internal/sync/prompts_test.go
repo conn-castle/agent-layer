@@ -159,7 +159,7 @@ func TestWriteAgentSkillsMkdirSkillDirError(t *testing.T) {
 	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	// Make skills dir read-only so RemoveAll(skillDir) fails.
+	// Make skills dir read-only so creating the skill directory fails.
 	if err := os.Chmod(skillsDir, 0o500); err != nil { // #nosec G302 -- test toggles dir/file mode bits to drive a production error path; the executable/traversal bit is intentional.
 		t.Fatalf("chmod: %v", err)
 	}
@@ -216,6 +216,50 @@ func TestWriteAgentSkills(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "name: beta") {
 		t.Fatalf("expected name in written skill")
+	}
+}
+
+func TestWriteAgentSkillsRefreshKeepsSkillReadable(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
+	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("initial WriteAgentSkills error: %v", err)
+	}
+
+	skillDir := filepath.Join(root, ".agents", "skills", "alpha")
+	skillPath := filepath.Join(skillDir, "SKILL.md")
+	var readerErr error
+	observeRemoval := func(path string) {
+		relativeSkillPath, err := filepath.Rel(path, skillPath)
+		if err != nil || relativeSkillPath == ".." || strings.HasPrefix(relativeSkillPath, ".."+string(filepath.Separator)) {
+			return
+		}
+		_, readerErr = os.ReadFile(skillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	}
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		RemoveFunc: func(path string) error {
+			if err := (RealSystem{}).Remove(path); err != nil {
+				return err
+			}
+			observeRemoval(path)
+			return nil
+		},
+		RemoveAllFunc: func(path string) error {
+			if err := (RealSystem{}).RemoveAll(path); err != nil {
+				return err
+			}
+			observeRemoval(path)
+			return nil
+		},
+	}
+
+	if err := WriteAgentSkills(sys, root, cmds); err != nil {
+		t.Fatalf("refresh WriteAgentSkills error: %v", err)
+	}
+	if readerErr != nil {
+		t.Fatalf("existing SKILL.md became unreadable during refresh: %v", readerErr)
 	}
 }
 
@@ -626,6 +670,133 @@ func TestWriteClaudeSkillsStaleSubFileCleanup(t *testing.T) {
 	}
 }
 
+func TestWriteClaudeSkillsReconcilesResourceTree(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	srcDir := t.TempDir()
+	keepScript := filepath.Join(srcDir, "scripts", "keep.sh")
+	staleFile := filepath.Join(srcDir, "references", "obsolete", "nested.txt")
+	if err := os.MkdirAll(filepath.Dir(keepScript), 0o700); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	if err := os.WriteFile(keepScript, []byte("#!/bin/sh\necho keep"), 0o755); err != nil { // #nosec G306 -- execute permission is the behavior under test.
+		t.Fatalf("write keep script: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(staleFile), 0o700); err != nil {
+		t.Fatalf("mkdir stale references: %v", err)
+	}
+	if err := os.WriteFile(staleFile, []byte("stale"), 0o600); err != nil {
+		t.Fatalf("write stale reference: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "skill.md"), []byte("source-owned lowercase entrypoint"), 0o600); err != nil {
+		t.Fatalf("write ignored lowercase entrypoint: %v", err)
+	}
+
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body", SourceDir: srcDir}
+	refresh := func(sourceDir string) {
+		t.Helper()
+		cmd.SourceDir = sourceDir
+		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
+			t.Fatalf("WriteClaudeSkills refresh error: %v", err)
+		}
+		assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), cmd.Name)
+	}
+
+	refresh(srcDir)
+	refresh(srcDir)
+	destScript := filepath.Join(root, ".claude", "skills", "alpha", "scripts", "keep.sh")
+	data, err := os.ReadFile(destScript) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil || !strings.Contains(string(data), "echo keep") {
+		t.Fatalf("unchanged desired resource did not survive refresh: data=%q err=%v", data, err)
+	}
+	info, err := os.Stat(destScript)
+	if err != nil {
+		t.Fatalf("stat refreshed executable: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Fatalf("expected execute permission after refresh, got %v", info.Mode())
+	}
+
+	if err := os.RemoveAll(filepath.Join(srcDir, "references")); err != nil {
+		t.Fatalf("remove source references: %v", err)
+	}
+	refresh(srcDir)
+	destReferences := filepath.Join(root, ".claude", "skills", "alpha", "references")
+	if _, err := os.Stat(destReferences); !os.IsNotExist(err) {
+		t.Fatalf("expected whole stale resource directory to be removed, got %v", err)
+	}
+
+	refresh("")
+	destScripts := filepath.Join(root, ".claude", "skills", "alpha", "scripts")
+	if _, err := os.Stat(destScripts); !os.IsNotExist(err) {
+		t.Fatalf("expected empty SourceDir to remove resources, got %v", err)
+	}
+
+	refresh(srcDir)
+	refresh(filepath.Join(t.TempDir(), "missing"))
+	if _, err := os.Stat(destScripts); !os.IsNotExist(err) {
+		t.Fatalf("expected nonexistent SourceDir to remove resources, got %v", err)
+	}
+}
+
+func TestWriteClaudeSkillsReconcilesResourceTypeTransitions(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	srcDir := t.TempDir()
+	sourceResource := filepath.Join(srcDir, "resource")
+	if err := os.WriteFile(sourceResource, []byte("file first"), 0o600); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+
+	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body", SourceDir: srcDir}
+	refresh := func() {
+		t.Helper()
+		if err := WriteClaudeSkills(RealSystem{}, root, []config.Skill{cmd}); err != nil {
+			t.Fatalf("WriteClaudeSkills refresh error: %v", err)
+		}
+		assertCanonicalSkillEntrypoint(t, root, filepath.Join(".claude", "skills"), cmd.Name)
+	}
+	destResource := filepath.Join(root, ".claude", "skills", "alpha", "resource")
+
+	refresh()
+	if err := os.Remove(sourceResource); err != nil {
+		t.Fatalf("remove source file: %v", err)
+	}
+	if err := os.MkdirAll(sourceResource, 0o700); err != nil {
+		t.Fatalf("mkdir source resource: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceResource, "nested.txt"), []byte("nested"), 0o600); err != nil {
+		t.Fatalf("write nested source file: %v", err)
+	}
+	refresh()
+	if data, err := os.ReadFile(filepath.Join(destResource, "nested.txt")); err != nil || string(data) != "nested" { // #nosec G304 -- path is constructed from test-controlled inputs.
+		t.Fatalf("file-to-directory transition failed: data=%q err=%v", data, err)
+	}
+
+	if err := os.RemoveAll(sourceResource); err != nil {
+		t.Fatalf("remove source resource directory: %v", err)
+	}
+	if err := os.WriteFile(sourceResource, []byte("file again"), 0o600); err != nil {
+		t.Fatalf("write replacement source file: %v", err)
+	}
+	refresh()
+	if data, err := os.ReadFile(destResource); err != nil || string(data) != "file again" { // #nosec G304 -- path is constructed from test-controlled inputs.
+		t.Fatalf("non-empty-directory-to-file transition failed: data=%q err=%v", data, err)
+	}
+}
+
+func assertCanonicalSkillEntrypoint(t *testing.T, root string, skillsPath string, skillName string) {
+	t.Helper()
+	path := filepath.Join(root, skillsPath, skillName, "SKILL.md")
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("canonical SKILL.md is unreadable after refresh: %v", err)
+	}
+	if !strings.Contains(string(data), "name: "+skillName) {
+		t.Fatalf("canonical SKILL.md has unexpected content: %q", data)
+	}
+}
+
 func TestCopyDirRecursive_StatError(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
@@ -652,6 +823,137 @@ func TestCopyDirRecursive_StatError(t *testing.T) {
 	if !strings.Contains(err.Error(), "stat failed") {
 		t.Fatalf("unexpected error: %v", err)
 	}
+}
+
+func TestCopyDirRecursive_DestinationLstatError(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("content"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		LstatFunc: func(string) (os.FileInfo, error) {
+			return nil, errors.New("destination lstat failed")
+		},
+	}
+	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	if err == nil || !strings.Contains(err.Error(), "destination lstat failed") {
+		t.Fatalf("expected actionable destination lstat error, got %v", err)
+	}
+}
+
+func TestCopyDirRecursive_ResourceConflictErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("remove conflicting file", func(t *testing.T) {
+		srcDir := t.TempDir()
+		destDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(srcDir, "resource"), 0o700); err != nil {
+			t.Fatalf("mkdir source resource: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(destDir, "resource"), []byte("old"), 0o600); err != nil {
+			t.Fatalf("write destination resource: %v", err)
+		}
+
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			RemoveFunc: func(string) error {
+				return errors.New("conflict removal failed")
+			},
+		}
+		err := copyDirRecursive(sys, srcDir, destDir, nil)
+		if err == nil || !strings.Contains(err.Error(), "conflict removal failed") {
+			t.Fatalf("expected actionable conflict removal error, got %v", err)
+		}
+	})
+
+	t.Run("create desired directory", func(t *testing.T) {
+		srcDir := t.TempDir()
+		destDir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(srcDir, "resource"), 0o700); err != nil {
+			t.Fatalf("mkdir source resource: %v", err)
+		}
+
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			MkdirAllFunc: func(path string, perm os.FileMode) error {
+				if filepath.Base(path) == "resource" {
+					return errors.New("desired directory creation failed")
+				}
+				return RealSystem{}.MkdirAll(path, perm)
+			},
+		}
+		err := copyDirRecursive(sys, srcDir, destDir, nil)
+		if err == nil || !strings.Contains(err.Error(), "desired directory creation failed") {
+			t.Fatalf("expected actionable desired directory error, got %v", err)
+		}
+	})
+}
+
+func TestCopyDirRecursive_StaleCleanupErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("read destination", func(t *testing.T) {
+		destDir := t.TempDir()
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			ReadDirFunc: func(path string) ([]os.DirEntry, error) {
+				if path == destDir {
+					return nil, errors.New("destination read failed")
+				}
+				return RealSystem{}.ReadDir(path)
+			},
+		}
+		err := copyDirRecursive(sys, "", destDir, nil)
+		if err == nil || !strings.Contains(err.Error(), "destination read failed") {
+			t.Fatalf("expected actionable destination read error, got %v", err)
+		}
+	})
+
+	t.Run("inspect stale node", func(t *testing.T) {
+		destDir := t.TempDir()
+		stalePath := filepath.Join(destDir, "stale.txt")
+		if err := os.WriteFile(stalePath, []byte("stale"), 0o600); err != nil {
+			t.Fatalf("write stale resource: %v", err)
+		}
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			LstatFunc: func(path string) (os.FileInfo, error) {
+				if path == stalePath {
+					return nil, errors.New("stale node lstat failed")
+				}
+				return RealSystem{}.Lstat(path)
+			},
+		}
+		err := copyDirRecursive(sys, "", destDir, nil)
+		if err == nil || !strings.Contains(err.Error(), "stale node lstat failed") {
+			t.Fatalf("expected actionable stale-node lstat error, got %v", err)
+		}
+	})
+
+	t.Run("remove stale node", func(t *testing.T) {
+		destDir := t.TempDir()
+		stalePath := filepath.Join(destDir, "stale.txt")
+		if err := os.WriteFile(stalePath, []byte("stale"), 0o600); err != nil {
+			t.Fatalf("write stale resource: %v", err)
+		}
+		sys := &MockSystem{
+			Fallback: RealSystem{},
+			RemoveFunc: func(path string) error {
+				if path == stalePath {
+					return errors.New("stale node removal failed")
+				}
+				return RealSystem{}.Remove(path)
+			},
+		}
+		err := copyDirRecursive(sys, "", destDir, nil)
+		if err == nil || !strings.Contains(err.Error(), "stale node removal failed") {
+			t.Fatalf("expected actionable stale-node removal error, got %v", err)
+		}
+	})
 }
 
 func TestCopyDirRecursive_WriteFileAtomicSubFileError(t *testing.T) {
@@ -706,6 +1008,69 @@ func TestCopyDirRecursive_SkipsSymlinks(t *testing.T) {
 	// link.txt should be skipped.
 	if _, err := os.Stat(filepath.Join(destDir, "link.txt")); !os.IsNotExist(err) {
 		t.Fatalf("expected link.txt (symlink) to be skipped")
+	}
+}
+
+func TestCopyDirRecursive_NestedSourceReadError(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+	nestedDir := filepath.Join(srcDir, "scripts")
+	if err := os.MkdirAll(nestedDir, 0o700); err != nil {
+		t.Fatalf("mkdir nested source: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(nestedDir, "run.sh"), []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatalf("write nested source file: %v", err)
+	}
+
+	// Fail ReadDir of the NESTED source subdirectory only, so the top-level
+	// collect succeeds and recurses. This exercises both the source-side ReadDir
+	// error return and the collection recursion error propagation in one test.
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		ReadDirFunc: func(path string) ([]os.DirEntry, error) {
+			if path == nestedDir {
+				return nil, errors.New("nested source read failed")
+			}
+			return RealSystem{}.ReadDir(path)
+		},
+	}
+
+	err := copyDirRecursive(sys, srcDir, destDir, nil)
+	if err == nil || !strings.Contains(err.Error(), "nested source read failed") {
+		t.Fatalf("expected actionable nested source read error, got %v", err)
+	}
+}
+
+func TestCopyDirRecursive_DestinationSymlinkStaleRemoval(t *testing.T) {
+	t.Parallel()
+	destDir := t.TempDir()
+	externalDir := t.TempDir()
+	externalTarget := filepath.Join(externalDir, "target.txt")
+	if err := os.WriteFile(externalTarget, []byte("external target"), 0o600); err != nil {
+		t.Fatalf("write external target: %v", err)
+	}
+	symlinkPath := filepath.Join(destDir, "link.txt")
+	if err := os.Symlink(externalTarget, symlinkPath); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// Empty srcDir means nothing is desired, so the destination symlink is stale.
+	if err := copyDirRecursive(RealSystem{}, "", destDir, nil); err != nil {
+		t.Fatalf("copyDirRecursive error: %v", err)
+	}
+
+	// The stale symlink itself must be unlinked...
+	if _, err := os.Lstat(symlinkPath); !os.IsNotExist(err) {
+		t.Fatalf("expected stale destination symlink to be removed, got %v", err)
+	}
+	// ...without being followed: the external target must survive with intact content.
+	data, err := os.ReadFile(externalTarget) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("external symlink target was not preserved: %v", err)
+	}
+	if string(data) != "external target" {
+		t.Fatalf("external target content changed: %q", data)
 	}
 }
 
