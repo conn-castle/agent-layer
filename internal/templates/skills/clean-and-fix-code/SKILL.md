@@ -45,16 +45,25 @@ For every subagent step, use a built-in subagent with fresh context.
 3. Run `/review-uncommitted-code` directly (not as a subagent).
    - Pass the combined target: staged diff, unstaged diff, and untracked files.
 4. Apply the Finding Gate.
-5. Run a subagent to plan fixes for all findings regardless of severity. Do not
-   require a separate spec when the findings are concrete enough to plan from:
+5. Apply the Significance Gate to each accepted finding or tightly coupled
+   finding group.
+6. For a direct fix:
+   - validate the finding against the current tree
+   - diagnose and repair the root cause within the bounded target
+   - make directly required test, doc, or memory edits
+   - run the narrowest credible affected checks
+   - audit the final diff against the accepted finding
+7. For an exceptionally significant fix, run a subagent to plan the accepted
+   finding group. Do not require a separate spec when the findings are concrete
+   enough to plan from:
 
    ```text
    /plan-work
-   {accepted review findings from the gate}
+   {exceptionally significant accepted review findings from the gate}
    plan_reviewers are {agent 1, agent 2, ...}
    ```
 
-6. Run:
+8. For an exceptionally significant planned fix, run:
 
    ```text
    /implement-plan
@@ -64,15 +73,27 @@ For every subagent step, use a built-in subagent with fresh context.
    {relative path to context artifact}
    ```
 
-7. Run a built-in subagent to verify against the plan that fixes the findings:
+9. For every planned fix, run the plan's focused checks and audit the final diff
+   against every planned finding. Return the cleanup plan, accepted cleanup
+   findings, and focused evidence so a calling workflow can include them in its
+   final verification when needed. Do not run `/verify-work` from this skill.
 
-   ```text
-   /verify-work
-   Plan artifacts:
-   {relative path to plan artifact}
-   {relative path to task artifact}
-   {relative path to context artifact}
-   ```
+## Significance Gate
+
+Choose based on fix complexity and decision risk, not finding severity alone.
+
+- `direct`: the root cause and bounded fix are concrete, local, behaviorally
+  clear, and safe to verify with focused evidence. A High-severity defect can
+  still be direct when its repair is obvious and contained.
+- `planned`: use `/plan-work` + `/implement-plan` only when the fix is
+  exceptionally significant: cross-cutting, behavior-changing,
+  architecture-sensitive, ambiguous, unsafe to bound directly, or dependent
+  on a substantive user decision. A Medium finding can require planning when
+  its design risk is high.
+
+Record the classification and one-line reason for every accepted finding or
+group. Preserve all existing human checkpoints and stop before destructive or
+user-owned decisions.
 
 ## Finding Gate
 
@@ -89,9 +110,10 @@ For this skill, "findings" means `/review-uncommitted-code` findings under
 
 ## Guardrails
 
-- Do not do delegated workflow work yourself. Delegate the two cleanup pre-passes to
-  subagents, run `/review-uncommitted-code` directly, then let `/plan-work`,
-  `/implement-plan`, and `/verify-work` own their contracts.
+- Delegate the two cleanup pre-passes to subagents and run
+  `/review-uncommitted-code` directly. Apply bounded direct fixes in this skill;
+  let `/plan-work` and `/implement-plan` own their contracts when the
+  Significance Gate selects them.
 - Subagent and sub-skill returns are intermediate until this structure reaches
   its final step or the no-findings gate exits early.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
@@ -100,17 +122,28 @@ For this skill, "findings" means `/review-uncommitted-code` findings under
   edits for accepted findings.
 - A broad-but-clear fix is still in scope when it resolves an accepted finding
   against the working-tree target and does not trigger a human checkpoint.
-- Do not run another review round after implementation. If `/verify-work`
-  reports incomplete work, surface that result and stop.
+- Do not run another review round after implementation.
+- Run the test-pruning and simplification pre-passes sequentially because each
+  can mutate the diff consumed by the next phase.
+- Apply direct and planned fixes sequentially against the latest working tree;
+  do not parallelize mutations or decisions that share repository state.
 
 ## Handoff
 
 When the skill finishes, report:
 
-- cleanup subagent outcomes, or `not applicable`
-- `/review-uncommitted-code` report path and whether the no-findings gate exited
-- reject, defer, and already-resolved counts when available
+- `outcome`: `no-findings`, `completed`, or `blocked`, including any blocker or
+  residual risk
+- cleanup pre-pass outcomes, or `not applicable`
+- `/review-uncommitted-code` report path and, for planned fixes, the plan, task,
+  context, and implementation report paths
+- accepted, rejected, deferred, and already-resolved counts
 - `resolved_findings`: every accepted finding fixed by this run, with title,
-  severity, and files; use an empty list when no accepted findings were fixed
-- if fixes ran: plan, task, context, implementation report, and verification
-  report paths, plus final `/verify-work` verdict
+  severity, files, and `direct` or `planned` classification; use an empty list
+  when no accepted findings were fixed
+- focused command evidence and the final diff audit for each fixed finding;
+  command evidence includes the exact command, exit status, captured output or
+  artifact, and the repository state it covered
+
+Callers may pass `resolved_findings` directly to final verification as
+supplemental obligations; do not create a duplicate obligations list.

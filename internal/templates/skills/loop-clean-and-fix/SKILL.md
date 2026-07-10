@@ -16,9 +16,7 @@ Fail before side effects unless all are present:
 No file, directory, or diff target is required. The target is always the full
 uncommitted working tree.
 
-Dispatch agent roles may be terse. Before dispatching, inspect live
-`al dispatch options` output and fail if a requested role or override is
-unsupported.
+Dispatch agent roles may be terse.
 
 ## Required artifact
 
@@ -73,9 +71,10 @@ unresolved blockers or user checkpoints, and the next exact step.
    plan_reviewers are {agent 1, agent 2, ...}
    ```
 
-   Treat its output as one cleanup round: record the cleanup report path,
-   accepted/rejected/deferred/already-resolved counts, `resolved_findings`,
-   blockers, residual risk, and every reported issue for the final report.
+   Treat its output as one cleanup round: record its outcome, review and planned
+   artifact paths, accepted/rejected/deferred/already-resolved counts,
+   `resolved_findings`, focused evidence, blockers, residual risk, and every
+   reported issue for the final report.
 2. Read the cleanup output and determine whether the round succeeded, failed, or
    stopped at a checkpoint. If it failed or stopped, write the final report with
    the failure/checkpoint as the stop reason and do not repeat. On success,
@@ -117,10 +116,11 @@ Include:
 
 - inputs
 - cleanup round count
-- cleanup report path for each round
+- review and planned artifact paths for each round
 - accepted/rejected/deferred/already-resolved counts
 - the full `## Issue Ledger` table
 - aggregate `resolved_findings`
+- focused evidence for aggregate `resolved_findings`
 - stop reason
 - blocker or residual risk
 
@@ -140,5 +140,5 @@ Present the results to the user in chat. Include:
 3. The full issue ledger table with every issue from every round, including the
    round number and classification. Do not replace this table with only a report
    link.
-4. Aggregate `resolved_findings`.
+4. Aggregate `resolved_findings` and their focused evidence.
 5. Any blocker or residual risk.

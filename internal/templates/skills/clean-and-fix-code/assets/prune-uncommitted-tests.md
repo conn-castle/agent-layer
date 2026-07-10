@@ -89,10 +89,12 @@ and `Applier` yourself, then reconcile the returned review.
 
 1. Group changed tests into review chunks (one test file or a small cluster
    of related files per chunk).
-2. For each chunk, invoke the built-in reviewer subagent with the contents of
-   `prune-uncommitted-tests-reviewer-prompt.md` and the chunk inputs above. The
-   subagent must be a fresh invocation with no carryover from this conversation.
-3. Track each verdict with `Location`, `Name`, `Verdict`, `Justification`,
+2. Build every chunk's immutable input packet before launching reviewers.
+3. Invoke one fresh built-in reviewer subagent per chunk concurrently with the
+   contents of `prune-uncommitted-tests-reviewer-prompt.md` and the chunk inputs
+   above. Launch all reviewers before waiting, join all results, and only then
+   enter the single Applier phase. No reviewer may edit the working tree.
+4. Track each verdict with `Location`, `Name`, `Verdict`, `Justification`,
    and `Coverage Gap`. `Justification` is the `mutation` for `keep` and the
    `reason` for `delete`; `Coverage Gap` is the reviewer's `coverage_gap` or
    `None`.

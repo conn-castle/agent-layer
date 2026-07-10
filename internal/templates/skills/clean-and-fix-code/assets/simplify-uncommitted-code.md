@@ -82,11 +82,12 @@ Inputs the reviewer receives alongside the prompt:
 
 1. Group changed files into review chunks (one file or a small cluster of
    related files per chunk).
-2. For each chunk, invoke the reviewer subagent with the contents of
-   `simplify-uncommitted-code-reviewer-prompt.md` and the chunk inputs above. The
-   built-in subagent must be a fresh invocation with no carryover from this
-   conversation.
-3. Track each JSON-line finding with `Location`, `Smell`, `Before`, `After`,
+2. Build every chunk's immutable input packet before launching reviewers.
+3. Invoke one fresh built-in reviewer subagent per chunk concurrently with the
+   contents of `simplify-uncommitted-code-reviewer-prompt.md` and the chunk
+   inputs above. Launch all reviewers before waiting, join all results, and only
+   then enter the single Applier phase. No reviewer may edit the working tree.
+4. Track each JSON-line finding with `Location`, `Smell`, `Before`, `After`,
    and `Rationale`.
 
 ### Phase 3: Apply simplifications (Applier)
@@ -94,7 +95,8 @@ Inputs the reviewer receives alongside the prompt:
 1. Group findings into small, coherent batches (one smell category at a
    time, or one file at a time, whichever is smaller).
 2. Apply each finding's `before` → `after` simplification.
-3. After each batch, run the project's test command from `COMMANDS.md`.
+3. After each batch, run the narrowest credible affected test or check from
+   `COMMANDS.md` or the repository's documented focused-test convention.
    Record the command, exit status, and any new failures.
 4. If a batch causes tests to fail, revert that batch and mark each
    finding `reverted` with the failure observed. Continue with the next batch.
@@ -103,12 +105,17 @@ Inputs the reviewer receives alongside the prompt:
 
 ### Phase 4: Re-scan and converge (Smell-pattern reviewer + Applier)
 
-1. After all initial findings are applied or reverted, re-invoke the
-   reviewer subagent (fresh context) on the updated diff to catch second-
-   order smells revealed by the first pass.
+1. After all initial findings are applied or reverted, rebuild immutable chunk
+   packets from the updated diff and repeat Phase 2's concurrent fresh-reviewer
+   fan-out to catch second-order smells revealed by the first pass.
 2. Apply any new findings using Phase 3's batching rules.
 3. Stop when a re-scan returns zero findings, or after 3 re-scans.
    Escalate at the 3-scan limit instead of looping.
+4. After convergence, run the full documented project test command once on the
+   final simplified tree. If it fails, bisect the applied batches to identify
+   which simplification introduced the failure, revert each offending batch,
+   and rerun the full command. Do not weaken or modify a pre-existing test to
+   preserve a simplification.
 
 ## Guardrails
 
@@ -126,6 +133,7 @@ After completing the workflow:
 1. State total findings, applied count, reverted count, and re-scan
    iterations.
 2. Summarize simplifications applied, reverted batches, and test
-   command/results.
+   command/results, distinguishing focused batch checks from the one final full
+   gate.
 3. If out-of-scope observations exist, recommend a follow-up
    codebase-wide cleanup scoped to the named files.

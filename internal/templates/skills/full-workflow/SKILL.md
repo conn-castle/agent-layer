@@ -20,9 +20,7 @@ Fail before side effects unless all are present:
 - the user's requested work
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before dispatching,
-inspect live `al dispatch options` output; fail rather than substituting an
-unsupported role or override.
+`antigravity`).
 
 ## Required artifact
 
@@ -45,6 +43,7 @@ unresolved blockers or user checkpoints, and the next exact step.
 
 ## Rules
 
+- Dispatch external roles through `/agent-dispatch`.
 - Put every user-facing question, summary, and approval request in chat; do not
   require the user to read artifacts.
 - Ask only for decisions affecting end-user-facing behavior, architecture, scope,

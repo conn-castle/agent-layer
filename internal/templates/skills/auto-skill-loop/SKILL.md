@@ -7,6 +7,7 @@ description: >-
 # auto-skill-loop
 
 This is an orchestrator skill. Do not implement or ship code yourself.
+Dispatch external roles through `/agent-dispatch`.
 
 ## Required inputs
 
@@ -19,9 +20,7 @@ Fail before side effects unless all are present:
 - explicit standing authorization for this orchestrator to merge ready PRs
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
-`antigravity`). Infer the agent only when unambiguous from the model; otherwise
-fail. Before dispatching, inspect live `al dispatch options` output and fail if
-a requested override is unsupported.
+`antigravity`).
 
 Pass `plan_reviewers` to any delegated skill that uses `/review-plan`.
 
@@ -57,10 +56,11 @@ Create `.agent-layer/tmp/auto-skill-loop.<run-id>.state.md`. Update it before
 and after dispatches, branch switches, pushes, PR actions, blockers, and
 merges.
 
-Record current step, branches, PRs, dispatch agent roles, normalized dispatch
-flags, plan reviewer dispatch roles, merged PRs, blocked branches, blocked PRs,
-recent touched paths, exhausted lenses, worker questions and answers,
-user-only blockers, manual gates, PR-gate status, and verification evidence.
+Record current step, branches, PRs, requested dispatch agent roles, terminal
+dispatch selections, plan reviewer dispatch roles, merged PRs, blocked branches,
+blocked PRs, recent touched paths, exhausted lenses, worker questions and
+answers, user-only blockers, manual gates, PR-gate status, and verification
+evidence.
 Record worker deferrals in this ledger or worker artifacts, not as deferral
 notes in `ISSUES.md`.
 

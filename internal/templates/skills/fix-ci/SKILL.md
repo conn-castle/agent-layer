@@ -25,9 +25,7 @@ Fail before side effects unless all are present:
 - `plan_reviewers`: one or more dispatch agent roles
 
 Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before passing any
-dispatch role to delegated skills, inspect live `al dispatch options` output and
-fail if a requested override is unsupported.
+`antigravity`).
 
 Optional input:
 - a PR number or URL

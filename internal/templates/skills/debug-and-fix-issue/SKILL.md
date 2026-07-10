@@ -2,15 +2,15 @@
 name: debug-and-fix-issue
 description: >-
   Investigate a reported bug from symptom to root cause: reproduce, narrow,
-  diagnose, write a failing test, then delegate planning, implementation, and
+  diagnose, write a failing test, then delegate a proportional repair and
   verification. Use when the cause is unknown and investigation must precede a
-  fix plan.
+  fix.
 ---
 
 # debug-and-fix-issue
 
 Reproduce the symptom, prove the root cause, capture the failing test or
-blocker, then delegate planning and implementation.
+blocker, then delegate a direct or planned repair.
 
 ## Inputs
 
@@ -42,9 +42,11 @@ source.
 
 ## Guardrails
 
+- Dispatch external roles through `/agent-dispatch`.
 - Do not implement inline. After reproduction, evidenced root cause, and the
-  failing test or blocker are recorded, delegate through `/plan-work`, then
-  `/fully-implement-plan`.
+  failing test or blocker are recorded, delegate a bounded direct repair when
+  it is concrete and local; use `/plan-work` then `/fully-implement-plan` only
+  for an exceptionally significant repair.
 - Diagnose from observable evidence; record each hypothesis and outcome.
 - Do not change test expectations unless the expectation is genuinely wrong.
 - Fix standard: repair the evidenced root cause first. Add defensive hardening
@@ -69,8 +71,9 @@ smallest needed user input when:
 - multiple plausible root causes remain
 - the fix requires a breaking change, broad refactor, or architecture decision
 - `implementer`, `fixer`, or `plan_reviewers` is missing before planning
-- `/plan-work` or `/fully-implement-plan` checkpoints, fails, omits required
-  artifact paths, or omits the needed verdict
+- a direct implementer/fixer/verifier or `/plan-work` or
+  `/fully-implement-plan` checkpoints, fails, omits required artifact paths,
+  or omits the needed verdict
 
 ## Workflow
 
@@ -137,9 +140,46 @@ test can be written yet.
 4. In diagnosis-only mode, log the finding to `ISSUES.md`, write the report,
    use `/finish-task` when no broader orchestrator owns closeout, and stop.
 
-### Step 6: Plan the Fix or Diagnostic Instrumentation
+### Step 6: Choose the Repair Path
 
-Run:
+Choose based on fix complexity and decision risk, not bug severity alone.
+
+- `direct`: the evidenced root cause and bounded fix are concrete, local,
+  behaviorally clear, and safely verified by the failing test plus focused
+  affected checks.
+- `planned`: use the full planning path only when the repair is exceptionally
+  significant: cross-cutting, behavior-changing, architecture-sensitive,
+  ambiguous, or unsafe to bound directly.
+
+Record the classification and one-line reason. A human checkpoint still wins
+over either path.
+
+### Step 7A: Delegate a Direct Repair
+
+For a direct repair, dispatch the implementer with the debug report,
+the original user request as the authoritative contract, the exact bounded fix
+target, and the root-cause-first standard from this skill. Require it to make
+the failing test pass, run focused affected checks, and write
+`.agent-layer/tmp/debug-and-fix-issue.<run-id>.direct-repair.report.md`. Do not
+create plan/task/context artifacts solely to repair this local defect.
+
+Then dispatch the fixer for one non-iterative cleanup pass with:
+
+```text
+/clean-and-fix-code
+plan_reviewers are {agent 1, agent 2, ...}
+```
+
+Finally, run one fresh built-in verifier with `/verify-work` against the
+original user request/scope. Supply the debug report and implementation report
+as evidence, and supply every resolved cleanup finding as supplemental
+obligations. Supplemental obligations may add checks but must not weaken or
+replace the original request. Record the implementation report, cleanup review
+and planned artifact paths, verification report path, and verdict.
+
+### Step 7B: Plan and Fully Implement a Significant Repair
+
+For a planned repair, run:
 
 ```text
 /plan-work
@@ -159,11 +199,7 @@ plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Record the `/plan-work` report path and the returned plan, task, and context
-artifact paths.
-
-### Step 7: Fully Implement the Plan
-
-Run:
+artifact paths. Then run:
 
 ```text
 /fully-implement-plan
@@ -199,13 +235,14 @@ Report headings:
 6. `## Failing Test` — test path; command; failing output summary, or why no
    root-cause failing test can be written yet
 7. `## Planning Handoff` — `/plan-work` report path; plan, task, context paths;
-   blocker, if any
-8. `## Implementation and Verification` — `/fully-implement-plan` report path;
+   direct-repair classification or blocker, if any
+8. `## Implementation and Verification` — direct implementation, cleanup, and
+   verification report paths, or the `/fully-implement-plan` report path;
    verdict; stop reason; residual risk; explicitly say "not fixed" when only
    diagnostic instrumentation was added
 9. `## Follow-up` — related issues logged; remaining concerns
 
 Final chat handoff: report path; symptom; root cause; failing test;
-`/plan-work` and `/fully-implement-plan` report paths in full mode; outcome and
-why. If the root cause is unknown, say the issue is not fixed and summarize the
-diagnostics added for the next occurrence.
+the direct-repair report paths or `/plan-work` and `/fully-implement-plan`
+report paths; outcome and why. If the root cause is unknown, say the issue is
+not fixed and summarize the diagnostics added for the next occurrence.

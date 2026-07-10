@@ -45,38 +45,17 @@ longer needed.
 
 ## Required artifact
 
-Write the report to the child report path supplied by the orchestrator.
+Compose the complete report, then write it once to the child report path
+supplied by the orchestrator. After the final write, treat the report as
+immutable; do not rewrite it with identical or revised content.
 
 If no child report path was supplied, write to:
 
 - `.agent-layer/tmp/review-plan.agent-review.<run-id>.report.md`
 
 Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` only for the fallback path. Create
-the file before writing. Never write to or modify the parent
+the file as part of the single final write. Never write to or modify the parent
 `.agent-layer/tmp/review-plan.<run-id>.report.md`.
-
-## Multi-agent pattern
-
-Use built-in subagents as independent review lenses when available. Keep
-artifact loading, artifact summary extraction, final judgment, and report
-synthesis with the current agent.
-
-Recommended roles:
-
-1. `Artifact alignment reviewer`: checks whether the plan, task list, and
-   context file agree on objective, scope, non-goals, dependencies, sequencing,
-   and exit criteria.
-2. `Assumption reviewer`: looks for claims the artifacts treat as true without
-   evidence, including API behavior, repo conventions, existing coverage,
-   architecture constraints, command availability, migration safety, and
-   compatibility.
-3. `Decision reviewer`: looks for user-owned decisions under the decision
-   checkpoint standard that have not actually been made.
-4. `Experience reviewer`: looks for ways the plan could harm end-user
-   experience, developer experience, operator experience, support burden, or
-   maintenance paths.
-5. `Verification reviewer`: stress-tests the test, docs, memory, and update
-   expectations.
 
 ## Review workflow
 
@@ -99,12 +78,40 @@ From the plan, task, and context artifacts, extract:
 - exit criteria
 - key files and entry point from the context file
 
+For Round 1, review the full artifact set. For a later round, treat the current
+artifacts as authoritative but use the supplied artifact delta, prior finding
+ledger, and changed-clause list to focus revalidation on changed clauses and
+their dependents. Do not repeat an unchanged-context audit without evidence
+that a changed clause affects it.
+
 ### Phase 2: Evaluate with independent review lenses
 
-Use the recommended review roles as independent lenses. Use repository and
-memory files to validate concrete artifact claims, such as paths, sequencing,
-roadmap constraints, or verification commands. Do not use that context to hunt
-for unrelated implementation issues.
+You own synthesis and are the sole writer of the child report. Use these review
+lenses:
+
+1. `Artifact alignment reviewer`: checks whether the plan, task list, and
+   context file agree on objective, scope, non-goals, dependencies, sequencing,
+   and exit criteria.
+2. `Assumption reviewer`: looks for claims the artifacts treat as true without
+   evidence, including API behavior, repo conventions, existing coverage,
+   architecture constraints, command availability, migration safety, and
+   compatibility.
+3. `Decision reviewer`: looks for user-owned decisions under the decision
+   checkpoint standard that have not actually been made.
+4. `Experience reviewer`: looks for ways the plan could harm end-user
+   experience, developer experience, operator experience, support burden, or
+   maintenance paths.
+5. `Verification reviewer`: stress-tests the test, docs, memory, and update
+   expectations.
+
+Launch all five lens subagents concurrently as one batch, then wait for all of
+them before synthesizing. Give each the artifact paths, relevant round context,
+its exact lens, and the requirement to return evidence-backed candidates only,
+not edit artifacts or reports, and not delegate further. If built-in subagents
+are unavailable, apply every lens directly and disclose that limitation in the
+report. Use repository and memory files to validate concrete artifact claims,
+such as paths, sequencing, roadmap constraints, or verification commands. Do
+not use that context to hunt for unrelated implementation issues.
 
 Check for:
 
@@ -179,6 +186,8 @@ The report must contain:
 - The report ends with exactly one recommendation: `approve`,
   `approve-with-changes`, or `revise`.
 - Plan, task, and context artifacts were not modified.
+- Every review lens was evaluated, and the child report was written once by this
+  reviewer rather than a lens subagent.
 
 ## Final handoff
 

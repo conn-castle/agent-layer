@@ -24,9 +24,7 @@ Optional input:
 - spec artifact path, used as the review contract when present
 
 Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before dispatching,
-inspect live `al dispatch options` output and fail if a requested override is
-unsupported.
+`antigravity`).
 
 ## Required artifacts
 
@@ -37,7 +35,7 @@ Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`:
 Create both before writing. Store plan reviewer prompt/output artifacts under
 `.agent-layer/tmp/` with the same prefix and record each path in state. For
 each dispatched reviewer, assign a unique child report path:
-`.agent-layer/tmp/review-plan.<run-id>.<role-slug>.report.md`.
+`.agent-layer/tmp/review-plan.<run-id>.round-<n>.<reviewer-index>-<role-slug>.report.md`.
 
 ## Context preservation
 
@@ -55,24 +53,17 @@ unresolved blockers or user checkpoints, and the next exact step.
 
 ## Rules
 
+- Dispatch external roles through `/agent-dispatch`.
 - Review against the spec when a spec path is supplied; otherwise review against
   the plan's stated objective and scope.
-- Use `assets/agent-review-prompt.md` for dispatched plan reviewer runs. Do not
-  ask plan reviewers to edit artifacts.
 - Treat plan reviewer output as suspect. Accept a suggestion only when you agree with
   it.
 - Classify each finding as `accepted`, `rejected`, `duplicate`, or
   `substantive-user-decision`; record a one-line reason.
-- This is not a report-only review: revise the plan/task/context artifacts for
-  accepted findings and resolved user decisions.
 - Revise artifacts only for accepted findings and resolved user decisions.
 - Ask the user before applying a substantive change or tradeoff not settled by
   the spec or plan. Use concrete options with brief pros, cons, and a
   recommendation.
-- Iterate until no accepted unresolved findings remain and no substantive user
-  decision is pending.
-- Dispatch plan reviewers one at a time unless the dispatch implementation is known
-  to be safe for concurrent plan reviewer launches in the current repo.
 
 ## Workflow
 
@@ -82,24 +73,19 @@ unresolved blockers or user checkpoints, and the next exact step.
 2. Read the spec if one was supplied.
 3. Confirm the artifacts describe the same objective, scope, and execution
    contract.
-4. Normalize dispatch agent roles through live `al dispatch` options.
-5. Record artifact paths, dispatch agent roles, normalized dispatch flags, and
-   current round in the state file.
+4. Record artifact paths, requested dispatch agent roles, and current round in
+   the state file.
 
 ### Phase 2: Dispatch Plan Reviewers
 
-For each plan reviewer dispatch role, dispatch a focused prompt using
-`assets/agent-review-prompt.md` and containing:
-- plan, task, context, and optional spec paths
-- the unique child report path assigned for that reviewer
-- instruction to review only the artifact set
-- instruction to report blockers, weak verification, missing scope, sequencing
-  gaps, hidden assumptions, and docs/tests/memory gaps
-- instruction to avoid rewriting the plan
-- instruction not to write or modify the parent
-  `.agent-layer/tmp/review-plan.<run-id>.report.md`
+Prepare every reviewer prompt with `assets/agent-review-prompt.md`. Supply the
+artifact paths and that reviewer's unique child report path. For Round 1, supply
+the full artifact set. For later rounds, also supply the artifact delta, prior
+finding ledger, and exact changed clauses.
 
-Capture the useful plan reviewer result or report path in the state file.
+Start every reviewer dispatch in the round before waiting for any of them. Once
+all have terminated, validate each child report, treat it as immutable, and
+record its path, terminal result, and target/model/effort selection in state.
 
 ### Phase 3: Synthesize
 
@@ -108,6 +94,14 @@ For every plan reviewer finding:
 2. Classify it under `Rules`.
 3. Ignore speculative, unsupported, out-of-scope, or merely stylistic findings.
 4. Merge duplicates before revising artifacts.
+5. Assign one aggregate round impact:
+   - `High`: the round exposes a blocker or a major correctness, scope,
+     sequencing, verification, or unresolved user-decision gap.
+   - `Medium`: the round exposes material implementation-readiness gaps but no
+     High-impact gap.
+   - `Low`: the round has no accepted material readiness gap; findings are
+     minor alignment improvements or there are no accepted findings.
+6. Record the rating and its reason under `## Review Agent Rounds`.
 
 ### Phase 4: Revise accepted findings
 
@@ -122,7 +116,11 @@ Do not convert rejected suggestions into churn.
 
 ### Phase 5: Repeat to alignment
 
-After any artifact revision, repeat Phases 2-4.
+Review rounds are sequential. Before revising, retain the prior artifact content
+or an equivalent exact delta. Repeat Phases 2-4 only after a `High` or `Medium`
+round. A `Low` round means there are no accepted material
+implementation-readiness gaps; apply any minor accepted edits, record the stop
+reason, and continue to Phase 6.
 
 ### Phase 6: Report
 
@@ -148,10 +146,8 @@ Write the final report with these sections:
 ## Definition of done
 
 - All required artifacts and dispatch agent roles were validated.
-- Every plan reviewer dispatch role ran with `assets/agent-review-prompt.md`.
-- Every plan reviewer finding was classified with a reason.
-- Accepted findings were resolved in the artifacts or escalated through a human
-  checkpoint.
+- Every finding was classified, and no accepted material readiness gap remains
+  unresolved.
 - The final report exists and declares `implementation-ready` or
   `blocked-for-user-decision`.
 

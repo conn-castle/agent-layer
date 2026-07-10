@@ -37,8 +37,7 @@ Roadmap phases should normally be distinct enough that this decomposition is str
 ## Required behavior
 
 Fail before side effects unless `plan_reviewers` is present. Values may be terse
-(`codex high`, `claude opus xhigh`, `antigravity`). Infer the agent only when
-unambiguous.
+(`codex high`, `claude opus xhigh`, `antigravity`).
 
 At minimum, use:
 - a scout/planner subagent
@@ -123,6 +122,11 @@ phase-level done criteria, and which work package executes first:
 {selected roadmap phase}
 plan_reviewers are {agent 1, agent 2, ...}
 ```
+
+This reviewed phase plan is reused across its internal work packages. Re-run
+`/plan-work` only when new evidence changes phase scope, dependencies,
+architecture, or acceptance criteria; package progress by itself does not
+require a new plan.
 
 ### Phase 3: Confirm Plan Readiness (Plan Reviewers)
 
@@ -263,9 +267,12 @@ At each major stage, echo the current artifact path(s), identify the active phas
 ## Definition of done
 
 - Every unchecked task in the selected roadmap phase is checked off in `ROADMAP.md`, backed by observed code, test, or doc evidence.
-- Each internal work package ran the full /plan-work, /implement-plan,
-  /verify-work, /review-uncommitted-code, accepted-finding fix loop, and no unresolved Critical or High
-  findings remain at phase close.
+- The selected phase produced one initial reviewed phase plan and reused it
+  across internal work packages, rerunning `/plan-work` only when scope,
+  dependencies, architecture, or acceptance criteria changed. Each package ran
+  `/implement-plan`, `/verify-work`, `/review-uncommitted-code`, and the
+  accepted-finding fix loop, and no unresolved Critical or High findings remain
+  at phase close.
 - The `/finish-task` skill ran as the closeout pass, and memory/doc updates it produced are present.
 - The run ended only when the phase is complete or a triggered human checkpoint blocked progress — no stop after a single work package while unchecked phase tasks remain.
 

@@ -43,8 +43,8 @@ Accept any combination of:
 - a scope preference such as targeted or all-selected
 - `plan_reviewers`: one or more dispatch agent roles for `/plan-work`
 
-Fail before side effects unless `plan_reviewers` is present. They may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous.
+Fail before side effects unless `plan_reviewers` is present. They may be terse
+(`codex high`, `claude opus xhigh`, `antigravity`).
 
 ## Multi-agent pattern
 

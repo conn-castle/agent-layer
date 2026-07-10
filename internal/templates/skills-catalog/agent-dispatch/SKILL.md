@@ -21,6 +21,16 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 
 - Run `al dispatch --help` before the first `al dispatch` command in a session.
 - Run relevant subcommand help before using non-obvious subcommands or flags.
+- Before the first real dispatch in an orchestration workflow, inspect
+  `al dispatch options --json` once. Reuse that result while dispatch
+  configuration and the target environment remain unchanged.
+- Resolve each requested role to one exact invocation: target plus optional
+  full model and reasoning-effort values. Infer a target from a model only when
+  the options output makes the mapping unique.
+- Preserve target, model, and reasoning-effort strings exactly as reported by
+  the options contract. Never shorten or reinterpret a model name, guess an
+  unsupported value, or silently substitute a fallback. Fail before launch
+  when the request is ambiguous or unsupported.
 - If `al`, a target CLI, authentication, source skill, or generated skill
   projection is missing, stop and report the missing requirement. Do not
   install, authenticate, sync, or change configuration unless the user asked
@@ -28,14 +38,23 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 
 ## Workflow
 
-1. Verify any requested skill exists in the current project's Agent Layer skill
+1. Normalize and validate the requested role under `Global constraints`.
+2. Verify any requested skill exists in the current project's Agent Layer skill
    source. Do not invent a skill name.
-2. Send the focused prompt to one target. Omit unrelated conversation
+3. Send the focused prompt to one target. Omit unrelated conversation
    history and information that could bias the target.
-3. If a prompt file is needed, write it under `.agent-layer/tmp/`.
-4. Run `al dispatch` and wait for the original process to finish, even if
-   output is quiet or it appears stalled. Do not poll.
-   Wait until it finishes to inspect dispatch artifacts.
+4. If a prompt file is needed, write it under `.agent-layer/tmp/`.
+5. Run one foreground `al dispatch` call and let that original call finish,
+   even when output is quiet or the target appears stalled.
+   - Do not background the process or create a monitoring loop.
+   - Do not poll the process, send empty-input status checks, inspect partial
+     output, or read child artifacts while the call is running.
+   - Do not narrate quiet progress from the child. The blocking dispatch call
+     is the wait.
+   - End the wait only when the original call returns, the user explicitly
+     interrupts it, or the runtime reports a terminal process failure.
+6. After the call returns, inspect the final result and completed artifacts
+   once, then continue the caller's workflow.
 
 ## Guardrails
 
@@ -46,13 +65,18 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 - Do not retry failed target launches by guessing flags, targets, models, or
   reasoning-effort values. Re-check help and options, then report the mismatch
   if it remains unresolved.
+- When a caller launches an independent batch concurrently, apply this complete
+  blocking contract to every invocation and collect only terminal results.
 
 ## Definition of done
 
 - Current target metadata was inspected before any real run.
+- The requested role was normalized to exact supported values with no fallback.
 - Target selection and skill delivery if used were intentional and reported.
 - Prompt and output artifacts were stored only under `.agent-layer/tmp/` and
   every created artifact path was reported.
 - Errors were reported explicitly.
+- The original dispatch call reached a terminal result without polling or
+  partial-work inspection.
 - Any side effects from target work were inspected and verified through the
   current task's normal checks.

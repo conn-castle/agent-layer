@@ -2,15 +2,16 @@
 name: run-and-fix-all-checks
 description: >-
   Run the repository's full documented check lane from COMMANDS.md, including
-  every required test and check, then plan, implement, verify, and repeat fixes
-  until the lane passes or a real blocker remains.
+  every required test and check, then repair failures with a proportional
+  direct or planned workflow until the lane passes or a real blocker remains.
 ---
 
 # run-and-fix-all-checks
 
 Parent workflow for making the repo-defined full check lane green. Use the
 documented commands as the source of truth, preserve failed command evidence,
-route code fixes through planning and verification, then rerun the lane.
+route code fixes through proportional repair and verification, then rerun the
+lane.
 
 ## Required inputs
 
@@ -22,9 +23,7 @@ If `implementer` or `plan_reviewers` is missing, ask for it before
 starting. Do not invent a default implementer or plan reviewer list.
 
 Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`). Infer the agent only when unambiguous. Before dispatching,
-inspect live `al dispatch options` output and fail if a requested override is
-unsupported.
+`antigravity`).
 
 ## Scope
 
@@ -71,7 +70,9 @@ unresolved blockers or user checkpoints, and the next exact step.
 ## Workflow
 
 For every subagent step, use a built-in subagent with fresh context. Dispatch
-the requested `implementer` role for `/implement-plan`.
+the requested `implementer` role for a bounded direct repair or
+`/implement-plan`, as selected by the significance gate.
+Dispatch external roles through `/agent-dispatch`.
 
 1. Resolve the full check lane from `COMMANDS.md` and record the commands in
    state.
@@ -84,9 +85,15 @@ the requested `implementer` role for `/implement-plan`.
 5. If a command fails, save the failing command, exit code, relevant output,
    suspected failing package/file/test when available, and any minimal
    reproduction notes as a failure artifact.
-6. Run a subagent to plan a root-cause fix for the observed failure. Do not
-   require a separate spec when the command output is concrete enough to plan
-   from:
+6. Apply the Repair Significance Gate.
+7. For a direct repair, dispatch the implementer with the failure
+   artifact, exact bounded repair target, root-cause-first standard, and focused
+   check command. Require it to write
+   `.agent-layer/tmp/run-and-fix-all-checks.<run-id>.repair-<cycle>.report.md`,
+   but do not create plan/task/context artifacts solely for this local repair.
+8. For an exceptionally significant repair, run a subagent to plan a root-cause
+   fix. Do not require a separate spec when the command output is concrete enough
+   to plan from:
 
    ```text
    /plan-work
@@ -94,7 +101,7 @@ the requested `implementer` role for `/implement-plan`.
    plan_reviewers are {agent 1, agent 2, ...}
    ```
 
-7. Dispatch the implementer role with:
+9. For a planned repair only, dispatch the implementer role with:
 
    ```text
    /implement-plan
@@ -104,8 +111,8 @@ the requested `implementer` role for `/implement-plan`.
    {relative path to context artifact}
    ```
 
-8. Run a built-in subagent to verify against the plan, task, and context paths
-   produced by `/plan-work`:
+10. For a planned repair only, run a built-in subagent to verify against the
+    plan, task, and context paths produced by `/plan-work`:
 
    ```text
    /verify-work
@@ -115,16 +122,32 @@ the requested `implementer` role for `/implement-plan`.
    {relative path to context artifact}
    ```
 
-   Treat an `incomplete` verdict as active failure evidence for the next repair
-   cycle.
-9. Go back to step 2.
+    Treat an `incomplete` verdict as active failure evidence for the next repair
+    cycle. For a direct repair, skip steps 8-10: the focused check plus the next
+    full check-lane run are the verification evidence; do not create a synthetic
+    plan merely to invoke `/verify-work`.
+11. Go back to step 2.
+
+## Repair Significance Gate
+
+Choose based on fix complexity and decision risk, not failure severity alone.
+
+- `direct`: the failure, root cause, and bounded repair are concrete, local,
+  behaviorally clear, and safely checked with focused evidence plus the next
+  full-lane run.
+- `planned`: use `/plan-work` + `/implement-plan` + `/verify-work` only when the
+  repair is exceptionally significant: large, cross-cutting,
+  behavior-changing, architecture-sensitive, ambiguous, or unsafe to bound.
+
+Record the classification and reason in the repair-cycle ledger. Preserve every
+Failure Gate checkpoint.
 
 ## Pass Gate
 
 - Finish only when the full check lane passes after the latest changes.
 - If the latest `/verify-work` verdict for the active repair is `incomplete`,
-  do not finish even if the check lane passes. Plan the verification gaps as the
-  next repair task.
+  do not finish even if the check lane passes. Treat the verification gaps as
+  the next repair task and apply the Repair Significance Gate.
 - `complete-with-follow-up` is acceptable only when every follow-up is clearly
   outside the check failure repair.
 
@@ -142,14 +165,16 @@ the requested `implementer` role for `/implement-plan`.
 
 ## Guardrails
 
-- Do not do delegated workflow work yourself. Let `/plan-work` own planning,
-  `/implement-plan` own code edits, and `/verify-work` own contract
-  verification.
+- Do not do repair implementation yourself. Let the dispatched implementer own
+  direct repairs or `/implement-plan` own planned edits; let `/plan-work` and
+  `/verify-work` own their contracts when the significance gate selects them.
 - Do not skip, disable, weaken, or lower thresholds for checks or tests.
 - Do not silently downgrade from the full lane to a fast lane.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
   user explicitly asks.
 - Keep fixes tied to observed check failures or active verification gaps.
+- Keep check/repair rounds sequential because each full-lane rerun must observe
+  the tree produced by the preceding repair.
 - Treat delegated skill returns as intermediate until this workflow reaches the
   pass gate or a failure gate.
 
@@ -171,8 +196,9 @@ Include:
 - commands selected from `COMMANDS.md`
 - check round count and pass/fail result for each round
 - failure artifact path for each failed round
-- plan, task, context, implementation report, and verification report paths for
-  each repair cycle
+- significance classification and reason for each repair cycle
+- direct-repair report path, or plan, task, context, implementation, and
+  verification report paths, as applicable
 - final stop reason: `checks-passed`, `blocked`, `delegated-checkpoint`, or
   `repeated-failure`
 - any blocker or residual risk
@@ -182,7 +208,8 @@ Include:
 - `COMMANDS.md` was read before selecting the check lane.
 - The full documented check lane, including all tests and CI, ran at least once.
 - Every failed check round either produced a repair cycle or a named blocker.
-- Every repair cycle ran `/plan-work`, `/implement-plan`, and `/verify-work`.
+- Every repair cycle recorded a significance decision and ran either a bounded
+  direct repair or `/plan-work`, `/implement-plan`, and `/verify-work`.
 - The workflow stopped only through the pass gate or a failure gate.
 
 ## Final handoff
@@ -194,4 +221,5 @@ When the skill finishes, report:
 - check round count and stop reason
 - repair cycle count
 - final passing command evidence, or the blocker that prevented a clean finish
-- plan, implementation, and verification report paths for repair cycles
+- direct-repair report paths or plan, implementation, and verification report
+  paths for repair cycles, as applicable

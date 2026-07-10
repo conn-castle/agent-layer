@@ -40,6 +40,10 @@ The caller must provide one contract source:
   file
 - an explicit user request/scope
 
+The caller may also provide supplemental obligations, such as accepted cleanup
+findings. They are additive verification targets only: they cannot weaken,
+replace, reinterpret, or mark complete any item in the authoritative contract.
+
 If either the plan path or task path is missing, stop and ask for the missing
 path. Do not discover, infer, or auto-select artifacts from `.agent-layer/tmp/`.
 
@@ -70,6 +74,10 @@ extract:
 - promised docs or memory updates
 - explicit exit criteria
 - key files and entry point, if present
+
+Extract every supplied supplemental obligation separately and preserve its
+source, exact wording, affected paths, and focused evidence. Never merge it into
+the authoritative contract in a way that changes that contract's meaning.
 
 If the contract is ambiguous enough that completion cannot be judged credibly,
 ask for the smallest clarification that resolves it.
@@ -116,11 +124,21 @@ risk requires them. Run or inspect:
 - direct inspection of touched files and diffs when command output is not the
   right evidence
 
+For every command result, record:
+
+- the exact command
+- exit status
+- output artifact or captured output
+- the repository state the command covered
+
 Do not repeat a command when current, trustworthy output already covers the
-same final working tree. If a needed command cannot run, record why and assess
-the residual risk. Do not mark working-code evidence as satisfied without
-observed command output, direct inspection, or a documented reason the check is
-not applicable.
+relevant final working tree. Reuse prior evidence only when its command, result,
+and covered state are known and the relevant code or configuration has not
+changed since it ran. Otherwise rerun the narrowest credible check.
+
+If a needed command cannot run, record why and assess the residual risk. Do not
+mark working-code evidence as satisfied without observed command output, direct
+inspection, or a documented reason the check is not applicable.
 
 ### Phase 5: Decide completion status
 
@@ -141,11 +159,13 @@ Write:
 2. `## Inputs`
 3. `## Contract Coverage`
    - item-by-item status
-4. `## Findings`
+4. `## Supplemental Obligation Coverage`
+   - item-by-item status, or `None`
+5. `## Findings`
    - ordered by severity
-5. `## Working-Code Evidence`
-6. `## Docs and Memory Assessment`
-7. `## Recommended Next Step`
+6. `## Working-Code Evidence`
+7. `## Docs and Memory Assessment`
+8. `## Recommended Next Step`
 
 For every finding, include:
 
@@ -176,7 +196,10 @@ For every finding, include:
 - `Contract Coverage` lists every in-scope contract item with an item-by-item
   status; partial completions are not presented as done.
 - `Working-Code Evidence` lists observed commands, direct inspections, skipped
-  checks, and residual risk.
+  checks, residual risk, and the repository state covered by each command
+  result.
+- `Supplemental Obligation Coverage` lists every supplied obligation without
+  replacing or weakening `Contract Coverage`.
 - The report carries exactly one verdict: `complete`,
   `complete-with-follow-up`, or `incomplete`.
 - Implementation, plan, task, and context artifacts were not modified.

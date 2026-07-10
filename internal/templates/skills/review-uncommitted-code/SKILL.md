@@ -39,17 +39,21 @@ For proactive hotspots, keep scope narrow and record each selection signal:
 Create `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md` before
 writing. Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
-## Required asset
+## Conditional classification asset
 
-During synthesis, load `assets/finding-verdict-classification.md`. After
-writing deduplicated unclassified candidates to the report, run one built-in
-subagent as the `Finding verdict classifier`. Pass the report path, this asset,
-and the minimum cited evidence needed to classify candidates; the classifier
-updates the report in place.
+During synthesis, load `assets/finding-verdict-classification.md` and use its
+rubric. The current synthesizer may classify unambiguous, evidence-backed
+candidates directly.
 
-Do not assign recommended verdicts yourself or manually move findings between
-verdict groups. If the classifier omits candidates, loses evidence, or produces
-invalid structure, rerun it with the concrete mismatch.
+After gathering, deduplicating, and validating the full candidate set, identify
+every candidate with conflicting reviewer conclusions, ambiguous evidence,
+uncertain scope or checkpoint ownership, or Critical/High severity that needs
+an independent verdict gate. If that gated set is non-empty, run at most one
+fresh built-in subagent as the `Finding verdict classifier` for the entire set
+in one batch. Pass the gated candidates, report path, asset, and minimum cited
+evidence. Validate its updates; if any are missing or invalid, classify those
+candidates with the rubric in the current synthesizer and record the classifier
+failure instead of launching it again.
 
 ## Workflow
 
@@ -86,8 +90,10 @@ of presenting it as new.
 ### Phase 3: Synthesize findings
 
 Treat reviewer output as candidates until checked against the current repo.
-Write deduplicated unclassified candidates with all fields below except
-`Recommended verdict`, then run the classifier. Final findings must include:
+Deduplicate and validate candidates, classify unambiguous evidence-backed
+candidates with the asset rubric, and collect every gated candidate for the
+single conditional classifier batch before finalizing the report. Final
+findings must include:
 
 - `Title`
 - `Severity`: Critical | High | Medium | Low
@@ -99,7 +105,8 @@ Write deduplicated unclassified candidates with all fields below except
 - `Recommendation`
 
 Style-only, unsupported, out-of-scope, or already-tracked candidates must stay
-visible for classifier review. Do not silently drop weak candidates.
+visible through synthesis and receive a rubric-backed verdict. Do not silently
+drop weak candidates.
 
 ## Required report structure
 
@@ -116,8 +123,9 @@ The report must contain:
 5. `## Self-Check`: one line for every accepted finding covering root cause,
    evidence, severity, and reviewed scope.
 
-If an accepted finding fails self-check, rerun the classifier with the concrete
-mismatch instead of moving it yourself or dropping it silently.
+If an accepted finding fails self-check, reassess it with the rubric. Do not
+launch another classifier; preserve the candidate and record any unresolved
+ambiguity as `Defer`.
 
 ## Human checkpoints
 
@@ -135,7 +143,8 @@ mismatch instead of moving it yourself or dropping it silently.
 ## Definition of done
 
 Done when the report exists, every candidate is classified into exactly one
-verdict group, accepted findings pass self-check, and each finding names
+verdict group, every gated candidate was included in the single classifier batch
+when one was needed, accepted findings pass self-check, and each finding names
 location, severity, confidence, evidence, and recommendation tied to scope.
 
 ## Final handoff
