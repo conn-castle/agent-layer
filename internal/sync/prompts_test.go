@@ -2,6 +2,7 @@ package sync
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,17 @@ import (
 )
 
 const generatedMarkerFixture = "<!--\n  GENERATED FILE\n  Source: .agent-layer/skills/test.md\n  Regenerate: al sync\n-->\n"
+
+type unknownTypeDirEntry struct {
+	name string
+}
+
+func (e unknownTypeDirEntry) Name() string    { return e.name }
+func (unknownTypeDirEntry) IsDir() bool       { return false }
+func (unknownTypeDirEntry) Type() fs.FileMode { return 0 }
+func (unknownTypeDirEntry) Info() (fs.FileInfo, error) {
+	return nil, errors.New("directory entry info should not be used")
+}
 
 func TestBuildAgentSkill(t *testing.T) {
 	cmd := config.Skill{Name: "alpha", Description: "desc", Body: "Body"}
@@ -260,6 +272,51 @@ func TestWriteAgentSkillsRefreshKeepsSkillReadable(t *testing.T) {
 	}
 	if readerErr != nil {
 		t.Fatalf("existing SKILL.md became unreadable during refresh: %v", readerErr)
+	}
+}
+
+func TestWriteAgentSkillsReplacesPreexistingSkillDirectorySymlink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	externalDir := t.TempDir()
+	externalSkillDir := filepath.Join(externalDir, "alpha")
+	if err := os.MkdirAll(externalSkillDir, 0o700); err != nil {
+		t.Fatalf("mkdir external skill: %v", err)
+	}
+	externalSkillPath := filepath.Join(externalSkillDir, "SKILL.md")
+	if err := os.WriteFile(externalSkillPath, []byte("external content"), 0o600); err != nil {
+		t.Fatalf("write external skill: %v", err)
+	}
+
+	skillsDir := filepath.Join(root, ".agents", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil { // #nosec G301 -- the fixture uses the same managed-directory mode as production.
+		t.Fatalf("mkdir skills: %v", err)
+	}
+	skillDir := filepath.Join(skillsDir, "alpha")
+	if err := os.Symlink(externalSkillDir, skillDir); err != nil {
+		t.Fatalf("symlink skill directory: %v", err)
+	}
+
+	cmds := []config.Skill{{Name: "alpha", Description: "desc", Body: "Body"}}
+	if err := WriteAgentSkills(RealSystem{}, root, cmds); err != nil {
+		t.Fatalf("WriteAgentSkills error: %v", err)
+	}
+
+	info, err := os.Lstat(skillDir)
+	if err != nil {
+		t.Fatalf("lstat generated skill directory: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		t.Fatalf("expected a real generated skill directory, got mode %v", info.Mode())
+	}
+	assertCanonicalSkillEntrypoint(t, root, filepath.Join(".agents", "skills"), "alpha")
+
+	data, err := os.ReadFile(externalSkillPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read external skill: %v", err)
+	}
+	if string(data) != "external content" {
+		t.Fatalf("external symlink target was modified: %q", data)
 	}
 }
 
@@ -797,7 +854,7 @@ func assertCanonicalSkillEntrypoint(t *testing.T, root string, skillsPath string
 	}
 }
 
-func TestCopyDirRecursive_StatError(t *testing.T) {
+func TestCopyDirRecursive_LstatError(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
 	destDir := t.TempDir()
@@ -808,19 +865,19 @@ func TestCopyDirRecursive_StatError(t *testing.T) {
 
 	sys := &MockSystem{
 		Fallback: RealSystem{},
-		StatFunc: func(name string) (os.FileInfo, error) {
+		LstatFunc: func(name string) (os.FileInfo, error) {
 			if strings.HasSuffix(name, "data.txt") {
-				return nil, errors.New("stat failed")
+				return nil, errors.New("lstat failed")
 			}
-			return RealSystem{}.Stat(name)
+			return RealSystem{}.Lstat(name)
 		},
 	}
 
 	err := copyDirRecursive(sys, srcDir, destDir, nil)
 	if err == nil {
-		t.Fatalf("expected error from Stat failure")
+		t.Fatalf("expected error from Lstat failure")
 	}
-	if !strings.Contains(err.Error(), "stat failed") {
+	if !strings.Contains(err.Error(), "lstat failed") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1011,6 +1068,55 @@ func TestCopyDirRecursive_SkipsSymlinks(t *testing.T) {
 	}
 }
 
+func TestCopyDirRecursive_UsesLstatForSourceSymlinkDetection(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+	externalDir := t.TempDir()
+	realPath := filepath.Join(srcDir, "real.txt")
+	linkPath := filepath.Join(srcDir, "link.txt")
+	externalPath := filepath.Join(externalDir, "target.txt")
+	if err := os.WriteFile(realPath, []byte("real"), 0o600); err != nil {
+		t.Fatalf("write real source file: %v", err)
+	}
+	if err := os.WriteFile(externalPath, []byte("external target"), 0o600); err != nil {
+		t.Fatalf("write external target: %v", err)
+	}
+	if err := os.Symlink(externalPath, linkPath); err != nil {
+		t.Fatalf("symlink source file: %v", err)
+	}
+
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		ReadDirFunc: func(path string) ([]os.DirEntry, error) {
+			if path == srcDir {
+				return []os.DirEntry{
+					unknownTypeDirEntry{name: "real.txt"},
+					unknownTypeDirEntry{name: "link.txt"},
+				}, nil
+			}
+			return RealSystem{}.ReadDir(path)
+		},
+	}
+
+	if err := copyDirRecursive(sys, srcDir, destDir, nil); err != nil {
+		t.Fatalf("copyDirRecursive error: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(destDir, "real.txt")); err != nil || string(data) != "real" { // #nosec G304 -- path is constructed from test-controlled inputs.
+		t.Fatalf("real source file was not copied: data=%q err=%v", data, err)
+	}
+	if _, err := os.Lstat(filepath.Join(destDir, "link.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected source symlink to be skipped, got %v", err)
+	}
+	data, err := os.ReadFile(externalPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read external target: %v", err)
+	}
+	if string(data) != "external target" {
+		t.Fatalf("external source symlink target changed: %q", data)
+	}
+}
+
 func TestCopyDirRecursive_NestedSourceReadError(t *testing.T) {
 	t.Parallel()
 	srcDir := t.TempDir()
@@ -1071,6 +1177,97 @@ func TestCopyDirRecursive_DestinationSymlinkStaleRemoval(t *testing.T) {
 	}
 	if string(data) != "external target" {
 		t.Fatalf("external target content changed: %q", data)
+	}
+}
+
+func TestCopyDirRecursive_PreservesCanonicalSkillFileCase(t *testing.T) {
+	t.Parallel()
+	destDir := t.TempDir()
+	canonicalPath := filepath.Join(destDir, "skill.md")
+	if err := os.WriteFile(canonicalPath, []byte("generated content"), 0o600); err != nil {
+		t.Fatalf("write lowercase canonical skill file: %v", err)
+	}
+
+	if err := copyDirRecursive(RealSystem{}, "", destDir, map[string]struct{}{"SKILL.md": {}}); err != nil {
+		t.Fatalf("copyDirRecursive error: %v", err)
+	}
+
+	data, err := os.ReadFile(canonicalPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read lowercase canonical skill file: %v", err)
+	}
+	if string(data) != "generated content" {
+		t.Fatalf("canonical skill file changed: %q", data)
+	}
+}
+
+func TestCopyDirRecursive_RemovesDestinationSymlinkBeforeWriting(t *testing.T) {
+	t.Parallel()
+	srcDir := t.TempDir()
+	destDir := t.TempDir()
+	externalDir := t.TempDir()
+	sourcePath := filepath.Join(srcDir, "resource.txt")
+	destPath := filepath.Join(destDir, "resource.txt")
+	externalPath := filepath.Join(externalDir, "target.txt")
+	if err := os.WriteFile(sourcePath, []byte("source content"), 0o600); err != nil {
+		t.Fatalf("write source resource: %v", err)
+	}
+	if err := os.WriteFile(externalPath, []byte("external content"), 0o600); err != nil {
+		t.Fatalf("write external target: %v", err)
+	}
+	if err := os.Symlink(externalPath, destPath); err != nil {
+		t.Fatalf("symlink destination resource: %v", err)
+	}
+
+	var removedPath string
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		RemoveFunc: func(path string) error {
+			if path == destPath {
+				removedPath = path
+			}
+			return RealSystem{}.Remove(path)
+		},
+		WriteFileAtomicFunc: func(filename string, data []byte, perm os.FileMode) error {
+			if filename == destPath {
+				info, err := os.Lstat(filename)
+				if err != nil && !os.IsNotExist(err) {
+					return err
+				}
+				if err == nil && info.Mode()&os.ModeSymlink != 0 {
+					return errors.New("refused to write over destination symlink")
+				}
+			}
+			return RealSystem{}.WriteFileAtomic(filename, data, perm)
+		},
+	}
+
+	if err := copyDirRecursive(sys, srcDir, destDir, nil); err != nil {
+		t.Fatalf("copyDirRecursive error: %v", err)
+	}
+	if removedPath != destPath {
+		t.Fatalf("expected destination symlink to be removed before writing, got %q", removedPath)
+	}
+	info, err := os.Lstat(destPath)
+	if err != nil {
+		t.Fatalf("lstat destination resource: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("destination resource remained a symlink")
+	}
+	data, err := os.ReadFile(destPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read destination resource: %v", err)
+	}
+	if string(data) != "source content" {
+		t.Fatalf("unexpected destination content: %q", data)
+	}
+	data, err = os.ReadFile(externalPath) // #nosec G304 -- path is constructed from test-controlled inputs.
+	if err != nil {
+		t.Fatalf("read external target: %v", err)
+	}
+	if string(data) != "external content" {
+		t.Fatalf("external symlink target changed: %q", data)
 	}
 }
 

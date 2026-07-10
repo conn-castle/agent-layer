@@ -2,7 +2,6 @@ package sync
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,6 +45,15 @@ func writeSkillFiles(sys System, skillsDir string, commands []config.Skill, buil
 		}
 
 		wanted[cmd.Name] = struct{}{}
+		skillInfo, lstatErr := sys.Lstat(skillDir)
+		if lstatErr != nil && !os.IsNotExist(lstatErr) {
+			return fmt.Errorf(messages.SyncReadFailedFmt, skillDir, lstatErr)
+		}
+		if lstatErr == nil && skillInfo.Mode()&os.ModeSymlink != 0 {
+			if err := removeSkillResourceNode(sys, skillDir, skillInfo); err != nil {
+				return err
+			}
+		}
 		if err := sys.MkdirAll(skillDir, 0o755); err != nil {
 			return fmt.Errorf(messages.SyncCreateDirFailedFmt, skillDir, err)
 		}
@@ -103,7 +111,7 @@ func copyDirRecursive(sys System, srcDir string, destDir string, skipFiles map[s
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf(messages.SyncReadFailedFmt, destPath, err)
 		}
-		if err == nil && destInfo.IsDir() != resource.isDir {
+		if err == nil && (destInfo.IsDir() != resource.isDir || destInfo.Mode()&os.ModeSymlink != 0) {
 			if err := removeSkillResourceNode(sys, destPath, destInfo); err != nil {
 				return err
 			}
@@ -150,17 +158,21 @@ func collectDesiredSkillResources(
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
-		if entry.Type()&fs.ModeSymlink != 0 {
-			continue
-		}
 		if _, skip := skipFiles[name]; skip {
 			continue
 		}
 
 		srcPath := filepath.Join(srcDir, name)
 		relativePath := filepath.Join(relativeDir, name)
+		srcInfo, err := sys.Lstat(srcPath)
+		if err != nil {
+			return fmt.Errorf(messages.SyncReadFailedFmt, srcPath, err)
+		}
+		if srcInfo.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
 
-		if entry.IsDir() {
+		if srcInfo.IsDir() {
 			desired[relativePath] = desiredSkillResource{isDir: true}
 			if err := collectDesiredSkillResources(sys, srcPath, relativePath, nil, desired); err != nil {
 				return err
@@ -169,10 +181,6 @@ func collectDesiredSkillResources(
 		}
 
 		data, err := sys.ReadFile(srcPath)
-		if err != nil {
-			return fmt.Errorf(messages.SyncReadFailedFmt, srcPath, err)
-		}
-		srcInfo, err := sys.Stat(srcPath)
 		if err != nil {
 			return fmt.Errorf(messages.SyncReadFailedFmt, srcPath, err)
 		}
@@ -200,7 +208,7 @@ func removeStaleSkillResources(
 
 	for _, entry := range entries {
 		name := entry.Name()
-		if relativeDir == "" && preserveCanonicalSkill && name == "SKILL.md" {
+		if relativeDir == "" && preserveCanonicalSkill && strings.EqualFold(name, "SKILL.md") {
 			continue
 		}
 
