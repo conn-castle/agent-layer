@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.12.3 - 2026-07-10
+
+Patch release for the v0.12 line. Adds current Codex model and reasoning-effort suggestions, and fixes `al sync` so generated skill resources stay reconciled safely with their source trees.
+
+### Changed
+- Codex model suggestions now include `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` in the wizard and Agent Dispatch options.
+- Codex reasoning-effort suggestions now include `max` and `ultra` in the wizard and Agent Dispatch options.
+
+### Fixed
+- `al sync` now reconciles generated skill resources (`scripts/`, `references/`, and `assets/`) with their source skill directory: it removes stale resources and handles file/directory transitions without replacing the generated `SKILL.md`.
+- Skill-resource sync now detects source symlinks without following them and safely replaces generated destination symlinks rather than writing through them.
+
+### Internal
+- Added v0.12.3 migration and template ownership manifests. The migration has no operations; existing configurations need no manual migration.
+
 ## v0.12.2 - 2026-07-06
 
 Patch release for the v0.12 line. Tightens bundled skill and instruction contracts, fixes installer prompt routing edge cases, adds public skill-architecture documentation, and hardens the release workflow before signing.
