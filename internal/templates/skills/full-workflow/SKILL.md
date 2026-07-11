@@ -35,7 +35,7 @@ Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md` using
   the user.
 - Ask only when multiple viable choices materially affect behavior,
   architecture, scope, risk, cost, or shipping.
-- Treat the approved spec as the workflow contract. Do not widen it silently.
+- Treat the aligned spec as the workflow contract. Do not widen it silently.
 - If a child skill fails or omits its required artifact or verdict, stop and
   report the concrete blocker.
 
@@ -44,28 +44,24 @@ Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md` using
 ### 1. Align the specification
 
 Read the focused repository context needed to distinguish facts from choices.
-Write a concise spec containing:
+Write a concise spec that clearly captures the objective, scope and non-goals,
+confirmed material decisions, constraints, acceptance criteria, shipping
+expectations, and any unresolved user-owned decisions. Organize it for the work
+at hand; these contents do not require ceremonial empty sections.
 
-1. `# Objective`
-2. `## Scope`
-3. `## Non-goals`
-4. `## User-Confirmed Decisions`
-5. `## Constraints`
-6. `## Acceptance Criteria`
-7. `## Shipping Expectations`
-8. `## Open User Decisions`
-
-Ask only the questions required to resolve `Open User Decisions`. Record each
+Ask only the questions required to resolve user-owned decisions. Record each
 answer in the spec and resolve routine gaps directly from evidence.
 
-Present one concise approval summary covering scope, non-goals, acceptance
-criteria, and material decisions. Apply user corrections directly. Ask again
-only if a correction introduces a new user-owned decision; do not repeat the
-gate merely for confidence.
+Present one concise alignment summary covering scope, non-goals, acceptance
+criteria, and material decisions. Continue to planning when repository evidence
+settles the contract and no user-owned decision remains. Wait for approval only
+when the user or caller explicitly requested an approval checkpoint, or when a
+material choice actually belongs to the user. Apply corrections directly and
+do not repeat alignment merely for confidence.
 
 ### 2. Plan once
 
-Dispatch `planner` with `/plan-work`, the approved spec path, and
+Dispatch `planner` with `/plan-work`, the aligned spec path, and
 `plan_reviewers`. Require the plan, task, context, and review report paths with
 `implementation-ready` status.
 
@@ -88,7 +84,7 @@ Return the spec, plan, task, context, and review report paths together with the
 
 ## Completion contract
 
-The workflow is complete when the approved spec is represented by an
+The workflow is complete when the aligned spec is represented by an
 implementation-ready plan and `/ship-plan` returns its terminal result. Report
 all artifact paths, pull request status when available, and any blocker or
 remaining user decision.

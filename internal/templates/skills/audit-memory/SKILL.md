@@ -69,10 +69,12 @@ Check complementary concerns in the same pass:
 - DECISIONS.md entries that are superseded, duplicated, now self-evident, or no
   longer constrain future work
 
-When DECISIONS.md exceeds 25 entries, assess every entry once, but record
+When DECISIONS.md has become large enough to obscure current guidance, assess
+it as a coherent set and consolidate superseded or duplicated chains. Record
 individual classifications only for entries that require consolidation,
-removal, or a user decision. Group related decisions by subsystem before
-editing so a historical chain becomes one current constraint where appropriate.
+removal, or a user decision. Group related decisions where that makes the
+current constraint clearer; do not reorganize entries merely to satisfy an
+arbitrary count or taxonomy.
 
 ### 3. Address findings directly
 

@@ -54,12 +54,18 @@ establishes the classification.
 
 ### 2. Run one test-suite audit pass
 
-For a broad scope, partition read-only investigation by repository-defined test
-tier or coherent subsystem and use fresh built-in investigator subagents in
-parallel. Each investigator returns compact candidate findings with concrete
-tests, behavior, and evidence. The owning agent validates candidates, checks
-cross-partition duplication and gaps, and owns every edit. A narrow scope may be
-audited directly.
+For a broad or context-heavy scope, form enough coherent, non-overlapping
+investigation groups to give materially different test areas independent
+attention without overloading an investigator's context. Repository-defined
+test tiers and subsystems are useful grouping signals, not mandatory
+one-agent-per-group assignments. Do not combine groups at the cost of credible
+coverage or split them merely to increase agent count. Use fresh built-in
+investigators and run substantial independent groups in parallel when the
+wall-clock benefit warrants the extra agent cost; otherwise run them
+sequentially. Each investigator returns compact candidate findings with
+concrete tests, behavior, and evidence. The owning agent validates candidates,
+checks cross-group duplication and gaps, and owns every edit. A compact scope
+may be audited directly.
 
 Review the scope through complementary concerns:
 
@@ -71,9 +77,9 @@ Review the scope through complementary concerns:
 - material behavioral gaps in error handling, boundaries, component
   interaction, or critical user workflows
 
-For every discovered tier, state either material gaps found, no material gaps
-found with evidence, or not applicable with architectural justification. Do
-not require tiers that the repository does not define.
+Account for material gaps across the declared scope, but do not require a
+ceremonial no-findings statement for every tier or subsystem. Do not require
+tiers that the repository does not define.
 
 Run coverage at most once as audit evidence when it is documented, available,
 and useful. It informs gap analysis but does not replace behavioral review.
@@ -97,7 +103,7 @@ The report contains:
 2. `## Inventory` — grouped count by discovered tier
 3. `## Fixes Applied`
 4. `## Material Findings` — category, tier, location, evidence, and outcome
-5. `## Gap Findings` — one concise conclusion per discovered tier
+5. `## Gap Findings` — material behavioral gaps and their affected scope
 6. `## Decisions Needed`
 7. `## Verification`
 

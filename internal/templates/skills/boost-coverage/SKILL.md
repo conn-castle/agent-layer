@@ -47,10 +47,11 @@ Write `.agent-layer/tmp/boost-coverage.<run-id>.report.md`, where `run-id` is
 
 ### 1. Establish the coverage contract
 
-Use a fresh built-in scout subagent to identify the documented coverage
-command, working directory, threshold source, exclusions, and trustworthy
-per-file output. Run the command once to capture the baseline and eligible
-shortfalls.
+Identify the documented coverage command, working directory, threshold source,
+exclusions, and trustworthy per-file output. Use a fresh built-in scout
+subagent when this discovery is context-heavy and can return a compact evidence
+map; handle a compact contract directly. Run the command once to capture the
+baseline and eligible shortfalls.
 
 If the contract or target cannot be established, return the smallest blocking
 decision. If the target is already satisfied, write the report and yield.
@@ -68,9 +69,11 @@ contribution, and why the tests can detect a real defect.
 
 ### 3. Implement and measure once
 
-Use a fresh built-in subagent to add the coherent test batch and run focused
-checks while implementing. Then run the authoritative coverage command once on
-the final tree.
+Implement the coherent test batch directly or use one fresh built-in subagent
+when doing so meaningfully protects the owning context or provides useful
+independence. Do not split one coherent batch across agents merely to create
+parallel work. Then run the authoritative coverage command once on the final
+tree.
 
 If the final result misses the declared target, directly address a concrete,
 actionable miss in the selected behavior and rerun only the affected evidence.

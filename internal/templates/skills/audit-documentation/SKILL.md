@@ -48,12 +48,17 @@ to understand their actionable claims.
 
 ### 2. Run one documentation audit pass
 
-For a broad scope, partition the documents into distinct groups and give each
-group to a fresh built-in investigator subagent. Start the investigators before
-waiting for their results. They are read-only and return compact candidate
-findings with exact claims, repository evidence, and cross-document references.
-The owning agent validates candidates, resolves relationships across groups,
-and owns all edits. A narrow scope may be audited directly.
+For a broad or context-heavy scope, form enough coherent document groups to
+give materially different areas independent attention without overloading an
+investigator's context. Do not combine groups when that would obscure
+cross-document relationships, and do not split them merely to increase agent
+count. Give each group to a fresh built-in investigator subagent. Run
+substantial independent groups concurrently when the wall-clock benefit
+warrants the extra agent cost; otherwise run them sequentially. Investigators
+are read-only and return compact candidate findings with exact claims,
+repository evidence, and cross-document references. The owning agent validates
+candidates, resolves relationships across groups, and owns all edits. A compact
+scope may be audited directly.
 
 In one pass, check:
 

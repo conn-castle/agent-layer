@@ -849,12 +849,16 @@
     - exit: return the updated ledger and local-change status
 audit-documentation:
   calls:
-    - if: documentation scope is broad
+    - if: documentation scope is broad or context-heavy
       calls:
-        - for: document_group in distinct scope groups, starting all investigators before waiting
+        - task: form enough coherent groups for independent coverage without overloading investigator context or creating redundant fan-out
+        - for: document_group, concurrent when wall-clock benefit warrants the agent cost
           calls:
             - task: return evidence-backed documentation candidates
               caller: subagent
+    - if: documentation scope is compact
+      calls:
+        - task: audit it directly
     - task: synthesize one evidence pass and directly apply safe documentation fixes
     - if: repository evidence cannot settle product intent
       calls:
@@ -870,12 +874,16 @@ audit-memory:
 audit-tests:
   calls:
     - task: establish repository test conventions
-    - if: test scope is broad
+    - if: test scope is broad or context-heavy
       calls:
-        - for: test_group in repository-defined tiers or coherent subsystems, starting all investigators before waiting
+        - task: form enough coherent non-overlapping groups for independent coverage without overloading investigator context
+        - for: test_group, concurrent when wall-clock benefit warrants the agent cost
           calls:
             - task: return evidence-backed test candidates
               caller: subagent
+    - if: test scope is compact
+      calls:
+        - task: audit it directly
     - task: synthesize one suite-health audit pass
     - task: directly apply safe test cleanup findings
     - if: test files changed
@@ -918,16 +926,25 @@ auto-skill-loop:
         - break: start the next autonomous attempt
 boost-coverage:
   calls:
+    - if: coverage-contract discovery is context-heavy
+      calls:
+        - task: return a compact coverage-contract evidence map
+          caller: subagent
     - task: establish the coverage contract, target, and baseline
-      caller: subagent
     - if: coverage contract or target is ambiguous, or required tooling is missing
       calls:
-        - exit: stop for the smallest user decision
+        - exit: return the concrete evidence or tooling blocker, or the smallest genuinely user-owned decision
     - if: declared target is already satisfied
       calls:
         - exit: report already-satisfied without editing
-    - task: select and implement one coherent behavior-focused test batch
-      caller: subagent
+    - task: select one coherent behavior-focused test batch
+    - if: implementation benefits materially from context protection or independence
+      calls:
+        - task: implement the coherent test batch
+          caller: subagent
+    - if: implementation is compact in the owning context
+      calls:
+        - task: implement the coherent test batch directly
     - task: measure final coverage once and directly address only a concrete actionable miss
     - exit: report target-met or the concrete blocker, then yield
 clean-and-fix-code:
@@ -1021,10 +1038,13 @@ fix-ci:
     - if: failure is external or lacks a credible reproducer and no safe patch is justified
       calls:
         - exit: return remote-retry-needed with failed-check evidence
-    - while: credible local reproducer fails and fewer than three evidence-backed repairs ran
+    - while: credible local reproducer fails and new diagnostic evidence supports a safe repair
       calls:
         - task: directly repair the root cause and verify it locally
-    - if: failure requires a user-owned decision, lacks required evidence, or repeats three times
+        - if: an evidence-equivalent failure recurs
+          calls:
+            - task: revisit the causal model and add focused instrumentation or another discriminating diagnostic
+    - if: failure requires a user-owned decision, lacks required evidence, or persists without new diagnostic evidence
       calls:
         - exit: return blocked or repeated-failure evidence
     - exit: return uncommitted repair changes and evidence to the caller
@@ -1059,7 +1079,10 @@ full-workflow:
   inputs: [planner, plan_reviewers, implementer, fixer, shipper]
   calls:
     - task: validate roles, align the spec, and resolve user-owned decisions
-    - if: user approves the aligned spec
+    - if: the user or caller explicitly requires an approval checkpoint and it is not yet satisfied
+      calls:
+        - exit: present the alignment summary for approval before planning
+    - if: the spec is aligned, no user-owned decision remains, and any explicit approval checkpoint is satisfied
       calls:
         - skill: plan-work
           inputs: [plan_reviewers]
@@ -1094,7 +1117,7 @@ improve-codebase:
   calls:
     - task: map the entire declared scope into subsystem, component, and boundary groups
       caller: subagent
-    - task: consolidate the map into the smallest non-overlapping investigator set that preserves credible coverage
+    - task: form enough non-overlapping investigator groups for credible independent coverage without redundant fan-out
     - if: the scope forms one compact coherent investigation group
       calls:
         - task: investigate assigned local and boundary risks and return material evidence
@@ -1146,12 +1169,21 @@ interface-audit:
     - if: running in update mode
       calls:
         - asset: interface-audit/references/update-workflow
-    - if: interface scope is broad
+        - if: update timestamp or complete change history cannot be established
+          calls:
+            - exit: stop before editing and report the evidence blocker or smallest fresh-versus-limited audit decision
+        - task: enumerate the complete local and merged-PR change interval, detecting truncation
+        - task: identify affected interface chains and refresh them against current repository evidence
+    - if: interface scope is broad or context-heavy
       calls:
-        - for: boundary_group in distinct interface boundaries, starting all investigators before waiting
+        - task: form enough coherent boundary groups for independent coverage without overloading investigator context
+        - for: boundary_group, concurrent when wall-clock benefit warrants the agent cost
           calls:
             - task: return compact row evidence without editing or calibrating the report
               caller: subagent
+    - if: interface scope is compact
+      calls:
+        - task: investigate it directly
     - task: synthesize one interface evidence pass across distinct boundaries
     - task: calibrate scores once and return the final recommendation gate
 loop-clean-and-fix:
@@ -1170,7 +1202,7 @@ plan-work:
     - asset: plan-work/assets/write-plan
     - if: write-plan returns revise with a concrete evidence-backed gap
       calls:
-        - task: apply one focused artifact correction and rerun only the self-check
+        - task: apply the cited corrections as one focused artifact revision and resolve any remaining concrete self-check gap
     - skill: review-plan
       inputs: [plan_reviewers]
     - task: return reviewed artifact paths and the readiness verdict
@@ -1181,14 +1213,29 @@ review-plan:
       calls:
         - asset: review-plan/assets/agent-review-prompt
           caller: dispatch(plan_reviewer)
+        - for: contract-scope, architecture-implementation, and verification-operational perspectives
+          calls:
+            - task: independently inspect the complete artifact set and return material evidence
+              caller: fresh subagent of dispatch(plan_reviewer)
+        - task: validate and synthesize the independent perspectives into one child report
+          caller: dispatch(plan_reviewer)
     - task: synthesize evidence, revise accepted findings, and report readiness
 review-uncommitted-code:
   calls:
     - task: establish one concrete review target and its authoritative evidence
-    - if: scope is non-trivial or the current context authored or materially changed the target
+    - if: scope is non-trivial
       calls:
-        - task: run complementary review lenses once on distinct concerns
+        - for: correctness, architecture, and quality-operability perspectives
+          calls:
+            - task: independently review the concrete target once
+              caller: subagent
+    - if: scope is narrow and the current context authored or materially changed the target
+      calls:
+        - task: independently review the target through the most relevant perspective
           caller: subagent
+    - if: scope is narrow and the current context did not author or materially change the target
+      calls:
+        - task: review the target directly
     - asset: review-uncommitted-code/assets/finding-verdict-classification
     - task: validate and synthesize material findings once, write the report, and yield
 run-and-fix-all-checks:
@@ -1197,7 +1244,10 @@ run-and-fix-all-checks:
     - while: full check lane has an actionable local failure
       calls:
         - task: preserve failure evidence, directly repair the root cause, and rerun the lane
-        - if: failure is external, requires a user-owned decision, or repeats without new evidence
+        - if: an evidence-equivalent failure recurs
+          calls:
+            - task: revisit the causal model and add focused instrumentation or another discriminating diagnostic
+        - if: failure is external, requires a user-owned decision, or persists without new diagnostic evidence
           calls:
             - exit: report the concrete blocker
 schedule-backlog:

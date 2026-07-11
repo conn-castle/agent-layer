@@ -45,10 +45,12 @@ planning stage. If it exposes a user-owned decision, stop and ask for that
 decision. Do not delegate planning or start repeated drafting passes for greater
 confidence.
 
-When `write-plan` returns `revise`, apply its cited correction once and rerun
-only the artifact self-check. Do not involve the user. Escalate only when the
-remaining choice materially affects behavior, architecture, scope, risk, or
-cost and available evidence cannot settle it.
+When `write-plan` returns `revise`, apply its cited corrections in one focused
+revision and rerun only the artifact self-check. Resolve any concrete,
+autonomously correctable material gap that self-check still exposes without
+restarting research, drafting, or review. Escalate only when the remaining
+choice materially affects behavior, architecture, scope, risk, or cost and
+available evidence cannot settle it.
 
 ### 3. Review once
 

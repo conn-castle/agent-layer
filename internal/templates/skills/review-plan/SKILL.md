@@ -61,7 +61,9 @@ same objective and scope before dispatching reviewers.
 
 Give each reviewer `assets/agent-review-prompt.md`, the artifact paths, and a
 unique child report path. Start all reviewer dispatches before waiting for their
-results. Validate that each completed report follows the reviewer contract.
+results. Each dispatched reviewer owns the bounded fresh-context perspectives
+required by that prompt and synthesizes them into its child report. Validate
+that each completed report follows the reviewer contract.
 
 ### 3. Synthesize and revise
 
@@ -99,7 +101,8 @@ Final readiness must be exactly one of:
 
 ## Definition of done
 
-- Every requested reviewer was dispatched once and produced one child report.
+- Every requested reviewer was dispatched once, ran the bounded independent
+  perspectives, and produced one synthesized child report.
 - Every material finding was applied or identified as a user-owned decision.
 - The final report records the artifact changes and readiness verdict.
 

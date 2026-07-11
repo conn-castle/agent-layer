@@ -42,7 +42,7 @@ single verdict rubric; it is not another review or classifier stage.
   hypothetical alternatives.
 - Use complementary perspectives on distinct concerns. For a non-trivial
   target, use bounded fresh built-in reviewers to examine correctness,
-  architecture, and quality/operability once in parallel.
+  architecture, and quality/operability independently once in parallel.
 - If the current context authored or materially changed any part of the target,
   at least one fresh built-in reviewer is required even when the target is
   narrow. Give reviewers the concrete target and authoritative contract, not
@@ -74,9 +74,10 @@ Examine complementary concerns once:
 - tests, documentation, performance, concurrency, data safety, and operational
   supportability where relevant
 
-Assign concerns to distinct reviewers when using parallel review. Preserve the
-fresh-review requirement for author-modified targets without manufacturing
-additional roles beyond what independence and target size justify.
+Assign the complementary concerns to distinct reviewers when the target is
+non-trivial. Preserve the fresh-review requirement for author-modified targets.
+Do not add duplicate reviewers for consensus after those perspectives are
+covered.
 
 ### 3. Synthesize once
 

@@ -69,8 +69,10 @@ tests, documentation, configuration, or memory updates. Demonstrate the local
 reproducer changing from red to green, then run the CI-equivalent checks for the
 affected path and inspect the resulting diff.
 
-If the same evidence-equivalent local failure survives three repairs without new
-root-cause evidence, stop with `repeated-failure`.
+If an evidence-equivalent local failure recurs, do not repeat the same repair
+strategy. Revisit the causal model and add focused instrumentation or another
+discriminating diagnostic when useful. Continue only when new evidence supports
+a safe repair; otherwise stop with `repeated-failure`.
 
 ### 4. Report
 
@@ -94,5 +96,6 @@ Use one status:
 ## Completion contract
 
 Return the report path, local changes, red-to-green evidence, focused check
-results, attempt count, status, and any failed-check identifiers needed for a
-remote retry. Confirm that no staging, commit, push, or GitHub write occurred.
+results, material diagnostic attempts, status, and any failed-check identifiers
+needed for a remote retry. Confirm that no staging, commit, push, or GitHub
+write occurred.

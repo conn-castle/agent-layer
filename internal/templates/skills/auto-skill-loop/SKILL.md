@@ -57,11 +57,11 @@ Create `.agent-layer/tmp/auto-skill-loop.<run-id>.state.md`. Update it before
 and after dispatches, branch switches, pushes, PR actions, blockers, and
 merges.
 
-Record current step, branches, PRs, worker and shipper dispatch roles, terminal
-dispatch selections, plan reviewer dispatch roles, merged PRs, blocked branches,
-blocked PRs, recent touched paths, completed scope maps and lenses, worker
-questions and answers, user-only blockers, manual gates, PR-gate status, and
-verification evidence.
+Record only durable state needed to resume safely: the current step, active and
+blocked branches or pull requests, selected dispatch roles, merged work, recent
+touched paths, completed scope maps and lenses, unresolved questions or gates,
+and verification evidence. Link delegated artifacts instead of copying their
+detail into the ledger.
 Record worker deferrals in this ledger or worker artifacts, not as deferral
 notes in `ISSUES.md`.
 

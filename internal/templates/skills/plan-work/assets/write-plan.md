@@ -15,8 +15,7 @@ Use the standard artifact naming rule under `.agent-layer/tmp/`:
 - `.agent-layer/tmp/write-plan.<run-id>.task.md`
 - `.agent-layer/tmp/write-plan.<run-id>.context.md`
 
-Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create all three files
-before writing.
+Use one shared `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
 ## Planning workflow
 
@@ -64,9 +63,9 @@ Write the plan file with these sections:
    - migration or compatibility concerns
    - unclear dependencies
 6. `## Verification`
-   - exact verification commands or evidence required
-   - when each command should run, if timing matters
-   - what each command proves
+   - repository-defined commands or other credible evidence required
+   - timing only when it matters
+   - what the evidence proves
 7. `## Exit Criteria`
    - objective conditions that define completion
 
@@ -111,8 +110,8 @@ Before presenting the artifacts, check:
 - context paths are valid or marked as new, and the entry point is clear
 - user-owned decisions are recorded as confirmed decisions or the verdict is
   `escalate`
-- no artifact defers investigation or approach selection, and the plan contains
-  no unresolved hedge words such as "likely", "probably", or "should work"
+- no artifact defers material investigation or approach selection; state any
+  residual uncertainty precisely instead of hiding it behind vague confidence
 
 Correct any evidence-backed inconsistency in this drafting pass. Then choose
 one handoff verdict:
@@ -125,10 +124,11 @@ one handoff verdict:
   risk, or cost cannot be settled by available evidence and therefore requires
   the user
 
-`revise` is an autonomous correction signal, not a human checkpoint. Apply one
-focused correction within the same planning stage, rerun only this self-check,
-and proceed when the gap is resolved. Do not restart research, drafting, or plan
-review merely for greater confidence.
+`revise` is an autonomous correction signal, not a human checkpoint. Apply the
+cited corrections as one focused revision within the same planning stage and
+rerun only this self-check. Resolve any remaining concrete, autonomously
+correctable material gap, then proceed. Do not restart research, drafting, or
+plan review merely for greater confidence.
 
 ## Final handoff
 

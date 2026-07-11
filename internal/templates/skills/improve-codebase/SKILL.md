@@ -31,8 +31,6 @@ mode. Otherwise the declared scope is the whole repository.
 - Do not use arbitrary chunk counts or finding caps to stop a productive sweep.
   Stop discovery when the scope map is covered and the evidence is sufficient
   to synthesize material findings.
-- Wide coverage does not imply maximum fan-out. Use the fewest investigation
-  groups that can cover the scope coherently without overloading one context.
 - Existing issue tracking is evidence and deduplication context, not a reason to
   leave an otherwise accepted in-scope problem unfixed.
 
@@ -48,17 +46,13 @@ delegated evidence to:
 
 - Use one fresh built-in scout subagent to map the full declared scope into
   coherent subsystem, component, and interface-boundary investigation groups.
-- Consolidate related areas into the smallest non-overlapping investigation set
-  that still gives every mapped subsystem and boundary credible coverage. A
-  separate investigator must be justified by distinct evidence, substantial
-  context load, or useful independent execution—not by the existence of another
-  directory or component.
-- Assign each resulting group to one fresh built-in investigator subagent. Run
-  substantial independent groups in parallel only when the wall-clock benefit
-  is meaningful; otherwise run justified groups sequentially to moderate
-  concurrent token use. Handle one compact group with one investigator, and
-  fold small related areas into the nearest coherent group. Each investigator
-  is read-only.
+- Use enough coherent, non-overlapping investigators to give every mapped
+  subsystem and boundary credible independent coverage without overloading any
+  one context. Do not minimize agent count at the expense of distinct
+  perspectives, and do not split groups merely to increase fan-out. Each
+  investigator is fresh and read-only. Run substantial independent groups
+  concurrently when the wall-clock benefit warrants the extra agent cost;
+  otherwise run them sequentially.
 - After those reports return, use one fresh built-in cross-cutting investigator
   to examine the complete scope map, all investigator reports, and the cited
   boundary evidence. Its responsibility is to find material relationships and
@@ -117,18 +111,15 @@ The scout returns:
 - cross-cutting questions that span those groups
 - known constraints, exclusions, and evidence locations
 
-The owning agent checks that the map accounts for the declared scope before
-investigation starts, then combines groups that can be examined coherently by
-one investigator. Record why any remaining separate group needs its own context.
-Do not silently shrink an explicitly requested scope because it is large.
+The owning agent checks that the map accounts for the declared scope and
+consolidates groups where one context can examine them coherently. Do not
+silently shrink an explicitly requested scope because it is large.
 
 ### 2. Investigate the full scope once
 
-Give each fresh investigator its distinct group, the relevant portion of the
-scope map, authoritative constraints, and its investigation report path. Start
-multiple investigators before waiting only when their groups are substantial,
-independent, and already justified under the agent boundary. Otherwise use one
-investigator or run the groups sequentially.
+Give each fresh investigator its distinct group, the relevant scope map and
+constraints, and its investigation report path. Follow the agent boundary above
+for grouping and concurrency.
 
 Each investigator reports only evidence-backed material candidates with exact
 locations, affected behavior or boundary, impact, and the smallest credible
@@ -214,7 +205,7 @@ Write the report with:
 
 1. `# Codebase Improvement Summary` — declared scope and terminal outcome
 2. `## Scope and Boundary Coverage`
-3. `## Investigation Reports` — group assignments and any parallelism rationale
+3. `## Investigation Reports` — group assignments and evidence coverage
 4. `## Material Finding Ledger` — local, cross-boundary, and architectural
 5. `## Repairs and Focused Evidence`
 6. `## Concrete-Work Review`

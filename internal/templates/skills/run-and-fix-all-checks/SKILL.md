@@ -71,10 +71,11 @@ before choosing.
 Rerun the full lane after repairs. A failed lane is concrete evidence for
 another repair pass; a desire for more confidence is not.
 
-If the same evidence-equivalent failure survives two repair attempts without
-new diagnostic evidence, stop with `repeated-failure` rather than trying another
-speculative fix. Stop with `blocked` when the failure is external or cannot be
-repaired safely within scope.
+If an evidence-equivalent failure recurs, do not repeat the same repair
+strategy. Revisit the causal model and add focused instrumentation or another
+discriminating diagnostic when useful. Continue only when new evidence supports
+a safe repair; otherwise stop with `repeated-failure`. Stop with `blocked` when
+the failure is external or cannot be repaired safely within scope.
 
 ### 4. Report
 

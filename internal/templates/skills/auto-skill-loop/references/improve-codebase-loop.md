@@ -10,10 +10,12 @@ Prefer high-value lenses: correctness, data loss, security, concurrency,
 cancellation, parser and input robustness, test integrity, documentation
 accuracy, dead code, dependency health, and meaningful coverage gaps.
 
-Wide coverage is not a request for maximum agent fan-out. Require the smallest
-non-overlapping investigator set that credibly covers the declared scope, and
-parallelize only substantial independent groups whose context or wall-clock
-benefit justifies the additional agent cost.
+Wide coverage requires enough non-overlapping investigators to give materially
+different areas credible independent attention without overloading a context.
+Do not minimize agent count at the expense of coverage or distinct
+perspectives, and do not add agents merely to increase fan-out. Parallelize
+substantial independent groups when their context or wall-clock benefit
+justifies the additional agent cost.
 
 Reject cosmetic churn, speculative abstraction, unjustified rewrites, and
 changes whose only value is making the batch larger. Each worker invocation
