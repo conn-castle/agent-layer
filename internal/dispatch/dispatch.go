@@ -12,12 +12,14 @@ import (
 	"github.com/conn-castle/agent-layer/internal/version"
 )
 
-// EnvCacheDir, EnvNoNetwork, EnvVersionOverride, and EnvShimActive define dispatch environment keys.
+// EnvCacheDir, EnvNoNetwork, EnvVersionOverride, EnvShimActive, and
+// EnvDevelopmentBypassVersionDispatch define dispatch environment keys.
 const (
-	EnvCacheDir        = "AL_CACHE_DIR"
-	EnvNoNetwork       = "AL_NO_NETWORK"
-	EnvVersionOverride = "AL_VERSION"
-	EnvShimActive      = "AL_SHIM_ACTIVE"
+	EnvCacheDir                         = "AL_CACHE_DIR"
+	EnvNoNetwork                        = "AL_NO_NETWORK"
+	EnvVersionOverride                  = "AL_VERSION"
+	EnvShimActive                       = "AL_SHIM_ACTIVE"
+	EnvDevelopmentBypassVersionDispatch = "AL_DEV_BYPASS_VERSION_DISPATCH" //nolint:gosec // Environment key, not a credential.
 
 	// sourceCurrent and sourcePin label the origin of the resolved version.
 	sourceCurrent = "current"
@@ -54,6 +56,13 @@ func MaybeExecWithSystem(sys System, args []string, currentVersion string, cwd s
 	current, err := normalizeCurrentVersion(currentVersion)
 	if err != nil {
 		return err
+	}
+	// Development launchers build and place a source snapshot first on PATH so
+	// child agents can invoke that same binary. Its explicit marker must bypass
+	// version pin resolution; otherwise a nested `al dispatch` could re-exec a
+	// cached release instead of the source snapshot.
+	if strings.TrimSpace(sys.Getenv(EnvDevelopmentBypassVersionDispatch)) != "" {
+		return nil
 	}
 
 	rootDir, found, err := sys.FindAgentLayerRoot(cwd)

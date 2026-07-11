@@ -1,7 +1,10 @@
 package sync
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,26 +38,153 @@ func (antigravityRenderer) RenderMCP(serverID string) string {
 	return "mcp(" + serverID + "/)"
 }
 
-// WriteAntigravitySettings generates .agy/antigravity-cli/settings.json.
+// WriteAntigravitySettings patches Agent Layer-managed keys into the user's
+// native .agy/antigravity-cli/settings.json, preserving native state and the
+// file's existing permissions.
 func WriteAntigravitySettings(sys System, root string, project *config.ProjectConfig) error {
-	settings := buildAntigravitySettings(project)
+	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := ensureAntigravityPathRealParentContained(root, path); err != nil {
+		return err
+	}
+	existing, err := readAntigravitySettings(sys, path)
+	if err != nil {
+		return err
+	}
+	settings, err := mergeAntigravitySettings(existing, buildAntigravitySettings(project))
+	if err != nil {
+		return fmt.Errorf("merge Antigravity settings %s: %w", path, err)
+	}
 	data, err := sys.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return fmt.Errorf(messages.SyncMarshalAntigravitySettingsFailedFmt, err)
 	}
 	data = append(data, '\n')
-
-	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
-	if err := ensureAntigravityPathRealParentContained(root, path); err != nil {
-		return err
-	}
 	if err := sys.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf(messages.SyncCreateDirFailedFmt, filepath.Dir(path), err)
 	}
-	if err := sys.WriteFileAtomic(path, data, 0o644); err != nil {
+	if err := sys.WriteFileAtomic(path, data, antigravitySettingsFileMode(sys, path)); err != nil {
 		return fmt.Errorf(messages.SyncWriteFileFailedFmt, path, err)
 	}
 	return nil
+}
+
+// readAntigravitySettings loads and validates the user's native Antigravity
+// settings.json for merging. A missing, empty, or whitespace-only file yields a
+// fresh empty object because there is no native state to preserve. It rejects a
+// symlink or non-regular target, malformed or non-object JSON, and trailing
+// data so a corrupt native file fails loud before any write, and uses a
+// number-preserving decoder so large or high-precision native numbers survive
+// the round trip.
+func readAntigravitySettings(sys System, path string) (map[string]any, error) {
+	info, err := sys.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]any), nil
+		}
+		return nil, fmt.Errorf(messages.InstallFailedStatFmt, path, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("antigravity settings must be a regular file, not a symlink or special file: %s", path)
+	}
+	data, err := sys.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read Antigravity settings %s: %w", path, err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		// An empty or whitespace-only file holds no native state to preserve;
+		// treat it like a missing file so a truncated or editor-created empty
+		// file does not fail the whole sync.
+		return make(map[string]any), nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var settings map[string]any
+	if err := decoder.Decode(&settings); err != nil {
+		return nil, fmt.Errorf("decode Antigravity settings %s: %w", path, err)
+	}
+	if settings == nil {
+		return nil, fmt.Errorf("decode Antigravity settings %s: top-level JSON value must be an object", path)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("decode Antigravity settings %s: trailing JSON value", path)
+		}
+		return nil, fmt.Errorf("decode Antigravity settings %s: trailing data: %w", path, err)
+	}
+	return settings, nil
+}
+
+// mergeAntigravitySettings overlays the Agent Layer-managed projection (model,
+// permissions.allow, and any agent_specific paths, all produced by
+// buildAntigravitySettings) onto the user's native Antigravity settings,
+// preserving every native key Agent Layer does not produce. A managed key
+// absent from desired is left untouched rather than deleted, because
+// .agy/antigravity-cli/settings.json is owned by Antigravity and the user: an
+// omitted Agent Layer value is not an instruction to erase native state. It
+// returns an error only when a managed key Agent Layer must write collides with
+// an incompatible native shape (object vs. scalar); a native path Agent Layer
+// does not target is never inspected.
+func mergeAntigravitySettings(existing, desired map[string]any) (map[string]any, error) {
+	merged, ok := cloneAgentSpecificValue(existing).(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("existing Antigravity settings must be a JSON object")
+	}
+	if err := overlayAntigravityManagedMap(merged, desired, nil); err != nil {
+		return nil, err
+	}
+	return merged, nil
+}
+
+// antigravitySettingsFileMode preserves the existing settings.json permission
+// bits when the file is already a regular file, falling back to owner-only
+// 0o600 for a newly created file so native trust or approval state is never
+// written with widened permissions.
+func antigravitySettingsFileMode(sys System, path string) os.FileMode {
+	if info, err := sys.Lstat(path); err == nil && info.Mode().IsRegular() {
+		return info.Mode().Perm()
+	}
+	return 0o600
+}
+
+// overlayAntigravityManagedMap recursively overlays the managed desired map onto
+// target, preserving native sibling keys. Nested objects are merged; scalar and
+// array values replace the value at their key. It returns an error when a
+// desired object would overwrite a native scalar or vice versa, so Agent Layer
+// never silently reshapes native state. prefix carries the path walked so far
+// for error messages.
+func overlayAntigravityManagedMap(target, desired map[string]any, prefix []string) error {
+	for key, value := range desired {
+		path := append(append([]string{}, prefix...), key)
+		if desiredMap, ok := value.(map[string]any); ok {
+			current, exists := target[key]
+			if !exists {
+				current = make(map[string]any)
+				target[key] = current
+			}
+			targetMap, ok := current.(map[string]any)
+			if !ok {
+				return fmt.Errorf("managed path %s requires an object", strings.Join(path, "."))
+			}
+			if err := overlayAntigravityManagedMap(targetMap, desiredMap, path); err != nil {
+				return err
+			}
+			continue
+		}
+		if current, exists := target[key]; exists && antigravityShapeConflict(current, value) {
+			return fmt.Errorf("managed path %s has incompatible existing shape", strings.Join(path, "."))
+		}
+		target[key] = cloneAgentSpecificValue(value)
+	}
+	return nil
+}
+
+// antigravityShapeConflict reports whether current and desired disagree on being
+// a JSON object, which the overlay treats as an incompatible managed-path shape.
+func antigravityShapeConflict(current, desired any) bool {
+	_, currentObject := current.(map[string]any)
+	_, desiredObject := desired.(map[string]any)
+	return currentObject != desiredObject
 }
 
 func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
@@ -219,7 +349,6 @@ func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPCo
 // CleanAntigravityOutputs removes Agent Layer-managed Antigravity files.
 func CleanAntigravityOutputs(sys System, root string) error {
 	for _, rel := range []string{
-		filepath.Join(".agy", "antigravity-cli", "settings.json"),
 		filepath.Join(".agy", "antigravity-cli", "mcp_config.json"),
 		filepath.Join(".agy", "config", "mcp_config.json"),
 	} {

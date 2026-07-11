@@ -172,6 +172,21 @@ func TestBuildEnvForAgentStripsDispatchActive(t *testing.T) {
 	}
 }
 
+func TestBuildEnvForAgentPreservesDevelopmentVersionDispatchBypass(t *testing.T) {
+	base := []string{
+		"PATH=/repo/.agent-layer/tmp/dev-bin:/bin",
+		dispatch.EnvDevelopmentBypassVersionDispatch + "=1",
+	}
+	env := BuildEnvForAgent(base, nil, nil, "codex")
+
+	if value, ok := GetEnv(env, dispatch.EnvDevelopmentBypassVersionDispatch); !ok || value != "1" {
+		t.Fatalf("expected %s=1 to reach the launched agent, got %q ok=%v", dispatch.EnvDevelopmentBypassVersionDispatch, value, ok)
+	}
+	if value, ok := GetEnv(env, "PATH"); !ok || value != "/repo/.agent-layer/tmp/dev-bin:/bin" {
+		t.Fatalf("expected development PATH to reach the launched agent, got %q ok=%v", value, ok)
+	}
+}
+
 func TestBuildEnvForAgentSetsSupportedCallerMarkers(t *testing.T) {
 	tests := map[string]string{
 		"antigravity": "antigravity",

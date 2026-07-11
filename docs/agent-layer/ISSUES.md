@@ -27,6 +27,24 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-10 antigravity-malformed-native-aborts-all-sync: A malformed native Antigravity settings.json fails the entire multi-client sync
+    Priority: Low. Area: internal/sync/antigravity.go (readAntigravitySettings/mergeAntigravitySettings) + sync.go step ordering
+    Description: WriteAntigravitySettings fails loud with no data loss on malformed/non-object/shape-conflict native settings.json, but the error bubbles up as a hard sync step, so one odd native value blocks generation for Claude/Codex/VS Code too. Overlay-only merge plus empty-file tolerance shrank the failure surface, but the blast radius is unchanged.
+    Next step: Human to decide whether a single client's settings failure should warn-and-skip that client instead of aborting the whole run.
+    Notes: Codex second-opinion flagged this as a separate product-level decision; intentionally not changed in the overlay-preserve change (decision antigravity-settings-overlay-preserve).
+
+- Issue 2026-07-10 antigravity-managed-values-not-reclaimed: Agent Layer never reclaims managed Antigravity settings it previously wrote
+    Priority: Low. Area: internal/sync/antigravity.go (overlay-only mergeAntigravitySettings)
+    Description: settings.json is overlay-patched and never delete-on-absent, so a managed value (model, permissions.allow, agent_specific) removed from config.toml — or left behind when Antigravity is disabled — lingers in the file, indistinguishable from native state, and is never cleaned by Agent Layer. This is the accepted tradeoff of preserving native state.
+    Next step: If reclaiming stale Agent Layer-written keys becomes a demonstrated need, add provenance tracking (a managed-key manifest/marker) so removed keys can be pruned without touching native values.
+    Notes: Deferred by decision antigravity-settings-overlay-preserve (2026-07-10); provenance was judged too much persistent state for a preservation fix.
+
+- Issue 2026-07-10 antigravity-settings-format-unverified: Antigravity settings.json treated as strict JSON without primary-source confirmation
+    Priority: Low. Area: internal/sync/antigravity.go (readAntigravitySettings strict json.Decoder)
+    Description: The merge parses native settings.json as strict JSON. Secondary sources (codelabs/tutorials) consistently describe it as a plain JSON file, but the official docs page is a JS app that could not be machine-read, so the format was not confirmed from a primary source. If Antigravity actually permits JSONC (comments/trailing commas), a native comment would fail every sync loud until hand-edited.
+    Next step: Confirm the format from a primary source (official spec or an observed real file); if JSONC, add tolerant parsing for this client instead of strict JSON.
+    Notes: Verification gap recorded in decision antigravity-settings-overlay-preserve (2026-07-10).
+
 - Issue 2026-07-09 precommit-nested-git-index-inheritance: Nested Git test mutates the outer commit index under pre-commit
     Priority: Medium. Area: internal/sync/claude_statusline_runtime_test.go (`runGit`) / pre-commit `go-test` hook
     Description: When `make test` runs inside `git commit`'s pre-commit hook, the statusline test's temporary-repository Git commands inherit the outer `GIT_INDEX_FILE`; `git add tracked.txt` contaminates the real index and the nested commit re-enters pre-commit without a config, failing the outer commit.

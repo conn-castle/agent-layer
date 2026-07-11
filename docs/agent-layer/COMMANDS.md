@@ -205,7 +205,7 @@ make al-copilot   # al copilot
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
-Notes: Convenience wrappers for `go run ./cmd/al <subcommand>` against this repo's own `.agent-layer/` config. Useful when developing al locally and you want to dogfood your changes without `go install`.
+Notes: Convenience wrappers against this repo's own `.agent-layer/` config. Interactive agent launchers build a source snapshot at `.agent-layer/tmp/dev-bin/al` and prepend that directory to the launched agent's `PATH`, so child `al dispatch` calls use the same source snapshot rather than the globally installed binary. The development launch bypasses repo version-pin handoff only for that Make invocation. `al-upgrade` and `al-doctor` continue to use `go run ./cmd/al`.
 
 - Run the Antigravity capability probe
 ```bash

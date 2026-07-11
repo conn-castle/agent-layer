@@ -233,7 +233,15 @@ dev: ## Fast local checks during development (format + lint + coverage + release
 
 # Local dev targets — run al subcommands against this repo's own .agent-layer using source
 AL_RUN := GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go run ./cmd/al
-AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE
+AL_DEV_BIN_DIR := $(ROOT_DIR)/.agent-layer/tmp/dev-bin
+AL_DEV_BIN := $(AL_DEV_BIN_DIR)/al
+AL_DEV_LAUNCH_ENV := PATH="$(AL_DEV_BIN_DIR):$$PATH" AL_DEV_BYPASS_VERSION_DISPATCH=1
+AL_MANAGED_AGENT_ENV := AL_RUN_DIR AL_RUN_ID AL_DISPATCH_CALLER_AGENT AL_DISPATCH_ACTIVE AL_SHIM_ACTIVE AL_DEV_BYPASS_VERSION_DISPATCH CODEX_HOME CLAUDE_CONFIG_DIR AGY_CLI_DISABLE_AUTO_UPDATE
+
+.PHONY: al-dev-build
+al-dev-build: ## Build source al for interactive development launchers
+	@mkdir -p "$(AL_DEV_BIN_DIR)"
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go build -o "$(AL_DEV_BIN)" ./cmd/al
 
 .PHONY: al-upgrade
 al-upgrade: ## Upgrade this repo's .agent-layer using current source
@@ -248,17 +256,17 @@ al-doctor: ## Run al doctor against this repo using current source
 	@$(AL_RUN) doctor
 
 .PHONY: al-claude
-al-claude: ## Run al claude against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) claude
+al-claude: al-dev-build ## Run al claude against this repo using current source
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" claude
 
 .PHONY: al-codex
-al-codex: ## Run al codex against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) codex
+al-codex: al-dev-build ## Run al codex against this repo using current source
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" codex
 
 .PHONY: al-agy
-al-agy: ## Run al agy against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) agy
+al-agy: al-dev-build ## Run al agy against this repo using current source
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" agy
 
 .PHONY: al-copilot
-al-copilot: ## Run al copilot against this repo using current source
-	@unset $(AL_MANAGED_AGENT_ENV); $(AL_RUN) copilot
+al-copilot: al-dev-build ## Run al copilot against this repo using current source
+	@unset $(AL_MANAGED_AGENT_ENV); $(AL_DEV_LAUNCH_ENV) "$(AL_DEV_BIN)" copilot

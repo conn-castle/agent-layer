@@ -77,6 +77,70 @@ func TestRunGolden(t *testing.T) {
 	}
 }
 
+func TestRunWithAntigravityDisabledPreservesMalformedSettingsAndCleansMCP(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	agentLayer := filepath.Join(root, ".agent-layer")
+	for _, dir := range []string{agentLayer, filepath.Join(agentLayer, "instructions"), filepath.Join(agentLayer, "skills")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	configToml := `[approvals]
+mode = "all"
+[agents.antigravity]
+enabled = false
+[agents.claude]
+enabled = false
+[agents.claude_vscode]
+enabled = false
+[agents.codex]
+enabled = false
+[agents.vscode]
+enabled = false
+[agents.copilot_cli]
+enabled = false
+`
+	if err := os.WriteFile(filepath.Join(agentLayer, "config.toml"), []byte(configToml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentLayer, ".env"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentLayer, "commands.allow"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentLayer, "gitignore.block"), []byte("# test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	agyDir := filepath.Join(root, ".agy", "antigravity-cli")
+	if err := os.MkdirAll(agyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(agyDir, "settings.json")
+	before := []byte(`{"malformed":`)
+	if err := os.WriteFile(settingsPath, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mcpPath := filepath.Join(agyDir, "mcp_config.json")
+	if err := os.WriteFile(mcpPath, []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(root); err != nil {
+		t.Fatalf("disabled sync parsed retained settings: %v", err)
+	}
+	after, err := os.ReadFile(settingsPath) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("settings changed: %q", after)
+	}
+	if _, err := os.Stat(mcpPath); !os.IsNotExist(err) {
+		t.Fatalf("managed MCP config was not removed: %v", err)
+	}
+}
+
 func writeTemplateToFixtureSource(t *testing.T, root string, templatePath string, relPath string, perm os.FileMode) {
 	t.Helper()
 	data, err := templates.Read(templatePath)
