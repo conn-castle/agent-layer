@@ -18,8 +18,8 @@ Required:
 
 - Before starting: symptom description specific enough for a testable
   hypothesis
-- Before planning in full investigate-and-fix mode: `implementer`, `fixer`, and
-  `plan_reviewers` for `/plan-work` and `/fully-implement-plan`
+- Before planning in full investigate-and-fix mode: `implementer` and `fixer`
+  for `/fully-implement-plan`, plus `plan_reviewers` for `/plan-work`
 
 Optional:
 
@@ -167,7 +167,6 @@ Then dispatch the fixer for one non-iterative cleanup pass with:
 
 ```text
 /clean-and-fix-code
-plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Finally, run one fresh built-in verifier with `/verify-work` against the
@@ -209,7 +208,6 @@ Plan artifacts:
 {relative path to context artifact}
 implementer is {implementer}
 fixer is {fixer}
-plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Record the `/fully-implement-plan` report path, implementation attempts,

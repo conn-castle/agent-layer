@@ -1,265 +1,217 @@
 ---
 name: ship-pr
 description: >-
-  Run completed local work through PR delivery: commit, push, open PR,
-  monitor CI and PR feedback with the bundled script, maintain one comment
-  ledger, handle review comments, finish green, then stop for merge
-  authorization; if authorized, merge and clean up the branch.
+  Batch local repairs, ship one pull request, observe CI and review feedback long
+  enough to address it, reply to every eligible comment, and stop for merge
+  authorization before merging and cleaning up.
 ---
 
 # ship-pr
 
+Own every commit and push for this workflow. Optimize wall-clock time by running
+local CI and remote monitoring concurrently, but serialize all working-tree
+mutations and batch currently known repairs into as few commits as possible.
+
 ## Defaults
 
-- Default base branch is the repository's default branch (usually `main`).
-- Default PR title and body are auto-generated from the branch name, commit history, and the work that was done.
-- Default minimum ready observation time is 5 minutes for each pushed head SHA.
-- Default comment ledger path is `.agent-layer/tmp/ship-pr-comments-<pr-number>.md`.
+- Base branch: repository default branch.
+- Pull request title and body: derive from the branch, commits, and delivered
+  work.
+- Minimum observation time: 5 minutes for every pushed head SHA.
+- Comment ledger: `.agent-layer/tmp/ship-pr-comments-<pr-number>.md`.
+- Monitor state: `.agent-layer/tmp/ship-pr-monitor-<pr-number>.json`.
 
-## Required inputs
+## Rules
 
-- `implementer`: dispatch agent role to pass to `/run-and-fix-all-checks` for
-  `/implement-plan`, and to delegated skills that may call
-  `/fully-implement-plan`
-- `fixer`: dispatch agent role to pass to delegated skills that may call
-  `/fully-implement-plan` for `/loop-clean-and-fix`
-- `plan_reviewers`: one or more dispatch agent roles to pass to
-  `/address-pr-comments`, `/run-and-fix-all-checks`, and any delegated skill
-  that requires plan reviewers.
+- `ship-pr` is the sole owner of staging, committing, and pushing during this
+  workflow. Child skills must return uncommitted local changes and evidence.
+- Make one initial delivery commit when needed, then at most one commit for each
+  accumulated repair batch. Do not commit each comment or CI fix separately.
+- Treat local CI, remote CI, review comments, and merge conflicts as inputs to
+  the same repair batch for the current head.
+- Only one actor may mutate the working tree at a time. The remote monitor may
+  run concurrently because it is read-only.
+- Every pushed head must satisfy the minimum observation time. Do not shorten it
+  because checks finish early.
+- Never close out with unprocessed feedback, an unposted eligible reply, or a
+  failed reply audit.
+- Merge only after explicit authorization for the exact pull request and after
+  all gates are freshly rechecked.
 
-If `implementer`, `fixer`, or `plan_reviewers` is missing, ask for it
-before starting. Do not invent a default implementer, fixer, or plan review
-agent list.
+## Comment ledger and reply contract
 
-## Continuation and checkpoints
+Create or reuse exactly one ledger for the pull request and pass it to every
+`/address-pr-comments` call. The ledger schema and comment decisions are owned
+by that skill; this skill owns publishing state.
 
-Continue the current step until this skill reaches a stop gate. Delegated-skill
-returns are intermediate results, not stop gates. The only stop gates are Step 5,
-Step 6, and checkpoints, including mirrored sub-skill checkpoints. At a
-checkpoint, report the current branch, PR number if one exists, latest head SHA
-if known, the blocking condition, and the smallest user decision or
-authorization needed; after the user answers, resume the same step.
+Every original non-excluded conversation comment, inline review comment, and
+review body must have its own ledger row and its own reply. Do not combine
+several comments into a generic response.
 
-## Context preservation
+An eligible reply must begin with exactly one required bold verdict:
 
-You are the orchestrator for this skill. Do not do work that belongs to
-subagents or delegated skills in the orchestration context. Preserve your
-context to make strategic decisions, enforce gates, reconcile returned outputs,
-and continue this skill's workflow after every delegation returns.
+- **Fixed in `<short-hash>`.** The pushed commit must materially address the
+  comment.
+- **No change — `<reason>`.** The reason must be specific and evidence-backed.
+- **Deferred — tracked in `<location>`.** The tracking location must exist and
+  the work must genuinely be outside this pull request.
 
-## Compaction guidance
+For every eligible row:
 
-When compaction is needed, retain this entire skill verbatim. Also preserve the
-current workflow step or phase, active artifact paths, selected scope, pending
-gate verdicts, delegated skills and subagents already run and their outcomes,
-unresolved blockers or user checkpoints, and the next exact step.
+1. Re-fetch the original comment and current replies.
+2. Post the row's reply in its native inline thread when one exists; otherwise
+   post a dedicated pull request conversation reply that identifies the
+   original comment or review body.
+3. Re-fetch GitHub data, record the reply ID or URL, and set the row to
+   `reply_posted_pending_audit`.
+4. Run `address-pr-comments/reviewer-prompt.md` in a fresh built-in subagent
+   with that row's original comment, posted reply, and verdict-specific
+   evidence required by the asset.
+5. Record the audit verdict. Set the row to `complete` only when it returns
+   `pass`.
 
-## Comment ledger
+For `insufficient_evidence`, complete the audit package and rerun the audit
+without posting another reply. Feed every substantive failed audit back into
+`/address-pr-comments` with its evidence. Edit the posted reply when the GitHub
+surface supports it; otherwise post one explicit corrective reply, record its
+URL or ID, and audit that reply. A row remains incomplete until an audit passes;
+generic acknowledgements never satisfy the contract.
 
-Create exactly one comment ledger for the PR and use it for the full run. After
-the PR number is known, create or reuse
-`.agent-layer/tmp/ship-pr-comments-<pr-number>.md`, then pass that same ledger to
-every `/address-pr-comments` invocation. Do not create per-loop ledgers.
+## Workflow
 
-The ledger is the source of truth for comment state. It must use the ledger
-schema defined by `/address-pr-comments`, including the `GitHub reply posted`
-column. Preserve it across monitor loops, CI repair loops, merge-conflict
-repair loops, and closeout.
+### 1. Publish the initial head
 
-`/address-pr-comments` must not commit, push, or post GitHub replies. This
-skill owns those boundaries:
+1. Resolve the current branch, default branch, upstream, and working-tree state.
+2. If local changes are on the default branch, create a topic branch.
+3. Commit all current delivery changes once, push the branch, and create or
+   reuse its pull request.
+4. Record the pull request number, URL, head SHA, push time, ledger path, and
+   monitor state path.
 
-- When this skill has local changes ready to publish, commit immediately. Then
-  push.
-- Run `/run-and-fix-all-checks` from Background local CI, not as a pre-commit
-  step.
-- Commit and push any required local changes. Then post GitHub replies only from
-  this skill.
-- For `fix` rows, replace `Fixed in <pending-commit>` with the actual pushed
-  short hash. Then post.
-- Post a reply. Then update the ledger's `GitHub reply posted` and reply
-  URL/note from fresh GitHub data.
+If there is no local work and no ahead commit to ship, stop with the concrete
+state instead of creating an empty pull request.
 
-When posting replies from the ledger:
+### 2. Start concurrent observation for the head
 
-1. Re-fetch the PR comments, review comments, and review bodies.
-2. Post only eligible rows with `GitHub reply posted=no`:
-   - `fix`: requires an actual pushed commit hash in the row.
-   - `disagree`: requires a `No change — <reason>` reply body and no pending
-     local changes from the current workflow loop.
-   - `defer`: requires a real tracking location, a `Deferred — tracked in
-     <location>` reply body, and no pending local changes from the current
-     workflow loop.
-3. Use the GitHub CLI or API:
-   - review comments: `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments/{comment-id}/replies -f body="<reply>"`
-   - conversation comments: `gh pr comment <pr-number> --body "<reply>"`
-4. Re-fetch and update the ledger with posted reply IDs/URLs.
-5. Run the fresh-context reply audit using
-   [`address-pr-comments/reviewer-prompt.md`](address-pr-comments/reviewer-prompt.md)
-   for posted feedback rows. If any row fails, keep the row non-complete and
-   feed it back into the next `/address-pr-comments` call.
+For the current pushed head, start the read-only monitor immediately. Start
+`/run-and-fix-all-checks` concurrently only when no current passing full-lane
+evidence covers the exact pushed tree:
 
-## Background local CI
+- the read-only monitor:
 
-Optimize for fast PR feedback by parallelizing GitHub Actions and local CI.
-Always commit, push, and create or confirm the PR. Then start
-`/run-and-fix-all-checks`. This applies to the initial PR and every follow-up
-fix commit.
+  ```bash
+  bash <skill_dir>/scripts/monitor-pr.sh \
+    --pr <pr-number> \
+    --state-file .agent-layer/tmp/ship-pr-monitor-<pr-number>.json \
+    --minimum-ready-seconds <minimum_ready_seconds>
+  ```
 
-Once the PR exists, run background local CI for each pushed head SHA as a
-parallel diagnostic signal:
+- `/run-and-fix-all-checks` in a built-in subagent, when required
 
-```text
-/run-and-fix-all-checks
-implementer is {implementer}
-plan_reviewers are {agent 1, agent 2, ...}
-```
+Omit `--timeout-seconds` so the script uses its documented default. While local
+CI runs, queue monitor actions but do not launch another mutator. Local CI may
+repair its failures directly, but it must leave changes uncommitted for this
+skill.
 
-Do not treat it as a pre-commit or pre-push gate. If GitHub Actions pass for
-the current head before local CI finishes, stop local CI immediately and
-continue to closeout when the other gates are clean. If GitHub Actions fail,
-keep local CI running when it can provide reproducer evidence for the failure.
-If background local CI produces local repair changes, route them through the
-repeatable workflow's local-changes path: commit immediately, push immediately,
-restart background local CI for the new pushed head, and start the whole process
-over.
+When current passing evidence already covers the pushed tree, reuse it instead
+of running the lane again. If a new local CI run is blocked, stop with its
+evidence. Otherwise, preserve its report and any local repairs, the final
+passing evidence, and the exact working-tree state that evidence covers. Then
+reconcile the latest queued remote state.
 
-## Orchestration loop
+### 3. Build one repair batch
 
-### Step 1: Prepare and push
+Refresh comments, required checks, mergeability, and ledger state. Sequentially
+address all currently known work:
 
-1. Determine the current branch, default branch, `git status --porcelain`, and upstream ahead count.
-2. If there are no uncommitted changes and the current branch is the default branch, checkpoint and report whether ahead commits exist.
-3. If uncommitted changes exist on the default branch, create and switch to a branch derived from the changes.
-4. If uncommitted changes exist, stage all and commit them immediately. Do not
-   run `/run-and-fix-all-checks` first.
-5. Push the branch to the remote immediately.
-6. If a PR number and comment ledger already exist, publish eligible ledger replies whose prerequisites are now satisfied.
+- Run `/address-pr-comments` with the pull request and single ledger for new or
+  incomplete feedback.
+- Run `/fix-ci` for a remote failure not already resolved by pending local
+  repairs. It must return uncommitted changes and local reproducer evidence.
+- Resolve mechanical merge conflicts directly. Stop for a user-owned behavior
+  or architecture decision.
 
-### Step 2: Create or use the PR
+After applying known work, compare the current working-tree state with the state
+covered by the latest passing full-lane evidence. Run
+`/run-and-fix-all-checks` over the combined local batch only when the tree has
+changed since that passing run. Keep any repairs in the same batch. Reuse the
+passing result when it already covers the current tree.
 
-1. Use the existing branch PR if `gh pr view` finds one; otherwise create one using Defaults: `gh pr create --title "<title>" --body "<body>" --base <base-branch>`.
-2. If PR creation fails due to an existing PR or branch conflict, checkpoint.
-3. Record the PR number/URL and current head SHA.
-4. Start or restart background checks for the current pushed head SHA now that
-   the PR is created or confirmed:
+Refresh remote comments and state again before committing. If new actionable
+work appeared, add it to the batch and rerun only the evidence invalidated by
+those changes.
 
-   ```text
-   /run-and-fix-all-checks
-   implementer is {implementer}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+If `/fix-ci` returns `remote-retry-needed` with no local change, use the
+repository-supported mechanism to rerun only the failed remote checks once for
+that evidence-equivalent failure on the current head, then restart monitoring.
+If no supported rerun exists, or the rerun produces the same failure and a
+second local diagnosis still cannot justify a repair, stop with the collected
+evidence. Do not push an empty commit to trigger CI.
 
-5. Create or reuse the single comment ledger for this PR.
-6. Publish eligible ledger replies whose prerequisites are already satisfied.
+If `/fix-ci` returns `blocked` or `repeated-failure`, stop with its evidence
+unless another already-applied repair in the current batch directly invalidates
+that failure evidence.
 
-### Step 3: Monitor and reconcile
+When no currently known actionable work remains:
 
-The monitor script is the only remote check and feedback polling loop.
+- If local changes exist, stage all of them, create one repair commit, push
+  once, replace applicable `<pending-commit>` placeholders with its short hash,
+  publish and audit eligible replies, then restart at Step 2 for the new head.
+- If no local changes exist, publish and audit eligible disagreement, deferral,
+  or already-pushed fix replies, then return to monitoring.
 
-1. Run:
+After publishing any reply, run at least one additional monitor cycle so new
+responses are observed before closeout.
 
-   ```bash
-   bash <skill_dir>/scripts/monitor-pr.sh \
-     --pr <pr-number> \
-     --state-file .agent-layer/tmp/ship-pr-monitor-<pr-number>.json \
-     --minimum-ready-seconds <minimum_ready_seconds>
-   ```
+### 4. Reconcile monitor actions
 
-   Use Defaults unless the user supplied overrides. Omit `--timeout-seconds`
-   so the monitor script uses its own timeout default.
-2. React to the JSON `.action`:
-   a. `feedback_changed`: run Step 4. The script intentionally omits comment bodies.
-   b. `ci_failed`: run Step 4. Then decide whether CI repair is still needed.
-   c. `merge_conflict`: run Step 4. Then decide whether merge repair is still needed.
-   d. `pr_not_open`: investigate without a human checkpoint. Re-fetch PR state, branch state, and monitor state; correct stale PR selection or recoverable branch/PR state when safe. If the PR is closed or merged and cannot be acted on, stop with the evidence and do not report it as green.
-   e. `timeout`: investigate without a human checkpoint. Re-fetch checks, comments, mergeability, and monitor state; run Step 4 if any actionable work exists. Rerun the monitor when checks are pending or `.remaining_minimum_ready_seconds > 0`. If no checks appear, run `gh pr checks <pr-number>` once and keep investigating based on that output; do not treat the PR as green solely because the monitor timed out.
-   f. `ready`: if there are no local changes, no pending ledger replies or
-      reply-audit failures, and the repeatable workflow is not running, stop
-      local CI immediately and go to Step 5. If local changes or pending ledger
-      work exist, run Step 4.
+Use `monitor-pr.sh` as the only remote polling loop:
 
-### Step 4: Repeatable feedback, merge-conflict, and CI workflow
+- `feedback_changed`: add the feedback to the current repair batch.
+- `ci_failed`: add the remote failure evidence to the batch.
+- `merge_conflict`: add mechanical resolution to the batch or stop for a
+  user-owned decision.
+- `timeout`: refresh checks, comments, mergeability, and monitor state. Continue
+  monitoring when checks are pending or observation time remains; timeout alone
+  is never evidence of readiness.
+- `pr_not_open`: investigate stale selection or recoverable state. Stop with
+  evidence when the pull request is closed or merged and cannot be acted on.
+- `ready`: apply the closeout gate below.
 
-Run this full workflow after monitor actions `feedback_changed`, `ci_failed`, or
-`merge_conflict`, and whenever `ready` still has local changes or pending ledger
-work.
+### 5. Closeout gate
 
-Repeat these substeps until all three have no immediate work left:
+Closeout requires all of the following for the current head:
 
-1. Automatically call a built-in subagent with the PR number and single comment
-   ledger:
+- the monitor returned `ready` after the full minimum observation time
+- required remote checks are green
+- the full local lane passed for the delivered tree
+- no merge conflict or local change remains
+- a fresh final fetch found no unledgered feedback or new requested change
+- every non-excluded ledger row has an eligible posted reply and a `pass` audit
+- at least one monitor cycle ran after the most recently posted reply
 
-   ```text
-   /address-pr-comments
-   {PR number}
-   {relative path to single comment ledger}
-   implementer is {implementer}
-   fixer is {fixer}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+When every gate passes, report the pull request URL, head SHA, checks, ledger,
+comment outcomes, reply audits, repair commits, and residual risk. Ask the user
+to authorize merging the exact pull request, then stop.
 
-   It must return the updated ledger and must not commit, push, or post GitHub
-   replies.
-2. Check for merge conflicts using fresh PR mergeability state and local branch
-   state. Resolve mechanical conflicts when the resolution does not change
-   product behavior; leave the resolution as local changes for this skill to
-   commit. If a conflict requires a substantive behavior or architecture
-   decision, checkpoint.
-3. Check whether CI is red using fresh PR check state. If CI is red and no local
-   CI repair is already pending for that failure, call with the PR number:
+### 6. Merge after authorization
 
-   ```text
-   /fix-ci
-   {PR number}
-   implementer is {implementer}
-   fixer is {fixer}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+Authorization is single-use and applies only to the named pull request at the
+approved head. Before merging, re-fetch the head, checks, mergeability, comments,
+and ledger. Resume the workflow and request fresh authorization if any gate is
+no longer satisfied.
 
-   Require it to return local repair changes plus reproducer evidence. Then
-   continue to this skill's commit/push phase. If `/fix-ci` cannot honor
-   ship-pr's commit/push boundary or reaches its own checkpoint, mirror that
-   checkpoint. If CI is red only because a local repair is already pending
-   commit/push, treat CI as having no immediate work for this loop.
+Use the repository's sole allowed merge method or the viewer's explicit default.
+If several methods are allowed without a default, ask the user to choose. Merge,
+switch to and update the base branch, then delete the local and mapped remote
+source branches only after confirming the pull request is merged. Verify both
+branches are gone; do not guess the remote for a cross-repository pull request.
 
-After a loop pass has no immediate comment, merge-conflict, or CI repair work:
+## Completion contract
 
-1. If the monitor reported `.remaining_minimum_ready_seconds > 0`, wait until
-   that minimum time has elapsed, then run one more full loop through the three
-   substeps above.
-2. If local changes exist, stage all changes and commit them immediately. Update
-   `fix` ledger rows from `<pending-commit>` to the new short hash where
-   applicable, then return to Step 1 so the new commit is pushed and the whole
-   process starts over. Follow Background local CI for the local check lane.
-3. If no local changes exist, publish eligible ledger replies, update the
-   ledger from fresh GitHub data, and return to Step 3 unless the latest monitor
-   result was `ready`.
-4. If the latest monitor result was `ready`, no local changes exist, and the
-   ledger has no pending replies or reply-audit failures, go to Step 5.
+Return either:
 
-### Step 5: Closeout
-
-1. Final gate: latest Step 3 result is `ready` for the current head, all local changes are committed and pushed, local CI has been stopped for the current head, and the single comment ledger has no pending replies or reply-audit failures.
-2. Report the PR URL, checks, comment ledger path, comment outcomes, `/fix-ci` evidence if used, and any comments re-addressed during audit.
-3. Ask the user to authorize merging the exact PR number. If the user has not already issued explicit approval for this PR, stop here.
-
-### Step 6: Merge after authorization
-
-1. Treat authorization as single-use and scoped to the named PR.
-2. Re-verify the PR is mergeable and CI is still green: `gh pr view <N> --json mergeable,mergeStateStatus,state`.
-3. Determine the merge method:
-   a. Run `gh repo view --json mergeCommitAllowed,rebaseMergeAllowed,squashMergeAllowed,viewerDefaultMergeMethod`.
-   b. If exactly one method is allowed, run `gh pr merge <N>` with that explicit flag (`--merge`, `--rebase`, or `--squash`).
-   c. If multiple methods are allowed and `viewerDefaultMergeMethod` names one of them, run `gh pr merge <N>` with the matching explicit flag.
-   d. If multiple methods are allowed and no explicit default method is available, stop and ask the user to choose one of the allowed methods. Do not infer a method from branch names, commit history, or personal preference.
-4. Merge with the selected method.
-5. Clean up the source branch:
-   a. Fetch metadata: `gh pr view <N> --json baseRefName,headRefName,headRepository,headRepositoryOwner,isCrossRepository,state`.
-   b. Switch to the base branch and update it: `git checkout <base> && git pull`.
-   c. Delete the local branch: `git branch -d <branch>`. If `-d` refuses, re-confirm the PR is merged via `gh pr view <N> --json state` before considering `-D`.
-   d. Map the PR head repository to a local remote using `git remote -v`; stop if no remote maps unambiguously.
-   e. Delete the mapped remote branch: `git push <remote> --delete <headRefName>`, unless `git ls-remote --heads <remote> <headRefName>` shows it is already gone.
-   f. Verify deletion:
-      - Local: `git branch --list <branch>` returns no output.
-      - Remote: `git ls-remote --heads <remote> <headRefName>` returns no output.
+- the exact merge-authorization request with all closeout evidence
+- the merged pull request and verified branch cleanup
+- a concrete blocker with the pull request, head SHA, ledger, and next required
+  decision

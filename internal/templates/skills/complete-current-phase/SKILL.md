@@ -131,8 +131,8 @@ require a new plan.
 ### Phase 3: Confirm Plan Readiness (Plan Reviewers)
 
 Do not send plan-review findings into the audit-fix loop; `/review-plan` owns
-plan reviewer synthesis, accepted artifact revisions, and repeat review rounds
-inside `/plan-work`.
+one reviewer pass, synthesis, and accepted artifact revisions inside
+`/plan-work`.
 
 If final readiness is `blocked-for-user-decision`, ask the smallest question
 that unblocks the plan. Continue only when final readiness is
@@ -171,7 +171,6 @@ broadening scope, run:
 
 ```text
 /clean-and-fix-code
-plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 ### Phase 6: Review against the plan (Completeness Review Agents)
@@ -214,7 +213,6 @@ behavior-preserving and in-scope, run:
 
 ```text
 /clean-and-fix-code
-plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 Then return to Phase 6.

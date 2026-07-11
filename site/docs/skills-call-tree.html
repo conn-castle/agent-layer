@@ -841,22 +841,11 @@
 
   <script>
     const defaultYaml = String.raw`address-pr-comments:
-  inputs: [plan_reviewers, implementer, fixer]
   calls:
-    - task: gather, evaluate, update the ledger, and draft replies
-    - if: a fix decision is small enough to handle directly
+    - task: gather, reconcile, and evaluate every pull request comment in one ledger with reply and audit state
+    - if: review comments have accepted in-scope fixes
       calls:
-        - task: apply the local fix and update the ledger
-    - if: a fix decision is large, cross-cutting, behavior-changing, or complex
-      calls:
-        - skill: plan-work
-          inputs: [plan_reviewers]
-        - skill: fully-implement-plan
-          inputs: [plan_reviewers, implementer, fixer]
-    - if: this skill made non-trivial local code changes
-      calls:
-        - skill: clean-and-fix-code
-          inputs: [plan_reviewers]
+        - task: directly address every accepted fix with focused evidence
     - exit: return the updated ledger and local-change status
 audit-documentation:
   calls:
@@ -900,7 +889,6 @@ auto-skill-loop:
         - if: PR gate is met
           calls:
             - skill: ship-pr
-              inputs: [plan_reviewers, implementer, fixer]
               caller: dispatch(shipper)
         - if: final readiness review finds a manual gate
           calls:
@@ -925,25 +913,21 @@ boost-coverage:
           calls:
             - exit: report the coverage outcome
 clean-and-fix-code:
-  inputs: [plan_reviewers]
   calls:
-    - if: diff adds or modifies test files or test cases
+    - if: uncommitted diff includes changed tests
       calls:
         - asset: clean-and-fix-code/assets/prune-uncommitted-tests
           caller: subagent
-    - if: diff adds or modifies production code
+    - if: uncommitted diff includes changed production code
       calls:
         - asset: clean-and-fix-code/assets/simplify-uncommitted-code
           caller: subagent
-    - skill: review-uncommitted-code
-    - if: review report has Recommended Accept findings
+    - if: cleanup pre-passes leave an uncommitted target
       calls:
-        - skill: plan-work
-          inputs: [plan_reviewers]
-          caller: subagent
-        - skill: implement-plan
-        - skill: verify-work
-          caller: subagent
+        - skill: review-uncommitted-code
+        - if: review report has Recommended Accept findings
+          calls:
+            - task: validate and directly repair accepted findings with focused checks
 complete-current-phase:
   inputs: [plan_reviewers]
   calls:
@@ -969,7 +953,6 @@ complete-current-phase:
             - if: implementation leaves obvious local complexity
               calls:
                 - skill: clean-and-fix-code
-                  inputs: [plan_reviewers]
             - skill: verify-work
               caller: subagent
             - if: package verification is incomplete
@@ -987,7 +970,6 @@ complete-current-phase:
             - if: audit fixes leave in-scope local complexity
               calls:
                 - skill: clean-and-fix-code
-                  inputs: [plan_reviewers]
             - if: audit fixes or cleanup changed the package
               calls:
                 - skill: verify-work
@@ -1005,7 +987,7 @@ debug-and-fix-issue:
         - skill: plan-work
           inputs: [plan_reviewers]
         - skill: fully-implement-plan
-          inputs: [plan_reviewers, implementer, fixer]
+          inputs: [implementer, fixer]
     - if: diagnosis-only mode and no broader orchestrator owns closeout
       calls:
         - skill: finish-task
@@ -1014,32 +996,18 @@ finish-task:
     - task: review scope, curate memory, verify, and summarize closeout
       caller: subagent
 fix-ci:
-  inputs: [plan_reviewers, implementer, fixer]
   calls:
-    - while: CI is still failing on the PR
+    - task: gather CI evidence and establish a credible local reproducer
+    - if: failure is external or lacks a credible reproducer and no safe patch is justified
       calls:
-        - task: diagnose the CI failure, repair it, verify locally, and push
-          caller: subagent
-        - if: no credible local reproducer can be built
-          calls:
-            - exit: stop at a human checkpoint instead of pushing a guess
-        - if: the CI fix is small and direct
-          calls:
-            - task: apply the minimum local fix
-        - if: the CI fix is large, cross-cutting, behavior-changing, or complex
-          calls:
-            - skill: plan-work
-              inputs: [plan_reviewers]
-            - skill: fully-implement-plan
-              inputs: [plan_reviewers, implementer, fixer]
-        - skill: clean-and-fix-code
-          inputs: [plan_reviewers]
-        - if: all CI checks pass
-          calls:
-            - exit: report the passing CI evidence
-        - if: the same CI failure persists after three fix attempts
-          calls:
-            - exit: stop at the repeated-failure checkpoint
+        - exit: return remote-retry-needed with failed-check evidence
+    - while: credible local reproducer fails and fewer than three evidence-backed repairs ran
+      calls:
+        - task: directly repair the root cause and verify it locally
+    - if: failure requires a user-owned decision, lacks required evidence, or repeats three times
+      calls:
+        - exit: return blocked or repeated-failure evidence
+    - exit: return uncommitted repair changes and evidence to the caller
 fix-issues:
   inputs: [plan_reviewers]
   calls:
@@ -1057,54 +1025,42 @@ fix-issues:
         - if: touched scope accumulates obvious local complexity or dead scaffolding
           calls:
             - skill: clean-and-fix-code
-              inputs: [plan_reviewers]
     - if: all selected batches are complete and no broader orchestrator owns closeout
       calls:
         - skill: finish-task
 full-workflow:
   inputs: [planner, plan_reviewers, implementer, fixer, shipper]
   calls:
-    - task: validate dispatch roles and draft the spec
-    - while: the spec has open questions
-      calls:
-        - task: ask one open question and update the spec
-    - if: user approves the final spec gate
+    - task: validate roles, align the spec, and resolve user-owned decisions
+    - if: user approves the aligned spec
       calls:
         - skill: plan-work
           inputs: [plan_reviewers]
           caller: dispatch(planner)
         - skill: ship-plan
-          inputs: [plan_reviewers, implementer, fixer]
+          inputs: [implementer, fixer]
           caller: dispatch(shipper)
 fully-implement-plan:
-  inputs: [plan_reviewers, implementer, fixer]
+  inputs: [implementer, fixer]
   calls:
     - skill: implement-plan
       caller: dispatch(implementer)
     - skill: loop-clean-and-fix
-      inputs: [plan_reviewers]
       caller: dispatch(fixer)
     - skill: verify-work
       caller: subagent
-    - while: verification verdict is incomplete and remaining-work attempts remain
+    - if: verification has material in-scope findings
       calls:
-        - skill: plan-work
-          inputs: [plan_reviewers]
-        - skill: implement-plan
+        - if: a repair requires a user-owned decision
+          calls:
+            - exit: stop for the smallest user decision
+        - task: directly address every verification finding with focused evidence
           caller: dispatch(implementer)
-        - skill: loop-clean-and-fix
-          inputs: [plan_reviewers]
-          caller: dispatch(fixer)
-        - skill: verify-work
-          caller: subagent
     - task: write the fully-implement-plan report
 implement-plan:
   calls:
-    - task: load artifacts, gate readiness, execute tasks, and write the implementation report
-    - if: readiness verdict requires plan or task revision
-      calls:
-        - task: revise the artifacts only within the supplied scope
-    - if: readiness verdict requires a human checkpoint
+    - task: implement ordered scope and report deviations, blockers, and verification readiness
+    - if: implementation requires a user-owned decision
       calls:
         - exit: stop for the smallest user decision
 improve-codebase:
@@ -1148,28 +1104,26 @@ interface-audit:
         - task: run focused interface investigation and verification passes
           caller: subagent
 loop-clean-and-fix:
-  inputs: [plan_reviewers]
   calls:
-    - while: cleanup target exists and the repeat gate stays open
+    - while: cleanup target exists, fewer than four rounds ran, and first round is pending or prior round made material non-repeating progress
       calls:
         - skill: clean-and-fix-code
-          inputs: [plan_reviewers]
+    - task: report the bounded cleanup outcome and stop reason
 plan-work:
   inputs: [plan_reviewers]
   calls:
     - asset: plan-work/assets/write-plan
     - skill: review-plan
       inputs: [plan_reviewers]
+    - task: return reviewed artifact paths and the readiness verdict
 review-plan:
   inputs: [plan_reviewers]
   calls:
-    - while: plan review has not reached implementation-ready
+    - for: plan_reviewer in plan_reviewers
       calls:
-        - for: plan_reviewer in plan_reviewers
-          calls:
-            - asset: review-plan/assets/agent-review-prompt
-              caller: dispatch(plan_reviewer)
-        - task: synthesize findings and revise accepted plan artifacts
+        - asset: review-plan/assets/agent-review-prompt
+          caller: dispatch(plan_reviewer)
+    - task: synthesize evidence, revise accepted findings, and report readiness
 review-uncommitted-code:
   calls:
     - if: scope is non-trivial
@@ -1179,80 +1133,72 @@ review-uncommitted-code:
     - asset: review-uncommitted-code/assets/finding-verdict-classification
       caller: subagent
 run-and-fix-all-checks:
-  inputs: [plan_reviewers, implementer]
   calls:
-    - task: resolve the full documented check lane from COMMANDS.md
-    - while: full check lane has not passed after latest changes
+    - task: resolve and run the full documented check lane from COMMANDS.md
+    - while: full check lane has an actionable local failure
       calls:
-        - task: run the full documented check lane
-        - if: every command passes and no active verification gap remains
+        - task: preserve failure evidence, directly repair the root cause, and rerun the lane
+        - if: failure is external, requires a user-owned decision, or repeats without new evidence
           calls:
-            - exit: write the final report and finish
-        - if: a command failed or verification gap remains
-          calls:
-            - task: save failure evidence as a repair artifact
-            - skill: plan-work
-              inputs: [plan_reviewers]
-              caller: subagent
-            - skill: implement-plan
-              caller: dispatch(implementer)
-            - skill: verify-work
-              caller: subagent
+            - exit: report the concrete blocker
 schedule-backlog:
   calls:
     - task: triage backlog and draft roadmap proposal options
       caller: subagent
 ship-plan:
-  inputs: [plan_reviewers, implementer, fixer]
+  inputs: [implementer, fixer]
   calls:
     - skill: fully-implement-plan
-      inputs: [plan_reviewers, implementer, fixer]
-    - if: /fully-implement-plan final status is complete or acceptable complete-with-follow-up
-      calls:
-        - skill: ship-pr
-          inputs: [plan_reviewers, implementer, fixer]
+      inputs: [implementer, fixer]
+    - skill: ship-pr
 ship-pr:
-  inputs: [plan_reviewers, implementer, fixer]
   calls:
-    - task: commit, push, and prepare the PR
-    - skill: run-and-fix-all-checks
-      inputs: [plan_reviewers, implementer]
-      caller: subagent
-    - while: PR is not ready for closeout
+    - task: publish the initial head, create or reuse the PR, and initialize one comment ledger
+    - while: current pushed head has not satisfied every closeout gate
       calls:
-        - task: run monitor-pr.sh and reconcile its action
-        - if: monitor reports feedback changed, CI failed, merge conflict, ready with pending work, or timeout with actionable work
+        - task: start monitor-pr.sh and queue remote actions while any local CI owns mutations
+        - if: exact pushed tree lacks current passing full-lane evidence
           calls:
-            - while: immediate comment, merge-conflict, or CI work remains
+            - skill: run-and-fix-all-checks
+              caller: subagent
+        - if: new or incomplete review feedback exists
+          calls:
+            - skill: address-pr-comments
+              caller: subagent
+        - if: remote CI failed and pending local repairs do not already address it
+          calls:
+            - skill: fix-ci
+        - if: fix-ci returns remote-retry-needed for a failure not yet retried on this head
+          calls:
+            - task: rerun only the failed remote checks and restart monitoring without pushing
+            - break: restart observation for the current head
+        - if: fix-ci returns blocked, repeated-failure, or an exhausted remote retry
+          calls:
+            - exit: report the concrete CI blocker
+        - if: the current head has a mechanically resolvable merge conflict
+          calls:
+            - task: resolve the conflict into the current repair batch
+        - if: the repair batch has local changes
+          calls:
+            - if: current tree is not covered by the latest passing full-lane evidence
               calls:
-                - skill: address-pr-comments
-                  inputs: [plan_reviewers, implementer, fixer]
+                - skill: run-and-fix-all-checks
                   caller: subagent
-                - if: monitor reports a merge conflict that is mechanically resolvable
-                  calls:
-                    - task: resolve mechanical merge conflicts
-                - if: CI is red and no local check repair is already pending
-                  calls:
-                    - skill: fix-ci
-                      inputs: [plan_reviewers, implementer, fixer]
-                - if: monitor minimum ready time remains after no immediate work is left
-                  calls:
-                    - task: wait until the minimum ready observation time elapses
-                    - break: rerun the repeatable workflow once more
-                - if: local changes exist after comment, conflict, CI, or local-check repair
-                  calls:
-                    - task: commit and push local repair changes
-                    - skill: run-and-fix-all-checks
-                      inputs: [plan_reviewers, implementer]
-                      caller: subagent
-                    - break: restart monitoring for the new pushed head
-                - if: no local changes exist and ledger replies are eligible
-                  calls:
-                    - task: publish eligible ledger replies and refresh the ledger from GitHub
-                    - asset: address-pr-comments/reviewer-prompt
-                      caller: subagent
-                    - break: return to monitor unless the latest monitor result was ready
-        - if: latest monitor result is ready, local check lane stopped, and ledger is complete
+            - task: commit the combined batch once, push once, publish eligible replies, and refresh the ledger
+            - for: posted_reply in newly posted ledger replies
+              calls:
+                - asset: address-pr-comments/reviewer-prompt
+                  caller: subagent
+            - break: restart observation for the new pushed head
+        - if: no local changes remain and ledger replies are eligible
+          calls:
+            - task: publish every eligible reply separately and refresh the ledger
+            - for: posted_reply in newly posted ledger replies
+              calls:
+                - asset: address-pr-comments/reviewer-prompt
+                  caller: subagent
+            - break: run another monitor cycle after the replies
+        - if: monitor is ready after the minimum window, local and remote checks are green, final refresh found no feedback, and every ledger row passed reply audit
           calls:
             - exit: stop and request authorization to merge the exact PR
     - if: user authorizes the exact PR merge
@@ -1268,7 +1214,7 @@ simplify-codebase:
 verify-work:
   calls:
     - asset: verify-work/contract-verification-rubric
-    - task: verify the contract and write the report
+    - task: compare the contract to the final tree, gather sufficient evidence, and report the verdict
 `;
 
     function skillList(spec) {
@@ -1555,8 +1501,8 @@ verify-work:
       "Use `skill:` for skills, `asset:` for bundled prompts or assets, `task:` for local orchestration work, and `break:` or `exit:` for terminal control flow.",
       "Put `if:`, `while:`, and `for:` at the list-item level with their body under nested `calls:`.",
       "Focus on meaningful delegation shape, not every mechanical instruction. At one `calls:` level, prefer one coarse direct `task:` row.",
-      "When a source skill gates a child call, the rendered YAML can assume that call is ready. For example, put failure evidence, `/plan-work`, `/implement-plan`, and `/verify-work` inside the same failure branch instead of rendering separate readiness checks.",
-      "A reusable plan/implement/verify abstraction can be useful when it has a real source skill and stable contract. Otherwise, inline the three skill calls under the meaningful condition.",
+      "When a source skill gates a child call, the rendered YAML can assume that call is ready. Put failure evidence and the direct repair under the same meaningful branch instead of rendering separate readiness checks.",
+      "Use a reusable orchestration skill only when it owns a stable artifact and handoff contract. Do not introduce a plan/implement/verify sequence around a direct repair.",
       "Use `caller: subagent` for built-in fresh-context subagents and `caller: dispatch(agent_name)` for named dispatch agents. Use `inputs:` only for agent-role inputs, ordered as `plan_reviewers`, `implementer`, `fixer`, then `shipper` when present.",
       "Use readable conditions and loop labels. Group repeated sibling guards into one branch, then show the meaningful calls inside it."
     ];

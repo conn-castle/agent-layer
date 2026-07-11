@@ -1,213 +1,108 @@
 ---
 name: verify-work
 description: >-
-  Read-only check of completed work against a plan, task list, context file, or
-  explicit request, reporting completion gaps, regressions, missing
-  verification, docs/memory gaps, working-code evidence, and scope drift.
+  Verify completed work against its authoritative contract and report coverage,
+  working-code evidence, material gaps, and the completion verdict.
 ---
 
 # verify-work
 
-Verify completed work without fixing it. This is a completion and evidence
-review, not a code-editing pass.
-
-The main question is:
-
-Did the implementation deliver the agreed contract, and is there credible
-evidence that the touched code works?
-
-## Defaults
-
-- Require either a plan/task artifact pair or an explicit user request/scope to
-  verify against.
-- If plan/task artifacts are used, require explicit paths to both files. Load
-  an explicit context file when provided.
-- Default implementation target is the current working tree plus files touched
-  for the supplied contract.
-- Do not modify code, docs, memory files, or plan artifacts. Produce a report
-  only.
-- Use the sibling `contract-verification-rubric.md` as this skill's fixed
-  internal comparison rubric.
-- Own final verification for the supplied contract. Run the smallest credible
-  checks, or accept existing command evidence only when it clearly covers the
-  final working tree.
+Run one read-only verification pass over completed work. Decide whether the
+implementation delivered its contract and whether sufficient evidence covers
+the final working tree. Do not fix findings in this stage.
 
 ## Required inputs
 
-The caller must provide one contract source:
+Require one authoritative contract source:
 
-- explicit paths to both a plan file and a task file, plus an optional context
-  file
-- an explicit user request/scope
+- explicit plan and task artifact paths, with an optional context artifact path
+- an explicit user request or scope
+
+Exact plan and task paths are required when artifacts are used. Do not discover
+or select them from `.agent-layer/tmp/`.
 
 The caller may also provide supplemental obligations, such as accepted cleanup
-findings. They are additive verification targets only: they cannot weaken,
-replace, reinterpret, or mark complete any item in the authoritative contract.
+findings. Verify them separately; they do not replace or reinterpret the
+authoritative contract.
 
-If either the plan path or task path is missing, stop and ask for the missing
-path. Do not discover, infer, or auto-select artifacts from `.agent-layer/tmp/`.
+Implementation reports, summaries, pull request descriptions, and issue bodies
+are evidence only. They cannot redefine promised work or mark it complete.
 
-Do not treat implementation reports, summaries, PR descriptions, issue bodies,
-or other free-form documents as contract artifacts. Read them only as evidence
-when they are relevant to declared deviations, skipped work, or observed
-verification.
+## Output artifact
 
-## Required artifact
+Write `.agent-layer/tmp/verify-work.<run-id>.report.md` using
+`run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
-Write the report to:
+## Rules
 
-- `.agent-layer/tmp/verify-work.<run-id>.report.md`
+- Use `contract-verification-rubric.md` as the fixed comparison rubric.
+- Verify the current working tree and the files touched for the supplied
+  contract.
+- Use the smallest credible evidence set for the changed behavior and its risk.
+  Do not seek exhaustive certainty or run broad checks for confidence alone.
+- Reuse existing command evidence only when the command, result, and covered
+  repository state are known and still current.
+- Report only gaps that materially affect contract completion, working behavior,
+  safety, scope, or required documentation and memory.
+- Do not modify code, documentation, memory, or planning artifacts.
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create the file before writing.
+## Workflow
 
-## Review workflow
+### 1. Establish the verification target
 
-### Phase 1: Extract the contract
+Read the authoritative contract and optional context, then inspect the relevant
+working-tree changes and post-implementation files. Use implementation reports
+only to understand declared deviations, skipped work, or prior evidence.
 
-From the supplied plan/task/context artifacts or explicit user request/scope,
-extract:
+If a required artifact is missing or the contract is too ambiguous to judge,
+stop and request the smallest missing input or clarification.
 
-- objective
-- in-scope items
-- out-of-scope items
-- promised tests or verification
-- promised docs or memory updates
-- explicit exit criteria
-- key files and entry point, if present
+### 2. Compare contract and implementation
 
-Extract every supplied supplemental obligation separately and preserve its
-source, exact wording, affected paths, and focused evidence. Never merge it into
-the authoritative contract in a way that changes that contract's meaning.
+Load `contract-verification-rubric.md` and apply it once. Record each contract
+item as complete, partial, missing, or unverified. Evaluate supplemental
+obligations separately. Identify material scope drift and undocumented
+deviations without expanding into unrelated code review.
 
-If the contract is ambiguous enough that completion cannot be judged credibly,
-ask for the smallest clarification that resolves it.
+### 3. Gather working-code evidence
 
-### Phase 2: Inventory the implementation
+Read `COMMANDS.md` before selecting repository workflow commands. Run the
+narrowest checks that credibly cover the contract and touched behavior,
+including broader checks only when the contract or risk requires them.
 
-Inspect:
+For each command, record the command, result, relevant output or artifact, and
+the repository state it covered. If a necessary check cannot run, record the
+reason and residual risk. Do not repeat a current trustworthy check.
 
-- `git status --porcelain`
-- staged, unstaged, and untracked files relevant to the work
-- diffs for touched files
-- post-implementation content of files needed to judge behavior
-- implementation reports, only for declared deviations or skipped work
+Direct inspection may serve as evidence when command output is not the right
+proof, but absence of evidence is not completion evidence.
 
-Do not let the implementation report override the contract. It can explain a
-deviation, but it cannot make missing promised work complete.
-
-### Phase 3: Compare contract to implementation
-
-Read the sibling `contract-verification-rubric.md` before comparing the
-contract to the implementation. Use it as the fixed checklist for coverage,
-evidence, scope drift, and undocumented deviations, then translate the results
-into the required report structure below. Keep the comparison grounded in the
-contract artifacts, working-tree state, touched file content, diffs, and
-observed verification evidence. Do not use chat history or implementer
-rationales as evidence of completion.
-
-### Phase 4: Verify working-code evidence
-
-Read `COMMANDS.md` before choosing project workflow commands. Choose the
-minimal credible evidence set for the touched area and contract, not every
-check or test suite the repository defines. Prefer fast, focused checks that
-cover the changed behavior and avoid long-running suites unless the contract or
-risk requires them. Run or inspect:
-
-- relevant format, lint, typecheck, tests, build, docs checks, or targeted
-  reproductions
-- plan-promised commands when the plan named them
-- focused test files, packages, markers, or reproductions when they prove the
-  changed behavior
-- broader project checks only when the contract or risk requires them, and only
-  as broad as needed
-- user-supplied command output or logs
-- direct inspection of touched files and diffs when command output is not the
-  right evidence
-
-For every command result, record:
-
-- the exact command
-- exit status
-- output artifact or captured output
-- the repository state the command covered
-
-Do not repeat a command when current, trustworthy output already covers the
-relevant final working tree. Reuse prior evidence only when its command, result,
-and covered state are known and the relevant code or configuration has not
-changed since it ran. Otherwise rerun the narrowest credible check.
-
-If a needed command cannot run, record why and assess the residual risk. Do not
-mark working-code evidence as satisfied without observed command output, direct
-inspection, or a documented reason the check is not applicable.
-
-### Phase 5: Decide completion status
-
-Assign one top-level conclusion:
-
-- `complete`
-- `complete-with-follow-up`
-- `incomplete`
-
-Use `complete-with-follow-up` only when the agreed contract is complete and the
-remaining items are clearly outside that contract.
-
-## Required report structure
+### 4. Report the verdict
 
 Write:
 
 1. `# Completion Verdict`
 2. `## Inputs`
 3. `## Contract Coverage`
-   - item-by-item status
 4. `## Supplemental Obligation Coverage`
-   - item-by-item status, or `None`
-5. `## Findings`
-   - ordered by severity
+5. `## Material Findings`
 6. `## Working-Code Evidence`
 7. `## Docs and Memory Assessment`
 8. `## Recommended Next Step`
 
-For every finding, include:
+For each material finding, include the affected contract item or location,
+evidence, impact, and smallest corrective action.
 
-- `Title`
-- `Severity`: Critical | High | Medium | Low
-- `Confidence`: High | Medium | Low
-- `Location`
-- `Why it matters`
-- `Evidence`
-- `Recommendation`
+Use exactly one verdict:
 
-## Guardrails
+- `complete`
+- `complete-with-follow-up`: the contract is complete and remaining work is
+  explicitly outside it
+- `incomplete`
 
-- Do not mark work complete just because code exists.
-- Do not ignore missing verification.
-- Do not expand the completion review beyond the supplied contract.
-- Do not confuse scope drift with value-add; drift is still drift.
-- If the implementation is better than the contract in a harmless way, note it,
-  but still call out undocumented deviation.
-- Do not fix issues discovered during verification.
-- Do not run broad commands just to add evidence when a narrower check answers
-  the contract.
+## Completion contract
 
-## Definition of done
-
-- The report exists at `.agent-layer/tmp/verify-work.<run-id>.report.md` with
-  every required section.
-- `Contract Coverage` lists every in-scope contract item with an item-by-item
-  status; partial completions are not presented as done.
-- `Working-Code Evidence` lists observed commands, direct inspections, skipped
-  checks, residual risk, and the repository state covered by each command
-  result.
-- `Supplemental Obligation Coverage` lists every supplied obligation without
-  replacing or weakening `Contract Coverage`.
-- The report carries exactly one verdict: `complete`,
-  `complete-with-follow-up`, or `incomplete`.
-- Implementation, plan, task, and context artifacts were not modified.
-
-## Final handoff
-
-After writing the report:
-
-1. Echo the report path.
-2. State the completion verdict clearly.
-3. If incomplete, name the next exact action to take.
+The report must account for every in-scope contract item and supplemental
+obligation, identify the evidence covering the final working tree, and state one
+verdict. Return the report path and verdict; when incomplete, name the next
+exact corrective action.

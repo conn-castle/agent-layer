@@ -1,164 +1,98 @@
 ---
 name: fix-ci
 description: >-
-  Diagnose and fix failing CI/checks on an open PR: inspect logs/artifacts,
-  create a local reproducer when possible, patch, audit, commit, push, and
-  re-check. Do not use for local-only check failures.
+  Diagnose and directly repair failing checks on an open pull request, verify
+  the repair locally, and return uncommitted changes and evidence to the caller.
 ---
 
 # fix-ci
 
-## Defaults
+Own local diagnosis and repair of an observed pull request CI failure. Do not
+commit, push, or wait for a new remote run; the caller owns publishing and remote
+observation.
 
-- Default PR is the current branch's open PR.
-- Default diagnosis uses CI logs from `gh run view --log-failed` and any artifacts available from the failed workflow run.
-- Default artifact location is `./.agent-layer/tmp/ci-artifacts/<run-id>` so downloaded reports stay in the agent temp area.
-- Default fix scope is the minimum change needed to make CI pass.
+## Inputs
 
-## Required inputs
+Optional inputs:
 
-Fail before side effects unless all are present:
-- `implementer`: dispatch agent role to pass to `/fully-implement-plan` for
-  `/implement-plan`
-- `fixer`: dispatch agent role to pass to `/fully-implement-plan` for
-  `/loop-clean-and-fix`
-- `plan_reviewers`: one or more dispatch agent roles
+- pull request number or URL; default to the current branch's open pull request
+- CI run ID
+- caller-provided failure evidence
 
-Dispatch agent roles may be terse (`codex high`, `claude opus xhigh`,
-`antigravity`).
+Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` and store downloaded artifacts under
+`.agent-layer/tmp/ci-artifacts/<run-id>`. Write the report to
+`.agent-layer/tmp/fix-ci.<run-id>.report.md`.
 
-Optional input:
-- a PR number or URL
-- a specific CI run ID
-- hints about the failure from the caller
+## Rules
 
-## Global constraints
+- Use failed logs and available artifacts together as the diagnostic source of
+  truth.
+- Build a credible local red reproducer before keeping a code fix.
+- Treat a CI-only mismatch as a reproducibility defect and reproduce the
+  material environment difference locally.
+- Make the minimum root-cause fix directly, regardless of complexity.
+- Do not weaken, skip, disable, or remove tests or checks, lower coverage, or
+  include unrelated warnings and refactors.
+- Stop before a fix that requires a user-owned behavior, architecture, scope,
+  risk, or cost decision.
+- Never stage, commit, push, or post to GitHub.
 
-- Keep fixes minimal and targeted to the CI failure.
-- Do not push speculative fixes without a local reproducer.
-- Treat GitHub-only failures as local-reproduction bugs: identify the
-  environmental difference, then write or adapt a local test or command that
-  fails for the same reason. Then fix it.
-- Do not make unrelated changes just because CI logs reveal other warnings.
-- Do not disable, skip, or weaken tests or CI checks to make them pass.
-- Do not lower coverage thresholds or remove failing tests.
-- Treat each CI fix as a focused patch, not a refactoring opportunity.
+## Workflow
 
-## Human checkpoints
+### 1. Diagnose
 
-- Required: ask when the CI failure appears to be an infrastructure or environment issue rather than a code issue.
-- Required: ask when the same CI failure persists after 3 fix attempts.
-- Required: ask when fixing the CI failure would require a materially broader scope change.
-- Required: ask when no credible local reproducer can be built after inspecting logs, artifacts, CI config, environmental differences, and relevant code.
-- Stay autonomous during normal diagnose, fix, audit, commit, push, re-check cycles.
+Identify the failing required checks. Read failed logs, download diagnostic
+artifacts, inspect relevant workflow configuration, and compare the CI
+environment with the documented local command in `COMMANDS.md`.
 
-## Fix workflow
+Preserve the check, run ID, command, exit status, relevant output or artifact,
+suspected location, and material environment differences.
 
-### Phase 1: Diagnose the failure (Diagnostician)
+### 2. Reproduce locally
 
-1. Get CI status: `gh pr checks <pr-number>` to identify which checks failed.
-2. Get failure logs: `gh run view <run-id> --log-failed` for each failed check.
-3. Download available artifacts for each failed workflow run when available:
-   `mkdir -p .agent-layer/tmp/ci-artifacts/<run-id>` then
-   `gh run download <run-id> --dir .agent-layer/tmp/ci-artifacts/<run-id>`.
-   Then inspect them alongside logs, prioritizing test reports, coverage
-   reports, screenshots/videos, build output, generated files, and any
-   tool-specific diagnostic bundles.
-4. Identify the root cause from logs and artifacts:
-   - test failures
-   - lint/format errors
-   - type errors
-   - build failures
-   - other CI step failures
-5. Identify the CI-vs-local execution surface: command, OS, toolchain version, environment variables, working directory, cache behavior, permissions, timezone, filesystem behavior, and network requirements.
-6. Read the relevant source files and test files to understand the failure.
+Run the failing command or closest documented equivalent. If it passes locally,
+build a focused reproduction of the material CI difference.
 
-### Phase 2: Fix the issue (Fixer)
+If evidence identifies an infrastructure or external-service failure, or no
+credible local reproducer can be built and no safe patch is justified, keep no
+speculative change and return `remote-retry-needed`. Preserve the evidence the
+caller needs to request one bounded rerun of the failed remote checks.
 
-1. If the fix requires understanding project conventions, read `COMMANDS.md` first.
-2. Run the same failing CI command locally, or the closest repo-documented local
-   equivalent. Then change code.
-3. If the command fails locally for the same reason, use that command as the red reproducer.
-4. If the command passes locally while CI failed, treat the mismatch as a bug: identify the environmental difference and write or adapt a local test or command that fails for the same reason.
-5. If no credible local reproducer can be built, stop at a human checkpoint instead of pushing a guess.
-6. Implement the minimum fix directly when it is small enough to handle safely
-   inside this skill.
-7. If the required fix is large, cross-cutting, behavior-changing, or complex
-   enough that direct editing would be risky, run `/plan-work` with:
+Use `blocked` instead when required evidence or credentials are unavailable, a
+user-owned decision is required, or no supported remote retry path can be
+identified for the caller.
 
-   ```text
-   /plan-work
-   {CI failure reproducer and scope}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+### 3. Fix directly
 
-   Then with the reviewed artifacts and agent roles, call:
+Repair the root cause in the current working tree, including directly required
+tests, documentation, configuration, or memory updates. Demonstrate the local
+reproducer changing from red to green, then run the CI-equivalent checks for the
+affected path and inspect the resulting diff.
 
-   ```text
-   /fully-implement-plan
-   Plan artifacts:
-   {relative path to reviewed plan artifact}
-   {relative path to reviewed task artifact}
-   {relative path to reviewed context artifact}
-   implementer is {implementer}
-   fixer is {fixer}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+If the same evidence-equivalent local failure survives three repairs without new
+root-cause evidence, stop with `repeated-failure`.
 
-   Resume this workflow after `/fully-implement-plan` returns local
-   working-tree changes.
-   Do not use this escalation for obvious one-file fixes, mechanical config
-   edits, or narrow test updates.
-8. Re-run the local reproducer to confirm it passes, then run local
-   verification using the same commands CI runs.
-9. Record the local reproducer command, initial red result, fix, final green
-   result, and any `/plan-work` or `/fully-implement-plan` report paths. Then
-   commit.
+### 4. Report
 
-### Phase 3: Audit and commit (Auditor + Committer)
+Write:
 
-1. Run:
+1. `# CI Fix Summary`
+2. `## Failure Evidence`
+3. `## Local Reproducer`
+4. `## Direct Repair`
+5. `## Local Verification`
+6. `## Changed Files`
+7. `## Status and Residual Risk`
 
-   ```text
-   /clean-and-fix-code
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+Use one status:
 
-   Use it to review and stabilize the fix.
-2. Stage all changes: `git add -A`
-3. Craft a commit message describing the CI fix.
-4. Commit and push.
+- `ready-to-publish`
+- `remote-retry-needed`
+- `blocked`
+- `repeated-failure`
 
-### Phase 4: Verify CI (Verifier)
+## Completion contract
 
-1. Wait for CI checks to complete on the new push.
-2. If all checks pass, the fix is complete.
-3. If any check still fails:
-   a. Track which failures are new vs. recurring.
-   b. Return to Phase 1 with the new failure information.
-
-## Guardrails
-
-- Run the audit-and-fix step. Then commit.
-- Do not disable or weaken CI checks to make them pass.
-- Do not expand scope beyond what is needed to fix the CI failure.
-- Do not patch from CI logs alone when CI artifacts are available; logs and artifacts together are the diagnostic source of truth.
-- Do not use GitHub Actions or other CI systems as debuggers; CI is only the final parity check after local red/green verification.
-- Do not push when the only evidence is a theory from CI logs.
-- Do not treat CI warnings as failures unless they are configured to fail the build.
-- Track recurring failures and escalate rather than looping indefinitely on the same issue.
-
-## Definition of done
-
-- `gh pr checks <pr-number>` shows every required CI check passing on the latest pushed commit.
-- The final handoff contains the evidence listed below.
-
-## Final handoff
-
-After CI passes:
-1. State which CI checks were failing and what was fixed.
-2. State how many fix iterations were needed.
-3. State the local reproducer command, initial red result, and final green result for each fix cycle.
-4. State any `/plan-work` and `/fully-implement-plan` report paths used for
-   large or complex fixes.
-5. Confirm all CI checks are now passing.
+Return the report path, local changes, red-to-green evidence, focused check
+results, attempt count, status, and any failed-check identifiers needed for a
+remote retry. Confirm that no staging, commit, push, or GitHub write occurred.

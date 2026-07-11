@@ -1,53 +1,60 @@
 ---
 name: plan-work
 description: >-
-  Produce an implementation-ready plan from a task source.
+  Produce and review an implementation-ready plan from a task source.
 ---
 
 # plan-work
+
+Create one implementation-ready artifact set, run one plan review, and return
+the reviewed artifacts or a user-owned blocker.
 
 ## Required inputs
 
 - task source or user request
 - `plan_reviewers` to pass to `/review-plan`
 
-If either is missing, ask for it before writing artifacts or running review.
+Ask for a missing required input before creating artifacts.
 
 ## Workflow
 
-1. Resolve missing material facts with the smallest read-only investigation
-   needed for planning. Then write plan artifacts. If a user-owned decision or
-   larger investigation is required, stop and surface the blocker. Never defer
-   investigation into the plan.
-2. Load and follow `assets/write-plan.md` in the current `/plan-work` run, using
-   the original task source plus the already-completed investigation findings
-   that shape the plan. Do not delegate this to a subagent.
-3. Continue only after the loaded planning prompt returns plan, task, and
-   context artifact paths. If its verdict is `escalate`, stop and surface the
-   checkpoint.
-4. Run:
+### 1. Establish the planning contract
 
-   ```text
-   /review-plan
-   Plan artifacts:
-   {relative path to plan artifact}
-   {relative path to task artifact}
-   {relative path to context artifact}
-   {relative path to source/spec artifact, if supplied}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
-5. If review changes artifacts, use the revised artifacts. If review blocks on a
-   user decision, ask and rerun the smallest necessary step.
+Read the task source and the smallest amount of repository context needed to
+resolve material facts. Do not defer factual investigation into the plan.
 
-## Guardrails
+Resolve routine planning choices from repository evidence. Ask the user only
+when multiple viable choices would materially change behavior, architecture,
+scope, risk, or cost.
+
+### 2. Write the artifacts
+
+Load and follow `assets/write-plan.md` in the current agent context. Give it the
+original task source and the evidence gathered during preflight. It must return
+plan, task, and context artifact paths.
+
+If the drafting result exposes a correctable material gap, fix it within this
+planning stage. If it exposes a user-owned decision, stop and ask for that
+decision. Do not delegate planning or start repeated drafting passes for greater
+confidence.
+
+### 3. Review once
+
+Call `/review-plan` once with the plan, task, context, optional source/spec, and
+`plan_reviewers`. Use the revised artifacts it returns.
+
+If review returns `blocked-for-user-decision`, ask the named question and update
+the affected artifacts after the answer. Do not rerun the review merely because
+the artifacts changed to record that decision.
+
+## Boundaries
 
 - Do not edit implementation code.
-- Do not invent missing required inputs.
+- Do not invent missing inputs or unresolved facts.
 
-## Definition of done
+## Completion contract
 
-- Success: `/review-plan` final readiness is `implementation-ready`.
-- Blocked: `/review-plan` final readiness is `blocked-for-user-decision` and the
-  handoff names the decision.
-- Final handoff includes plan, task, context, and review report paths when they
-  exist.
+Return the plan, task, context, and review report paths with exactly one status:
+
+- `implementation-ready`: the artifacts incorporate material review findings
+- `blocked-for-user-decision`: name the unresolved decision

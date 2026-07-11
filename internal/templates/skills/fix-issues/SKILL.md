@@ -155,7 +155,6 @@ that can be fixed without broadening scope, run:
 
 ```text
 /clean-and-fix-code
-plan_reviewers are {agent 1, agent 2, ...}
 ```
 
 ### Phase 6: Audit the touched area (Auditor)

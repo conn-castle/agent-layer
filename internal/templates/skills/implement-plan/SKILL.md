@@ -1,155 +1,84 @@
 ---
 name: implement-plan
 description: >-
-  Use when the user provides plan, task, and context artifact paths and
-  asks to apply the planned changes.
+  Apply an explicit plan/task/context artifact set and report the resulting
+  implementation, deviations, and remaining work.
 ---
 
 # implement-plan
 
-Implement a plan without freelancing. This skill requires three explicit
-artifact paths:
-
-- a plan file
-- a task file
-- a context file for cold-start orientation
-
-If any artifact path is missing, stop and ask for the missing path. Do not
-discover, infer, or auto-select artifacts from `.agent-layer/tmp/`.
-
-## Defaults
-
-- Do not start coding until explicit plan, task, and context paths are
-  available.
-- If any artifact path does not exist, treat that as a blocker instead of
-  guessing.
-- Default scope is exactly what the plan and task list describe.
-- If the plan is ambiguous in a way that changes code behavior or scope, treat
-  that as a blocker instead of guessing.
-- Do not turn implementation into a new planning, review, or verification
-  workflow.
-- Do not run broad project verification from this skill by default. You may run
-  narrow, task-local commands when needed to debug or confirm an implementation
-  step, but final verification belongs outside this skill.
-- Record what changed, what deviated, and what remains. Independent completion
-  judgment is outside this skill.
+Implement the supplied plan once. Treat the artifacts as the execution contract
+and return the completed work or a concrete blocker. Final verification remains
+a separate stage.
 
 ## Required inputs
 
-The caller must provide paths to all three artifacts. They usually follow the
-standard artifact naming rule under `.agent-layer/tmp/`:
+- plan artifact path
+- task artifact path
+- context artifact path
 
-- `<workflow>.<run-id>.plan.md`
-- `<workflow>.<run-id>.task.md`
-- `<workflow>.<run-id>.context.md`
+Require exact paths. Do not discover or select artifacts from
+`.agent-layer/tmp/`. Stop if an artifact is missing or unreadable.
 
-Do not select artifacts by listing `.agent-layer/tmp/`. If the user intended a
-specific set, require its exact paths.
+## Output artifact
 
-## Required artifact
+Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` using
+`run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
-Write an execution report to:
+## Rules
 
-- `.agent-layer/tmp/implement-plan.<run-id>.report.md`
+- Keep scope within the plan and task list.
+- Resolve routine implementation details directly from the artifacts and
+  repository evidence.
+- Include planned documentation and memory updates. Do not defer them silently.
+- Use narrow task-local checks when they help implement or debug the change.
+  Do not turn this stage into broad or final verification.
+- Do not add unrelated cleanup, a new planning cycle, or a review layer.
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Create the file before writing.
+## Workflow
 
-## Implementation workflow
+### 1. Preflight
 
-### Phase 1: Preflight
+Read the context, plan, and task artifacts. Confirm they describe the same
+objective and scope, then inspect the named implementation entry points.
 
-1. Load the context file first.
-2. Load the plan and task artifacts.
-3. Confirm all artifacts match the same objective, scope, and task ordering.
-4. Read the entry point files identified in the context file, then any
-   additional code and docs needed for the first task batch.
-5. Choose one readiness verdict:
-   - `proceed`: the current batch is ready to implement as written
-   - `revise`: update the plan or task list. Then rerun the gate
-   - `escalate`: a human checkpoint is required
-   - `rewrite-because-out-of-scope`: the current batch should be rewritten to
-     stay inside the plan's real scope
+If a material ambiguity cannot be settled from repository evidence, identify
+the user-owned decision before editing. Otherwise, proceed without another
+readiness ceremony.
 
-If the verdict is not `proceed`, resolve that condition. Record any equivalent
-task rewrite in the execution report.
+### 2. Implement
 
-### Phase 2: Execute the task list
+Execute the task list with localized, explainable changes. Split or reorder a
+task when needed to implement the same scope safely, and record the adjustment.
 
-Execution rules:
+When new information invalidates part of the plan, choose the smallest safe
+response:
 
-- work in task order unless a dependency forces reordering
-- keep diffs explainable and localized
-- update docs when user-facing or workflow behavior changed
-- update memory files when the change materially affects roadmap, decisions,
-  issues, backlog, repeatable commands, or stable project context
+- continue and record an `equivalent` or `narrower` deviation
+- stop for a user decision before a `broader` deviation
+- report a concrete implementation blocker when work cannot continue
 
-When a task becomes larger than expected:
+### 3. Report
 
-- split it
-- note the split in the report
-- continue only if scope still matches the plan
+Write the execution report with:
 
-### Phase 3: Track deviations
+1. `## Status`
+   - state whether the work is ready for verification or name the concrete
+     blocker
+2. `## Deviations`
+   - record `equivalent`, `narrower`, and approved `broader` deviations with
+     brief reasons; use `None` when there were none
+3. `## Implementation Checks`
+   - list task-local checks and results; use `None` when none ran
+4. `## Remaining Work`
+   - list incomplete planned work or deferred required updates with reasons;
+     use `None` when nothing remains
 
-If you must deviate from the plan:
+Keep the report concise and do not narrate changes already clear from the diff.
 
-- document the deviation in the report
-- explain why
-- tag the change as:
-  - `equivalent`
-  - `narrower`
-  - `broader`
+## Completion contract
 
-If the deviation broadens scope materially, stop and ask before implementing
-the broader change.
-
-## Execution report format
-
-Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` with only these
-sections:
-
-1. `## Deviations`
-   - Each deviation tagged `equivalent`, `narrower`, or `broader`, with a
-     one-line reason.
-   - Include task splits and any `rewrite-because-out-of-scope` rewrites here.
-   - Use `None` when no deviations occurred.
-2. `## Implementation Checks`
-   - Narrow task-local commands run during implementation, with result.
-   - Use `None` when no commands ran.
-3. `## Remaining Follow-up`
-   - Plan items skipped, docs/memory updates deferred, final verification, and
-     any other open threads, each with a reason.
-   - Use `None` when nothing is outstanding.
-
-Keep the report short. Do not re-narrate work that is already visible in the
-diff.
-
-## Guardrails
-
-- Do not treat the plan as inspiration. Treat it as the execution contract.
-- Do not skip in-scope docs or memory updates silently.
-- Do not expand into unrelated cleanup just because you noticed it.
-- Do not mark independent completion or broad verification as done from inside
-  this implementation step.
-
-## Definition of done
-
-- Every planned task-list item is implemented or recorded as a named deviation
-  or remaining follow-up.
-- Docs and memory updates promised by the plan were delivered or listed under
-  `## Remaining Follow-up` with reasons.
-- Broad or final verification is not claimed from inside this skill.
-- Any task-local implementation checks run are listed under
-  `## Implementation Checks`.
-- No major task list item was skipped silently.
-
-## Final handoff
-
-After execution:
-
-1. Echo the report path.
-2. Summarize completed work, including plan/task/context paths used.
-3. Name any task-local implementation checks run.
-4. Name any deviations or task splits.
-5. State whether implementation is ready for final verification or
-   follow-up remains.
+The stage is complete when the report accounts for every plan item and required
+documentation or memory update, then states either readiness for verification
+or a concrete blocker. Return the report path, completed scope, task-local
+checks, deviations, remaining work, and that status.

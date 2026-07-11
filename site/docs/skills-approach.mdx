@@ -17,42 +17,93 @@ Document ownership prevents guidance drift:
 
 ## Design ethos
 
+The following principles govern every root skill and workflow skill:
+
+- One purposeful pass per stage. Planning, review, implementation,
+  verification, cleanup, and shipping each happen once by default. Repetition
+  requires a concrete failure, not a desire for greater confidence.
+
+- Sufficiency over exhaustiveness. Each stage should produce enough confidence
+  to proceed safely. The goal is a sound result, not the elimination of every
+  conceivable uncertainty.
+
+- Progress through complementary perspectives. Quality comes from different
+  stages examining different artifacts—not from repeatedly asking agents to
+  reconsider the same artifact.
+
+- Review concrete work whenever possible. Prefer reviewing implemented
+  behavior, diffs, test results, and observable evidence over repeatedly
+  refining hypothetical implementation details.
+
+- Evidence outranks consensus. Repository behavior, tests, specifications, and
+  documented contracts settle questions. Additional agent agreement does not
+  make established evidence stronger.
+
+- Reasoning should be proportional to risk. Deep reasoning is reserved for
+  genuinely difficult, consequential, or ambiguous decisions. Routine
+  coordination and review should favor decisive, efficient judgment.
+
+- Only user-owned decisions interrupt momentum. Escalate choices that
+  materially affect behavior, architecture, scope, risk, or cost. Agents should
+  resolve routine implementation and verification details themselves.
+
+- Findings must justify their cost. A finding should change correctness,
+  safety, scope, or meaningful maintainability. Stylistic refinements and
+  speculative edge cases should not block the next stage.
+
+- Every stage has a terminal responsibility. An orchestrated role must deliver
+  its artifact, verdict, or blocker and then yield. It should not create another
+  layer of orchestration to strengthen its own conclusion.
+
+- Forward motion is the default. Once a stage’s contract is satisfied, the
+  workflow advances. “More review might find something” is not sufficient
+  reason to remain in place.
+
 **Deterministic modules, not improvisation.** A skill should make the same
 contract available every time: accepted inputs, required artifacts, stop
 conditions, verification expectations, and final handoff shape. The agent still
-uses judgment inside the task, but the module boundary should be stable.
+uses judgment inside the task, but the module boundary and terminal
+responsibility should be stable.
 
 **Root skills own bounded jobs; workflow skills compose them.** Planning,
-review, implementation, and verification remain separate. A root skill may use
-tools or subagents to produce its output, but it must not call another skill.
-Workflow skills own cross-skill sequencing, retry policy, and lifecycle loops.
+review, implementation, verification, cleanup, and shipping remain distinct
+stages with distinct artifacts. A root skill may use tools or a purposefully
+assigned subagent to produce its output, but it must not call another skill or
+create a nested orchestration layer. Workflow skills own cross-skill sequencing
+and advance after each stage satisfies its contract. They may re-enter a stage
+only in response to a concrete failure or materially changed artifact.
 
-**Evidence over assertion.** Skills should push agents toward observable
-evidence: read the code, inspect the diff, run documented checks, write or use
-real artifacts, and state what was verified.
+**Evidence over assertion or consensus.** Skills should push agents toward
+observable evidence: read the code, inspect the diff, run documented checks,
+use real artifacts, and state what was verified. Additional review does not
+override repository behavior, specifications, tests, or documented contracts.
 
 **Verification is intentionally placed.** Implementation skills may use narrow
 task-local checks when they need feedback, but final verification is its own
 boundary. `verify-work` owns the final verification pass for completed work:
 it runs the smallest credible checks or accepts current evidence only when that
 evidence clearly covers the final working tree. Workflow skills should call
-that boundary intentionally instead of rerunning broad checks after every step.
+that boundary once at the appropriate point instead of rerunning broad checks
+after every step. A failed check or a subsequent material change is a concrete
+reason to repair and re-verify the affected work.
 
-**Use built-in subagents only when fresh context matters.** The child must be
-able to follow its prompt without knowing whether a user or parent workflow
-launched it. The parent supplies inputs, handles the child result, and chooses
-the next phase. Call a skill directly when that skill already delegates its
-bias-sensitive review or classification work to built-in subagents.
+**Use built-in subagents only for a distinct perspective or bounded job.** The
+child must be able to follow its prompt without knowing whether a user or parent
+workflow launched it. The parent supplies inputs, handles the child result, and
+chooses the next phase. Do not add agents merely to repeat a judgment or build
+consensus around evidence that already settles the question.
 
 **Parents own boundaries; children own procedures.** A parent workflow states a
 child skill's required inputs, accepted result, and response to failure or
 required user input. The child owns its internal procedure. Do not repeat child
-logic, evidence, or rationale in the parent.
+logic, evidence, or rationale in the parent. Once the child returns its
+artifact, verdict, or blocker, its role is complete.
 
-**Ask the user only for a named decision or approval.** Name the exact input,
-tradeoff, destructive operation, external write, scope change, or missing
-requirement that prevents progress. State where execution resumes after the
-answer. Continue automatically when no user response is required.
+**Ask the user only for a user-owned decision or approval.** Name the exact
+behavior, architecture, scope, risk, cost, destructive operation, external
+write, or missing requirement that prevents progress. State where execution
+resumes after the answer. Agents resolve routine implementation and verification
+details and continue automatically when no user-owned decision is required.
 
 ## Nested skill call notation
 
@@ -99,8 +150,10 @@ for plan_reviewer in plan_reviewers:
 ```
 
 Use a leading dot for bundled prompts or assets instead of skills. The example
-above means each named plan reviewer is dispatched once with the
-`agent-review-prompt` asset. If the asset receives no agent-role inputs, leave
+above means each named plan reviewer is dispatched once with a distinct review
+responsibility through the `agent-review-prompt` asset. Their findings are
+synthesized within the same review stage; agreement among reviewers is not an
+independent form of evidence. If the asset receives no agent-role inputs, leave
 the parentheses off.
 
 ```text
@@ -127,7 +180,8 @@ evidence, plan, implement, and verify", keep those calls inside one meaningful
 condition instead of adding separate `if the plan is ready` or
 `if implementation changed files` rows. A reusable plan/implement/verify node is
 useful only when it corresponds to a real skill with a stable contract;
-otherwise inline the three skill calls.
+otherwise inline the three skill calls. Any path that re-enters a completed
+stage must name the concrete failure or changed artifact that requires it.
 
 Conditional calls can be shown with a short condition:
 
@@ -164,9 +218,14 @@ ship-pr:
 Use `break:` for a loop exit or restart point, and `exit:` for leaving the
 current skill at a stop gate or final handoff.
 
+Lifecycle monitoring may observe changing external state more than once within
+one shipping stage. That does not authorize repeated review for confidence. In
+the example, a failed check or new head SHA is new evidence that justifies the
+affected repair or verification work; an unchanged state does not.
+
 Keep the tree focused on delegation shape: who launches the work, whether it is
 a skill, asset, task, or terminal control statement, and which agent-role inputs
-flow into it.
+flow into it. Omit redundant review layers and confidence-seeking loops.
 
 ## Root Skill Model
 
@@ -174,25 +233,31 @@ Representative stable contracts:
 
 | Root skill | Stable contract |
 | --- | --- |
-| `review-plan` | Review plan artifacts before implementation and report blocking gaps, weak assumptions, and missing verification. |
-| `implement-plan` | Execute an approved plan against the codebase, use task-local feedback checks when needed, and record deviations or follow-up. |
-| `review-uncommitted-code` | Review explicit files, diffs, directories, uncommitted changes, or intentionally selected hotspots and produce prioritized findings. |
-| `verify-work` | Compare completed work against the plan or request, verify the touched work, and report completeness, regressions, missing verification, docs/memory gaps, and scope drift. |
+| `review-plan` | Make one risk-proportional pass over plan artifacts and report only gaps that materially affect implementation, verification, scope, or safety. |
+| `implement-plan` | Execute an approved plan once, use task-local feedback checks when needed, and return the completed work, a concrete failure, or a user-owned decision. |
+| `review-uncommitted-code` | Review concrete files, diffs, behavior, and test evidence once and produce findings that materially affect correctness, safety, scope, or maintainability. |
+| `verify-work` | Make one final, evidence-based comparison of completed work against the plan or request and return a completion verdict or concrete failure. |
 
 ## Workflow skills
 
-Current examples:
+Workflow boundaries include:
 
 - `complete-current-phase` orchestrates roadmap work through planning,
-  implementation, verification, auditing, and cleanup.
-- `ship-pr` owns the pull request lifecycle, including audit, commit, push,
-  CI monitoring, reviewer feedback, and final status checks.
-- `full-workflow` owns specification alignment, reviewed planning, local
-  implementation, and pull request shipping.
+  implementation, concrete-work review, verification, and cleanup, with one
+  purposeful pass per stage unless concrete evidence requires repair.
+- `ship-pr` owns one pull request shipping stage, including audit, commit, push,
+  continuous integration monitoring, reviewer feedback, and final status
+  checks. External state changes may require targeted repair without restarting
+  unrelated stages.
+- `full-workflow` owns specification alignment, planning, implementation,
+  concrete-work review, verification, and pull request shipping. Each stage
+  yields its result before the workflow advances.
 - `improve-codebase` decomposes broad quality work into reviewable chunks,
-  runs review and fix loops, and delegates to narrower skills when useful.
+  gives each chunk complementary review, implementation, verification, and
+  cleanup stages, and repeats work only after a concrete failure.
 - `fix-issues` works through `ISSUES.md` by batching, planning, implementing,
-  auditing, and keeping the ledger current.
+  verifying, and keeping the ledger current without adding review layers merely
+  for confidence.
 
 ## Contract expectations
 
@@ -200,16 +265,25 @@ A root skill should define:
 
 - Inputs it accepts, including file paths, artifacts, issue identifiers, or
   plain-language scope.
+- Its distinct stage responsibility and the artifact, verdict, or blocker that
+  terminates the stage.
 - Output artifact or report shape, so another skill or workflow can consume it.
 - Any required system source of truth, with a reason the root skill cannot do
   its own job without it.
 - Stop conditions for missing required input or incompatible state.
 - Verification expectations appropriate to its job. Implementation skills may
   run narrow feedback checks, verification skills own completion evidence, and
-  workflows should avoid duplicating broad checks without an explicit phase,
-  release, or CI boundary.
+  workflows should not duplicate broad checks without a concrete failure,
+  materially changed artifact, or explicit release or continuous integration
+  boundary.
 - Final handoff fields that are stable enough for follow-up automation.
 
 A root skill should avoid:
 
 - Hidden mode switches that change the main output contract.
+- Open-ended instructions to iterate until confidence, consensus, perfection,
+  or diminishing returns.
+- Findings based only on style preference or speculative edge cases that do not
+  materially affect correctness, safety, scope, or maintainability.
+- Delegating the same judgment to another orchestrated role after its own
+  contract is satisfied.

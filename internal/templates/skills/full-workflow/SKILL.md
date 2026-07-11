@@ -1,71 +1,51 @@
 ---
 name: full-workflow
 description: >-
-  Orchestrate a full feature workflow from questions and spec alignment through
-  reviewed planning, fully implemented local work, and PR shipping.
+  Align a feature specification, produce a reviewed plan, complete the local
+  work, and ship the pull request.
 ---
 
 # full-workflow
 
-Own specification alignment, dispatch `/plan-work`, then dispatch `/ship-plan`.
+Own one end-to-end feature workflow from specification alignment through
+`/plan-work` and `/ship-plan`.
 
 ## Required inputs
 
-Fail before side effects unless all are present:
-- `planner`: dispatch agent role
+- the user's requested work
+- `planner`: dispatch agent role for `/plan-work`
+- `shipper`: dispatch agent role for `/ship-plan`
 - `implementer`: dispatch agent role
 - `fixer`: dispatch agent role
-- `shipper`: dispatch agent role
 - `plan_reviewers`: one or more dispatch agent roles
-- the user's requested work
 
-Dispatch agent roles may be terse (`codex xhigh`, `claude opus xhigh`,
-`antigravity`).
+Require every input before side effects. Do not infer roles or reviewer lists.
 
-## Required artifact
+## Output artifact
 
-Create `.agent-layer/tmp/full-workflow.<run-id>.spec.md`, where
+Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md` using
 `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-
-## Context preservation
-
-You are the orchestrator for this skill. Do not do work that belongs to
-subagents or delegated skills in the orchestration context. Preserve your
-context to make strategic decisions, enforce gates, reconcile returned outputs,
-and continue this skill's workflow after every delegation returns.
-
-## Compaction guidance
-
-When compaction is needed, retain this entire skill verbatim. Also preserve the
-current workflow step or phase, active artifact paths, selected scope, pending
-gate verdicts, delegated skills and subagents already run and their outcomes,
-unresolved blockers or user checkpoints, and the next exact step.
 
 ## Rules
 
 - Dispatch external roles through `/agent-dispatch`.
-- Put every user-facing question, summary, and approval request in chat; do not
-  require the user to read artifacts.
-- Ask only for decisions affecting end-user-facing behavior, architecture, scope,
-  sequencing, risk, cost, or shipping; include options, tradeoffs, and a
-  recommendation when useful.
-- If either called skill needs a user answer or approval, relay its exact
-  request, wait, then resume the same phase. If it fails or omits output required
-  by that phase, report the failure and end the run. Otherwise, continue.
-- If planning or shipping requires a change to the approved spec, update the
-  spec, run Phases 3-5 again, then continue with Phase 6.
-- Do not widen scope beyond the approved spec.
+- Keep user questions, summaries, and approvals in chat; artifacts must not be
+  the only presentation of a user-owned decision.
+- Resolve repository facts and routine implementation details without asking
+  the user.
+- Ask only when multiple viable choices materially affect behavior,
+  architecture, scope, risk, cost, or shipping.
+- Treat the approved spec as the workflow contract. Do not widen it silently.
+- If a child skill fails or omits its required artifact or verdict, stop and
+  report the concrete blocker.
 
 ## Workflow
 
-### Phase 1: Initial questions
+### 1. Align the specification
 
-Read focused repo context for facts. Ask a blocking question only when the
-request is too ambiguous to draft; leave other unresolved choices for Phase 3.
+Read the focused repository context needed to distinguish facts from choices.
+Write a concise spec containing:
 
-### Phase 2: Draft spec
-
-Write a draft spec with these sections:
 1. `# Objective`
 2. `## Scope`
 3. `## Non-goals`
@@ -73,59 +53,42 @@ Write a draft spec with these sections:
 5. `## Constraints`
 6. `## Acceptance Criteria`
 7. `## Shipping Expectations`
-8. `## Open Questions`
+8. `## Open User Decisions`
 
-Put facts in `Constraints`, choices fixed by the request or answered by the user
-in `User-Confirmed Decisions`, and every other choice in `Open Questions`.
+Ask only the questions required to resolve `Open User Decisions`. Record each
+answer in the spec and resolve routine gaps directly from evidence.
 
-### Phase 3: Spec iteration
+Present one concise approval summary covering scope, non-goals, acceptance
+criteria, and material decisions. Apply user corrections directly. Ask again
+only if a correction introduces a new user-owned decision; do not repeat the
+gate merely for confidence.
 
-While `Open Questions` is not empty:
-- ask exactly one open question
-- update the spec after the answer
-- repeat
+### 2. Plan once
 
-### Phase 4: Approve spec
+Dispatch `planner` with `/plan-work`, the approved spec path, and
+`plan_reviewers`. Require the plan, task, context, and review report paths with
+`implementation-ready` status.
 
-Summarize the draft spec:
-- what will change
-- what will not change
-- the acceptance criteria
-- important constraints and decisions
+If planning uncovers a user-owned decision, relay the exact question, record the
+answer in the spec, and let the planning stage update the affected artifacts.
+Do not restart spec alignment or plan review unless the changed contract
+invalidates that completed work.
 
-Ask for approval or corrections. Apply corrections, resolve resulting open
-questions through Phase 3, and repeat this phase until the user approves the
-spec.
+### 3. Implement and ship
 
-### Phase 5: Plan and review
+Dispatch `shipper` with `/ship-plan`, the reviewed artifact paths,
+`implementer`, and `fixer`. Relay any explicit child checkpoint, including
+shipping or merge authorization, and resume the same stage after the user
+answers.
 
-Dispatch the planner role with:
+### 4. Report
 
-```text
-/plan-work
-{relative path to spec}
-plan_reviewers are {agent 1, agent 2, ...}
-```
-
-Require plan, task, context, and review report paths with final readiness
-`implementation-ready`.
-
-### Phase 6: Ship plan
-
-Dispatch the shipper role with:
-
-```text
-/ship-plan
-Plan artifacts:
-{relative path to reviewed plan artifact}
-{relative path to reviewed task artifact}
-{relative path to reviewed context artifact}
-implementer is {implementer}
-fixer is {fixer}
-plan_reviewers are {agent 1, agent 2, ...}
-```
-
-## Final handoff
-
-Report the spec path, all Phase 5 artifact paths and readiness, and the
+Return the spec, plan, task, context, and review report paths together with the
 `/ship-plan` final handoff.
+
+## Completion contract
+
+The workflow is complete when the approved spec is represented by an
+implementation-ready plan and `/ship-plan` returns its terminal result. Report
+all artifact paths, pull request status when available, and any blocker or
+remaining user decision.

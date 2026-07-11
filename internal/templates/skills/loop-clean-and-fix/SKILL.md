@@ -1,144 +1,106 @@
 ---
 name: loop-clean-and-fix
 description: >-
-  Run repeated review/fix rounds on the uncommitted working tree until the loop
-  reaches diminishing returns. Use to improve any uncommitted code.
+  Run one to four cleanup rounds over the uncommitted working tree, continuing
+  only while each round demonstrates material, non-repeating progress.
 ---
 
 # loop-clean-and-fix
 
-## Required inputs
+Run `/clean-and-fix-code` at least once and at most four times. The limit is a
+safety ceiling, not a target: stop as soon as another round is not justified by
+concrete progress from the previous round.
 
-Fail before side effects unless all are present:
+## Scope
 
-- `plan_reviewers`: one or more dispatch agent roles for `/clean-and-fix-code`
+The target is the combined staged, unstaged, and untracked working tree. Do not
+ask the user to confirm files before starting. If the target is empty, write the
+report with `resolved_findings: []` and stop.
 
-No file, directory, or diff target is required. The target is always the full
-uncommitted working tree.
+## Output artifact
 
-Dispatch agent roles may be terse.
-
-## Required artifact
-
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`. Write:
-
-- `.agent-layer/tmp/loop-clean-and-fix.<run-id>.report.md`
-
-## Context preservation
-
-You are the orchestrator for this skill. Do not do work that belongs to
-subagents or delegated skills in the orchestration context. Preserve your
-context to make strategic decisions, enforce gates, reconcile returned outputs,
-and continue this skill's workflow after every delegation returns.
-
-## Compaction guidance
-
-When compaction is needed, retain this entire skill verbatim. Also preserve the
-current workflow step or phase, active artifact paths, selected scope, pending
-gate verdicts, delegated skills and subagents already run and their outcomes,
-unresolved blockers or user checkpoints, and the next exact step.
+Write `.agent-layer/tmp/loop-clean-and-fix.<run-id>.report.md` using
+`run-id = YYYYMMDD-HHMMSS-<short-rand>`.
 
 ## Rules
 
-- Treat staged, unstaged, and untracked files as one cleanup target.
-- Do not ask the user to confirm files before starting.
-- If the working tree is empty, write the report with `resolved_findings: []`
-  and stop.
-- If `/clean-and-fix-code` fails, stops at its own checkpoint, or returns output
-  that cannot support the repeat decision, stop the loop, record the failure as
-  the stop reason, and surface it to the user. Do not run another cleanup round.
-- If the cleanup output includes findings but omits parseable counts or
-  `resolved_findings`, preserve the available findings in the issue ledger and
-  mark the run blocked on unparseable delegated output.
-- If resolved finding severity cannot be classified, stop instead of inferring
-  the repeat gate from prose.
-- Do not run a confirmation round after a Medium/Low-only round.
-- Rejected, deferred, and already-resolved findings never count toward the
-  repeat gate.
+- Run cleanup rounds sequentially against the latest working tree.
+- Capture enough before-and-after working-tree state to prove whether each round
+  materially changed the target and to detect oscillation.
+- Treat rejected, deferred, and already-resolved findings as report data, not
+  reasons to continue.
+- Stop when delegated output is missing the outcome, finding disposition, or
+  evidence needed to make the repeat decision. Do not infer progress from prose.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
   user explicitly asks.
-- Do not modify unrelated code just because it is nearby.
-- Ask when a deferred finding blocks cleanup, the same unresolved cleanup
-  finding recurs after two rounds, or another round would require a user-only
-  decision or destructive action.
+- Do not modify unrelated code or repeat a repair that already failed without
+  new evidence.
 
 ## Workflow
 
-1. Run:
+### 1. Run a cleanup round
 
-   ```text
-   /clean-and-fix-code
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+Run `/clean-and-fix-code`. Record:
 
-   Treat its output as one cleanup round: record its outcome, review and planned
-   artifact paths, accepted/rejected/deferred/already-resolved counts,
-   `resolved_findings`, focused evidence, blockers, residual risk, and every
-   reported issue for the final report.
-2. Read the cleanup output and determine whether the round succeeded, failed, or
-   stopped at a checkpoint. If it failed or stopped, write the final report with
-   the failure/checkpoint as the stop reason and do not repeat. On success,
-   count total resolved findings and count resolved High and Critical findings
-   separately.
-3. Repeat from step 1 only when the successful round resolved at least one
-   finding and resolved at least one High or Critical finding. If the round
-   resolved zero findings, or both the resolved High and resolved Critical
-   counts are zero, stop the loop.
-4. Write the final report and prepare the final message for the user.
+- outcome and report path
+- cleanup pre-pass results
+- accepted, rejected, deferred, and already-resolved counts
+- `resolved_findings`
+- changed files and material before/after diff
+- focused checks and evidence
+- blockers and residual risk
 
-## Required report structure
+### 2. Apply the repeat gate
 
-Write `.agent-layer/tmp/loop-clean-and-fix.<run-id>.report.md` with:
+Round one always runs. After each successful round, continue only when all of
+these are true:
+
+- fewer than four rounds have run
+- the cleanup outcome is `completed`, not `no-findings`
+- the round materially changed the working tree
+- the change resolved at least one accepted finding or applied a material
+  cleanup from a pre-pass
+- no evidence-equivalent finding recurred from the previous round
+- the resulting working-tree state does not match an earlier recorded state
+- no concrete blocker, destructive action, or user-owned decision prevents the
+  next round
+
+Stop immediately when any condition fails. In particular:
+
+- `no-findings` or no material change means the work reached diminishing returns
+- a recurring finding means the attempted repair did not resolve its root cause,
+  regardless of its reported disposition
+- a repeated working-tree state means the loop is oscillating
+- round four ends the loop even when it made progress
+
+Do not run a confirmation round after the gate closes.
+
+### 3. Report
+
+Write:
 
 1. `# Loop Clean and Fix Summary`
-2. `## Inputs`
-3. `## Cleanup Rounds`
-4. `## Issue Ledger`
-5. `## Resolved Findings`
-6. `## Stop Reason`
-7. `## Residual Risk`
+2. `## Cleanup Rounds`
+3. `## Issue Ledger`
+4. `## Resolved Findings`
+5. `## Stop Reason`
+6. `## Residual Risk`
 
-In `## Issue Ledger`, include one Markdown table row for every issue reported by
-any `/clean-and-fix-code` round, regardless of classification or outcome.
+The issue ledger must include every reported issue with its round, severity,
+classification, location, outcome, and source. Record one stop reason:
 
-Required columns:
+- `empty-target`
+- `no-findings`
+- `no-material-change`
+- `repeated-finding`
+- `oscillation`
+- `blocked`
+- `iteration-cap`
 
-`| Round | Severity | Classification | Issue | Location | Outcome | Source |`
+## Completion contract
 
-Use the delegated skill's classification when available, such as accepted,
-resolved, rejected, deferred, already-resolved, blocker, or unclassified. The
-`Round` column is required. If no issues were reported, include a single
-`No issues reported` row.
-
-## Report Contents
-
-Include:
-
-- inputs
-- cleanup round count
-- review and planned artifact paths for each round
-- accepted/rejected/deferred/already-resolved counts
-- the full `## Issue Ledger` table
-- aggregate `resolved_findings`
-- focused evidence for aggregate `resolved_findings`
-- stop reason
-- blocker or residual risk
-
-## Definition of done
-
-- `/clean-and-fix-code` ran at least once unless the working tree was empty.
-- Cleanup repeated only while the previous successful round resolved at least
-  one High or Critical finding.
-- The report records the stop reason and aggregate `resolved_findings`.
-
-## Final handoff
-
-Present the results to the user in chat. Include:
-
-1. The loop-clean-and-fix report path.
-2. Cleanup round count and stop reason.
-3. The full issue ledger table with every issue from every round, including the
-   round number and classification. Do not replace this table with only a report
-   link.
-4. Aggregate `resolved_findings` and their focused evidence.
-5. Any blocker or residual risk.
+Return the report path, round count, stop reason, aggregate
+`resolved_findings`, focused evidence, issue ledger, and residual risk. A run is
+successful when it stops because the target is empty, no findings or material
+change remain, or the fourth-round ceiling is reached without an unresolved
+blocker.

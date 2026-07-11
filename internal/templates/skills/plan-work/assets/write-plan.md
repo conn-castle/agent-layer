@@ -74,8 +74,11 @@ to an approach that requires a user decision.
 ### Phase 3: Draft the task list
 
 The task file should be a compact ordered Markdown checkbox list that mirrors
-the plan. Keep items small and verifiable, group by execution order, and include
-tests, docs, memory updates, and final verification when applicable.
+the implementation work in the plan. Keep items small and verifiable, group by
+execution order, and include directly required tests, docs, memory updates, and
+implementation-time checks. Keep final verification requirements in the
+plan's `## Verification` section for the verification stage; do not duplicate
+them as implementation tasks.
 
 ### Phase 4: Draft the context file
 

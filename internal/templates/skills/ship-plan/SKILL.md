@@ -18,13 +18,12 @@ Fail before side effects unless all are present:
 - plan artifact path
 - task artifact path
 - context artifact path
-- `implementer`: dispatch agent role to pass to both child skills
-- `fixer`: dispatch agent role to pass to both child skills
-- `plan_reviewers`: one or more dispatch agent roles to pass to both child skills
+- `implementer`: dispatch agent role for `/fully-implement-plan`
+- `fixer`: dispatch agent role for `/fully-implement-plan`
 
 If any required input is missing, ask for it before starting. Do not invent
-defaults, implementers, fixers, plan reviewer lists, or auto-select
-artifacts from `.agent-layer/tmp/`.
+defaults, implementers, fixers, or auto-select artifacts from
+`.agent-layer/tmp/`.
 
 ## Context preservation
 
@@ -62,7 +61,6 @@ unresolved blockers or user checkpoints, and the next exact step.
    {relative path to context artifact}
    implementer is {implementer}
    fixer is {fixer}
-   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Record its report path, final status, stop reason, verification verdict, and
@@ -71,9 +69,6 @@ unresolved blockers or user checkpoints, and the next exact step.
 
    ```text
    /ship-pr
-   implementer is {implementer}
-   fixer is {fixer}
-   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Record its PR URL or checkpoint, comment ledger path if available, check
@@ -83,7 +78,7 @@ unresolved blockers or user checkpoints, and the next exact step.
 ## Definition of done
 
 - `/fully-implement-plan` ran with the supplied plan, task, context,
-  `implementer`, `fixer`, and `plan_reviewers`, or this workflow stopped on
+  `implementer`, and `fixer`, or this workflow stopped on
   its child-skill blocker.
 - `/ship-pr` ran after `/fully-implement-plan` completed with a shippable final
   status, or this workflow stopped before shipping with the reason.

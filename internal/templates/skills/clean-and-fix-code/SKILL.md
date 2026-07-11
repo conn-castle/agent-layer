@@ -1,149 +1,101 @@
 ---
 name: clean-and-fix-code
 description: >-
-  Run a lightweight, non-iterative cleanup/fix pass over uncommitted
-  working-tree changes: prune uncommitted test changes, simplify changed
-  production code, review the diff, and fix accepted review findings.
+  Run one cleanup and repair pass over uncommitted working-tree changes: prune
+  test changes, simplify production changes, review the diff, and directly fix
+  accepted findings.
 ---
 
 # clean-and-fix-code
 
-Use only for uncommitted working-tree changes. Do not sweep old commits, the
-whole repository, or unrelated known issues unless explicitly asked. Run each
-phase once, then stop.
-
-## Required inputs
-
-- `plan_reviewers`: one or more dispatch agent roles to pass through to
-  `/plan-work` if accepted findings need fixes.
-
-If `plan_reviewers` is missing, ask for it before starting. Do not invent a
-default plan reviewer list.
+Use only for uncommitted working-tree changes. Run each stage once, directly
+address accepted findings, and stop.
 
 ## Scope
 
-Default target is the full uncommitted working tree:
+The default target is the combined uncommitted working tree:
 
 - staged diff from `git diff --cached`
 - unstaged diff from `git diff`
-- untracked files from `git ls-files --others --exclude-standard` (Include
-  untracked files in the default target.)
+- untracked files from `git ls-files --others --exclude-standard`
 
-Review and fix staged, unstaged, and untracked files as one combined change set.
-If the target is empty, stop and ask instead of reviewing history.
+Do not sweep old commits, unrelated known issues, or the whole repository unless
+explicitly asked. If the target is empty, report `no-findings` with zero counts
+and no review report instead of reviewing history.
 
 ## Workflow
 
-For every subagent step, use a built-in subagent with fresh context.
+### 1. Cleanup pre-passes
 
-1. Run a subagent with the prompt defined in
-   `assets/prune-uncommitted-tests.md`.
-   - Run only when the diff adds or modifies test files or test cases.
-2. Run a subagent with the prompt defined in
-   `assets/simplify-uncommitted-code.md`.
-   - Run only when the diff adds or modifies production code.
-3. Run `/review-uncommitted-code` directly (not as a subagent).
-   - Pass the combined target: staged diff, unstaged diff, and untracked files.
-4. Apply the Finding Gate.
-5. Apply the Significance Gate to each accepted finding or tightly coupled
-   finding group.
-6. For a direct fix:
-   - validate the finding against the current tree
-   - diagnose and repair the root cause within the bounded target
-   - make directly required test, doc, or memory edits
-   - run the narrowest credible affected checks
-   - audit the final diff against the accepted finding
-7. For an exceptionally significant fix, run a subagent to plan the accepted
-   finding group. Do not require a separate spec when the findings are concrete
-   enough to plan from:
+Run each applicable pre-pass once, sequentially, in a fresh built-in subagent:
 
-   ```text
-   /plan-work
-   {exceptionally significant accepted review findings from the gate}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+- `assets/prune-uncommitted-tests.md` when tests or test cases changed
+- `assets/simplify-uncommitted-code.md` when production code changed
 
-8. For an exceptionally significant planned fix, run:
+Record whether either pre-pass materially changed the target, then re-evaluate
+the combined uncommitted working tree. If the pre-passes emptied the target,
+skip review and finish with `completed`; do not invoke a reviewer on an empty
+diff.
 
-   ```text
-   /implement-plan
-   Plan artifacts:
-   {relative path to plan artifact}
-   {relative path to task artifact}
-   {relative path to context artifact}
-   ```
+### 2. Review once
 
-9. For every planned fix, run the plan's focused checks and audit the final diff
-   against every planned finding. Return the cleanup plan, accepted cleanup
-   findings, and focused evidence so a calling workflow can include them in its
-   final verification when needed. Do not run `/verify-work` from this skill.
+Run `/review-uncommitted-code` directly against staged, unstaged, and untracked
+changes as one target. Use its Finding Gate below. Do not launch another review
+round after repairs.
 
-## Significance Gate
+### 3. Address accepted findings directly
 
-Choose based on fix complexity and decision risk, not finding severity alone.
+For each accepted finding or tightly coupled finding group:
 
-- `direct`: the root cause and bounded fix are concrete, local, behaviorally
-  clear, and safe to verify with focused evidence. A High-severity defect can
-  still be direct when its repair is obvious and contained.
-- `planned`: use `/plan-work` + `/implement-plan` only when the fix is
-  exceptionally significant: cross-cutting, behavior-changing,
-  architecture-sensitive, ambiguous, unsafe to bound directly, or dependent
-  on a substantive user decision. A Medium finding can require planning when
-  its design risk is high.
+1. Validate the finding against the current working tree and repository
+   evidence.
+2. Diagnose and repair the root cause within the bounded target.
+3. Make directly required test, documentation, or memory edits.
+4. Run the narrowest credible affected checks.
+5. Inspect the resulting diff against the accepted finding.
 
-Record the classification and one-line reason for every accepted finding or
-group. Preserve all existing human checkpoints and stop before destructive or
-user-owned decisions.
+Apply fixes sequentially against the latest working tree. Resolve routine repair
+and verification details directly. Stop only when a required choice materially
+affects behavior, architecture, scope, risk, or cost, or when a concrete failure
+prevents safe repair.
 
 ## Finding Gate
 
-For this skill, "findings" means `/review-uncommitted-code` findings under
-`### Recommended Accept`.
+Use `/review-uncommitted-code` findings as follows:
 
-- If `### Recommended Accept` is `None`, finish the skill after reporting the
-  review report path and cleanup built-in subagent outcomes.
-- Continue only with `### Recommended Accept` findings.
-- If `### Recommended Defer` contains anything that blocks planning or fixing,
-  stop for the human checkpoint; do not treat the run as clean.
-- Ignore `### Recommended Reject` and `### Recommended Already Resolved` for fix
-  planning, but mention their counts in the final handoff when available.
+- Fix only `### Recommended Accept` findings.
+- If `### Recommended Accept` is `None`, finish with `completed` when a
+  cleanup pre-pass materially changed the target; otherwise finish with
+  `no-findings`.
+- Do not promote `Recommended Defer`, `Recommended Reject`, or
+  `Recommended Already Resolved` into repair scope. Report their counts.
+- If an accepted repair depends on a user-owned decision recorded under
+  `Recommended Defer`, stop and name that decision.
 
 ## Guardrails
 
-- Delegate the two cleanup pre-passes to subagents and run
-  `/review-uncommitted-code` directly. Apply bounded direct fixes in this skill;
-  let `/plan-work` and `/implement-plan` own their contracts when the
-  Significance Gate selects them.
-- Subagent and sub-skill returns are intermediate until this structure reaches
-  its final step or the no-findings gate exits early.
+- Do not call `/plan-work`, `/implement-plan`, or `/verify-work` from this skill.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
   user explicitly asks.
-- Keep scope tight to the uncommitted target plus directly required support
-  edits for accepted findings.
-- A broad-but-clear fix is still in scope when it resolves an accepted finding
-  against the working-tree target and does not trigger a human checkpoint.
-- Do not run another review round after implementation.
-- Run the test-pruning and simplification pre-passes sequentially because each
-  can mutate the diff consumed by the next phase.
-- Apply direct and planned fixes sequentially against the latest working tree;
-  do not parallelize mutations or decisions that share repository state.
+- Keep repairs within the uncommitted target plus directly required supporting
+  edits.
+- Do not parallelize mutations against shared working-tree state.
 
-## Handoff
+## Completion contract
 
-When the skill finishes, report:
+Report:
 
-- `outcome`: `no-findings`, `completed`, or `blocked`, including any blocker or
+- `outcome`: `no-findings`, `completed`, or `blocked`, with any blocker or
   residual risk
+- outcome basis: use `completed` when a cleanup pre-pass or accepted repair
+  materially changed the target; use `no-findings` only when neither did
 - cleanup pre-pass outcomes, or `not applicable`
-- `/review-uncommitted-code` report path and, for planned fixes, the plan, task,
-  context, and implementation report paths
+- `/review-uncommitted-code` report path, `not run — empty target`, or `not run
+  — target emptied by cleanup pre-passes`
 - accepted, rejected, deferred, and already-resolved counts
-- `resolved_findings`: every accepted finding fixed by this run, with title,
-  severity, files, and `direct` or `planned` classification; use an empty list
-  when no accepted findings were fixed
-- focused command evidence and the final diff audit for each fixed finding;
-  command evidence includes the exact command, exit status, captured output or
-  artifact, and the repository state it covered
+- `resolved_findings`: each fixed finding with title, severity, and files; use an
+  empty list when none were fixed
+- focused check evidence and the final diff assessment for each fixed finding
 
-Callers may pass `resolved_findings` directly to final verification as
-supplemental obligations; do not create a duplicate obligations list.
+Callers may pass `resolved_findings` to final verification as supplemental
+obligations. Do not create a second obligations list.

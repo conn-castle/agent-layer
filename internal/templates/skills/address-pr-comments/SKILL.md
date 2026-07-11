@@ -1,188 +1,124 @@
 ---
 name: address-pr-comments
 description: >-
-  Handle reviewer feedback on an open PR: evaluate comments, implement fix
-  decisions in the working tree, justify disagreements, track deferrals, prepare
-  reply text in a comment ledger, and return the ledger without committing or
-  posting replies.
+  Evaluate feedback on an open pull request, directly implement accepted fixes,
+  prepare replies, and return an updated comment ledger without committing,
+  pushing, or posting.
 ---
 
 # address-pr-comments
 
-## Required inputs
+Address each pull request comment once. Keep all local decisions, edits,
+evidence, and reply drafts in one durable ledger for the caller.
 
-- `implementer`: dispatch agent role to pass to `/fully-implement-plan` for
-  `/implement-plan`
-- `fixer`: dispatch agent role to pass to `/fully-implement-plan` for
-  `/loop-clean-and-fix`
-- `plan_reviewers`: one or more dispatch agent roles to pass to
-  `/clean-and-fix-code`, `/plan-work`, and `/fully-implement-plan`.
+## Inputs
 
-If `implementer`, `fixer`, or `plan_reviewers` is missing, ask for it
-before starting. Do not invent a default implementer, fixer, or plan review
-agent list.
+Optional inputs:
 
-## Optional inputs
+- pull request number or URL; default to the current branch's open pull request
+- existing comment ledger path or content
+- specific comment IDs
+- caller-provided comment data
+- prioritization guidance
 
-- a PR number or URL; default is the current branch's open PR
-- an optional comment ledger path or existing ledger content
-- specific comment IDs to address
-- pre-fetched comment data from the caller
-- guidance on which comments to prioritize
-
-If no ledger is found for the PR, create and return
+When no ledger exists, create
 `.agent-layer/tmp/address-pr-comments-<pr-number>-ledger.md`.
 
 ## Boundaries
 
-- Never run `git add`, `git commit`, `git push`, `gh pr comment`, or GitHub reply APIs.
-- Never post prepared replies.
-- Never set `GitHub reply posted` to `yes` unless fresh GitHub data shows the reply is already posted.
-- Leave implemented fixes as local working-tree changes for the caller.
-- Return the updated comment ledger on every non-checkpoint exit.
+- Do not stage, commit, push, post comments, call GitHub reply APIs, or mark a
+  reply posted without fresh GitHub evidence.
+- Leave fixes as local working-tree changes.
+- Return the ledger on every non-checkpoint exit.
 
-## Comment Ledger
+## Ledger contract
 
-The ledger is the handoff contract with the caller. It must include one row for
-every fetched original PR comment or review body. Agent-authored verdict replies
-are evidence for the parent row, not new feedback rows, unless they contain a
-new requested change.
+Include one row for every original conversation comment, inline review comment,
+or review body. Use stable keys:
 
-Use stable comment keys:
-- `review:<comment-id>` for inline review comments
-- `conversation:<comment-id-or-url>` for PR conversation comments
-- `review-body:<review-id>` for review summary bodies
+- `review:<comment-id>`
+- `conversation:<comment-id-or-url>`
+- `review-body:<review-id>`
 
-Maintain this summary table:
+Maintain:
 
-| Comment key | Location | Decision | State | GitHub reply posted | Notes |
-| --- | --- | --- | --- | --- | --- |
+| Comment key | Location | Decision | State | Reply URL or ID | Reply audit | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
 
-Column values:
-- `Decision`: `untriaged`, `fix`, `disagree`, `defer`, or `excluded`.
-- `State`: concise state such as `needs_evaluation`, `fixed_uncommitted`, `ready_to_reply`, `complete`, or `blocked_user_decision`.
-- `GitHub reply posted`: `yes` or `no`.
-- `Notes`: exact reply draft or detail-section link; include tracking, commit, reply URL, escalation report paths, cleanup notes, or narrow check results when relevant.
+Use `fix`, `disagree`, `defer`, or `excluded` for decided rows. Notes must hold
+the reply draft or link to detail containing the evidence, local fix, focused
+checks, or tracking location. Agent verdict replies are evidence for their
+parent row unless they contain a new requested change.
 
-Use detail sections keyed by comment key for full comment text, surrounding code
-excerpts, long reply drafts, cleanup notes, narrow check results, and
-caller-provided reply evidence.
+`address-pr-comments` may set `fixed_uncommitted`, `ready_to_reply`,
+`blocked_user_decision`, or `excluded`. The publishing caller may subsequently
+set `reply_posted_pending_audit` or `complete`. Use `not-run`, `pass`, or the
+auditor's failure verdict in `Reply audit`.
 
-Fully addressed means:
-- `fix` with a pushed commit hash, `GitHub reply posted` = `yes`, and a posted `Fixed in <hash>` reply.
-- `disagree` with `GitHub reply posted` = `yes` and a posted `No change — <reason>` reply.
-- `defer` with a real tracking location, `GitHub reply posted` = `yes`, and a posted `Deferred — tracked in <location>` reply.
-- `excluded` with an explicit exclusion reason.
+Treat a non-excluded row as fully addressed only when fresh GitHub data supplies
+its reply URL or ID, the reply audit is `pass`, and any claimed fix commit or
+deferral tracker exists. An excluded row requires an explicit exclusion reason.
 
 ## Workflow
 
-### Phase 1: Gather And Merge
+### 1. Gather and reconcile
 
-1. Read all PR comments:
-   - `gh pr view <pr-number> --comments` for conversation comments
-   - `gh api repos/{owner}/{repo}/pulls/{pr-number}/comments` for review comments
-   - `gh api repos/{owner}/{repo}/pulls/{pr-number}/reviews` for review bodies
-2. Merge fetched original comments into the ledger by stable comment key.
-3. Mark rows as `excluded` only for bot status messages, CI notifications,
-   pure statements of fact, and already-posted verdict replies that contain no
-   new requested change.
-4. Reconcile posted replies from fresh GitHub data.
-5. If every non-excluded feedback row is fully addressed, return immediately.
+Fetch conversation comments, inline review comments, and review bodies. Merge
+them by stable key and reconcile already-posted replies from fresh GitHub data.
+Exclude only status messages, continuous-integration notifications, pure factual
+statements, and posted verdict replies with no new request.
 
-### Phase 2: Evaluate
+If every non-excluded row is already fully addressed, return the reconciled
+ledger without editing code.
 
-For each non-fully-addressed feedback comment, choose:
-- `fix`: the suggestion is correct, beneficial, and belongs in this PR.
-- `disagree`: the suggestion is wrong, harmful, or not beneficial.
-- `defer`: the suggestion has merit but is outside this PR's scope.
+### 2. Decide each comment
 
-Do not disagree merely to avoid work. Defer only when the comment requests a
-new feature, identifies a pre-existing issue, or requires a non-trivial refactor
-unrelated to this PR. If a comment reports a bug introduced by this PR, fix it.
+Choose:
 
-Ask before continuing when a comment is ambiguous or requires a materially
-broader scope or architecture decision.
+- `fix`: correct, beneficial, and in scope for this pull request
+- `disagree`: unsupported, harmful, or not beneficial
+- `defer`: worthwhile but a new feature, pre-existing issue, or unrelated
+  refactor outside this pull request
 
-### Phase 3: Implement And Track
+Validate comments against the current tree and repository evidence. Do not
+disagree to avoid work or defer a defect introduced by this pull request.
 
-1. Implement `fix` decisions directly when they are small enough to handle
-   safely inside this skill.
-2. If a required `fix` decision is large, cross-cutting, behavior-changing, or
-   complex enough that direct editing would be risky, batch related comments
-   into one scoped task and run `/plan-work` with:
+Ask the user only when available evidence leaves multiple viable choices with
+materially different behavior, architecture, scope, risk, or cost.
 
-   ```text
-   /plan-work
-   {scoped task from batched comments}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+### 3. Implement accepted fixes directly
 
-   Then with the reviewed artifacts and agent roles, call:
+Address every `fix` decision directly, grouping tightly coupled comments when
+useful. Diagnose the root cause, make required code, test, documentation, and
+memory edits, and run the narrowest credible affected checks. Do not route large
+or cross-cutting fixes through `/plan-work`, `/implement-plan`,
+`/fully-implement-plan`, or `/verify-work`; complexity alone is not a user
+decision.
 
-   ```text
-   /fully-implement-plan
-   Plan artifacts:
-   {relative path to reviewed plan artifact}
-   {relative path to reviewed task artifact}
-   {relative path to reviewed context artifact}
-   implementer is {implementer}
-   fixer is {fixer}
-   plan_reviewers are {agent 1, agent 2, ...}
-   ```
+For `defer`, record an appropriate local tracking location. If external issue
+creation is required, prepare the tracking text but do not create it without
+authorization.
 
-   Resume this workflow after `/fully-implement-plan` returns local
-   working-tree changes. Do not use this escalation for ordinary reviewer nits,
-   docs-only edits, obvious local fixes, or one-file cleanup.
-3. Record `defer` items in `ISSUES.md`, `BACKLOG.md`, or a GitHub issue. Then
-   draft the deferred reply.
-4. Update each affected ledger row:
-   - fix rows: `Decision=fix`, `State=fixed_uncommitted`, `GitHub reply posted=no`
-   - disagree rows: `Decision=disagree`, `State=ready_to_reply`, `GitHub reply posted=no`
-   - defer rows: `Decision=defer`, `State=ready_to_reply`, `GitHub reply posted=no`
+Update each row to `fixed_uncommitted`, `ready_to_reply`, or
+`blocked_user_decision` as applicable. Preserve caller-owned reply URLs, audit
+verdicts, and completed state when reconciling an existing ledger unless fresh
+GitHub evidence invalidates them.
 
-### Phase 4: Clean
+### 4. Draft replies and return
 
-If this skill made non-trivial local code changes, run cleanup:
+Prepare one specific reply for every non-excluded row not blocked on a user
+decision:
 
-```text
-/clean-and-fix-code
-plan_reviewers are {agent 1, agent 2, ...}
-```
+- **Fixed in `<pending-commit>`.** Describe the fix.
+- **No change — `<reason>`.** Give the evidence-backed justification.
+- **Deferred — tracked in `<location>`.** Explain the scope boundary.
 
-Then draft fixed replies.
-Do not run the repo's full check lane here; `ship-pr` owns the final pre-commit
-check. Run only narrow, task-local commands when needed to debug or confirm an
-implementation step, and record cleanup notes or check results in the ledger.
+Re-read the ledger and ensure every fetched original comment has a row and a
+decision, reply draft, or user-decision blocker.
 
-### Phase 5: Draft Replies
+## Completion contract
 
-Every prepared reply must start with one bold verdict:
-- **Fixed in `<pending-commit>`.** Describe the concrete fix. The caller
-  replaces `<pending-commit>` with the actual short hash after committing.
-- **No change — `<reason>`.** Give a specific technical justification.
-- **Deferred — tracked in `<location>`.** Explain why the tracked item is
-  outside this PR's scope.
-
-Draft a specific reply for every non-excluded, non-fully-addressed row unless
-the row is blocked on a user decision. If a previously declined suggestion is
-subsequently implemented, the draft must acknowledge the reversal.
-
-### Phase 6: Return
-
-Before returning, re-read the ledger and ensure every fetched original comment
-has a row. Every non-excluded feedback row must be fully addressed, have a
-prepared reply, or be marked `blocked_user_decision`.
-
-The caller owns committing, pushing, replacing `<pending-commit>` placeholders,
-posting replies, setting `GitHub reply posted=yes`, and running the fresh-context
-reply audit with [`reviewer-prompt.md`](reviewer-prompt.md) after replies exist.
-
-## Final Handoff
-
-Return the ledger path/content and state:
-- whether the skill exited immediately because all comments were fully addressed
-- counts of fix, disagree, defer, already-replied, and caller-reply-needed rows
-- tracking locations for `defer` rows
-- `/plan-work` and `/fully-implement-plan` report paths for large-fix escalations
-- cleanup result and any narrow checks run, or why none were needed
-- confirmation that no stage, commit, push, or GitHub reply operation was performed
+Return the ledger path or content, decision counts, direct fixes and focused
+checks, deferred tracking locations, caller replies still needed, and any
+user-owned blocker. Confirm that no staging, commit, push, or GitHub reply
+operation occurred.

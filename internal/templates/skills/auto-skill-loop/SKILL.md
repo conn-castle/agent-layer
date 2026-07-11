@@ -91,9 +91,6 @@ notes in `ISSUES.md`.
 
    ```text
    /ship-pr
-   implementer is {implementer}
-   fixer is {fixer}
-   plan_reviewers are {agent 1, agent 2, ...}
    ```
 
    Do not delegate merge execution.
