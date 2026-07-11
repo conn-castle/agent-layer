@@ -1,192 +1,106 @@
 ---
 name: boost-coverage
 description: >-
-  Raise coverage: find the real coverage command, select under-covered files,
-  add behavior-focused tests, iterate to target or blocker. Do not use for
-  full-suite cleanup or pruning tests added in the current diff.
+  Raise coverage to an explicit or repository-required target with one
+  behavior-focused test batch and one final coverage measurement. Do not use
+  for full-suite cleanup or pruning tests added in the current diff.
 ---
 
 # boost-coverage
 
-Increase coverage with small, reviewable iterations.
-Default behavior is:
-- discover the real coverage contract first
-- improve one eligible file per iteration
-- stop only when further improvement no longer looks worthwhile or a real blocker prevents trustworthy progress
+Raise trustworthy coverage to a declared target. Establish the coverage
+contract once, implement one coherent batch of behavior-focused tests, measure
+the final result once, and yield.
 
-## Defaults
+## Inputs and target
 
-- Use the repo-defined threshold from CI, coverage config, or `DECISIONS.md`.
-- Treat the threshold as the minimum floor, not an automatic stop, when this skill is explicitly invoked.
-- If the user names a target file, use it for the next iteration after validating eligibility.
-- Otherwise choose the eligible file with the lowest trustworthy line coverage.
-- Prefer test-only changes. Allow only small behavior-preserving seams when they are required for testability.
+Accept an explicit target percentage and an optional file, component, or domain
+that narrows where the target is pursued. Otherwise use the minimum threshold
+defined by continuous integration, coverage configuration, or DECISIONS.md. A
+named scope does not create an unstated higher target.
 
-## Inputs
+- Do not invent a target or treat an already-satisfied threshold as permission
+  for open-ended improvement.
+- If the repository threshold is already satisfied and the user supplied no
+  higher target, return `already-satisfied` without editing.
+- A user-named file must be eligible under the repository's coverage rules.
+- Prefer test-only changes. Allow a small behavior-preserving seam only when it
+  is necessary to test an established contract.
 
-Accept any combination of:
-- a target file
-- a coverage domain or component
-- an iteration cap
-- a verification depth preference
-- whether approved command discoveries should be persisted to `COMMANDS.md`
+Write `.agent-layer/tmp/boost-coverage.<run-id>.report.md`, where `run-id` is
+`YYYYMMDD-HHMMSS-<short-rand>`.
 
-## Required artifact
+## Rules
 
-Write the report to:
-- `.agent-layer/tmp/boost-coverage.<run-id>.report.md`
+- Read COMMANDS.md and repository tooling before choosing commands, thresholds,
+  scope, or exclusions.
+- Do not add tautological, self-confirming, type-system, schema, or
+  implementation-restatement tests.
+- Test behavior, logic, integration, and meaningful runtime failure modes.
+- Do not change production behavior, weaken coverage configuration, or swap to
+  a narrower command to improve the number.
+- Ask only when no authoritative target exists, the coverage contract cannot be
+  established, required tooling must be installed, or a testability change
+  requires a user-owned design decision.
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
+## Workflow
 
-## Multi-agent pattern
+### 1. Establish the coverage contract
 
-Recommended roles:
-1. `Coverage scout`: identifies domains, commands, and threshold sources.
-2. `Coverage runner`: produces the current per-file coverage view.
-3. `Target selector`: chooses the next eligible file.
-4. `Test designer`: derives meaningful cases and edge conditions.
-5. `Implementer`: adds or updates tests.
-6. `Verifier`: re-runs coverage and confirms improvement.
+Use a fresh built-in scout subagent to identify the documented coverage
+command, working directory, threshold source, exclusions, and trustworthy
+per-file output. Run the command once to capture the baseline and eligible
+shortfalls.
 
-## Global constraints
+If the contract or target cannot be established, return the smallest blocking
+decision. If the target is already satisfied, write the report and yield.
 
-- Do not guess coverage commands, thresholds, or domain boundaries.
-- Do not change production behavior to inflate coverage.
-- Do not add tautological or self-confirming tests to reach a coverage target;
-  stop at the real shortfall instead.
-- Do not add runtime tests for constraints already enforced by a language,
-  compiler, type checker, schema, or static analyzer; coverage should come from
-  behavior, logic, integration, or runtime failure modes.
-- Keep each iteration focused on one target file unless the repo's test runner forces a broader command.
-- Keep tests deterministic and aligned with repo conventions.
+### 2. Select one coherent test batch
 
-## Human checkpoints
+Choose one coherent set of under-covered behaviors credibly sized to reach the
+declared target. Prefer high-value error paths, boundaries, branching logic, and
+component interactions over mechanically selecting the lowest percentage or
+touching one file at a time. If reaching the target would require unrelated or
+low-value test work, report that concrete target blocker before editing.
 
-- Required: ask when the coverage command set or domain model is ambiguous enough that the results would be untrustworthy.
-- Required: ask when no threshold is documented.
-- Required: ask before installing missing tooling.
-- Stay autonomous for normal test-writing and re-run iterations once the coverage contract is clear.
+Record the behavior to prove, its contract, baseline coverage, expected target
+contribution, and why the tests can detect a real defect.
 
-## Coverage workflow
+### 3. Implement and measure once
 
-### Phase 0: Preflight (Coverage scout)
+Use a fresh built-in subagent to add the coherent test batch and run focused
+checks while implementing. Then run the authoritative coverage command once on
+the final tree.
 
-1. Confirm baseline repo state with `git status --porcelain`.
-2. Read `COMMANDS.md` before choosing any coverage or verification command.
-3. Read `DECISIONS.md` only if the threshold is not already obvious from coverage tooling or CI configuration.
+If the final result misses the declared target, directly address a concrete,
+actionable miss in the selected behavior and rerun only the affected evidence.
+Do not start a new target-selection loop. Stop when the remaining shortfall
+requires a different scope, low-value tests, missing tooling, or a user-owned
+decision.
 
-### Phase 1: Discover the coverage contract (Coverage scout)
+### 4. Report and yield
 
-1. Identify:
-   - repo or component coverage commands
-   - working directories
-   - output format or stable textual source
-   - exclusions that affect file eligibility
-2. Classify confidence:
-   - `high`: commands and scope are explicit
-   - `medium`: plausible but incomplete mapping
-   - `low`: no trustworthy contract
-3. Proceed autonomously only on `high`.
+The report contains:
 
-### Phase 2: Resolve blockers before execution (Coverage scout)
+1. `# Coverage Summary` — scope, target, and terminal outcome
+2. `## Contract and Baseline` — command, threshold source, exclusions, and
+   observed baseline
+3. `## Behavior-Focused Tests` — behavior, files, and defects the tests detect
+4. `## Final Coverage Evidence` — observed final result and covered tree
+5. `## Remaining Shortfall or Blocker`
 
-Stop and ask when any of these are true:
-- confidence is `medium` or `low`
-- the threshold is missing
-- required tooling is missing
+Use one outcome:
 
-When asking, provide:
-- the proposed commands
-- the domain scope
-- the missing threshold or tooling detail
-- the smallest decision the user needs to make
+- `target-met`
+- `already-satisfied`
+- `blocked`
 
-### Phase 3: Build the current coverage table (Coverage runner)
+## Completion contract
 
-1. Run the documented coverage command.
-2. Normalize the result into:
-   - domain
-   - file
-   - line coverage percent
-   - optional lines total or missed lines
-3. Exclude obvious noise:
-   - tests
-   - fixtures
-   - generated code
-   - mocks
-   - thin entrypoints with no real logic
-
-### Phase 4: Choose the next target (Target selector)
-
-1. Validate a user-supplied target when present.
-2. Otherwise select the eligible file with the lowest trustworthy coverage.
-3. Record:
-   - why the file is eligible
-   - coverage before
-   - why it was selected over nearby candidates
-
-### Phase 5: Design and implement tests (Test designer + Implementer)
-
-Cover:
-- primary behavior
-- guard clauses
-- error paths
-- branch-heavy logic
-- important boundary cases
-
-If better testability needs a seam:
-- keep it small
-- preserve behavior
-- escalate first if it stops being obviously mechanical
-
-### Phase 6: Verify improvement (Verifier)
-
-1. Re-run the smallest credible coverage command that proves improvement.
-2. Confirm:
-   - the target file improved
-   - the repo or domain moved toward the threshold
-3. Refresh the coverage table before deciding the next iteration.
-
-### Phase 7: Iterate or stop (Coverage scout)
-
-Continue only when:
-- the next target still looks meaningful
-- the last iteration improved coverage
-- eligible files remain
-
-If the repo is still below threshold, keep going until the threshold is met or blocked.
-If the repo is already above threshold, keep going while meaningful improvements remain or until the user-imposed iteration cap is reached.
-
-Otherwise stop and report the real blocker or diminishing-return reason.
-
-## Required report structure
-
-Write `.agent-layer/tmp/boost-coverage.<run-id>.report.md` with:
-
-1. `# Coverage Summary`
-2. `## Threshold and Commands`
-3. `## Iterations`
-4. `## Coverage Before and After`
-5. `## Remaining Blockers or Diminishing Returns`
-
-## Guardrails
-
-- Do not pad coverage with trivial tests that add little behavioral confidence.
-- Do not keep iterating when coverage is no longer improving.
-- Do not silently swap to a weaker coverage command.
-- Do not claim threshold success without the observed command output.
-
-## Definition of done
-
-- The report exists at `.agent-layer/tmp/boost-coverage.<run-id>.report.md` with the required sections (`Summary`, `Threshold and Commands`, `Iterations`, `Coverage Before and After`, `Remaining Blockers or Diminishing Returns`).
-- The documented coverage command was run at least once per iteration, and the report cites observed command output for each before/after number.
-- The run stopped for one of the named reasons: threshold met, diminishing returns, iteration cap, or a documented human-checkpoint blocker; no implicit stops.
-- No production behavior was changed to move the coverage number; any added seams are explicit in the report.
-
-## Final handoff
-
-After writing the report:
-1. Echo the report path.
-2. Summarize the threshold used, commands run, and files improved per iteration.
-3. Call out coverage before and after, plus any blocked decision or shortfall that prevented reaching the threshold.
+- The target and coverage command come from an explicit or repository-defined
+  source.
+- The skill performed one baseline, one coherent implementation batch, and one
+  final coverage measurement by default.
+- Every added test can fail because of a real implementation defect.
+- The report names the observed before/after result, any concrete repair of the
+  selected batch, and any remaining blocker, then yields.

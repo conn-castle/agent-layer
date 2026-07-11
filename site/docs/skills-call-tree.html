@@ -868,7 +868,7 @@ audit-tests:
         - task: run one credible verification lane
     - exit: report material findings, gaps, and verification, then yield
 auto-skill-loop:
-  inputs: [plan_reviewers, implementer, fixer, shipper]
+  inputs: [implementer, shipper]
   calls:
     - while: autonomous work remains
       calls:
@@ -881,7 +881,6 @@ auto-skill-loop:
         - if: worker_skill is /improve-codebase
           calls:
             - skill: improve-codebase
-              inputs: [plan_reviewers]
               caller: dispatch(implementer)
         - if: worker returns a user-only blocker
           calls:
@@ -904,18 +903,18 @@ auto-skill-loop:
         - break: start the next autonomous attempt
 boost-coverage:
   calls:
-    - task: discover the coverage contract and threshold
+    - task: establish the coverage contract, target, and baseline
       caller: subagent
-    - if: coverage contract is ambiguous or required tooling is missing
+    - if: coverage contract or target is ambiguous, or required tooling is missing
       calls:
         - exit: stop for the smallest user decision
-    - while: coverage improvement remains meaningful
+    - if: declared target is already satisfied
       calls:
-        - task: select a target, add behavior tests, and verify coverage improvement
-          caller: subagent
-        - if: threshold met, iteration cap reached, blocker found, or returns diminish
-          calls:
-            - exit: report the coverage outcome
+        - exit: report already-satisfied without editing
+    - task: select and implement one coherent behavior-focused test batch
+      caller: subagent
+    - task: measure final coverage once and directly address only a concrete actionable miss
+    - exit: report target-met or the concrete blocker, then yield
 clean-and-fix-code:
   calls:
     - if: uncommitted diff includes changed tests
@@ -937,53 +936,51 @@ complete-current-phase:
   calls:
     - task: map active roadmap phase and package boundaries
       caller: subagent
-    - while: selected phase has unchecked tasks or the active package needs a revised plan
-      calls:
-        - if: the active package needs a new or revised plan
-          calls:
-            - skill: plan-work
-              inputs: [plan_reviewers]
-        - task: gate the current package and next execution step
-          caller: subagent
-        - while: current package is not complete
-          calls:
-            - if: work package spans distinct files or subsystems
-              calls:
-                - skill: implement-plan
-                  caller: subagent
-            - if: work package stays in current context
-              calls:
-                - skill: implement-plan
-            - if: implementation leaves obvious local complexity
-              calls:
-                - skill: clean-and-fix-code
-            - skill: verify-work
-              caller: subagent
-            - if: package verification is incomplete
-              calls:
-                - break: return to the earliest affected planning or implementation phase
-            - if: package verification is complete or complete-with-follow-up
-              calls:
-                - skill: review-uncommitted-code
-            - if: review report has Recommended Accept findings
-              calls:
-                - task: fix accepted audit findings
-            - if: audit fixes leave in-scope local complexity
-              calls:
-                - skill: clean-and-fix-code
-            - if: audit fixes or cleanup changed the package
-              calls:
-                - skill: verify-work
-                  caller: subagent
-            - break: return to the package gate
-    - if: every selected phase task is complete
+    - if: selected phase is already complete in the current tree
       calls:
         - skill: finish-task
+        - exit: report the evidence-backed phase closeout
+    - skill: plan-work
+      inputs: [plan_reviewers]
+    - task: gate the reviewed phase plan once
+      caller: subagent
+    - for: package in planned_phase_packages
+      calls:
+        - if: package spans a distinct subsystem
+          calls:
+            - skill: implement-plan
+              caller: subagent
+        - if: package is narrow and stays in the current context
+          calls:
+            - skill: implement-plan
+    - skill: clean-and-fix-code
+    - skill: verify-work
+      caller: subagent
+    - if: phase verification has material in-scope findings
+      calls:
+        - task: directly address each finding with focused evidence
+    - skill: review-uncommitted-code
+    - if: concrete-work review has Recommended Accept findings
+      calls:
+        - task: directly address each accepted finding with focused evidence
+    - skill: finish-task
 debug-and-fix-issue:
   inputs: [plan_reviewers, implementer, fixer]
   calls:
     - task: reproduce, narrow, diagnose, and capture a failing test when feasible
-    - if: full investigate-and-fix mode
+    - if: direct repair path
+      calls:
+        - task: repair the proven root cause
+          caller: dispatch(implementer)
+        - skill: clean-and-fix-code
+          caller: dispatch(fixer)
+        - skill: verify-work
+          caller: subagent
+        - if: direct-path verification has material in-scope findings
+          calls:
+            - task: directly address every verified finding with focused evidence
+              caller: dispatch(implementer)
+    - if: significant planned repair path
       calls:
         - skill: plan-work
           inputs: [plan_reviewers]
@@ -1015,21 +1012,30 @@ fix-ci:
 fix-issues:
   inputs: [plan_reviewers]
   calls:
-    - task: select and batch the issue set
+    - task: validate, classify, and batch the selected issue set once
       caller: subagent
-    - while: unprocessed issue batches remain
+    - if: no open selected issue remains
       calls:
-        - skill: plan-work
-          inputs: [plan_reviewers]
-        - task: gate, implement, audit, verify, and update the current batch
+        - exit: report no-work without planning
+    - skill: plan-work
+      inputs: [plan_reviewers]
+    - task: gate the reviewed issue-set plan once
+      caller: subagent
+    - for: package in planned_issue_packages
+      calls:
+        - task: implement the bounded issue package
           caller: subagent
-        - if: gate verdict is revise or rewrite-because-out-of-scope
-          calls:
-            - break: return to planning for the affected batch
-        - if: touched scope accumulates obvious local complexity or dead scaffolding
-          calls:
-            - skill: clean-and-fix-code
-    - if: all selected batches are complete and no broader orchestrator owns closeout
+    - if: combined work has meaningful cleanup scope
+      calls:
+        - skill: clean-and-fix-code
+    - skill: review-uncommitted-code
+    - if: review has Recommended Accept findings
+      calls:
+        - task: directly address accepted findings with focused evidence
+    - skill: verify-work
+      caller: subagent
+    - task: apply every issue disposition to the canonical ledger
+    - if: no broader orchestrator owns closeout
       calls:
         - skill: finish-task
 full-workflow:
@@ -1068,35 +1074,32 @@ implement-plan:
       calls:
         - exit: stop for the smallest user decision
 improve-codebase:
-  inputs: [plan_reviewers]
   calls:
-    - task: survey chunks and run the cross-cutting review
+    - task: survey risk evidence and propose one bounded chunk set
       caller: subagent
+    - if: scout finds no evidence-backed chunk worth reviewing
+      calls:
+        - exit: report no-material-findings
     - for: chunk in planned_chunks
       calls:
         - skill: review-uncommitted-code
         - if: chunk review has Recommended Accept findings
           calls:
-            - task: fix accepted chunk findings
-        - while: fresh re-audit still reports Critical or High findings
-          calls:
-            - if: post-fix chunk re-audit is required
+            - if: finding group is independent from other mutations
               calls:
-                - asset: improve-codebase/reviewer-prompt
+                - task: directly fix accepted findings with focused evidence
                   caller: subagent
-    - if: audit surfaces significant complexity
+            - if: finding group overlaps current mutations
+              calls:
+                - task: directly fix accepted findings with focused evidence
+    - if: fixes were made
       calls:
-        - skill: simplify-codebase
-    - if: audit surfaces significant test gaps
-      calls:
-        - skill: boost-coverage
-    - if: audit surfaces test suite quality, redundancy, or organization concerns
-      calls:
-        - skill: audit-tests
-    - if: audit findings overlap existing ISSUES.md entries
-      calls:
-        - skill: fix-issues
-          inputs: [plan_reviewers]
+        - asset: improve-codebase/reviewer-prompt
+          caller: subagent
+        - task: directly address material post-fix findings without another review
+    - task: review cross-cutting relationships across selected chunks once
+      caller: subagent
+    - exit: report the bounded outcome and any justified next-skill recommendation
 interface-audit:
   calls:
     - asset: interface-audit/references/report-structure
@@ -1115,6 +1118,9 @@ plan-work:
   inputs: [plan_reviewers]
   calls:
     - asset: plan-work/assets/write-plan
+    - if: write-plan returns revise with a concrete evidence-backed gap
+      calls:
+        - task: apply one focused artifact correction and rerun only the self-check
     - skill: review-plan
       inputs: [plan_reviewers]
     - task: return reviewed artifact paths and the readiness verdict

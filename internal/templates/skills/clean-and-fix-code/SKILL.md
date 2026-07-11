@@ -92,7 +92,7 @@ Report:
 - cleanup pre-pass outcomes, or `not applicable`
 - `/review-uncommitted-code` report path, `not run — empty target`, or `not run
   — target emptied by cleanup pre-passes`
-- accepted, rejected, deferred, and already-resolved counts
+- accepted and deferred counts
 - `resolved_findings`: each fixed finding with title, severity, and files; use an
   empty list when none were fixed
 - focused check evidence and the final diff assessment for each fixed finding

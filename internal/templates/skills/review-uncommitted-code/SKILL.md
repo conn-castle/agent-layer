@@ -100,10 +100,6 @@ The report contains:
 Use `None` for empty groups. The readiness verdict is `proceed`,
 `proceed-after-fixes`, or `revise-first`.
 
-## Human checkpoints
-
-- Ask when a credible target cannot be established.
-
 ## Definition of done
 
 - The target received one evidence-backed review pass through the relevant

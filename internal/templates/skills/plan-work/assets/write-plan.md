@@ -34,8 +34,10 @@ before writing.
    scans unless the request truly demands it.
 3. For architectural, roadmap, issue, or backlog work, read the relevant memory
    files before committing to a plan.
-4. Resolve remaining material unknowns before drafting. If an unresolved fact or
-   user decision remains, use the `escalate` handoff verdict and name it.
+4. Resolve remaining material facts from repository evidence before drafting.
+   If required evidence is unavailable, name the concrete evidence blocker; do
+   not turn it into a user decision. Use `escalate` only for a choice that meets
+   the human-checkpoint standard.
 
 ### Phase 2: Draft the plan
 
@@ -56,8 +58,8 @@ Write the plan file with these sections:
    - user-confirmed decisions that settled substantive choices, if any
 4. `## Approach`
    - the intended design or execution path
-   - why this path is preferred over obvious alternatives
-5. `## Risks`
+   - rationale only where the choice is consequential or non-obvious
+5. `## Material Risks`
    - behavior regressions
    - migration or compatibility concerns
    - unclear dependencies
@@ -98,7 +100,7 @@ The context file must include these sections:
 Use relative paths, mark new files explicitly, keep descriptions brief, and do
 not duplicate the plan's narrative or include generic best practices.
 
-### Phase 5: Self-review and gate
+### Phase 5: Self-check and handoff
 
 Before presenting the artifacts, check:
 
@@ -112,19 +114,21 @@ Before presenting the artifacts, check:
 - no artifact defers investigation or approach selection, and the plan contains
   no unresolved hedge words such as "likely", "probably", or "should work"
 
-Choose one handoff verdict:
+Correct any evidence-backed inconsistency in this drafting pass. Then choose
+one handoff verdict:
 
-- `proceed`: the artifact set is ready for execution
-- `revise`: the artifacts need another drafting pass
-- `escalate`: a human checkpoint is required
-- `rewrite-because-out-of-scope`: the request should be rewritten around a
-  smaller in-scope slice
+- `proceed`: the artifact set is ready for review
+- `revise`: a concrete, evidence-backed material gap remains and can be
+  corrected without user input; cite the exact artifact location, evidence,
+  and required correction
+- `escalate`: a choice that materially affects behavior, architecture, scope,
+  risk, or cost cannot be settled by available evidence and therefore requires
+  the user
 
-## Human checkpoints
-
-Use the repository human-checkpoint rule for user-owned decisions. Satisfy it by
-recording the user-confirmed decision, citing the source that settles it, or
-setting the verdict to `escalate` and asking the smallest blocking question.
+`revise` is an autonomous correction signal, not a human checkpoint. Apply one
+focused correction within the same planning stage, rerun only this self-check,
+and proceed when the gap is resolved. Do not restart research, drafting, or plan
+review merely for greater confidence.
 
 ## Final handoff
 
@@ -132,5 +136,4 @@ After writing the artifacts:
 
 1. Echo all three artifact paths.
 2. Summarize the plan in a few sentences.
-3. State the handoff verdict and highlight the biggest risk or open question,
-   if any.
+3. State the handoff verdict and any material risk or open question.

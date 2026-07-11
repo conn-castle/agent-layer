@@ -27,8 +27,7 @@ Write `.agent-layer/tmp/loop-clean-and-fix.<run-id>.report.md` using
 - Run cleanup rounds sequentially against the latest working tree.
 - Capture enough before-and-after working-tree state to prove whether each round
   materially changed the target and to detect oscillation.
-- Treat rejected, deferred, and already-resolved findings as report data, not
-  reasons to continue.
+- Treat deferred findings as report data, not a reason to continue.
 - Stop when delegated output is missing the outcome, finding disposition, or
   evidence needed to make the repeat decision. Do not infer progress from prose.
 - Do not stage, commit, discard, or destructively rewrite changes unless the
@@ -44,7 +43,7 @@ Run `/clean-and-fix-code`. Record:
 
 - outcome and report path
 - cleanup pre-pass results
-- accepted, rejected, deferred, and already-resolved counts
+- accepted and deferred counts
 - `resolved_findings`
 - changed files and material before/after diff
 - focused checks and evidence

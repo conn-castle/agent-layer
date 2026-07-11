@@ -3,24 +3,26 @@
 Use when `worker_skill=improve-codebase`.
 
 Dispatch the implementer with `/improve-codebase`. Give it the ledger's recent
-branches, merged PRs, touched paths, deferred blockers, and exhausted lenses.
-Instruct it to avoid recently improved areas unless it has concrete evidence.
+branches, merged pull requests, touched paths, user-owned blockers, exhausted
+lenses, and concrete evidence that should prevent repeated work.
 
 Prefer high-value lenses: correctness, data loss, security, concurrency,
-cancellation, parser/input robustness, test integrity, documentation accuracy,
-dead code, dependency health, and meaningful coverage gaps.
+cancellation, parser and input robustness, test integrity, documentation
+accuracy, dead code, dependency health, and meaningful coverage gaps.
 
 Reject cosmetic churn, speculative abstraction, broad rewrites, and changes
-whose only value is making the diff larger.
+whose only value is making the batch larger. Each worker invocation owns one
+bounded sweep; the autonomous loop may select a different scope or lens on the
+next invocation.
 
 The implementer must return:
-- scope and lens used
-- concrete findings fixed
-- rejected candidates and why
-- blocker candidates, if any
-- changed files and line stats
-- verification run and result
-- touched areas and suggested avoid list for the next iteration
 
-Stack safe thin improvements on the same batch branch until the normal PR gate
-or an exception is met.
+- selected scope and lens with evidence
+- concrete findings fixed or deferred
+- user-owned blocker candidates
+- changed files and meaningful line statistics
+- focused verification and result
+- touched areas, exhausted lens, and justified next-skill recommendation
+
+Stack safe, non-repeating improvements on the same batch branch until the
+normal pull-request gate or an exception is met.

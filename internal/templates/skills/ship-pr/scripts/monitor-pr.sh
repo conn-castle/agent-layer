@@ -16,7 +16,7 @@ Options:
 
 Actions:
   ci_failed          One or more PR checks failed.
-  feedback_changed   External PR feedback changed or remains unaddressed.
+  feedback_changed   External PR feedback changed since the last observation.
   merge_conflict     PR has a merge conflict with the base branch.
   pr_not_open        PR is no longer open.
   ready              Checks are terminal and the minimum ready window elapsed.
@@ -108,26 +108,38 @@ minimum_ready_seconds="300"
 interval_seconds="10"
 timeout_seconds="1800"
 
+option_value() {
+  local option="$1"
+  local value="${2:-}"
+
+  if [[ -z "$value" || "$value" == --* ]]; then
+    printf 'monitor-pr: %s requires a value\n' "$option" >&2
+    usage
+    exit 2
+  fi
+  printf '%s' "$value"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --pr)
-      pr_number="${2:-}"
+      pr_number="$(option_value "$1" "${2:-}")"
       shift 2
       ;;
     --state-file)
-      state_file="${2:-}"
+      state_file="$(option_value "$1" "${2:-}")"
       shift 2
       ;;
     --minimum-ready-seconds)
-      minimum_ready_seconds="${2:-}"
+      minimum_ready_seconds="$(option_value "$1" "${2:-}")"
       shift 2
       ;;
     --interval)
-      interval_seconds="${2:-}"
+      interval_seconds="$(option_value "$1" "${2:-}")"
       shift 2
       ;;
     --timeout-seconds)
-      timeout_seconds="${2:-}"
+      timeout_seconds="$(option_value "$1" "${2:-}")"
       shift 2
       ;;
     -h | --help)
@@ -171,10 +183,13 @@ require_command gh
 require_command git
 require_command jq
 
+state_dir="$(dirname "$state_file")"
+mkdir -p "$state_dir"
+state_dir="$(cd "$state_dir" && pwd -P)"
+state_file="$state_dir/$(basename "$state_file")"
+
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
-
-mkdir -p "$(dirname "$state_file")"
 
 if [[ -f "$state_file" ]] && ! jq -e 'type == "object"' "$state_file" >/dev/null; then
   printf 'monitor-pr: invalid JSON state file: %s\n' "$state_file" >&2
@@ -207,8 +222,8 @@ write_state() {
   local unresolved_feedback_count="$5"
   local tmp_file
 
-  tmp_file="${state_file}.tmp"
-  jq -n \
+  tmp_file="$(mktemp "${state_file}.tmp.XXXXXX")"
+  if ! jq -n \
     --arg head_sha "$head_sha" \
     --arg feedback_fingerprint "$feedback_fingerprint" \
     --arg updated_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
@@ -230,8 +245,14 @@ write_state() {
       elapsed_minimum_ready_seconds: $elapsed_minimum_ready_seconds,
       remaining_minimum_ready_seconds: $remaining_minimum_ready_seconds,
       updated_at: $updated_at
-    }' >"$tmp_file"
-  mv "$tmp_file" "$state_file"
+    }' >"$tmp_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  if ! mv "$tmp_file" "$state_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
 }
 
 emit_and_exit() {
@@ -274,7 +295,7 @@ emit_and_exit() {
 }
 
 while true; do
-  gh_retry pr_json gh pr view "$pr_number" --json createdAt,headRefOid,url,mergeable,mergeStateStatus,state
+  gh_retry pr_json gh pr view "$pr_number" --json headRefOid,url,mergeable,mergeStateStatus,state,isDraft
   gh_retry issue_comments_pages_json gh api "repos/{owner}/{repo}/issues/$pr_number/comments" --paginate --slurp
   gh_retry review_comments_pages_json gh api "repos/{owner}/{repo}/pulls/$pr_number/comments" --paginate --slurp
   gh_retry review_bodies_pages_json gh api "repos/{owner}/{repo}/pulls/$pr_number/reviews" --paginate --slurp
@@ -285,6 +306,7 @@ while true; do
   pr_state="$(jq -r '.state // ""' <<<"$pr_json")"
   mergeable="$(jq -r '.mergeable // ""' <<<"$pr_json")"
   merge_state_status="$(jq -r '.mergeStateStatus // ""' <<<"$pr_json")"
+  is_draft="$(jq -r '.isDraft // false' <<<"$pr_json")"
 
   now_epoch="$(date +%s)"
   previous_head_sha=""
@@ -434,13 +456,9 @@ while true; do
   pending_statuses_json="$(jq -c '[.[] | select(.result == "pending")]' <<<"$statuses_json")"
   failed_count="$(jq 'length' <<<"$failed_statuses_json")"
   pending_count="$(jq 'length' <<<"$pending_statuses_json")"
-  status_count="$(jq 'length' <<<"$statuses_json")"
-
   prior_feedback_fingerprint="$(previous_feedback_fingerprint)"
   feedback_changed="false"
-  if [[ "$unresolved_feedback_count" -gt 0 ]]; then
-    feedback_changed="true"
-  elif [[ "$feedback_count" -gt 0 && "$feedback_fingerprint" != "$prior_feedback_fingerprint" ]]; then
+  if [[ "$feedback_count" -gt 0 && "$feedback_fingerprint" != "$prior_feedback_fingerprint" ]]; then
     feedback_changed="true"
   fi
 
@@ -453,14 +471,14 @@ while true; do
   fi
 
   if [[ "$feedback_changed" == "true" ]]; then
-    emit_and_exit "feedback_changed" "External PR feedback changed or remains unaddressed."
+    emit_and_exit "feedback_changed" "External PR feedback changed since the last observation."
   fi
 
   if [[ "$failed_count" -gt 0 ]]; then
     emit_and_exit "ci_failed" "One or more PR checks failed."
   fi
 
-  if [[ "$status_count" -gt 0 && "$pending_count" -eq 0 && "$minimum_ready_elapsed" == "true" ]]; then
+  if [[ "$pending_count" -eq 0 && "$minimum_ready_elapsed" == "true" && "$is_draft" == "false" ]]; then
     emit_and_exit "ready" "Checks are terminal and the minimum ready window elapsed."
   fi
 
@@ -509,5 +527,12 @@ while true; do
     "$feedback_count" \
     "$unresolved_feedback_count" \
     "$remaining_minimum_ready_seconds" >&2
-  sleep "$interval_seconds"
+  sleep_seconds="$interval_seconds"
+  if [[ "$timeout_seconds" -gt 0 ]]; then
+    remaining_timeout_seconds=$((timeout_seconds - elapsed_wall_seconds))
+    if [[ "$remaining_timeout_seconds" -lt "$sleep_seconds" ]]; then
+      sleep_seconds="$remaining_timeout_seconds"
+    fi
+  fi
+  sleep "$sleep_seconds"
 done

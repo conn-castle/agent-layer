@@ -19,7 +19,9 @@ repository state are known and the relevant code or configuration has not
 changed since it ran. Otherwise treat it as stale and run the narrowest credible
 check.
 
-Use an adversarial posture: actively try to falsify completion, challenge assumptions, and look for hidden coupling, edge cases, and failure modes. Report only evidence-backed findings; do not invent issues or report low-signal nits.
+Try to falsify material completion claims where the contract or risk supplies a
+credible failure path. Report only evidence-backed findings; do not expand into
+general code review, invent issues, or report low-signal edge cases.
 
 For each finding, capture the exact contract item, status (`complete`, `partial`, `missing`, `unverified`, `undocumented_deviation`, or `scope_drift`), evidence, severity, and smallest corrective action. The skill report structure controls the final presentation format.
 

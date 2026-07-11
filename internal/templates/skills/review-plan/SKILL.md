@@ -43,8 +43,9 @@ Treat completed child reports as immutable evidence for synthesis.
   evidence. Reviewer agreement does not strengthen or replace evidence.
 - Keep only findings that materially affect correctness, safety, scope,
   implementability, verification, or meaningful maintainability.
-- Classify retained findings as `accepted`, `rejected`, `duplicate`, or
-  `user-decision`, with a concise evidence-based reason.
+- Classify material findings as `accepted` or `user-decision`. Unsupported,
+  duplicate, stylistic, speculative, and immaterial suggestions remain in the
+  immutable child reports but do not enter the final findings ledger.
 - Resolve routine planning and verification details directly. Ask the user only
   when available evidence leaves a choice that materially affects behavior,
   architecture, scope, risk, or cost.
@@ -65,8 +66,8 @@ results. Validate that each completed report follows the reviewer contract.
 ### 3. Synthesize and revise
 
 Evaluate each reported finding against the artifacts and repository evidence,
-apply the materiality threshold, classify it, and merge duplicates. Do not use
-reviewer consensus as a deciding factor.
+apply the materiality threshold, and merge duplicates. Do not use reviewer
+consensus as a deciding factor.
 
 Make one revision pass for accepted findings. Then inspect the changed clauses
 and their direct dependents for internal consistency. This is part of applying
@@ -81,7 +82,6 @@ Write the final report with:
 
 - reviewed artifact paths and reviewer roles
 - accepted changes
-- rejected and duplicate suggestions with brief reasons
 - unresolved user-owned decisions
 - final readiness
 
@@ -100,7 +100,7 @@ Final readiness must be exactly one of:
 ## Definition of done
 
 - Every requested reviewer was dispatched once and produced one child report.
-- Every material finding was classified and either applied or accounted for.
+- Every material finding was applied or identified as a user-owned decision.
 - The final report records the artifact changes and readiness verdict.
 
 ## Final handoff

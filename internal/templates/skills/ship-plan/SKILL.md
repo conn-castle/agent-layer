@@ -45,8 +45,9 @@ unresolved blockers or user checkpoints, and the next exact step.
 - If `/fully-implement-plan` fails, stops at a checkpoint, reports a blocker, or
   cannot provide the report path and final status needed for handoff, stop this
   workflow and surface that child result.
-- Run `/ship-pr` only after `/fully-implement-plan` reports a shippable final
-  status: `complete` or acceptable `complete-with-follow-up`.
+- Run `/ship-pr` only after `/fully-implement-plan` reports `complete`, or
+  `complete-with-follow-up` with every follow-up explicitly outside the
+  supplied contract.
 - Stop at any `/ship-pr` checkpoint, including merge authorization.
 
 ## Workflow

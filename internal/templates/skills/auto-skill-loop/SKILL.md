@@ -14,15 +14,16 @@ Dispatch external roles through `/agent-dispatch`.
 Fail before side effects unless all are present:
 - `worker_skill`: exactly `/fix-issues` or `/improve-codebase`
 - `implementer`: dispatch agent role
-- `fixer`: dispatch agent role
 - `shipper`: dispatch agent role
-- `plan_reviewers`: one or more dispatch agent roles
 - explicit standing authorization for this orchestrator to merge ready PRs
+
+When `worker_skill=/fix-issues`, also require `plan_reviewers`: one or more
+dispatch agent roles. `/improve-codebase` does not require plan reviewers.
 
 Dispatch agent roles may be terse (`codex xhigh`, `claude opus high`,
 `antigravity`).
 
-Pass `plan_reviewers` to any delegated skill that uses `/review-plan`.
+Pass `plan_reviewers` to `/fix-issues`, which uses `/review-plan`.
 
 ## References
 
@@ -56,7 +57,7 @@ Create `.agent-layer/tmp/auto-skill-loop.<run-id>.state.md`. Update it before
 and after dispatches, branch switches, pushes, PR actions, blockers, and
 merges.
 
-Record current step, branches, PRs, requested dispatch agent roles, terminal
+Record current step, branches, PRs, worker and shipper dispatch roles, terminal
 dispatch selections, plan reviewer dispatch roles, merged PRs, blocked branches,
 blocked PRs, recent touched paths, exhausted lenses, worker questions and
 answers, user-only blockers, manual gates, PR-gate status, and verification
