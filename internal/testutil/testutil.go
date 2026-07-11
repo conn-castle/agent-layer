@@ -1,11 +1,95 @@
 package testutil
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
+
+// ExecCall records one captured executable handoff.
+type ExecCall struct {
+	Called bool
+	Path   string
+	Argv   []string
+	Env    []string
+}
+
+// AssertCalled verifies that the executable handoff occurred once with the
+// expected path and argument vector.
+func (call *ExecCall) AssertCalled(t *testing.T, wantPath string, wantArgv []string) {
+	t.Helper()
+	call.assertCalled(t, wantPath, wantArgv)
+}
+
+// assertCalled implements AssertCalled for both production test contexts and
+// direct helper behavior tests.
+func (call *ExecCall) assertCalled(t testContext, wantPath string, wantArgv []string) {
+	t.Helper()
+	if !call.Called {
+		t.Fatal("expected exec function to be called")
+	}
+	if call.Path != wantPath {
+		t.Fatalf("expected exec path %q, got %q", wantPath, call.Path)
+	}
+	if !reflect.DeepEqual(call.Argv, wantArgv) {
+		t.Fatalf("unexpected argv: got %#v want %#v", call.Argv, wantArgv)
+	}
+}
+
+// CaptureExec replaces target with a one-call capture seam that returns err.
+// It restores the original handoff when the test completes.
+func CaptureExec(t *testing.T, target *func(string, []string, []string) error, err error) *ExecCall {
+	return captureExec(t, target, err)
+}
+
+// ForbidExec replaces target with a test failure and restores the original
+// handoff when the test completes.
+func ForbidExec(t *testing.T, target *func(string, []string, []string) error) {
+	forbidExec(t, target)
+}
+
+// testContext captures the testing hooks needed by the exec seam helpers.
+type testContext interface {
+	Cleanup(func())
+	Fatal(...any)
+	Fatalf(string, ...any)
+	Helper()
+}
+
+// captureExec installs the capture seam for both production test contexts and
+// direct helper behavior tests.
+func captureExec(t testContext, target *func(string, []string, []string) error, err error) *ExecCall {
+	t.Helper()
+	original := *target
+	call := &ExecCall{}
+	*target = func(path string, argv []string, env []string) error {
+		if call.Called {
+			t.Fatal("exec function called more than once")
+		}
+		call.Called = true
+		call.Path = path
+		call.Argv = append([]string(nil), argv...)
+		call.Env = append([]string(nil), env...)
+		return err
+	}
+	t.Cleanup(func() { *target = original })
+	return call
+}
+
+// forbidExec installs the no-exec seam for both production test contexts and
+// direct helper behavior tests.
+func forbidExec(t testContext, target *func(string, []string, []string) error) {
+	t.Helper()
+	original := *target
+	*target = func(string, []string, []string) error {
+		t.Fatal("exec function should not be called")
+		return errors.New("exec function should not be called")
+	}
+	t.Cleanup(func() { *target = original })
+}
 
 // WriteStub writes an executable shell stub that exits successfully.
 // t is the active test; dir is the output directory; name is the executable file name.
