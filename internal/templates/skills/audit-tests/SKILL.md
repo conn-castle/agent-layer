@@ -1,245 +1,108 @@
 ---
 name: audit-tests
 description: >-
-  Audit the entire test suite for redundancy, quality gaps, and
-  organization: duplicate or self-confirming tests, coverage gaps metrics
-  miss, and safe cleanup fixes.
+  Audit the existing test suite once for redundancy, misleading coverage,
+  organization, and material behavioral gaps, directly fixing safe findings.
 ---
 
 # audit-tests
 
-Audit the health of the existing test suite and fix what can be fixed safely:
-- discover the project's test conventions and runner configuration
-- classify existing tests by tier (unit, integration, e2e)
-- identify redundant, misleading, or low-value tests
-- identify meaningful coverage gaps that line-coverage metrics miss
-- identify misclassified tests (e.g., integration tests labeled as unit tests)
-- remove dead tests and strengthen weak assertions where mechanical
-- report all findings and fixes
+Audit the health of the existing test suite and directly address clear
+negative-value or mechanical findings. Use `/boost-coverage` when the primary
+goal is to add tests to reach a coverage target, and `/clean-and-fix-code` for
+tests added in the current uncommitted diff.
 
-Use `/boost-coverage` when the goal is to write new tests to raise coverage.
-Use `/clean-and-fix-code` when the goal is to prune speculative tests added in
-the current uncommitted diff (burden-of-proof, diff-scoped only).
-Use this skill when the goal is to assess and clean up the existing test suite.
+## Scope and inputs
 
-## Defaults
-
-- Default scope is all test files in the repository.
-- Classify tests into tiers based on project conventions, not assumptions.
-- If the project has no clear tier separation, note that as a finding rather
-  than inventing a classification scheme.
-- Prioritize findings that affect developer confidence, suite speed, or
-  maintenance burden.
-
-## Inputs
-
-Accept any combination of:
-- explicit paths, directories, or modules
-- tier filters (unit, integration, e2e, or all)
-- a maximum finding count
-- whether to run coverage commands during gap analysis (default: yes if available)
+- Default scope is every repository test file.
+- Accept explicit paths, modules, or discovered test-tier filters; an optional
+  maximum finding count; and whether coverage evidence may be gathered.
+- Derive test tiers from repository configuration and conventions. Do not
+  invent unit, integration, end-to-end, or other categories the repository
+  does not use.
+- If conventions are too ambiguous for a trustworthy classification, report
+  the limitation and ask only if it blocks the requested audit.
 
 ## Required artifact
 
-Write the report to:
-- `.agent-layer/tmp/audit-tests.<run-id>.report.md`
+Write `.agent-layer/tmp/audit-tests.<run-id>.report.md`, where `run-id` is
+`YYYYMMDD-HHMMSS-<short-rand>`.
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
-Create the file with `touch` before writing.
+## Finding and edit contract
 
-## Multi-agent pattern
+- Findings must identify concrete tests, behavior, and evidence. Coverage
+  percentage alone is not a quality finding.
+- Delete tests that are clearly tautological, self-confirming, dead,
+  rubber-stamp, or duplicative. Preserve the strongest behavioral coverage.
+- Strengthen an assertion or correct a misleading name or classification only
+  when the change is mechanical and the intended behavior is established.
+- Do not delete a partially valuable test or change production code for
+  testability without a user decision.
+- Do not replace removed false coverage with another test unless a meaningful
+  behavior gap and expected contract are already clear.
+- Do not turn framework conventions or style preferences into findings.
 
-Recommended roles:
-1. `Convention scout`: discovers test runner, directory layout, naming
-   patterns, and tier conventions.
-2. `Redundancy analyst`: identifies duplicative and overlapping tests.
-3. `Quality analyst`: identifies low-value tests, weak assertions, and
-   misclassified tests.
-4. `Gap analyst`: identifies meaningful coverage gaps by comparing test
-   targets against production code structure.
-5. `Fixer`: removes dead tests and applies mechanical fixes.
-6. `Reporter`: writes the final report.
+## Workflow
 
-## Global constraints
+### 1. Establish the test contract
 
-- Do not assume test tier conventions; discover them from the project's
-  configuration, directory structure, and naming patterns.
-- Do not treat line-coverage metrics as the sole measure of test health.
-- Do not flag tests as redundant without concrete evidence (shared setup,
-  identical assertions on the same code path, duplicated scenarios).
-- Keep findings tied to specific test files and functions.
-- Do not run tests or coverage commands unless required for gap analysis
-  and the user has not opted out.
+Read COMMANDS.md before selecting commands. Identify the test runner,
+configuration, directory and naming conventions, fixtures, helpers, and
+repository-defined tiers. Build a grouped inventory sufficient to account for
+the scope; do not produce per-file rationale when a directory or convention
+establishes the classification.
 
-## Human checkpoints
+### 2. Run one test-suite audit pass
 
-- Required: ask when the project's test conventions are ambiguous enough
-  that tier classification would be unreliable.
-- Required: ask before removing tests that have partial value and no clear
-  negative-value or duplicate finding.
-- Required: ask when a finding would require changes to production code
-  for testability.
-- Stay autonomous for: dead tests, clear negative-value tests, clear duplicates,
-  and mechanical assertion fixes.
+Review the scope through complementary concerns:
 
-## Audit workflow
+- duplicate scenarios, setup, assertions, helpers, and fixtures
+- tautological, self-confirming, rubber-stamp, fragile, dead, or misleading
+  tests
+- tests placed in the wrong repository-defined tier
+- unexpected I/O, network access, sleeps, or other tier violations
+- material behavioral gaps in error handling, boundaries, component
+  interaction, or critical user workflows
 
-### Phase 0: Preflight (Convention scout)
+For every discovered tier, state either material gaps found, no material gaps
+found with evidence, or not applicable with architectural justification. Do
+not require tiers that the repository does not define.
 
-1. Confirm baseline with `git status --porcelain`.
-2. Read `COMMANDS.md` before choosing any test or coverage commands.
-3. Discover test conventions: runner and configuration, directory structure and naming patterns, tier separation (directories, suffixes, tags, markers), fixture/helper patterns, and any categorization system.
-4. If tier conventions are unclear, note this and proceed with best-effort classification. Do not invent conventions.
+Run coverage at most once as audit evidence when it is documented, available,
+and useful. It informs gap analysis but does not replace behavioral review.
 
-### Phase 1: Inventory and classify (Convention scout)
+### 3. Address safe findings directly
 
-1. Build an inventory of all test files in scope.
-2. Classify each test file by tier:
-   - **Unit**: tests a single function/method/class in isolation, mocks
-     external dependencies
-   - **Integration**: tests interaction between multiple components, may use
-     real databases or services
-   - **E2E**: tests complete end-user-facing workflows or API paths
-   - **Unclassified**: does not clearly fit a single tier
-3. Record the classification rationale for each file or group.
-4. Note any tests that appear misclassified relative to their actual behavior
-   (e.g., a "unit" test that starts a database).
+Apply all clear deletions, consolidations, and mechanical corrections in one
+repair stage. Leave judgment-dependent changes untouched and record the
+decision required. Recommend `/boost-coverage` for material missing behavior
+that belongs in a dedicated coverage implementation, but do not launch it.
 
-### Phase 2: Redundancy analysis (Redundancy analyst)
+If files changed, run one credible repository-defined verification lane that
+covers the edits. A failure is concrete evidence: directly repair an in-scope
+mistake or return the blocker; do not start another audit round.
 
-Identify tests that are duplicative or overlapping:
-- tests that exercise the same code path with the same inputs and equivalent
-  assertions
-- test functions that are copy-pasted with trivial variations
-- multiple test files covering the same module with substantial overlap
-- test helpers or fixtures that duplicate production code behavior
+### 4. Report and yield
 
-For each redundancy finding, state:
-- which tests overlap
-- what they share (code path, setup, assertions)
-- which test is the more complete or maintainable version
+The report contains:
 
-### Phase 3: Quality analysis (Quality analyst)
+1. `# Test Audit Summary` — scope, conventions, and verdict
+2. `## Inventory` — grouped count by discovered tier
+3. `## Fixes Applied`
+4. `## Material Findings` — category, tier, location, evidence, and outcome
+5. `## Gap Findings` — one concise conclusion per discovered tier
+6. `## Decisions Needed`
+7. `## Verification`
 
-Identify tests with quality concerns:
-- **Tautological/self-confirming tests**: tests whose assertions are satisfied
-  by their own setup; delete clear cases instead of counting them as coverage.
-  Also flag runtime tests that only re-check constraints already enforced by a
-  language, compiler, type checker, schema, or static analyzer.
-- **Rubber-stamp tests**: tests with no meaningful assertions — they run
-  code but only check that it does not panic/error, assert truthiness
-  without verifying behavior, or assert on implementation details rather
-  than outcomes. These provide false confidence and should be deleted.
-- **Duplicate tests**: tests that are substantially identical to another
-  test — same code path, same inputs, equivalent assertions — often
-  created by agents adding a new test per task instead of extending
-  existing tests. Keep the more complete version; delete the rest.
-- **Weak assertions**: tests that assert only on happy paths or skip
-  error paths, boundary conditions, or guard clauses for tested functions
-- **Fragile tests**: tests tightly coupled to implementation details that
-  would break on safe refactors
-- **Misleading names**: test names that do not match what the test actually
-  verifies
-- **Dead tests**: tests that are skipped, commented out, or unreachable
-- **Slow unit tests**: tests classified as unit tests that perform I/O,
-  network calls, or sleep
-
-### Phase 4: Gap analysis (Gap analyst)
-
-Analyze gaps separately for each tier. Every tier must have its own
-dedicated section in the findings. No tier may be silently omitted.
-
-For each tier, the conclusion must be one of:
-- gaps exist (list them)
-- no gaps found (state the evidence)
-- not applicable (with genuine architectural justification — e.g., a pure library with no running services has no meaningful integration tier)
-- tier does not exist yet but the project would benefit from it (this is itself a gap finding)
-
-"Not applicable" requires genuine architectural justification, not merely "the project doesn't have these tests yet."
-
-**Unit test gaps:** untested production functions/methods/modules; uncovered error paths, guard clauses, and boundary conditions; complex branching tested only at higher tiers; recently changed code (last 3 months) with stale or missing unit tests.
-
-**Integration test gaps:** untested component interactions and interface boundaries; data-layer operations tested only via mocks; configuration/wiring never tested with real components.
-
-**E2E test gaps:** untested end-user-facing workflows or API paths; critical business flows relying solely on lower-tier coverage; deployment-sensitive paths (migrations, startup, health checks) with no e2e coverage.
-
-**Additional tiers** (when discovered): apply the same gap analysis to any project-specific tier (contract, smoke, performance, etc.) and note when a tier is expected by conventions but has no tests.
-
-Focus on gaps that represent real risk, not low line-coverage numbers. If coverage commands are available and the user has not opted out, run them to inform the analysis.
-
-### Phase 5: Fix safe findings (Fixer)
-
-1. Delete clear tautological/self-confirming tests; report the resulting
-   coverage gap instead of replacing them with false coverage.
-2. Delete clearly dead tests (skipped, commented out, unreachable).
-3. Delete rubber-stamp tests that have no meaningful assertions.
-4. Consolidate clear duplicates: keep the more complete version, delete
-   the rest. When tests overlap substantially but each has unique value,
-   merge into a single consolidated test.
-5. Strengthen weak assertions where the fix is mechanical and unambiguous.
-6. For borderline cases where the test has partial value and deletion is
-   not clearly correct, ask the user.
-7. Run the test suite after fixes to confirm nothing broke.
-
-### Phase 6: Synthesize findings (Reporter)
-
-Each finding across all phases must include:
-- `Title`
-- `Severity`: High | Medium | Low
-- `Category`: redundancy | quality | gap | misclassification
-- `Tier`: unit | integration | e2e | cross-tier (for redundancy/quality findings that span tiers)
-- `Location`: test file(s) and function(s)
-- `Evidence`: concrete observation
-- `What was done`: fixed | needs human decision | recommendation for `/boost-coverage`
-
-## Required report structure
-
-Write `.agent-layer/tmp/audit-tests.<run-id>.report.md` with:
-
-1. `# Test Audit Summary`
-   - scope audited
-   - test conventions discovered
-   - short outcome summary
-2. `## Fixes Applied`
-   - what was removed, changed, or strengthened
-3. `## Test Inventory`
-   - total test count by tier
-   - tier classification rationale
-   - misclassified tests
-4. `## Redundancy Findings`
-   - ordered by impact (most duplicative first)
-5. `## Quality Findings`
-   - ordered by severity
-6. `## Gap Findings`
-   - one subsection per tier (`### Unit Test Gaps`, `### Integration Test Gaps`, `### E2E Test Gaps`, plus each additional tier discovered)
-   - ordered by risk; every tier must appear with an explicit conclusion
-7. `## Strengths`
-   - well-tested areas, good patterns worth preserving
-8. `## Recommended Actions`
-   - prioritized list: what still needs human decision, what to add
-   - distinguish between actions for this skill and actions for `/boost-coverage`
-
-## Guardrails
-
-- Do not turn test style preferences into findings unless they affect
-  correctness, maintainability, or developer confidence.
-- Do not recommend removing tests without evidence of redundancy or
-  negative value.
-- Do not conflate low coverage with poor test quality; they are separate
-  concerns.
-- Do not flag framework-generated or conventional boilerplate as redundant.
-- Do not widen a test audit into a production code audit.
+Finding outcomes are `fixed`, `needs-user-decision`, or
+`recommend-boost-coverage`. Use `None` for empty sections.
 
 ## Definition of done
 
-- The report exists at `.agent-layer/tmp/audit-tests.<run-id>.report.md` with every required section (`Summary`, `Fixes Applied`, `Test Inventory`, `Redundancy Findings`, `Quality Findings`, `Gap Findings`, `Strengths`, `Recommended Actions`).
-- The `Gap Findings` section contains one subsection per discovered tier, each with an explicit conclusion (gaps exist / no gaps / not applicable with justification / tier missing).
-- Every finding names the tier, test file(s), function(s), evidence, and `What was done` verdict; no tier is silently omitted.
-- If any tests were removed or consolidated, the test suite was re-run and the report records the outcome.
-
-## Final handoff
-
-After writing the report:
-1. Echo the report path.
-2. Summarize fixes applied and the test inventory by tier.
-3. If significant gaps were found, recommend `/boost-coverage` on the identified areas.
+- The full declared scope received one purposeful audit pass.
+- Every reported finding is evidence-backed and materially affects confidence,
+  speed, correctness, or maintenance cost.
+- Safe findings were addressed once, and changed tests received one credible
+  verification lane.
+- The skill returns the report path, fixes, residual findings, and verification
+  outcome, then yields.

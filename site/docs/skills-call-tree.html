@@ -849,20 +849,24 @@
     - exit: return the updated ledger and local-change status
 audit-documentation:
   calls:
-    - task: audit documentation and apply safe fixes
-      caller: subagent
-    - if: evidence does not clearly show whether docs or code should win
+    - task: run one evidence pass and directly apply safe documentation fixes
+    - if: repository evidence cannot settle product intent
       calls:
-        - task: adjudicate whether docs or code should win
-          caller: subagent
+        - exit: return the smallest user-owned decision without editing either side
+    - exit: report fixes, code gaps, and decisions, then yield
 audit-memory:
   calls:
-    - task: audit memory files and apply accepted mechanical fixes
-      caller: subagent
+    - task: run one structural, content, and cross-file audit pass
+    - task: directly apply evidence-backed memory fixes and write the report
+    - exit: return fixes and user-owned decisions, then yield
 audit-tests:
   calls:
-    - task: audit test-suite health and apply safe fixes
-      caller: subagent
+    - task: establish repository test conventions and run one suite-health audit pass
+    - task: directly apply safe test cleanup findings
+    - if: test files changed
+      calls:
+        - task: run one credible verification lane
+    - exit: report material findings, gaps, and verification, then yield
 auto-skill-loop:
   inputs: [plan_reviewers, implementer, fixer, shipper]
   calls:
@@ -964,9 +968,6 @@ complete-current-phase:
             - if: review report has Recommended Accept findings
               calls:
                 - task: fix accepted audit findings
-            - if: accepted Critical or High findings were fixed
-              calls:
-                - skill: review-uncommitted-code
             - if: audit fixes leave in-scope local complexity
               calls:
                 - skill: clean-and-fix-code
@@ -993,8 +994,11 @@ debug-and-fix-issue:
         - skill: finish-task
 finish-task:
   calls:
-    - task: review scope, curate memory, verify, and summarize closeout
-      caller: subagent
+    - task: compare the delivered scope to its contract and update affected project truth once
+    - if: current passing evidence does not cover the exact final tree and delivered scope
+      calls:
+        - task: run one risk-proportional repository-defined verification lane
+    - exit: return the closeout status and yield
 fix-ci:
   calls:
     - task: gather CI evidence and establish a credible local reproducer
@@ -1099,10 +1103,8 @@ interface-audit:
     - if: running in update mode
       calls:
         - asset: interface-audit/references/update-workflow
-    - if: focused subagents are available
-      calls:
-        - task: run focused interface investigation and verification passes
-          caller: subagent
+    - task: run one interface evidence pass across distinct boundaries
+    - task: calibrate scores once and return the final recommendation gate
 loop-clean-and-fix:
   calls:
     - while: cleanup target exists, fewer than four rounds ran, and first round is pending or prior round made material non-repeating progress
@@ -1126,12 +1128,13 @@ review-plan:
     - task: synthesize evidence, revise accepted findings, and report readiness
 review-uncommitted-code:
   calls:
+    - task: establish one concrete review target and its authoritative evidence
     - if: scope is non-trivial
       calls:
-        - task: run independent review lenses
+        - task: run complementary review lenses once on distinct concerns
           caller: subagent
     - asset: review-uncommitted-code/assets/finding-verdict-classification
-      caller: subagent
+    - task: validate and synthesize material findings once, write the report, and yield
 run-and-fix-all-checks:
   calls:
     - task: resolve and run the full documented check lane from COMMANDS.md
@@ -1143,8 +1146,14 @@ run-and-fix-all-checks:
             - exit: report the concrete blocker
 schedule-backlog:
   calls:
-    - task: triage backlog and draft roadmap proposal options
-      caller: subagent
+    - task: select one coherent backlog slice, cross-check constraints, and draft the proposal
+    - if: a clear low-ambiguity application is already authorized
+      calls:
+        - task: update roadmap and ledgers once
+    - if: prioritization or sequencing requires a user-owned choice
+      calls:
+        - exit: return the proposal and smallest approval decision
+    - exit: return the proposal or applied roadmap outcome and yield
 ship-plan:
   inputs: [implementer, fixer]
   calls:
@@ -1207,10 +1216,12 @@ ship-pr:
         - exit: report merge outcome and branch cleanup
 simplify-codebase:
   calls:
-    - task: assess candidates, apply one simplification, verify, and report
-    - if: all candidates fail the useful-change bar
+    - task: assess enough evidence once to choose the strongest material candidate
+    - if: no candidate clears the useful-change contract
       calls:
         - exit: write a report-only simplification outcome
+    - task: apply one coherent simplification and verify the removed concept once
+    - exit: return the terminal simplification verdict and yield
 verify-work:
   calls:
     - asset: verify-work/contract-verification-rubric

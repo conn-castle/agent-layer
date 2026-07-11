@@ -1,57 +1,39 @@
 # Finding Verdict Classification
 
-You are the `Finding verdict classifier`. Use this asset only when the caller
-provides a review report path containing unclassified candidate findings.
+Use this rubric once while synthesizing `/review-uncommitted-code` candidates.
+It does not create a separate classifier or review pass.
 
-Update the supplied report file in place. Do not return a separate
-classification-only response unless the report cannot be updated. The report
-must keep every candidate visible, but group candidates by recommended verdict.
-Verdicts are reviewer recommendations only; a later fixer or resolver owns the
-final decision.
+## Evidence gate
+
+Before reporting a candidate:
+
+1. Locate and inspect its cited evidence in the current tree.
+2. Confirm the concern exists in the reviewed state and scope.
+3. Confirm it materially affects correctness, safety, scope, reliability,
+   performance, test integrity, or meaningful maintainability.
+4. Merge it with any duplicate candidate.
+5. Determine whether resolving it requires a user-owned decision.
+
+Discard candidates that are unsupported, merely stylistic, speculative,
+out-of-scope, unrelated known issues, or based on stale evidence. They are not
+findings and do not need report entries.
 
 ## Verdicts
 
-Assign exactly one recommended verdict to each candidate:
+Assign exactly one verdict to every reported finding:
 
-- `Accept`: valid now, supported by concrete evidence, tied to the reviewed
-  scope, and actionable without a new human decision.
-- `Reject`: not valid, not actionable, unsupported by the cited evidence,
-  based on incorrect evidence, merely stylistic, already tracked without being
-  introduced or worsened by the reviewed target, or outside the review contract.
-- `Defer`: valid, but blocked by a human checkpoint, an explicit scope
-  boundary, missing information that cannot be resolved during review, or a
-  substantive tradeoff that the user must decide.
-- `Already Resolved`: valid for an earlier state or intermediate reviewer
-  observation, but no longer present in the current repo state.
+- `Accept`: valid now, supported by concrete evidence, within reviewed scope,
+  and actionable without a new user decision.
+- `Defer`: valid, but blocked by a user-owned decision, an explicit scope
+  boundary, or information that cannot be established during this review.
 
-Do not accept a finding just because it sounds plausible.
+Do not defer merely because a fix is broad, and do not accept a finding merely
+because several reviewers agree. Evidence settles the verdict.
 
-## Classification Workflow
+## Reporting rules
 
-Read the supplied report file and classify each unclassified candidate:
-
-1. Locate the cited evidence.
-2. Inspect the current repo state directly.
-3. Decide whether the issue exists now.
-4. Check whether the issue is inside the reviewed scope.
-5. Check whether the recommendation is actionable without a human checkpoint.
-6. Assign one recommended verdict and record a concrete reason.
-7. Update the report file in place.
-
-Only `Accept` findings are real current findings for the review's action
-summary. `Reject`, `Defer`, and `Already Resolved` candidates stay in the
-report for transparency, but they must not be counted as accepted findings or
-presented as work the user should fix now.
-
-## Reporting Rules
-
-- Preserve every candidate in exactly one verdict group.
-- Make clear that verdicts are recommendations, not final resolution.
-- Explain every non-accepted verdict in concrete terms.
-- Merge duplicates before reporting; when duplicate candidates disagree, keep
-  the strongest evidence and mention the duplicate source in the reason.
-- If a Critical or High candidate is not accepted, make the reason especially
-  explicit.
-- Do not silently drop weak findings. Reject them with a reason.
-- Do not defer merely because the fix might be broad. Defer only for a real
-  checkpoint, explicit scope boundary, or unresolved information gap.
+- Preserve the strongest evidence when merging duplicates.
+- Explain every non-accepted verdict concretely.
+- Make Critical or High severity proportional to demonstrated impact.
+- Findings remain recommendations; the caller that owns edits makes the final
+  resolution after validating current state.

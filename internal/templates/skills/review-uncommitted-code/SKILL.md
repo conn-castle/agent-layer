@@ -8,149 +8,106 @@ description: >-
 
 # review-uncommitted-code
 
-Write a findings report only; do not modify reviewed files.
+Review one concrete target and write a findings report. Do not modify reviewed
+files.
 
 ## Target selection
 
-Resolve targets in order:
+Resolve the target in this order:
 
-1. User-specified files, directories, diffs, or git ranges. For staged or
-   unstaged-only review, use `git diff --cached` or `git diff`.
-2. Proactive hotspots, only when the user asks for a codebase audit without
-   exact targets.
-3. Otherwise, review all uncommitted changes: staged, unstaged, and untracked
-   files from `git ls-files --others --exclude-standard`.
-4. If no credible target exists, stop and ask.
+1. User-specified files, directories, diffs, or ranges.
+2. Proactive hotspots when the user requested a codebase audit without exact
+   targets.
+3. Otherwise all staged, unstaged, and untracked working-tree changes.
 
-Review the last commit only when explicitly requested:
-`git show --name-only --pretty="" HEAD`.
+Review the last commit only when explicitly requested. If no credible target
+exists, ask for the smallest scope decision and stop.
 
-For proactive hotspots, keep scope narrow and record each selection signal:
-
-- recently changed or unstable core files
-- oversized or high-churn modules
-- code paths with weak or missing tests
-- TODO/FIXME or temporary scaffolding markers
-- reliability-sensitive entrypoints or data boundaries
-- code that appears to drift from `README.md`, `ROADMAP.md`, or `DECISIONS.md`
+For proactive hotspots, select a bounded target using concrete signals such as
+change frequency, size or complexity, weak behavioral coverage, temporary
+scaffolding, data or reliability boundaries, and drift from authoritative
+project contracts. Record why each hotspot was selected.
 
 ## Required artifact
 
-Create `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md` before
-writing. Use `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
+Write `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md`, where
+`run-id` is `YYYYMMDD-HHMMSS-<short-rand>`.
 
-## Conditional classification asset
+Read `assets/finding-verdict-classification.md` during synthesis. It is the
+single verdict rubric; it is not another review or classifier stage.
 
-During synthesis, load `assets/finding-verdict-classification.md` and use its
-rubric. The current synthesizer may classify unambiguous, evidence-backed
-candidates directly.
+## Review contract
 
-After gathering, deduplicating, and validating the full candidate set, identify
-every candidate with conflicting reviewer conclusions, ambiguous evidence,
-uncertain scope or checkpoint ownership, or Critical/High severity that needs
-an independent verdict gate. If that gated set is non-empty, run at most one
-fresh built-in subagent as the `Finding verdict classifier` for the entire set
-in one batch. Pass the gated candidates, report path, asset, and minimum cited
-evidence. Validate its updates; if any are missing or invalid, classify those
-candidates with the rubric in the current synthesizer and record the classifier
-failure instead of launching it again.
+- Review concrete code, diffs, tests, and observable contracts rather than
+  hypothetical alternatives.
+- Use complementary perspectives on distinct concerns. For a non-trivial
+  target, bounded reviewers may examine correctness, architecture, and
+  quality/operability once in parallel. Do not run an outer review loop or ask
+  another agent to classify the same evidence.
+- Treat reviewer output as candidates until the synthesizer validates it
+  against current repository evidence.
+- Report only findings that materially affect correctness, safety, scope,
+  reliability, performance, test integrity, or meaningful maintainability.
+- Do not report style preferences, speculative edge cases, unsupported claims,
+  or unrelated known issues as current findings.
 
 ## Workflow
 
-### Phase 1: Preflight
+### 1. Establish scope and evidence
 
-1. Resolve and record the target, review mode, report path, and proactive
-   hotspot signals when applicable. When reviewing all uncommitted changes,
-   include staged diff, unstaged diff, and untracked file contents as one target.
-2. Read the minimum surrounding code, tests, docs, and memory files needed to
-   understand the target.
+Record the target, review mode, report path, and hotspot signals when
+applicable. Read the minimum surrounding code, tests, docs, and memory needed
+to establish intended behavior.
 
-### Phase 2: Review
+### 2. Run one purposeful review pass
 
-Use built-in subagents as independent review lenses when available. Keep target
-selection, candidate synthesis, and classifier orchestration with the current
-agent. For non-trivial scopes, run at least two review agents in parallel.
+Examine complementary concerns once:
 
-Review lenses:
+- correctness, error handling, boundary inputs, and failure modes
+- ownership, interfaces, coupling, and unnecessary complexity
+- tests, documentation, performance, concurrency, data safety, and operational
+  supportability where relevant
 
-1. `Correctness reviewer`: edge cases, assumptions, failure handling.
-2. `Architecture reviewer`: boundaries, ownership, responsibility drift,
-   unnecessary complexity.
-3. `Quality reviewer`: tests, docs, maintainability, performance, concurrency.
-4. `Maintainer reviewer`: reliability-sensitive entrypoints, data safety,
-   destructive behavior, user experience, supportability, migration risk.
-5. `Adversarial reviewer`: intended behavior, boundary inputs, failure modes,
-   implicit contracts, missing evidence.
+Assign concerns to distinct reviewers when using parallel review. A narrow
+target may be reviewed directly without manufacturing extra roles.
 
-Check the target against intended behavior, repo constraints, error paths, data
-boundaries, verification coverage, and docs or memory drift. If a likely issue
-is already tracked in `ISSUES.md`, mark it as an existing known issue instead
-of presenting it as new.
+### 3. Synthesize once
 
-### Phase 3: Synthesize findings
+Validate candidates against the current tree, merge duplicates, and apply the
+verdict rubric. Only evidence-backed candidates that survive this synthesis
+become report entries.
 
-Treat reviewer output as candidates until checked against the current repo.
-Deduplicate and validate candidates, classify unambiguous evidence-backed
-candidates with the asset rubric, and collect every gated candidate for the
-single conditional classifier batch before finalizing the report. Final
-findings must include:
+Each reported finding includes:
 
-- `Title`
-- `Severity`: Critical | High | Medium | Low
-- `Confidence`: High | Medium | Low
-- `Location`: exact file/path/scope
-- `Recommended verdict`: Accept | Reject | Defer | Already Resolved
-- `Why it matters`
-- `Evidence`
-- `Recommendation`
+- title, severity, and confidence
+- exact location and reviewed scope
+- recommended verdict: Accept | Defer
+- evidence, why it matters, and a concrete recommendation
 
-Style-only, unsupported, out-of-scope, or already-tracked candidates must stay
-visible through synthesis and receive a rubric-backed verdict. Do not silently
-drop weak candidates.
+`Accept` means valid, current, in scope, and actionable without a new user
+decision. `Defer` is reserved for a valid finding blocked by a user-owned
+decision or explicit scope boundary. Candidates absent from the final reviewed
+state are not findings and are omitted.
 
-## Required report structure
+### 4. Write the report and yield
 
-The report must contain:
+The report contains:
 
-1. `# Review Summary`: target, mode, short outcome.
-2. `## Findings`: start with `Verdicts are reviewer recommendations, not final
-   resolution.` Group every candidate under `### Recommended Accept`,
-   `### Recommended Reject`, `### Recommended Defer`, or
-   `### Recommended Already Resolved`; order by severity, then confidence; use
-   `None` for empty groups.
-3. `## Open Questions`: only items that block confidence.
-4. `## Suggested Next Steps`: a small coherent action list.
-5. `## Self-Check`: one line for every accepted finding covering root cause,
-   evidence, severity, and reviewed scope.
+1. `# Review Summary` — target, mode, and readiness verdict
+2. `## Recommended Accept`
+3. `## Recommended Defer`
 
-If an accepted finding fails self-check, reassess it with the rubric. Do not
-launch another classifier; preserve the candidate and record any unresolved
-ambiguity as `Defer`.
+Use `None` for empty groups. The readiness verdict is `proceed`,
+`proceed-after-fixes`, or `revise-first`.
 
 ## Human checkpoints
 
-- Ask when no credible review target can be established.
-- Ask before turning findings into code edits, doc edits, or issue logging.
-
-## Guardrails
-
-- Do not claim certainty beyond the evidence.
-- Keep unrelated problems in separate findings.
-- Recommend large refactors only when the current approach is clearly
-  unsafe or unsound.
-- If a finding depends on an assumption, say so explicitly.
+- Ask when a credible target cannot be established.
 
 ## Definition of done
 
-Done when the report exists, every candidate is classified into exactly one
-verdict group, every gated candidate was included in the single classifier batch
-when one was needed, accepted findings pass self-check, and each finding names
-location, severity, confidence, evidence, and recommendation tied to scope.
-
-## Final handoff
-
-After writing the report:
-
-1. Echo the report path.
-2. Summarize top recommended accepted findings.
-3. Recommend `proceed`, `proceed after fixes`, or `revise first`.
+- The target received one evidence-backed review pass through the relevant
+  complementary concerns.
+- Every reported finding survived current-tree validation and has one verdict.
+- The report exists with a readiness verdict and the skill yields without
+  editing reviewed files.

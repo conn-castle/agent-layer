@@ -9,99 +9,86 @@ description: >-
 
 # interface-audit
 
-Audit product interfaces as component boundaries. Produce a report, not code.
+Audit product interfaces as component boundaries and produce one evidence-backed
+report. Do not implement the recommendation.
 
-## Progressive Disclosure
-
-Read [`references/report-structure.md`](references/report-structure.md) before
-creating or editing a report. It owns filename, sections, tables, and fields.
-
-With `--update`, also read
-[`references/update-workflow.md`](references/update-workflow.md) before
-inspecting code. It owns report selection, local-change review, merged-PR
-review, and update limits.
-
-Do not duplicate those reference details in generated notes or side artifacts.
-
-## Inputs
+## Inputs and references
 
 - Fresh audit: no option.
-- Update audit: `--update`.
+- Update audit: `--update`, optionally with an explicit report path.
+- No other flags are supported. Ask which mode to use if extra flags make the
+  request ambiguous.
 
-No other options are supported. If extra flags appear, stop and ask which mode
-to use. In update mode, a report path may appear in the user's message;
-otherwise use `references/update-workflow.md`.
+Read [`references/report-structure.md`](references/report-structure.md) before
+creating or editing a report. With `--update`, also read
+[`references/update-workflow.md`](references/update-workflow.md); it owns report
+selection, update boundaries, and source evidence.
 
-## Fresh-Run Isolation
+## Fresh-run isolation
 
-Fresh audits must be independent. Do not open, list, quote, summarize, compare,
-or mine prior audit reports, cleanup analyses, or prior subagent outputs. Do not
-give prior-run material to subagents.
+A fresh audit uses only current code, tests, docs, command output, and user
+instructions. Do not inspect or reuse prior audits, cleanup analyses, or agent
+outputs. If the user wants prior evidence incorporated, use update mode.
 
-Use only current code, tests, docs, command output, and user instructions. If
-the user asks to use prior audit material, stop and ask whether to switch to
-`--update`.
+## Evidence contract
 
-## Audit Rules
-
-- Describe current code in present tense.
-- Verify numeric claims and names before writing them.
-- Preserve row numbers once assigned; retired numbers are not reused.
-- Mark partial or unverifiable claims explicitly.
-- Product requirements discovered during the audit are protected unless the user
-  explicitly approves a behavior change.
-- Prefer code and tests over docs when they disagree.
-- Prefer exact file paths and symbol names over prose descriptions.
-- Use structured parsers, language tooling, `rg`, `git`, and package test tools
-  before manual counting when available.
-- Do not preserve stale scores because prior reports said so.
+- Treat each scored row as a concrete component boundary, not a vague area.
+- Verify names and numeric claims before recording them. Use `partial` when an
+  exact count would cost more than it contributes.
+- Tie complexity, over-engineering, debt, and confidence scores to current
+  observable evidence.
+- Preserve row identifiers during updates; retired identifiers are not reused.
+- Prefer current code and tests over stale documentation.
+- Protect discovered product requirements unless the user approves a behavior
+  change.
+- Do not preserve a prior score when current evidence no longer supports it.
 
 ## Workflow
 
-1. Establish the mode and read the required reference file or files.
-2. Confirm the repository baseline with `git status --porcelain`.
-3. For a fresh audit, create the new report path defined by
-   `references/report-structure.md`, then discover and score interfaces from
-   current evidence only.
-4. For `--update`, follow `references/update-workflow.md` exactly and edit only
-   the selected report.
-5. Use focused subagents for broad investigation, row-level verification, and
-   adversarial score review when available. If unavailable, work inline and
-   record the limitation.
-6. Honor user-requested agent or model targets when available. If a requested
-   target is unavailable, fail loudly and ask whether to continue with available
-   targets or inline review.
-7. Keep the main agent responsible for scoring calibration, resolving reviewer
-   disagreement, and the final recommendation gate.
-8. Complete the final recommendation gate below, then stop.
+### 1. Establish mode and artifact
 
-## Final Recommendation Gate
+Read the applicable references and establish the repository baseline. For a
+fresh audit, create the required report. For an update, select and update only
+the report established by the update workflow.
 
-1. Decide whether any major architectural change is required to address the
-   highest-value findings. Major means broad ownership changes, protocol
-   redesign, data model changes, cross-language contract replacement, or a
-   substantial change to user workflows.
-2. If major architecture is required, propose that architecture item and state
-   why smaller interface work is insufficient.
-3. Otherwise propose the smallest coherent interface improvement that
-   meaningfully reduces complexity, over-engineering, or debt.
-4. If the proposal changes behavior, say so and ask for explicit approval before
-   planning or implementation.
-5. Stop after asking whether to run `/plan-work` for the proposed item or search
-   for another item.
+### 2. Run one interface evidence pass
+
+Discover the interface chain, contracts, ownership, state, tests, failure
+modes, and material cleanup opportunities. For broad scopes, complementary
+investigators may examine distinct boundaries once in parallel; do not ask
+multiple reviewers to reconsider the same row.
+
+### 3. Calibrate and synthesize once
+
+The main agent resolves evidence, calibrates scores across neighboring rows,
+updates the required report sections, and identifies the highest-value coherent
+improvement. Revisit a row only when its cited evidence is missing or
+internally inconsistent, not to seek additional confidence.
+
+### 4. Final recommendation gate
+
+Decide whether the highest-value finding requires major architecture: broad
+ownership changes, protocol redesign, data-model changes, cross-language
+contract replacement, or a substantial user-workflow change.
+
+- If yes, propose the architectural item and explain why a smaller interface
+  improvement is insufficient.
+- Otherwise propose the smallest coherent improvement that materially reduces
+  complexity, over-engineering, or debt.
+- State any behavior change and require explicit approval before planning it.
+- Stop after asking whether to run `/plan-work` for that item or select a
+  different item.
 
 ## Guardrails
 
-- Do not edit production code, tests, docs, or memory files as part of this
-  skill.
-- Do not silently widen the audit beyond product interfaces.
-- Do not create a parallel plan, summary, or scratch report.
-- Do not score from vibes. Tie every score to concrete evidence.
-- Do not treat behavior changes as cleanup.
-- Do not run `/plan-work` from this skill without asking at the final gate.
+- Do not edit production code, tests, docs, or memory files.
+- Do not widen beyond product interfaces or create parallel reports.
+- Do not score from intuition when evidence is available.
+- Do not run `/plan-work` from this skill.
 
 ## Definition of done
 
-- Report created or updated.
-- Applicable reference workflow followed.
-- Final handoff satisfies the final recommendation gate.
+- The required report was created or updated through one evidence and
+  calibration pass.
+- Every material score and recommendation cites concrete evidence.
+- The skill returns the report path and final recommendation gate, then yields.

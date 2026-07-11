@@ -27,13 +27,9 @@ One-line purpose statement.
 - `Commit:`
 - `Working tree:` clean or dirty, with brief status
 - `Scope:`
-- `Source evidence:` code, tests, docs, subagent reviews, PRs for updates
+- `Source evidence:` code, tests, docs, investigator evidence, PRs for updates
 
 `Last updated UTC` is the update boundary.
-
-### `## Intent And Rules`
-
-Concise copy of relevant audit invariants from `SKILL.md`.
 
 ### `## Product Requirements`
 
@@ -85,7 +81,7 @@ Columns:
 - `Complexity`, `Over-Eng`, `Debt`: integers 1-5.
 - `Avg`: one decimal place.
 - `Confidence`: High, Medium, or Low.
-- `Evidence`: terse references to files, tests, docs, or reviewer pass.
+- `Evidence`: terse references to files, tests, docs, or investigator evidence.
 
 ### `## Row Details`
 

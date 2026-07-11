@@ -188,11 +188,11 @@ Plan artifacts:
 If the verdict is `incomplete`, return to implementation.
 Repeat until the verdict is `complete` or `complete-with-follow-up`, or a real blocker requires user input.
 
-### Phase 7: Broad audit of the delivered work package (Audit Review Agents)
+### Phase 7: Broad audit of the delivered work package
 
 Use the `/review-uncommitted-code` skill on the touched files, surrounding modules, and changed tests/docs.
 
-### Phase 8: Fix audit findings (Fixers + Auditors)
+### Phase 8: Fix audit findings (Fixers)
 
 Use the Phase 7 review report as input. Fix every `Recommended Accept` finding
 regardless of severity after verifying it against the current repo state.
@@ -202,11 +202,11 @@ For accepted findings:
 - keep unrelated findings separate when they can be fixed independently
 - diagnose the root cause
 - implement the scoped fix and directly required test, doc, or memory updates
-- run focused verification
-- audit the final diff against the accepted finding
+- run focused evidence that directly demonstrates the finding is resolved
 
-If accepted Critical or High findings were fixed, run one more `/review-uncommitted-code` pass on the touched scope.
-Repeat the audit/fix loop only when the new report still contains unresolved Critical or High findings.
+Do not run another broad review pass after fixing accepted findings. A concrete
+failed check or unresolved finding may return to the responsible implementation
+stage; a desire for additional confidence may not.
 
 If the fixes introduce or expose local complexity that remains
 behavior-preserving and in-scope, run:
@@ -215,9 +215,9 @@ behavior-preserving and in-scope, run:
 /clean-and-fix-code
 ```
 
-Then return to Phase 6.
-
-Count every return to Phase 6 after Phase 7 begins, including cleanup-triggered returns. Escalate if the loop is not converging.
+If audit fixes or cleanup changed the package, run `/verify-work` once against
+the final package. Return to implementation only if that concrete verification
+is incomplete. Otherwise proceed to Phase 9 without another review pass.
 
 ### Phase 9: Reassess phase status and gate the next package (Execution gatekeeper + Reporter)
 

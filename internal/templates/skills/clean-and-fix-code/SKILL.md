@@ -67,8 +67,8 @@ Use `/review-uncommitted-code` findings as follows:
 - If `### Recommended Accept` is `None`, finish with `completed` when a
   cleanup pre-pass materially changed the target; otherwise finish with
   `no-findings`.
-- Do not promote `Recommended Defer`, `Recommended Reject`, or
-  `Recommended Already Resolved` into repair scope. Report their counts.
+- Do not promote `Recommended Defer` findings into repair scope. Report their
+  count and the user-owned decision or scope boundary for each.
 - If an accepted repair depends on a user-owned decision recorded under
   `Recommended Defer`, stop and name that decision.
 
