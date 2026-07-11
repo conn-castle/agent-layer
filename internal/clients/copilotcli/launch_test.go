@@ -12,41 +12,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
-type execCall struct {
-	called bool
-	path   string
-	argv   []string
-	env    []string
-}
-
-func captureExec(t *testing.T, err error) *execCall {
-	t.Helper()
-	original := execFunc
-	call := &execCall{}
-	execFunc = func(path string, argv []string, env []string) error {
-		if call.called {
-			t.Fatal("execFunc called more than once")
-		}
-		call.called = true
-		call.path = path
-		call.argv = append([]string(nil), argv...)
-		call.env = append([]string(nil), env...)
-		return err
-	}
-	t.Cleanup(func() { execFunc = original })
-	return call
-}
-
-func forbidExec(t *testing.T) {
-	t.Helper()
-	original := execFunc
-	execFunc = func(string, []string, []string) error {
-		t.Fatal("execFunc should not be called")
-		return nil
-	}
-	t.Cleanup(func() { execFunc = original })
-}
-
 func writeResolvableCopilot(t *testing.T) string {
 	t.Helper()
 	binDir := t.TempDir()
@@ -55,23 +20,10 @@ func writeResolvableCopilot(t *testing.T) string {
 	return filepath.Join(binDir, "copilot")
 }
 
-func assertExecCalled(t *testing.T, call *execCall, wantPath string, wantArgv []string) {
-	t.Helper()
-	if !call.called {
-		t.Fatal("expected execFunc to be called")
-	}
-	if call.path != wantPath {
-		t.Fatalf("expected exec path %q, got %q", wantPath, call.path)
-	}
-	if !reflect.DeepEqual(call.argv, wantArgv) {
-		t.Fatalf("unexpected argv: got %#v want %#v", call.argv, wantArgv)
-	}
-}
-
 func TestLaunchCopilotCLIExecHandoff(t *testing.T) {
 	root := t.TempDir()
 	copilotPath := writeResolvableCopilot(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 	env := []string{"PATH=" + filepath.Dir(copilotPath), "CUSTOM=1"}
 
 	cfg := &config.ProjectConfig{
@@ -87,9 +39,9 @@ func TestLaunchCopilotCLIExecHandoff(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	assertExecCalled(t, call, copilotPath, []string{"copilot", "--model", "test-model", "--prompt", "hello"})
-	if !reflect.DeepEqual(call.env, env) {
-		t.Fatalf("expected env to pass through unchanged, got %#v want %#v", call.env, env)
+	call.AssertCalled(t, copilotPath, []string{"copilot", "--model", "test-model", "--prompt", "hello"})
+	if !reflect.DeepEqual(call.Env, env) {
+		t.Fatalf("expected env to pass through unchanged, got %#v want %#v", call.Env, env)
 	}
 }
 
@@ -97,7 +49,7 @@ func TestLaunchCopilotCLIExecError(t *testing.T) {
 	root := t.TempDir()
 	writeResolvableCopilot(t)
 	wantErr := errors.New("exec failed")
-	captureExec(t, wantErr)
+	testutil.CaptureExec(t, &execFunc, wantErr)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{},
@@ -116,7 +68,7 @@ func TestLaunchCopilotCLIExecError(t *testing.T) {
 func TestLaunchCopilotCLIMissingBinary(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("PATH", t.TempDir())
-	forbidExec(t)
+	testutil.ForbidExec(t, &execFunc)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{},
@@ -135,7 +87,7 @@ func TestLaunchCopilotCLIMissingBinary(t *testing.T) {
 func TestLaunchCopilotCLIYOLO(t *testing.T) {
 	root := t.TempDir()
 	copilotPath := writeResolvableCopilot(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -151,13 +103,13 @@ func TestLaunchCopilotCLIYOLO(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	assertExecCalled(t, call, copilotPath, []string{"copilot", "--model", "test-model", "--yolo"})
+	call.AssertCalled(t, copilotPath, []string{"copilot", "--model", "test-model", "--yolo"})
 }
 
 func TestLaunchCopilotCLIAllowAllTools(t *testing.T) {
 	root := t.TempDir()
 	copilotPath := writeResolvableCopilot(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -173,5 +125,5 @@ func TestLaunchCopilotCLIAllowAllTools(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	assertExecCalled(t, call, copilotPath, []string{"copilot", "--model", "test-model", "--allow-all-tools"})
+	call.AssertCalled(t, copilotPath, []string{"copilot", "--model", "test-model", "--allow-all-tools"})
 }

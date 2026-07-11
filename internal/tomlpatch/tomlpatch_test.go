@@ -315,6 +315,15 @@ func TestMultilineValueEndIndex_CoversStringsArraysAndTables(t *testing.T) {
 	if ContainsUnescapedTripleQuote(`a \""" not-close`) {
 		t.Fatal("expected escaped triple quote to be ignored")
 	}
+	if !ContainsUnescapedTripleQuote(`a \\""" close`) {
+		t.Fatal("expected even backslash parity to leave the triple quote unescaped")
+	}
+	if ContainsUnescapedTripleQuote(`a \\\""" not-close`) {
+		t.Fatal("expected odd backslash parity to escape the triple quote")
+	}
+	if !ContainsUnescapedTripleQuote(`a \""" then """ close`) {
+		t.Fatal("expected a later unescaped triple quote to be detected after skipping an escaped one")
+	}
 }
 
 func TestRenderAndCloneHelpers_DoNotAliasInputs(t *testing.T) {

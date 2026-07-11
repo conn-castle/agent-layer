@@ -492,65 +492,6 @@ func removeKeyFromBlock(block *tomlBlock, key string) {
 	applySharedBlock(block, shared)
 }
 
-// multilineValueEndIndex returns the index of the last line of a value that
-// starts at startIdx. Returns startIdx when the value fits on a single line.
-// Handles multiline arrays ([...]), inline tables ({...}), and triple-quoted
-// basic strings and literal strings.
-func multilineValueEndIndex(lines []string, startIdx int) int {
-	return tomlpatch.MultilineValueEndIndex(lines, startIdx)
-}
-
-// quoteState tracks whether we are inside a quoted string across line boundaries.
-type quoteState struct {
-	inDouble bool
-	inSingle bool
-}
-
-// countBracketDepth remains local for wizard tests that pin bracket-depth edge
-// cases. Production multiline range detection delegates to tomlpatch.
-func countBracketDepth(s string, opener, closer byte, qs quoteState) (int, quoteState) {
-	depth := 0
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		if qs.inDouble {
-			if ch == '\\' {
-				i++
-				continue
-			}
-			if ch == '"' {
-				qs.inDouble = false
-			}
-			continue
-		}
-		if qs.inSingle {
-			if ch == '\'' {
-				qs.inSingle = false
-			}
-			continue
-		}
-		switch ch {
-		case '"':
-			qs.inDouble = true
-		case '\'':
-			qs.inSingle = true
-		case '#':
-			return depth, qs
-		case opener:
-			depth++
-		case closer:
-			depth--
-		}
-	}
-	return depth, qs
-}
-
-// containsUnescapedTripleQuote reports whether s contains an unescaped """ delimiter.
-// In TOML basic strings, \" is an escaped quote; an odd number of preceding
-// backslashes means the first quote is escaped, so \""" is not a closing delimiter.
-func containsUnescapedTripleQuote(s string) bool {
-	return tomlpatch.ContainsUnescapedTripleQuote(s)
-}
-
 // updateMCPEnabled applies the enabled toggle to a server block when requested.
 // block holds the current server text; templateBlock provides canonical formatting; id identifies the server.
 func updateMCPEnabled(block mcpBlock, templateBlock mcpBlock, choices *Choices, id string) tomlBlock {
