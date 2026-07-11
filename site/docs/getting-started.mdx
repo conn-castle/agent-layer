@@ -225,7 +225,7 @@ If you prefer to launch VS Code without the repo-local launcher, see the Codex a
 
 ### Safe to delete
 
-You can delete generated outputs at any time. Running `al sync` or `al <client>` will recreate them from `.agent-layer/`. The exception is `.agy/antigravity-cli/settings.json`: it is shared state that can contain native workspace approval or trust values, so keep it gitignored but do not delete it as part of cleanup. Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths; its Antigravity MCP output remains disposable.
+You can delete generated outputs at any time. Running `al sync` or `al <client>` will recreate them from `.agent-layer/`. The exceptions are the shared-state files `al sync` patches in place — `.codex/config.toml` and `.agy/antigravity-cli/settings.json` — which can hold native values (for Antigravity, workspace approval or trust), so keep them gitignored but do not delete them as part of cleanup. For Antigravity, Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths; its Antigravity MCP output remains disposable.
 
 If you keep your own files under `.vscode/`, delete only the Agent Layer-managed files (`.vscode/mcp.json` and the managed block in `.vscode/settings.json`). Agent Layer also projects VS Code/GitHub Copilot skills through `.agents/skills/`.
 

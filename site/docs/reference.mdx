@@ -604,7 +604,7 @@ Common outputs include:
 - `AGENTS.md`, `CLAUDE.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
-Generated outputs are safe to delete, and `al sync` will recreate them. Keep `.agy/antigravity-cli/settings.json` gitignored but do not treat it as disposable: native Antigravity values, including workspace approval or trust, are preserved there. Managed MCP output remains safe to regenerate.
+Generated outputs are safe to delete, and `al sync` will recreate them — except the shared-state files it patches in place, `.codex/config.toml` and `.agy/antigravity-cli/settings.json`. Keep both gitignored but do not treat them as disposable: native values (for Antigravity, workspace approval or trust) are preserved there. Managed MCP output remains safe to regenerate.
 
 **Warnings**
 
