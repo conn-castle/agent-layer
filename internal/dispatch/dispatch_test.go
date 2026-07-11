@@ -582,6 +582,26 @@ func TestMaybeExec_CurrentIsDev(t *testing.T) {
 	}
 }
 
+func TestMaybeExec_DevelopmentBypassSkipsVersionResolution(t *testing.T) {
+	sys := &testSystem{
+		GetenvFunc: func(key string) string {
+			if key == EnvDevelopmentBypassVersionDispatch {
+				return "1"
+			}
+			return ""
+		},
+		FindAgentLayerRootFunc: func(string) (string, bool, error) {
+			t.Fatal("development bypass must not inspect a repository version pin")
+			return "", false, nil
+		},
+	}
+
+	err := MaybeExecWithSystem(sys, []string{"al", "dispatch"}, "dev", t.TempDir(), func(int) {})
+	if err != nil {
+		t.Fatalf("expected development bypass to keep the source binary, got %v", err)
+	}
+}
+
 func TestMaybeExec_CorruptPinFallsThroughToCurrentVersion(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")
