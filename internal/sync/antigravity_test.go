@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -204,6 +205,304 @@ func TestWriteAntigravityOutputs(t *testing.T) {
 	if !strings.Contains(mcp, `"example"`) {
 		t.Fatalf("expected example server id keyed in mcp_config.json, got:\n%s", mcp)
 	}
+}
+
+func TestWriteAntigravitySettingsPreservesNativeStateAndRefreshesManagedPaths(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	seed := `{"model":"old","permissions":{"allow":["old"],"nativeDeny":["keep"]},"trust":{"approved":true,"counter":900719925474099312345},"features":{"native":true}}`
+	if err := os.WriteFile(path, []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.ProjectConfig{Config: config.Config{
+		Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll},
+		Agents: config.AgentsConfig{Antigravity: config.AntigravityConfig{
+			Model: "new", AgentSpecific: map[string]any{"features": map[string]any{"managed": "first"}},
+		}},
+	}, CommandsAllow: []string{"git status"}}
+	if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+		t.Fatal(err)
+	}
+	project.Config.Agents.Antigravity.Model = "newer"
+	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"features": map[string]any{"managed": "second"}}
+	if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+		t.Fatal(err)
+	}
+	got := readFileForTest(t, path)
+	for _, want := range []string{`"model": "newer"`, `"command(git status)"`, `"approved": true`, `900719925474099312345`, `"native": true`, `"managed": "second"`, `"nativeDeny"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("settings missing %s:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, `"old"`) {
+		t.Fatalf("stale managed model/permissions.allow value was not refreshed:\n%s", got)
+	}
+}
+
+func TestWriteAntigravitySettingsPreservesNativeManagedPathsWhenConfigOmitsThem(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// settings.json is owned by Antigravity and the user. When Agent Layer
+	// config produces no model or permissions, it must not delete the native
+	// values the user set in Antigravity itself.
+	seed := []byte(`{"model":"native-model","permissions":{"allow":["native-allow"],"deny":["native"]},"trust":true}`)
+	if err := os.WriteFile(path, seed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	got := readFileForTest(t, path)
+	for _, want := range []string{`"native-model"`, `"native-allow"`, `"deny"`, `"native"`, `"trust"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("native value %s was not preserved:\n%s", want, got)
+		}
+	}
+}
+
+func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, seed string }{
+		{"malformed", `{"trust":`},
+		{"non-object", `[]`},
+		{"null", `null`},
+		{"trailing", `{} {}`},
+		{"shape-conflict", `{"permissions":"native"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			before := []byte(tc.seed)
+			if err := os.WriteFile(path, before, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// Approvals mode all makes buildPermissionsBlock emit permissions.allow,
+			// so the shape-conflict seed is a path Agent Layer actually writes.
+			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
+			if err := WriteAntigravitySettings(RealSystem{}, root, project); err == nil {
+				t.Fatal("expected error")
+			}
+			after, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatalf("file changed on failure: %q", after)
+			}
+		})
+	}
+}
+
+func TestWriteAntigravitySettingsRejectsSymlinkAndNonRegularTarget(t *testing.T) {
+	t.Parallel()
+	t.Run("symlink", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(root, "native.json")
+		before := []byte(`{"trust":true}`)
+		if err := os.WriteFile(target, before, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			t.Fatal(err)
+		}
+		err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{})
+		if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
+			t.Fatalf("expected regular-file guard error, got %v", err)
+		}
+		after, err := os.ReadFile(target) // #nosec G304 -- test-owned path.
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(after, before) {
+			t.Fatal("symlink target changed")
+		}
+	})
+	t.Run("directory", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{})
+		if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
+			t.Fatalf("expected regular-file guard error, got %v", err)
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			t.Fatalf("target changed: %v", err)
+		}
+	})
+}
+
+func TestWriteAntigravitySettingsReadErrorDoesNotWrite(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	before := []byte(`{"trust":true}`)
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wrote := false
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		ReadFileFunc: func(string) ([]byte, error) {
+			return nil, errors.New("permission denied")
+		},
+		WriteFileAtomicFunc: func(string, []byte, os.FileMode) error {
+			wrote = true
+			return nil
+		},
+	}
+	if err := WriteAntigravitySettings(sys, root, &config.ProjectConfig{}); err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected read error, got %v", err)
+	}
+	if wrote {
+		t.Fatal("write attempted after read failure")
+	}
+	after, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("file changed on read failure: %q", after)
+	}
+}
+
+func TestWriteAntigravitySettingsRejectsManagedLeafShapeConflict(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Native model is an object, but Agent Layer overlays a scalar model.
+	// Overlaying a scalar onto an object is an incompatible shape and must fail
+	// loud rather than silently reshape native state.
+	before := []byte(`{"model":{"native":true}}`)
+	if err := os.WriteFile(path, before, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{Antigravity: config.AntigravityConfig{Model: "gemini"}}}}
+	err := WriteAntigravitySettings(RealSystem{}, root, project)
+	if err == nil || !strings.Contains(err.Error(), "incompatible existing shape") {
+		t.Fatalf("expected shape conflict error, got %v", err)
+	}
+	after, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("file changed on shape conflict: %q", after)
+	}
+}
+
+func TestWriteAntigravitySettingsTreatsEmptyFileAsFresh(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, seed string }{
+		{"empty", ""},
+		{"whitespace", "  \n\t "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(tc.seed), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
+			if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+				t.Fatalf("empty file should be treated as fresh, got %v", err)
+			}
+			got := readFileForTest(t, path)
+			if !strings.Contains(got, `"command(git status)"`) {
+				t.Fatalf("expected managed content written over empty file, got:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestWriteAntigravitySettingsPreservesUnmanagedNonObjectValue(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Native permissions is a non-object value and Agent Layer produces no
+	// permissions here, so the merge must not inspect or reject the native
+	// shape — it targets nothing at that path.
+	seed := []byte(`{"permissions":null,"trust":true}`)
+	if err := os.WriteFile(path, seed, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+		t.Fatalf("unmanaged non-object native value must not error, got %v", err)
+	}
+	got := readFileForTest(t, path)
+	for _, want := range []string{`"permissions": null`, `"trust": true`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("native value %s not preserved:\n%s", want, got)
+		}
+	}
+}
+
+func TestWriteAntigravitySettingsPreservesFileMode(t *testing.T) {
+	t.Parallel()
+	t.Run("preserves existing mode", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(`{"trust":true}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("existing 0600 mode widened to %o", perm)
+		}
+	})
+	t.Run("new file is owner-only", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+		project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
+		if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("new settings.json mode = %o, want 0600", perm)
+		}
+	})
 }
 
 func TestWriteAntigravityMCPConfigUpdatesMigratedSymlinkTarget(t *testing.T) {
@@ -454,7 +753,10 @@ func TestCleanAntigravityOutputsRemovesMigratedMCPConfig(t *testing.T) {
 	if err := CleanAntigravityOutputs(RealSystem{}, root); err != nil {
 		t.Fatalf("CleanAntigravityOutputs: %v", err)
 	}
-	for _, path := range append(paths, legacyPath) {
+	if _, err := os.Lstat(paths[0]); err != nil {
+		t.Fatalf("expected shared settings preserved, lstat err = %v", err)
+	}
+	for _, path := range []string{paths[1], legacyPath} {
 		if _, err := os.Lstat(path); !os.IsNotExist(err) {
 			t.Fatalf("expected %s removed, lstat err = %v", path, err)
 		}

@@ -52,7 +52,8 @@ Some teams keep `.agent-layer/` local while experimenting; others commit it so e
 When you run `al sync` or `al <client>`, Agent Layer generates client-specific config files and launchers, such as:
 
 - `.agents/skills/`
-- `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.agy/antigravity-cli/settings.json` (shared state patched only at Agent Layer-managed paths)
 - `.codex/` (generated config and rules)
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
 - `AGENTS.md`
@@ -60,7 +61,7 @@ When you run `al sync` or `al <client>`, Agent Layer generates client-specific c
 - `.github/copilot-instructions.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
-The generated files are always safe to delete and regenerate.
+Generated outputs are safe to delete and regenerate, except for the shared-state files `al sync` patches in place rather than regenerating: `.codex/config.toml` and `.agy/antigravity-cli/settings.json`. The Antigravity file can also hold native workspace approval, trust, and other settings. Keep it gitignored, but preserve it during cleanup; Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths, and never deletes native values it did not set.
 
 This separation is deliberate. It gives you the confidence to wipe outputs and rebuild when something feels off, without losing the source of truth that you actually maintain.
 
@@ -68,11 +69,11 @@ This separation is deliberate. It gives you the confidence to wipe outputs and r
 
 In a manual setup, every client becomes a separate source of truth. You change a rule in one place and forget to update another. That is how approvals diverge, MCP servers go missing, and agents behave inconsistently.
 
-Agent Layer avoids that by forcing everything through a single canonical input. The outputs are always derived and always disposable.
+Agent Layer avoids that by forcing managed values through a single canonical input. Generated outputs are derived and disposable; shared client settings preserve native values outside Agent Layer's managed paths.
 
 ### Anti-patterns to avoid
 
-- Editing generated files under `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.codex/`, `.copilot/`, or `.mcp.json`
+- Editing Agent Layer-managed values under `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.codex/`, `.copilot/`, or `.mcp.json`
 - Editing Agent Layer-managed files under `.vscode/` (`mcp.json` and the managed block in `settings.json`)
 - Copying instructions manually between clients
 - Maintaining separate MCP configs for each agent

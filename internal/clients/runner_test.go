@@ -18,6 +18,13 @@ import (
 func TestRunPipeline(t *testing.T) {
 	root := t.TempDir()
 	writeMinimalRepo(t, root)
+	settingsPath := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o700); err != nil {
+		t.Fatalf("mkdir Antigravity settings dir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"workspaceTrust":{"approved":true}}`), 0o600); err != nil {
+		t.Fatalf("seed native Antigravity settings: %v", err)
+	}
 
 	var gotRun *run.Info
 	var gotEnv []string
@@ -56,6 +63,10 @@ func TestRunPipeline(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".agy", "antigravity-cli", "settings.json")); err != nil {
 		t.Fatalf("expected antigravity settings: %v", err)
+	}
+	settings, err := os.ReadFile(settingsPath) // #nosec G304 -- test-controlled path.
+	if err != nil || !strings.Contains(string(settings), `"workspaceTrust"`) {
+		t.Fatalf("expected launcher preparation to preserve native settings, got %q err=%v", settings, err)
 	}
 }
 
