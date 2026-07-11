@@ -16,8 +16,9 @@ scope, and structure remain coherent.
 
 ## Establish the evidence boundary
 
-Require a valid `Last updated UTC:` value and use its full timestamp as the
-incremental history boundary. If it is missing or malformed, do not perform a
+Require a valid `Last updated UTC:` value and recorded baseline commit. Use the
+full timestamp for pull-request metadata and the commit for repository-history
+coverage. If either is missing, malformed, or unavailable, do not perform a
 partial update. Report the missing boundary and recommend a fresh audit; ask
 only if the user must choose between that fresh audit and an explicitly limited
 update.
@@ -25,6 +26,8 @@ update.
 Enumerate both:
 
 - local working-tree changes that affect existing or potential interface rows
+- repository changes from the recorded commit through the current audited
+  commit
 - the complete set of merged pull requests strictly after the full update
   boundary
 
@@ -32,6 +35,13 @@ Use change history to locate affected interfaces; current code, tests, and
 contracts remain authoritative for the report body. Label uncommitted evidence
 as local changes and ignore unrelated local changes except for the metadata
 summary.
+
+If the selected report recorded a dirty working tree at its prior boundary,
+require enough recorded path or source evidence to identify what that report
+observed. When the prior uncommitted state cannot be reconstructed well enough
+to detect later removal or replacement, complete incremental coverage is not
+established; stop before editing and recommend a fresh audit rather than
+preserving potentially stale rows.
 
 Choose repository and GitHub commands from the available tooling rather than
 requiring one command sequence. Detect pagination, result limits, and truncated
@@ -72,4 +82,5 @@ implementation.
 
 Return the updated report path, material rows or sections changed, the
 highest-value remaining issue, whether major architecture appears necessary,
-the smallest coherent next improvement, and any behavior change.
+the smallest coherent next improvement, and any behavior change. Return
+`no-material-improvement` when no candidate justifies its cost.

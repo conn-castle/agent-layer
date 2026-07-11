@@ -17,7 +17,8 @@ changes.
 - Otherwise audit all tracked `*.md` files.
 - Exclude ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md, COMMANDS.md, and
   CONTEXT.md. Use `/audit-memory` when the user requests memory files.
-- Accept an optional maximum finding count.
+- Accept an optional maximum reported-finding count. It limits report size, not
+  the evidence pass or declared scope coverage.
 - If no Markdown files are in scope, report `no-findings` and stop.
 
 ## Evidence and edit contract

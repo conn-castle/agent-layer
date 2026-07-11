@@ -67,6 +67,9 @@ master ledger, orders mutations, resolves routine decisions, and produces the
 terminal result. Investigators and reviewers return evidence, findings, or a
 blocker; they do not create another orchestration layer.
 
+Do not stage, commit, or push. Leave the combined result for the caller or
+`/ship-pr` to publish.
+
 Do not assign multiple agents to the same artifact or concern for consensus,
 and do not create parallelism whose only result is duplicated repository
 reading. Comprehensive means every meaningful area and relationship is covered,

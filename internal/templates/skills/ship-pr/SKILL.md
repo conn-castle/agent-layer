@@ -129,8 +129,8 @@ reconcile the latest queued remote state.
 Refresh comments, required checks, mergeability, and ledger state. Sequentially
 address all currently known work:
 
-- Run `/address-pr-comments` with the pull request and single ledger for new or
-  incomplete feedback.
+- Run `/address-pr-comments` in a fresh built-in subagent with the pull request
+  and single ledger for new or incomplete feedback.
 - Run `/fix-ci` in a fresh built-in subagent for a remote failure not already
   resolved by pending local repairs. It must return uncommitted changes and
   local reproducer evidence. Do not run it concurrently with another
@@ -140,9 +140,10 @@ address all currently known work:
 
 After applying known work, compare the current working-tree state with the state
 covered by the latest passing full-lane evidence. Run
-`/run-and-fix-all-checks` over the combined local batch only when the tree has
-changed since that passing run. Keep any repairs in the same batch. Reuse the
-passing result when it already covers the current tree.
+`/run-and-fix-all-checks` in a fresh built-in subagent over the combined local
+batch only when the tree has changed since that passing run. Keep any repairs
+in the same batch. Reuse the passing result when it already covers the current
+tree.
 
 Refresh remote comments and state again before committing. If new actionable
 work appeared, add it to the batch and rerun only the evidence invalidated by

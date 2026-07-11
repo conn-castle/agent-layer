@@ -75,12 +75,15 @@ Make one revision pass for accepted findings. Then inspect the changed clauses
 and their direct dependents for internal consistency. This is part of applying
 the findings, not a new review round.
 
-If a genuine user-owned decision remains, stop and ask for the smallest choice
-that unblocks the plan. Otherwise, continue without interruption.
+If a genuine user-owned decision remains, record it in the final report with
+`blocked-for-user-decision`, stop, and ask for the smallest choice that
+unblocks the plan. After the answer, resume this same synthesis stage, apply the
+decision to the affected artifacts and direct dependents, and continue without
+redispatching reviewers.
 
 ### 4. Report readiness
 
-Write the final report with:
+Write or update the final report with:
 
 - reviewed artifact paths and reviewer roles
 - accepted changes

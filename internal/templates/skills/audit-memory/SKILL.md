@@ -16,7 +16,8 @@ problems, and report only material unresolved findings.
 - Default scope is ISSUES.md, BACKLOG.md, ROADMAP.md, DECISIONS.md,
   COMMANDS.md, and CONTEXT.md.
 - Accept an explicit subset, audit-only mode, optional repository-documentation
-  cross-checks, and a maximum finding count.
+  cross-checks, and a maximum reported-finding count. The count limits report
+  size, not the evidence pass or declared scope coverage.
 - Do not create a missing memory file. Report it and follow repository policy.
 - Do not modify source code, tests, or repository documentation.
 
@@ -52,9 +53,9 @@ user.
 ### 1. Establish current memory state
 
 Give the investigator the in-scope memory files and the minimum repository
-questions needed to evaluate them. Record missing files and the DECISIONS.md
-entry count before edits, then validate the returned candidate ledger against
-the cited evidence before changing a memory file.
+questions needed to evaluate them. Record missing files, then validate the
+returned candidate ledger against the cited evidence before changing a memory
+file.
 
 ### 2. Run one memory audit pass
 
@@ -94,8 +95,7 @@ Audit-only mode records the same outcomes without editing.
 
 The report contains:
 
-1. `# Memory Audit Summary` — files, verdict, and DECISIONS.md count before and
-   after
+1. `# Memory Audit Summary` — files and verdict
 2. `## Fixes Applied` — grouped by file
 3. `## Material Findings` — evidence and affected file
 4. `## Decisions Needed` — the smallest unresolved questions
@@ -108,8 +108,7 @@ memory entries merely to record this audit.
 
 - Every in-scope memory file received one structural, content, and cross-file
   evidence pass.
-- Clear findings were addressed once; ambiguous entries were preserved with an
-  explicit decision request.
-- DECISIONS.md counts before and after are recorded.
+- Clear findings were addressed once, or recorded without editing in audit-only
+  mode; ambiguous entries were preserved with an explicit decision request.
 - Only the in-scope memory files and required report were modified.
 - The skill returns the report path and terminal outcome, then yields.

@@ -57,9 +57,10 @@ available evidence cannot settle it.
 Call `/review-plan` once with the plan, task, context, optional source/spec, and
 `plan_reviewers`. Use the revised artifacts it returns.
 
-If review returns `blocked-for-user-decision`, ask the named question and update
-the affected artifacts after the answer. Do not rerun the review merely because
-the artifacts changed to record that decision.
+If review returns `blocked-for-user-decision`, ask the named question, then
+resume the same review stage with the answer so it updates the affected
+artifacts and final report. Do not redispatch reviewers or start another review
+round merely because the artifacts changed to record that decision.
 
 ## Boundaries
 

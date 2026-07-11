@@ -869,7 +869,13 @@ audit-memory:
     - task: investigate all memory files together and return a compact cross-file candidate ledger
       caller: subagent
     - task: validate one structural, content, and cross-file audit pass
-    - task: directly apply evidence-backed memory fixes and write the report
+    - if: audit-only mode
+      calls:
+        - task: record evidence-backed outcomes without editing memory files
+    - if: edit mode
+      calls:
+        - task: directly apply evidence-backed memory fixes
+    - task: write the report
     - exit: return fixes and user-owned decisions, then yield
 audit-tests:
   calls:
@@ -905,13 +911,14 @@ auto-skill-loop:
           calls:
             - skill: improve-codebase
               caller: dispatch(implementer)
+        - task: keep worker changes uncommitted and unpushed for blocked-branch preservation or ship-pr delivery
         - if: worker returns a user-only blocker
           calls:
             - task: commit and push the blocked branch, record the blocker, and checkout the primary branch
             - break: start a fresh autonomous attempt
         - if: PR gate is not met
           calls:
-            - break: continue worker dispatch on the current batch branch
+            - break: continue worker dispatch on the current uncommitted batch branch
         - if: PR gate is met
           calls:
             - skill: ship-pr
@@ -1058,7 +1065,7 @@ fix-issues:
         - exit: report no-work without planning
     - skill: plan-work
       inputs: [plan_reviewers]
-    - for: package in planned_issue_packages
+    - for: package in planned_issue_packages, serializing every working-tree mutation against the latest tree
       calls:
         - task: implement the bounded issue package
           caller: subagent
@@ -1169,10 +1176,10 @@ interface-audit:
     - if: running in update mode
       calls:
         - asset: interface-audit/references/update-workflow
-        - if: update timestamp or complete change history cannot be established
+        - if: update timestamp, baseline commit, prior dirty-tree evidence, or complete change history cannot be established
           calls:
             - exit: stop before editing and report the evidence blocker or smallest fresh-versus-limited audit decision
-        - task: enumerate the complete local and merged-PR change interval, detecting truncation
+        - task: enumerate the complete baseline-commit, local, and merged-PR change interval, detecting truncation
         - task: identify affected interface chains and refresh them against current repository evidence
     - if: interface scope is broad or context-heavy
       calls:
@@ -1185,7 +1192,11 @@ interface-audit:
       calls:
         - task: investigate it directly
     - task: synthesize one interface evidence pass across distinct boundaries
-    - task: calibrate scores once and return the final recommendation gate
+    - task: calibrate scores once
+    - if: no candidate materially justifies its cost
+      calls:
+        - exit: record no-material-improvement and yield without manufacturing a change
+    - task: return the final recommendation gate
 loop-clean-and-fix:
   calls:
     - while: cleanup target exists, fewer than four rounds ran, and first round is pending or prior round made material non-repeating progress
@@ -1205,6 +1216,9 @@ plan-work:
         - task: apply the cited corrections as one focused artifact revision and resolve any remaining concrete self-check gap
     - skill: review-plan
       inputs: [plan_reviewers]
+    - if: review returns blocked-for-user-decision
+      calls:
+        - task: ask the named question, then resume synthesis and update the artifacts and final report without redispatching reviewers
     - task: return reviewed artifact paths and the readiness verdict
 review-plan:
   inputs: [plan_reviewers]
@@ -1215,11 +1229,15 @@ review-plan:
           caller: dispatch(plan_reviewer)
         - for: contract-scope, architecture-implementation, and verification-operational perspectives
           calls:
-            - task: independently inspect the complete artifact set and return material evidence
-              caller: fresh subagent of dispatch(plan_reviewer)
+            - task: fresh subagent started by the dispatched reviewer independently inspects the complete artifact set and returns material evidence
+              caller: subagent
         - task: validate and synthesize the independent perspectives into one child report
           caller: dispatch(plan_reviewer)
-    - task: synthesize evidence, revise accepted findings, and report readiness
+    - task: synthesize evidence and revise accepted findings
+    - if: a genuine user-owned decision remains
+      calls:
+        - task: record blocked-for-user-decision, ask the smallest question, then resume synthesis and update the artifacts without redispatching reviewers
+    - task: report readiness
 review-uncommitted-code:
   calls:
     - task: establish one concrete review target and its authoritative evidence

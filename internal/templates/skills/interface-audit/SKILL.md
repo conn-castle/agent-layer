@@ -72,7 +72,13 @@ updates the required report sections, and identifies the highest-value coherent
 improvement. Revisit a row only when its cited evidence is missing or
 internally inconsistent, not to seek additional confidence.
 
+If no candidate would materially reduce complexity, over-engineering, or debt,
+record `no-material-improvement` and yield without manufacturing a proposed
+change.
+
 ### 4. Final recommendation gate
+
+Skip this gate only when Stage 3 recorded `no-material-improvement`.
 
 Decide whether the highest-value finding requires major architecture: broad
 ownership changes, protocol redesign, data-model changes, cross-language
@@ -98,4 +104,5 @@ contract replacement, or a substantial user-workflow change.
 - The required report was created or updated through one evidence and
   calibration pass.
 - Every material score and recommendation cites concrete evidence.
-- The skill returns the report path and final recommendation gate, then yields.
+- The skill returns the report path and either the final recommendation gate or
+  `no-material-improvement`, then yields.

@@ -80,14 +80,16 @@ notes in `ISSUES.md`.
    Or dispatch the implementer with `/improve-codebase`.
 
    Provide the current ledger context needed to avoid repeating blocked or
-   exhausted work.
+   exhausted work. Require the worker to leave changes uncommitted and
+   unpushed; this orchestrator owns blocked-branch preservation and `/ship-pr`
+   owns delivery commits and pushes.
 4. Answer worker checkpoints as the human proxy when no user-only decision is
    required. If user input is required, commit and push the branch, leave any
    PR open, record the blocker, and checkout the primary branch. Then start a
    fresh attempt from #1.
 5. If the PR gate has not been met, go back to #3 and continue on the same
-   batch branch with the current uncommitted work or local commits. Once the PR
-   gate has been met, continue to #6.
+   batch branch with the current uncommitted work. Once the PR gate has been
+   met, continue to #6.
 6. Use the shipper dispatch agent role through its green, open-PR endpoint:
 
    ```text

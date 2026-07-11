@@ -16,7 +16,9 @@ tests added in the current uncommitted diff.
 
 - Default scope is every repository test file.
 - Accept explicit paths, modules, or discovered test-tier filters; an optional
-  maximum finding count; and whether coverage evidence may be gathered.
+  maximum reported-finding count; and whether coverage evidence may be
+  gathered. The count limits report size, not the evidence pass or declared
+  scope coverage.
 - Derive test tiers from repository configuration and conventions. Do not
   invent unit, integration, end-to-end, or other categories the repository
   does not use.

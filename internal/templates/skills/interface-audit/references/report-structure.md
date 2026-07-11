@@ -25,7 +25,9 @@ One-line purpose statement.
 - `Last updated UTC:`
 - `Repository:`
 - `Commit:`
-- `Working tree:` clean or dirty, with brief status
+- `Working tree:` clean or dirty; when dirty, include changed paths or another
+  compact source reference sufficient for a later update to identify the local
+  state this report observed
 - `Scope:`
 - `Source evidence:` code, tests, docs, investigator evidence, PRs for updates
 
@@ -107,6 +109,9 @@ Optional; use only when needed to defend the score.
 
 ### `## Improvement Candidates`
 
+Use `None — no material improvement` when no candidate justifies its cost.
+Otherwise include:
+
 - affected row ids
 - expected score movement or qualitative benefit
 - whether it requires behavior change
@@ -114,6 +119,9 @@ Optional; use only when needed to defend the score.
 - why it is or is not the highest-value next item
 
 ### `## Proposed Next Spec`
+
+Use `None — no material improvement` when the evidence pass found no change
+whose benefit justifies its cost. Otherwise include:
 
 - `Title:`
 - `Type:` major architecture or interface improvement

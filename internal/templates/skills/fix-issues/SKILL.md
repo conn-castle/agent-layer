@@ -21,9 +21,13 @@ do not each create a new planning, review, and verification cycle.
   `YYYYMMDD-HHMMSS-<short-rand>`.
 
 Use a fresh built-in triage subagent to select, validate, and group the issue
-set. Use fresh built-in implementers for independent packages where useful and
-a fresh built-in verifier for final contract verification. Preserve plan-review
-dispatch through `/plan-work`.
+set. Use fresh built-in implementers for distinct packages where useful and a
+fresh built-in verifier for final contract verification. Preserve plan-review
+dispatch through `/plan-work`. Keep every working-tree mutation sequential
+against the latest tree even when packages are otherwise independent.
+
+Do not stage, commit, or push. Leave the combined result for the caller or
+`/ship-pr` to publish.
 
 ## Issue disposition contract
 
@@ -54,7 +58,7 @@ evidence. Have the triage subagent:
 - group the remaining work into ordered, coherent implementation packages
 - identify user-owned decisions
 
-Record these dispositions without editing the ledgers yet; Stage 6 applies them
+Record these dispositions without editing the ledgers yet; Stage 5 applies them
 after the selected contract is verified.
 
 If no open issue remains in the selected scope, write a `no-work` outcome and
@@ -86,7 +90,8 @@ the shared plan artifacts, its bounded issues, the relevant current tree, and
 the issue disposition contract. Require a failing reproducer for a defect when
 feasible; debt and refactors may use established contract evidence instead.
 
-Run mutations sequentially when packages overlap. Resolve routine
+Run every package's mutations sequentially against the latest working tree;
+fresh implementer contexts do not authorize concurrent edits. Resolve routine
 implementation and focused-check details autonomously. Stop only for a concrete
 failure or user-owned decision; do not silently drop the rest of the selected
 set.

@@ -106,7 +106,14 @@ The report contains:
 3. `## Recommended Defer`
 
 Use `None` for empty groups. The readiness verdict is `proceed`,
-`proceed-after-fixes`, or `revise-first`.
+`proceed-after-fixes`, or `revise-first`:
+
+- `proceed`: no accepted fix remains and no deferred finding blocks safe use of
+  the reviewed work
+- `proceed-after-fixes`: one or more `Accept` findings should be addressed by
+  the caller
+- `revise-first`: a deferred user-owned decision or explicit scope boundary
+  prevents the reviewed work from proceeding safely
 
 ## Definition of done
 
