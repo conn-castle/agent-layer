@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -81,10 +82,10 @@ func TestCaptureExecCapturesIndependentInputsAndRestoresTarget(t *testing.T) {
 	if call.Path != "/test/tool" {
 		t.Fatalf("captured path = %q, want /test/tool", call.Path)
 	}
-	if !reflect.DeepEqual(call.Argv, []string{"tool", "--flag"}) {
+	if !slices.Equal(call.Argv, []string{"tool", "--flag"}) {
 		t.Fatalf("captured argv changed with caller input: %#v", call.Argv)
 	}
-	if !reflect.DeepEqual(call.Env, []string{"PATH=/test", "CUSTOM=1"}) {
+	if !slices.Equal(call.Env, []string{"PATH=/test", "CUSTOM=1"}) {
 		t.Fatalf("captured env changed with caller input: %#v", call.Env)
 	}
 
@@ -147,7 +148,7 @@ func TestCaptureExecExportedSeamCapturesAndAssertsCalled(t *testing.T) {
 	}
 
 	call.AssertCalled(t, "/bin/tool", []string{"launch", "--flag"})
-	if !reflect.DeepEqual(call.Env, []string{"PATH=/bin"}) {
+	if !slices.Equal(call.Env, []string{"PATH=/bin"}) {
 		t.Fatalf("captured env = %#v, want [PATH=/bin]", call.Env)
 	}
 }

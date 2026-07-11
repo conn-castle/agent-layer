@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -34,7 +34,7 @@ func (call *ExecCall) assertCalled(t testContext, wantPath string, wantArgv []st
 	if call.Path != wantPath {
 		t.Fatalf("expected exec path %q, got %q", wantPath, call.Path)
 	}
-	if !reflect.DeepEqual(call.Argv, wantArgv) {
+	if !slices.Equal(call.Argv, wantArgv) {
 		t.Fatalf("unexpected argv: got %#v want %#v", call.Argv, wantArgv)
 	}
 }

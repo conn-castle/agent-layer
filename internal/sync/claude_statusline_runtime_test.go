@@ -28,6 +28,10 @@ func runClaudeStatusline(t *testing.T, cwd, stdinJSON string) string {
 	if err != nil {
 		t.Skip("bash not available")
 	}
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git not available")
+	}
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq not available")
 	}
@@ -43,6 +47,7 @@ func runClaudeStatusline(t *testing.T, cwd, stdinJSON string) string {
 
 	cmd := exec.Command(bashPath, scriptPath) // #nosec G204 -- test-controlled script path.
 	cmd.Dir = cwd
+	cmd.Env = gitTestEnvironment(t, gitPath)
 	cmd.Stdin = strings.NewReader(stdinJSON)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -81,9 +86,9 @@ func runGit(t *testing.T, cwd string, args ...string) string {
 func gitTestEnvironment(t *testing.T, gitPath string) []string {
 	t.Helper()
 	cmd := exec.Command(gitPath, "rev-parse", "--local-env-vars") // #nosec G204 -- gitPath came from LookPath.
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("list Git repository-local environment variables: %v", err)
+		t.Fatalf("list Git repository-local environment variables: %v\noutput: %s", err, output)
 	}
 
 	localNames := make(map[string]struct{})
@@ -145,6 +150,14 @@ func TestRunGitDoesNotInheritExternalIndex(t *testing.T) {
 }
 
 func TestClaudeStatuslineScript_RendersFullPayload(t *testing.T) {
+	externalRoot := t.TempDir()
+	runGit(t, externalRoot, "init")
+	if err := os.WriteFile(filepath.Join(externalRoot, "external-sentinel.txt"), []byte("external\n"), 0o600); err != nil {
+		t.Fatalf("write external sentinel: %v", err)
+	}
+	runGit(t, externalRoot, "add", "external-sentinel.txt")
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(externalRoot, ".git", "index"))
+
 	root := t.TempDir()
 	runGit(t, root, "init")
 	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("one\ntwo\nthree\n"), 0o600); err != nil {
