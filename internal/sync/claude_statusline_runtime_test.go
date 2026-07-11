@@ -53,10 +53,9 @@ func runClaudeStatusline(t *testing.T, cwd, stdinJSON string) string {
 	return ansiEscape.ReplaceAllString(stdout.String(), "")
 }
 
-// runGit executes git in a test repository with repository-local Git
-// environment variables removed. It returns stdout and fails with captured
-// output when the command does not complete successfully.
-func runGit(t *testing.T, cwd string, args ...string) string {
+// runGit executes git in a test repository and fails with captured output when
+// the command does not complete successfully.
+func runGit(t *testing.T, cwd string, args ...string) {
 	t.Helper()
 	gitPath, err := exec.LookPath("git")
 	if err != nil {
@@ -65,82 +64,11 @@ func runGit(t *testing.T, cwd string, args ...string) string {
 
 	cmd := exec.Command(gitPath, args...) // #nosec G204 -- test-controlled arguments.
 	cmd.Dir = cwd
-	cmd.Env = gitTestEnvironment(t, gitPath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("git %s: %v\nstdout: %s\nstderr: %s", strings.Join(args, " "), err, stdout.String(), stderr.String())
-	}
-	return stdout.String()
-}
-
-// gitTestEnvironment removes Git's own repository-local environment variables
-// so commands against a temporary repository cannot inherit an outer index or
-// worktree context.
-func gitTestEnvironment(t *testing.T, gitPath string) []string {
-	t.Helper()
-	cmd := exec.Command(gitPath, "rev-parse", "--local-env-vars") // #nosec G204 -- gitPath came from LookPath.
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("list Git repository-local environment variables: %v", err)
-	}
-
-	localNames := make(map[string]struct{})
-	for _, name := range strings.Fields(string(output)) {
-		localNames[name] = struct{}{}
-	}
-	if len(localNames) == 0 {
-		t.Fatal("Git reported no repository-local environment variables")
-	}
-
-	env := make([]string, 0, len(os.Environ()))
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if _, local := localNames[name]; !local {
-			env = append(env, entry)
-		}
-	}
-	return env
-}
-
-func TestRunGitDoesNotInheritExternalIndex(t *testing.T) {
-	externalRoot := t.TempDir()
-	runGit(t, externalRoot, "init")
-	if err := os.WriteFile(filepath.Join(externalRoot, "external-sentinel.txt"), []byte("external\n"), 0o600); err != nil {
-		t.Fatalf("write external sentinel: %v", err)
-	}
-	runGit(t, externalRoot, "add", "external-sentinel.txt")
-	externalIndexPath := filepath.Join(externalRoot, ".git", "index")
-	externalIndexBefore, err := os.ReadFile(externalIndexPath) // #nosec G304 -- test-created index under t.TempDir.
-	if err != nil {
-		t.Fatalf("read external index before nested setup: %v", err)
-	}
-	t.Setenv("GIT_INDEX_FILE", externalIndexPath)
-
-	nestedRoot := t.TempDir()
-	runGit(t, nestedRoot, "init")
-	if err := os.WriteFile(filepath.Join(nestedRoot, "nested.txt"), []byte("nested\n"), 0o600); err != nil {
-		t.Fatalf("write nested fixture: %v", err)
-	}
-	runGit(t, nestedRoot, "add", "nested.txt")
-	runGit(t, nestedRoot, "-c", "user.name=Agent Layer", "-c", "user.email=agent-layer@example.invalid", "commit", "-m", "nested baseline")
-
-	externalIndexAfter, err := os.ReadFile(externalIndexPath) // #nosec G304 -- test-created index under t.TempDir.
-	if err != nil {
-		t.Fatalf("read external index after nested setup: %v", err)
-	}
-	if !bytes.Equal(externalIndexAfter, externalIndexBefore) {
-		t.Fatal("nested Git setup changed the inherited external index")
-	}
-
-	tree := runGit(t, nestedRoot, "ls-tree", "--name-only", "-r", "HEAD")
-	entries := strings.Fields(tree)
-	if !containsString(entries, "nested.txt") {
-		t.Fatalf("nested commit tree omitted nested.txt: %q", tree)
-	}
-	if containsString(entries, "external-sentinel.txt") {
-		t.Fatalf("nested commit tree used external index entry: %q", tree)
 	}
 }
 

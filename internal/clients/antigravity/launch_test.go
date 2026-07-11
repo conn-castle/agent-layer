@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -14,6 +15,41 @@ import (
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
+type execCall struct {
+	called bool
+	path   string
+	argv   []string
+	env    []string
+}
+
+func captureExec(t *testing.T, err error) *execCall {
+	t.Helper()
+	original := execFunc
+	call := &execCall{}
+	execFunc = func(path string, argv []string, env []string) error {
+		if call.called {
+			t.Fatal("execFunc called more than once")
+		}
+		call.called = true
+		call.path = path
+		call.argv = append([]string(nil), argv...)
+		call.env = append([]string(nil), env...)
+		return err
+	}
+	t.Cleanup(func() { execFunc = original })
+	return call
+}
+
+func forbidExec(t *testing.T) {
+	t.Helper()
+	original := execFunc
+	execFunc = func(string, []string, []string) error {
+		t.Fatal("execFunc should not be called")
+		return nil
+	}
+	t.Cleanup(func() { execFunc = original })
+}
+
 func writeResolvableAgy(t *testing.T) string {
 	t.Helper()
 	binDir := t.TempDir()
@@ -22,10 +58,23 @@ func writeResolvableAgy(t *testing.T) string {
 	return filepath.Join(binDir, "agy")
 }
 
+func assertExecCalled(t *testing.T, call *execCall, wantPath string, wantArgv []string) {
+	t.Helper()
+	if !call.called {
+		t.Fatal("expected execFunc to be called")
+	}
+	if call.path != wantPath {
+		t.Fatalf("expected exec path %q, got %q", wantPath, call.path)
+	}
+	if !reflect.DeepEqual(call.argv, wantArgv) {
+		t.Fatalf("unexpected argv: got %#v want %#v", call.argv, wantArgv)
+	}
+}
+
 func TestLaunchAntigravity(t *testing.T) {
 	root := t.TempDir()
 	agyPath := writeResolvableAgy(t)
-	call := testutil.CaptureExec(t, &execFunc, nil)
+	call := captureExec(t, nil)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{},
@@ -44,17 +93,17 @@ func TestLaunchAntigravity(t *testing.T) {
 		t.Fatalf("expected %s to be a directory", expectedGeminiDir)
 	}
 
-	call.AssertCalled(t, agyPath, []string{"agy", "--gemini_dir=" + expectedGeminiDir, "--debug"})
-	value, ok := clients.GetEnv(call.Env, disableAutoUpdateEnv)
+	assertExecCalled(t, call, agyPath, []string{"agy", "--gemini_dir=" + expectedGeminiDir, "--debug"})
+	value, ok := clients.GetEnv(call.env, disableAutoUpdateEnv)
 	if !ok || value != "1" {
-		t.Fatalf("expected %s=1 in exec env, got %#v", disableAutoUpdateEnv, call.Env)
+		t.Fatalf("expected %s=1 in exec env, got %#v", disableAutoUpdateEnv, call.env)
 	}
 }
 
 func TestLaunchAntigravityYOLO(t *testing.T) {
 	root := t.TempDir()
 	agyPath := writeResolvableAgy(t)
-	call := testutil.CaptureExec(t, &execFunc, nil)
+	call := captureExec(t, nil)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -68,14 +117,14 @@ func TestLaunchAntigravityYOLO(t *testing.T) {
 	}
 
 	expectedGeminiDir := filepath.Join(root, ".agy")
-	call.AssertCalled(t, agyPath, []string{"agy", "--gemini_dir=" + expectedGeminiDir, "--dangerously-skip-permissions", "--debug"})
+	assertExecCalled(t, call, agyPath, []string{"agy", "--gemini_dir=" + expectedGeminiDir, "--dangerously-skip-permissions", "--debug"})
 }
 
 func TestLaunchAntigravityExecError(t *testing.T) {
 	root := t.TempDir()
 	writeResolvableAgy(t)
 	wantErr := errors.New("exec failed")
-	testutil.CaptureExec(t, &execFunc, wantErr)
+	captureExec(t, wantErr)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{},
@@ -116,7 +165,7 @@ func TestLaunchAntigravityMissingBinary(t *testing.T) {
 	originalLookPath := lookPathFunc
 	lookPathFunc = func(string) (string, error) { return "", fmt.Errorf("not found") }
 	t.Cleanup(func() { lookPathFunc = originalLookPath })
-	testutil.ForbidExec(t, &execFunc)
+	forbidExec(t)
 
 	root := t.TempDir()
 	cfg := &config.ProjectConfig{

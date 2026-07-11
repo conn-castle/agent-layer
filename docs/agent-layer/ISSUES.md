@@ -45,6 +45,17 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Confirm the format from a primary source (official spec or an observed real file); if JSONC, add tolerant parsing for this client instead of strict JSON.
     Notes: Verification gap recorded in decision antigravity-settings-overlay-preserve (2026-07-10).
 
+- Issue 2026-07-09 precommit-nested-git-index-inheritance: Nested Git test mutates the outer commit index under pre-commit
+    Priority: Medium. Area: internal/sync/claude_statusline_runtime_test.go (`runGit`) / pre-commit `go-test` hook
+    Description: When `make test` runs inside `git commit`'s pre-commit hook, the statusline test's temporary-repository Git commands inherit the outer `GIT_INDEX_FILE`; `git add tracked.txt` contaminates the real index and the nested commit re-enters pre-commit without a config, failing the outer commit.
+    Next step: Scrub repository-local Git environment variables from `runGit` before invoking Git in the temporary repository, and add a regression that supplies an external `GIT_INDEX_FILE` without mutating it.
+
+- Issue 2026-07-02 launcher-exec-capture-test-harness-duplication: Exec-capture test harness duplicated across four launcher packages
+    Priority: Low. Area: internal/clients/{claude,codex,copilotcli,antigravity}/launch_test.go
+    Description: `execCall`/`captureExec`/`forbidExec`/`assertExecCalled` (all over the identical `func(string, []string, []string) error` execFunc seam) are copied near-verbatim into each launcher's launch_test.go, ~50 lines per package. Flagged as CodeRabbit nitpicks on PR #130. Not a defect — the tests pass and cover behavior — but a maintainability trap: a change to the mock's behavior must be made in four places.
+    Next step: Extract a shared helper into `internal/testutil` (e.g. `CaptureExec(t, target *func(...)error, err error) *ExecCall`) that takes a pointer to the package-local execFunc var, and update the four launcher suites to use it.
+    Notes: Deferred from PR #130 (macOS signing / exec-handoff) as a cross-package test refactor outside that PR's scope.
+
 - Issue 2026-07-02 lint-ci-local-goconst-false-negative-darwin: `make lint-ci-local` misses goconst violations on macOS
     Priority: Medium. Area: Makefile (`lint-ci-local`) / CI-parity lint tooling; COMMANDS.md guidance
     Description: `make lint-ci-local` runs golangci-lint with GOOS=linux GOARCH=amd64 on a darwin host; cross-GOOS package loading drops the package's `_test.go` files from the analyzed fileset, so goconst's per-package string-occurrence counts fall below the threshold and real violations do not fire. This caused a false negative during PR #128: local `make dev` and `make lint-ci-local` both passed, but CI's `verify` (`make ci` -> `make lint`) failed on `goconst` in internal/sync/codex_config_merge.go. The documented "CI-parity" command is not faithful for occurrence-counting linters.
@@ -56,6 +67,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Description: When a managed root scalar (e.g. `model`) is absent and gets inserted just before the first table header via `insertRootLine`, a `# comment` that documented that first table ends up above the newly inserted scalar (separated by a blank), so it reads as documenting the scalar. In-place updates of existing managed keys are unaffected (they now preserve position and inline comments); only the first-time fresh insert of a root scalar in front of a commented first table is affected. No data loss; valid TOML.
     Next step: Decide placement policy for fresh root-scalar inserts relative to a first table's leading comment block (insert above the comment block, or leave as-is), then implement; this is a formatting/UX tradeoff, not a correctness bug.
     Notes: Deferred from resolve-findings 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
+
+- Issue 2026-07-02 wizard-dead-countbracketdepth-duplicate: Dead wizard countBracketDepth/quoteState duplicate kept alive only by tests
+    Priority: Low. Area: internal/wizard/patch.go (`countBracketDepth`, `quoteState`, `containsUnescapedTripleQuote`) + patch_test.go
+    Description: Production wizard multiline detection delegates to `tomlpatch.MultilineValueEndIndex`; the local `countBracketDepth`/`quoteState` copy (and the `containsUnescapedTripleQuote` shim) in patch.go is referenced only by patch_test.go. Unlike the live `tomlpatch` copy (fixed in this pass to be triple-quote-aware), the wizard copy is the old single-quote-only version — dead but still test-pinned, so it is a stale duplicate and a maintenance trap.
+    Next step: Delete the wizard-local `countBracketDepth`/`quoteState` and their pinning tests (and inline the `containsUnescapedTripleQuote` shim), leaving `tomlpatch` as the single source of truth.
+    Notes: Left in place by resolve-findings 20260702 (F3) to avoid deleting committed-test-covered code out of scope.
 
 - Issue 2026-07-02 codex-feature-toggles-cli-only-in-wizard: Codex feature toggles (statusline/apps/browser) not offered to VS Code-only repos
     Priority: Low. Area: internal/wizard/wizard.go (Codex prompt block)
