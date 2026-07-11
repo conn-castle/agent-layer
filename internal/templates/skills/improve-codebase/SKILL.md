@@ -1,139 +1,238 @@
 ---
 name: improve-codebase
 description: >-
-  Run one bounded, evidence-led quality sweep over a repository or named scope:
-  select high-value chunks, review each once, directly fix accepted findings,
-  and perform one fresh-context post-fix review.
+  Run one wide, evidence-led quality sweep over a repository or named scope:
+  investigate local and cross-cutting risks, directly repair material findings
+  from small defects through architectural problems, review the concrete work,
+  and verify the result.
 ---
 
 # improve-codebase
 
-Improve a repository through one bounded sweep of its highest-value current
-risks. This skill is broader than working-tree cleanup but is not an obligation
-to reconsider every line or eliminate every conceivable issue.
+Survey the entire declared scope once, identify material problems within and
+across its parts, and directly fix every accepted in-scope finding that is not
+blocked by a genuinely user-owned decision or concrete failure. Work packages
+organize mutations; they do not narrow discovery or limit the kinds of problems
+this skill may address.
 
 ## Scope and inputs
 
-Accept explicit paths, subsystems, audit lenses, a maximum chunk count, and
-report-only mode. Otherwise use repository-wide evidence to select a coherent,
-reviewable set of high-value chunks for this invocation.
+Accept explicit paths, subsystems, audit lenses, exclusions, and report-only
+mode. Otherwise the declared scope is the whole repository.
 
-- Exclude generated, vendored, and build output.
-- Prefer correctness, data safety, security, concurrency, cancellation,
-  input robustness, test integrity, dependency boundaries, and material
-  maintainability risks.
-- Do not prioritize recent change, file size, low coverage, or TODO markers
-  without a credible risk or maintenance consequence.
-- A later invocation may choose a different scope or lens; this invocation does
-  not loop merely because additional code exists.
+- Account for the full declared scope at the subsystem, component, and boundary
+  level. A wide sweep does not require ceremonial per-file commentary or an
+  exhaustive search for every conceivable defect.
+- Exclude generated, vendored, and build output unless explicitly included.
+- Examine correctness, data safety, security, concurrency, cancellation, input
+  robustness, test integrity, ownership, interfaces, dependency direction,
+  duplicated workflows, error handling, documentation truth, and material
+  maintainability where relevant.
+- Do not use arbitrary chunk counts or finding caps to stop a productive sweep.
+  Stop discovery when the scope map is covered and the evidence is sufficient
+  to synthesize material findings.
+- Wide coverage does not imply maximum fan-out. Use the fewest investigation
+  groups that can cover the scope coherently without overloading one context.
+- Existing issue tracking is evidence and deduplication context, not a reason to
+  leave an otherwise accepted in-scope problem unfixed.
 
 Write `.agent-layer/tmp/improve-codebase.<run-id>.report.md`, where `run-id` is
-`YYYYMMDD-HHMMSS-<short-rand>`. The report is the run ledger and handoff.
+`YYYYMMDD-HHMMSS-<short-rand>`. Use it as the master ledger and handoff. Write
+delegated evidence to:
+
+- `.agent-layer/tmp/improve-codebase.<run-id>.investigation-<index>-<slug>.report.md`
+- `.agent-layer/tmp/improve-codebase.<run-id>.cross-cutting.report.md`
+- `.agent-layer/tmp/improve-codebase.<run-id>.repair-<index>-<slug>.report.md`
 
 ## Required agent boundaries
 
-- Use a fresh built-in scout subagent to map risk signals and propose the
-  bounded chunk set.
-- Use `/review-uncommitted-code` for each selected chunk so its complementary
-  review lenses and fresh-context subagents remain authoritative.
-- Directly fix accepted findings in the current orchestration context or a
-  bounded built-in fixer subagent when the chunks are independent.
-- After fixes, use `reviewer-prompt.md` once in a fresh-context built-in
-  subagent. This is the concrete post-fix review, not the start of a loop.
-- Use one fresh built-in cross-cutting reviewer after chunk work to examine
-  relationships that no individual chunk review could establish.
+- Use one fresh built-in scout subagent to map the full declared scope into
+  coherent subsystem, component, and interface-boundary investigation groups.
+- Consolidate related areas into the smallest non-overlapping investigation set
+  that still gives every mapped subsystem and boundary credible coverage. A
+  separate investigator must be justified by distinct evidence, substantial
+  context load, or useful independent execution—not by the existence of another
+  directory or component.
+- Assign each resulting group to one fresh built-in investigator subagent. Run
+  substantial independent groups in parallel only when the wall-clock benefit
+  is meaningful; otherwise run justified groups sequentially to moderate
+  concurrent token use. Handle one compact group with one investigator, and
+  fold small related areas into the nearest coherent group. Each investigator
+  is read-only.
+- After those reports return, use one fresh built-in cross-cutting investigator
+  to examine the complete scope map, all investigator reports, and the cited
+  boundary evidence. Its responsibility is to find material relationships and
+  architectural problems that no isolated investigation could establish.
+- Use fresh built-in fixer subagents for context-heavy repair packages when
+  useful. Keep all working-tree mutations sequential against the latest tree.
+- Review the combined concrete work through `/review-uncommitted-code` once so
+  its fresh-context, complementary reviewers remain authoritative.
 
-Do not replace these fresh-context boundaries with same-context reconsideration.
+The owning agent controls scope coverage, validates findings, maintains the
+master ledger, orders mutations, resolves routine decisions, and produces the
+terminal result. Investigators and reviewers return evidence, findings, or a
+blocker; they do not create another orchestration layer.
+
+Do not assign multiple agents to the same artifact or concern for consensus,
+and do not create parallelism whose only result is duplicated repository
+reading. Comprehensive means every meaningful area and relationship is covered,
+not that every available agent slot is used.
 
 ## Finding and repair contract
 
+- Classify findings as `local`, `cross-boundary`, or `architectural`. Breadth is
+  not severity, and architectural scope is not automatically a user decision.
 - Validate every candidate against current code, tests, specifications, and
-  documented contracts. Evidence outranks reviewer agreement.
-- Fix every `Recommended Accept` finding that remains within the declared
-  scope. Group tightly coupled findings; keep unrelated mutations sequential.
-- A finding may be deferred only for an explicit scope boundary or user-owned
-  behavior, architecture, risk, cost, or migration decision. Record durable
-  engineering debt in ISSUES.md when repository policy requires it.
-- Apply directly required tests, documentation, and memory updates with the
-  repair. Run focused evidence that demonstrates the finding is resolved.
-- Do not re-audit a chunk after repair except for the single fresh-context
-  post-fix review defined below.
+  documented contracts. Evidence outranks agreement between investigators.
+- Accept a finding only when it materially affects correctness, safety,
+  reliability, performance, test integrity, architectural coherence, or
+  meaningful maintenance cost.
+- Omit unsupported, duplicate, stylistic, speculative, and immaterial
+  candidates. Small issues remain valid when their concrete impact clears the
+  same materiality threshold.
+- Directly fix every accepted finding within the declared scope, whether it is
+  a small defect, repeated local problem, cross-component inconsistency, or
+  holistic architectural issue.
+- Ask the user only when available evidence leaves multiple viable choices that
+  materially differ in behavior, architecture, scope, risk, cost, migration, or
+  external contract. Continue independent repairs while that decision is
+  pending when safe.
+- Apply directly required tests, documentation, and memory updates with each
+  repair. Do not route findings into planning, coverage, simplification,
+  issue-fixing, or verification sub-workflows.
 
 ## Workflow
 
-### 1. Survey and select once
+### 1. Map the entire scope once
 
-Read COMMANDS.md and the minimum repository context needed to understand known
-constraints and existing issues. Have the scout identify concrete risk signals,
-candidate boundaries, and exclusions.
+Read COMMANDS.md and the minimum memory and repository context needed to
+identify authoritative constraints. Give the scout the declared scope, lenses,
+exclusions, known issues, and report path.
 
-Select a coherent chunk set that can be reviewed, repaired, and verified well
-in one run. Record why each chunk is included. If an explicitly requested scope
-cannot be handled safely in one run, ask for the smallest scope decision rather
-than silently reducing it.
+The scout returns:
 
-If the scout finds no evidence-backed chunk worth changing or reporting, write
-`no-material-findings` and yield without manufacturing review work.
+- every in-scope subsystem and significant component
+- ownership, interface, state-flow, and dependency boundaries
+- coherent investigation groups that together cover the declared scope
+- cross-cutting questions that span those groups
+- known constraints, exclusions, and evidence locations
 
-### 2. Review each selected chunk once
+The owning agent checks that the map accounts for the declared scope before
+investigation starts, then combines groups that can be examined coherently by
+one investigator. Record why any remaining separate group needs its own context.
+Do not silently shrink an explicitly requested scope because it is large.
 
-Run `/review-uncommitted-code` once per selected chunk in proactive-hotspot mode.
-Use distinct chunks or lenses to gain complementary evidence; do not send the
-same artifact through additional reviewers for confidence.
+### 2. Investigate the full scope once
 
-Copy only `Recommended Accept` and `Recommended Defer` findings into the master
-report. Omit rejected candidates and unaffected-area inventories.
+Give each fresh investigator its distinct group, the relevant portion of the
+scope map, authoritative constraints, and its investigation report path. Start
+multiple investigators before waiting only when their groups are substantial,
+independent, and already justified under the agent boundary. Otherwise use one
+investigator or run the groups sequentially.
 
-### 3. Address accepted findings directly
+Each investigator reports only evidence-backed material candidates with exact
+locations, affected behavior or boundary, impact, and the smallest credible
+repair shape. It also records which assigned components and boundaries were
+examined so scope coverage can be reconciled without an unaffected-file
+inventory.
 
-Validate and repair accepted findings, then run the narrowest credible affected
-checks. Report a concrete blocker rather than starting a planning,
-implementation, verification, simplification, coverage, test-audit, or
-issue-fixing sub-workflow.
+After all group reports return, give the fresh cross-cutting investigator:
 
-In report-only mode, record the same validated findings without editing.
+- the complete scope and boundary map
+- every investigator report
+- cited code, tests, contracts, and documentation needed to inspect the
+  relationships between groups
+- the cross-cutting report path
 
-### 4. Review the concrete result once
+Have it examine ownership and dependency direction, state and data flow,
+protocol consistency, duplicated workflows, lifecycle and cancellation,
+security and reliability boundaries, error semantics, and documentation or
+test contracts across the declared scope. It reports only material findings
+that require a multi-part view.
 
-When fixes were made, pass `reviewer-prompt.md`, the post-fix content of every
-changed chunk file, and the originating finding stable identifiers, titles,
-severities, and locations to one fresh-context built-in subagent.
+### 3. Synthesize one master finding ledger
 
-Directly address every material in-scope post-fix finding with focused evidence.
-Do not invoke the reviewer again. A concrete failed check may return to the
-responsible repair; the possibility of another finding may not.
+Validate candidates against their cited current-tree evidence, merge
+duplicates, and reconcile local symptoms with any shared cross-cutting root
+cause. Preserve the strongest root-cause finding instead of scheduling several
+surface repairs.
 
-### 5. Cross-cutting synthesis and yield
+For every material finding record:
 
-Have the fresh cross-cutting reviewer inspect the selected chunks together once
-for material boundary, consistency, error-handling, dependency, and
-documentation issues that cannot be seen within one chunk. Directly address
-accepted in-scope findings under the same repair contract.
+- stable identifier, category, severity, and affected scope
+- concrete evidence and impact
+- root cause and repair boundary
+- directly required tests, documentation, memory, and verification
+- any user-owned decision or concrete blocker
 
-Recommend a complementary skill only when a concrete remaining concern belongs
-to that skill's distinct responsibility. Do not invoke complementary skills
-from this workflow.
+If no material finding survives validation, return `no-material-findings` after
+the full scope and cross-cutting coverage are recorded. In report-only mode,
+return the validated ledger without editing.
 
-## Report structure
+Group all accepted findings into coherent, dependency-ordered repair packages.
+Packages are execution boundaries only: every accepted finding must appear in
+one package or have an explicit blocker.
 
-1. `# Codebase Improvement Summary` — scope, lenses, and terminal outcome
-2. `## Selected Chunks and Evidence`
-3. `## Findings and Repairs` — accepted, deferred, and post-fix findings
-4. `## Cross-Cutting Result`
-5. `## Focused Verification`
-6. `## Recommended Next Skill` — only when justified; otherwise `None`
-7. `## Residual Risk`
+### 4. Repair every accepted finding
 
-Use one outcome: `improved`, `report-only`, `no-material-findings`, or
-`blocked-user-decision`.
+Execute packages sequentially against the latest tree. Handle a narrow package
+directly or give a context-heavy package to one fresh built-in fixer subagent
+with its finding identifiers, evidence, repair boundary, and repair report path.
+
+Require each package to:
+
+- repair the shared root cause rather than each visible symptom
+- update directly affected tests, documentation, and memory
+- run the narrowest credible checks for the changed behavior
+- account for every assigned finding as `fixed`, `invalid-with-evidence`,
+  `blocked-user-decision`, or `blocked-concrete-failure`
+
+Do not stop after small local fixes while accepted cross-boundary or
+architectural findings remain. If a user decision blocks one package, continue
+independent packages when their outcome cannot prejudice that decision.
+
+### 5. Review the combined concrete work once
+
+When changes were made, run `/review-uncommitted-code` once over the combined
+changes and their directly affected boundaries. Pass the master finding ledger
+as contract evidence. Validate and directly address every `Recommended Accept`
+finding with focused evidence.
+
+Do not run another broad review after those repairs. A user-owned decision or
+explicit scope boundary may remain `Recommended Defer`; difficulty or breadth
+alone may not.
+
+### 6. Verify the final result and yield
+
+Run one combined, risk-proportional repository-defined verification stage that
+covers the final tree and repaired finding set. Reuse focused evidence only when
+its command, result, and covered tree are still current. A concrete failed check
+may return to its responsible repair and rerun the invalidated evidence; a
+desire for more confidence may not restart surveying or review.
+
+Write the report with:
+
+1. `# Codebase Improvement Summary` — declared scope and terminal outcome
+2. `## Scope and Boundary Coverage`
+3. `## Investigation Reports` — group assignments and any parallelism rationale
+4. `## Material Finding Ledger` — local, cross-boundary, and architectural
+5. `## Repairs and Focused Evidence`
+6. `## Concrete-Work Review`
+7. `## Final Verification`
+8. `## User Decisions, Blockers, and Residual Risk`
+
+Use one outcome: `improved`, `report-only`, `no-material-findings`,
+`blocked-user-decision`, or `blocked-concrete-failure`.
 
 ## Completion contract
 
-- The scout proposed one bounded, evidence-led chunk set.
-- Every selected chunk received one review and every accepted finding received
-  a terminal repair, deferral, or blocker outcome.
-- Changed chunks received one fresh-context post-fix review, followed by direct
-  resolution rather than another review round.
-- Cross-cutting synthesis examined the selected work once.
-- The skill returns the report path, outcome, changes, evidence, deferred
-  decisions, and any justified next-skill recommendation, then yields.
+- The scope map accounts for the entire declared scope at meaningful subsystem,
+  component, and boundary granularity.
+- Distinct investigators examined every mapped group once, and the cross-cutting
+  investigator examined their relationships once.
+- Every validated material finding has a terminal repair, user-decision, or
+  concrete-failure outcome; work packages did not silently narrow the ledger.
+- The combined implementation received one fresh-context concrete-work review
+  and one final verification stage.
+- The skill returns its report, scope coverage, findings, repairs, evidence,
+  decisions, blockers, and residual risk, then yields.

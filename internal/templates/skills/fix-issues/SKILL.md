@@ -21,9 +21,9 @@ do not each create a new planning, review, and verification cycle.
   `YYYYMMDD-HHMMSS-<short-rand>`.
 
 Use a fresh built-in triage subagent to select, validate, and group the issue
-set. Use a fresh built-in gatekeeper after planning, fresh built-in implementers
-for independent packages where useful, and a fresh built-in verifier for final
-contract verification. Preserve plan-review dispatch through `/plan-work`.
+set. Use fresh built-in implementers for independent packages where useful and
+a fresh built-in verifier for final contract verification. Preserve plan-review
+dispatch through `/plan-work`.
 
 ## Issue disposition contract
 
@@ -79,17 +79,7 @@ decision returned by planning.
 In plan-only mode, finalize the report with the selected set and reviewed
 artifact paths, then yield here.
 
-### 3. Gate execution once
-
-Give the fresh gatekeeper the selected issues, reviewed artifacts, package map,
-and current evidence. It returns `proceed`, `revise`, or
-`blocked-user-decision`.
-
-`revise` must cite concrete inconsistent or missing artifact evidence. Correct
-that evidence directly and do not rerun plan review unless the issue contract
-materially changed.
-
-### 4. Implement all packages
+### 3. Implement all packages
 
 Execute every package once in dependency order. A package implementer receives
 the shared plan artifacts, its bounded issues, the relevant current tree, and
@@ -104,13 +94,13 @@ set.
 After all packages, run `/clean-and-fix-code` once only when the combined
 uncommitted work contains meaningful cleanup scope.
 
-### 5. Review the concrete result once
+### 4. Review the concrete result once
 
 Run `/review-uncommitted-code` once over the selected issue changes and their
 direct boundaries. Validate and directly address every `Recommended Accept`
 finding with focused evidence. Do not start another broad review.
 
-### 6. Verify once and update the ledger
+### 5. Verify once and update the ledger
 
 Run `/verify-work` once in a fresh built-in subagent using the selected issues
 and reviewed plan artifacts as the authoritative contract. Include accepted

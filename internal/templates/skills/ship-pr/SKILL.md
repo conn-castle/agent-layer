@@ -70,6 +70,11 @@ For every eligible row:
 5. Record the audit verdict. Set the row to `complete` only when it returns
    `pass`.
 
+When several rows are ready for audit, prepare every independent audit package,
+start all fresh audit subagents, and then wait for their results. Reply
+publishing and ledger mutations remain serialized; only the read-only audits
+run in parallel.
+
 For `insufficient_evidence`, complete the audit package and rerun the audit
 without posting another reply. Feed every substantive failed audit back into
 `/address-pr-comments` with its evidence. Edit the posted reply when the GitHub
@@ -126,8 +131,10 @@ address all currently known work:
 
 - Run `/address-pr-comments` with the pull request and single ledger for new or
   incomplete feedback.
-- Run `/fix-ci` for a remote failure not already resolved by pending local
-  repairs. It must return uncommitted changes and local reproducer evidence.
+- Run `/fix-ci` in a fresh built-in subagent for a remote failure not already
+  resolved by pending local repairs. It must return uncommitted changes and
+  local reproducer evidence. Do not run it concurrently with another
+  working-tree mutator.
 - Resolve mechanical merge conflicts directly. Stop for a user-owned behavior
   or architecture decision.
 

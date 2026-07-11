@@ -23,6 +23,13 @@ Ask for a missing required input before creating artifacts.
 Read the task source and the smallest amount of repository context needed to
 resolve material facts. Do not defer factual investigation into the plan.
 
+For a broad or cross-subsystem target whose investigation would consume
+substantial planning context, use one fresh built-in scout subagent. Give it the
+task source and bounded research questions. Require a compact evidence map of
+entry points, contracts, dependencies, constraints, and unresolved facts with
+exact repository locations. The planning agent validates consequential evidence
+and owns the plan; a narrow target does not require a scout.
+
 Resolve routine planning choices from repository evidence. Ask the user only
 when multiple viable choices would materially change behavior, architecture,
 scope, risk, or cost.

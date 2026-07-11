@@ -54,9 +54,11 @@ the report established by the update workflow.
 ### 2. Run one interface evidence pass
 
 Discover the interface chain, contracts, ownership, state, tests, failure
-modes, and material cleanup opportunities. For broad scopes, complementary
-investigators may examine distinct boundaries once in parallel; do not ask
-multiple reviewers to reconsider the same row.
+modes, and material cleanup opportunities. For a broad scope, assign distinct
+boundary groups to fresh built-in investigator subagents and start them before
+waiting for results. Each investigator returns compact row evidence and does
+not edit or calibrate the report. A narrow scope may be investigated directly.
+Do not ask multiple investigators to reconsider the same row.
 
 ### 3. Calibrate and synthesize once
 

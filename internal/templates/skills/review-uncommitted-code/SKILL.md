@@ -41,9 +41,15 @@ single verdict rubric; it is not another review or classifier stage.
 - Review concrete code, diffs, tests, and observable contracts rather than
   hypothetical alternatives.
 - Use complementary perspectives on distinct concerns. For a non-trivial
-  target, bounded reviewers may examine correctness, architecture, and
-  quality/operability once in parallel. Do not run an outer review loop or ask
-  another agent to classify the same evidence.
+  target, use bounded fresh built-in reviewers to examine correctness,
+  architecture, and quality/operability once in parallel.
+- If the current context authored or materially changed any part of the target,
+  at least one fresh built-in reviewer is required even when the target is
+  narrow. Give reviewers the concrete target and authoritative contract, not
+  the author's rationale. A narrow target may be reviewed directly only when
+  the current context did not author or materially change it.
+- Do not run an outer review loop or ask another agent to classify the same
+  evidence.
 - Treat reviewer output as candidates until the synthesizer validates it
   against current repository evidence.
 - Report only findings that materially affect correctness, safety, scope,
@@ -68,8 +74,9 @@ Examine complementary concerns once:
 - tests, documentation, performance, concurrency, data safety, and operational
   supportability where relevant
 
-Assign concerns to distinct reviewers when using parallel review. A narrow
-target may be reviewed directly without manufacturing extra roles.
+Assign concerns to distinct reviewers when using parallel review. Preserve the
+fresh-review requirement for author-modified targets without manufacturing
+additional roles beyond what independence and target size justify.
 
 ### 3. Synthesize once
 

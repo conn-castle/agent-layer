@@ -59,9 +59,9 @@ merges.
 
 Record current step, branches, PRs, worker and shipper dispatch roles, terminal
 dispatch selections, plan reviewer dispatch roles, merged PRs, blocked branches,
-blocked PRs, recent touched paths, exhausted lenses, worker questions and
-answers, user-only blockers, manual gates, PR-gate status, and verification
-evidence.
+blocked PRs, recent touched paths, completed scope maps and lenses, worker
+questions and answers, user-only blockers, manual gates, PR-gate status, and
+verification evidence.
 Record worker deferrals in this ledger or worker artifacts, not as deferral
 notes in `ISSUES.md`.
 

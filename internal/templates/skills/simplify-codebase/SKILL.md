@@ -58,10 +58,16 @@ report.
 
 ### 2. Assess candidates once
 
-Inspect enough of the declared scope to identify the strongest material
-simplification or establish that none exists. Stop gathering candidates once
-the evidence is sufficient to choose safely; do not require an arbitrary count
-or expand scope merely to manufacture a change.
+For a repository-wide or otherwise context-heavy scope, use one fresh built-in
+scout subagent to inspect the declared scope and return a compact candidate map:
+the named complexity, affected boundaries, behavioral contract, maintenance
+payoff, risk, and verification path. The owning agent validates the evidence
+and selects the candidate. A narrow scope may be assessed directly.
+
+Inspect only enough evidence to identify the strongest material simplification
+or establish that none exists. Stop gathering candidates once the evidence is
+sufficient to choose safely; do not require an arbitrary count or expand scope
+merely to manufacture a change.
 
 For serious candidates, record:
 

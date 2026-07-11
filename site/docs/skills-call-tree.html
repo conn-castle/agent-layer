@@ -849,19 +849,34 @@
     - exit: return the updated ledger and local-change status
 audit-documentation:
   calls:
-    - task: run one evidence pass and directly apply safe documentation fixes
+    - if: documentation scope is broad
+      calls:
+        - for: document_group in distinct scope groups, starting all investigators before waiting
+          calls:
+            - task: return evidence-backed documentation candidates
+              caller: subagent
+    - task: synthesize one evidence pass and directly apply safe documentation fixes
     - if: repository evidence cannot settle product intent
       calls:
         - exit: return the smallest user-owned decision without editing either side
     - exit: report fixes, code gaps, and decisions, then yield
 audit-memory:
   calls:
-    - task: run one structural, content, and cross-file audit pass
+    - task: investigate all memory files together and return a compact cross-file candidate ledger
+      caller: subagent
+    - task: validate one structural, content, and cross-file audit pass
     - task: directly apply evidence-backed memory fixes and write the report
     - exit: return fixes and user-owned decisions, then yield
 audit-tests:
   calls:
-    - task: establish repository test conventions and run one suite-health audit pass
+    - task: establish repository test conventions
+    - if: test scope is broad
+      calls:
+        - for: test_group in repository-defined tiers or coherent subsystems, starting all investigators before waiting
+          calls:
+            - task: return evidence-backed test candidates
+              caller: subagent
+    - task: synthesize one suite-health audit pass
     - task: directly apply safe test cleanup findings
     - if: test files changed
       calls:
@@ -942,8 +957,6 @@ complete-current-phase:
         - exit: report the evidence-backed phase closeout
     - skill: plan-work
       inputs: [plan_reviewers]
-    - task: gate the reviewed phase plan once
-      caller: subagent
     - for: package in planned_phase_packages
       calls:
         - if: package spans a distinct subsystem
@@ -967,7 +980,13 @@ complete-current-phase:
 debug-and-fix-issue:
   inputs: [plan_reviewers, implementer, fixer]
   calls:
-    - task: reproduce, narrow, diagnose, and capture a failing test when feasible
+    - if: diagnostic commands, observations, and state are transferable
+      calls:
+        - task: reproduce, narrow, diagnose, and capture a failing test when feasible
+          caller: subagent
+    - if: diagnosis depends on live non-transferable state
+      calls:
+        - task: investigate in the current context and record why delegation was unsafe
     - if: direct repair path
       calls:
         - task: repair the proven root cause
@@ -1019,8 +1038,6 @@ fix-issues:
         - exit: report no-work without planning
     - skill: plan-work
       inputs: [plan_reviewers]
-    - task: gate the reviewed issue-set plan once
-      caller: subagent
     - for: package in planned_issue_packages
       calls:
         - task: implement the bounded issue package
@@ -1075,38 +1092,67 @@ implement-plan:
         - exit: stop for the smallest user decision
 improve-codebase:
   calls:
-    - task: survey risk evidence and propose one bounded chunk set
+    - task: map the entire declared scope into subsystem, component, and boundary groups
       caller: subagent
-    - if: scout finds no evidence-backed chunk worth reviewing
+    - task: consolidate the map into the smallest non-overlapping investigator set that preserves credible coverage
+    - if: the scope forms one compact coherent investigation group
+      calls:
+        - task: investigate assigned local and boundary risks and return material evidence
+          caller: subagent
+    - if: multiple substantial independent groups justify concurrent execution
+      calls:
+        - for: investigation_group in the justified group set, starting independent work before waiting
+          calls:
+            - task: investigate assigned local and boundary risks and return material evidence
+              caller: subagent
+    - if: separate groups remain but concurrent fan-out is not worth its cost
+      calls:
+        - for: investigation_group in the justified group set, running one at a time
+          calls:
+            - task: investigate assigned local and boundary risks and return material evidence
+              caller: subagent
+    - task: inspect the full scope map, all reports, and cited boundary evidence for cross-cutting and architectural findings
+      caller: subagent
+    - task: validate and merge local, cross-boundary, and architectural findings into one master ledger
+    - if: no material finding survives full-scope synthesis
       calls:
         - exit: report no-material-findings
-    - for: chunk in planned_chunks
+    - if: report-only mode
       calls:
-        - skill: review-uncommitted-code
-        - if: chunk review has Recommended Accept findings
+        - exit: return the full validated finding ledger without editing
+    - for: repair_package in dependency-ordered accepted findings, serializing all mutations
+      calls:
+        - if: package is context-heavy
           calls:
-            - if: finding group is independent from other mutations
-              calls:
-                - task: directly fix accepted findings with focused evidence
-                  caller: subagent
-            - if: finding group overlaps current mutations
-              calls:
-                - task: directly fix accepted findings with focused evidence
+            - task: repair every assigned root cause and return focused evidence
+              caller: subagent
+        - if: package is narrow
+          calls:
+            - task: repair every assigned root cause and return focused evidence
     - if: fixes were made
       calls:
-        - asset: improve-codebase/reviewer-prompt
-          caller: subagent
-        - task: directly address material post-fix findings without another review
-    - task: review cross-cutting relationships across selected chunks once
-      caller: subagent
-    - exit: report the bounded outcome and any justified next-skill recommendation
+        - skill: review-uncommitted-code
+        - if: concrete-work review has Recommended Accept findings
+          calls:
+            - task: directly address each accepted finding with focused evidence
+        - task: run one combined risk-proportional verification stage over the final tree
+        - if: final verification exposes a concrete in-scope failure
+          calls:
+            - task: repair the responsible root cause and rerun only invalidated evidence
+    - exit: return scope coverage, the complete finding ledger, repairs, evidence, and blockers
 interface-audit:
   calls:
     - asset: interface-audit/references/report-structure
     - if: running in update mode
       calls:
         - asset: interface-audit/references/update-workflow
-    - task: run one interface evidence pass across distinct boundaries
+    - if: interface scope is broad
+      calls:
+        - for: boundary_group in distinct interface boundaries, starting all investigators before waiting
+          calls:
+            - task: return compact row evidence without editing or calibrating the report
+              caller: subagent
+    - task: synthesize one interface evidence pass across distinct boundaries
     - task: calibrate scores once and return the final recommendation gate
 loop-clean-and-fix:
   calls:
@@ -1117,6 +1163,10 @@ loop-clean-and-fix:
 plan-work:
   inputs: [plan_reviewers]
   calls:
+    - if: planning requires broad or cross-subsystem repository investigation
+      calls:
+        - task: return a compact evidence map for the planning questions
+          caller: subagent
     - asset: plan-work/assets/write-plan
     - if: write-plan returns revise with a concrete evidence-backed gap
       calls:
@@ -1135,7 +1185,7 @@ review-plan:
 review-uncommitted-code:
   calls:
     - task: establish one concrete review target and its authoritative evidence
-    - if: scope is non-trivial
+    - if: scope is non-trivial or the current context authored or materially changed the target
       calls:
         - task: run complementary review lenses once on distinct concerns
           caller: subagent
@@ -1183,6 +1233,7 @@ ship-pr:
         - if: remote CI failed and pending local repairs do not already address it
           calls:
             - skill: fix-ci
+              caller: subagent
         - if: fix-ci returns remote-retry-needed for a failure not yet retried on this head
           calls:
             - task: rerun only the failed remote checks and restart monitoring without pushing
@@ -1200,7 +1251,7 @@ ship-pr:
                 - skill: run-and-fix-all-checks
                   caller: subagent
             - task: commit the combined batch once, push once, publish eligible replies, and refresh the ledger
-            - for: posted_reply in newly posted ledger replies
+            - for: posted_reply in newly posted ledger replies, starting all audits before waiting
               calls:
                 - asset: address-pr-comments/reviewer-prompt
                   caller: subagent
@@ -1208,7 +1259,7 @@ ship-pr:
         - if: no local changes remain and ledger replies are eligible
           calls:
             - task: publish every eligible reply separately and refresh the ledger
-            - for: posted_reply in newly posted ledger replies
+            - for: posted_reply in newly posted ledger replies, starting all audits before waiting
               calls:
                 - asset: address-pr-comments/reviewer-prompt
                   caller: subagent
@@ -1222,7 +1273,11 @@ ship-pr:
         - exit: report merge outcome and branch cleanup
 simplify-codebase:
   calls:
-    - task: assess enough evidence once to choose the strongest material candidate
+    - if: candidate discovery is repository-wide or context-heavy
+      calls:
+        - task: return a compact evidence-backed simplification candidate map
+          caller: subagent
+    - task: validate enough evidence once to choose the strongest material candidate
     - if: no candidate clears the useful-change contract
       calls:
         - exit: write a report-only simplification outcome

@@ -25,6 +25,15 @@ problems, and report only material unresolved findings.
 Write `.agent-layer/tmp/audit-memory.<run-id>.report.md`, where `run-id` is
 `YYYYMMDD-HHMMSS-<short-rand>`.
 
+## Agent boundary
+
+Use one fresh built-in investigator subagent to examine all in-scope memory
+files together and return a compact candidate ledger with exact entries,
+cross-file conflicts, and repository evidence. Keep the investigation holistic;
+do not split individual memory files among agents. The owning agent validates
+the candidates, makes every edit, and decides which ambiguity belongs to the
+user.
+
 ## Evidence and decision contract
 
 - Read each in-scope file's own purpose, format, and insertion-marker rules
@@ -42,9 +51,10 @@ Write `.agent-layer/tmp/audit-memory.<run-id>.report.md`, where `run-id` is
 
 ### 1. Establish current memory state
 
-Read the in-scope memory files and the minimum repository evidence needed to
-evaluate them. Record missing files and the DECISIONS.md entry count before
-edits.
+Give the investigator the in-scope memory files and the minimum repository
+questions needed to evaluate them. Record missing files and the DECISIONS.md
+entry count before edits, then validate the returned candidate ledger against
+the cited evidence before changing a memory file.
 
 ### 2. Run one memory audit pass
 

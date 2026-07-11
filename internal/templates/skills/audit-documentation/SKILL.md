@@ -48,6 +48,13 @@ to understand their actionable claims.
 
 ### 2. Run one documentation audit pass
 
+For a broad scope, partition the documents into distinct groups and give each
+group to a fresh built-in investigator subagent. Start the investigators before
+waiting for their results. They are read-only and return compact candidate
+findings with exact claims, repository evidence, and cross-document references.
+The owning agent validates candidates, resolves relationships across groups,
+and owns all edits. A narrow scope may be audited directly.
+
 In one pass, check:
 
 - referenced commands, paths, configuration keys, and interface names

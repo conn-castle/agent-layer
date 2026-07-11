@@ -30,6 +30,15 @@ is `YYYYMMDD-HHMMSS-<short-rand>`. A direct repair also writes
 
 - Dispatch external roles through `/agent-dispatch`; do not implement the repair
   in the investigation context.
+- Use one fresh built-in investigator subagent for reproduction, narrowing,
+  diagnosis, and the failing test when its commands, observations, and state can
+  be captured in transferable evidence. Give it the original symptom, supplied
+  evidence, relevant constraints, and the debug report path. It must return a
+  compact causal account, evidence locations, and either the failing test or the
+  exact diagnostic blocker.
+- Keep investigation in the current context only when it depends on a live,
+  non-transferable session or process state. Record why that boundary could not
+  be used.
 - Base the diagnosis on observed reproduction, code paths, experiments, logs,
   and authoritative dependency behavior.
 - Repair the root cause before defensive hardening. Do not accept retries,
@@ -82,6 +91,10 @@ durable entry, run `/finish-task` only when no broader orchestrator owns
 closeout, and yield.
 
 ### 4. Choose one repair path
+
+Validate the investigator's causal claim against its cited evidence before
+selecting a repair path. The investigator supplies evidence; the owning agent
+decides whether the root cause is proven and owns the repair boundary.
 
 Use `direct` when the root cause, desired behavior, boundary, and verification
 are concrete. Use `planned` only when the repair materially changes several

@@ -29,8 +29,6 @@ packages while preserving phase-level done criteria.
 - Use one fresh built-in scout subagent to map the phase, remaining tasks,
   prerequisites, and package boundaries.
 - Use the requested dispatch reviewers through `/plan-work`.
-- Use one fresh built-in gatekeeper subagent after planning to decide whether
-  the phase plan is ready to execute.
 - Use fresh built-in implementation subagents for distinct packages or
   subsystems. A narrow package may run `/implement-plan` in the current context.
 - Use one fresh built-in subagent for the phase-level `/verify-work` pass.
@@ -80,19 +78,7 @@ plan_reviewers are {agent 1, agent 2, ...}
 Continue only with `implementation-ready`, or ask the exact decision returned
 by planning. Do not create a new plan for each package.
 
-### 3. Gate execution once
-
-Give the fresh gatekeeper the phase contract, reviewed artifacts, package map,
-and current repository evidence. It returns exactly one verdict:
-
-- `proceed`: execute the packages
-- `revise`: name concrete artifact evidence that must be corrected before work
-- `blocked-user-decision`: name the smallest material decision
-
-Apply a concrete `revise` correction directly to the artifacts. Do not run
-another reviewer pass unless the correction materially changes the contract.
-
-### 4. Implement every package
+### 3. Implement every package
 
 Run `/implement-plan` once per package against the shared phase artifacts and
 that package's bounded task subset. Use fresh built-in subagents for distinct
@@ -107,13 +93,13 @@ If concrete evidence invalidates the remaining plan, return only to the
 earliest responsible stage. Package completion by itself is not a reason to
 replan or re-review.
 
-### 5. Clean the combined implementation once
+### 4. Clean the combined implementation once
 
 After all packages are implemented, run `/clean-and-fix-code` once over the
 combined uncommitted work. Directly address its accepted findings under that
 skill's contract.
 
-### 6. Verify the phase once
+### 5. Verify the phase once
 
 Run `/verify-work` once in a fresh built-in subagent against the original phase
 plan, task, and context. Include cleanup `resolved_findings` as supplemental
@@ -124,14 +110,14 @@ in-scope finding. Use focused evidence for each repair; do not rerun
 `/verify-work` or reopen planning unless the finding proves the contract itself
 is invalid.
 
-### 7. Review the concrete phase result once
+### 6. Review the concrete phase result once
 
 Run `/review-uncommitted-code` once over the delivered phase files, tests, docs,
 and relevant surrounding boundaries. Validate and directly fix every
 `Recommended Accept` finding. Use focused evidence for the final tree and do not
 run another broad review.
 
-### 8. Close the phase
+### 7. Close the phase
 
 Run `/finish-task` once with the phase contract, artifact paths, package
 results, verification report, review report, and final focused evidence. It

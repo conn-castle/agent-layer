@@ -54,6 +54,13 @@ establishes the classification.
 
 ### 2. Run one test-suite audit pass
 
+For a broad scope, partition read-only investigation by repository-defined test
+tier or coherent subsystem and use fresh built-in investigator subagents in
+parallel. Each investigator returns compact candidate findings with concrete
+tests, behavior, and evidence. The owning agent validates candidates, checks
+cross-partition duplication and gaps, and owns every edit. A narrow scope may be
+audited directly.
+
 Review the scope through complementary concerns:
 
 - duplicate scenarios, setup, assertions, helpers, and fixtures
