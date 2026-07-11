@@ -225,13 +225,11 @@ func TestBuildUpgradeReadinessChecks_DisabledAgentArtifacts(t *testing.T) {
 		t.Fatalf("expected %s check", readinessCheckDisabledArtifacts)
 	}
 	joined := strings.Join(check.Details, "\n")
-	for _, expected := range []string{
-		".agy/antigravity-cli/settings.json",
-		".agy/antigravity-cli/mcp_config.json",
-	} {
-		if !strings.Contains(joined, expected) {
-			t.Fatalf("expected disabled artifact detail %q, got %q", expected, joined)
-		}
+	if strings.Contains(joined, ".agy/antigravity-cli/settings.json") {
+		t.Fatalf("shared Antigravity settings must not be reported as disposable, got %q", joined)
+	}
+	if !strings.Contains(joined, ".agy/antigravity-cli/mcp_config.json") {
+		t.Fatalf("expected managed MCP artifact detail, got %q", joined)
 	}
 }
 

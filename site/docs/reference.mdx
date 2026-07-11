@@ -9,7 +9,7 @@ This page is the authoritative reference for configuration, environment variable
 If you are setting up Agent Layer for the first time, start with [Getting started](./getting-started).
 For upgrade policy commitments (event model, guarantees, migration rules, and platform matrix), use [Upgrades](./upgrades).
 
-Agent Layer is explicit by design. It prefers failing fast over guessing, and it treats generated files as disposable outputs rather than hand-maintained sources. When you need to know exactly what will change on disk, this is the contract.
+Agent Layer is explicit by design. It prefers failing fast over guessing, treats generated files as disposable outputs, and patches only owned paths in shared client settings. When you need to know exactly what will change on disk, this is the contract.
 
 ## In this page
 
@@ -595,7 +595,8 @@ description: Run a code quality audit.
 Common outputs include:
 
 - `.agents/skills/`
-- `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.claude/skills/`, `.mcp.json`
+- `.agy/antigravity-cli/settings.json` (shared state patched at Agent Layer-managed model, `permissions.allow`, and `agent_specific` paths)
 - `.codex/` (generated config and rules)
 - `.copilot/mcp-config.json`
 - `.vscode/mcp.json` and a managed block in `.vscode/settings.json`
@@ -603,7 +604,7 @@ Common outputs include:
 - `AGENTS.md`, `CLAUDE.md`
 - repo-local VS Code launchers under `.agent-layer/` when VS Code is enabled (for example `open-vscode.command`, `open-vscode.sh`, and `open-vscode.app/`)
 
-These files are derived outputs and safe to delete. Running `al sync` will recreate them.
+Generated outputs are safe to delete, and `al sync` will recreate them. Keep `.agy/antigravity-cli/settings.json` gitignored but do not treat it as disposable: native Antigravity values, including workspace approval or trust, are preserved there. Managed MCP output remains safe to regenerate.
 
 **Warnings**
 

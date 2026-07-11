@@ -314,7 +314,8 @@ Common memory files include:
 Generated outputs are written into the repo in client-specific formats (examples):
 
 - Instruction shims: `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`
-- MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/settings.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`
+- MCP + client configs: `.mcp.json`, `.agy/antigravity-cli/mcp_config.json`, `.claude/settings.json`, `.codex/`, `.copilot/mcp-config.json`
+- Shared Antigravity settings: `.agy/antigravity-cli/settings.json` (Agent Layer patches its managed model, `permissions.allow`, and `agent_specific` paths while preserving native settings)
 - Shared skills: `.agents/skills/`
 - Antigravity notification plugin: `.agents/plugins/agent-layer-chime/`
 - Claude skills: `.claude/skills/`
@@ -708,6 +709,8 @@ Notes:
 Installer adds a managed `.gitignore` block that typically ignores:
 - `.agent-layer/` (except if teams choose to commit it)
 - generated client config files/directories (for example `.agents/`, `.agy/`, `.antigravitycli/`, `.claude/`, `.mcp.json`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, and `.github/copilot-instructions.md`)
+
+Keep `.agy/antigravity-cli/settings.json` gitignored, but do not treat it as disposable: it is shared state and can contain native Antigravity settings such as workspace approval or trust. Agent Layer-managed MCP output remains safe to regenerate.
 
 If you choose to commit `.agent-layer/`, keep `.agent-layer/.gitignore` so repo-local launchers, template copies, and backups stay untracked.
 

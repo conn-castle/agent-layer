@@ -71,7 +71,7 @@ Run [`al init`](./reference#init) in the repo to create `.agent-layer/`. To add 
 
 ### Generated files showing up in git
 
-Generated client outputs are meant to be disposable. If you see generated files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md` showing up in `git status`, it usually means one of:
+Generated client outputs should stay gitignored. If you see files like `.agents/skills/`, `.agy/`, `.antigravitycli/`, `.claude/settings.json`, `.claude/skills/`, `.codex/`, `.copilot/`, `.vscode/mcp.json`, `.vscode/settings.json`, `.mcp.json`, `.github/copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md` showing up in `git status`, it usually means one of:
 
 - the repo has not been initialized with Agent Layer's managed `.gitignore` block,
 - the ignore rules were customized,
@@ -80,7 +80,7 @@ Generated client outputs are meant to be disposable. If you see generated files 
 Run `al sync` (or `al <client>`) to reinstall the managed ignore rules. If the files were already committed, you will also need to stop tracking them in git (and ensure `.agent-layer/.env` stays untracked, since it contains secrets).
 
 :::caution
-`.codex/config.toml` is shared Codex state patched by `al sync`, not a disposable generated file. It may contain resolved values for MCP server URLs, commands, or environment variables. Treat it as private and keep it gitignored.
+`.codex/config.toml` and `.agy/antigravity-cli/settings.json` are shared state patched by `al sync`, not disposable generated files. Antigravity settings can contain native workspace approval or trust state; Agent Layer patches only its managed model, `permissions.allow`, and `agent_specific` paths. Treat both files as private and keep them gitignored. Antigravity MCP output remains safe to regenerate.
 :::
 
 ### "gitignore block must not include managed markers or template hash"

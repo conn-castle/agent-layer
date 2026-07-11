@@ -563,10 +563,6 @@ func detectDisabledAgentArtifacts(inst *installer, cfg *config.Config) (*Upgrade
 			enabled: cfg.Agents.Antigravity.Enabled,
 			files: []disabledArtifactFileSpec{
 				{
-					path:     filepath.Join(inst.root, ".agy", "antigravity-cli", "settings.json"),
-					evidence: isJSONObject,
-				},
-				{
 					path:     filepath.Join(inst.root, ".agy", "antigravity-cli", "mcp_config.json"),
 					evidence: isJSONObject,
 				},
