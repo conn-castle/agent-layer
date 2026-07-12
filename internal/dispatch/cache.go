@@ -332,10 +332,10 @@ func downloadTimeoutWithSystem(sys System) time.Duration {
 // finish downloading the binary and checksum, including their retries, plus
 // local-work and polling headroom for the waiter.
 func cacheLockWaitTimeoutWithSystem(sys System) time.Duration {
-	attemptsPerOperation := time.Duration(downloadRetryCount + 1)
-	operations := time.Duration(2) // binary and checksum downloads run sequentially.
-	return operations*attemptsPerOperation*downloadTimeoutWithSystem(sys) +
-		operations*time.Duration(downloadRetryCount)*downloadRetryBackoff +
+	attemptsPerOperation := downloadRetryCount + 1
+	const operations = 2 // binary and checksum downloads run sequentially.
+	return time.Duration(operations*attemptsPerOperation)*downloadTimeoutWithSystem(sys) +
+		time.Duration(operations*downloadRetryCount)*downloadRetryBackoff +
 		cacheLockWorkHeadroom
 }
 
