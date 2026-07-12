@@ -112,9 +112,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Notes: Deferred per "breaking dep bumps need confirmation". Not a defect; a coordinated upgrade-planning task.
 
 - Issue 2026-06-23 completion-windows-build-tag-misleading: `//go:build !windows` on cmd/al/completion.go implies Windows support the project cannot provide
-    Priority: Low. Area: cmd/al (completion.go build constraint; platform story)
-    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows (internal/versiondispatch depends on `unix.Flock`/`unix.LOCK_EX` with no Windows fallback), and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist and would leave platform.go referencing an undefined symbol on a Windows build. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
-    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for dispatch/platform (the opposite, much bigger change). Either direction is a deliberate decision, not a mechanical edit.
+    Priority: Low. Area: cmd/al and internal dispatch packages (platform story)
+    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows: internal/versiondispatch depends on `unix.Flock`/`unix.LOCK_EX`, internal/agentdispatch uses Unix flock and process-signal liveness APIs, and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
+    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for version dispatch, Agent Dispatch locking/process liveness, and CLI platform wiring. Either direction is a deliberate decision, not a mechanical edit.
     Notes: Deferred because it is a project-direction (Windows support) judgment call with two opposite valid resolutions.
 
 - Issue 2026-06-22 secret-in-url-precision-recall: Secret-in-URL detection precision vs recall tradeoff (needs human decision)

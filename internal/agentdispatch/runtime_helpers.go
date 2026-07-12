@@ -80,7 +80,7 @@ func providerStartError(target string, err error) error {
 		}
 		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target, binary))
 	}
-	return wrapExitError(ExitTargetFailure, fmt.Sprintf("wait for %s: %v", target, err), err)
+	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
 }
 
 func providerWaitError(target string, err error) error {
@@ -95,5 +95,5 @@ func providerWaitError(target string, err error) error {
 		}
 		return exitError(ExitTargetFailure, fmt.Sprintf("%s exited with code %d; `al dispatch` exiting 70", target, code))
 	}
-	return wrapExitError(ExitTargetFailure, fmt.Sprintf("start %s: %v", target, err), err)
+	return wrapExitError(ExitTargetFailure, fmt.Sprintf("wait for %s: %v", target, err), err)
 }

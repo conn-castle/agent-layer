@@ -108,3 +108,14 @@ func TestProviderVersionFailureIsUnavailable(t *testing.T) {
 	_, err := requireSupportedVersion("ignored", AgentCodex, func(string, string) (string, error) { return "", errors.New("unreadable") })
 	requireDispatchExitCode(t, err, ExitUnavailable)
 }
+
+func TestProviderProcessErrorsNameTheCorrectLifecyclePhase(t *testing.T) {
+	startErr := providerStartError(AgentCodex, errors.New("start failed"))
+	if !strings.Contains(startErr.Error(), "start codex") {
+		t.Fatalf("start error = %q", startErr)
+	}
+	waitErr := providerWaitError(AgentCodex, errors.New("wait failed"))
+	if !strings.Contains(waitErr.Error(), "wait for codex") {
+		t.Fatalf("wait error = %q", waitErr)
+	}
+}
