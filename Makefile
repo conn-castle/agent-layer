@@ -8,7 +8,7 @@ TOOL_BIN ?= $(ROOT_DIR)/.tools/bin
 GO_CACHE ?= $(ROOT_DIR)/.cache/go-build
 GO_MOD_CACHE ?= $(ROOT_DIR)/.cache/go-mod
 
-GO_FILES_FIND_CMD := find . -type f -name '*.go' -not -path './.tools/*' -not -path './.cache/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './.gemini/*' -not -path './.agy/*' -not -path './.antigravitycli/*' -not -path './.agents/*' -not -path './tmp/*'
+GO_FILES_FIND_CMD := find . -type f -name '*.go' -not -path './.tools/*' -not -path './.cache/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './.gemini/*' -not -path './.agy/*' -not -path './.antigravitycli/*' -not -path './.agents/*' -not -path './.agent-layer/*' -not -path './tmp/*'
 
 COVERAGE_THRESHOLD ?= 95.0
 

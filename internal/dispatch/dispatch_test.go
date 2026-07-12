@@ -14,6 +14,16 @@ import (
 	"testing"
 )
 
+// TestMain keeps dispatch tests independent of the outer development launcher.
+// Individual tests exercise the bypass explicitly through testSystem.
+func TestMain(m *testing.M) {
+	if err := os.Unsetenv(EnvDevelopmentBypassVersionDispatch); err != nil {
+		fmt.Fprintf(os.Stderr, "clear %s: %v\n", EnvDevelopmentBypassVersionDispatch, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
+
 func TestReadPinnedVersion(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, ".agent-layer")

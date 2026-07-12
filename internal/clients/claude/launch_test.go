@@ -16,41 +16,6 @@ import (
 	"github.com/conn-castle/agent-layer/internal/testutil"
 )
 
-type execCall struct {
-	called bool
-	path   string
-	argv   []string
-	env    []string
-}
-
-func captureExec(t *testing.T, err error) *execCall {
-	t.Helper()
-	original := execFunc
-	call := &execCall{}
-	execFunc = func(path string, argv []string, env []string) error {
-		if call.called {
-			t.Fatal("execFunc called more than once")
-		}
-		call.called = true
-		call.path = path
-		call.argv = append([]string(nil), argv...)
-		call.env = append([]string(nil), env...)
-		return err
-	}
-	t.Cleanup(func() { execFunc = original })
-	return call
-}
-
-func forbidExec(t *testing.T) {
-	t.Helper()
-	original := execFunc
-	execFunc = func(string, []string, []string) error {
-		t.Fatal("execFunc should not be called")
-		return nil
-	}
-	t.Cleanup(func() { execFunc = original })
-}
-
 func writeResolvableClaude(t *testing.T) string {
 	t.Helper()
 	binDir := t.TempDir()
@@ -59,23 +24,10 @@ func writeResolvableClaude(t *testing.T) string {
 	return filepath.Join(binDir, "claude")
 }
 
-func assertExecCalled(t *testing.T, call *execCall, wantPath string, wantArgv []string) {
-	t.Helper()
-	if !call.called {
-		t.Fatal("expected execFunc to be called")
-	}
-	if call.path != wantPath {
-		t.Fatalf("expected exec path %q, got %q", wantPath, call.path)
-	}
-	if !reflect.DeepEqual(call.argv, wantArgv) {
-		t.Fatalf("unexpected argv: got %#v want %#v", call.argv, wantArgv)
-	}
-}
-
 func TestLaunchClaudeExecHandoff(t *testing.T) {
 	root := t.TempDir()
 	claudePath := writeResolvableClaude(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 	env := []string{"PATH=" + filepath.Dir(claudePath), "CUSTOM=1"}
 
 	cfg := &config.ProjectConfig{
@@ -91,9 +43,9 @@ func TestLaunchClaudeExecHandoff(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	assertExecCalled(t, call, claudePath, []string{"claude", "--model", "test-model", "--print", "hello"})
-	if !reflect.DeepEqual(call.env, env) {
-		t.Fatalf("expected env to pass through unchanged, got %#v want %#v", call.env, env)
+	call.AssertCalled(t, claudePath, []string{"claude", "--model", "test-model", "--print", "hello"})
+	if !reflect.DeepEqual(call.Env, env) {
+		t.Fatalf("expected env to pass through unchanged, got %#v want %#v", call.Env, env)
 	}
 }
 
@@ -101,7 +53,7 @@ func TestLaunchClaudeExecError(t *testing.T) {
 	root := t.TempDir()
 	writeResolvableClaude(t)
 	wantErr := errors.New("exec failed")
-	captureExec(t, wantErr)
+	testutil.CaptureExec(t, &execFunc, wantErr)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -124,7 +76,7 @@ func TestLaunchClaudeExecError(t *testing.T) {
 func TestLaunchClaudeMissingBinary(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("PATH", t.TempDir())
-	forbidExec(t)
+	testutil.ForbidExec(t, &execFunc)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -188,7 +140,7 @@ func TestLaunchClaudeEffortArgs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			claudePath := writeResolvableClaude(t)
-			call := captureExec(t, nil)
+			call := testutil.CaptureExec(t, &execFunc, nil)
 			cfg := &config.ProjectConfig{
 				Config: config.Config{
 					Agents: config.AgentsConfig{Claude: tc.agent},
@@ -200,7 +152,7 @@ func TestLaunchClaudeEffortArgs(t *testing.T) {
 				t.Fatalf("Launch error: %v", err)
 			}
 
-			assertExecCalled(t, call, claudePath, tc.argv)
+			call.AssertCalled(t, claudePath, tc.argv)
 		})
 	}
 }
@@ -208,7 +160,7 @@ func TestLaunchClaudeEffortArgs(t *testing.T) {
 func TestLaunchClaudeYOLO(t *testing.T) {
 	root := t.TempDir()
 	claudePath := writeResolvableClaude(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -224,7 +176,7 @@ func TestLaunchClaudeYOLO(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	assertExecCalled(t, call, claudePath, []string{"claude", "--model", "test-model", "--dangerously-skip-permissions"})
+	call.AssertCalled(t, claudePath, []string{"claude", "--model", "test-model", "--dangerously-skip-permissions"})
 }
 
 func TestEnsureClaudeConfigDirSetsDefault(t *testing.T) {
@@ -293,7 +245,7 @@ func TestEnsureClaudeConfigDirWarnsOnMismatch(t *testing.T) {
 func TestLaunchClaudeNoLocalConfigDir(t *testing.T) {
 	root := t.TempDir()
 	claudePath := writeResolvableClaude(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 
 	cfg := &config.ProjectConfig{
 		Config: config.Config{
@@ -308,7 +260,7 @@ func TestLaunchClaudeNoLocalConfigDir(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	if _, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR"); ok {
+	if _, ok := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR"); ok {
 		t.Fatal("expected CLAUDE_CONFIG_DIR to NOT be set when local_config_dir is nil")
 	}
 }
@@ -316,7 +268,7 @@ func TestLaunchClaudeNoLocalConfigDir(t *testing.T) {
 func TestLaunchClaudeSetsClaudeConfigDirWhenEnabled(t *testing.T) {
 	root := t.TempDir()
 	claudePath := writeResolvableClaude(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 
 	localConfigDir := true
 	cfg := &config.ProjectConfig{
@@ -336,16 +288,16 @@ func TestLaunchClaudeSetsClaudeConfigDirWhenEnabled(t *testing.T) {
 	}
 
 	expected := filepath.Join(root, ".claude-config")
-	value, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR")
+	value, ok := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR")
 	if !ok || value != expected {
-		t.Fatalf("expected CLAUDE_CONFIG_DIR=%s, got %#v", expected, call.env)
+		t.Fatalf("expected CLAUDE_CONFIG_DIR=%s, got %#v", expected, call.Env)
 	}
 }
 
 func TestLaunchClaudeClearsStaleClaudeConfigDir(t *testing.T) {
 	root := t.TempDir()
 	claudePath := writeResolvableClaude(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 
 	stale := filepath.Join(root, ".claude-config")
 	cfg := &config.ProjectConfig{
@@ -362,7 +314,7 @@ func TestLaunchClaudeClearsStaleClaudeConfigDir(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	if _, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR"); ok {
+	if _, ok := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR"); ok {
 		t.Fatal("expected stale CLAUDE_CONFIG_DIR to be cleared when local_config_dir is disabled")
 	}
 }
@@ -370,7 +322,7 @@ func TestLaunchClaudeClearsStaleClaudeConfigDir(t *testing.T) {
 func TestLaunchClaudePreservesUserClaudeConfigDir(t *testing.T) {
 	root := t.TempDir()
 	claudePath := writeResolvableClaude(t)
-	call := captureExec(t, nil)
+	call := testutil.CaptureExec(t, &execFunc, nil)
 
 	userDir := filepath.Join(t.TempDir(), "my-custom-claude")
 	cfg := &config.ProjectConfig{
@@ -387,8 +339,8 @@ func TestLaunchClaudePreservesUserClaudeConfigDir(t *testing.T) {
 		t.Fatalf("Launch error: %v", err)
 	}
 
-	value, ok := clients.GetEnv(call.env, "CLAUDE_CONFIG_DIR")
+	value, ok := clients.GetEnv(call.Env, "CLAUDE_CONFIG_DIR")
 	if !ok || value != userDir {
-		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got %#v", call.env)
+		t.Fatalf("expected user CLAUDE_CONFIG_DIR to be preserved, got %#v", call.Env)
 	}
 }
