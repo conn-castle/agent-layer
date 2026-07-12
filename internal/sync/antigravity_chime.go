@@ -16,11 +16,11 @@ func antigravityChimePluginDir(root string) string {
 	return filepath.Join(root, ".agents", "plugins", antigravityChimePluginName)
 }
 
-// WriteAntigravityChimePlugin writes the Agent Layer-owned Antigravity Stop
+// writeAntigravityChimePlugin writes the Agent Layer-owned Antigravity Stop
 // hook plugin used by notifications.chime.
-func WriteAntigravityChimePlugin(sys System, root string, project *config.ProjectConfig) error {
+func writeAntigravityChimePlugin(sys System, root string, project *config.ProjectConfig) error {
 	if !config.NotificationsChimeEnabled(project.Config) {
-		return CleanAntigravityChimePlugin(sys, root)
+		return cleanAntigravityChimePlugin(sys, root)
 	}
 	dir := antigravityChimePluginDir(root)
 	if err := ensureAntigravityChimePathContained(sys, root, dir); err != nil {
@@ -48,9 +48,9 @@ func WriteAntigravityChimePlugin(sys System, root string, project *config.Projec
 	return nil
 }
 
-// CleanAntigravityChimePlugin removes the dedicated Agent Layer-owned
+// cleanAntigravityChimePlugin removes the dedicated Agent Layer-owned
 // Antigravity chime plugin, preserving any other user plugins or .agents state.
-func CleanAntigravityChimePlugin(sys System, root string) error {
+func cleanAntigravityChimePlugin(sys System, root string) error {
 	dir := antigravityChimePluginDir(root)
 	if err := ensureAntigravityChimePathContained(sys, root, dir); err != nil {
 		return err

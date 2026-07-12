@@ -48,7 +48,7 @@ func TestWriteCodexConfig_MkdirError(t *testing.T) {
 	}
 
 	project := &config.ProjectConfig{}
-	if err := WriteCodexConfig(RealSystem{}, root, project); err == nil {
+	if err := writeCodexConfig(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error from MkdirAll")
 	}
 }
@@ -94,7 +94,7 @@ func TestWriteCodexConfig_BuildError(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err == nil {
+	if err := writeCodexConfig(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error from buildCodexConfig")
 	}
 }

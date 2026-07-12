@@ -289,6 +289,7 @@ const (
 	DispatchSkillProjectionNotRegularFmt  = "`al dispatch` skill projection %s is not a regular file (mode %s); refusing to follow symlink or special file"
 	DispatchAntigravityPromptTooLargeFmt  = "antigravity prompt is %d bytes; `al dispatch` caps it at %d bytes because agy --print has no stdin/file path. Use --agent claude or --agent codex for larger prompts."
 	DispatchRunSyncFailedFmt              = "`al dispatch` sync failed: %v"
+	DispatchRunSyncCleanupFailedFmt       = "`al dispatch` generated sync outputs succeeded, but post-write lock cleanup failed: %v"
 	DispatchRunCreateFailedFmt            = "`al dispatch` run setup failed: %v"
 	DispatchStartTargetFailedFmt          = "start %s: %v"
 	DispatchSignalExitFmt                 = "%s interrupted by signal %s"

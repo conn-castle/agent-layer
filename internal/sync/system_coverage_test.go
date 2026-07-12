@@ -1,8 +1,12 @@
 package sync
 
 import (
+	"errors"
 	"os"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func TestRealSystem_LookPath_NotFound(t *testing.T) {
@@ -71,5 +75,56 @@ func TestRealSystem_RemoveAll(t *testing.T) {
 	}
 	if _, err := os.Stat(sub); !os.IsNotExist(err) {
 		t.Fatal("expected directory to be removed")
+	}
+}
+
+func TestRealSystemLockLifecycle(t *testing.T) {
+	sys := RealSystem{}
+	path := t.TempDir() + "/sync.lock"
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path is rooted under a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("open lock: %v", err)
+	}
+	probe, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path is rooted under a test-owned temporary directory.
+	if err != nil {
+		_ = sys.Close(file)
+		t.Fatalf("open probe: %v", err)
+	}
+	t.Cleanup(func() { _ = sys.Close(probe) })
+
+	if err := sys.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
+		_ = sys.Close(file)
+		t.Fatalf("acquire lock: %v", err)
+	}
+	if err := sys.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB); !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
+		_ = sys.Close(file)
+		t.Fatalf("probe lock error = %v, want EWOULDBLOCK/EAGAIN", err)
+	}
+	if err := sys.Flock(int(file.Fd()), unix.LOCK_UN); err != nil { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
+		_ = sys.Close(file)
+		t.Fatalf("unlock: %v", err)
+	}
+	if err := sys.Flock(int(probe.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
+		_ = sys.Close(file)
+		t.Fatalf("probe acquire after unlock: %v", err)
+	}
+	if err := sys.Flock(int(probe.Fd()), unix.LOCK_UN); err != nil { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
+		_ = sys.Close(file)
+		t.Fatalf("probe unlock: %v", err)
+	}
+	if err := sys.Close(file); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if _, err := file.Stat(); err == nil {
+		t.Fatal("closed file remained usable")
+	}
+}
+
+func TestRealSystemNowAndSleep(t *testing.T) {
+	sys := RealSystem{}
+	before := sys.Now()
+	sys.Sleep(2 * time.Millisecond)
+	if elapsed := sys.Now().Sub(before); elapsed < time.Millisecond {
+		t.Fatalf("Sleep returned too early: elapsed=%v", elapsed)
 	}
 }

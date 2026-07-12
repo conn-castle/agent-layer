@@ -41,6 +41,13 @@ func TestRunWithSystemFS_NilSystem(t *testing.T) {
 	}
 }
 
+func TestRunWithProject_NilSystem(t *testing.T) {
+	_, err := RunWithProject(nil, t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil system")
+	}
+}
+
 func TestRunWithSystemFS_NilFS(t *testing.T) {
 	_, err := RunWithSystemFS(RealSystem{}, nil, ".")
 	if err == nil {

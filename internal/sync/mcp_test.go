@@ -75,8 +75,8 @@ func TestWriteMCPConfig(t *testing.T) {
 		Root: root,
 	}
 
-	if err := WriteMCPConfig(sys, root, project); err != nil {
-		t.Fatalf("WriteMCPConfig error: %v", err)
+	if err := writeMCPConfig(sys, root, project); err != nil {
+		t.Fatalf("writeMCPConfig error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".mcp.json")); err != nil {
 		t.Fatalf("expected mcp.json: %v", err)
@@ -94,7 +94,7 @@ func TestWriteMCPConfigError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{Root: root}
-	if err := WriteMCPConfig(sys, file, project); err == nil {
+	if err := writeMCPConfig(sys, file, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -114,7 +114,7 @@ func TestWriteMCPConfigWriteError(t *testing.T) {
 		},
 		Root: root,
 	}
-	if err := WriteMCPConfig(sys, root, project); err == nil {
+	if err := writeMCPConfig(sys, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -207,7 +207,7 @@ func TestWriteMCPConfigMarshalError(t *testing.T) {
 		Root:   root,
 	}
 
-	if err := WriteMCPConfig(sys, root, project); err == nil {
+	if err := writeMCPConfig(sys, root, project); err == nil {
 		t.Fatal("expected marshal error")
 	}
 }

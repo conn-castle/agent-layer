@@ -124,8 +124,8 @@ func TestWriteVSCodeMCPConfig(t *testing.T) {
 		Env: map[string]string{"TOKEN": "abc"},
 	}
 
-	if err := WriteVSCodeMCPConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteVSCodeMCPConfig error: %v", err)
+	if err := writeVSCodeMCPConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeVSCodeMCPConfig error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".vscode", "mcp.json")); err != nil {
 		t.Fatalf("expected mcp.json: %v", err)
@@ -140,7 +140,7 @@ func TestWriteVSCodeMCPConfigError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
-	if err := WriteVSCodeMCPConfig(RealSystem{}, file, project); err == nil {
+	if err := writeVSCodeMCPConfig(RealSystem{}, file, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -165,7 +165,7 @@ func TestWriteVSCodeMCPConfigMissingEnv(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	if err := WriteVSCodeMCPConfig(RealSystem{}, root, project); err == nil {
+	if err := writeVSCodeMCPConfig(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -178,7 +178,7 @@ func TestWriteVSCodeMCPConfigMarshalError(t *testing.T) {
 			return nil, errors.New("marshal fail")
 		},
 	}
-	if err := WriteVSCodeMCPConfig(sys, t.TempDir(), &config.ProjectConfig{}); err == nil {
+	if err := writeVSCodeMCPConfig(sys, t.TempDir(), &config.ProjectConfig{}); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -197,7 +197,7 @@ func TestWriteVSCodeMCPConfigWriteError(t *testing.T) {
 			return nil
 		},
 	}
-	if err := WriteVSCodeMCPConfig(sys, t.TempDir(), &config.ProjectConfig{}); err == nil {
+	if err := writeVSCodeMCPConfig(sys, t.TempDir(), &config.ProjectConfig{}); err == nil {
 		t.Fatal("expected error")
 	}
 }

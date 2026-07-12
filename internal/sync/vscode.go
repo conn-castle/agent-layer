@@ -32,15 +32,15 @@ var vscodeSettingsManagedHeader = []string{
 
 var errInvalidVSCodeSettings = errors.New("invalid vscode settings.json")
 
-// WriteVSCodeSettings generates .vscode/settings.json.
-func WriteVSCodeSettings(sys System, root string, project *config.ProjectConfig) error {
-	return writeVSCodeSettings(sys, root, project, buildVSCodeSettings)
+// writeVSCodeSettings generates .vscode/settings.json.
+func writeVSCodeSettings(sys System, root string, project *config.ProjectConfig) error {
+	return writeVSCodeSettingsWithBuilder(sys, root, project, buildVSCodeSettings)
 }
 
-// writeVSCodeSettings builds settings and writes them to disk.
+// writeVSCodeSettingsWithBuilder builds settings and writes them to disk.
 // Args: sys provides system calls, root is the repo root, project holds config, build constructs settings.
 // Returns: an error if build or any filesystem operation fails.
-func writeVSCodeSettings(sys System, root string, project *config.ProjectConfig, build func(*config.ProjectConfig) (*vscodeSettings, error)) error {
+func writeVSCodeSettingsWithBuilder(sys System, root string, project *config.ProjectConfig, build func(*config.ProjectConfig) (*vscodeSettings, error)) error {
 	settings, err := build(project)
 	if err != nil {
 		return err

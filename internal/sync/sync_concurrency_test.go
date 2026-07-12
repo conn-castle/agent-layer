@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	stdsync "sync"
 	"testing"
 	"time"
@@ -17,6 +18,9 @@ import (
 var errConcurrentSyncOverlap = errors.New("concurrent sync writer overlap")
 
 func TestRunWithProjectSerializesConcurrentRuns(t *testing.T) {
+	// RunWithProject is the shared generated-write coordinator reached by both
+	// `al sync` and `al dispatch`; blocking its atomic skill write proves the
+	// concrete boundary that prevents their temporary-rename collision.
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
 		t.Fatalf("mkdir .agent-layer: %v", err)
@@ -105,14 +109,17 @@ func TestAcquireProjectSyncLockHoldsOSFileLock(t *testing.T) {
 	}
 	lockPath := filepath.Join(root, ".agent-layer", projectSyncLockFile)
 
-	// Mirror withProjectSyncLock: hold the process mutex before acquiring so the
-	// deferred Unlock inside release() does not panic on an unlocked mutex.
-	processLock := &stdsync.Mutex{}
-	processLock.Lock()
+	// Mirror withProjectSyncLock: hold the process token before acquiring so
+	// release() returns it after releasing the operating-system lock.
+	processLock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
+	processLock.token <- struct{}{}
+	if err := processLock.acquire(RealSystem{}, time.Now().Add(projectSyncLockWaitTimeout)); err != nil {
+		t.Fatalf("acquire process lock: %v", err)
+	}
 
-	lock, err := acquireProjectSyncLock(lockPath, processLock)
+	lock, err := acquireProjectSyncLock(RealSystem{}, lockPath, processLock, time.Now().Add(projectSyncLockWaitTimeout))
 	if err != nil {
-		processLock.Unlock()
+		processLock.release()
 		t.Fatalf("acquireProjectSyncLock: %v", err)
 	}
 
@@ -143,6 +150,280 @@ func TestAcquireProjectSyncLockHoldsOSFileLock(t *testing.T) {
 	if err := unix.Flock(int(probe.Fd()), unix.LOCK_UN); err != nil { //nolint:gosec // Unix file descriptors are small non-negative ints on supported platforms.
 		t.Fatalf("unlock probe: %v", err)
 	}
+}
+
+func TestProjectSyncProcessLockDeadlineAndRecovery(t *testing.T) {
+	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
+	sys := &MockSystem{
+		NowFunc:   func() time.Time { return now },
+		SleepFunc: func(d time.Duration) { now = now.Add(d) },
+	}
+	lock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
+	lock.token <- struct{}{}
+
+	if err := lock.acquire(sys, now.Add(time.Second)); err != nil {
+		t.Fatalf("acquire initial process lock: %v", err)
+	}
+	if err := lock.acquire(sys, now.Add(250*time.Millisecond)); !errors.Is(err, errProjectSyncLockDeadline) {
+		t.Fatalf("contended process lock error = %v, want deadline error", err)
+	}
+
+	lock.release()
+	if err := lock.acquire(sys, now.Add(time.Second)); err != nil {
+		t.Fatalf("process lock did not recover after timeout: %v", err)
+	}
+	lock.release()
+}
+
+func TestWithProjectSyncLockTimeoutDiagnosticsAndRecovery(t *testing.T) {
+	root := newSyncLockTestRoot(t)
+	lockPath := filepath.Join(root, ".agent-layer", projectSyncLockFile)
+	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
+	contended := true
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		FlockFunc: func(_ int, how int) error {
+			if how == unix.LOCK_UN || !contended {
+				return nil
+			}
+			return unix.EWOULDBLOCK
+		},
+		NowFunc:   func() time.Time { return now },
+		SleepFunc: func(d time.Duration) { now = now.Add(d) },
+	}
+
+	result, err := withProjectSyncLock(sys, root, func() (*Result, error) {
+		return &Result{}, nil
+	})
+	if result != nil {
+		t.Fatalf("timed-out lock returned result %#v", result)
+	}
+	if err == nil {
+		t.Fatal("expected lock timeout")
+	}
+	for _, want := range []string{lockPath, "30s", "another sync may still be generating files"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("timeout error %q does not contain %q", err, want)
+		}
+	}
+
+	contended = false
+	want := &Result{}
+	result, err = withProjectSyncLock(sys, root, func() (*Result, error) {
+		return want, nil
+	})
+	if err != nil {
+		t.Fatalf("lock did not recover after timeout: %v", err)
+	}
+	if result != want {
+		t.Fatalf("result = %#v, want original populated result", result)
+	}
+}
+
+func TestWithProjectSyncLockRetriesEINTRWithNonBlockingFlock(t *testing.T) {
+	root := newSyncLockTestRoot(t)
+	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
+	var flockCalls []int
+	acquisitionCalls := 0
+	sys := &MockSystem{
+		Fallback: RealSystem{},
+		FlockFunc: func(_ int, how int) error {
+			flockCalls = append(flockCalls, how)
+			if how == unix.LOCK_UN {
+				return nil
+			}
+			acquisitionCalls++
+			switch acquisitionCalls {
+			case 1:
+				return unix.EINTR
+			case 2:
+				return unix.EAGAIN
+			default:
+				return nil
+			}
+		},
+		NowFunc:   func() time.Time { return now },
+		SleepFunc: func(d time.Duration) { now = now.Add(d) },
+	}
+
+	if _, err := withProjectSyncLock(sys, root, func() (*Result, error) { return &Result{}, nil }); err != nil {
+		t.Fatalf("withProjectSyncLock: %v", err)
+	}
+	if len(flockCalls) != 4 {
+		t.Fatalf("flock calls = %v, want three acquisitions and one release", flockCalls)
+	}
+	for _, how := range flockCalls[:3] {
+		if how != unix.LOCK_EX|unix.LOCK_NB {
+			t.Fatalf("acquisition flock flags = %#x, want LOCK_EX|LOCK_NB", how)
+		}
+	}
+	if flockCalls[3] != unix.LOCK_UN {
+		t.Fatalf("release flock flags = %#x, want LOCK_UN", flockCalls[3])
+	}
+}
+
+func TestWithProjectSyncLockReturnsNonContentionFlockErrorImmediately(t *testing.T) {
+	root := newSyncLockTestRoot(t)
+	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
+	flockErr := unix.EPERM
+	slept := false
+	sys := &MockSystem{
+		Fallback:  RealSystem{},
+		FlockFunc: func(int, int) error { return flockErr },
+		NowFunc:   func() time.Time { return now },
+		SleepFunc: func(time.Duration) { slept = true },
+	}
+
+	_, err := withProjectSyncLock(sys, root, func() (*Result, error) { return &Result{}, nil })
+	if !errors.Is(err, flockErr) {
+		t.Fatalf("error = %v, want flock error %v", err, flockErr)
+	}
+	if slept {
+		t.Fatal("non-contention flock error unexpectedly slept")
+	}
+}
+
+func TestWithProjectSyncLockPreservesSuccessfulResultOnCleanupFailure(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*MockSystem, error)
+	}{
+		{
+			name: "unlock",
+			configure: func(sys *MockSystem, cleanupErr error) {
+				sys.FlockFunc = func(_ int, how int) error {
+					if how == unix.LOCK_UN {
+						return cleanupErr
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name: "close",
+			configure: func(sys *MockSystem, cleanupErr error) {
+				sys.CloseFunc = func(file *os.File) error {
+					if err := file.Close(); err != nil {
+						return err
+					}
+					return cleanupErr
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := newSyncLockTestRoot(t)
+			cleanupErr := errors.New(tt.name + " cleanup failure")
+			sys := &MockSystem{Fallback: RealSystem{}}
+			tt.configure(sys, cleanupErr)
+			want := &Result{}
+
+			result, err := withProjectSyncLock(sys, root, func() (*Result, error) { return want, nil })
+			if result != want {
+				t.Fatalf("result = %#v, want populated successful result", result)
+			}
+			if !errors.Is(err, ErrPostWriteLockCleanup) {
+				t.Fatalf("error = %v, want ErrPostWriteLockCleanup", err)
+			}
+			for _, wantText := range []string{"generated writes succeeded", cleanupErr.Error()} {
+				if !strings.Contains(err.Error(), wantText) {
+					t.Fatalf("cleanup error %q does not contain %q", err, wantText)
+				}
+			}
+		})
+	}
+}
+
+func TestWithProjectSyncLockKeepsWorkFailurePrimaryWhenCleanupAlsoFails(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*MockSystem, error)
+	}{
+		{
+			name: "unlock",
+			configure: func(sys *MockSystem, cleanupErr error) {
+				sys.FlockFunc = func(_ int, how int) error {
+					if how == unix.LOCK_UN {
+						return cleanupErr
+					}
+					return nil
+				}
+			},
+		},
+		{
+			name: "close",
+			configure: func(sys *MockSystem, cleanupErr error) {
+				sys.CloseFunc = func(file *os.File) error {
+					if err := file.Close(); err != nil {
+						return err
+					}
+					return cleanupErr
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := newSyncLockTestRoot(t)
+			workErr := errors.New("generated write failure")
+			cleanupErr := errors.New(tt.name + " cleanup failure")
+			sys := &MockSystem{Fallback: RealSystem{}}
+			tt.configure(sys, cleanupErr)
+
+			_, err := withProjectSyncLock(sys, root, func() (*Result, error) { return nil, workErr })
+			if !errors.Is(err, workErr) {
+				t.Fatalf("error = %v, want primary work error %v", err, workErr)
+			}
+			if errors.Is(err, ErrPostWriteLockCleanup) {
+				t.Fatalf("combined error incorrectly claims generated writes succeeded: %v", err)
+			}
+			if !strings.Contains(err.Error(), cleanupErr.Error()) {
+				t.Fatalf("combined error %q does not retain cleanup detail %q", err, cleanupErr)
+			}
+		})
+	}
+}
+
+func TestAcquireProjectSyncLockReportsAcquisitionCleanupFailure(t *testing.T) {
+	root := newSyncLockTestRoot(t)
+	path := filepath.Join(root, ".agent-layer", projectSyncLockFile)
+	cleanupErr := errors.New("close during acquisition failed")
+	sys := &MockSystem{
+		Fallback:  RealSystem{},
+		FlockFunc: func(int, int) error { return unix.EPERM },
+		CloseFunc: func(file *os.File) error {
+			if err := file.Close(); err != nil {
+				return err
+			}
+			return cleanupErr
+		},
+	}
+	processLock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
+	processLock.token <- struct{}{}
+	if err := processLock.acquire(sys, time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("acquire process lock: %v", err)
+	}
+	defer processLock.release()
+
+	lock, err := acquireProjectSyncLock(sys, path, processLock, time.Now().Add(time.Second))
+	if lock != nil {
+		t.Fatalf("lock = %#v, want nil", lock)
+	}
+	if !errors.Is(err, unix.EPERM) || !strings.Contains(err.Error(), cleanupErr.Error()) {
+		t.Fatalf("acquisition error = %v, want flock and cleanup failures", err)
+	}
+}
+
+func newSyncLockTestRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".agent-layer"), 0o700); err != nil {
+		t.Fatalf("mkdir .agent-layer: %v", err)
+	}
+	return root
 }
 
 type overlapDetectingSystem struct {

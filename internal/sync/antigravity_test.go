@@ -179,11 +179,11 @@ func TestWriteAntigravityOutputs(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravitySettings error: %v", err)
+	if err := writeAntigravitySettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravitySettings error: %v", err)
 	}
-	if err := WriteAntigravityMCPConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityMCPConfig error: %v", err)
+	if err := writeAntigravityMCPConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityMCPConfig error: %v", err)
 	}
 
 	// Existence checks alone (the old test) would still pass if the writers
@@ -224,12 +224,12 @@ func TestWriteAntigravitySettingsPreservesNativeStateAndRefreshesManagedPaths(t 
 			Model: "new", AgentSpecific: map[string]any{"features": map[string]any{"managed": "first"}},
 		}},
 	}, CommandsAllow: []string{"git status"}}
-	if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+	if err := writeAntigravitySettings(RealSystem{}, root, project); err != nil {
 		t.Fatal(err)
 	}
 	project.Config.Agents.Antigravity.Model = "newer"
 	project.Config.Agents.Antigravity.AgentSpecific = map[string]any{"features": map[string]any{"managed": "second"}}
-	if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+	if err := writeAntigravitySettings(RealSystem{}, root, project); err != nil {
 		t.Fatal(err)
 	}
 	got := readFileForTest(t, path)
@@ -257,7 +257,7 @@ func TestWriteAntigravitySettingsPreservesNativeManagedPathsWhenConfigOmitsThem(
 	if err := os.WriteFile(path, seed, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+	if err := writeAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
 		t.Fatal(err)
 	}
 	got := readFileForTest(t, path)
@@ -290,7 +290,7 @@ func TestWriteAntigravitySettingsRejectsInvalidStateBeforeWrite(t *testing.T) {
 			// Approvals mode all makes buildPermissionsBlock emit permissions.allow,
 			// so the shape-conflict seed is a path Agent Layer actually writes.
 			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
-			if err := WriteAntigravitySettings(RealSystem{}, root, project); err == nil {
+			if err := writeAntigravitySettings(RealSystem{}, root, project); err == nil {
 				t.Fatal("expected error")
 			}
 			after, err := os.ReadFile(path) // #nosec G304 -- test-owned path.
@@ -320,7 +320,7 @@ func TestWriteAntigravitySettingsRejectsSymlinkAndNonRegularTarget(t *testing.T)
 		if err := os.Symlink(target, path); err != nil {
 			t.Fatal(err)
 		}
-		err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{})
+		err := writeAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{})
 		if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
 			t.Fatalf("expected regular-file guard error, got %v", err)
 		}
@@ -338,7 +338,7 @@ func TestWriteAntigravitySettingsRejectsSymlinkAndNonRegularTarget(t *testing.T)
 		if err := os.MkdirAll(path, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{})
+		err := writeAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{})
 		if err == nil || !strings.Contains(err.Error(), "must be a regular file") {
 			t.Fatalf("expected regular-file guard error, got %v", err)
 		}
@@ -371,7 +371,7 @@ func TestWriteAntigravitySettingsReadErrorDoesNotWrite(t *testing.T) {
 			return nil
 		},
 	}
-	if err := WriteAntigravitySettings(sys, root, &config.ProjectConfig{}); err == nil || !strings.Contains(err.Error(), "permission denied") {
+	if err := writeAntigravitySettings(sys, root, &config.ProjectConfig{}); err == nil || !strings.Contains(err.Error(), "permission denied") {
 		t.Fatalf("expected read error, got %v", err)
 	}
 	if wrote {
@@ -401,7 +401,7 @@ func TestWriteAntigravitySettingsRejectsManagedLeafShapeConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	project := &config.ProjectConfig{Config: config.Config{Agents: config.AgentsConfig{Antigravity: config.AntigravityConfig{Model: "gemini"}}}}
-	err := WriteAntigravitySettings(RealSystem{}, root, project)
+	err := writeAntigravitySettings(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "incompatible existing shape") {
 		t.Fatalf("expected shape conflict error, got %v", err)
 	}
@@ -430,7 +430,7 @@ func TestWriteAntigravitySettingsTreatsEmptyFileAsFresh(t *testing.T) {
 				t.Fatal(err)
 			}
 			project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
-			if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+			if err := writeAntigravitySettings(RealSystem{}, root, project); err != nil {
 				t.Fatalf("empty file should be treated as fresh, got %v", err)
 			}
 			got := readFileForTest(t, path)
@@ -455,7 +455,7 @@ func TestWriteAntigravitySettingsPreservesUnmanagedNonObjectValue(t *testing.T) 
 	if err := os.WriteFile(path, seed, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+	if err := writeAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
 		t.Fatalf("unmanaged non-object native value must not error, got %v", err)
 	}
 	got := readFileForTest(t, path)
@@ -477,7 +477,7 @@ func TestWriteAntigravitySettingsPreservesFileMode(t *testing.T) {
 		if err := os.WriteFile(path, []byte(`{"trust":true}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := WriteAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
+		if err := writeAntigravitySettings(RealSystem{}, root, &config.ProjectConfig{}); err != nil {
 			t.Fatal(err)
 		}
 		info, err := os.Stat(path)
@@ -492,7 +492,7 @@ func TestWriteAntigravitySettingsPreservesFileMode(t *testing.T) {
 		root := t.TempDir()
 		path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
 		project := &config.ProjectConfig{Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeAll}}, CommandsAllow: []string{"git status"}}
-		if err := WriteAntigravitySettings(RealSystem{}, root, project); err != nil {
+		if err := writeAntigravitySettings(RealSystem{}, root, project); err != nil {
 			t.Fatal(err)
 		}
 		info, err := os.Stat(path)
@@ -532,8 +532,8 @@ func TestWriteAntigravityMCPConfigUpdatesMigratedSymlinkTarget(t *testing.T) {
 		},
 	}
 
-	if err := WriteAntigravityMCPConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityMCPConfig error: %v", err)
+	if err := writeAntigravityMCPConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityMCPConfig error: %v", err)
 	}
 
 	linkInfo, err := os.Lstat(legacyPath)
@@ -595,8 +595,8 @@ func TestWriteAntigravityMCPConfigUsesSystemForMigratedSymlink(t *testing.T) {
 		},
 	}
 
-	if err := WriteAntigravityMCPConfig(sys, root, project); err != nil {
-		t.Fatalf("WriteAntigravityMCPConfig error: %v", err)
+	if err := writeAntigravityMCPConfig(sys, root, project); err != nil {
+		t.Fatalf("writeAntigravityMCPConfig error: %v", err)
 	}
 	if !usedLstat || !usedReadlink {
 		t.Fatalf("expected System Lstat and Readlink for migrated symlink, got Lstat=%v Readlink=%v", usedLstat, usedReadlink)
@@ -632,8 +632,8 @@ func TestWriteAntigravityMCPConfigUsesSystemForMigratedPathStat(t *testing.T) {
 		},
 	}
 
-	if err := WriteAntigravityMCPConfig(sys, root, project); err != nil {
-		t.Fatalf("WriteAntigravityMCPConfig error: %v", err)
+	if err := writeAntigravityMCPConfig(sys, root, project); err != nil {
+		t.Fatalf("writeAntigravityMCPConfig error: %v", err)
 	}
 	if !usedMigratedStat {
 		t.Fatal("expected System Stat for migrated Antigravity MCP config path")
@@ -668,7 +668,7 @@ func TestWriteAntigravityMCPConfigRejectsEscapedMigratedSymlinkParent(t *testing
 		},
 	}
 
-	err := WriteAntigravityMCPConfig(RealSystem{}, root, project)
+	err := writeAntigravityMCPConfig(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "resolves outside .agy") {
 		t.Fatalf("expected escaped symlink parent error, got %v", err)
 	}
@@ -702,7 +702,7 @@ func TestWriteAntigravityMCPConfigRejectsEscapedDirectMigratedParent(t *testing.
 		},
 	}
 
-	err := WriteAntigravityMCPConfig(RealSystem{}, root, project)
+	err := writeAntigravityMCPConfig(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "resolves outside .agy") {
 		t.Fatalf("expected escaped migrated parent error, got %v", err)
 	}
@@ -721,7 +721,7 @@ func TestWriteAntigravitySettingsRejectsEscapedAgyRoot(t *testing.T) {
 	}
 	project := &config.ProjectConfig{Config: config.Config{}}
 
-	err := WriteAntigravitySettings(RealSystem{}, root, project)
+	err := writeAntigravitySettings(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "must not be a symlink") {
 		t.Fatalf("expected escaped .agy error, got %v", err)
 	}
@@ -750,8 +750,8 @@ func TestCleanAntigravityOutputsRemovesMigratedMCPConfig(t *testing.T) {
 		t.Fatalf("seed legacy symlink: %v", err)
 	}
 
-	if err := CleanAntigravityOutputs(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanAntigravityOutputs: %v", err)
+	if err := cleanAntigravityOutputs(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanAntigravityOutputs: %v", err)
 	}
 	if _, err := os.Lstat(paths[0]); err != nil {
 		t.Fatalf("expected shared settings preserved, lstat err = %v", err)
@@ -779,7 +779,7 @@ func TestCleanAntigravityOutputsRejectsEscapedMigratedParent(t *testing.T) {
 		t.Fatalf("seed outside config: %v", err)
 	}
 
-	err := CleanAntigravityOutputs(RealSystem{}, root)
+	err := cleanAntigravityOutputs(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "resolves outside .agy") {
 		t.Fatalf("expected escaped cleanup error, got %v", err)
 	}
@@ -796,8 +796,8 @@ func TestWriteAntigravityChimePluginWritesManagedFiles(t *testing.T) {
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
 
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin: %v", err)
 	}
 	dir := antigravityChimePluginDir(root)
 	plugin := readFileForTest(t, filepath.Join(dir, "plugin.json"))
@@ -844,8 +844,8 @@ func TestCleanAntigravityChimePluginRemovesOnlyManagedPlugin(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin: %v", err)
 	}
 	otherPlugin := filepath.Join(root, ".agents", "plugins", "user-plugin", "plugin.json")
 	if err := os.MkdirAll(filepath.Dir(otherPlugin), 0o700); err != nil {
@@ -855,8 +855,8 @@ func TestCleanAntigravityChimePluginRemovesOnlyManagedPlugin(t *testing.T) {
 		t.Fatalf("write user plugin: %v", err)
 	}
 
-	if err := CleanAntigravityChimePlugin(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanAntigravityChimePlugin: %v", err)
+	if err := cleanAntigravityChimePlugin(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanAntigravityChimePlugin: %v", err)
 	}
 	if _, err := os.Lstat(antigravityChimePluginDir(root)); !os.IsNotExist(err) {
 		t.Fatalf("expected chime plugin removed, lstat err=%v", err)
@@ -873,14 +873,14 @@ func TestWriteAntigravityChimePluginDisabledCleansManagedPlugin(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin enabled: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin enabled: %v", err)
 	}
 
 	disabled := false
 	project.Config.Notifications.Chime = &disabled
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin disabled: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin disabled: %v", err)
 	}
 	if _, err := os.Lstat(antigravityChimePluginDir(root)); !os.IsNotExist(err) {
 		t.Fatalf("expected disabled chime to remove managed plugin, lstat err=%v", err)
@@ -891,8 +891,8 @@ func TestCleanAntigravityChimePluginNoopWhenMissing(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
-	if err := CleanAntigravityChimePlugin(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanAntigravityChimePlugin missing plugin: %v", err)
+	if err := cleanAntigravityChimePlugin(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanAntigravityChimePlugin missing plugin: %v", err)
 	}
 	if _, err := os.Lstat(filepath.Join(root, ".agents")); !os.IsNotExist(err) {
 		t.Fatalf("cleanup of missing chime plugin should not create .agents, lstat err=%v", err)
@@ -907,7 +907,7 @@ func TestCleanAntigravityChimePluginRejectsSymlinkAgentsParentWhenPluginMissing(
 		t.Fatalf("seed .agents symlink: %v", err)
 	}
 
-	err := CleanAntigravityChimePlugin(RealSystem{}, root)
+	err := cleanAntigravityChimePlugin(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected symlink parent cleanup conflict, got %v", err)
 	}
@@ -925,7 +925,7 @@ func TestCleanAntigravityChimePluginRejectsUserOwnedPluginDir(t *testing.T) {
 		t.Fatalf("write user plugin: %v", err)
 	}
 
-	err := CleanAntigravityChimePlugin(RealSystem{}, root)
+	err := cleanAntigravityChimePlugin(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected user-owned plugin cleanup conflict, got %v", err)
 	}
@@ -941,15 +941,15 @@ func TestCleanAntigravityChimePluginRejectsManagedPluginWithExtraFile(t *testing
 	project := &config.ProjectConfig{
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin: %v", err)
 	}
 	extraPath := filepath.Join(antigravityChimePluginDir(root), "notes.txt")
 	if err := os.WriteFile(extraPath, []byte("user data"), 0o600); err != nil {
 		t.Fatalf("write extra plugin file: %v", err)
 	}
 
-	err := CleanAntigravityChimePlugin(RealSystem{}, root)
+	err := cleanAntigravityChimePlugin(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected augmented plugin cleanup conflict, got %v", err)
 	}
@@ -966,7 +966,7 @@ func TestCleanAntigravityChimePluginRejectsIncompletePluginDir(t *testing.T) {
 		t.Fatalf("mkdir plugin dir: %v", err)
 	}
 
-	err := CleanAntigravityChimePlugin(RealSystem{}, root)
+	err := cleanAntigravityChimePlugin(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected incomplete plugin cleanup conflict, got %v", err)
 	}
@@ -982,8 +982,8 @@ func TestCleanAntigravityChimePluginReadDirErrorPreservesPlugin(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin: %v", err)
 	}
 	readDirErr := errors.New("readdir denied")
 	sys := &MockSystem{
@@ -996,7 +996,7 @@ func TestCleanAntigravityChimePluginReadDirErrorPreservesPlugin(t *testing.T) {
 		},
 	}
 
-	err := CleanAntigravityChimePlugin(sys, root)
+	err := cleanAntigravityChimePlugin(sys, root)
 	if err == nil || !strings.Contains(err.Error(), "readdir denied") {
 		t.Fatalf("expected plugin ReadDir error, got %v", err)
 	}
@@ -1019,7 +1019,7 @@ func TestCleanAntigravityChimePluginStatErrorFailsLoud(t *testing.T) {
 		},
 	}
 
-	err := CleanAntigravityChimePlugin(sys, root)
+	err := cleanAntigravityChimePlugin(sys, root)
 	if err == nil || !strings.Contains(err.Error(), "stat denied") {
 		t.Fatalf("expected plugin stat error, got %v", err)
 	}
@@ -1036,7 +1036,7 @@ func TestCleanAntigravityChimePluginRejectsNonDirectoryPluginPath(t *testing.T) 
 		t.Fatalf("write plugin path file: %v", err)
 	}
 
-	err := CleanAntigravityChimePlugin(RealSystem{}, root)
+	err := cleanAntigravityChimePlugin(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected non-directory plugin cleanup conflict, got %v", err)
 	}
@@ -1053,14 +1053,14 @@ func TestCleanAntigravityChimePluginRejectsSymlinkAgentsParent(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, outside, project); err != nil {
+	if err := writeAntigravityChimePlugin(RealSystem{}, outside, project); err != nil {
 		t.Fatalf("seed outside chime plugin: %v", err)
 	}
 	if err := os.Symlink(filepath.Join(outside, ".agents"), filepath.Join(root, ".agents")); err != nil {
 		t.Fatalf("seed .agents symlink: %v", err)
 	}
 
-	err := CleanAntigravityChimePlugin(RealSystem{}, root)
+	err := cleanAntigravityChimePlugin(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected symlink parent cleanup conflict, got %v", err)
 	}
@@ -1076,8 +1076,8 @@ func TestCleanAntigravityChimePluginRemoveErrorPreservesPlugin(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin: %v", err)
 	}
 	removeErr := errors.New("remove denied")
 	sys := &MockSystem{
@@ -1090,7 +1090,7 @@ func TestCleanAntigravityChimePluginRemoveErrorPreservesPlugin(t *testing.T) {
 		},
 	}
 
-	err := CleanAntigravityChimePlugin(sys, root)
+	err := cleanAntigravityChimePlugin(sys, root)
 	if err == nil || !strings.Contains(err.Error(), "remove denied") {
 		t.Fatalf("expected remove error, got %v", err)
 	}
@@ -1114,7 +1114,7 @@ func TestWriteAntigravityChimePluginRejectsUserOwnedPluginDir(t *testing.T) {
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
 
-	err := WriteAntigravityChimePlugin(RealSystem{}, root, project)
+	err := writeAntigravityChimePlugin(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected user-owned plugin conflict, got %v", err)
 	}
@@ -1136,7 +1136,7 @@ func TestWriteAntigravityChimePluginRejectsSymlinkPluginDir(t *testing.T) {
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
 
-	err := WriteAntigravityChimePlugin(RealSystem{}, root, project)
+	err := writeAntigravityChimePlugin(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected symlink plugin conflict, got %v", err)
 	}
@@ -1160,7 +1160,7 @@ func TestWriteAntigravityChimePluginRejectsNonDirectoryPluginPath(t *testing.T) 
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
 
-	err := WriteAntigravityChimePlugin(RealSystem{}, root, project)
+	err := writeAntigravityChimePlugin(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("expected non-directory plugin conflict, got %v", err)
 	}
@@ -1193,7 +1193,7 @@ func TestWriteAntigravityChimePluginStatErrorFailsLoud(t *testing.T) {
 		},
 	}
 
-	err := WriteAntigravityChimePlugin(sys, root, project)
+	err := writeAntigravityChimePlugin(sys, root, project)
 	if err == nil || !strings.Contains(err.Error(), "stat denied") {
 		t.Fatalf("expected plugin stat error, got %v", err)
 	}
@@ -1254,7 +1254,7 @@ func TestWriteAntigravityChimePluginCreateDirErrorDoesNotWritePlugin(t *testing.
 		},
 	}
 
-	err := WriteAntigravityChimePlugin(sys, root, project)
+	err := writeAntigravityChimePlugin(sys, root, project)
 	if err == nil || !strings.Contains(err.Error(), "mkdir denied") {
 		t.Fatalf("expected create dir error, got %v", err)
 	}
@@ -1278,7 +1278,7 @@ func TestWriteAntigravityChimePluginWriteErrorReportsTarget(t *testing.T) {
 		},
 	}
 
-	err := WriteAntigravityChimePlugin(sys, root, project)
+	err := writeAntigravityChimePlugin(sys, root, project)
 	if err == nil || !strings.Contains(err.Error(), filepath.Join("agent-layer-chime", "plugin.json")) || !strings.Contains(err.Error(), "write denied") {
 		t.Fatalf("expected plugin write error with target path, got %v", err)
 	}
@@ -1298,8 +1298,8 @@ func TestAntigravityChimePluginValidateWhenAgyAvailable(t *testing.T) {
 	project := &config.ProjectConfig{
 		Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}},
 	}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteAntigravityChimePlugin: %v", err)
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeAntigravityChimePlugin: %v", err)
 	}
 	cmd := exec.Command(agy, "plugin", "validate", antigravityChimePluginDir(root))
 	out, err := cmd.CombinedOutput()

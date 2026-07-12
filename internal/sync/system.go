@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/conn-castle/agent-layer/internal/fsutil"
 )
@@ -21,6 +24,10 @@ type System interface {
 	ReadDir(name string) ([]os.DirEntry, error)
 	Remove(name string) error
 	RemoveAll(path string) error
+	Close(file *os.File) error
+	Flock(fd int, how int) error
+	Now() time.Time
+	Sleep(d time.Duration)
 }
 
 // RealSystem implements System using actual system calls.
@@ -79,4 +86,24 @@ func (RealSystem) Remove(name string) error {
 // RemoveAll removes path and any children it contains.
 func (RealSystem) RemoveAll(path string) error {
 	return os.RemoveAll(path)
+}
+
+// Close closes file.
+func (RealSystem) Close(file *os.File) error {
+	return file.Close()
+}
+
+// Flock applies or removes an advisory lock on the file represented by fd.
+func (RealSystem) Flock(fd int, how int) error {
+	return unix.Flock(fd, how)
+}
+
+// Now returns the current time.
+func (RealSystem) Now() time.Time {
+	return time.Now()
+}
+
+// Sleep pauses the current goroutine for at least d.
+func (RealSystem) Sleep(d time.Duration) {
+	time.Sleep(d)
 }

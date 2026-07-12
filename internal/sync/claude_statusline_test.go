@@ -41,7 +41,7 @@ func writeStatuslineFile(t *testing.T, root, name, content string) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatalf("mkdir source dir: %v", err)
 	}
-	// Source perm is irrelevant: WriteClaudeStatusline forces 0o755 on the copy.
+	// Source perm is irrelevant: writeClaudeStatusline forces 0o755 on the copy.
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 		t.Fatalf("write source statusline: %v", err)
 	}
@@ -56,8 +56,8 @@ func TestWriteClaudeStatusline_EnabledCopiesEditedSourceToNewPath(t *testing.T) 
 	const edited = "#!/usr/bin/env bash\necho my custom status\n"
 	writeSourceStatusline(t, root, edited)
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
-		t.Fatalf("WriteClaudeStatusline: %v", err)
+	if err := writeClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
+		t.Fatalf("writeClaudeStatusline: %v", err)
 	}
 
 	got, err := os.ReadFile(filepath.Join(root, ".claude", "claude-statusline.sh")) // #nosec G304 -- test-controlled path.
@@ -80,7 +80,7 @@ func TestWriteClaudeStatusline_EnabledMissingNewSourceErrors(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 
-	err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject())
+	err := writeClaudeStatusline(RealSystem{}, root, enabledStatuslineProject())
 	if err == nil || !strings.Contains(err.Error(), "agents.claude.statusline is true") {
 		t.Fatalf("expected missing-source error, got %v", err)
 	}
@@ -92,8 +92,8 @@ func TestWriteClaudeStatusline_MigratesLegacySourceWhenNewMissing(t *testing.T) 
 	const legacy = "#!/usr/bin/env bash\necho legacy edit\n"
 	writeLegacySourceStatusline(t, root, legacy)
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
-		t.Fatalf("WriteClaudeStatusline: %v", err)
+	if err := writeClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
+		t.Fatalf("writeClaudeStatusline: %v", err)
 	}
 
 	newSource, err := os.ReadFile(filepath.Join(root, ".agent-layer", "claude-statusline.sh")) // #nosec G304 -- test-controlled path.
@@ -120,8 +120,8 @@ func TestWriteClaudeStatusline_BothSourcesUsesNewAndLeavesLegacy(t *testing.T) {
 	writeLegacySourceStatusline(t, root, legacy)
 	writeSourceStatusline(t, root, current)
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
-		t.Fatalf("WriteClaudeStatusline: %v", err)
+	if err := writeClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
+		t.Fatalf("writeClaudeStatusline: %v", err)
 	}
 
 	projected, err := os.ReadFile(filepath.Join(root, ".claude", "claude-statusline.sh")) // #nosec G304 -- test-controlled path.
@@ -155,8 +155,8 @@ func TestWriteClaudeStatusline_EnabledRemovesStaleLegacyProjection(t *testing.T)
 		t.Fatalf("seed legacy projection: %v", err)
 	}
 
-	if err := WriteClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
-		t.Fatalf("WriteClaudeStatusline: %v", err)
+	if err := writeClaudeStatusline(RealSystem{}, root, enabledStatuslineProject()); err != nil {
+		t.Fatalf("writeClaudeStatusline: %v", err)
 	}
 
 	if _, err := os.Stat(filepath.Join(claudeDir, "claude-statusline.sh")); err != nil {
@@ -183,8 +183,8 @@ func TestWriteClaudeStatusline_DisabledRemovesStaleCopiesAndPreservesSource(t *t
 	}
 
 	disabled := false
-	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(&disabled)); err != nil {
-		t.Fatalf("WriteClaudeStatusline disabled: %v", err)
+	if err := writeClaudeStatusline(RealSystem{}, root, statuslineProject(&disabled)); err != nil {
+		t.Fatalf("writeClaudeStatusline disabled: %v", err)
 	}
 	for _, name := range []string{"claude-statusline.sh", "statusline.sh"} {
 		if _, err := os.Stat(filepath.Join(claudeDir, name)); !os.IsNotExist(err) {
@@ -201,8 +201,8 @@ func TestWriteClaudeStatusline_DisabledNoCopyIsNoop(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	disabled := false
-	if err := WriteClaudeStatusline(RealSystem{}, root, statuslineProject(&disabled)); err != nil {
-		t.Fatalf("WriteClaudeStatusline disabled no-op: %v", err)
+	if err := writeClaudeStatusline(RealSystem{}, root, statuslineProject(&disabled)); err != nil {
+		t.Fatalf("writeClaudeStatusline disabled no-op: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".claude", "claude-statusline.sh")); !os.IsNotExist(err) {
 		t.Fatalf("did not expect a projected statusline, stat err=%v", err)
@@ -219,7 +219,7 @@ func TestWriteClaudeStatusline_DisabledRemoveErrorSurfaces(t *testing.T) {
 		RemoveFunc: func(string) error { return boom },
 	}
 	disabled := false
-	err := WriteClaudeStatusline(sys, t.TempDir(), statuslineProject(&disabled))
+	err := writeClaudeStatusline(sys, t.TempDir(), statuslineProject(&disabled))
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped remove error, got %v", err)
 	}
@@ -240,7 +240,7 @@ func TestWriteClaudeStatusline_SourceReadErrorSurfaces(t *testing.T) {
 			return os.ReadFile(name) // #nosec G304 -- test-controlled path.
 		},
 	}
-	err := WriteClaudeStatusline(sys, root, enabledStatuslineProject())
+	err := writeClaudeStatusline(sys, root, enabledStatuslineProject())
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped source read error, got %v", err)
 	}
@@ -261,7 +261,7 @@ func TestWriteClaudeStatusline_DestMkdirErrorSurfaces(t *testing.T) {
 			return os.MkdirAll(path, perm)
 		},
 	}
-	err := WriteClaudeStatusline(sys, root, enabledStatuslineProject())
+	err := writeClaudeStatusline(sys, root, enabledStatuslineProject())
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped mkdir error, got %v", err)
 	}

@@ -3,6 +3,7 @@ package sync
 import (
 	"errors"
 	"os"
+	"time"
 )
 
 type MockSystem struct {
@@ -18,6 +19,10 @@ type MockSystem struct {
 	ReadDirFunc         func(name string) ([]os.DirEntry, error)
 	RemoveFunc          func(name string) error
 	RemoveAllFunc       func(path string) error
+	CloseFunc           func(file *os.File) error
+	FlockFunc           func(fd int, how int) error
+	NowFunc             func() time.Time
+	SleepFunc           func(d time.Duration)
 }
 
 func (m *MockSystem) LookPath(file string) (string, error) {
@@ -128,4 +133,44 @@ func (m *MockSystem) RemoveAll(path string) error {
 		return m.Fallback.RemoveAll(path)
 	}
 	return os.ErrNotExist
+}
+
+func (m *MockSystem) Close(file *os.File) error {
+	if m.CloseFunc != nil {
+		return m.CloseFunc(file)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Close(file)
+	}
+	return errors.New("mock system Close not implemented")
+}
+
+func (m *MockSystem) Flock(fd int, how int) error {
+	if m.FlockFunc != nil {
+		return m.FlockFunc(fd, how)
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Flock(fd, how)
+	}
+	return errors.New("mock system Flock not implemented")
+}
+
+func (m *MockSystem) Now() time.Time {
+	if m.NowFunc != nil {
+		return m.NowFunc()
+	}
+	if m.Fallback != nil {
+		return m.Fallback.Now()
+	}
+	return time.Time{}
+}
+
+func (m *MockSystem) Sleep(d time.Duration) {
+	if m.SleepFunc != nil {
+		m.SleepFunc(d)
+		return
+	}
+	if m.Fallback != nil {
+		m.Fallback.Sleep(d)
+	}
 }

@@ -22,8 +22,8 @@ type vscodeMCPServer struct {
 	Env     OrderedMap[string] `json:"env,omitempty"`
 }
 
-// WriteVSCodeMCPConfig generates .vscode/mcp.json.
-func WriteVSCodeMCPConfig(sys System, root string, project *config.ProjectConfig) error {
+// writeVSCodeMCPConfig generates .vscode/mcp.json.
+func writeVSCodeMCPConfig(sys System, root string, project *config.ProjectConfig) error {
 	cfg, err := buildVSCodeMCPConfig(project)
 	if err != nil {
 		return err

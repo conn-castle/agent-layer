@@ -62,12 +62,12 @@ command = "old-tool"
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	first := readCodexConfig(t, root)
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("second WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second writeCodexConfig: %v", err)
 	}
 	second := readCodexConfig(t, root)
 	if first != second {
@@ -134,12 +134,12 @@ command = "old-tool"
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("first WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("first writeCodexConfig: %v", err)
 	}
 	first := readCodexConfig(t, root)
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("second WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second writeCodexConfig: %v", err)
 	}
 	second := readCodexConfig(t, root)
 	if first != second {
@@ -165,7 +165,7 @@ func TestWriteCodexConfig_InlineTableProjectsSeedConflictFailsWithActionableErro
 	existing := codexPartialHeader + "projects = { \"/other/repo\" = { trust_level = \"on-request\" } }\n"
 	writeExistingCodexConfig(t, root, existing)
 
-	err := WriteCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}})
+	err := writeCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}})
 	if err == nil || !strings.Contains(err.Error(), "incompatible shape at projects") {
 		t.Fatalf("expected projects shape conflict, got %v", err)
 	}
@@ -186,8 +186,8 @@ func TestWriteCodexConfig_InlineTableProjectsWithTrustedRootSucceeds(t *testing.
 	existing := codexPartialHeader + "projects = { " + tomlpatch.FormatKey(absRoot) + " = { trust_level = \"on-request\" } }\n"
 	writeExistingCodexConfig(t, root, existing)
 
-	if err := WriteCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}}); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}}); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	parsed := parseCodexConfig(t, merged)
@@ -215,7 +215,7 @@ func TestWriteCodexConfig_ManagedScalarAsTableHeaderFailsWithActionableError(t *
 	}
 	// Managed sync writes a root scalar `model = ...`, which collides with the
 	// existing [model] table header; fail loud naming `model`.
-	err := WriteCodexConfig(RealSystem{}, root, project)
+	err := writeCodexConfig(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "incompatible shape at model") {
 		t.Fatalf("expected model shape conflict, got %v", err)
 	}
@@ -235,8 +235,8 @@ func TestWriteCodexConfig_ManagedScalarTableHeaderPreservedWhenNotManaged(t *tes
 		Config: config.Config{Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone}},
 		Env:    map[string]string{},
 	}
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	parsed := parseCodexConfig(t, merged)
@@ -417,8 +417,8 @@ notifications = true
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 
 	parsed := parseCodexConfig(t, readCodexConfig(t, root))
@@ -450,12 +450,12 @@ timeout = 2
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	first := readCodexConfig(t, root)
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("second WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second writeCodexConfig: %v", err)
 	}
 	second := readCodexConfig(t, root)
 	if first != second {
@@ -494,12 +494,12 @@ read = true
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	first := readCodexConfig(t, root)
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("second WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second writeCodexConfig: %v", err)
 	}
 	second := readCodexConfig(t, root)
 	if first != second {
@@ -574,8 +574,8 @@ func TestWriteCodexConfig_ChimePreservesAgentSpecificStopHooks(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	for _, want := range []string{codexChimeBeginMarker, agentLayerChimeMarker, `command = 'echo user'`} {
@@ -602,8 +602,8 @@ timeout = 2
 		Env:    map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	if strings.Contains(merged, codexChimeBeginMarker) || strings.Contains(merged, agentLayerChimeMarker) {
@@ -629,7 +629,7 @@ read = true
 		Env:    map[string]string{},
 	}
 
-	err := WriteCodexConfig(RealSystem{}, root, project)
+	err := writeCodexConfig(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "markers are incomplete or ambiguous") {
 		t.Fatalf("expected ambiguous chime marker error, got %v", err)
 	}
@@ -650,8 +650,8 @@ timeout = 2
 
 `+codexChimeBlockForTest())
 
-	if err := CleanCodexChimeHook(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanCodexChimeHook: %v", err)
+	if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanCodexChimeHook: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	if strings.Contains(merged, codexChimeBeginMarker) || strings.Contains(merged, agentLayerChimeMarker) {
@@ -675,7 +675,7 @@ func TestCleanCodexChimeHookRejectsSymlinkConfigDir(t *testing.T) {
 		t.Fatalf("seed .codex symlink: %v", err)
 	}
 
-	err := CleanCodexChimeHook(RealSystem{}, root)
+	err := cleanCodexChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "must be a real file") {
 		t.Fatalf("expected symlink cleanup error, got %v", err)
 	}
@@ -699,7 +699,7 @@ func TestCleanCodexChimeHookRejectsSymlinkConfigFile(t *testing.T) {
 		t.Fatalf("seed config symlink: %v", err)
 	}
 
-	err := CleanCodexChimeHook(RealSystem{}, root)
+	err := cleanCodexChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "must be a real file") {
 		t.Fatalf("expected symlink cleanup error, got %v", err)
 	}
@@ -720,8 +720,8 @@ func TestCleanCodexChimeHookIgnoresMalformedConfigWithoutChime(t *testing.T) {
 		t.Fatalf("write config: %v", err)
 	}
 
-	if err := CleanCodexChimeHook(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanCodexChimeHook should ignore malformed no-chime config: %v", err)
+	if err := cleanCodexChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanCodexChimeHook should ignore malformed no-chime config: %v", err)
 	}
 	if got := readFileForTest(t, configPath); got != content {
 		t.Fatalf("expected malformed no-chime config untouched, got:\n%s", got)
@@ -746,8 +746,8 @@ timeout = 5
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	if got := strings.Count(merged, "[[hooks.Stop]]"); got != 1 {
@@ -777,12 +777,12 @@ func TestWriteCodexConfig_ChimePreservesHookTrustStateInsideManagedMarkers(t *te
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	first := readCodexConfig(t, root)
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("second WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second writeCodexConfig: %v", err)
 	}
 	second := readCodexConfig(t, root)
 	if first != second {
@@ -824,8 +824,8 @@ func TestWriteCodexConfig_ChimeIgnoresMarkersInsideMultilineStrings(t *testing.T
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	parsed := parseCodexConfig(t, merged)
@@ -853,7 +853,7 @@ func TestWriteCodexConfig_ChimeRootInlineHooksConflictFails(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	err := WriteCodexConfig(RealSystem{}, root, project)
+	err := writeCodexConfig(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "incompatible shape at hooks") {
 		t.Fatalf("expected root inline hooks conflict, got %v", err)
 	}
@@ -878,7 +878,7 @@ func TestWriteCodexConfig_ChimeRejectsLegacyAgentSpecificHook(t *testing.T) {
 		},
 		Env: map[string]string{},
 	}
-	err := WriteCodexConfig(RealSystem{}, t.TempDir(), project)
+	err := writeCodexConfig(RealSystem{}, t.TempDir(), project)
 	if err == nil || !strings.Contains(err.Error(), "agents.codex.agent_specific.hooks") {
 		t.Fatalf("expected legacy agent_specific chime error, got %v", err)
 	}
@@ -903,8 +903,8 @@ tui = { status_line = ["old"], notifications = true }
 		},
 		Env: map[string]string{},
 	}
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	merged := readCodexConfig(t, root)
 	for _, unexpected := range []string{"apps = false", "plugins = false", "browser_use = false", "in_app_browser = false", "computer_use = false", "status_line"} {
@@ -926,7 +926,7 @@ func TestWriteCodexConfig_FailsOnInvalidExistingTOMLWithoutOverwrite(t *testing.
 	const invalid = "[tui\nstatus_line = []\n"
 	writeExistingCodexConfig(t, root, invalid)
 
-	err := WriteCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}})
+	err := writeCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}})
 	if err == nil || !strings.Contains(err.Error(), "invalid existing Codex config TOML") {
 		t.Fatalf("expected invalid existing TOML error, got %v", err)
 	}
@@ -954,7 +954,7 @@ func TestWriteCodexConfig_ReadErrorDoesNotWrite(t *testing.T) {
 		},
 	}
 
-	err := WriteCodexConfig(sys, root, &config.ProjectConfig{Env: map[string]string{}})
+	err := writeCodexConfig(sys, root, &config.ProjectConfig{Env: map[string]string{}})
 	if err == nil || !strings.Contains(err.Error(), "read denied") {
 		t.Fatalf("expected read error, got %v", err)
 	}
@@ -983,7 +983,7 @@ func TestWriteCodexConfig_MalformedAgentSpecificProjectsFails(t *testing.T) {
 				},
 				Env: map[string]string{},
 			}
-			err := WriteCodexConfig(RealSystem{}, t.TempDir(), project)
+			err := writeCodexConfig(RealSystem{}, t.TempDir(), project)
 			if err == nil || !strings.Contains(err.Error(), "agents.codex.agent_specific.projects") {
 				t.Fatalf("expected malformed projects error, got %v", err)
 			}
@@ -1006,8 +1006,8 @@ func TestWriteCodexConfig_PreservesExistingQuotedProjectTrust(t *testing.T) {
 trust_level = "on-request"
 `)
 
-	if err := WriteCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}}); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}}); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 
 	merged := readCodexConfig(t, root)
@@ -1028,7 +1028,7 @@ func TestWriteCodexConfig_ExistingShapeConflictFailsWithoutOverwrite(t *testing.
 	const conflict = "tui = \"not-a-table\"\n"
 	writeExistingCodexConfig(t, root, conflict)
 
-	err := WriteCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}})
+	err := writeCodexConfig(RealSystem{}, root, &config.ProjectConfig{Env: map[string]string{}})
 	if err == nil || !strings.Contains(err.Error(), "incompatible shape at tui") {
 		t.Fatalf("expected shape conflict, got %v", err)
 	}
@@ -1070,8 +1070,8 @@ keep = true
 		Env: map[string]string{},
 	}
 
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 
 	merged := readCodexConfig(t, root)
@@ -1121,7 +1121,7 @@ func TestWriteCodexConfig_AgentSpecificManagedScalarTableFails(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	err := WriteCodexConfig(RealSystem{}, root, project)
+	err := writeCodexConfig(RealSystem{}, root, project)
 	if err == nil || !strings.Contains(err.Error(), "cannot render TOML table as scalar literal") {
 		t.Fatalf("expected scalar table conflict, got %v", err)
 	}

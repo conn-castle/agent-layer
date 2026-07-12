@@ -55,10 +55,10 @@ func appendClaudeChimeStopHook(existing any) []any {
 	})
 }
 
-// CleanClaudeChimeHook removes only Agent Layer's generated chime handler from
+// cleanClaudeChimeHook removes only Agent Layer's generated chime handler from
 // .claude/settings.json. It is used when both Claude surfaces are disabled, so
 // the normal settings regeneration path will not run.
-func CleanClaudeChimeHook(sys System, root string) error {
+func cleanClaudeChimeHook(sys System, root string) error {
 	path, exists, err := existingChimeCleanupTarget(sys, root, ".claude", "settings.json")
 	if err != nil {
 		return err

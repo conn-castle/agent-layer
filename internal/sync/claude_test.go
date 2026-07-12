@@ -64,8 +64,8 @@ func TestWriteClaudeSettings(t *testing.T) {
 		},
 		CommandsAllow: []string{"git status"},
 	}
-	if err := WriteClaudeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteClaudeSettings error: %v", err)
+	if err := writeClaudeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeClaudeSettings error: %v", err)
 	}
 	// The writer must persist the built settings, not an empty object. Read the
 	// file back and assert the managed allow entries are present so a regression
@@ -90,7 +90,7 @@ func TestWriteClaudeSettingsError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
-	if err := WriteClaudeSettings(RealSystem{}, file, project); err == nil {
+	if err := writeClaudeSettings(RealSystem{}, file, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -110,7 +110,7 @@ func TestWriteClaudeSettingsWriteError(t *testing.T) {
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
-	if err := WriteClaudeSettings(RealSystem{}, root, project); err == nil {
+	if err := writeClaudeSettings(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -508,7 +508,7 @@ func TestWriteClaudeSettingsMarshalError(t *testing.T) {
 		},
 	}
 
-	if err := WriteClaudeSettings(sys, root, project); err == nil {
+	if err := writeClaudeSettings(sys, root, project); err == nil {
 		t.Fatal("expected marshal error")
 	}
 }
@@ -1060,8 +1060,8 @@ func TestCleanClaudeChimeHookRemovesOnlyManagedHandler(t *testing.T) {
 	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
-	if err := CleanClaudeChimeHook(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanClaudeChimeHook: %v", err)
+	if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeChimeHook: %v", err)
 	}
 	updated := readFileForTest(t, settingsPath)
 	if strings.Contains(updated, "agent-layer-chime") {
@@ -1086,7 +1086,7 @@ func TestCleanClaudeChimeHookRejectsSymlinkSettingsDir(t *testing.T) {
 		t.Fatalf("seed .claude symlink: %v", err)
 	}
 
-	err := CleanClaudeChimeHook(RealSystem{}, root)
+	err := cleanClaudeChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "must be a real file") {
 		t.Fatalf("expected symlink cleanup error, got %v", err)
 	}
@@ -1110,7 +1110,7 @@ func TestCleanClaudeChimeHookRejectsSymlinkSettingsFile(t *testing.T) {
 		t.Fatalf("seed settings symlink: %v", err)
 	}
 
-	err := CleanClaudeChimeHook(RealSystem{}, root)
+	err := cleanClaudeChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "must be a real file") {
 		t.Fatalf("expected symlink cleanup error, got %v", err)
 	}
@@ -1131,8 +1131,8 @@ func TestCleanClaudeChimeHookIgnoresMalformedSettingsWithoutChime(t *testing.T) 
 		t.Fatalf("write settings: %v", err)
 	}
 
-	if err := CleanClaudeChimeHook(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanClaudeChimeHook should ignore malformed no-chime settings: %v", err)
+	if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeChimeHook should ignore malformed no-chime settings: %v", err)
 	}
 	if got := readFileForTest(t, settingsPath); got != content {
 		t.Fatalf("expected malformed no-chime settings untouched, got:\n%s", got)
@@ -1160,7 +1160,7 @@ func TestCleanClaudeChimeHookReadErrorFailsLoud(t *testing.T) {
 		},
 	}
 
-	err := CleanClaudeChimeHook(sys, root)
+	err := cleanClaudeChimeHook(sys, root)
 	if err == nil || !strings.Contains(err.Error(), "read denied") {
 		t.Fatalf("expected read error, got %v", err)
 	}
@@ -1178,7 +1178,7 @@ func TestCleanClaudeChimeHookRejectsMalformedSettingsWithChime(t *testing.T) {
 		t.Fatalf("write settings: %v", err)
 	}
 
-	err := CleanClaudeChimeHook(RealSystem{}, root)
+	err := cleanClaudeChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "invalid Claude settings") {
 		t.Fatalf("expected malformed chime-bearing settings to fail, got %v", err)
 	}
@@ -1199,7 +1199,7 @@ func TestCleanClaudeChimeHookRejectsMalformedHooksWithChime(t *testing.T) {
 		t.Fatalf("write settings: %v", err)
 	}
 
-	err := CleanClaudeChimeHook(RealSystem{}, root)
+	err := cleanClaudeChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "hooks must be a table") {
 		t.Fatalf("expected malformed hooks cleanup error, got %v", err)
 	}
@@ -1220,7 +1220,7 @@ func TestCleanClaudeChimeHookRejectsMalformedStopWithChime(t *testing.T) {
 		t.Fatalf("write settings: %v", err)
 	}
 
-	err := CleanClaudeChimeHook(RealSystem{}, root)
+	err := cleanClaudeChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "hooks.Stop must be a list") {
 		t.Fatalf("expected malformed Stop cleanup error, got %v", err)
 	}
@@ -1241,7 +1241,7 @@ func TestCleanClaudeChimeHookRejectsMalformedHandlerListWithChime(t *testing.T) 
 		t.Fatalf("write settings: %v", err)
 	}
 
-	err := CleanClaudeChimeHook(RealSystem{}, root)
+	err := cleanClaudeChimeHook(RealSystem{}, root)
 	if err == nil || !strings.Contains(err.Error(), "hooks.Stop.hooks must be a list") {
 		t.Fatalf("expected malformed handler-list cleanup error, got %v", err)
 	}
@@ -1271,8 +1271,8 @@ func TestCleanClaudeChimeHookNoopWhenChimeTextIsOutsideHooks(t *testing.T) {
 				t.Fatalf("write settings: %v", err)
 			}
 
-			if err := CleanClaudeChimeHook(RealSystem{}, root); err != nil {
-				t.Fatalf("CleanClaudeChimeHook should preserve no-op %q: %v", name, err)
+			if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+				t.Fatalf("cleanClaudeChimeHook should preserve no-op %q: %v", name, err)
 			}
 			if got := readFileForTest(t, settingsPath); got != content {
 				t.Fatalf("expected no-op settings preserved for %q, got:\n%s", name, got)
@@ -1299,7 +1299,7 @@ func TestCleanClaudeChimeHookMarshalErrorPreservesSettings(t *testing.T) {
 		},
 	}
 
-	err := CleanClaudeChimeHook(sys, root)
+	err := cleanClaudeChimeHook(sys, root)
 	if err == nil || !strings.Contains(err.Error(), "marshal denied") {
 		t.Fatalf("expected marshal error, got %v", err)
 	}
@@ -1329,7 +1329,7 @@ func TestCleanClaudeChimeHookWriteErrorPreservesSettings(t *testing.T) {
 		},
 	}
 
-	err := CleanClaudeChimeHook(sys, root)
+	err := cleanClaudeChimeHook(sys, root)
 	if err == nil || !strings.Contains(err.Error(), "write denied") {
 		t.Fatalf("expected write error, got %v", err)
 	}
@@ -1370,8 +1370,8 @@ func TestCleanClaudeChimeHookPreservesAugmentedMatchingHandler(t *testing.T) {
 	if err := os.WriteFile(settingsPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
-	if err := CleanClaudeChimeHook(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanClaudeChimeHook: %v", err)
+	if err := cleanClaudeChimeHook(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanClaudeChimeHook: %v", err)
 	}
 	updated := readFileForTest(t, settingsPath)
 	if !strings.Contains(updated, `"description": "user-owned"`) {
