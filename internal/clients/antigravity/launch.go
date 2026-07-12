@@ -23,6 +23,9 @@ var execFunc = clients.ExecHandoff
 
 // Launch starts Antigravity through agy with a repo-local --gemini_dir.
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
+	if !filepath.IsAbs(cfg.Root) {
+		return fmt.Errorf(messages.ClientsAntigravityRelativeRootFmt, cfg.Root)
+	}
 	// Preflight `agy` discovery BEFORE creating `.agy/` so a missing-binary
 	// failure does not pollute the user's repo with a stray directory
 	// (Round 2 F-B2-5).
