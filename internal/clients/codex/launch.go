@@ -2,6 +2,7 @@ package codex
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,7 @@ var execFunc = clients.ExecHandoff
 func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs []string) error {
 	args := append([]string{}, passArgs...)
 
-	env = configureCodexHome(cfg.Root, env, cfg.Config.Agents.Codex)
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Codex, os.Stderr)
 
 	path, err := exec.LookPath("codex")
 	if err != nil {
@@ -33,7 +34,9 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	return nil
 }
 
-func configureCodexHome(root string, env []string, cfg config.CodexConfig) []string {
+// ConfigureEnvironment applies the Codex environment rules shared by the
+// interactive launcher and headless Agent Dispatch.
+func ConfigureEnvironment(root string, env []string, cfg config.CodexConfig, warning io.Writer) []string {
 	if !config.CodexLocalConfigDirEnabled(cfg) {
 		return env
 	}
@@ -43,12 +46,12 @@ func configureCodexHome(root string, env []string, cfg config.CodexConfig) []str
 	if !ok || current == "" {
 		return clients.SetEnv(env, "CODEX_HOME", expected)
 	}
-
-	if !clients.SamePath(current, expected) {
-		// Best-effort warning; a stderr write failure does not change the returned
-		// env (the existing CODEX_HOME is preserved regardless).
-		_, _ = fmt.Fprintf(os.Stderr, messages.ClientsCodexHomeWarningFmt, current, expected)
+	if !clients.SamePath(current, expected) && warning != nil {
+		_, _ = fmt.Fprintf(warning, messages.ClientsCodexHomeWarningFmt, current, expected)
 	}
-
 	return env
+}
+
+func configureCodexHome(root string, env []string, cfg config.CodexConfig) []string {
+	return ConfigureEnvironment(root, env, cfg, os.Stderr)
 }

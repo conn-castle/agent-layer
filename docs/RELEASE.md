@@ -51,6 +51,16 @@ make release-preflight RELEASE_TAG="$VERSION"
 
 CI validates both manifests exist via `make docs-upgrade-check RELEASE_TAG=<tag>`. The release workflow will fail if either manifest is missing. Run `make release-preflight` locally before tagging to run CI, release-script checks, and upgrade-doc validation before publishing.
 
+## Agent Dispatch compatibility evidence
+
+For a release that changes Agent Dispatch, attach a short evidence record under
+`docs/release-evidence/` to the release pull request before tagging. Record the
+exact `claude --version`, `codex --version`, and `agy --version` values plus a
+fresh and named-resume probe for every declared supported capability. A changed
+or missing Antigravity UUID line must also be shown to retain diagnostics and
+fail safe as `not resumable`; do not replace it with global/provider-private
+state lookup. This is release evidence, not a new public probe command.
+
 ## GitHub release (automatic)
 1. Tag push triggers the release workflow.
 2. The workflow validates upgrade-contract docs for the tag (`make docs-upgrade-check RELEASE_TAG=<tag>`), ensuring a matching migration-table row exists, blocking placeholder migration text when changelog notes breaking/manual migration impact, verifying the migration manifest and template ownership manifest exist, and enforcing upgrade CTA syntax drift checks in core docs/message surfaces.

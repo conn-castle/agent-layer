@@ -38,8 +38,8 @@ mode = "all"
 
 [dispatch]
 # Maximum dispatch depth, including the initial `al dispatch` call.
-# 1 means a dispatched target cannot call `al dispatch` again.
-max_depth = 1
+# 3 allows two nested `al dispatch` calls.
+max_depth = 3
 
 [agents.antigravity]
 enabled = true
@@ -640,23 +640,41 @@ al vscode --no-sync -- --reuse-window
 
 ### Dispatch
 
-`al dispatch` lets an Agent Layer-launched caller run one supported headless target for a focused text task:
+`al dispatch` starts one fresh, final-answer-only headless provider turn:
 
 ```bash
 al dispatch --agent codex "Review this plan."
 al dispatch --agent random --skill review-plan "Review this plan."
 cat prompt.md | al dispatch --agent claude
+al dispatch resume tiny-round-capacitor "Review the revision."
+al dispatch inspect tiny-round-capacitor --json
+al dispatch list
+al dispatch delete tiny-round-capacitor
 ```
 
-Supported target values are `codex`, `claude`, `antigravity`, and `random`. When `--agent` is omitted, Agent Layer uses the env-only caller marker (`AL_DISPATCH_CALLER_AGENT`) and the caller's optional `agents.<caller>.dispatch.default_agent`, defaulting to `random`. Dispatch writes target answer text to stdout and status/errors to stderr, limits nested calls with `dispatch.max_depth` (default `1`), and uses the selected target's generated config and permissions. See `docs/AGENT-DISPATCH.md` in the repository for the full v1 contract.
+Supported target values are `codex`, `claude`, `antigravity`, and `random`.
+When `--agent` is omitted, Agent Layer uses the env-only caller marker
+(`AL_DISPATCH_CALLER_AGENT`) and the caller's optional
+`agents.<caller>.dispatch.default_agent`, defaulting to `random`.
+
+Each ordinary call creates a new provider conversation. Only `resume <name>`
+continues a conversation, using an exact durable mapping; prompt, role, target,
+and artifact paths never infer reuse. Dispatch writes one identity line to
+standard error and replays only a semantically completed final answer to
+standard output. `inspect` reports read-only transport facts, while `delete`
+removes only the Agent Layer mapping. Use `al dispatch options --json` for
+installed version and separate fresh/resume/inspect capability facts. The
+initial exact compatibility set is Claude Code 2.1.207, Codex CLI 0.144.1, and
+Antigravity 1.1.1. See `docs/AGENT-DISPATCH.md` in the repository for the full
+v0.13 contract.
 
 **Exit codes**
 
 - `0` — dispatch completed successfully
 - `64` — usage or resolution failure (missing prompt and skill, unknown target, unknown caller with omitted `--agent`, unsupported override field for the selected target)
 - `65` — configuration or state failure (missing source skill, stale/missing target skill projection, malformed config, disabled target)
-- `69` — target unavailable (missing target binary, unauthenticated/unusable target CLI, no eligible target in the random-selection pool)
-- `70` — target or adapter failure (target subprocess non-zero exit, target rejection of a custom override value, changed structured stream shape, unreadable target output, internal dispatch error)
+- `69` — target unavailable (missing target binary, unsupported provider version, no eligible target in the random-selection pool)
+- `70` — target or adapter failure (provider failure, missing required terminal result, capture limit/I/O failure, or process-supervision failure)
 - `75` — nested dispatch blocked by `dispatch.max_depth` or invalid `AL_DISPATCH_ACTIVE`
 - `130` — interrupted by `SIGINT`
 - `143` — terminated by `SIGTERM`

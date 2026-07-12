@@ -1,4 +1,4 @@
-package dispatch
+package versiondispatch
 
 import (
 	"io"
@@ -33,7 +33,6 @@ type System interface {
 	Sleep(d time.Duration)
 	HTTPClient() *http.Client
 	Flock(fd int, how int) error
-	Now() time.Time
 }
 
 // defaultHTTPClient is the shared HTTP client for production use.
@@ -126,9 +125,4 @@ func (RealSystem) HTTPClient() *http.Client {
 // Flock applies or removes an advisory lock on the file represented by fd.
 func (RealSystem) Flock(fd int, how int) error {
 	return unix.Flock(fd, how)
-}
-
-// Now returns the current time.
-func (RealSystem) Now() time.Time {
-	return time.Now()
 }

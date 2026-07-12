@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 // poison normal (non-dispatch) launches; the dispatch flow re-sets the
 // marker explicitly on the dispatched child.
 func BuildEnv(base []string, projectEnv map[string]string, runInfo *run.Info) []string {
-	env := UnsetEnv(base, dispatch.EnvShimActive)
+	env := UnsetEnv(base, versiondispatch.EnvShimActive)
 	env = UnsetEnv(env, EnvDispatchActive)
 	env = mergeEnvFillMissing(env, projectEnv)
 	if runInfo != nil {

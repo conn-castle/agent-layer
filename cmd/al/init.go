@@ -14,12 +14,12 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	alsync "github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/update"
 	"github.com/conn-castle/agent-layer/internal/version"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/wizard"
 )
 
@@ -122,10 +122,10 @@ func warnInitUpdate(cmd *cobra.Command, flagVersion string) {
 	if strings.TrimSpace(flagVersion) != "" {
 		return
 	}
-	if strings.TrimSpace(os.Getenv(dispatch.EnvVersionOverride)) != "" {
+	if strings.TrimSpace(os.Getenv(versiondispatch.EnvVersionOverride)) != "" {
 		return
 	}
-	if strings.TrimSpace(os.Getenv(dispatch.EnvNoNetwork)) != "" {
+	if strings.TrimSpace(os.Getenv(versiondispatch.EnvNoNetwork)) != "" {
 		return
 	}
 	warnColor := color.New(color.FgYellow)

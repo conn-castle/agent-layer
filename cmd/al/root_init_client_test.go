@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/config"
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/testutil"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 func TestInitAndSyncCommands(t *testing.T) {
@@ -31,7 +31,7 @@ func TestInitAndSyncCommands(t *testing.T) {
 		binDir := t.TempDir()
 		testutil.WriteStub(t, binDir, "al")
 		t.Setenv("PATH", binDir)
-		t.Setenv(dispatch.EnvNoNetwork, "1")
+		t.Setenv(versiondispatch.EnvNoNetwork, "1")
 
 		syncCmd := newSyncCmd()
 		err := syncCmd.RunE(syncCmd, nil)

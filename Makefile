@@ -113,7 +113,7 @@ test: check-gotestsum ## Run tests
 .PHONY: test-race
 test-race: ## Run race detector for concurrency-critical packages
 	@mkdir -p "$(GO_CACHE)" "$(GO_MOD_CACHE)"
-	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/sync/... ./internal/install/... ./internal/warnings/...
+	@GOCACHE="$(GO_CACHE)" GOMODCACHE="$(GO_MOD_CACHE)" go test -race ./internal/agentdispatch/... ./internal/sync/... ./internal/install/... ./internal/warnings/...
 
 .PHONY: dead-code
 dead-code: check-deadcode ## Run dead code analysis across all packages (test-aware); fails on findings

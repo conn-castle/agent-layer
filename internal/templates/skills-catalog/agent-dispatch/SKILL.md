@@ -1,7 +1,7 @@
 ---
 name: agent-dispatch
-description: Use `al dispatch` only when the user names an external dispatch target or another skill explicitly requires dispatch. Treat generic subagent, second-agent, and fresh-context requests as built-in subagent work.
-compatibility: Requires the Agent Layer CLI (`al`) from the project environment and at least one configured target for actual al dispatch runs.
+description: Use `al dispatch` only when the user names an external dispatch target or another skill explicitly requires dispatch. Do not use it for generic subagent, second-agent, or fresh-context requests; use the built-in subagent instead.
+compatibility: Requires the project Agent Layer CLI (`al`) and a provider whose exact installed version is reported as fresh-capable by `al dispatch options --json`.
 allowed-tools: Bash(al:*) Bash(cat:*)
 ---
 
@@ -9,50 +9,72 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 
 ## Required artifacts
 
-- No artifact is required for ordinary `al dispatch` runs.
-- If preparing prompt files or saving target output, put agent-only files under
-  `.agent-layer/tmp/`.
-- Use `.agent-layer/tmp/agent-dispatch.<run-id>.<type>.md` or
-  `.agent-layer/tmp/agent-dispatch.<run-id>.<type>.json` for scratch prompt,
-  output, or options files.
-- Report every artifact path created.
+- No artifact is required for an ordinary dispatch.
+- Put caller-owned prompt or output files under `.agent-layer/tmp/` and report
+  each created path.
+- Agent Dispatch itself owns isolated evidence under
+  `.agent-layer/tmp/runs/<run-id>/`; do not inspect it merely to wait.
 
 ## Global constraints
 
-- Run `al dispatch --help` before the first `al dispatch` command in a session.
-- Run relevant subcommand help before using non-obvious subcommands or flags.
-- If `al`, a target CLI, authentication, source skill, or generated skill
-  projection is missing, stop and report the missing requirement. Do not
-  install, authenticate, sync, or change configuration unless the user asked
-  for setup or repair.
+- Run `al dispatch --help` before the first real dispatch in a session and run
+  subcommand help before using an unfamiliar command or flag.
+- Before choosing a target, run `al dispatch options --json` against the current
+  project. Use its separate `fresh`, `resume`, and `inspect` capability facts;
+  never rely on a former `dispatch_capable` or streaming field.
+- Start ordinary work with `al dispatch --agent <target> ...`. Ordinary calls
+  always create a fresh provider conversation.
+- Continue work only with `al dispatch resume <name> ...`, where `<name>` is
+  the exact identity printed by the original successful dispatch. Never infer
+  reuse from a target, prompt, role, artifact, or prior output.
+- Standard output is the final answer only. Identity lines, capability changes,
+  and failures are on standard error. Do not parse provider events or expect
+  partial-answer progress.
+- If a target, authentication, source skill, generated skill projection, or
+  required capability is missing, stop and report it. Do not install,
+  authenticate, sync, or change configuration unless the user asked for setup
+  or repair.
 
 ## Workflow
 
-1. Verify any requested skill exists in the current project's Agent Layer skill
-   source. Do not invent a skill name.
-2. Send the focused prompt to one target. Omit unrelated conversation
-   history and information that could bias the target.
-3. If a prompt file is needed, write it under `.agent-layer/tmp/`.
-4. Run `al dispatch` and wait for the original process to finish, even if
-   output is quiet or it appears stalled. Do not poll.
-   Wait until it finishes to inspect dispatch artifacts.
+1. Validate the requested target and optional skill from current metadata.
+2. Build a focused prompt without unrelated history or biasing context.
+3. Launch one fresh `al dispatch` invocation in a background-capable terminal
+   and yield. Preserve its printed identity name with the task state.
+4. Wait for its terminal notification. Do not poll, send empty input, inspect
+   partial output, or infer failure from silence.
+5. Inspect final output and required artifacts once after terminal completion.
+   Use `al dispatch inspect <name>` only for a deliberate diagnosis; it reports
+   transport facts and never makes a process healthy or retry-safe.
+6. If explicit continuation is required, use the exact name with `resume`.
+   A failure, missing report, or silence is not permission to launch a fresh
+   replacement. Preserve ambiguous work and surface the blocker.
+
+## Review-plan fanout
+
+- Start the requested external reviewer dispatches before waiting for any one.
+- Each reviewer starts exactly the three built-in perspectives from its review
+  prompt before waiting, synthesizes them, and writes its required report.
+- Replace a reviewer only after proven terminal infrastructure failure, all of
+  its descendants terminal, and evidence that the retry is safe. Missing
+  output or an ambiguous lifecycle blocks replacement.
 
 ## Guardrails
 
-- Do not use `al dispatch` for ordinary local shell work, tests, web retrieval,
-  browser automation, or API-only tasks.
-- Do not use `al dispatch` to bypass the caller's restrictions, approvals, or
-  sandbox expectations.
-- Do not retry failed target launches by guessing flags, targets, models, or
-  reasoning-effort values. Re-check help and options, then report the mismatch
-  if it remains unresolved.
+- Do not use Agent Dispatch for ordinary local shell work, tests, web
+  retrieval, browser automation, or API-only tasks.
+- Do not use it to bypass caller restrictions, approvals, or sandbox policy.
+- Do not guess flags, target versions, models, effort values, provider session
+  IDs, or a fallback conversation. Re-check help and options, then report the
+  mismatch.
+- `delete` removes only the Agent Layer mapping; it never deletes a
+  provider-owned conversation or transcript.
 
 ## Definition of done
 
-- Current target metadata was inspected before any real run.
-- Target selection and skill delivery if used were intentional and reported.
-- Prompt and output artifacts were stored only under `.agent-layer/tmp/` and
-  every created artifact path was reported.
-- Errors were reported explicitly.
-- Any side effects from target work were inspected and verified through the
-  current task's normal checks.
+- Current capability metadata informed intentional target selection.
+- The original invocation reached a terminal result without polling or
+  partial-work inspection.
+- Any explicit resume used its exact durable name.
+- Created caller artifacts are reported, required output is verified, and
+  failures or unresolved ambiguity are reported explicitly.

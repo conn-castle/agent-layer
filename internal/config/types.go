@@ -10,7 +10,7 @@ const (
 )
 
 // DefaultDispatchMaxDepth is the maximum dispatch recursion depth when unset.
-const DefaultDispatchMaxDepth = 1
+const DefaultDispatchMaxDepth = 3
 
 // Config is the root configuration loaded from .agent-layer/config.toml.
 type Config struct {

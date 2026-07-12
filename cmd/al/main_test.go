@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/testutil"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 func TestMainVersion(t *testing.T) {
@@ -115,7 +115,7 @@ func TestRunMain_Dispatched(t *testing.T) {
 	orig := maybeExecFunc
 	defer func() { maybeExecFunc = orig }()
 	maybeExecFunc = func(args []string, currentVersion string, cwd string, stderr io.Writer, exit func(int)) error {
-		return dispatch.ErrDispatched
+		return versiondispatch.ErrDispatched
 	}
 
 	var out bytes.Buffer

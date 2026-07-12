@@ -12,11 +12,11 @@ import (
 	"testing"
 
 	"github.com/conn-castle/agent-layer/internal/config"
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/doctor"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 	"github.com/conn-castle/agent-layer/internal/update"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 	"github.com/conn-castle/agent-layer/internal/warnings"
 )
 
@@ -120,7 +120,7 @@ func TestDoctorCommand_UpdateSkippedNoNetwork(t *testing.T) {
 		return nil, warnings.MCPSummary{}, nil
 	}
 
-	t.Setenv(dispatch.EnvNoNetwork, "1")
+	t.Setenv(versiondispatch.EnvNoNetwork, "1")
 	testutil.WithWorkingDir(t, root, func() {
 		cmd := newDoctorCmd()
 		if err := cmd.RunE(cmd, nil); err != nil {
