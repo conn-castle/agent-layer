@@ -52,6 +52,9 @@ func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Re
 	if sys == nil {
 		return nil, fmt.Errorf(messages.SyncSystemRequired)
 	}
+	if project == nil {
+		return nil, fmt.Errorf(messages.SyncProjectRequired)
+	}
 	return withProjectSyncLock(sys, root, func() (*Result, error) {
 		return runWithProjectLocked(sys, root, project)
 	})

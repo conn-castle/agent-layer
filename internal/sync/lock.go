@@ -81,16 +81,16 @@ func processLockForSyncPath(path string) *projectSyncProcessLock {
 
 func (l *projectSyncProcessLock) acquire(sys System, deadline time.Time) error {
 	for {
+		now := sys.Now()
+		if !now.Before(deadline) {
+			return errProjectSyncLockDeadline
+		}
 		select {
 		case <-l.token:
 			return nil
 		default:
 		}
 
-		now := sys.Now()
-		if !now.Before(deadline) {
-			return errProjectSyncLockDeadline
-		}
 		wait := projectSyncLockPollEvery
 		if remaining := deadline.Sub(now); remaining < wait {
 			wait = remaining

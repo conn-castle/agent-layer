@@ -175,6 +175,26 @@ func TestProjectSyncProcessLockDeadlineAndRecovery(t *testing.T) {
 	lock.release()
 }
 
+func TestProjectSyncProcessLockRejectsTokenReleasedAtDeadline(t *testing.T) {
+	now := time.Date(2026, time.July, 11, 12, 0, 0, 0, time.UTC)
+	lock := &projectSyncProcessLock{token: make(chan struct{}, 1)}
+	deadline := now.Add(projectSyncLockPollEvery)
+	sys := &MockSystem{
+		NowFunc: func() time.Time { return now },
+		SleepFunc: func(d time.Duration) {
+			now = now.Add(d)
+			lock.release()
+		},
+	}
+
+	if err := lock.acquire(sys, deadline); !errors.Is(err, errProjectSyncLockDeadline) {
+		t.Fatalf("acquire error = %v, want deadline error", err)
+	}
+	if len(lock.token) != 1 {
+		t.Fatal("token released at the deadline was consumed")
+	}
+}
+
 func TestWithProjectSyncLockTimeoutDiagnosticsAndRecovery(t *testing.T) {
 	root := newSyncLockTestRoot(t)
 	lockPath := filepath.Join(root, ".agent-layer", projectSyncLockFile)

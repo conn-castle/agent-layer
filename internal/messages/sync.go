@@ -50,6 +50,7 @@ const (
 	SyncCodexHeaderPlaceholderUnsupportedFmt        = "codex header %s must be literal or use ${VAR}"
 	SyncCodexAuthorizationPlaceholderUnsupportedFmt = "authorization header must be literal, ${VAR}, or Bearer ${VAR}"
 	SyncSystemRequired                              = "sync system is required"
+	SyncProjectRequired                             = "sync project is required"
 	SyncConfigFSRequired                            = "sync config filesystem is required"
 	SyncFailedReadGitignoreBlockFmt                 = "failed to read gitignore block %s: %w"
 	SyncOpenLockFmt                                 = "failed to open sync lock %s: %w"

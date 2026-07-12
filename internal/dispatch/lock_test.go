@@ -111,23 +111,32 @@ func TestFileLock_Release_UnlockError(t *testing.T) {
 }
 
 func TestLockFile_Timeout(t *testing.T) {
+	now := time.Date(2026, time.July, 12, 0, 0, 0, 0, time.UTC)
+	var sleeps []time.Duration
 	sys := &testSystem{
 		FlockFunc: func(fd int, how int) error {
 			return unix.EWOULDBLOCK
 		},
-		SleepFunc: func(time.Duration) {},
+		NowFunc: func() time.Time { return now },
+		SleepFunc: func(d time.Duration) {
+			sleeps = append(sleeps, d)
+			now = now.Add(d)
+		},
 	}
 
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "test.lock")
-	lock, err := acquireFileLock(sys, path, time.Nanosecond)
+	lock, err := acquireFileLock(sys, path, 250*time.Millisecond)
 	if lock != nil {
 		t.Fatalf("expected no lock on timeout, got %+v", lock)
 	}
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
-	if !strings.Contains(err.Error(), "timed out waiting for lock after 1ns") {
+	if !strings.Contains(err.Error(), "timed out waiting for lock after 250ms") {
 		t.Fatalf("expected configured timeout diagnostic, got %v", err)
+	}
+	if got, want := fmt.Sprint(sleeps), "[100ms 100ms 50ms]"; got != want {
+		t.Fatalf("sleep durations = %s, want %s", got, want)
 	}
 }

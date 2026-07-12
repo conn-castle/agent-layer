@@ -57,7 +57,7 @@ func (l *fileLock) release() error {
 
 // lockFile acquires an exclusive advisory lock on the file.
 func lockFile(sys System, file *os.File, waitTimeout time.Duration) error {
-	deadline := time.Now().Add(waitTimeout)
+	deadline := sys.Now().Add(waitTimeout)
 	for {
 		err := sys.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // Unix file descriptors are small non-negative ints; cast is safe on all supported platforms
 		if err == nil {
@@ -66,10 +66,15 @@ func lockFile(sys System, file *os.File, waitTimeout time.Duration) error {
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
 			return err
 		}
-		if time.Now().After(deadline) {
+		now := sys.Now()
+		if !now.Before(deadline) {
 			return fmt.Errorf(messages.DispatchLockTimeoutFmt, waitTimeout)
 		}
-		sys.Sleep(lockPollEvery)
+		wait := lockPollEvery
+		if remaining := deadline.Sub(now); remaining < wait {
+			wait = remaining
+		}
+		sys.Sleep(wait)
 	}
 }
 
