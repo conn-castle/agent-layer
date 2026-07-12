@@ -145,6 +145,52 @@ printf 'answer without a provider id'
 	}
 }
 
+func TestAntigravityResumeWithoutParsedIDRetainsDurableMapping(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	run, err := newDispatchRun(root, AgentAntigravity, supportedProviderVersions[AgentAntigravity], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+	session.ProviderSessionID = runtimeSessionID
+	session.State = "durable"
+	if err := persistSession(root, session); err != nil {
+		t.Fatalf("persist session: %v", err)
+	}
+
+	binDir := t.TempDir()
+	path := filepath.Join(binDir, "agy")
+	stub := `#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+  printf '1.1.1\n'
+  exit 0
+fi
+printf 'resumed answer without a provider id'
+`
+	if err := os.WriteFile(path, []byte(stub), 0o700); err != nil { // #nosec G306 -- test-controlled provider stub.
+		t.Fatalf("write agy stub: %v", err)
+	}
+	if err := Resume(ResumeOptions{
+		Root:       root,
+		Name:       session.Name,
+		PromptArgs: []string{"resume"},
+		Env:        []string{"PATH=" + testPath(binDir)},
+		LookPath:   mockLookPath(binDir),
+	}); err != nil {
+		t.Fatalf("Resume Antigravity: %v", err)
+	}
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatalf("load retained session: %v", err)
+	}
+	if retained.ProviderSessionID != runtimeSessionID || retained.State != "durable" {
+		t.Fatalf("retained session = %#v", retained)
+	}
+}
+
 func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {
 	claudeData, err := os.ReadFile(filepath.Join("testdata", "claude", "v0.13-2.1.207.jsonl"))
 	if err != nil {

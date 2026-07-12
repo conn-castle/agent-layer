@@ -246,8 +246,10 @@ func executeDispatch(request dispatchExecution) error {
 			if id == "" {
 				result.NotResumable = true
 				request.Run.Record.NotResumable = true
-				if err := deleteSession(request.Root, session.Name); err != nil {
-					return finishDispatchFailure(request, err)
+				if request.Mode == dispatchModeFresh {
+					if err := deleteSession(request.Root, session.Name); err != nil {
+						return finishDispatchFailure(request, err)
+					}
 				}
 				if _, err := fmt.Fprintf(request.Stderr, "[%s] antigravity · not resumable · agy %s · diagnostics: %s\n", session.Name, request.Version, command.LogPath); err != nil {
 					return finishDispatchFailure(request, wrapExitError(ExitTargetFailure, "write Antigravity capability warning", err))

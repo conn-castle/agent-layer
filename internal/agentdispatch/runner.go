@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -294,10 +293,8 @@ func antigravityTimeoutReported(stderrPath string, logPath string) bool {
 		if err != nil {
 			continue
 		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.TrimSpace(line) == "Error: timeout waiting for response" {
-				return true
-			}
+		if bytes.Contains(data, []byte("Error: timeout waiting for response")) {
+			return true
 		}
 	}
 	return false

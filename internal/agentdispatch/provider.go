@@ -295,8 +295,11 @@ func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, e
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), maxStructuredEventBytes)
 	for scanner.Scan() {
-		line := append(append([]byte(nil), scanner.Bytes()...), '\n')
+		line := scanner.Bytes()
 		if _, err := rawWriter.Write(line); err != nil {
+			return err
+		}
+		if _, err := rawWriter.Write([]byte{'\n'}); err != nil {
 			return err
 		}
 		events, err := reduceStructuredEvent(agent, expectedSession, bytes.TrimSpace(line))

@@ -28,6 +28,7 @@ const (
 	defaultDownloadTimeout   = 30 * time.Second
 	downloadRetryCount       = 1
 	downloadRetryBackoff     = 250 * time.Millisecond
+	cacheLockWorkHeadroom    = 5 * time.Second
 )
 
 // ensureCachedBinary returns the cached binary path, downloading and verifying it if missing.
@@ -61,7 +62,7 @@ func ensureCachedBinaryWithSystem(sys System, cacheRoot string, version string, 
 		return "", fmt.Errorf(messages.DispatchCreateCacheDirFmt, err)
 	}
 
-	if err := withFileLock(sys, lockPath, func() error {
+	if err := withFileLock(sys, lockPath, cacheLockWaitTimeoutWithSystem(sys), func() error {
 		if _, err := sys.Stat(binPath); err == nil {
 			return nil
 		} else if err != nil && !os.IsNotExist(err) {
@@ -334,6 +335,16 @@ func downloadTimeoutWithSystem(sys System) time.Duration {
 		return defaultDownloadTimeout
 	}
 	return timeout
+}
+
+// cacheLockWaitTimeoutWithSystem covers the holder's complete download and
+// checksum retry budget, plus local-work and polling headroom for the waiter.
+func cacheLockWaitTimeoutWithSystem(sys System) time.Duration {
+	attemptsPerOperation := downloadRetryCount + 1
+	const operations = 2 // binary and checksum downloads run sequentially.
+	return time.Duration(operations*attemptsPerOperation)*downloadTimeoutWithSystem(sys) +
+		time.Duration(operations*downloadRetryCount)*downloadRetryBackoff +
+		cacheLockWorkHeadroom
 }
 
 func downloadHTTPClientWithSystem(sys System) *http.Client {
