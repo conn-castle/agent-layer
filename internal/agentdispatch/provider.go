@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/clients/antigravity"
@@ -30,6 +31,7 @@ const (
 	dispatchStateRunning    = "running"
 	statusUnknown           = "unknown"
 	processStatusAlive      = "alive"
+	providerVersionTimeout  = 10 * time.Second
 	// AntigravityPromptMaxBytes retains headroom below common ARG_MAX limits
 	// because Antigravity accepts print-mode prompts only as an argument.
 	AntigravityPromptMaxBytes = 100 * 1024
@@ -79,7 +81,9 @@ var supportedProviderVersions = map[string]string{
 }
 
 func providerVersion(path string, agent string) (string, error) {
-	cmd := exec.CommandContext(context.Background(), path, "--version") // #nosec G204 -- path is resolved from the static provider registry.
+	ctx, cancel := context.WithTimeout(context.Background(), providerVersionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "--version") // #nosec G204 -- path is resolved from the static provider registry.
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("read %s version: %w", agent, err)
@@ -169,11 +173,30 @@ func buildProviderCommand(
 		if mode == dispatchModeResume {
 			args = append(args, sessionID)
 		}
-		if value := strings.TrimSpace(model); value != "" {
-			args = append(args, "--model", value)
+		resolvedModel := strings.TrimSpace(model)
+		if resolvedModel == "" && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexModelKey) {
+			resolvedModel = strings.TrimSpace(project.Config.Agents.Codex.Model)
 		}
-		if value := strings.TrimSpace(effort); value != "" {
-			args = append(args, "-c", "model_reasoning_effort="+value)
+		if resolvedModel != "" {
+			args = append(args, "--model", resolvedModel)
+		}
+		resolvedEffort := strings.TrimSpace(effort)
+		if resolvedEffort == "" && !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexReasoningEffortKey) {
+			resolvedEffort = strings.TrimSpace(project.Config.Agents.Codex.ReasoningEffort)
+		}
+		if resolvedEffort != "" {
+			args = append(args, "-c", "model_reasoning_effort="+resolvedEffort)
+		}
+		if project.Config.Approvals.Mode == config.ApprovalModeYOLO {
+			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexApprovalPolicyKey) {
+				args = append(args, "-c", "approval_policy=never")
+			}
+			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexSandboxModeKey) {
+				args = append(args, "-c", "sandbox_mode=danger-full-access")
+			}
+			if !config.HasProviderPassthroughKey(project.Config.Agents.Codex.AgentSpecific, config.CodexWebSearchKey) {
+				args = append(args, "-c", "web_search=live")
+			}
 		}
 		args = append(args, "-")
 		command.Args = args
@@ -302,7 +325,11 @@ func readStructuredEvents(reader io.Reader, rawWriter io.Writer, agent string, e
 		if _, err := rawWriter.Write([]byte{'\n'}); err != nil {
 			return err
 		}
-		events, err := reduceStructuredEvent(agent, expectedSession, bytes.TrimSpace(line))
+		trimmed := bytes.TrimSpace(line)
+		if len(trimmed) == 0 {
+			continue
+		}
+		events, err := reduceStructuredEvent(agent, expectedSession, trimmed)
 		if err != nil {
 			return err
 		}

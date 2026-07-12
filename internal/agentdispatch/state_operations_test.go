@@ -118,9 +118,35 @@ func TestListAndInspectExposeCurrentStateWithoutMutation(t *testing.T) {
 	if err := Inspect(InspectionRequest{Root: root, ID: run.Record.ID, Stdout: &inspection}); err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
-	for _, want := range []string{"State: failed", "Provider status: not resumable", "Terminal reason: provider failure"} {
+	for _, want := range []string{"Mode: fresh", "State: failed", "Provider status: not resumable", "Terminal reason: provider failure"} {
 		if !strings.Contains(inspection.String(), want) {
 			t.Fatalf("inspection omitted %q: %q", want, inspection.String())
 		}
+	}
+}
+
+func TestDeleteRejectsCorruptRunRecordButAllowsMissingRecord(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(run.Dir, dispatchRunFile), []byte("not-json"), 0o600); err != nil {
+		t.Fatalf("corrupt run record: %v", err)
+	}
+	if err := Delete(root, session.Name); err == nil {
+		t.Fatal("Delete accepted corrupt run record")
+	} else {
+		requireDispatchExitCode(t, err, ExitConfig)
+	}
+	if err := os.RemoveAll(run.Dir); err != nil {
+		t.Fatalf("remove run: %v", err)
+	}
+	if err := Delete(root, session.Name); err != nil {
+		t.Fatalf("Delete with missing run record: %v", err)
 	}
 }

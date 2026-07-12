@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/config"
 )
 
 func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
@@ -23,7 +25,10 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 		t.Fatalf("new run: %v", err)
 	}
 
-	claudeTarget, _ := lookupTarget(AgentClaude)
+	claudeTarget, ok := lookupTarget(AgentClaude)
+	if !ok {
+		t.Fatal("Claude target missing from registry")
+	}
 	claudeCommand, err := buildProviderCommand(claudeTarget, project, []string{}, []byte("prompt"), "override", "high", "fresh", runtimeSessionID, run, io.Discard)
 	if err != nil {
 		t.Fatalf("build Claude command: %v", err)
@@ -33,7 +38,10 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 		t.Fatalf("Claude command = %#v", claudeCommand)
 	}
 
-	codexTarget, _ := lookupTarget(AgentCodex)
+	codexTarget, ok := lookupTarget(AgentCodex)
+	if !ok {
+		t.Fatal("Codex target missing from registry")
+	}
 	codexCommand, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "high", "resume", runtimeSessionID, run, io.Discard)
 	if err != nil {
 		t.Fatalf("build Codex command: %v", err)
@@ -41,8 +49,23 @@ func TestProviderCommandsUseExactProviderContracts(t *testing.T) {
 	if got := strings.Join(codexCommand.Args, " "); !strings.Contains(got, "exec resume --json "+runtimeSessionID+" -c model_reasoning_effort=high -") {
 		t.Fatalf("Codex command = %q", got)
 	}
+	project.Config.Agents.Codex.Model = "configured-codex"
+	project.Config.Agents.Codex.ReasoningEffort = "medium"
+	project.Config.Approvals.Mode = config.ApprovalModeYOLO
+	codexDefaults, err := buildProviderCommand(codexTarget, project, []string{}, []byte("prompt"), "", "", dispatchModeFresh, "", run, io.Discard)
+	if err != nil {
+		t.Fatalf("build Codex defaults command: %v", err)
+	}
+	for _, want := range []string{"--model configured-codex", "model_reasoning_effort=medium", "approval_policy=never", "sandbox_mode=danger-full-access", "web_search=live"} {
+		if got := strings.Join(codexDefaults.Args, " "); !strings.Contains(got, want) {
+			t.Fatalf("Codex defaults command %q omitted %q", got, want)
+		}
+	}
 
-	antigravityTarget, _ := lookupTarget(AgentAntigravity)
+	antigravityTarget, ok := lookupTarget(AgentAntigravity)
+	if !ok {
+		t.Fatal("Antigravity target missing from registry")
+	}
 	if _, err := buildProviderCommand(antigravityTarget, project, []string{}, bytes.Repeat([]byte("x"), AntigravityPromptMaxBytes+1), "", "", "fresh", "", run, io.Discard); err == nil {
 		t.Fatal("Antigravity accepted an argv-sized prompt")
 	} else {
@@ -65,6 +88,13 @@ func TestStructuredEventsRejectChangedProviderContracts(t *testing.T) {
 	}
 	if raw.String() != "not-json\n" {
 		t.Fatalf("raw evidence = %q", raw.String())
+	}
+	raw.Reset()
+	if err := readStructuredEvents(strings.NewReader("\n  \n"), &raw, AgentCodex, "", func(providerEvent) error { return nil }); err != nil {
+		t.Fatalf("blank provider lines failed: %v", err)
+	}
+	if raw.String() != "\n  \n" {
+		t.Fatalf("blank raw evidence = %q", raw.String())
 	}
 }
 

@@ -24,6 +24,8 @@ const (
 	dispatchRunFile  = "dispatch.json"
 )
 
+var errDispatchRunNotFound = errors.New("dispatch run record not found")
+
 // Session is the durable, name-keyed mapping owned by Agent Layer. Provider
 // transcripts remain provider-owned; this record contains only the alias
 // needed for explicit continuation.
@@ -144,9 +146,9 @@ func newUUID() (string, error) {
 	return fmt.Sprintf("%s-%s-%s-%s-%s", encoded[:8], encoded[8:12], encoded[12:16], encoded[16:20], encoded[20:]), nil
 }
 
-var nameSizes = []string{"big", "small", "tiny", "short", "calm"}
-var nameShapes = []string{"round", "bright", "silent", "rapid", "steady"}
-var nameElectrical = []string{"capacitor", "inductor", "resistor", "transistor", "rectifier"}
+var nameSizes = []string{"big", "small", "tiny", "short", "calm", "compact", "micro", "nimble", "slim", "wide"}
+var nameShapes = []string{"round", "bright", "silent", "rapid", "steady", "curved", "gentle", "linear", "square", "swift"}
+var nameElectrical = []string{"capacitor", "inductor", "resistor", "transistor", "rectifier", "amplifier", "diode", "oscillator", "relay", "transformer"}
 
 func randomDispatchName() (string, error) {
 	pick := func(values []string) (string, error) {
@@ -308,7 +310,7 @@ func loadRunRecord(root string, id string) (RunRecord, error) {
 	var record RunRecord
 	if err := readJSON(filepath.Join(dir, dispatchRunFile), &record); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return RunRecord{}, exitError(ExitUsage, fmt.Sprintf("dispatch run %q was not found", id))
+			return RunRecord{}, wrapExitError(ExitUsage, fmt.Sprintf("dispatch run %q was not found", id), errDispatchRunNotFound)
 		}
 		return RunRecord{}, wrapExitError(ExitConfig, "read dispatch run record", err)
 	}

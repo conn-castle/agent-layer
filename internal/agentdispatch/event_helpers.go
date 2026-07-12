@@ -1,11 +1,13 @@
 package agentdispatch
 
+import "strings"
+
 func claudeResultIsErrorV013(raw map[string]any) bool {
 	if isErr, ok := raw["is_error"].(bool); ok && isErr {
 		return true
 	}
 	subtype, _ := raw["subtype"].(string)
-	return len(subtype) >= len("error") && subtype[:len("error")] == "error"
+	return strings.HasPrefix(subtype, "error")
 }
 
 func claudeTextDeltaV013(raw map[string]any) (string, bool) {

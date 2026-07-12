@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ func Inspect(request InspectionRequest) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(inspection)
 	}
-	_, err = fmt.Fprintf(stdout, "Dispatch: %s\nAgent: %s\nState: %s\nProcess: %s\nAttempt: %d\nStarted: %s\n", inspection.Name, inspection.Agent, inspection.State, inspection.Process, inspection.Attempt, inspection.StartedAt.Format(time.RFC3339))
+	_, err = fmt.Fprintf(stdout, "Dispatch: %s\nAgent: %s\nMode: %s\nState: %s\nProcess: %s\nAttempt: %d\nStarted: %s\n", inspection.Name, inspection.Agent, inspection.Mode, inspection.State, inspection.Process, inspection.Attempt, inspection.StartedAt.Format(time.RFC3339))
 	if err != nil {
 		return err
 	}
@@ -171,6 +172,9 @@ func Delete(root string, name string) error {
 	}
 	if session.RunID != "" {
 		record, recordErr := loadRunRecord(root, session.RunID)
+		if recordErr != nil && !errors.Is(recordErr, errDispatchRunNotFound) {
+			return recordErr
+		}
 		if recordErr == nil && (record.State == "pending" || record.State == "starting" || (record.State == dispatchStateRunning && processAlive(record.PID) == processStatusAlive)) {
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch session %q is active; inspect it or wait for terminal completion before deleting the mapping", name))
 		}

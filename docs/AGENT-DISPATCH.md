@@ -104,6 +104,8 @@ by the project sync lock and finishes before name reservation or provider
 launch, so independent provider processes can overlap safely.
 
 Prompts from standard input are capped at 10 MiB and rejected rather than
+truncated. Antigravity passes prompts through `agy --print` and therefore has a
+lower 100 KiB limit; oversized Antigravity prompts are rejected, never
 truncated. The final answer is capped at 16 MiB and all captured provider data
 per attempt at 64 MiB; a limit or capture failure terminates the owned process
 group and emits no answer.

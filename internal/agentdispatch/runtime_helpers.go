@@ -73,8 +73,12 @@ func installProviderSignalForwarder(cmd *exec.Cmd) (caught func() os.Signal, sto
 
 func providerStartError(target string, err error) error {
 	if errors.Is(err, exec.ErrNotFound) {
-		meta, _ := lookupTarget(target)
-		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target, meta.Binary))
+		meta, ok := lookupTarget(target)
+		binary := target
+		if ok {
+			binary = meta.Binary
+		}
+		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target, binary))
 	}
 	return wrapExitError(ExitTargetFailure, fmt.Sprintf("wait for %s: %v", target, err), err)
 }

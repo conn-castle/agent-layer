@@ -671,9 +671,9 @@ v0.13 contract.
 **Exit codes**
 
 - `0` — dispatch completed successfully
-- `64` — usage or resolution failure (missing prompt and skill, unknown target, unknown caller with omitted `--agent`, unsupported override field for the selected target)
+- `64` — usage or resolution failure (missing prompt and skill, unknown target, unknown caller with omitted `--agent`, unknown dispatch/session name for resume, inspect, or delete, unsupported override field for the selected target)
 - `65` — configuration or state failure (missing source skill, stale/missing target skill projection, malformed config, disabled target)
-- `69` — target unavailable (missing target binary, unsupported provider version, no eligible target in the random-selection pool)
+- `69` — target unavailable (missing target binary, unsupported provider version, no eligible target in the random-selection pool, attempt to delete an active session)
 - `70` — target or adapter failure (provider failure, missing required terminal result, capture limit/I/O failure, or process-supervision failure)
 - `75` — nested dispatch blocked by `dispatch.max_depth` or invalid `AL_DISPATCH_ACTIVE`
 - `130` — interrupted by `SIGINT`

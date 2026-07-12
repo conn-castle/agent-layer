@@ -139,8 +139,20 @@ func executeProvider(
 	run.Record.PID = cmd.Process.Pid
 	run.Record.State = dispatchStateRunning
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		stdoutDrained := make(chan struct{})
+		stderrDrained := make(chan struct{})
+		go func() {
+			_, _ = io.Copy(io.Discard, stdoutPipe)
+			close(stdoutDrained)
+		}()
+		go func() {
+			_, _ = io.Copy(io.Discard, stderrPipe)
+			close(stderrDrained)
+		}()
 		signalProviderProcess(cmd, syscall.SIGTERM)
 		_ = cmd.Wait()
+		<-stdoutDrained
+		<-stderrDrained
 		return executionResult{}, err
 	}
 	caughtSignal, stopForwarder := installProviderSignalForwarder(cmd)
@@ -263,9 +275,6 @@ func executeProvider(
 	if waitErr != nil {
 		return executionResult{}, providerWaitError(command.Provider, waitErr)
 	}
-	if command.Provider == AgentAntigravity && antigravityTimeoutReported(run.Record.StderrPath, command.LogPath) {
-		return executionResult{}, exitError(ExitTargetFailure, "antigravity reported terminal failure: Error: timeout waiting for response")
-	}
 	if command.LogPath != "" {
 		info, err := os.Stat(command.LogPath)
 		if err != nil {
@@ -277,6 +286,9 @@ func executeProvider(
 		if info.Size() > remaining {
 			return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("Antigravity provider log exceeded the remaining %d byte dispatch capture budget", remaining))
 		}
+	}
+	if command.Provider == AgentAntigravity && antigravityTimeoutReported(run.Record.StderrPath, command.LogPath) {
+		return executionResult{}, exitError(ExitTargetFailure, "antigravity reported terminal failure: Error: timeout waiting for response")
 	}
 	if command.Structured && (!result.Complete || !result.AnswerSeen || result.SessionID == "") {
 		return executionResult{}, exitError(ExitTargetFailure, fmt.Sprintf("%s dispatch completed without required terminal result, session ID, and final answer", command.Provider))

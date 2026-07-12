@@ -105,6 +105,7 @@ SKILL
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_1=resume" "resume uses explicit Codex resume command"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_2=--json" "resume requests Codex JSON stream"
   assert_file_contains "$MOCK_DISPATCH_CODEX_LOG" "ARG_3=11111111-1111-4111-8111-111111111111" "resume uses stored thread ID"
+  assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Continue" "resume passes follow-up prompt on stdin"
 
   cat >> "$repo_dir/.agent-layer/config.toml" <<'TOML'
 
@@ -133,6 +134,8 @@ TOML
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" '$e2e-skill' "dispatch uses codex skill prefix"
   assert_file_contains "$MOCK_DISPATCH_CODEX_PROMPT" "Use skill" "dispatch includes prompt after skill"
 
+  sed -i.bak 's/^max_depth = 3$/max_depth = 1/' "$repo_dir/.agent-layer/config.toml"
+  rm -f "$repo_dir/.agent-layer/config.toml.bak"
   : > "$MOCK_DISPATCH_CODEX_LOG"
   rc=0
   (cd "$repo_dir" && AL_DISPATCH_ACTIVE=1 al dispatch --agent codex "nested" >"$stdout_file" 2>"$stderr_file") || rc=$?
