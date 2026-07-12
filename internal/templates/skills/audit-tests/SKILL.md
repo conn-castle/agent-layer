@@ -56,18 +56,12 @@ establishes the classification.
 
 ### 2. Run one test-suite audit pass
 
-For a broad or context-heavy scope, form enough coherent, non-overlapping
-investigation groups to give materially different test areas independent
-attention without overloading an investigator's context. Repository-defined
-test tiers and subsystems are useful grouping signals, not mandatory
-one-agent-per-group assignments. Do not combine groups at the cost of credible
-coverage or split them merely to increase agent count. Use fresh built-in
-investigators and run substantial independent groups in parallel when the
-wall-clock benefit warrants the extra agent cost; otherwise run them
-sequentially. Each investigator returns compact candidate findings with
-concrete tests, behavior, and evidence. The owning agent validates candidates,
-checks cross-group duplication and gaps, and owns every edit. A compact scope
-may be audited directly.
+Audit a compact scope directly. For a context-heavy scope, give coherent,
+non-overlapping test tiers or subsystems to fresh investigators and run
+independent groups concurrently when useful. Each returns compact candidates
+with concrete tests, behavior, and evidence; the owning agent validates them,
+reconciles duplication and gaps, and makes every edit. Do not split work merely
+to add agents.
 
 Review the scope through complementary concerns:
 
@@ -112,12 +106,6 @@ The report contains:
 Finding outcomes are `fixed`, `needs-user-decision`, or
 `recommend-boost-coverage`. Use `None` for empty sections.
 
-## Definition of done
-
-- The full declared scope received one purposeful audit pass.
-- Every reported finding is evidence-backed and materially affects confidence,
-  speed, correctness, or maintenance cost.
-- Safe findings were addressed once, and changed tests received one credible
-  verification lane.
-- The skill returns the report path, fixes, residual findings, and verification
-  outcome, then yields.
+Return the report path, fixes, residual findings, and verification outcome after
+the declared scope receives one evidence pass and changed tests pass one
+credible verification lane.

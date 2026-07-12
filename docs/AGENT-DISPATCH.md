@@ -11,7 +11,7 @@ Use `al dispatch` with prompt text, a skill, or both:
 ```bash
 al dispatch --agent codex "Review this plan artifact set."
 al dispatch --agent random --skill review-plan "Review this plan artifact set."
-al dispatch --agent claude --skill finish-task
+al dispatch --agent claude --skill audit-memory
 al dispatch --agent antigravity "Check whether this implementation plan is complete."
 ```
 

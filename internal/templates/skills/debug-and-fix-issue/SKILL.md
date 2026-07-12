@@ -7,139 +7,74 @@ description: >-
 
 # debug-and-fix-issue
 
-Turn an unexplained symptom into evidence, then repair the proven root cause.
-Investigation is complete when it produces a failing test and causal diagnosis,
-or an explicit diagnostic blocker—not when every hypothesis has been explored.
+Turn a symptom into a failing test and causal diagnosis, or an explicit
+diagnostic blocker, then repair the proven root cause.
 
-## Inputs and artifacts
+## Inputs and boundaries
 
-Require a symptom specific enough to support a testable hypothesis.
+Require a testable symptom. Fix mode also requires `implementer` and `fixer`
+dispatch roles; require `plan_reviewers` only for the planned repair path.
+Accept reproduction evidence, suspect paths, regression range, and
+diagnosis-only mode.
 
-For fix mode, require `implementer` and `fixer` dispatch roles before repair.
-Require `plan_reviewers` only if the proven repair is significant enough to use
-the planned path. Diagnosis-only mode does not require agent roles.
+Write `.agent-layer/tmp/debug-and-fix-issue.<run-id>.report.md`; direct repair
+also writes the same prefix with `.direct-repair.report.md`.
 
-Accept reproduction steps, expected and actual behavior, errors or traces,
-suspect paths, a regression range, and diagnosis-only mode.
-
-Write `.agent-layer/tmp/debug-and-fix-issue.<run-id>.report.md`, where `run-id`
-is `YYYYMMDD-HHMMSS-<short-rand>`. A direct repair also writes
-`.agent-layer/tmp/debug-and-fix-issue.<run-id>.direct-repair.report.md`.
-
-## Rules
-
-- Dispatch external roles through `/agent-dispatch`; do not implement the repair
-  in the investigation context.
-- Use one fresh built-in investigator subagent for reproduction, narrowing,
-  diagnosis, and the failing test when its commands, observations, and state can
-  be captured in transferable evidence. Give it the original symptom, supplied
-  evidence, relevant constraints, and the debug report path. It must return a
-  compact causal account, evidence locations, and either the failing test or the
-  exact diagnostic blocker.
-- Keep investigation in the current context only when it depends on a live,
-  non-transferable session or process state. Record why that boundary could not
-  be used.
-- Base the diagnosis on observed reproduction, code paths, experiments, logs,
-  and authoritative dependency behavior.
-- Repair the root cause before defensive hardening. Do not accept retries,
-  sleeps, timeout inflation, broad catches, error silencing, ignored validation,
-  or weaker assertions unless evidence proves that behavior is the contract.
-- Do not change a test expectation unless repository evidence proves the
-  expectation wrong.
-- If the root cause remains unknown, the issue is not fixed. Return the exact
-  instrumentation or evidence needed to distinguish the remaining hypotheses.
-- Do not stage, commit, discard, or destructively rewrite changes.
+- Dispatch external roles through `/agent-dispatch`; the investigation context
+  does not implement the repair.
+- Use one fresh investigator for reproduction, diagnosis, and failing test
+  unless live non-transferable state requires the current context. Give it the
+  original symptom, evidence, constraints, and report path.
+- Require observed reproduction, code paths, experiments, logs, or
+  authoritative dependency behavior. Unknown root cause means not fixed.
+- Reject symptom-masking retries, sleeps, timeout inflation, broad catches,
+  silenced errors, ignored validation, and weakened assertions unless evidence
+  proves they are the contract.
+- Do not change a test expectation without evidence or stage, commit, discard,
+  or destructively rewrite changes.
 
 ## Workflow
 
-### 1. Reproduce
+### 1. Reproduce and diagnose
 
-Read COMMANDS.md and relevant issue and decision context. Follow supplied
-reproduction steps first; otherwise build the smallest credible reproducer.
-Capture expected behavior, observed behavior, command, environment facts, and
-output.
+Read COMMANDS.md and relevant issue/decision context. Follow supplied steps or
+build the smallest reproducer; capture expected and observed behavior, command,
+environment, and output. If it cannot reproduce, return the evidence and
+smallest missing input.
 
-If targeted attempts cannot reproduce the symptom, stop with the evidence and
-the smallest missing input. Do not speculate a repair.
+Trace the failing path and run only experiments that distinguish plausible
+causes. Record the defective condition, causal chain, excluded alternatives,
+useful introducing change, and rejected masking fixes. If causes remain
+plausible, add only discriminating instrumentation and return `diagnosed-only`.
 
-### 2. Narrow and diagnose
+### 2. Capture the failing test
 
-Trace the failing path and test only hypotheses that distinguish plausible
-causes. Use history, binary search, focused experiments, dependency research,
-or temporary instrumentation when the evidence warrants them.
+Create or refine one behavioral reproducer and confirm it fails for the
+diagnosed defect. When automation is impossible, record why and the alternative
+evidence. In diagnosis-only mode, update ISSUES.md when required, use
+the repository's memory format, avoid duplicate entries, and yield without a
+separate closeout or verification stage.
 
-Record:
+### 3. Choose and run one repair path
 
-- the defective condition and exact location
-- the causal chain from input to symptom
-- experiments or evidence that exclude competing causes
-- the introducing change when established and useful
-- symptom-masking fixes rejected by the evidence
+Validate the investigator's causal claim. Use `direct` for a concrete root
+cause, desired behavior, boundary, and verification. Use `planned` only for
+material multi-system, architecture, behavior, migration, or risk changes. Ask
+only for a genuine material choice.
 
-If multiple causes remain plausible, add only the diagnostic instrumentation
-needed to separate them, record `diagnosed-only`, and stop.
+For `direct`, dispatch `implementer` with the report, request, root cause,
+failing test, and repair-report path. Require the root-cause fix, green test,
+required updates, and focused checks. Dispatch `fixer` once with
+`/clean-and-fix-code`, then run `/verify-work` once in a fresh subagent against
+the original request. If incomplete, validate and dispatch `implementer` once
+for material in-scope findings; do not rerun cleanup or verification.
 
-### 3. Capture the failing test
+For `planned`, run `/plan-work` once from the debug report and then
+`/fully-implement-plan` once with its artifacts and roles. When root cause is
+unknown, plan only diagnostic instrumentation.
 
-Refine an automated reproducer or write one focused behavioral test. Confirm it
-fails because of the diagnosed defect. Skip this only when the root cause is
-unknown or the behavior cannot be automated; record the concrete reason and
-alternative evidence.
+## Completion contract
 
-In diagnosis-only mode, update ISSUES.md when repository policy requires a
-durable entry, run `/finish-task` only when no broader orchestrator owns
-closeout, and yield.
-
-### 4. Choose one repair path
-
-Validate the investigator's causal claim against its cited evidence before
-selecting a repair path. The investigator supplies evidence; the owning agent
-decides whether the root cause is proven and owns the repair boundary.
-
-Use `direct` when the root cause, desired behavior, boundary, and verification
-are concrete. Use `planned` only when the repair materially changes several
-subsystems, architecture, behavior, migration, or risk and therefore benefits
-from an explicit reviewed plan. Severity alone does not require planning.
-
-Ask the user before either path only when evidence leaves a user-owned behavior,
-architecture, scope, risk, or cost choice.
-
-### 5A. Dispatch a direct repair
-
-Dispatch `implementer` with the debug report, original request, bounded root
-cause, failing test, and direct-repair report path. Require the root-cause fix,
-the failing test to turn green, directly required updates, and focused affected
-checks.
-
-Dispatch `fixer` once with `/clean-and-fix-code`. Then run `/verify-work` once
-in a fresh built-in subagent against the original request, passing the debug and
-repair reports as evidence and cleanup `resolved_findings` as supplemental
-obligations.
-
-If verification is incomplete, validate its material in-scope findings and
-dispatch `implementer` once to address them directly with focused evidence.
-Do not rerun cleanup or verification merely to gain confidence. Return a
-blocker only for a remaining concrete failure or user-owned decision.
-
-### 5B. Dispatch a significant planned repair
-
-Run `/plan-work` once from the debug report with `plan_reviewers`, then run
-`/fully-implement-plan` once with the returned artifacts, `implementer`, and
-`fixer`. Do not plan a behavior fix when the report says the root cause is
-unknown; plan only the diagnostic instrumentation needed to obtain it.
-
-### 6. Report and yield
-
-The report contains:
-
-1. `# Debug Summary` — `fixed`, `diagnosed-only`, or `blocked`
-2. `## Reproduction`
-3. `## Investigation and Root Cause`
-4. `## Failing Test or Diagnostic Evidence`
-5. `## Repair Path and Artifacts`
-6. `## Verification`
-7. `## Residual Risk and Follow-up`
-
-Return the report path, symptom, root cause or missing fact, failing test,
-repair artifacts, verification verdict, and terminal outcome. State explicitly
-when the issue is not fixed.
+Report `fixed`, `diagnosed-only`, or `blocked`; include the symptom, root cause
+or missing fact, failing test or diagnostic evidence, repair artifacts,
+verification, residual risk, and report path. State explicitly when unfixed.

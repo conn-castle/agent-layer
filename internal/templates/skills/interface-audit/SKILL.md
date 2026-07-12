@@ -53,17 +53,12 @@ the report established by the update workflow.
 
 ### 2. Run one interface evidence pass
 
-Discover the interface chain, contracts, ownership, state, tests, failure
-modes, and material cleanup opportunities. For a broad or context-heavy scope,
-form enough coherent boundary groups to give materially different interfaces
-independent attention without overloading an investigator's context. Do not
-combine groups at the cost of boundary coverage or split them merely to
-increase agent count. Give each group to a fresh built-in investigator, running
-substantial independent groups concurrently when the wall-clock benefit
-warrants the extra agent cost and otherwise running them sequentially. Each
-investigator returns compact row evidence and does not edit or calibrate the
-report. A compact scope may be investigated directly. Do not ask multiple
-investigators to reconsider the same row.
+Discover the interface chain, contracts, ownership, state, tests, failure modes,
+and material cleanup opportunities. Investigate a compact scope directly. For
+a context-heavy scope, give coherent, non-overlapping boundary groups to fresh
+read-only investigators and run independent groups concurrently when useful.
+Each returns compact row evidence; the main agent calibrates the report. Do not
+duplicate rows across investigators.
 
 ### 3. Calibrate and synthesize once
 
@@ -99,10 +94,6 @@ contract replacement, or a substantial user-workflow change.
 - Do not score from intuition when evidence is available.
 - Do not run `/plan-work` from this skill.
 
-## Definition of done
-
-- The required report was created or updated through one evidence and
-  calibration pass.
-- Every material score and recommendation cites concrete evidence.
-- The skill returns the report path and either the final recommendation gate or
-  `no-material-improvement`, then yields.
+Return the report path and either the final recommendation gate or
+`no-material-improvement`; every material score and recommendation must cite
+current evidence.

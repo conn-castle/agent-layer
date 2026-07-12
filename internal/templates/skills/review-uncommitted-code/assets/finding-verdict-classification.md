@@ -24,11 +24,17 @@ Assign exactly one verdict to every reported finding:
 
 - `Accept`: valid now, supported by concrete evidence, within reviewed scope,
   and actionable without a new user decision.
-- `Defer`: valid, but blocked by a user-owned decision, an explicit scope
-  boundary, or information that cannot be established during this review.
+- `Defer`: valid, but blocked by a genuine user-owned decision or information
+  that cannot be established during this review.
 
 Do not defer merely because a fix is broad, and do not accept a finding merely
 because several reviewers agree. Evidence settles the verdict.
+
+A scope boundary alone is not a user-owned decision. Ask only when resolution
+requires an external write, a destructive action, a substantive product or
+architecture choice, or material expansion beyond the requested scope. Do not
+ask before a reversible local repair that uniquely restores the declared base
+and contract.
 
 ## Reporting rules
 

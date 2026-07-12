@@ -242,16 +242,14 @@ Representative stable contracts:
 
 Workflow boundaries include:
 
-- `complete-current-phase` orchestrates roadmap work through planning,
-  implementation, concrete-work review, verification, and cleanup, with one
-  purposeful pass per stage unless concrete evidence requires repair.
 - `ship-pr` owns one pull request shipping stage, including audit, commit, push,
   continuous integration monitoring, reviewer feedback, and final status
   checks. External state changes may require targeted repair without restarting
   unrelated stages.
-- `full-workflow` owns specification alignment, planning, implementation,
-  concrete-work review, verification, and pull request shipping. Each stage
-  yields its result before the workflow advances.
+- `full-workflow` owns specification alignment for features or roadmap phases,
+  planning, implementation, concrete-work review, verification, closeout, and
+  pull request shipping. Each stage yields its result before the workflow
+  advances.
 - `improve-codebase` decomposes broad quality work into reviewable chunks,
   gives each chunk complementary review, implementation, verification, and
   cleanup stages, and repeats work only after a concrete failure.

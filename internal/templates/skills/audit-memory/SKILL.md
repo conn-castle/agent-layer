@@ -28,12 +28,10 @@ Write `.agent-layer/tmp/audit-memory.<run-id>.report.md`, where `run-id` is
 
 ## Agent boundary
 
-Use one fresh built-in investigator subagent to examine all in-scope memory
-files together and return a compact candidate ledger with exact entries,
-cross-file conflicts, and repository evidence. Keep the investigation holistic;
-do not split individual memory files among agents. The owning agent validates
-the candidates, makes every edit, and decides which ambiguity belongs to the
-user.
+Use one fresh built-in investigator to examine all in-scope memory files
+together and return a compact, evidence-backed candidate ledger. Do not split
+files among agents. The owning agent validates candidates, makes every edit,
+and identifies genuine user decisions.
 
 ## Evidence and decision contract
 
@@ -104,11 +102,6 @@ The report contains:
 Use `None` for empty sections. Do not inventory unaffected entries or add new
 memory entries merely to record this audit.
 
-## Definition of done
-
-- Every in-scope memory file received one structural, content, and cross-file
-  evidence pass.
-- Clear findings were addressed once, or recorded without editing in audit-only
-  mode; ambiguous entries were preserved with an explicit decision request.
-- Only the in-scope memory files and required report were modified.
-- The skill returns the report path and terminal outcome, then yields.
+Return the report path and outcome after every in-scope file receives one
+structural, content, and cross-file pass and each finding is fixed, preserved
+for a stated decision, or recorded in audit-only mode.

@@ -8,16 +8,14 @@ description: >-
 
 # boost-coverage
 
-Raise trustworthy coverage to a declared target. Establish the coverage
-contract once, implement one coherent batch of behavior-focused tests, measure
-the final result once, and yield.
+Raise trustworthy coverage to a declared target with one coherent behavioral
+test batch and one final measurement.
 
 ## Inputs and target
 
-Accept an explicit target percentage and an optional file, component, or domain
-that narrows where the target is pursued. Otherwise use the minimum threshold
-defined by continuous integration, coverage configuration, or DECISIONS.md. A
-named scope does not create an unstated higher target.
+Accept a target percentage and optional file, component, or domain. Otherwise
+use the minimum threshold in continuous integration, coverage configuration, or
+DECISIONS.md. A named scope does not imply a higher target.
 
 - Do not invent a target or treat an already-satisfied threshold as permission
   for open-ended improvement.
@@ -100,10 +98,6 @@ Use one outcome:
 
 ## Completion contract
 
-- The target and coverage command come from an explicit or repository-defined
-  source.
-- The skill performed one baseline, one coherent implementation batch, and one
-  final coverage measurement by default.
-- Every added test can fail because of a real implementation defect.
-- The report names the observed before/after result, any concrete repair of the
-  selected batch, and any remaining blocker, then yields.
+Return the authoritative target and command, baseline and final result,
+behavioral tests added, any repair, and remaining blocker. Every added test must
+be able to fail for a real implementation defect.

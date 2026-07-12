@@ -52,7 +52,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 - Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
     Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
-    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into `prune-uncommitted-tests` / `simplify-uncommitted-code` clean-and-fix assets, split `fully-implement-plan` and `loop-clean-and-fix`, add `run-and-fix-all-checks`, remove `repair-checks`, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
+    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into `prune-uncommitted-tests` / `simplify-uncommitted-code` clean-and-fix assets, remove the redundant `loop-clean-and-fix`, `finish-task`, and `complete-current-phase` wrappers, add `run-and-fix-all-checks`, remove `repair-checks`, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
     Next step: When the next release version is selected, add the required skill migration entry and generate the matching template ownership manifest.
     Notes: Do not edit already-tagged manifest files such as `0.12.1.json`.
 

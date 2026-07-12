@@ -78,12 +78,6 @@ Return:
 
 Use `None` for empty sections.
 
-## Definition of done
-
-- One coherent backlog slice was evaluated against current roadmap, issue, and
-  decision evidence.
-- The proposal names placement, contents, rationale, prerequisites, and issue
-  impacts.
-- Files were either updated once under clear authorization or left unchanged
-  for an explicit user-owned decision.
-- The skill returns its proposal or applied outcome, then yields.
+Return the proposal or applied outcome after one coherent slice is evaluated
+against roadmap, issue, and decision evidence. Name placement, rationale,
+prerequisites, issue impacts, and any prioritization decision still required.

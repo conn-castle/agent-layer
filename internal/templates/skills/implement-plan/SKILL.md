@@ -7,9 +7,8 @@ description: >-
 
 # implement-plan
 
-Implement the supplied plan once. Treat the artifacts as the execution contract
-and return the completed work or a concrete blocker. Final verification remains
-a separate stage.
+Implement the supplied artifact contract once and return completed work or a
+concrete blocker. Final verification is separate.
 
 ## Required inputs
 
@@ -19,8 +18,6 @@ a separate stage.
 
 Require exact paths. Do not discover or select artifacts from
 `.agent-layer/tmp/`. Stop if an artifact is missing or unreadable.
-
-## Output artifact
 
 Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` using
 `run-id = YYYYMMDD-HHMMSS-<short-rand>`.
@@ -60,7 +57,7 @@ response:
 
 ### 3. Report
 
-Write the execution report with:
+Write a concise report with:
 
 1. `## Status`
    - state whether the work is ready for verification or name the concrete
@@ -74,11 +71,8 @@ Write the execution report with:
    - list incomplete planned work or deferred required updates with reasons;
      use `None` when nothing remains
 
-Keep the report concise and do not narrate changes already clear from the diff.
-
 ## Completion contract
 
-The stage is complete when the report accounts for every plan item and required
-documentation or memory update, then states either readiness for verification
-or a concrete blocker. Return the report path, completed scope, task-local
-checks, deviations, remaining work, and that status.
+Return the report path, completed scope, checks, deviations, remaining work,
+and readiness or a blocker after accounting for every plan item and required
+docs/memory update. Do not narrate changes already clear from the diff.

@@ -7,17 +7,13 @@ description: >-
 
 # fix-ci
 
-Own local diagnosis and repair of an observed pull request CI failure. Do not
-commit, push, or wait for a new remote run; the caller owns publishing and remote
-observation.
+Diagnose and repair an observed PR CI failure locally. The caller owns commits,
+pushes, and remote observation.
 
 ## Inputs
 
-Optional inputs:
-
-- pull request number or URL; default to the current branch's open pull request
-- CI run ID
-- caller-provided failure evidence
+Accept an optional PR number/URL, CI run ID, or caller evidence; otherwise use
+the current branch's open PR.
 
 Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` and store downloaded artifacts under
 `.agent-layer/tmp/ci-artifacts/<run-id>`. Write the report to
@@ -76,17 +72,8 @@ a safe repair; otherwise stop with `repeated-failure`.
 
 ### 4. Report
 
-Write:
-
-1. `# CI Fix Summary`
-2. `## Failure Evidence`
-3. `## Local Reproducer`
-4. `## Direct Repair`
-5. `## Local Verification`
-6. `## Changed Files`
-7. `## Status and Residual Risk`
-
-Use one status:
+Report failure evidence, reproducer, repair, verification, changed files,
+residual risk, and one status:
 
 - `ready-to-publish`
 - `remote-retry-needed`
@@ -95,7 +82,6 @@ Use one status:
 
 ## Completion contract
 
-Return the report path, local changes, red-to-green evidence, focused check
-results, material diagnostic attempts, status, and any failed-check identifiers
-needed for a remote retry. Confirm that no staging, commit, push, or GitHub
-write occurred.
+Return the report, changes, red-to-green evidence, checks, material diagnostics,
+status, and remote-retry identifiers. Confirm no staging, commit, push, or
+GitHub write occurred.

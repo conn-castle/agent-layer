@@ -48,6 +48,8 @@ unresolved blockers or user checkpoints, and the next exact step.
 - Run `/ship-pr` only after `/fully-implement-plan` reports `complete`, or
   `complete-with-follow-up` with every follow-up explicitly outside the
   supplied contract.
+- A shippable `/fully-implement-plan` result is intermediate, not terminal.
+  Invoke `/ship-pr`; do not replace it with a question or completion summary.
 - Stop at any `/ship-pr` checkpoint, including merge authorization.
 
 ## Workflow

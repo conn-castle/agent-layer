@@ -959,48 +959,15 @@ clean-and-fix-code:
     - if: uncommitted diff includes changed tests
       calls:
         - asset: clean-and-fix-code/assets/prune-uncommitted-tests
-          caller: subagent
     - if: uncommitted diff includes changed production code
       calls:
         - asset: clean-and-fix-code/assets/simplify-uncommitted-code
-          caller: subagent
     - if: cleanup pre-passes leave an uncommitted target
       calls:
         - skill: review-uncommitted-code
         - if: review report has Recommended Accept findings
           calls:
             - task: validate and directly repair accepted findings with focused checks
-complete-current-phase:
-  inputs: [plan_reviewers]
-  calls:
-    - task: map active roadmap phase and package boundaries
-      caller: subagent
-    - if: selected phase is already complete in the current tree
-      calls:
-        - skill: finish-task
-        - exit: report the evidence-backed phase closeout
-    - skill: plan-work
-      inputs: [plan_reviewers]
-    - for: package in planned_phase_packages
-      calls:
-        - if: package spans a distinct subsystem
-          calls:
-            - skill: implement-plan
-              caller: subagent
-        - if: package is narrow and stays in the current context
-          calls:
-            - skill: implement-plan
-    - skill: clean-and-fix-code
-    - skill: verify-work
-      caller: subagent
-    - if: phase verification has material in-scope findings
-      calls:
-        - task: directly address each finding with focused evidence
-    - skill: review-uncommitted-code
-    - if: concrete-work review has Recommended Accept findings
-      calls:
-        - task: directly address each accepted finding with focused evidence
-    - skill: finish-task
 debug-and-fix-issue:
   inputs: [plan_reviewers, implementer, fixer]
   calls:
@@ -1031,14 +998,7 @@ debug-and-fix-issue:
           inputs: [implementer, fixer]
     - if: diagnosis-only mode and no broader orchestrator owns closeout
       calls:
-        - skill: finish-task
-finish-task:
-  calls:
-    - task: compare the delivered scope to its contract and update affected project truth once
-    - if: current passing evidence does not cover the exact final tree and delivered scope
-      calls:
-        - task: run one risk-proportional repository-defined verification lane
-    - exit: return the closeout status and yield
+        - task: update ISSUES.md when required and yield without another verification stage
 fix-ci:
   calls:
     - task: gather CI evidence and establish a credible local reproducer
@@ -1081,11 +1041,17 @@ fix-issues:
     - task: apply every issue disposition to the canonical ledger
     - if: no broader orchestrator owns closeout
       calls:
-        - skill: finish-task
+        - task: update only documentation and memory made stale by the resolved issues
 full-workflow:
   inputs: [planner, plan_reviewers, implementer, fixer, shipper]
   calls:
     - task: validate roles, align the spec, and resolve user-owned decisions
+    - if: the request targets a roadmap phase
+      calls:
+        - task: include the named or first incomplete phase, every remaining task and exit criterion, direct prerequisites, and project-truth closeout
+        - if: repository evidence shows the phase is already complete
+          calls:
+            - exit: update only stale project truth and report the evidence without creating an empty pull request
     - if: the user or caller explicitly requires an approval checkpoint and it is not yet satisfied
       calls:
         - exit: present the alignment summary for approval before planning
@@ -1102,7 +1068,7 @@ fully-implement-plan:
   calls:
     - skill: implement-plan
       caller: dispatch(implementer)
-    - skill: loop-clean-and-fix
+    - skill: clean-and-fix-code
       caller: dispatch(fixer)
     - skill: verify-work
       caller: subagent
@@ -1197,12 +1163,6 @@ interface-audit:
       calls:
         - exit: record no-material-improvement and yield without manufacturing a change
     - task: return the final recommendation gate
-loop-clean-and-fix:
-  calls:
-    - while: cleanup target exists, fewer than four rounds ran, and first round is pending or prior round made material non-repeating progress
-      calls:
-        - skill: clean-and-fix-code
-    - task: report the bounded cleanup outcome and stop reason
 plan-work:
   inputs: [plan_reviewers]
   calls:

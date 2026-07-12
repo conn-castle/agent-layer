@@ -1,124 +1,74 @@
 ---
 name: review-uncommitted-code
 description: >-
-  Targeted, report-only code review of files, directories, diffs, git ranges,
-  uncommitted changes, or proactive hotspots for correctness, gaps, risks,
-  architecture, tests, docs, performance, reliability, and maintainability.
+  Report-only review of a concrete file, directory, diff, range, working tree,
+  or proactive hotspot for material correctness, risk, architecture, test,
+  documentation, performance, reliability, and maintainability findings.
 ---
 
 # review-uncommitted-code
 
-Review one concrete target and write a findings report. Do not modify reviewed
-files.
+Review one concrete target once and write a findings report without modifying
+reviewed files.
 
-## Target selection
+## Target and artifact
 
-Resolve the target in this order:
+Use the user's explicit target, then requested proactive hotspots, otherwise all
+staged, unstaged, and untracked changes. Review the last commit only when asked.
+For hotspots, select bounded targets using concrete signals such as churn,
+complexity, weak coverage, scaffolding, reliability boundaries, or contract
+drift. Stop for the smallest scope decision only when no credible target exists.
 
-1. User-specified files, directories, diffs, or ranges.
-2. Proactive hotspots when the user requested a codebase audit without exact
-   targets.
-3. Otherwise all staged, unstaged, and untracked working-tree changes.
-
-Review the last commit only when explicitly requested. If no credible target
-exists, ask for the smallest scope decision and stop.
-
-For proactive hotspots, select a bounded target using concrete signals such as
-change frequency, size or complexity, weak behavioral coverage, temporary
-scaffolding, data or reliability boundaries, and drift from authoritative
-project contracts. Record why each hotspot was selected.
-
-## Required artifact
-
-Write `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md`, where
-`run-id` is `YYYYMMDD-HHMMSS-<short-rand>`.
-
-Read `assets/finding-verdict-classification.md` during synthesis. It is the
-single verdict rubric; it is not another review or classifier stage.
+Write `.agent-layer/tmp/review-uncommitted-code.<run-id>.report.md`. During
+synthesis read `assets/finding-verdict-classification.md`; it is the sole
+verdict rubric, not another review stage.
 
 ## Review contract
 
-- Review concrete code, diffs, tests, and observable contracts rather than
-  hypothetical alternatives.
-- Use complementary perspectives on distinct concerns. For a non-trivial
-  target, use bounded fresh built-in reviewers to examine correctness,
-  architecture, and quality/operability independently once in parallel.
-- If the current context authored or materially changed any part of the target,
-  at least one fresh built-in reviewer is required even when the target is
-  narrow. Give reviewers the concrete target and authoritative contract, not
-  the author's rationale. A narrow target may be reviewed directly only when
-  the current context did not author or materially change it.
-- Do not run an outer review loop or ask another agent to classify the same
-  evidence.
-- Treat reviewer output as candidates until the synthesizer validates it
-  against current repository evidence.
-- Report only findings that materially affect correctness, safety, scope,
-  reliability, performance, test integrity, or meaningful maintainability.
-- Do not report style preferences, speculative edge cases, unsupported claims,
-  or unrelated known issues as current findings.
+- Review concrete code, tests, diffs, and observable contracts, not hypothetical
+  alternatives.
+- Give one reviewer the complete target and relevant concerns. If this context
+  authored or materially changed the target, use one fresh built-in reviewer
+  with the target and authoritative contract, not the author's rationale.
+  Otherwise review directly.
+- Do not split one diff for perspectives, consensus, or convergence.
+- Treat reviewer output as candidates until validated against current evidence.
+- Report only material correctness, safety, scope, reliability, performance,
+  test-integrity, or maintainability findings. Omit style, speculation,
+  unsupported claims, duplicates, and unrelated known issues.
 
 ## Workflow
 
-### 1. Establish scope and evidence
+### 1. Review once
 
-Record the target, review mode, report path, and hotspot signals when
-applicable. Read the minimum surrounding code, tests, docs, and memory needed
-to establish intended behavior.
-
-### 2. Run one purposeful review pass
-
-Examine complementary concerns once:
+Record target, mode, and hotspot evidence. Read the minimum surrounding code,
+tests, docs, and memory needed to establish intent, then cover relevant:
 
 - correctness, error handling, boundary inputs, and failure modes
 - ownership, interfaces, coupling, and unnecessary complexity
-- tests, documentation, performance, concurrency, data safety, and operational
-  supportability where relevant
+- tests, docs, performance, concurrency, data safety, and operability
 
-Assign the complementary concerns to distinct reviewers when the target is
-non-trivial. Preserve the fresh-review requirement for author-modified targets.
-Do not add duplicate reviewers for consensus after those perspectives are
-covered.
-
-### 3. Synthesize once
+### 2. Synthesize and report
 
 Validate candidates against the current tree, merge duplicates, and apply the
-verdict rubric. Only evidence-backed candidates that survive this synthesis
-become report entries.
+verdict rubric once. Each survivor includes title, severity, confidence,
+location, scope, `Accept` or `Defer`, evidence, impact, and recommendation.
 
-Each reported finding includes:
+`Accept` is current, in scope, and actionable without a new user decision.
+`Defer` requires a genuine user decision or unavailable evidence; a scope
+boundary alone is not a user decision.
 
-- title, severity, and confidence
-- exact location and reviewed scope
-- recommended verdict: Accept | Defer
-- evidence, why it matters, and a concrete recommendation
+Write:
 
-`Accept` means valid, current, in scope, and actionable without a new user
-decision. `Defer` is reserved for a valid finding blocked by a user-owned
-decision or explicit scope boundary. Candidates absent from the final reviewed
-state are not findings and are omitted.
-
-### 4. Write the report and yield
-
-The report contains:
-
-1. `# Review Summary` — target, mode, and readiness verdict
+1. `# Review Summary` — target, mode, and readiness
 2. `## Recommended Accept`
 3. `## Recommended Defer`
 
-Use `None` for empty groups. The readiness verdict is `proceed`,
-`proceed-after-fixes`, or `revise-first`:
+Use `None` for empty groups and one readiness verdict:
 
-- `proceed`: no accepted fix remains and no deferred finding blocks safe use of
-  the reviewed work
-- `proceed-after-fixes`: one or more `Accept` findings should be addressed by
-  the caller
-- `revise-first`: a deferred user-owned decision or explicit scope boundary
-  prevents the reviewed work from proceeding safely
+- `proceed`: no accepted fix or blocking defer remains
+- `proceed-after-fixes`: accepted findings remain
+- `revise-first`: a genuine decision or evidence gap blocks safe use
 
-## Definition of done
-
-- The target received one evidence-backed review pass through the relevant
-  complementary concerns.
-- Every reported finding survived current-tree validation and has one verdict.
-- The report exists with a readiness verdict and the skill yields without
-  editing reviewed files.
+Return the report and readiness after one evidence-backed pass. Do not edit the
+target or add another reviewer.

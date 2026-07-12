@@ -2,135 +2,75 @@
 name: fix-issues
 description: >-
   Resolve a selected ISSUES.md set through one reviewed plan, bounded
-  implementation batches, one concrete-work review, and one verification pass.
+  implementation packages, one concrete-work review, and one verification pass.
 ---
 
 # fix-issues
 
-Resolve the selected issue set as one workflow. Batches organize mutations; they
-do not each create a new planning, review, and verification cycle.
+Resolve the selected issue set as one workflow. Packages organize mutations;
+they do not create separate planning, review, or verification cycles.
 
-## Inputs and scope
+## Inputs and disposition
 
-- Accept explicit issue identifiers, a maximum count, a scope filter, or
-  plan-only mode. Otherwise select every open ISSUES.md entry.
-- Require `plan_reviewers` before side effects and pass them unchanged to
-  `/plan-work`.
-- Keep scope to selected issues and prerequisites that directly block them.
-- Write `.agent-layer/tmp/fix-issues.<run-id>.report.md`, where `run-id` is
-  `YYYYMMDD-HHMMSS-<short-rand>`.
+Accept issue IDs, maximum count, scope filter, or plan-only mode; otherwise
+select every open issue. Require `plan_reviewers`. Keep scope to selected issues
+and direct prerequisites. Write
+`.agent-layer/tmp/fix-issues.<run-id>.report.md`.
 
-Use a fresh built-in triage subagent to select, validate, and group the issue
-set. Use fresh built-in implementers for distinct packages where useful and a
-fresh built-in verifier for final contract verification. Preserve plan-review
-dispatch through `/plan-work`. Keep every working-tree mutation sequential
-against the latest tree even when packages are otherwise independent.
+Use one fresh triage subagent, fresh package implementers when useful, and one
+fresh final verifier. Serialize all mutations. Do not stage, commit, or push.
 
-Do not stage, commit, or push. Leave the combined result for the caller or
-`/ship-pr` to publish.
-
-## Issue disposition contract
-
-Every selected issue ends as exactly one of:
+Every selected issue ends as:
 
 - `fixed`: resolved with evidence and removed from ISSUES.md
-- `reclassified`: an end-user-visible capability moved to BACKLOG.md
-- `deferred`: still valid but blocked by an explicit scope boundary or
-  user-owned decision; leave the canonical ISSUES.md entry unchanged
-- `rejected`: repository evidence proves the entry invalid or already resolved;
-  remove it and record the evidence
+- `reclassified`: end-user capability moved to BACKLOG.md
+- `deferred`: valid but blocked by a genuine scope or user decision; unchanged
+- `rejected`: evidence proves it invalid or already resolved; remove it
 
-Do not defer because a clear fix is inconvenient or spans multiple files. Log a
-new out-of-scope engineering problem only when it is concrete, material, and not
-already present.
+Do not defer clear fixes because they are inconvenient or multi-file.
 
 ## Workflow
 
-### 1. Triage and batch once
+### 1. Triage and plan once
 
-Read ISSUES.md, then relevant ROADMAP.md, DECISIONS.md, COMMANDS.md, and code
-evidence. Have the triage subagent:
+Read ISSUES.md and relevant ROADMAP.md, DECISIONS.md, COMMANDS.md, and code. The
+triage subagent validates entries, proposes reclassifications, merges duplicate
+obligations without losing IDs, groups ordered packages, and identifies genuine
+user decisions. Do not edit ledgers until verification. Return `no-work` when
+nothing remains.
 
-- validate each selected entry against the current tree
-- propose reclassification for clear feature requests
-- merge duplicate selected entries into one repair obligation without losing
-  their identifiers
-- group the remaining work into ordered, coherent implementation packages
-- identify user-owned decisions
+Run `/plan-work` once for the complete selected set and package map with
+`plan_reviewers`; continue only with `implementation-ready`. In plan-only mode,
+return the reviewed artifacts here.
 
-Record these dispositions without editing the ledgers yet; Stage 5 applies them
-after the selected contract is verified.
+### 2. Implement all packages
 
-If no open issue remains in the selected scope, write a `no-work` outcome and
-yield without planning.
+Execute packages once in dependency order against the latest tree. Give each
+implementer the shared artifacts, bounded issues, and disposition contract.
+Require a failing reproducer for defects when feasible; debt and refactors may
+use established contract evidence. Resolve routine details without asking and
+do not silently drop selected work.
 
-If plan-only mode was requested, continue through planning and return the
-reviewed artifacts without implementing.
+After all packages, run `/clean-and-fix-code` once when meaningful cleanup scope
+exists.
 
-### 2. Plan the selected set once
+### 3. Review, verify, and update ledgers
 
-Run `/plan-work` once for the complete selected issue set and its packages:
+Run `/review-uncommitted-code` once over the issue changes and direct boundaries;
+validate and fix every `Recommended Accept` finding with focused evidence.
 
-```text
-/plan-work
-{selected issues, evidence, package map, and report path}
-plan_reviewers are {agent 1, agent 2, ...}
-```
+Run `/verify-work` once in a fresh subagent using the selected issues and plan
+as the contract and review repairs as supplemental obligations. Directly repair
+material in-scope findings without another plan, review, or verification pass.
+Then apply every disposition to ISSUES.md or BACKLOG.md. When no broader
+orchestrator owns closeout, use the current verification evidence and update
+only documentation or memory made stale by the resolved issues. Read each
+memory file's format, merge duplicates, and record only non-obvious durable
+decisions. Do not add another verification or review stage.
 
-Continue only with `implementation-ready`. Ask only the exact user-owned
-decision returned by planning.
+## Completion contract
 
-In plan-only mode, finalize the report with the selected set and reviewed
-artifact paths, then yield here.
-
-### 3. Implement all packages
-
-Execute every package once in dependency order. A package implementer receives
-the shared plan artifacts, its bounded issues, the relevant current tree, and
-the issue disposition contract. Require a failing reproducer for a defect when
-feasible; debt and refactors may use established contract evidence instead.
-
-Run every package's mutations sequentially against the latest working tree;
-fresh implementer contexts do not authorize concurrent edits. Resolve routine
-implementation and focused-check details autonomously. Stop only for a concrete
-failure or user-owned decision; do not silently drop the rest of the selected
-set.
-
-After all packages, run `/clean-and-fix-code` once only when the combined
-uncommitted work contains meaningful cleanup scope.
-
-### 4. Review the concrete result once
-
-Run `/review-uncommitted-code` once over the selected issue changes and their
-direct boundaries. Validate and directly address every `Recommended Accept`
-finding with focused evidence. Do not start another broad review.
-
-### 5. Verify once and update the ledger
-
-Run `/verify-work` once in a fresh built-in subagent using the selected issues
-and reviewed plan artifacts as the authoritative contract. Include accepted
-review repairs as supplemental obligations.
-
-Directly address material in-scope verification findings with focused evidence;
-do not launch another plan, review, or verification pass. Then apply each issue
-disposition to ISSUES.md or BACKLOG.md and finalize the report.
-
-When no broader orchestrator owns closeout, run `/finish-task` once with current
-evidence.
-
-## Report and completion contract
-
-The report contains:
-
-1. `# Issue Resolution Summary`
-2. `## Selected Issues and Packages`
-3. `## Plan Artifacts`
-4. `## Dispositions and Evidence`
-5. `## Concrete-Work Review`
-6. `## Verification`
-7. `## Blockers and Residual Risk`
-
-Return the report and delegated artifact paths, every selected issue's terminal
-disposition, fixes, ledger changes, verification evidence, and any blocker.
-The run is complete only when all selected issues are accounted for; each stage
-runs once by default and then yields.
+Report selected issues and packages, plan artifacts, every terminal disposition,
+fixes and ledger changes, review and verification evidence, blockers, and
+residual risk. The run is complete only when every selected issue is accounted
+for.

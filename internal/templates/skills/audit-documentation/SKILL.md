@@ -49,17 +49,12 @@ to understand their actionable claims.
 
 ### 2. Run one documentation audit pass
 
-For a broad or context-heavy scope, form enough coherent document groups to
-give materially different areas independent attention without overloading an
-investigator's context. Do not combine groups when that would obscure
-cross-document relationships, and do not split them merely to increase agent
-count. Give each group to a fresh built-in investigator subagent. Run
-substantial independent groups concurrently when the wall-clock benefit
-warrants the extra agent cost; otherwise run them sequentially. Investigators
-are read-only and return compact candidate findings with exact claims,
-repository evidence, and cross-document references. The owning agent validates
-candidates, resolves relationships across groups, and owns all edits. A compact
-scope may be audited directly.
+Audit a compact scope directly. For a context-heavy scope, give coherent,
+non-overlapping document groups to fresh read-only investigators and run
+independent groups concurrently when useful. Each returns compact candidates
+with exact claims and evidence; the owning agent validates them, resolves
+cross-document conflicts, and makes all edits. Do not split work merely to add
+agents.
 
 In one pass, check:
 
@@ -97,10 +92,5 @@ The final summary contains:
 Use `None` for empty sections. Mention accurate areas only when that context is
 useful; do not create a ceremonial strengths inventory.
 
-## Definition of done
-
-- Every in-scope document received one purposeful evidence pass.
-- Safe corrections were applied once and every remaining finding has concrete
-  evidence and a terminal outcome.
-- No source code, tests, or memory files were modified.
-- The skill returns its summary, decisions, and blockers, then yields.
+Return the summary, decisions, and blockers after every in-scope document has
+one evidence pass and each material finding has a terminal outcome.

@@ -7,9 +7,8 @@ description: >-
 
 # run-and-fix-all-checks
 
-Own the repository's full check lane from first run through a passing result.
-Use observed failure evidence to make direct root-cause repairs; do not create a
-planning, implementation, or verification sub-workflow.
+Run the full check lane to green using observed failures and direct root-cause
+repairs. Do not create another planning, implementation, or verification flow.
 
 ## Scope
 
@@ -24,10 +23,8 @@ authoritative lane can be determined.
 
 ## Output artifacts
 
-Use `run-id = YYYYMMDD-HHMMSS-<short-rand>` and write:
-
-- `.agent-layer/tmp/run-and-fix-all-checks.<run-id>.report.md`
-- failure evidence under the same prefix for each failed round
+Write `.agent-layer/tmp/run-and-fix-all-checks.<run-id>.report.md` and each
+round's failure evidence under the same prefix.
 
 ## Rules
 
@@ -79,17 +76,8 @@ the failure is external or cannot be repaired safely within scope.
 
 ### 4. Report
 
-Write:
-
-1. `# Run All Checks Summary`
-2. `## Check Lane`
-3. `## Check Rounds`
-4. `## Direct Repairs`
-5. `## Stop Reason`
-6. `## Residual Risk`
-
-Record the selected commands, each round's result and failure artifact, each
-repair and focused evidence, and one stop reason:
+Record commands, round results and artifacts, repairs and focused evidence,
+residual risk, and one stop reason:
 
 - `checks-passed`
 - `blocked`
@@ -97,6 +85,5 @@ repair and focused evidence, and one stop reason:
 
 ## Completion contract
 
-Return the report path, full-lane commands, round count, direct repairs, and
-final passing evidence or blocker. The stage is complete only when the full lane
-passes after the latest changes or a named failure gate prevents safe progress.
+Return the report, commands, rounds, repairs, and final passing evidence or named
+failure gate.

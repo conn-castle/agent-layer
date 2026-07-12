@@ -7,26 +7,20 @@ description: >-
 
 # verify-work
 
-Run one read-only verification pass over completed work. Decide whether the
-implementation delivered its contract and whether sufficient evidence covers
-the final working tree. Do not fix findings in this stage.
+Run one read-only pass to decide whether the final tree delivers its contract
+with sufficient evidence. Do not fix findings.
 
 ## Required inputs
 
-Require one authoritative contract source:
-
-- explicit plan and task artifact paths, with an optional context artifact path
-- an explicit user request or scope
-
-Exact plan and task paths are required when artifacts are used. Do not discover
-or select them from `.agent-layer/tmp/`.
+Require either exact plan/task paths with optional context, or an explicit user
+request/scope. Do not discover artifacts from `.agent-layer/tmp/`.
 
 The caller may also provide supplemental obligations, such as accepted cleanup
 findings. Verify them separately; they do not replace or reinterpret the
 authoritative contract.
 
-Implementation reports, summaries, pull request descriptions, and issue bodies
-are evidence only. They cannot redefine promised work or mark it complete.
+Implementation reports, summaries, PR descriptions, and issue bodies are
+evidence only; they cannot redefine or complete the contract.
 
 ## Output artifact
 
@@ -102,7 +96,6 @@ Use exactly one verdict:
 
 ## Completion contract
 
-The report must account for every in-scope contract item and supplemental
-obligation, identify the evidence covering the final working tree, and state one
-verdict. Return the report path and verdict; when incomplete, name the next
-exact corrective action.
+Return the report path and one verdict after accounting for every contract item,
+supplemental obligation, and evidence covering the final tree. When incomplete,
+name the next exact correction.

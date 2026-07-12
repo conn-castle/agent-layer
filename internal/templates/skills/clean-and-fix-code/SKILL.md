@@ -25,17 +25,17 @@ and no review report instead of reviewing history.
 
 ## Workflow
 
-### 1. Cleanup pre-passes
+### 1. Inspect and clean once
 
-Run each applicable pre-pass once, sequentially, in a fresh built-in subagent:
+Own the cleanup directly. Read and apply each applicable checklist once:
 
 - `assets/prune-uncommitted-tests.md` when tests or test cases changed
 - `assets/simplify-uncommitted-code.md` when production code changed
 
-Record whether either pre-pass materially changed the target, then re-evaluate
-the combined uncommitted working tree. If the pre-passes emptied the target,
-skip review and finish with `completed`; do not invoke a reviewer on an empty
-diff.
+Do not delegate these checks to separate cleanup agents. Apply supported
+removals and simplifications sequentially against the latest tree, record what
+changed, then re-evaluate the target. If cleanup empties the target, skip review
+and finish with `completed`.
 
 ### 2. Review once
 
@@ -68,7 +68,7 @@ Use `/review-uncommitted-code` findings as follows:
   cleanup pre-pass materially changed the target; otherwise finish with
   `no-findings`.
 - Do not promote `Recommended Defer` findings into repair scope. Report their
-  count and the user-owned decision or scope boundary for each.
+  count and the genuine user-owned decision or missing evidence for each.
 - If an accepted repair depends on a user-owned decision recorded under
   `Recommended Defer`, stop and name that decision.
 
@@ -80,6 +80,8 @@ Use `/review-uncommitted-code` findings as follows:
 - Keep repairs within the uncommitted target plus directly required supporting
   edits.
 - Do not parallelize mutations against shared working-tree state.
+- Do not repeat cleanup, review, or repair for convergence or confidence. A
+  focused check of a repaired finding is evidence, not another review pass.
 
 ## Completion contract
 

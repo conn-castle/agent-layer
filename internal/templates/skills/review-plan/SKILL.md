@@ -95,21 +95,8 @@ Final readiness must be exactly one of:
 - `implementation-ready`
 - `blocked-for-user-decision`
 
-## Guardrails
-
-- Do not widen scope or weaken verification to satisfy reviewer preference.
-- Do not let stylistic improvements or speculative edge cases block progress.
-- Do not dispatch more reviewers to increase confidence in an evidence-settled
-  conclusion.
-
-## Definition of done
-
-- Every requested reviewer was dispatched once, ran the bounded independent
-  perspectives, and produced one synthesized child report.
-- Every material finding was applied or identified as a user-owned decision.
-- The final report records the artifact changes and readiness verdict.
-
-## Final handoff
-
-Return the final report path, accepted changes, any user-owned decision, and the
-readiness verdict.
+Do not widen scope, weaken verification, or add reviewers to satisfy preference
+or seek confidence. Return the final report path, accepted changes, any genuine
+user decision, and the readiness verdict after every requested reviewer has
+reported once and every material finding is resolved or blocked on that
+decision.

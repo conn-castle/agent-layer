@@ -97,7 +97,10 @@ func TestSkillTemplatesAllowResourceFiles(t *testing.T) {
 func TestRemovedSkillTemplatesStayRemoved(t *testing.T) {
 	for _, path := range []string{
 		"skills/continue-roadmap/SKILL.md",
+		"skills/complete-current-phase/SKILL.md",
 		"skills/find-issues/SKILL.md",
+		"skills/finish-task/SKILL.md",
+		"skills/loop-clean-and-fix/SKILL.md",
 		"skills/mechanical-cleanup/SKILL.md",
 		"skills/audit-and-fix-uncommitted/SKILL.md",
 		"skills/audit-and-fix-uncommitted-changes/SKILL.md",

@@ -7,8 +7,7 @@ description: >-
 
 # full-workflow
 
-Own one end-to-end feature workflow from specification alignment through
-`/plan-work` and `/ship-plan`.
+Align one feature specification, plan it, and ship it.
 
 ## Required inputs
 
@@ -21,10 +20,7 @@ Own one end-to-end feature workflow from specification alignment through
 
 Require every input before side effects. Do not infer roles or reviewer lists.
 
-## Output artifact
-
-Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md` using
-`run-id = YYYYMMDD-HHMMSS-<short-rand>`.
+Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md`.
 
 ## Rules
 
@@ -43,21 +39,24 @@ Write `.agent-layer/tmp/full-workflow.<run-id>.spec.md` using
 
 ### 1. Align the specification
 
-Read the focused repository context needed to distinguish facts from choices.
-Write a concise spec that clearly captures the objective, scope and non-goals,
-confirmed material decisions, constraints, acceptance criteria, shipping
-expectations, and any unresolved user-owned decisions. Organize it for the work
-at hand; these contents do not require ceremonial empty sections.
+Read enough repository context to distinguish facts from choices. Write a
+concise spec with objective, scope/non-goals, material decisions, constraints,
+acceptance criteria, shipping expectations, and unresolved decisions; omit
+ceremonial empty sections.
+
+When the request is to complete a roadmap phase, read ROADMAP.md first. Use the
+named phase or the first incomplete phase, and include every unchecked task,
+exit criterion, and direct prerequisite. Include necessary ROADMAP.md, memory,
+and documentation closeout in the contract. If repository evidence shows the
+phase is already complete, update only stale project truth and return the
+evidence instead of planning or creating an empty pull request.
 
 Ask only the questions required to resolve user-owned decisions. Record each
 answer in the spec and resolve routine gaps directly from evidence.
 
-Present one concise alignment summary covering scope, non-goals, acceptance
-criteria, and material decisions. Continue to planning when repository evidence
-settles the contract and no user-owned decision remains. Wait for approval only
-when the user or caller explicitly requested an approval checkpoint, or when a
-material choice actually belongs to the user. Apply corrections directly and
-do not repeat alignment merely for confidence.
+Present one alignment summary and continue when evidence settles the contract.
+Wait only for a requested checkpoint or genuine material choice; apply routine
+corrections without repeating alignment.
 
 ### 2. Plan once
 

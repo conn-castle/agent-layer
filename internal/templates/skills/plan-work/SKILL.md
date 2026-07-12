@@ -6,8 +6,7 @@ description: >-
 
 # plan-work
 
-Create one implementation-ready artifact set, run one plan review, and return
-the reviewed artifacts or a user-owned blocker.
+Create and review one implementation-ready artifact set.
 
 ## Required inputs
 
@@ -23,12 +22,10 @@ Ask for a missing required input before creating artifacts.
 Read the task source and the smallest amount of repository context needed to
 resolve material facts. Do not defer factual investigation into the plan.
 
-For a broad or cross-subsystem target whose investigation would consume
-substantial planning context, use one fresh built-in scout subagent. Give it the
-task source and bounded research questions. Require a compact evidence map of
-entry points, contracts, dependencies, constraints, and unresolved facts with
-exact repository locations. The planning agent validates consequential evidence
-and owns the plan; a narrow target does not require a scout.
+For broad, cross-system research, use one fresh scout with bounded questions and
+require a compact map of entry points, contracts, dependencies, constraints,
+and unresolved facts. The planner validates consequential evidence and owns the
+plan; research a narrow target directly.
 
 Resolve routine planning choices from repository evidence. Ask the user only
 when multiple viable choices would materially change behavior, architecture,
@@ -45,12 +42,9 @@ planning stage. If it exposes a user-owned decision, stop and ask for that
 decision. Do not delegate planning or start repeated drafting passes for greater
 confidence.
 
-When `write-plan` returns `revise`, apply its cited corrections in one focused
-revision and rerun only the artifact self-check. Resolve any concrete,
-autonomously correctable material gap that self-check still exposes without
-restarting research, drafting, or review. Escalate only when the remaining
-choice materially affects behavior, architecture, scope, risk, or cost and
-available evidence cannot settle it.
+When `write-plan` returns `revise`, apply cited corrections once and rerun only
+the artifact self-check. Resolve evidence-settled gaps without restarting
+research or drafting; escalate only a remaining material choice.
 
 ### 3. Review once
 
