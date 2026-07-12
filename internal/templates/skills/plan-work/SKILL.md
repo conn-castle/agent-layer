@@ -6,7 +6,7 @@ description: >-
 
 # plan-work
 
-Create and review one implementation-ready artifact set.
+Create and review an implementation-ready artifact set.
 
 ## Required inputs
 
@@ -22,7 +22,7 @@ Ask for a missing required input before creating artifacts.
 Read the task source and the smallest amount of repository context needed to
 resolve material facts. Do not defer factual investigation into the plan.
 
-For broad, cross-system research, use one fresh scout with bounded questions and
+For broad, cross-system research, use a fresh scout with bounded questions and
 require a compact map of entry points, contracts, dependencies, constraints,
 and unresolved facts. The planner validates consequential evidence and owns the
 plan; research a narrow target directly.
@@ -42,19 +42,21 @@ planning stage. If it exposes a user-owned decision, stop and ask for that
 decision. Do not delegate planning or start repeated drafting passes for greater
 confidence.
 
-When `write-plan` returns `revise`, apply cited corrections once and rerun only
-the artifact self-check. Resolve evidence-settled gaps without restarting
-research or drafting; escalate only a remaining material choice.
+When `write-plan` returns `revise`, apply its cited corrections and rerun the
+artifact self-check against the changed version. Resolve evidence-settled gaps
+without restarting valid research or drafting; escalate only a remaining
+material choice.
 
-### 3. Review once
+### 3. Review
 
-Call `/review-plan` once with the plan, task, context, optional source/spec, and
+Call `/review-plan` with the plan, task, context, optional source/spec, and
 `plan_reviewers`. Use the revised artifacts it returns.
 
 If review returns `blocked-for-user-decision`, ask the named question, then
 resume the same review stage with the answer so it updates the affected
-artifacts and final report. Do not redispatch reviewers or start another review
-round merely because the artifacts changed to record that decision.
+artifacts and final report. Reuse reviewer evidence while it still covers the
+artifact contract; do not redispatch merely because the artifacts changed to
+record that decision.
 
 ## Boundaries
 

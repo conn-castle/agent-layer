@@ -8,8 +8,8 @@ description: >-
 
 # review-uncommitted-code
 
-Review one concrete target once and write a findings report without modifying
-reviewed files.
+Review a concrete target and write a findings report without modifying reviewed
+files.
 
 ## Target and artifact
 
@@ -39,7 +39,7 @@ verdict rubric, not another review stage.
 
 ## Workflow
 
-### 1. Review once
+### 1. Review
 
 Record target, mode, and hotspot evidence. Read the minimum surrounding code,
 tests, docs, and memory needed to establish intent, then cover relevant:
@@ -51,7 +51,7 @@ tests, docs, and memory needed to establish intent, then cover relevant:
 ### 2. Synthesize and report
 
 Validate candidates against the current tree, merge duplicates, and apply the
-verdict rubric once. Each survivor includes title, severity, confidence,
+verdict rubric. Each survivor includes title, severity, confidence,
 location, scope, `Accept` or `Defer`, evidence, impact, and recommendation.
 
 `Accept` is current, in scope, and actionable without a new user decision.
@@ -70,5 +70,5 @@ Use `None` for empty groups and one readiness verdict:
 - `proceed-after-fixes`: accepted findings remain
 - `revise-first`: a genuine decision or evidence gap blocks safe use
 
-Return the report and readiness after one evidence-backed pass. Do not edit the
-target or add another reviewer.
+Return the report and readiness after covering the target with current evidence.
+Do not edit the target or add another reviewer for confidence.

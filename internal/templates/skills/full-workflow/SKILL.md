@@ -58,7 +58,7 @@ Present one alignment summary and continue when evidence settles the contract.
 Wait only for a requested checkpoint or genuine material choice; apply routine
 corrections without repeating alignment.
 
-### 2. Plan once
+### 2. Plan
 
 Dispatch `planner` with `/plan-work`, the aligned spec path, and
 `plan_reviewers`. Require the plan, task, context, and review report paths with
@@ -72,9 +72,10 @@ invalidates that completed work.
 ### 3. Implement and ship
 
 Dispatch `shipper` with `/ship-plan`, the reviewed artifact paths,
-`implementer`, and `fixer`. Relay any explicit child checkpoint, including
-shipping or merge authorization, and resume the same stage after the user
-answers.
+`implementer`, and `fixer`. Relay child checkpoints, including merge
+authorization. Resume by passing the exact `ship-plan` checkpoint and the
+user's exact answer back to the shipper; do not restart completed phases unless
+reconciliation invalidates them.
 
 ### 4. Report
 

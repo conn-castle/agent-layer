@@ -7,8 +7,8 @@ description: >-
 
 # address-pr-comments
 
-Address each PR comment once and keep decisions, edits, evidence, and reply
-drafts in one durable ledger.
+Resolve every PR comment and keep decisions, edits, evidence, and reply drafts
+in one durable ledger.
 
 ## Inputs and boundaries
 

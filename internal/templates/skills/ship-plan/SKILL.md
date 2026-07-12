@@ -25,6 +25,15 @@ If any required input is missing, ask for it before starting. Do not invent
 defaults, implementers, fixers, or auto-select artifacts from
 `.agent-layer/tmp/`.
 
+An exact prior checkpoint path is an optional resume input; never discover one
+implicitly. Write `.agent-layer/tmp/ship-plan.<run-id>.checkpoint.md` with the
+phase, contract hashes, roles, child reports/verdicts, shipping obligations,
+tree fingerprint (`HEAD` plus staged, unstaged, and untracked content),
+PR/head/ledger state, and next step.
+
+Resuming a user gate also requires the user's exact answer. Treat it as
+single-use input, not checkpoint state or authorization inferred from the phase.
+
 ## Context preservation
 
 You are the orchestrator for this skill. Preserve your context to validate
@@ -33,10 +42,8 @@ skill returns as intermediate until this workflow reaches its final handoff.
 
 ## Compaction guidance
 
-When compaction is needed, retain this entire skill verbatim. Also preserve the
-current workflow step or phase, active artifact paths, selected scope, pending
-gate verdicts, delegated skills and subagents already run and their outcomes,
-unresolved blockers or user checkpoints, and the next exact step.
+When compaction is needed, retain this skill and the checkpoint path. Reconcile
+the checkpoint before acting again.
 
 ## Rules
 
@@ -54,7 +61,12 @@ unresolved blockers or user checkpoints, and the next exact step.
 
 ## Workflow
 
-1. Run:
+1. Create or reconcile the checkpoint using phases `implementation`, `shipping`,
+   `merge-authorization`, and `done`. Continue at its next step when contract
+   hashes and covered tree still match. Restart implementation only for a
+   contract change or unexplained pre-shipping tree change; let `/ship-pr`
+   reconcile changes made during shipping.
+2. When the phase is `implementation`, run:
 
    ```text
    /fully-implement-plan
@@ -66,30 +78,29 @@ unresolved blockers or user checkpoints, and the next exact step.
    fixer is {fixer}
    ```
 
-   Record its report path, final status, stop reason, verification verdict, and
-   residual risk.
-2. Run:
+   On a shippable result, checkpoint its report, verdict, tree fingerprint, and
+   shipping obligations; set phase `shipping` and next step `/ship-pr`.
+3. When the phase is `shipping` or `merge-authorization`, run:
 
    ```text
    /ship-pr
    ```
 
-   Record its PR URL or checkpoint, comment ledger path if available, check
-   status, and any merge authorization requirement.
-3. Prepare the final message for the user.
+   Pass checkpointed shipping obligations and PR/head/ledger state plus any
+   exact gate answer. At merge authorization, checkpoint that phase with next
+   step `/ship-pr`; mark `done` only on a terminal result.
+4. Prepare the final message for the user.
 
 ## Definition of done
 
-- `/fully-implement-plan` ran with the supplied plan, task, context,
-  `implementer`, and `fixer`, or this workflow stopped on
-  its child-skill blocker.
-- `/ship-pr` ran after `/fully-implement-plan` completed with a shippable final
-  status, or this workflow stopped before shipping with the reason.
-- Final handoff reports the child skill report path, PR URL or checkpoint, and
-  any blocker or required user decision.
+- `/fully-implement-plan` completed with a shippable result and `/ship-pr` ran,
+  or a child blocker was surfaced.
+- A resumed workflow reconciled its explicit checkpoint and skipped every
+  completed phase whose contract and covered tree remained valid.
 
 ## Final handoff
 
 Report the `/fully-implement-plan` report path and final status. Report the
 `/ship-pr` PR URL, current PR status, comment ledger path, and checkpoint when
-available. State any blocker, residual risk, or user decision needed next.
+available. Always report the `ship-plan` checkpoint path. State any blocker,
+residual risk, or user decision needed next.

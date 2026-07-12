@@ -52,7 +52,7 @@ build a focused reproduction of the material CI difference.
 If evidence identifies an infrastructure or external-service failure, or no
 credible local reproducer can be built and no safe patch is justified, keep no
 speculative change and return `remote-retry-needed`. Preserve the evidence the
-caller needs to request one bounded rerun of the failed remote checks.
+caller needs to rerun the failed remote checks without changing the tree.
 
 Use `blocked` instead when required evidence or credentials are unavailable, a
 user-owned decision is required, or no supported remote retry path can be

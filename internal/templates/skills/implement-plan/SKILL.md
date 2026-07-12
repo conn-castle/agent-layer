@@ -7,8 +7,8 @@ description: >-
 
 # implement-plan
 
-Implement the supplied artifact contract once and return completed work or a
-concrete blocker. Final verification is separate.
+Implement the supplied artifact contract and return completed work or a concrete
+blocker. Final verification is separate.
 
 ## Required inputs
 
@@ -28,8 +28,9 @@ Write `.agent-layer/tmp/implement-plan.<run-id>.report.md` using
 - Resolve routine implementation details directly from the artifacts and
   repository evidence.
 - Include planned documentation and memory updates. Do not defer them silently.
-- Use narrow task-local checks when they help implement or debug the change.
-  Do not turn this stage into broad or final verification.
+- Run risk-proportional checks: focused by default, or the documented full lane
+  when the contract or change risk warrants it and the lane supports the tree.
+  Do not run broad checks only for confidence.
 - Do not add unrelated cleanup, a new planning cycle, or a review layer.
 
 ## Workflow

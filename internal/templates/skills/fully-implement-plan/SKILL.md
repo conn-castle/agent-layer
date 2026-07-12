@@ -1,14 +1,14 @@
 ---
 name: fully-implement-plan
 description: >-
-  Implement supplied plan/task/context artifacts, clean the working tree,
-  verify the contract once, and repair material verification findings.
+  Implement supplied plan/task/context artifacts, review the changes, verify
+  the contract, and repair material findings.
 ---
 
 # fully-implement-plan
 
-Coordinate implementation, one cleanup pass, one verification pass, and any
-required repair. Do not open a PR or run an unrelated full-repository lane.
+Coordinate implementation, code review, contract verification, and required
+repairs. Do not open a PR or run an unrelated full-repository lane.
 
 ## Inputs and artifact
 
@@ -17,52 +17,68 @@ Require exact plan, task, and context artifact paths plus `implementer` and
 `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md`.
 
 Dispatch external roles through `/agent-dispatch`. Treat the supplied artifacts
-as the contract; delegated reports are evidence and cleanup findings are
-supplemental obligations. Serialize mutations against the latest tree and stop
-on a failed delegation or missing required report/verdict.
+as the contract and delegated reports as evidence. Serialize mutations against
+the latest tree and stop on a failed delegation or missing required verdict.
+Keep a findings and evidence ledger in the workflow report, tied to the contract
+version and covered tree.
 
 Continue through reversible in-scope repairs and non-destructive checks. Ask
 only for external writes not already authorized, destructive actions,
 substantive product/architecture choices, or material scope expansion. Do not
 stage, commit, weaken checks, or destructively rewrite changes.
 
+Run risk-appropriate checks, including the full lane when it supports the
+uncommitted tree. When an exact required lane is clean-revision-only, run its
+independently runnable substantive components and pass the exact lane to
+`/ship-pr` as a shipping obligation.
+
 ## Workflow
 
-### 1. Implement and clean
+### 1. Implement
 
 Dispatch `implementer` with `/implement-plan` and the artifacts. Record its
 report, deviations, checks, remaining work, and readiness.
 
-Dispatch `fixer` with `/clean-and-fix-code` for one cleanup pass. Record its
-report, resolved findings, focused evidence, and residual risk.
+### 2. Establish completion evidence
 
-### 2. Verify once
+Run `/review-uncommitted-code` in a fresh built-in subagent against the complete
+change. Record its report, readiness, and accepted or deferred findings.
 
-Run `/verify-work` once in a fresh built-in subagent against the original
-artifacts, passing cleanup findings as supplemental obligations. Record its
-verdict, material findings, evidence, and next step. Treat
+Then run `/verify-work` in another fresh built-in subagent against the
+original artifacts. Pass accepted review findings as supplemental obligations
+and any clean-revision-only lane as a shipping obligation. Record its verdict,
+material findings, evidence, shipping obligations, and next step. Treat
 `complete-with-follow-up` as complete only when all follow-up is outside the
 contract.
 
-### 3. Repair verification findings
+### 3. Reconcile findings and evidence
 
-When incomplete, validate every material in-scope finding against the contract
-and tree; discard only with repository evidence. If no genuine user decision
-blocks repair, dispatch `implementer` once with the original artifacts,
-verification report, confirmed findings, required updates/checks, and required
-report path
-`.agent-layer/tmp/fully-implement-plan.<run-id>.verification-repair.report.md`.
+Validate and deduplicate accepted review findings and material verification
+findings against the contract and current tree. Record each as `open`,
+`resolved`, `invalid-with-evidence`, or `blocked`. Do not dispatch `fixer` when
+no confirmed finding remains open. If no genuine user decision blocks repair,
+dispatch `fixer` with the original artifacts, current evidence, open findings,
+required checks, and a unique
+`.agent-layer/tmp/fully-implement-plan.<run-id>.repair.<repair-id>.report.md`.
 
-The implementer owns all repairs and records each finding as `resolved`,
-`invalid-with-evidence`, or `blocked`, with focused checks and final diff
-assessment. Do not replan, rerun implementation, cleanup, review, or verification
-for confidence.
+The fixer owns that repair set and returns finding dispositions, focused checks,
+and a final diff assessment. The orchestrator validates its evidence and owns
+the durable ledger and completion verdict.
+
+After a mutation, reassess the findings ledger and evidence invalidated by the
+changed tree. Run focused checks for the affected behavior and reacquire review
+or contract coverage only where the mutation invalidated it. Dispatch another
+repair set when confirmed open findings remain and evidence supports a safe
+repair; do not repeat unchanged work for confidence. On an evidence-equivalent
+failure, revise the causal model or instrument it. Stop when no safe in-scope
+repair remains or a genuine user decision is required.
 
 ## Completion contract
 
-Report inputs, implementation, cleanup, verification, repairs, final evidence,
-and residual risk. Return:
+Report inputs, implementation, review, verification, repairs, final evidence,
+shipping obligations, and residual risk. Return:
 
-- `complete`: verification passed or every in-scope finding was repaired
+- `complete`: current evidence verifies the final tree against the contract and
+  every confirmed in-scope finding is resolved or invalid with evidence
 - `complete-with-follow-up`: only explicit out-of-contract work remains
 - `blocked`: name the concrete failure or genuine user decision

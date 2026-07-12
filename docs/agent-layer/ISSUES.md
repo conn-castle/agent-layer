@@ -27,6 +27,12 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-12 dispatch-terminal-before-descendants: Dispatch can report terminal failure while provider descendants remain active
+    Priority: Critical. Area: al dispatch provider lifecycle and completion signaling
+    Description: In session 019f540c, the Claude reviewer dispatch was reported failed without its artifact while Claude-native children continued, synthesized, wrote the required report 87 seconds later, and completed two seconds before an unnecessary replacement started.
+    Next step: In the dedicated dispatch effort, make terminal results cover the full descendant tree, terminate failed attempts atomically, expose explicit retry-safe status, and provide completion notification without write_stdin polling.
+    Notes: Workflow skills permit replacement only after proven terminal failure and new evidence of a transient cause; dispatch must make terminality and retry safety trustworthy before that policy is reliable.
+
 - Issue 2026-07-10 antigravity-malformed-native-aborts-all-sync: A malformed native Antigravity settings.json fails the entire multi-client sync
     Priority: Low. Area: internal/sync/antigravity.go (readAntigravitySettings/mergeAntigravitySettings) + sync.go step ordering
     Description: WriteAntigravitySettings fails loud with no data loss on malformed/non-object/shape-conflict native settings.json, but the error bubbles up as a hard sync step, so one odd native value blocks generation for Claude/Codex/VS Code too. Overlay-only merge plus empty-file tolerance shrank the failure surface, but the blast radius is unchanged.
