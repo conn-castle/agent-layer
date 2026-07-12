@@ -27,6 +27,9 @@ const (
 	maxCaptureBytes         = 64 * 1024 * 1024
 	dispatchModeFresh       = "fresh"
 	dispatchModeResume      = "resume"
+	dispatchStateRunning    = "running"
+	statusUnknown           = "unknown"
+	processStatusAlive      = "alive"
 	// AntigravityPromptMaxBytes retains headroom below common ARG_MAX limits
 	// because Antigravity accepts print-mode prompts only as an argument.
 	AntigravityPromptMaxBytes = 100 * 1024

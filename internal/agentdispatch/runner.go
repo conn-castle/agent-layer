@@ -138,7 +138,7 @@ func executeProvider(
 		return executionResult{}, &preStartFailure{err: providerStartError(command.Provider, err)}
 	}
 	run.Record.PID = cmd.Process.Pid
-	run.Record.State = "running"
+	run.Record.State = dispatchStateRunning
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		signalProviderProcess(cmd, syscall.SIGTERM)
 		_ = cmd.Wait()

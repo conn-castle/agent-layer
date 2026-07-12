@@ -419,14 +419,14 @@ func isProvider(agent string) bool {
 
 func processAlive(pid int) string {
 	if pid <= 0 {
-		return "unknown"
+		return statusUnknown
 	}
 	err := syscall.Kill(pid, 0)
 	if err == nil || errors.Is(err, syscall.EPERM) {
-		return "alive"
+		return processStatusAlive
 	}
 	if errors.Is(err, syscall.ESRCH) {
 		return "dead"
 	}
-	return "unknown"
+	return statusUnknown
 }

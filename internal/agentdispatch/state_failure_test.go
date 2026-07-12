@@ -75,10 +75,10 @@ func TestStateStorageReportsCorruptionAndFilesystemFailures(t *testing.T) {
 }
 
 func TestStateHelpersDescribeSafeProcessAndNameFacts(t *testing.T) {
-	if got := processAlive(0); got != "unknown" {
+	if got := processAlive(0); got != statusUnknown {
 		t.Fatalf("processAlive(0) = %q", got)
 	}
-	if got := processAlive(os.Getpid()); got != "alive" {
+	if got := processAlive(os.Getpid()); got != processStatusAlive {
 		t.Fatalf("processAlive(self) = %q", got)
 	}
 	if id, err := newUUID(); err != nil {

@@ -93,12 +93,12 @@ func identityName(t *testing.T, stderr string) string {
 }
 
 func TestInspectDoesNotInferProviderHealth(t *testing.T) {
-	record := RunRecord{ID: "11111111-1111-4111-8111-111111111111", Name: "tiny-round-capacitor", Agent: AgentClaude, State: "running", PID: 0}
+	record := RunRecord{ID: "11111111-1111-4111-8111-111111111111", Name: "tiny-round-capacitor", Agent: AgentClaude, State: dispatchStateRunning, PID: 0}
 	inspection := inspectionFromRecord(record)
-	if inspection.Process != "unknown" {
+	if inspection.Process != statusUnknown {
 		t.Fatalf("process = %q, want unknown", inspection.Process)
 	}
-	if inspection.State != "running" {
+	if inspection.State != dispatchStateRunning {
 		t.Fatalf("state = %q", inspection.State)
 	}
 }

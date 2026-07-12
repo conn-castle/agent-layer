@@ -171,7 +171,7 @@ func Delete(root string, name string) error {
 	}
 	if session.RunID != "" {
 		record, recordErr := loadRunRecord(root, session.RunID)
-		if recordErr == nil && (record.State == "pending" || record.State == "starting" || (record.State == "running" && processAlive(record.PID) == "alive")) {
+		if recordErr == nil && (record.State == "pending" || record.State == "starting" || (record.State == dispatchStateRunning && processAlive(record.PID) == processStatusAlive)) {
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch session %q is active; inspect it or wait for terminal completion before deleting the mapping", name))
 		}
 	}

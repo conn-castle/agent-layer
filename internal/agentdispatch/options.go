@@ -134,7 +134,7 @@ func WriteOptions(req OptionsRequest) error {
 
 func displayVersion(value string) string {
 	if value == "" {
-		return "unknown"
+		return statusUnknown
 	}
 	return value
 }
