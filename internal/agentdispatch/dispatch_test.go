@@ -12,6 +12,7 @@ import (
 
 	"github.com/conn-castle/agent-layer/internal/clients"
 	"github.com/conn-castle/agent-layer/internal/config"
+	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
 
@@ -457,6 +458,20 @@ printf '{"type":"agent_message","message":"ok"}\n'
 	// buffer (forwarded verbatim by runStructuredCommand's stderr copier).
 	if !strings.Contains(stderr.String(), "bogus-rejected-model is not recognized") {
 		t.Fatalf("expected stub stderr to be preserved on caller stderr; got %q", stderr.String())
+	}
+}
+
+func TestSyncRunExitErrorAttributesPostWriteCleanupAfterSuccessfulSync(t *testing.T) {
+	err := fmt.Errorf("%w: failed to unlock sync lock", sync.ErrPostWriteLockCleanup)
+	exitErr := syncRunExitError(err)
+	if exitErr.Code != ExitConfig {
+		t.Fatalf("exit code = %d, want %d", exitErr.Code, ExitConfig)
+	}
+	if !strings.Contains(exitErr.Error(), "generated sync outputs succeeded") {
+		t.Fatalf("dispatch cleanup error = %q, want successful-output attribution", exitErr.Error())
+	}
+	if strings.Contains(exitErr.Error(), "sync failed") {
+		t.Fatalf("dispatch cleanup error = %q, must not misattribute successful sync as failed", exitErr.Error())
 	}
 }
 

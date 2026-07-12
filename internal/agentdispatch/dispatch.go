@@ -1,6 +1,7 @@
 package agentdispatch
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -85,7 +86,7 @@ func Run(opts RunOptions) error {
 
 	result, err := sync.RunWithProject(sync.RealSystem{}, opts.Root, project)
 	if err != nil {
-		return wrapExitError(ExitConfig, fmt.Sprintf(messages.DispatchRunSyncFailedFmt, err), err)
+		return syncRunExitError(err)
 	}
 	for _, warning := range result.Warnings {
 		_, _ = fmt.Fprintln(infoStderr, warning.String())
@@ -106,6 +107,13 @@ func Run(opts RunOptions) error {
 	opts.Stdout = stdout
 	opts.Stderr = stderr
 	return runTarget(target, project, childEnv, childPrompt, opts)
+}
+
+func syncRunExitError(err error) *ExitError {
+	if errors.Is(err, sync.ErrPostWriteLockCleanup) {
+		return wrapExitError(ExitConfig, fmt.Sprintf(messages.DispatchRunSyncCleanupFailedFmt, err), err)
+	}
+	return wrapExitError(ExitConfig, fmt.Sprintf(messages.DispatchRunSyncFailedFmt, err), err)
 }
 
 func dispatchDepthFromEnv(env []string) (int, error) {

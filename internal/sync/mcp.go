@@ -23,8 +23,8 @@ type mcpServer struct {
 	Headers OrderedMap[string] `json:"headers,omitempty"`
 }
 
-// WriteMCPConfig generates .mcp.json for Claude Code.
-func WriteMCPConfig(sys System, root string, project *config.ProjectConfig) error {
+// writeMCPConfig generates .mcp.json for Claude Code.
+func writeMCPConfig(sys System, root string, project *config.ProjectConfig) error {
 	cfg, err := buildMCPConfig(project)
 	if err != nil {
 		return err

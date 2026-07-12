@@ -147,8 +147,8 @@ func TestWriteCopilotMCPConfig(t *testing.T) {
 	}
 
 	sys := &RealSystem{}
-	if err := WriteCopilotMCPConfig(sys, root, project); err != nil {
-		t.Fatalf("WriteCopilotMCPConfig error: %v", err)
+	if err := writeCopilotMCPConfig(sys, root, project); err != nil {
+		t.Fatalf("writeCopilotMCPConfig error: %v", err)
 	}
 
 	path := filepath.Join(root, ".copilot", "mcp-config.json")
@@ -181,8 +181,8 @@ func TestWriteCopilotMCPConfigEmptyServersKeepsTopLevelKey(t *testing.T) {
 		Env: map[string]string{},
 	}
 
-	if err := WriteCopilotMCPConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCopilotMCPConfig error: %v", err)
+	if err := writeCopilotMCPConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCopilotMCPConfig error: %v", err)
 	}
 
 	data, err := os.ReadFile(filepath.Join(root, ".copilot", "mcp-config.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -212,7 +212,7 @@ func TestWriteCopilotMCPConfigMkdirError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{Env: map[string]string{}}
-	if err := WriteCopilotMCPConfig(&RealSystem{}, file, project); err == nil {
+	if err := writeCopilotMCPConfig(&RealSystem{}, file, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -229,7 +229,7 @@ func TestWriteCopilotMCPConfigWriteError(t *testing.T) {
 		t.Fatalf("mkdir mcp-config.json: %v", err)
 	}
 	project := &config.ProjectConfig{Env: map[string]string{}}
-	if err := WriteCopilotMCPConfig(&RealSystem{}, root, project); err == nil {
+	if err := writeCopilotMCPConfig(&RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -244,7 +244,7 @@ func TestWriteCopilotMCPConfigMarshalError(t *testing.T) {
 		},
 	}
 	project := &config.ProjectConfig{Env: map[string]string{}}
-	err := WriteCopilotMCPConfig(sys, root, project)
+	err := writeCopilotMCPConfig(sys, root, project)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -267,8 +267,8 @@ func TestCleanCopilotOutputsRemovesMCPConfig(t *testing.T) {
 		t.Fatalf("write mcp-config: %v", err)
 	}
 
-	if err := CleanCopilotOutputs(sys, root); err != nil {
-		t.Fatalf("CleanCopilotOutputs error: %v", err)
+	if err := cleanCopilotOutputs(sys, root); err != nil {
+		t.Fatalf("cleanCopilotOutputs error: %v", err)
 	}
 
 	if _, err := os.Stat(filepath.Join(copilotDir, "mcp-config.json")); !os.IsNotExist(err) {
@@ -280,7 +280,7 @@ func TestCleanCopilotOutputsNoArtifacts(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	// No .copilot/ exists — should not error.
-	if err := CleanCopilotOutputs(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanCopilotOutputs error on clean dir: %v", err)
+	if err := cleanCopilotOutputs(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanCopilotOutputs error on clean dir: %v", err)
 	}
 }

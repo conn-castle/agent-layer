@@ -250,14 +250,14 @@ func removeSkillResourceNode(sys System, path string, info os.FileInfo) error {
 	return nil
 }
 
-// WriteAgentSkills generates shared Agent Skills in .agents/skills/<name>/SKILL.md.
-func WriteAgentSkills(sys System, root string, commands []config.Skill) error {
+// writeAgentSkills generates shared Agent Skills in .agents/skills/<name>/SKILL.md.
+func writeAgentSkills(sys System, root string, commands []config.Skill) error {
 	skillsDir := filepath.Join(root, ".agents", "skills")
 	return writeSkillFiles(sys, skillsDir, commands, buildAgentSkill)
 }
 
-// WriteClaudeSkills generates Claude Code skill files in .claude/skills/<name>/SKILL.md.
-func WriteClaudeSkills(sys System, root string, commands []config.Skill) error {
+// writeClaudeSkills generates Claude Code skill files in .claude/skills/<name>/SKILL.md.
+func writeClaudeSkills(sys System, root string, commands []config.Skill) error {
 	skillsDir := filepath.Join(root, ".claude", "skills")
 	return writeSkillFiles(sys, skillsDir, commands, buildClaudeSkill)
 }
@@ -424,8 +424,8 @@ func removeStaleSkillDirs(sys System, skillsDir string, wanted map[string]struct
 	return nil
 }
 
-// CleanSharedAgentSkills removes generated .agents/skills entries when no shared-skill consumer is enabled.
-func CleanSharedAgentSkills(sys System, root string) error {
+// cleanSharedAgentSkills removes generated .agents/skills entries when no shared-skill consumer is enabled.
+func cleanSharedAgentSkills(sys System, root string) error {
 	skillsDir := filepath.Join(root, ".agents", "skills")
 	if _, err := sys.ReadDir(skillsDir); err != nil {
 		if os.IsNotExist(err) {
@@ -436,12 +436,12 @@ func CleanSharedAgentSkills(sys System, root string) error {
 	return removeStaleSkillDirs(sys, skillsDir, map[string]struct{}{})
 }
 
-// CleanLegacySkillOutputs removes retired Agent Layer-generated skill
+// cleanLegacySkillOutputs removes retired Agent Layer-generated skill
 // projection directories. Agent Layer claims exclusive ownership of these
 // paths (see docs/SKILL-CLIENT-SPEC.md "Ownership of legacy projection
 // paths") and removes them unconditionally. The canonical list lives in
 // config.LegacySkillProjections.
-func CleanLegacySkillOutputs(sys System, root string) error {
+func cleanLegacySkillOutputs(sys System, root string) error {
 	for _, projection := range config.LegacySkillProjections {
 		path := filepath.Join(append([]string{root}, projection.Dir...)...)
 		if err := sys.RemoveAll(path); err != nil {

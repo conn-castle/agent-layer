@@ -96,8 +96,8 @@ func TestWriteVSCodeSettings(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeVSCodeSettings error: %v", err)
 	}
 	settingsPath := filepath.Join(root, ".vscode", "settings.json")
 	data, err := os.ReadFile(settingsPath) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -131,16 +131,16 @@ func TestWriteVSCodeSettingsAgentSkillsLocationsIdempotent(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("first WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("first writeVSCodeSettings error: %v", err)
 	}
 	first, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
 		t.Fatalf("read first: %v", err)
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("second WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("second writeVSCodeSettings error: %v", err)
 	}
 	second, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -170,8 +170,8 @@ func TestBuildVSCodeSettingsYOLO(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeVSCodeSettings error: %v", err)
 	}
 	updatedBytes, err := os.ReadFile(filepath.Join(root, ".vscode", "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
 	if err != nil {
@@ -244,8 +244,8 @@ func TestWriteVSCodeSettingsPreservesExistingContent(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeVSCodeSettings error: %v", err)
 	}
 
 	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -294,8 +294,8 @@ func TestWriteVSCodeSettingsReplacesManagedBlock(t *testing.T) {
 		CommandsAllow: []string{"git status"},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeVSCodeSettings error: %v", err)
 	}
 
 	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -338,8 +338,8 @@ func TestWriteVSCodeSettingsNoTrailingCommaWhenManagedBlockIsLast(t *testing.T) 
 		CommandsAllow: []string{"git status"},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeVSCodeSettings error: %v", err)
 	}
 
 	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -376,8 +376,8 @@ func TestWriteVSCodeSettingsInsertsManagedBlockWithExistingFields(t *testing.T) 
 		CommandsAllow: []string{"git status"},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteVSCodeSettings error: %v", err)
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeVSCodeSettings error: %v", err)
 	}
 
 	updatedBytes, err := os.ReadFile(filepath.Join(vscodeDir, "settings.json")) // #nosec G304 -- path is constructed from test-controlled inputs.
@@ -408,7 +408,7 @@ func TestWriteVSCodeSettingsError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
-	if err := WriteVSCodeSettings(RealSystem{}, file, project); err == nil {
+	if err := writeVSCodeSettings(RealSystem{}, file, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -431,7 +431,7 @@ func TestWriteVSCodeSettingsInvalidJSONC(t *testing.T) {
 		},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err == nil {
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -454,7 +454,7 @@ func TestWriteVSCodeSettingsInvalidJSONCExtraTokensBeforeRoot(t *testing.T) {
 		},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err == nil {
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }

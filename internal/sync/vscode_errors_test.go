@@ -27,7 +27,7 @@ func TestWriteVSCodeSettingsInvalidJSONCExtraTokensAfterRoot(t *testing.T) {
 		},
 	}
 
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err == nil {
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -44,7 +44,7 @@ func TestWriteVSCodeSettingsWriteError(t *testing.T) {
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
-	if err := WriteVSCodeSettings(RealSystem{}, root, project); err == nil {
+	if err := writeVSCodeSettings(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -52,7 +52,7 @@ func TestWriteVSCodeSettingsWriteError(t *testing.T) {
 func TestWriteVSCodeSettingsBuildError(t *testing.T) {
 	t.Parallel()
 	sys := &MockSystem{}
-	err := writeVSCodeSettings(sys, t.TempDir(), &config.ProjectConfig{}, func(*config.ProjectConfig) (*vscodeSettings, error) {
+	err := writeVSCodeSettingsWithBuilder(sys, t.TempDir(), &config.ProjectConfig{}, func(*config.ProjectConfig) (*vscodeSettings, error) {
 		return nil, errors.New("build fail")
 	})
 	if err == nil {
@@ -68,7 +68,7 @@ func TestWriteVSCodeSettingsMarshalError(t *testing.T) {
 			return nil, errors.New("marshal fail")
 		},
 	}
-	if err := WriteVSCodeSettings(sys, t.TempDir(), &config.ProjectConfig{}); err == nil {
+	if err := writeVSCodeSettings(sys, t.TempDir(), &config.ProjectConfig{}); err == nil {
 		t.Fatal("expected error")
 	}
 }
