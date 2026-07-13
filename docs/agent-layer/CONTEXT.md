@@ -60,6 +60,8 @@ Do not duplicate information that belongs in other memory files:
 ## Agent Dispatch
 
 - Agent Dispatch's public request/API shapes should stay caller- and provider-agnostic. Target-specific model or option discovery belongs behind the target/provider registry, not as fields like `AntigravityModels` on dispatch request structs.
+- Public dispatch/resume/fanout commands are synchronous over an internal concurrent coordinator. Built-in workflows are root-to-leaf and use fanout only for one shared prompt/skill; the global depth-three limit exists for intentional custom workflows.
+- Immutable run records are canonical history. Friendly names are lookup mappings, and factual workflow manifests must not carry recommendation, risk, readiness, confidence, verdict, or synthesis fields between independent stages.
 
 ## Pin file recovery
 

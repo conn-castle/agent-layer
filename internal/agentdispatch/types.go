@@ -126,6 +126,45 @@ type ListRequest struct {
 	JSON   bool
 }
 
+// HistoryRequest configures immutable turn-history output.
+type HistoryRequest struct {
+	Root   string
+	Name   string
+	Stdout io.Writer
+	Stderr io.Writer
+	JSON   bool
+}
+
+// CancelRequest identifies one active run, friendly conversation, or fanout.
+type CancelRequest struct {
+	Root string
+	ID   string
+}
+
+// FanoutTarget is one self-contained provider target specification.
+type FanoutTarget struct {
+	Agent           string `json:"agent"`
+	Model           string `json:"model,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+}
+
+// FanoutOptions configures one synchronous shared-prompt fanout.
+type FanoutOptions struct {
+	Root          string
+	Targets       []FanoutTarget
+	Skill         string
+	PromptArgs    []string
+	Stdin         io.Reader
+	ReadStdin     bool
+	Stdout        io.Writer
+	Stderr        io.Writer
+	Env           []string
+	Quiet         bool
+	LookPath      func(string) (string, error)
+	NewCommand    CommandFactory
+	VersionLookup func(path string, agent string) (string, error)
+}
+
 // OptionsRequest configures an Agent Dispatch options response.
 type OptionsRequest struct {
 	Root          string

@@ -9,9 +9,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const runtimeSessionID = "11111111-1111-4111-8111-111111111111"
+
+func TestProcStatStartTimeSurvivesCommWithSpacesAndParens(t *testing.T) {
+	remainder := "S 1 42 42 0 -1 4194560 100 0 0 0 5 3 0 0 20 0 1 0 777 123456 0"
+	for _, comm := range []string{"(codex)", "(tmux: server)", "(a) (b)"} {
+		content := "42 " + comm + " " + remainder
+		if got := procStatStartTime(content); got != "777" {
+			t.Fatalf("comm %q shifted starttime: got %q", comm, got)
+		}
+	}
+	if got := procStatStartTime("no stat shape"); got != "" {
+		t.Fatalf("malformed stat produced identity %q", got)
+	}
+}
 
 func TestSessionLifecycleIsExplicitAndInspectable(t *testing.T) {
 	root := t.TempDir()
@@ -31,7 +45,10 @@ func TestSessionLifecycleIsExplicitAndInspectable(t *testing.T) {
 	if err := persistSession(root, session); err != nil {
 		t.Fatalf("persist session: %v", err)
 	}
-	run.Record.State = "completed"
+	now := time.Now().UTC()
+	run.Record.State = dispatchStateCompleted
+	run.Record.RecoveryState = recoveryResumeRequired
+	run.Record.CompletedAt = &now
 	run.Record.ProviderSessionID = runtimeSessionID
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		t.Fatalf("complete record: %v", err)

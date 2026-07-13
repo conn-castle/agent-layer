@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.13.0",
-  "generated_at_utc": "2026-07-12T19:53:55Z",
+  "generated_at_utc": "2026-07-13T18:11:53Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -71,11 +71,11 @@
     },
     {
       "path": ".agent-layer/skills/address-pr-comments/reviewer-prompt.md",
-      "full_hash_normalized": "8227ec5d35921b2db7e53b996972f48e5f6938055e936fb2ffcd88026ceee25c"
+      "full_hash_normalized": "cfa065886f5bb281dc8f87c2c5c6d34683d24213ceed79337102445dbb5fdf22"
     },
     {
       "path": ".agent-layer/skills/agent-dispatch/SKILL.md",
-      "full_hash_normalized": "1f7b1fb9fc71af7ece4e18399af2ce2b54e169e7a140519500eaab7896f5dae0",
+      "full_hash_normalized": "35a768086127797128f79826c5e58e5957d2d677037dfd2b709202e43a3b5c8e",
       "policy_id": "catalog_skills_v1"
     },
     {
@@ -145,11 +145,15 @@
     },
     {
       "path": ".agent-layer/skills/full-workflow/SKILL.md",
-      "full_hash_normalized": "6d6780c088cb3e405d443ed9d605bbc92d9c6c16c459bf03efc53c60c178ce28"
+      "full_hash_normalized": "72c3f94a16e925ba484c01520eafe61b65a2e9e1c0d2f781e43ec063d992bbcb"
+    },
+    {
+      "path": ".agent-layer/skills/full-workflow/assets/facts-manifest.schema.json",
+      "full_hash_normalized": "2cb7a4c3a3e609cbd5ee6da999d1682bb7e38ac2d6a6b4a51b91f8ecef168e4f"
     },
     {
       "path": ".agent-layer/skills/fully-implement-plan/SKILL.md",
-      "full_hash_normalized": "89d37a6cb1a510b1fe696009b29afee358a775ef4e8ce0588d6c10f7cb8e351e"
+      "full_hash_normalized": "0717c1750caffd5e4156595624c525982f20c221bee15fd4e5a4364e36e13cf7"
     },
     {
       "path": ".agent-layer/skills/implement-plan/SKILL.md",
@@ -200,12 +204,16 @@
       "policy_id": "catalog_skills_v1"
     },
     {
+      "path": ".agent-layer/skills/review-and-ship/SKILL.md",
+      "full_hash_normalized": "74e0811ad635a966f69a1a06b34a56da68d0ca0e09eb985a1615660db58e7241"
+    },
+    {
       "path": ".agent-layer/skills/review-plan/SKILL.md",
-      "full_hash_normalized": "60e5b836728757540ed0ab952fce38ce84da753195dec8b3ed82561d7969fc81"
+      "full_hash_normalized": "ffa263d234df73129704c4c587a8c0cf83a14340bb8333d0ad9f69faff30c46e"
     },
     {
       "path": ".agent-layer/skills/review-plan/assets/agent-review-prompt.md",
-      "full_hash_normalized": "326b3b3ad2ff343700c63521df1f7e2f0657f2e83d1c50602aa1c7402cf37ede"
+      "full_hash_normalized": "d7d3469b77d55c61707ed441e085ad3dcdd810397950339cdc4d00669df25ef0"
     },
     {
       "path": ".agent-layer/skills/review-uncommitted-code/SKILL.md",
@@ -224,12 +232,8 @@
       "full_hash_normalized": "228e2cae3fdda15ef56dc5805feebe53145143dadfc12f24103dd22bdb544922"
     },
     {
-      "path": ".agent-layer/skills/ship-plan/SKILL.md",
-      "full_hash_normalized": "86b064d3823635d3eb82632bcf64982369bedffe800f49dbd7ac2a5eca68f8ab"
-    },
-    {
       "path": ".agent-layer/skills/ship-pr/SKILL.md",
-      "full_hash_normalized": "0c8ae6f8a345a335e4bd5930d352ea23fe656e9f268ea1f7e61475c474275842"
+      "full_hash_normalized": "6ab516da892fec255cfd00b0c1e9970316f27280f104bbb79cc4dd5733aa7f7e"
     },
     {
       "path": ".agent-layer/skills/ship-pr/assets/pr-body-template.md",
@@ -237,7 +241,7 @@
     },
     {
       "path": ".agent-layer/skills/ship-pr/scripts/monitor-pr.sh",
-      "full_hash_normalized": "62b93da05a7f32bdd6fc16bfefd0e00643f22d11f9ea46ecacf074adb408eb59"
+      "full_hash_normalized": "3992e085cd912b34010d8c72b385ed0848a269e9084dd8840bb6f5919e367921"
     },
     {
       "path": ".agent-layer/skills/simplify-codebase/SKILL.md",

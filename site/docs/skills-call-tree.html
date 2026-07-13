@@ -1043,42 +1043,49 @@ fix-issues:
       calls:
         - task: update only documentation and memory made stale by the resolved issues
 full-workflow:
-  inputs: [planner, plan_reviewers, implementer, fixer, shipper]
+  inputs: [plan_reviewers, implementer, fixer]
   calls:
-    - task: validate roles, align the spec, and resolve user-owned decisions
-    - if: the request targets a roadmap phase
+    - task: resolve the default base and create the workflow-owned worktree plus facts-only manifest
+    - if: a requested multi-issue batch has fewer than two live compatible substantive issues
       calls:
-        - task: include the named or first incomplete phase, every remaining task and exit criterion, direct prerequisites, and project-truth closeout
-        - if: repository evidence shows the phase is already complete
-          calls:
-            - exit: update only stale project truth and report the evidence without creating an empty pull request
-    - if: the user or caller explicitly requires an approval checkpoint and it is not yet satisfied
+        - exit: report scope collapse before planning
+    - task: align the specification
+    - skill: plan-work
+      inputs: [exactly three plan_reviewers]
+    - skill: implement-plan
+      caller: dispatch(implementer)
+    - task: run proportional deterministic checks against one exact head
+    - parallel:
+      - skill: review-uncommitted-code
+        caller: subagent
+      - skill: verify-work
+        caller: subagent
+    - if: accumulated supported findings require repair
       calls:
-        - exit: present the alignment summary for approval before planning
-    - if: the spec is aligned, no user-owned decision remains, and any explicit approval checkpoint is satisfied
-      calls:
-        - skill: plan-work
-          inputs: [plan_reviewers]
-          caller: dispatch(planner)
-        - skill: ship-plan
-          inputs: [implementer, fixer]
-          caller: dispatch(shipper)
+        - task: send one bounded repair batch
+          caller: dispatch(fixer)
+        - task: rerun invalidated focused checks and targeted contract verification
+    - skill: ship-pr
+    - exit: return merge authorization, verified merge cleanup, or the concrete blocker
 fully-implement-plan:
   inputs: [implementer, fixer]
   calls:
     - skill: implement-plan
       caller: dispatch(implementer)
-    - skill: clean-and-fix-code
-      caller: dispatch(fixer)
-    - skill: verify-work
-      caller: subagent
-    - if: verification has material in-scope findings
+    - task: run proportional deterministic checks against one exact head
+    - parallel:
+      - skill: review-uncommitted-code
+        caller: subagent
+      - skill: verify-work
+        caller: subagent
+    - if: accumulated supported findings require repair
       calls:
         - if: a repair requires a user-owned decision
           calls:
             - exit: stop for the smallest user decision
-        - task: directly address every verification finding with focused evidence
-          caller: dispatch(implementer)
+        - task: send one bounded repair batch
+          caller: dispatch(fixer)
+        - task: rerun invalidated focused checks and targeted contract verification
     - task: write the fully-implement-plan report
 implement-plan:
   calls:
@@ -1180,18 +1187,27 @@ plan-work:
       calls:
         - task: ask the named question, then resume synthesis and update the artifacts and final report without redispatching reviewers
     - task: return reviewed artifact paths and the readiness verdict
+review-and-ship:
+  calls:
+    - task: establish the authoritative contract and isolate the intended delivery
+    - task: run proportional deterministic checks against one exact tree
+    - parallel:
+      - skill: review-uncommitted-code
+        caller: subagent
+      - skill: verify-work
+        caller: subagent
+    - if: accumulated supported findings require repair
+      calls:
+        - task: apply one bounded root-owned repair batch
+        - task: rerun invalidated focused checks and targeted contract verification
+    - skill: ship-pr
+    - exit: return merge authorization, verified merge cleanup, or the concrete blocker
 review-plan:
   inputs: [plan_reviewers]
   calls:
     - for: plan_reviewer in plan_reviewers
       calls:
-        - asset: review-plan/assets/agent-review-prompt
-          caller: dispatch(plan_reviewer)
-        - for: contract-scope, architecture-implementation, and verification-operational perspectives
-          calls:
-            - task: fresh subagent started by the dispatched reviewer independently inspects the complete artifact set and returns material evidence
-              caller: subagent
-        - task: validate and synthesize the independent perspectives into one child report
+        - asset: agent-review-prompt
           caller: dispatch(plan_reviewer)
     - task: synthesize evidence and revise accepted findings
     - if: a genuine user-owned decision remains
@@ -1238,12 +1254,6 @@ schedule-backlog:
       calls:
         - exit: return the proposal and smallest approval decision
     - exit: return the proposal or applied roadmap outcome and yield
-ship-plan:
-  inputs: [implementer, fixer]
-  calls:
-    - skill: fully-implement-plan
-      inputs: [implementer, fixer]
-    - skill: ship-pr
 ship-pr:
   calls:
     - task: publish the initial head, create or reuse the PR, and initialize one comment ledger

@@ -7,8 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 func defaultProviderCommandFactory(name string, args ...string) *exec.Cmd {
@@ -21,6 +24,40 @@ func prepareProviderProcessGroup(cmd *exec.Cmd) {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
 	cmd.SysProcAttr.Setpgid = true
+}
+
+func processStartIdentity(pid int) string {
+	if pid <= 0 {
+		return ""
+	}
+	if data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+		if start := procStatStartTime(string(data)); start != "" {
+			return "proc:" + start
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output() // #nosec G204 -- pid is an Agent Layer-owned integer.
+	if err != nil {
+		return ""
+	}
+	return "ps:" + strings.TrimSpace(string(out))
+}
+
+// procStatStartTime extracts starttime (field 22) from /proc/<pid>/stat. The
+// parenthesized comm field may itself contain spaces or parentheses, so
+// fields are indexed after the last ")": the remainder starts at field 3
+// (state), putting starttime at remainder index 19.
+func procStatStartTime(content string) string {
+	closeParen := strings.LastIndex(content, ")")
+	if closeParen == -1 {
+		return ""
+	}
+	fields := strings.Fields(content[closeParen+1:])
+	if len(fields) <= 19 {
+		return ""
+	}
+	return fields[19]
 }
 
 func signalProviderProcess(cmd *exec.Cmd, sig os.Signal) {

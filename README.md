@@ -588,12 +588,16 @@ Examples:
 
 ```bash
 al dispatch --agent codex "Review this plan."
-al dispatch --agent random --skill review-plan "Review this plan."
+al dispatch --agent random --skill review-uncommitted-code "Review the current working tree."
 al dispatch --agent antigravity --model "Gemini 3.1 Pro (High)" "Review this plan."
 cat prompt.md | al dispatch --agent claude
 al dispatch options --json
 al dispatch resume tiny-round-capacitor "Review the revision."
+cat prompt.md | al dispatch fanout \
+  --target 'agent=codex' --target 'agent=claude'
 al dispatch inspect tiny-round-capacitor
+al dispatch history tiny-round-capacitor
+al dispatch cancel <name-or-run-or-fanout-id>
 al dispatch list
 ```
 
@@ -601,6 +605,8 @@ Ordinary calls never reuse a conversation. Continue one only with the exact
 friendly name printed by the original call: `al dispatch resume <name> ...`.
 `inspect` is deliberate, read-only diagnosis—not a polling mechanism—and
 `delete` removes only Agent Layer’s mapping, never the provider transcript.
+`fanout` is a synchronous shared-prompt operation with independently retained
+child results; it is not a generic different-prompt batch interface.
 `al dispatch options --json` reports exact installed versions plus separate
 fresh, resume, and inspection capabilities. For the full v0.13 contract,
 including bounded capture, state isolation, retries, and exit codes, see

@@ -140,8 +140,8 @@ printf 'answer without a provider id'
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Fatalf("non-resumable call retained a mapping: %#v", sessions)
+	if len(sessions) != 1 || sessions[0].State != "pending" || sessions[0].ActiveRunID != "" {
+		t.Fatalf("non-resumable history mapping = %#v", sessions)
 	}
 }
 
@@ -157,6 +157,7 @@ func TestAntigravityResumeWithoutParsedIDRetainsDurableMapping(t *testing.T) {
 	}
 	session.ProviderSessionID = runtimeSessionID
 	session.State = "durable"
+	session.ActiveRunID = ""
 	if err := persistSession(root, session); err != nil {
 		t.Fatalf("persist session: %v", err)
 	}
@@ -204,7 +205,7 @@ func TestSupportedVersionFixturesReduceOnlyRequiredEvents(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("reduce Claude fixture: %v", err)
 	}
-	if len(claudeEvents) != 3 || claudeEvents[0].Kind != eventAnswer || claudeEvents[1].Kind != eventSession || claudeEvents[2].Kind != eventComplete {
+	if len(claudeEvents) != 4 || claudeEvents[0].Kind != eventProgress || claudeEvents[1].Kind != eventSession || claudeEvents[2].Answer != "Claude final answer." || claudeEvents[3].Kind != eventComplete {
 		t.Fatalf("Claude events = %#v", claudeEvents)
 	}
 

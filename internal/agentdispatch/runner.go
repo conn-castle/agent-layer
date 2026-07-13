@@ -92,11 +92,6 @@ func executeProvider(
 		newCommand = defaultProviderCommandFactory
 	}
 	budget := &captureBudget{max: maxCaptureBytes}
-	answer, err := newLimitedWriter(run.Record.AnswerPath, maxAnswerBytes, nil)
-	if err != nil {
-		return executionResult{}, wrapExitError(ExitConfig, "create dispatch answer capture", err)
-	}
-	defer func() { _ = answer.Close() }()
 	providerStdout, err := newLimitedWriter(run.Record.StdoutPath, maxCaptureBytes, budget)
 	if err != nil {
 		return executionResult{}, wrapExitError(ExitConfig, "create dispatch stdout capture", err)
@@ -137,7 +132,13 @@ func executeProvider(
 		return executionResult{}, &preStartFailure{err: providerStartError(command.Provider, err)}
 	}
 	run.Record.PID = cmd.Process.Pid
+	run.Record.ProcessGroupID = cmd.Process.Pid
+	run.Record.ProcessStartIdentity = processStartIdentity(cmd.Process.Pid)
 	run.Record.State = dispatchStateRunning
+	run.Record.RecoveryState = recoveryAcceptanceUnknown
+	started := time.Now().UTC()
+	run.Record.LastActivityAt = &started
+	run.Record.LastActivityKind = "provider_started"
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		stdoutDrained := make(chan struct{})
 		stderrDrained := make(chan struct{})
@@ -159,6 +160,7 @@ func executeProvider(
 	defer stopForwarder()
 
 	var result executionResult
+	var answerCandidate string
 	var resultMu sync.Mutex
 	var semanticErr error
 	setFailure := func(err error) {
@@ -175,7 +177,12 @@ func executeProvider(
 	consume := func(event providerEvent) error {
 		resultMu.Lock()
 		defer resultMu.Unlock()
+		if current, loadErr := loadRunRecord(root, run.Record.ID); loadErr == nil && current.State == dispatchStateCancelled {
+			semanticErr = errors.New("dispatch was cancelled")
+			return semanticErr
+		}
 		now := time.Now().UTC()
+		run.Record.LastActivityAt = &now
 		switch event.Kind {
 		case eventSession:
 			if event.SessionID == "" {
@@ -193,14 +200,19 @@ func executeProvider(
 				return err
 			}
 		case eventAnswer:
-			if _, err := io.WriteString(answer, event.Answer); err != nil { // #nosec G705 -- provider text is persisted as plain bytes, not rendered as HTML.
-				semanticErr = fmt.Errorf("capture final answer: %w", err)
+			if len(event.Answer) > maxAnswerBytes {
+				semanticErr = fmt.Errorf("dispatch final answer exceeded %d byte limit", maxAnswerBytes)
 				return semanticErr
 			}
+			answerCandidate = event.Answer
 			result.AnswerSeen = true
 			run.Record.LastOutputAt = &now
+			run.Record.LastActivityKind = "answer_candidate"
+		case eventProgress:
+			run.Record.LastActivityKind = event.Activity
 		case eventComplete:
 			result.Complete = true
+			run.Record.LastActivityKind = "provider_completed"
 		case eventFailure:
 			semanticErr = errors.New(event.Reason)
 			return semanticErr
@@ -216,10 +228,20 @@ func executeProvider(
 	stderrErr := make(chan error, 1)
 	go func() {
 		if command.Plain {
-			_, err := io.Copy(io.MultiWriter(providerStdout, answer), stdoutPipe)
+			var candidate bytes.Buffer
+			_, err := io.Copy(io.MultiWriter(providerStdout, &candidate), stdoutPipe)
 			if err == nil {
 				resultMu.Lock()
-				result.AnswerSeen = answer.written > 0
+				if candidate.Len() > maxAnswerBytes {
+					err = fmt.Errorf("dispatch final answer exceeded %d byte limit", maxAnswerBytes)
+				} else {
+					answerCandidate = candidate.String()
+					result.AnswerSeen = candidate.Len() > 0
+					now := time.Now().UTC()
+					run.Record.LastOutputAt = &now
+					run.Record.LastActivityAt = &now
+					run.Record.LastActivityKind = "answer_candidate"
+				}
 				resultMu.Unlock()
 			}
 			if err != nil {
@@ -295,6 +317,12 @@ func executeProvider(
 	}
 	if command.Plain && !result.AnswerSeen {
 		return executionResult{}, exitError(ExitTargetFailure, "antigravity dispatch completed without a final answer")
+	}
+	resultMu.Lock()
+	terminalAnswer := answerCandidate
+	resultMu.Unlock()
+	if err := writeBytesAtomic(run.Record.AnswerPath, []byte(terminalAnswer), 0o600); err != nil {
+		return executionResult{}, wrapExitError(ExitConfig, "publish dispatch terminal answer", err)
 	}
 	return result, nil
 }

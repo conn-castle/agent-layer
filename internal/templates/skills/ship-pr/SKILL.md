@@ -8,9 +8,10 @@ description: >-
 
 # ship-pr
 
-Own staging, commits, pushes, and PR delivery. Run local checks and read-only
-remote monitoring concurrently, but serialize working-tree mutations and batch
-known repairs.
+Run staging, commits, pushes, pull-request delivery, and merge continuation as
+a root-owned local procedure. Run local checks, remote review, continuous
+integration, and read-only monitoring concurrently when independent; serialize
+working-tree mutations and batch known repairs.
 
 ## Defaults and rules
 
@@ -23,11 +24,11 @@ known repairs.
   `.agent-layer/tmp/ship-pr-monitor-<pr-number>.json`.
 - Make one initial delivery commit when needed and one commit per accumulated
   repair batch, not per comment or failure.
-- Run risk-proportional checks for each committed head. Fulfill shipping
-  obligations on the first committed head unless known pending work would
-  invalidate them; run them earlier when risk warrants. Reuse evidence only for
-  the exact tree. The final head must pass the documented full lane through
-  `/run-and-fix-all-checks`.
+- Run focused preflight, then push and open the pull request promptly. Normally
+  run the documented full lane once on the final stable head while remote gates
+  and review proceed. Rerun only for changed coverage, failure reproduction,
+  environment diagnosis, or missing/invalid evidence. Reuse evidence only for
+  its exact tree fingerprint.
 - Never close out with failed checks, local changes, conflicts, unprocessed
   feedback, unposted eligible replies, or failed reply audits.
 - Merge only after explicit authorization for the exact PR and a fresh gate
@@ -44,17 +45,19 @@ row and reply. Replies begin with exactly one verdict:
 - **Deferred — tracked in `<location>`.** The location exists and work is
   genuinely outside this PR.
 
-For each eligible row, re-fetch the comment, post in its native thread when
-available, re-fetch and record the reply ID/URL, then audit the current reply
-and evidence package with `address-pr-comments/reviewer-prompt.md` in a fresh
-built-in subagent. Reuse a passing audit while that package remains unchanged;
-mark the row complete only on `pass`. Run independent audits concurrently after
-preparing their packages; keep publishing and ledger edits serialized.
+Fetch all eligible comment types once per cycle, prepare one ledger, and pass
+the full batch to `/address-pr-comments`. Post replies serially in native
+threads, then refetch once and record reply IDs/URLs. Validate mechanical ledger
+invariants deterministically. For every newly posted or changed reply or
+evidence-package batch, run one built-in auditor with the canonical
+`reviewer-prompt.md` from `/address-pr-comments` and a complete package for each
+row. Require exactly one result per input row and record each verdict in the
+ledger; never launch an auditor per row.
 
-For `insufficient_evidence`, complete the package and audit the changed package
-without posting a new reply. Feed substantive failures back to
-`/address-pr-comments`; edit the reply when supported or post a correction, then
-audit the changed reply and evidence.
+For `insufficient_evidence`, complete the package without posting a new reply.
+Feed substantive failures back to `/address-pr-comments`; edit the reply when
+supported or post a correction. Audit only the changed failed-row package
+before closeout.
 
 ## Workflow
 
@@ -69,7 +72,8 @@ monitor state. Stop instead of creating an empty PR.
 
 ### 2. Observe the current head
 
-Start the read-only monitor immediately:
+Start the read-only monitor immediately and wait on this single blocking
+process; do not run model-driven sleep, process, GitHub, or status polls:
 
 ```bash
 bash <skill_dir>/scripts/monitor-pr.sh \
@@ -120,18 +124,24 @@ monitoring. Observe at least one monitor cycle after the latest reply.
 - `pr_not_open`: investigate; stop if the PR cannot be acted on.
 - `ready`: apply the closeout gate.
 
-### 5. Close out or merge
+### 5. Close out or merge atomically
 
-Request merge authorization only when the current head has completed its
-observation, remote checks and the full local lane pass, the tree is clean and
-mergeable, a fresh fetch finds no new feedback, every non-excluded row has a
-posted audited reply, and a monitor cycle followed the latest reply.
+When the current head has completed its observation, remote checks and the full
+local lane pass, the tree is clean and mergeable, a fresh fetch finds no new
+feedback, every non-excluded row has a posted audited reply, and a monitor cycle
+followed the latest reply, resolve the merge method. Use the sole
+repository-allowed method or an explicit repository/user default. If multiple
+methods remain and no default exists, ask the user to choose one and resume this
+phase with that single-use answer; the method choice is not merge authorization.
+Then request single-use merge authorization for the exact ready head.
 
-After single-use authorization, re-fetch head, checks, mergeability, comments,
-and ledger. Request fresh authorization if any gate changed. Use the sole
-allowed merge method or the user's explicit default; ask only when several are
-allowed without a default. After confirmed merge, update the base and delete
-the local and mapped remote source branches, verifying both are gone.
+After single-use authorization, perform one uninterrupted continuation:
+re-fetch the expected head, checks, mergeability, all eligible comments, ledger,
+and clean local state; abort before merge if any gate changed. After confirmed
+merge, update a base checkout only when it is separate from the caller checkout
+and is workflow-owned or verified clean. Otherwise leave the caller checkout
+unchanged and report that the base was not updated. Remove only workflow-owned
+worktree/local/remote source state, verifying each cleanup.
 
 ## Completion contract
 

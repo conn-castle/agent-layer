@@ -28,9 +28,9 @@ const (
 	maxCaptureBytes         = 64 * 1024 * 1024
 	dispatchModeFresh       = "fresh"
 	dispatchModeResume      = "resume"
-	dispatchStateRunning    = "running"
 	statusUnknown           = "unknown"
 	processStatusAlive      = "alive"
+	processStatusDead       = "dead"
 	providerVersionTimeout  = 10 * time.Second
 	// AntigravityPromptMaxBytes retains headroom below common ARG_MAX limits
 	// because Antigravity accepts print-mode prompts only as an argument.
@@ -68,12 +68,14 @@ type providerEvent struct {
 	Kind      string
 	SessionID string
 	Answer    string
+	Activity  string
 	Reason    string
 }
 
 const (
 	eventSession  = "session"
 	eventAnswer   = "answer"
+	eventProgress = "progress"
 	eventComplete = "complete"
 	eventFailure  = "failure"
 )
@@ -264,9 +266,19 @@ func reduceStructuredEvent(agent string, expectedSession string, raw []byte) ([]
 func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, error) {
 	events := make([]providerEvent, 0, 2)
 	if text, ok := claudeTextDeltaV013(value); ok && text != "" {
-		events = append(events, providerEvent{Kind: eventAnswer, Answer: text})
+		events = append(events, providerEvent{Kind: eventProgress, Activity: "text_delta"})
 	}
-	if eventType, _ := value["type"].(string); eventType != "result" {
+	eventType, _ := value["type"].(string)
+	if eventType != "result" {
+		if len(events) == 0 && eventType != "" {
+			activity := eventType
+			if nested, ok := mapValueV013(value, "event"); ok {
+				if nestedType, _ := nested["type"].(string); nestedType != "" {
+					activity = nestedType
+				}
+			}
+			events = append(events, providerEvent{Kind: eventProgress, Activity: activity})
+		}
 		return events, nil
 	}
 	if claudeResultIsErrorV013(value) {
@@ -280,7 +292,11 @@ func reduceClaudeEvent(expected string, value map[string]any) ([]providerEvent, 
 	if id == "" || id != expected {
 		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not return the caller-assigned session ID"}), nil
 	}
-	events = append(events, providerEvent{Kind: eventSession, SessionID: id}, providerEvent{Kind: eventComplete})
+	answer, _ := value["result"].(string)
+	if answer == "" {
+		return append(events, providerEvent{Kind: eventFailure, Reason: "Claude terminal result did not contain a final answer"}), nil
+	}
+	events = append(events, providerEvent{Kind: eventSession, SessionID: id}, providerEvent{Kind: eventAnswer, Answer: answer}, providerEvent{Kind: eventComplete})
 	return events, nil
 }
 
@@ -309,6 +325,9 @@ func reduceCodexEvent(value map[string]any) ([]providerEvent, error) {
 		if answer, ok := firstStringV013(value, "message", "text"); ok {
 			return []providerEvent{{Kind: eventAnswer, Answer: answer}}, nil
 		}
+	}
+	if eventType != "" {
+		return []providerEvent{{Kind: eventProgress, Activity: eventType}}, nil
 	}
 	if item, ok := mapValueV013(value, "item"); ok && item != nil {
 		if itemType, _ := item["type"].(string); itemType == "agent_message" {

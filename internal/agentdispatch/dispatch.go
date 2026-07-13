@@ -24,7 +24,7 @@ func Run(opts RunOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := pruneExpiredSessions(opts.Root, time.Now()); err != nil {
+	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
 		return err
 	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {
@@ -49,11 +49,17 @@ func Run(opts RunOptions) error {
 	if err != nil {
 		return err
 	}
+	if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
+		run.Record.ParentRunID = parent
+		if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+			return err
+		}
+	}
 	session, err := reserveSession(opts.Root, run)
 	if err != nil {
 		return err
 	}
-	return executeDispatch(dispatchExecution{
+	return launchExecution(dispatchExecution{
 		Root:          opts.Root,
 		Project:       project,
 		Target:        target,
@@ -70,7 +76,7 @@ func Run(opts RunOptions) error {
 		Effort:        opts.ReasoningEffort,
 		NewCommand:    opts.NewCommand,
 		VersionLookup: opts.VersionLookup,
-	})
+	}).await()
 }
 
 // Resume continues exactly the provider session addressed by name.
@@ -79,7 +85,7 @@ func Resume(opts ResumeOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := pruneExpiredSessions(opts.Root, time.Now()); err != nil {
+	if err := pruneDispatchEvidence(opts.Root, time.Now()); err != nil {
 		return err
 	}
 	if err := checkDispatchDepth(project.Config, depth); err != nil {
@@ -89,7 +95,7 @@ func Resume(opts ResumeOptions) error {
 	if err != nil {
 		return err
 	}
-	if session.State != "durable" || session.ProviderSessionID == "" {
+	if session.State != sessionStateDurable || session.ProviderSessionID == "" {
 		return exitError(ExitUnavailable, fmt.Sprintf("dispatch session %q is still pending and cannot be resumed", session.Name))
 	}
 	target, ok := lookupTarget(session.Agent)
@@ -107,7 +113,7 @@ func Resume(opts ResumeOptions) error {
 	if err != nil {
 		return exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
 	}
-	target, version, err := compatibleTargetVersion(path, target, opts.VersionLookup)
+	target, version, err := compatibleTargetVersionCached(opts.Root, path, target, opts.VersionLookup)
 	if err != nil {
 		return err
 	}
@@ -119,21 +125,36 @@ func Resume(opts ResumeOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
-		return err
-	}
-	if err := validateSkillProjection(project.Root, target, opts.Skill); err != nil {
-		return err
-	}
 	run, err := newDispatchRun(opts.Root, target.Name, version, dispatchModeResume)
 	if err != nil {
 		return err
 	}
+	if parent, ok := clients.GetEnv(env, "AL_RUN_ID"); ok {
+		run.Record.ParentRunID = parent
+	}
 	run.Record.Name = session.Name
+	run.Record.PreviousRunID = session.RunID
 	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
 		return err
 	}
-	return executeDispatch(dispatchExecution{
+	session, err = claimConversation(opts.Root, session.Name, run.Record.ID)
+	if err != nil {
+		now := time.Now().UTC()
+		run.Record.State = dispatchStateFailed
+		run.Record.RecoveryState = recoveryRetrySafe
+		run.Record.CompletedAt = &now
+		run.Record.TerminalReason = err.Error()
+		_ = writeRunRecord(run.Dir, &run.Record)
+		return err
+	}
+	preflightRequest := dispatchExecution{Root: opts.Root, Project: project, Target: target, Version: version, Mode: dispatchModeResume, Run: run, Session: session}
+	if err := prepareProjection(project, opts.Root, stderr, opts.Quiet); err != nil {
+		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
+	}
+	if err := validateSkillProjection(project.Root, target, opts.Skill); err != nil {
+		return finishDispatchFailure(preflightRequest, &preStartFailure{err: err})
+	}
+	return launchExecution(dispatchExecution{
 		Root:          opts.Root,
 		Project:       project,
 		Target:        target,
@@ -148,7 +169,7 @@ func Resume(opts ResumeOptions) error {
 		Depth:         depth + 1,
 		NewCommand:    opts.NewCommand,
 		VersionLookup: opts.VersionLookup,
-	})
+	}).await()
 }
 
 type dispatchExecution struct {
@@ -174,6 +195,9 @@ func executeDispatch(request dispatchExecution) error {
 	if request.Run == nil || request.Project == nil {
 		return exitError(ExitConfig, "dispatch execution was not initialized")
 	}
+	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
+		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before launch", request.Run.Record.ID))
+	}
 	session := request.Session
 	if request.Mode == dispatchModeFresh && request.Target.Name == AgentClaude {
 		id, err := newUUID()
@@ -181,19 +205,12 @@ func executeDispatch(request dispatchExecution) error {
 			return wrapExitError(ExitTargetFailure, "generate Claude dispatch session ID", err)
 		}
 		session.ProviderSessionID = id
-		session.State = "durable"
+		session.State = sessionStateDurable
 		if err := persistSession(request.Root, session); err != nil {
 			return err
 		}
 	}
-	if request.Mode == dispatchModeResume {
-		session.RunID = request.Run.Record.ID
-		session.LastUsedAt = time.Now().UTC()
-		if err := persistSession(request.Root, session); err != nil {
-			return err
-		}
-	}
-	if err := writeIdentity(request.Stderr, session.Name, request.Target.Name, request.Mode, session.State == "durable"); err != nil {
+	if err := writeIdentity(request.Stderr, session.Name, request.Target.Name, request.Mode, session.State == sessionStateDurable); err != nil {
 		return wrapExitError(ExitTargetFailure, "write dispatch identity", err)
 	}
 
@@ -203,7 +220,7 @@ func executeDispatch(request dispatchExecution) error {
 		}
 		session.ProviderSessionID = id
 		session.Agent = request.Target.Name
-		session.State = "durable"
+		session.State = sessionStateDurable
 		session.RunID = request.Run.Record.ID
 		session.LastUsedAt = time.Now().UTC()
 		return persistSession(request.Root, session)
@@ -211,7 +228,8 @@ func executeDispatch(request dispatchExecution) error {
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		request.Run.Record.Attempt = attempt
-		request.Run.Record.State = "starting"
+		request.Run.Record.State = dispatchStateStarting
+		request.Run.Record.RecoveryState = recoveryRetrySafe
 		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
 			return err
 		}
@@ -228,11 +246,14 @@ func executeDispatch(request dispatchExecution) error {
 		childEnv := dispatchEnvironment(request.Env, request.Project, request.Run, request.Depth, request.Target.Name)
 		command, err := buildProviderCommand(request.Target, request.Project, childEnv, request.Prompt, request.Model, request.Effort, request.Mode, session.ProviderSessionID, request.Run, request.Stderr)
 		if err != nil {
-			return finishDispatchFailure(request, err)
+			return finishDispatchFailure(request, &preStartFailure{err: err})
 		}
 		request.Run.Record.ProviderLogPath = command.LogPath
 		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
 			return finishDispatchFailure(request, err)
+		}
+		if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
+			return finishDispatchFailure(request, exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled before provider launch", request.Run.Record.ID)))
 		}
 		result, err := executeProvider(command, request.Prompt, request.Run, request.Root, request.NewCommand, persist)
 		if err != nil {
@@ -252,11 +273,6 @@ func executeDispatch(request dispatchExecution) error {
 			if id == "" {
 				result.NotResumable = true
 				request.Run.Record.NotResumable = true
-				if request.Mode == dispatchModeFresh {
-					if err := deleteSession(request.Root, session.Name); err != nil {
-						return finishDispatchFailure(request, err)
-					}
-				}
 				if _, err := fmt.Fprintf(request.Stderr, "[%s] antigravity · not resumable · agy %s · diagnostics: %s\n", session.Name, request.Version, command.LogPath); err != nil {
 					return finishDispatchFailure(request, wrapExitError(ExitTargetFailure, "write Antigravity capability warning", err))
 				}
@@ -274,10 +290,18 @@ func executeDispatch(request dispatchExecution) error {
 			}
 		}
 		now := time.Now().UTC()
-		request.Run.Record.State = "completed"
+		request.Run.Record.State = dispatchStateCompleted
+		if result.NotResumable {
+			request.Run.Record.RecoveryState = recoveryNotResumable
+		} else {
+			request.Run.Record.RecoveryState = recoveryResumeRequired
+		}
 		request.Run.Record.CompletedAt = &now
 		request.Run.Record.ProviderSessionID = session.ProviderSessionID
 		if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
+			return err
+		}
+		if err := releaseConversation(request.Root, session.Name, request.Run.Record.ID); err != nil {
 			return err
 		}
 		return replayAnswer(request.Run.Record.AnswerPath, request.Stdout)
@@ -286,15 +310,36 @@ func executeDispatch(request dispatchExecution) error {
 }
 
 func finishDispatchFailure(request dispatchExecution, cause error) error {
+	if current, err := loadRunRecord(request.Root, request.Run.Record.ID); err == nil && current.State == dispatchStateCancelled {
+		_ = releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID)
+		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch run %s was cancelled", request.Run.Record.ID))
+	}
 	now := time.Now().UTC()
-	request.Run.Record.State = "failed"
+	request.Run.Record.State = dispatchStateFailed
+	switch {
+	case request.Run.Record.ProviderSessionID != "", request.Mode == dispatchModeResume:
+		request.Run.Record.RecoveryState = recoveryAcceptanceUnknown
+	case isSafePreStartFailure(cause):
+		request.Run.Record.RecoveryState = recoveryRetrySafe
+	default:
+		request.Run.Record.RecoveryState = recoveryAcceptanceUnknown
+	}
 	request.Run.Record.CompletedAt = &now
 	request.Run.Record.TerminalReason = cause.Error()
-	if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
+	// Release the active claim even when the terminal write fails, so a
+	// persistence error cannot leave the conversation stuck on a failed run.
+	writeErr := writeRunRecord(request.Run.Dir, &request.Run.Record)
+	if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
 		return err
 	}
-	if request.Mode == dispatchModeFresh && request.Run.Record.ProviderSessionID == "" {
-		if err := deleteSession(request.Root, request.Session.Name); err != nil {
+	if writeErr != nil {
+		return writeErr
+	}
+	// A proven pre-start failure means the provider never created a
+	// conversation; do not leave a pre-persisted durable mapping (fresh
+	// Claude runs) advertising a session that does not exist.
+	if request.Mode == dispatchModeFresh && request.Run.Record.RecoveryState == recoveryRetrySafe {
+		if err := downgradeUnstartedSession(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
 			return err
 		}
 	}
@@ -382,7 +427,7 @@ func prepareFresh(project *config.ProjectConfig, target targetMeta, opts RunOpti
 	if err != nil {
 		return targetMeta{}, "", nil, exitError(ExitUnavailable, fmt.Sprintf("`al dispatch` target %s requires `%s` on PATH", target.Name, target.Binary))
 	}
-	target, version, err := compatibleTargetVersion(path, target, opts.VersionLookup)
+	target, version, err := compatibleTargetVersionCached(project.Root, path, target, opts.VersionLookup)
 	if err != nil {
 		return targetMeta{}, "", nil, err
 	}

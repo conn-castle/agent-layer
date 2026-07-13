@@ -1,145 +1,166 @@
 # Agent Dispatch
 
-Agent Dispatch runs one focused, headless provider turn for an Agent
-Layer-managed project. It is separate from **version dispatch**, which chooses
-the repo-pinned `al` binary.
+Agent Dispatch runs focused headless provider turns for an Agent Layer-managed
+project. It is command-line-interface-only and separate from version dispatch,
+which chooses the repository-pinned `al` binary.
 
-## Commands
+## Synchronous commands
 
-Start a fresh conversation:
+Fresh and resumed turns block until terminal publication:
 
 ```bash
 al dispatch --agent codex "Review this plan."
-al dispatch --agent claude --skill review-plan "Review this plan."
-al dispatch --agent antigravity "Check this design."
-```
-
-Continue only an explicitly named conversation:
-
-```bash
+al dispatch --agent claude --skill review-uncommitted-code "Review the current working tree."
 al dispatch resume tiny-round-capacitor "Review the revision."
 ```
 
-Inspect Agent Layer-owned evidence or manage a mapping:
+One narrow fanout sends one shared prompt, optionally with one skill, to two or
+more targets, runs them concurrently, waits for every child, and prints one JSON
+manifest:
 
 ```bash
-al dispatch inspect tiny-round-capacitor
+al dispatch fanout \
+  --target 'agent=codex,reasoning=high' \
+  --target 'agent=claude,model=opus' \
+  --target 'agent=antigravity' < shared-prompt.md
+```
+
+Each repeated `--target` is self-contained:
+`agent=<provider>[,model=<model>][,reasoning=<effort>]`. Unknown or duplicate
+keys and unsupported overrides fail before launch. Omitted overrides use the
+same configured defaults as ordinary dispatch. Fanout cannot express
+per-target prompts or skills; different prompts use independent ordinary
+commands.
+
+Recovery and diagnostics:
+
+```bash
 al dispatch inspect tiny-round-capacitor --json
+al dispatch history tiny-round-capacitor --json
+al dispatch cancel <name-or-run-or-fanout-id>
 al dispatch list
 al dispatch delete tiny-round-capacitor
 al dispatch options --json
 ```
 
-Ordinary `al dispatch` calls are always fresh. A target, role, prompt, artifact
-path, or previous output never implies conversation reuse. `resume` resolves
-the provider exclusively from the named durable mapping.
+Ordinary calls are always fresh. Resume resolves the provider conversation
+exclusively from the named durable mapping.
 
-## Output and completion
+## Internal coordinator and completion
 
-After atomically reserving a friendly name, Dispatch writes one compact
-identity line to standard error, such as:
+Public fresh, resume, and fanout commands remain synchronous over an internal
+concurrency-safe coordinator. The coordinator reserves immutable run state
+before launch, owns provider process groups, and publishes terminal state before
+the command returns. It is not a detached public job service; there are no
+public `start`, `wait`, `wait-all`, or `result` commands.
 
-```text
-[tiny-round-capacitor] codex · fresh
-```
+A chat host may yield a long-running terminal command and require one host-level
+wait. That wake-up behavior is outside the CLI contract. Workflows must not
+model-poll `inspect` merely to wait.
 
-Standard output receives only the final assistant answer and only after the
-provider has supplied its required semantic completion evidence. Provider tool
-calls, raw events, reasoning, token usage, command output, diagnostics, and
-partial failed answers are retained privately rather than forwarded.
+After atomically reserving a friendly name, Dispatch writes a compact identity
+line to standard error. Successful standard output contains exactly one
+terminal answer. Raw provider streams, progress, tool/child activity,
+diagnostics, prior answer candidates, and failed partial output remain private.
 
-Claude and Codex require a provider session identity, final answer, and
-successful terminal event. Antigravity uses its documented print-process exit
-and an isolated `--log-file` extractor. If an Antigravity answer succeeds but
-the exact ID is not recognized, the answer remains successful and standard
-error reports `not resumable` with the installed `agy` version and diagnostic
-path.
+Provider reduction is explicit:
 
-Failures are nonzero and publish no partial answer. Dispatch owns the target
-process group and forwards `SIGINT` and `SIGTERM` to that group.
+- Codex retains the latest assistant-message candidate and publishes it only
+  after authoritative turn completion.
+- Claude records streaming deltas as progress and uses the terminal result as
+  the answer.
+- Antigravity records successful print output as the candidate and publishes it
+  at process completion.
 
-## State, isolation, and inspection
+Each fanout child has its own friendly name, immutable run record, and result
+path. Early child results are persisted immediately. Failure does not cancel
+unrelated children: fanout waits until all are terminal, emits complete
+per-child evidence, then exits nonzero. Cancelling a fanout affects only its
+active children and preserves completed evidence.
 
-Durable mappings use one atomic JSON file per friendly name:
+## Canonical state and concurrency
 
-```text
-.agent-layer/state/dispatch/tiny-round-capacitor.json
-```
+Friendly mappings under `.agent-layer/state/dispatch/` are lookup keys, not
+history. Immutable run records under `.agent-layer/tmp/runs/<uuid>/` are the
+canonical turn history and link a turn to its name, predecessor, provider
+conversation, parent, and fanout group when applicable. `history` derives its
+ordered output from these records rather than a second mutable history file.
 
-The mapping contains only the friendly name, provider, exact provider session
-ID, and timestamps. Provider transcripts remain provider-owned. Each attempt
-also has a mode-0700 private record under `.agent-layer/tmp/runs/<uuid>/` with
-bounded stdout, stderr, structured-event, final-answer, and (when needed)
-provider-log capture.
+Run records expose:
 
-Inactive name mappings are retained for 30 days after `last_used_at` and are
-pruned opportunistically by fresh dispatch, resume, and list operations.
-Pruning removes only the Agent Layer mapping: provider conversations and run
-evidence remain untouched. Active and corrupt mappings are never pruned.
-Upgrades preserve `.agent-layer/state/`; retention belongs to Agent Dispatch,
-not the installer.
+- execution state: `pending`, `running`, `completed`, `failed`,
+  `cancelled`, or `interrupted`
+- recovery state: `retry_safe`, `resume_required`,
+  `acceptance_unknown`, or `not_resumable`
+- factual last semantic activity time and kind
+- process identifier, process group, and operating-system start identity
+- exact private result and diagnostic paths
 
-`inspect` is read-only. `running` means only that the owned process is alive;
-silence, elapsed time, and missing output are not health evidence. Workflows
-should wait for the process’s terminal notification, not poll inspection.
+Dispatch never derives a `stalled` state from elapsed inactivity. Inspection
+reports facts and reconciles a definitively dead owned wrapper to
+`interrupted`; it does not infer provider health or descendant terminality
+that the provider cannot prove.
 
-`delete` releases only the Agent Layer mapping after the associated run is no
-longer active. It never deletes a provider conversation or transcript.
+A per-conversation active claim spans the entire provider execution. A second
+simultaneous resume fails nonzero with the active run handle. It launches no
+provider, queues no prompt, and does not mutate provider conversation state.
+Unrelated conversations and fresh calls remain concurrent; no global lock is
+held while a provider runs.
 
-## Provider compatibility
+`cancel` signals only the exact recorded live process group after verifying
+its process-start identity. A fanout cancellation iterates only nonterminal
+children.
 
-Initial support is exact and per capability:
+## Retention
 
-| Provider | Supported version | Fresh | Resume |
-| --- | --- | --- | --- |
-| Claude Code | 2.1.207 | Yes | `--resume <id>` |
-| Codex CLI | 0.144.1 | Yes | `codex exec resume --json <id> -` |
-| Antigravity | 1.1.1 | Yes | `agy --conversation <id>` when its isolated log yields a validated ID |
+Agent Layer applies a fixed 30-day window to name mappings and eligible terminal
+raw-run evidence using canonical record timestamps, not filesystem modification
+time. Opportunistic pruning never removes active/nonterminal work, corrupt
+evidence whose age or state cannot be established, or the current run
+referenced by a retained mapping. When an older predecessor was pruned,
+`history` reports a retention boundary instead of claiming complete history.
+There is no retention configuration.
 
-An unmatched version fails before provider launch with the supported version
-and next action. `al dispatch options --json` reports installed status, exact
-detected version, and `fresh`, `resume`, and `inspect` capabilities separately;
-it has no `dispatch_capable` or streaming promise.
+Provider-owned conversations and transcripts are never deleted. `delete`
+removes only an inactive Agent Layer name mapping.
 
-## Configuration and launch parity
+## Provider compatibility and limits
 
-Dispatch uses the same provider configuration construction as ordinary
-launchers: Claude’s opt-in repository-local `CLAUDE_CONFIG_DIR`, Codex’s
-opt-in `CODEX_HOME`, Antigravity’s repository-local `--gemini_dir`, approvals,
-models, effort, skills, and dispatch depth. Projection preparation is serialized
-by the project sync lock and finishes before name reservation or provider
-launch, so independent provider processes can overlap safely.
+`al dispatch options --json` is authoritative for installed versions and
+fresh/resume/inspect capability. An unmatched version fails before launch.
 
-Prompts from standard input are capped at 10 MiB and rejected rather than
-truncated. Antigravity passes prompts through `agy --print` and therefore has a
-lower 100 KiB limit; oversized Antigravity prompts are rejected, never
-truncated. The final answer is capped at 16 MiB and all captured provider data
-per attempt at 64 MiB; a limit or capture failure terminates the owned process
-group and emits no answer.
+Prompts from standard input are capped at 10 MiB. Antigravity currently has a
+100 KiB prompt cap because its print mode accepts only an argument. Terminal
+answers are capped at 16 MiB and retained provider data at 64 MiB. Inputs and
+outputs are rejected rather than truncated.
 
-## Retry and recovery
+Dispatch performs at most one automatic retry and only for a proven pre-start
+failure. After a provider might have accepted work it preserves known
+conversation identity and reports explicit recovery state; it never starts an
+out-of-band replacement.
 
-Dispatch makes at most one automatic retry, and only when command start is
-proven not to have succeeded. Once a provider process starts, task acceptance
-is ambiguous unless explicit provider evidence says otherwise: Dispatch marks
-the attempt interrupted or failed and requires an explicit later `resume` when
-a durable ID exists. It never launches an out-of-band replacement.
+## Exit codes
 
-## Exit status
+Dispatch commands exit with a stable, category-scoped code:
 
-- `0` — provider completed successfully and the final answer was replayed
-- `64` — usage or resolution failure
-- `65` — configuration or Agent Layer state failure
-- `69` — unavailable binary or unsupported provider version
-- `70` — provider, capture, completion, or process-supervision failure
-- `75` — nesting blocked by `dispatch.max_depth` or invalid dispatch depth
-- `130` / `143` — interrupted by `SIGINT` / `SIGTERM`
+- `0` — success
+- `64` — usage or name/run resolution failure
+- `65` — configuration or dispatch-state failure
+- `69` — target unavailable (disabled, missing binary, or busy conversation)
+- `70` — target or adapter failure during execution
+- `75` — nested-call limit failure
+- `130` — terminated by SIGINT
+- `143` — terminated by SIGTERM
 
 ## Workflow use
 
-Independent orchestration starts separate fresh commands before waiting. The
-review-plan workflow preserves its fixed matrix: three external reviewer
-dispatches, each starting and synthesizing three built-in perspectives. A
-reviewer may be replaced only after its whole descendant tree is terminal and
-the failure is proven safe to retry; an ambiguous lifecycle or missing report
-is a blocker, not evidence for a fresh replacement.
+Built-in workflows use external dispatch only for bounded leaf judgment. Root
+orchestration owns worktrees, transitions, verification coordination, shipping,
+and merge authorization. The global maximum dispatch depth remains three for
+intentional custom workflows; built-in workflows are root-to-leaf.
+
+Plan review uses one shared-prompt fanout to three equivalent external
+reviewers. Each follows the leaf review asset directly and returns one
+complete-plan report without launching another agent or workflow. Only primary
+artifacts and mechanically verifiable facts cross independent stages; reviewer
+conclusions do not.

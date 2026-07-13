@@ -150,8 +150,8 @@ for plan_reviewer in plan_reviewers:
 ```
 
 Use a leading dot for bundled prompts or assets instead of skills. The example
-above means each named plan reviewer is dispatched once with a distinct review
-responsibility through the `agent-review-prompt` asset. Their findings are
+above means each named plan reviewer is dispatched once to follow the
+`agent-review-prompt` asset directly. Their findings are
 synthesized within the same review stage; agreement among reviewers is not an
 independent form of evidence. If the asset receives no agent-role inputs, leave
 the parentheses off.

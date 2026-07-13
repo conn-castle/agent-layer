@@ -48,10 +48,13 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 2. Verify any requested skill exists in the current project's Agent Layer skill
    source, then build a focused prompt without unrelated history or biasing
    context.
-3. Launch one fresh `al dispatch` invocation in a background-capable terminal
-   and yield. Preserve its printed identity name with the task state.
-4. Wait for its terminal notification. Do not poll, send empty input, inspect
-   partial output, or infer failure from silence.
+3. Launch one blocking synchronous `al dispatch` invocation. Preserve its
+   printed identity name with the task state. A chat host may yield a terminal
+   session handle for a long-running process; that wake-up behavior is outside
+   the Agent Layer command-line interface contract.
+4. Wait once on that invocation or its host-owned terminal session. The CLI
+   does not promise a separate terminal notification. Do not model-poll,
+   repeatedly inspect, send empty input, or infer failure from silence.
 5. Inspect final output and required artifacts once after terminal completion.
    Use `al dispatch inspect <name>` only for a deliberate diagnosis; it reports
    transport facts and never makes a process healthy or retry-safe.
@@ -59,12 +62,15 @@ allowed-tools: Bash(al:*) Bash(cat:*)
    A failure, missing report, or silence is not permission to launch a fresh
    replacement. Preserve ambiguous work and surface the blocker.
 
-## Review-plan fanout
+## Shared-prompt fanout
 
-- Start the requested external reviewer dispatches before waiting for any one.
-- Each reviewer starts exactly the three built-in perspectives from its review
-  prompt before waiting, synthesizes them, and writes its required report.
-- Replace a reviewer only after proven terminal infrastructure failure, all of
+- Use one synchronous `al dispatch fanout` only when every child receives the
+  same caller prompt and skill. Supply two or more repeated self-contained
+  `--target` specifications; do not encode parallel agent/model/effort lists.
+- Fanout waits for every child and emits one manifest. Read canonical child
+  result paths from that manifest; never put report destinations in the shared
+  prompt or mix child output.
+- Replace a fanout target only after proven terminal infrastructure failure, all of
   its descendants terminal, and evidence that the retry is safe. Missing
   output or an ambiguous lifecycle blocks replacement.
 

@@ -27,6 +27,23 @@ const (
 	dispatchSessionRetention = 30 * 24 * time.Hour
 )
 
+const (
+	dispatchStatePending     = "pending"
+	dispatchStateStarting    = "starting"
+	dispatchStateRunning     = "running"
+	dispatchStateCompleted   = "completed"
+	dispatchStateFailed      = "failed"
+	dispatchStateCancelled   = "cancelled"
+	dispatchStateInterrupted = "interrupted"
+
+	recoveryRetrySafe         = "retry_safe"
+	recoveryResumeRequired    = "resume_required"
+	recoveryAcceptanceUnknown = "acceptance_unknown"
+	recoveryNotResumable      = "not_resumable"
+	sessionStateDurable       = "durable"
+	sessionStatePending       = "pending"
+)
+
 var errDispatchRunNotFound = errors.New("dispatch run record not found")
 
 // Session is the durable, name-keyed mapping owned by Agent Layer. Provider
@@ -40,31 +57,41 @@ type Session struct {
 	LastUsedAt        time.Time `json:"last_used_at"`
 	State             string    `json:"state,omitempty"`
 	RunID             string    `json:"run_id,omitempty"`
+	ActiveRunID       string    `json:"active_run_id,omitempty"`
 }
 
 // RunRecord is private, recoverable dispatch evidence. It never contains the
 // caller prompt or a provider transcript.
 type RunRecord struct {
-	ID                string     `json:"id"`
-	Name              string     `json:"name"`
-	Agent             string     `json:"agent"`
-	ProviderVersion   string     `json:"provider_version"`
-	Mode              string     `json:"mode"`
-	State             string     `json:"state"`
-	Attempt           int        `json:"attempt"`
-	PID               int        `json:"pid,omitempty"`
-	StartedAt         time.Time  `json:"started_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
-	CompletedAt       *time.Time `json:"completed_at,omitempty"`
-	ProviderSessionID string     `json:"provider_session_id,omitempty"`
-	NotResumable      bool       `json:"not_resumable,omitempty"`
-	TerminalReason    string     `json:"terminal_reason,omitempty"`
-	LastOutputAt      *time.Time `json:"last_output_at,omitempty"`
-	AnswerPath        string     `json:"answer_path"`
-	StdoutPath        string     `json:"stdout_path"`
-	StderrPath        string     `json:"stderr_path"`
-	EventsPath        string     `json:"events_path,omitempty"`
-	ProviderLogPath   string     `json:"provider_log_path,omitempty"`
+	ID                   string     `json:"id"`
+	Name                 string     `json:"name"`
+	Agent                string     `json:"agent"`
+	ProviderVersion      string     `json:"provider_version"`
+	Mode                 string     `json:"mode"`
+	State                string     `json:"state"`
+	RecoveryState        string     `json:"recovery_state"`
+	Revision             uint64     `json:"revision"`
+	Attempt              int        `json:"attempt"`
+	PID                  int        `json:"pid,omitempty"`
+	ProcessGroupID       int        `json:"process_group_id,omitempty"`
+	ProcessStartIdentity string     `json:"process_start_identity,omitempty"`
+	StartedAt            time.Time  `json:"started_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	ProviderSessionID    string     `json:"provider_session_id,omitempty"`
+	PreviousRunID        string     `json:"previous_run_id,omitempty"`
+	ParentRunID          string     `json:"parent_run_id,omitempty"`
+	FanoutGroupID        string     `json:"fanout_group_id,omitempty"`
+	NotResumable         bool       `json:"not_resumable,omitempty"`
+	TerminalReason       string     `json:"terminal_reason,omitempty"`
+	LastOutputAt         *time.Time `json:"last_output_at,omitempty"`
+	LastActivityAt       *time.Time `json:"last_activity_at,omitempty"`
+	LastActivityKind     string     `json:"last_activity_kind,omitempty"`
+	AnswerPath           string     `json:"answer_path"`
+	StdoutPath           string     `json:"stdout_path"`
+	StderrPath           string     `json:"stderr_path"`
+	EventsPath           string     `json:"events_path,omitempty"`
+	ProviderLogPath      string     `json:"provider_log_path,omitempty"`
 }
 
 type dispatchRun struct {
@@ -124,7 +151,8 @@ func newDispatchRun(root string, agent string, version string, mode string) (*di
 		Agent:           agent,
 		ProviderVersion: version,
 		Mode:            mode,
-		State:           "pending",
+		State:           dispatchStatePending,
+		RecoveryState:   recoveryRetrySafe,
 		StartedAt:       now,
 		UpdatedAt:       now,
 		AnswerPath:      filepath.Join(dir, "answer.txt"),
@@ -197,7 +225,7 @@ func reserveSession(root string, run *dispatchRun) (Session, error) {
 			return Session{}, err
 		}
 		now := time.Now().UTC()
-		session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: "pending", RunID: run.Record.ID}
+		session := Session{Name: name, Agent: run.Record.Agent, CreatedAt: now, LastUsedAt: now, State: sessionStatePending, RunID: run.Record.ID, ActiveRunID: run.Record.ID}
 		file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- name is generated from fixed vocabularies.
 		if errors.Is(openErr, fs.ErrExist) {
 			continue
@@ -231,6 +259,97 @@ func persistSession(root string, session Session) error {
 	return withSessionLock(root, session.Name, func() error {
 		return writeJSONAtomic(path, session)
 	})
+}
+
+func claimConversation(root string, name string, runID string) (Session, error) {
+	var claimed Session
+	err := withSessionLock(root, name, func() error {
+		path, err := sessionPath(root, name)
+		if err != nil {
+			return err
+		}
+		var session Session
+		if err := readJSON(path, &session); err != nil {
+			return wrapExitError(ExitConfig, "read dispatch mapping for active claim", err)
+		}
+		if session.ActiveRunID != "" && session.ActiveRunID != runID {
+			active, loadErr := loadRunRecord(root, session.ActiveRunID)
+			if loadErr == nil && !terminalDispatchState(active.State) {
+				return exitError(ExitUnavailable, fmt.Sprintf("dispatch conversation %q is already active in run %s", name, session.ActiveRunID))
+			}
+			if loadErr != nil && !errors.Is(loadErr, errDispatchRunNotFound) {
+				return loadErr
+			}
+		}
+		session.ActiveRunID = runID
+		session.RunID = runID
+		session.LastUsedAt = time.Now().UTC()
+		if err := writeJSONAtomic(path, session); err != nil {
+			return wrapExitError(ExitConfig, "publish dispatch active claim", err)
+		}
+		claimed = session
+		return nil
+	})
+	return claimed, err
+}
+
+// downgradeUnstartedSession clears durable provider identity from the mapping
+// of a fresh run that provably failed before the provider started, so list
+// and resume stop advertising a conversation the provider never created. The
+// mapping itself is kept for run history.
+func downgradeUnstartedSession(root string, name string, runID string) error {
+	return withSessionLock(root, name, func() error {
+		path, err := sessionPath(root, name)
+		if err != nil {
+			return err
+		}
+		var session Session
+		if err := readJSON(path, &session); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return wrapExitError(ExitConfig, "read dispatch mapping for pre-start downgrade", err)
+		}
+		if session.RunID != runID || session.State != sessionStateDurable {
+			return nil
+		}
+		session.ProviderSessionID = ""
+		session.State = sessionStatePending
+		if err := writeJSONAtomic(path, session); err != nil {
+			return wrapExitError(ExitConfig, "downgrade unstarted dispatch mapping", err)
+		}
+		return nil
+	})
+}
+
+func releaseConversation(root string, name string, runID string) error {
+	return withSessionLock(root, name, func() error {
+		path, err := sessionPath(root, name)
+		if err != nil {
+			return err
+		}
+		var session Session
+		if err := readJSON(path, &session); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return wrapExitError(ExitConfig, "read dispatch mapping for claim release", err)
+		}
+		if session.ActiveRunID != runID {
+			return nil
+		}
+		session.ActiveRunID = ""
+		return writeJSONAtomic(path, session)
+	})
+}
+
+func terminalDispatchState(state string) bool {
+	switch state {
+	case dispatchStateCompleted, dispatchStateFailed, dispatchStateCancelled, dispatchStateInterrupted:
+		return true
+	default:
+		return false
+	}
 }
 
 func deleteSession(root string, name string) error {
@@ -295,6 +414,69 @@ func pruneExpiredSessions(root string, now time.Time) error {
 	return nil
 }
 
+func pruneDispatchEvidence(root string, now time.Time) error {
+	if err := pruneExpiredSessions(root, now); err != nil {
+		return err
+	}
+	sessions, err := listSessions(root)
+	if err != nil {
+		return err
+	}
+	current := make(map[string]bool, len(sessions))
+	for _, session := range sessions {
+		if session.RunID != "" {
+			current[session.RunID] = true
+		}
+	}
+	cutoff := now.UTC().Add(-dispatchSessionRetention)
+	entries, err := os.ReadDir(dispatchRunPath(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return pruneExpiredFanoutManifests(root, cutoff)
+	}
+	if err != nil {
+		return wrapExitError(ExitConfig, "list dispatch evidence for retention", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || parseUUID(entry.Name()) != nil || current[entry.Name()] {
+			continue
+		}
+		record, loadErr := loadRunRecord(root, entry.Name())
+		if loadErr != nil || !terminalDispatchState(record.State) || record.CompletedAt == nil || !record.CompletedAt.Before(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dispatchRunPath(root), entry.Name())); err != nil {
+			return wrapExitError(ExitConfig, "prune expired dispatch evidence", err)
+		}
+	}
+	return pruneExpiredFanoutManifests(root, cutoff)
+}
+
+// pruneExpiredFanoutManifests applies the same fixed retention window to
+// terminal fanout manifests. Nonterminal manifests and manifests whose state
+// or age cannot be established are left in place.
+func pruneExpiredFanoutManifests(root string, cutoff time.Time) error {
+	entries, err := os.ReadDir(fanoutStateRoot(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return wrapExitError(ExitConfig, "list fanout manifests for retention", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || parseUUID(entry.Name()) != nil {
+			continue
+		}
+		manifest, loadErr := loadFanoutManifest(root, entry.Name())
+		if loadErr != nil || !terminalDispatchState(manifest.State) || manifest.CompletedAt == nil || !manifest.CompletedAt.Before(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(fanoutStateRoot(root), entry.Name())); err != nil {
+			return wrapExitError(ExitConfig, "prune expired fanout manifest", err)
+		}
+	}
+	return nil
+}
+
 func pruneExpiredSession(root string, name string, cutoff time.Time) error {
 	return withSessionLock(root, name, func() error {
 		session, err := loadSession(root, name)
@@ -328,7 +510,7 @@ func dispatchSessionActive(root string, session Session) bool {
 	if err != nil {
 		return false
 	}
-	return record.State == dispatchStateRunning && processAlive(record.PID) == processStatusAlive
+	return record.State == dispatchStateRunning && processOwned(record)
 }
 
 func withSessionLock(root string, name string, fn func() error) error {
@@ -361,11 +543,45 @@ func writeRunRecord(dir string, record *RunRecord) error {
 	if record == nil {
 		return exitError(ExitConfig, "write nil dispatch run record")
 	}
-	record.UpdatedAt = time.Now().UTC()
-	if err := writeJSONAtomic(filepath.Join(dir, dispatchRunFile), record); err != nil {
-		return wrapExitError(ExitConfig, "write dispatch run record", err)
+	if err := validateRunRecord(*record); err != nil {
+		return err
 	}
-	return nil
+	return withRunLock(dir, func() error {
+		path := filepath.Join(dir, dispatchRunFile)
+		var current RunRecord
+		if err := readJSON(path, &current); err == nil {
+			if current.Revision != record.Revision {
+				return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s changed concurrently (expected revision %d, active revision %d)", record.ID, record.Revision, current.Revision))
+			}
+			if terminalDispatchState(current.State) && !terminalDispatchState(record.State) {
+				return exitError(ExitUnavailable, fmt.Sprintf("dispatch run %s is already terminal (%s)", record.ID, current.State))
+			}
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return wrapExitError(ExitConfig, "read dispatch run record before update", err)
+		}
+		record.Revision++
+		record.UpdatedAt = time.Now().UTC()
+		if err := writeJSONAtomic(path, record); err != nil {
+			return wrapExitError(ExitConfig, "write dispatch run record", err)
+		}
+		return nil
+	})
+}
+
+func withRunLock(dir string, fn func() error) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(filepath.Join(dir, ".record.lock"), os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- dir is an Agent Layer-owned run directory.
+	if err != nil {
+		return err
+	}
+	defer func() { _ = file.Close() }()
+	if err := unix.Flock(int(file.Fd()), unix.LOCK_EX); err != nil { //nolint:gosec // supported Unix descriptor.
+		return err
+	}
+	defer func() { _ = unix.Flock(int(file.Fd()), unix.LOCK_UN) }() //nolint:gosec // supported Unix descriptor.
+	return fn()
 }
 
 func loadRunRecord(root string, id string) (RunRecord, error) {
@@ -383,7 +599,65 @@ func loadRunRecord(root string, id string) (RunRecord, error) {
 	if record.ID != id {
 		return RunRecord{}, exitError(ExitConfig, fmt.Sprintf("dispatch run %q is invalid", id))
 	}
+	if err := validateRunRecord(record); err != nil {
+		return RunRecord{}, err
+	}
 	return record, nil
+}
+
+func validateRunRecord(record RunRecord) error {
+	validState := map[string]bool{dispatchStatePending: true, dispatchStateStarting: true, dispatchStateRunning: true, dispatchStateCompleted: true, dispatchStateFailed: true, dispatchStateCancelled: true, dispatchStateInterrupted: true}
+	validRecovery := map[string]bool{recoveryRetrySafe: true, recoveryResumeRequired: true, recoveryAcceptanceUnknown: true, recoveryNotResumable: true}
+	if !validState[record.State] || !validRecovery[record.RecoveryState] {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q has invalid execution/recovery state %q/%q", record.ID, record.State, record.RecoveryState))
+	}
+	if !terminalDispatchState(record.State) && record.CompletedAt != nil {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q is nonterminal with a completion timestamp", record.ID))
+	}
+	if terminalDispatchState(record.State) && record.CompletedAt == nil {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q is terminal without a completion timestamp", record.ID))
+	}
+	if record.State == dispatchStateCompleted && record.RecoveryState != recoveryResumeRequired && record.RecoveryState != recoveryNotResumable {
+		return exitError(ExitConfig, fmt.Sprintf("completed dispatch run %q has invalid recovery state %q", record.ID, record.RecoveryState))
+	}
+	if record.RecoveryState == recoveryNotResumable && !record.NotResumable {
+		return exitError(ExitConfig, fmt.Sprintf("dispatch run %q reports not_resumable without provider evidence", record.ID))
+	}
+	return nil
+}
+
+// listRunRecords loads every readable run record. Records that cannot be
+// loaded or validated are skipped and reported as warnings so one corrupt
+// record cannot hide the history of unrelated conversations; the corrupt
+// evidence itself is left in place.
+func listRunRecords(root string) ([]RunRecord, []string, error) {
+	entries, err := os.ReadDir(dispatchRunPath(root))
+	if errors.Is(err, fs.ErrNotExist) {
+		return []RunRecord{}, nil, nil
+	}
+	if err != nil {
+		return nil, nil, wrapExitError(ExitConfig, "list dispatch run records", err)
+	}
+	records := make([]RunRecord, 0, len(entries))
+	warnings := make([]string, 0)
+	for _, entry := range entries {
+		if !entry.IsDir() || parseUUID(entry.Name()) != nil {
+			continue
+		}
+		record, err := loadRunRecord(root, entry.Name())
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("skipped unreadable dispatch run record %s: %v", entry.Name(), err))
+			continue
+		}
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].StartedAt.Equal(records[j].StartedAt) {
+			return records[i].ID < records[j].ID
+		}
+		return records[i].StartedAt.Before(records[j].StartedAt)
+	})
+	return records, warnings, nil
 }
 
 func parseUUID(value string) error {
@@ -431,6 +705,35 @@ func writeJSONAtomic(path string, value any) error {
 		return err
 	}
 	return os.Rename(temp, path) // #nosec G703 -- path and temp share the caller-selected Agent Layer state directory.
+}
+
+func writeBytesAtomic(path string, data []byte, mode fs.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(dir, ".dispatch-result-*.tmp")
+	if err != nil {
+		return err
+	}
+	temp := file.Name()
+	defer func() { _ = os.Remove(temp) }()
+	if err := file.Chmod(mode); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temp, path) // #nosec G703 -- temp and destination share Agent Layer's private directory.
 }
 
 func readJSON(path string, target any) error {
@@ -494,7 +797,7 @@ func processAlive(pid int) string {
 		return processStatusAlive
 	}
 	if errors.Is(err, syscall.ESRCH) {
-		return "dead"
+		return processStatusDead
 	}
 	return statusUnknown
 }

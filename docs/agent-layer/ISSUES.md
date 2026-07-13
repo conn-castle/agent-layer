@@ -27,6 +27,30 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-13 codex-wrapped-answer-fallback-unverified: Codex wrapped agent_message answer fallback may be dead or load-bearing
+    Priority: Low. Area: internal/agentdispatch/provider.go (reduceCodexEvent)
+    Description: The `eventType != ""` progress return makes the wrapped `{"type":…,"item":{"type":"agent_message"…}}` answer fallback unreachable; if pinned Codex 0.144.1 emits answers only in that wrapped shape, every dispatch would fail without a final answer. Pinned fixtures use only the flat shape, so this cannot be confirmed offline.
+    Next step: Run pinned `codex exec --json` against the real binary, then either reorder the wrapped-answer fallback above the progress return or delete it as dead code.
+    Notes: Found during redesign review; unresolvable without the real provider binary.
+
+- Issue 2026-07-13 corrupt-run-record-blocks-delete-cancel: A corrupt run record leaves its mapping undeletable and uncancellable
+    Priority: Low. Area: internal/agentdispatch/operations.go (Delete, Cancel) + state.go retention
+    Description: Delete and Cancel deliberately fail loud on a corrupt referenced run record (tested behavior consistent with the retention stance of never hiding corrupt evidence), so the only recovery is manual removal of the run directory; history already skips-and-warns, but the mapping stays blocked and retention never expires nonterminal corrupt records.
+    Next step: Human to decide whether Delete should treat a provably corrupt record as inactive (releasing the mapping while preserving the evidence) or whether manual cleanup stays the contract.
+    Notes: Dispatch is unreleased; blast radius today is developer-local state.
+
+- Issue 2026-07-13 dispatch-redesign-performance-observation: Representative post-cutover workflow timing is not yet observed
+    Priority: Medium. Area: full-workflow rollout evidence
+    Description: The redesign implementation can be verified locally with fixtures, race tests, and repository checks, but this implementation run is explicitly prohibited from shipping itself or running another full workflow; planning, quality-stage, pull-request-open, shipping-overhead, and merge-continuation targets therefore lack three post-cutover representative observations.
+    Next step: After user review and rollout, observe at least one tiny/local, one normal, and one concurrency/cross-cutting workflow; record controlled time separately from external wait and compare each phase to its target.
+    Notes: This is the only intentionally deferred acceptance measurement; it does not authorize weakening functional gates. Known optimization candidate if targets are missed: the per-event run-record read in runner.go `consume` used for cooperative cancellation detection.
+
+- Issue 2026-07-13 dispatch-host-yield-descendant-proof: Dispatch cannot control chat-host yielding or universally prove provider-native descendant terminality
+    Priority: Critical. Area: agent dispatch host integration and provider lineage
+    Description: Synchronous dispatch now separates progress/results, excludes concurrent resume, preserves recovery/history, reconciles owned processes, supports cancellation, and exposes factual activity; however a chat host may still yield the terminal command without a completion callback, and providers do not uniformly expose descendant lineage sufficient to prove every native child terminal.
+    Next step: Add host-native completion wake-up only when the host offers a supported callback/tool boundary, and extend lineage claims provider-by-provider from authoritative events; do not infer terminality or poll inspect.
+    Notes: The Claude background-wait ceiling is already fixed and is explicitly excluded.
+
 - Issue 2026-07-10 antigravity-malformed-native-aborts-all-sync: A malformed native Antigravity settings.json fails the entire multi-client sync
     Priority: Low. Area: internal/sync/antigravity.go (readAntigravitySettings/mergeAntigravitySettings) + sync.go step ordering
     Description: WriteAntigravitySettings fails loud with no data loss on malformed/non-object/shape-conflict native settings.json, but the error bubbles up as a hard sync step, so one odd native value blocks generation for Claude/Codex/VS Code too. Overlay-only merge plus empty-file tolerance shrank the failure surface, but the blast radius is unchanged.

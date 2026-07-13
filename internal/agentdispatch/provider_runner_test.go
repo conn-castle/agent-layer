@@ -221,9 +221,12 @@ func TestRunnerBuffersOnlyCompletedAnswer(t *testing.T) {
 		Structured: true,
 	}, []byte("prompt"), incompleteRun, root, nil, func(string) error { return nil })
 	requireDispatchExitCode(t, err, ExitTargetFailure)
-	answer, readErr := os.ReadFile(incompleteRun.Record.AnswerPath)
-	if readErr != nil || string(answer) != "partial" {
-		t.Fatalf("private answer evidence = %q, %v", answer, readErr)
+	if _, readErr := os.Stat(incompleteRun.Record.AnswerPath); !os.IsNotExist(readErr) {
+		t.Fatalf("incomplete turn published a terminal answer: %v", readErr)
+	}
+	raw, readErr := os.ReadFile(incompleteRun.Record.StdoutPath)
+	if readErr != nil || !bytes.Contains(raw, []byte("partial")) {
+		t.Fatalf("raw progress evidence = %q, %v", raw, readErr)
 	}
 }
 

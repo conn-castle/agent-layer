@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,6 +48,41 @@ func TestOptionsExposeOnlyV013Capabilities(t *testing.T) {
 	if !bytes.Contains(raw, []byte(`"capabilities"`)) {
 		t.Fatalf("v0.13 capabilities absent: %s", raw)
 	}
+}
+
+func TestOptionsReportExactUnsupportedInstalledVersion(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	binary := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\necho 9.9.9\n"), 0o700); err != nil { // #nosec G306 -- test provider must be executable.
+		t.Fatal(err)
+	}
+	options, err := BuildOptions(OptionsRequest{
+		Root: root,
+		Env:  []string{},
+		LookPath: func(name string) (string, error) {
+			if name == "claude" {
+				return binary, nil
+			}
+			return "", exec.ErrNotFound
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildOptions: %v", err)
+	}
+	for _, target := range options.Targets {
+		if target.Agent != AgentClaude {
+			continue
+		}
+		if !target.Installed || target.InstalledVersion != "9.9.9" {
+			t.Fatalf("options hid the exact installed version: %#v", target)
+		}
+		want := "unsupported provider version; install " + supportedProviderVersions[AgentClaude]
+		if target.Capabilities.Fresh.Supported || target.Capabilities.Fresh.Reason != want {
+			t.Fatalf("fresh capability = %#v", target.Capabilities.Fresh)
+		}
+		return
+	}
+	t.Fatal("claude target missing from options")
 }
 
 func TestTargetResolutionEnforcesEligibility(t *testing.T) {

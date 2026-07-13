@@ -102,7 +102,7 @@ func TestDispatchSessionRetentionPrunesOnlyExpiredInactiveMappings(t *testing.T)
 	if err := os.MkdirAll(runDir, 0o700); err != nil {
 		t.Fatalf("create active run: %v", err)
 	}
-	if err := writeJSONAtomic(filepath.Join(runDir, dispatchRunFile), RunRecord{ID: runtimeSessionID, State: dispatchStateRunning, PID: os.Getpid()}); err != nil {
+	if err := writeJSONAtomic(filepath.Join(runDir, dispatchRunFile), RunRecord{ID: runtimeSessionID, State: dispatchStateRunning, RecoveryState: recoveryAcceptanceUnknown, PID: os.Getpid(), ProcessStartIdentity: processStartIdentity(os.Getpid())}); err != nil {
 		t.Fatalf("write active run: %v", err)
 	}
 	if err := pruneExpiredSessions(root, now); err != nil {
@@ -147,7 +147,10 @@ func TestListAndInspectExposeCurrentStateWithoutMutation(t *testing.T) {
 	if err := persistSession(root, session); err != nil {
 		t.Fatalf("persist: %v", err)
 	}
-	run.Record.State = "failed"
+	now := time.Now().UTC()
+	run.Record.State = dispatchStateFailed
+	run.Record.RecoveryState = recoveryNotResumable
+	run.Record.CompletedAt = &now
 	run.Record.NotResumable = true
 	run.Record.TerminalReason = "provider failure"
 	run.Record.ProviderSessionID = runtimeSessionID
