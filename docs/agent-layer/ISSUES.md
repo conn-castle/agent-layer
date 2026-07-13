@@ -27,6 +27,11 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
+- Issue 2026-07-12 precommit-go-format-hook-never-matches: The go-format pre-commit hook never runs because its files regex cannot match
+    Priority: Medium. Area: .pre-commit-config.yaml (go-format hook)
+    Description: The hook's `files: \\.go$` is a plain YAML scalar, so the regex is a literal backslash followed by ".go" and matches no real path; commits touching only .go files show "(no files to check) Skipped" and gofmt/goimports never run at commit time (observed on commit ff31eba with six staged .go files). Formatting is still enforced by `make fmt-check` in `make dev`/CI, so drift surfaces late instead of at commit.
+    Next step: Change the pattern to `\.go$` and confirm the hook fires on a .go-only commit.
+
 - Issue 2026-07-12 dispatch-terminal-before-descendants: Dispatch can report terminal failure while provider descendants remain active
     Priority: Critical. Area: al dispatch provider lifecycle and completion signaling
     Description: In session 019f540c, the Claude reviewer dispatch was reported failed without its artifact while Claude-native children continued, synthesized, wrote the required report 87 seconds later, and completed two seconds before an unnecessary replacement started.
