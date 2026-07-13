@@ -372,6 +372,14 @@ func TestPruneDroppedVersionArtifacts_RemoveSidebarError(t *testing.T) {
 	}
 }
 
+func TestDocSlugStopsAtWhitespaceDelimitedFrontMatterFence(t *testing.T) {
+	data := []byte("---\ntitle: Guide\n--- \nslug: body-only-value\n")
+
+	if got := docSlug("guide.mdx", data); got != "guide" {
+		t.Fatalf("docSlug read body slug after front matter: got %q want %q", got, "guide")
+	}
+}
+
 func TestPruneDroppedVersionArtifacts_RecordsRedirectsBeforeDeleting(t *testing.T) {
 	repo := t.TempDir()
 	latestDocs := filepath.Join(repo, "docs", "nested")

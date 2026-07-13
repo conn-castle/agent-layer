@@ -183,13 +183,13 @@ require_command gh
 require_command git
 require_command jq
 
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
 state_dir="$(dirname "$state_file")"
 mkdir -p "$state_dir"
 state_dir="$(cd "$state_dir" && pwd -P)"
 state_file="$state_dir/$(basename "$state_file")"
-
-repo_root="$(git rev-parse --show-toplevel)"
-cd "$repo_root"
 
 if [[ -f "$state_file" ]] && ! jq -e 'type == "object"' "$state_file" >/dev/null; then
   printf 'monitor-pr: invalid JSON state file: %s\n' "$state_file" >&2
@@ -456,9 +456,12 @@ while true; do
   pending_statuses_json="$(jq -c '[.[] | select(.result == "pending")]' <<<"$statuses_json")"
   failed_count="$(jq 'length' <<<"$failed_statuses_json")"
   pending_count="$(jq 'length' <<<"$pending_statuses_json")"
+  status_count="$(jq 'length' <<<"$statuses_json")"
   prior_feedback_fingerprint="$(previous_feedback_fingerprint)"
   feedback_changed="false"
-  if [[ "$feedback_count" -gt 0 && "$feedback_fingerprint" != "$prior_feedback_fingerprint" ]]; then
+  if [[ "$unresolved_feedback_count" -gt 0 ]]; then
+    feedback_changed="true"
+  elif [[ "$feedback_count" -gt 0 && "$feedback_fingerprint" != "$prior_feedback_fingerprint" ]]; then
     feedback_changed="true"
   fi
 
@@ -471,14 +474,14 @@ while true; do
   fi
 
   if [[ "$feedback_changed" == "true" ]]; then
-    emit_and_exit "feedback_changed" "External PR feedback changed since the last observation."
+    emit_and_exit "feedback_changed" "External PR feedback changed or remains unaddressed."
   fi
 
   if [[ "$failed_count" -gt 0 ]]; then
     emit_and_exit "ci_failed" "One or more PR checks failed."
   fi
 
-  if [[ "$pending_count" -eq 0 && "$minimum_ready_elapsed" == "true" && "$is_draft" == "false" ]]; then
+  if [[ "$status_count" -gt 0 && "$pending_count" -eq 0 && "$minimum_ready_elapsed" == "true" && "$is_draft" == "false" ]]; then
     emit_and_exit "ready" "Checks are terminal and the minimum ready window elapsed."
   fi
 

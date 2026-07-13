@@ -1003,7 +1003,7 @@ func frontMatterSlug(data []byte) (string, bool) {
 
 	lines := strings.Split(text, "\n")
 	for _, line := range lines[1:] {
-		if line == "---" {
+		if strings.TrimSpace(line) == "---" {
 			return "", false
 		}
 		key, value, ok := strings.Cut(line, ":")
