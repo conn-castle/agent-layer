@@ -332,6 +332,14 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 	if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
 		return err
 	}
+	// A proven pre-start failure means the provider never created a
+	// conversation; do not leave a pre-persisted durable mapping (fresh
+	// Claude runs) advertising a session that does not exist.
+	if request.Mode == dispatchModeFresh && request.Run.Record.RecoveryState == recoveryRetrySafe {
+		if err := downgradeUnstartedSession(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
+			return err
+		}
+	}
 	return cause
 }
 

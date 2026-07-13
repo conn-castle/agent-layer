@@ -83,6 +83,45 @@ func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) 
 	}
 }
 
+func TestPreStartFailureDowngradesUnstartedDurableMapping(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentClaude, supportedProviderVersions[AgentClaude], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+	session.ProviderSessionID = runtimeSessionID
+	session.State = sessionStateDurable
+	if err := persistSession(root, session); err != nil {
+		t.Fatalf("persist durable mapping: %v", err)
+	}
+	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentClaude)}
+	cause := &preStartFailure{err: exitError(ExitTargetFailure, "provider never started")}
+	if err := finishDispatchFailure(dispatchExecution{Root: root, Project: project, Run: run, Session: session, Mode: dispatchModeFresh}, cause); err == nil {
+		t.Fatal("finishDispatchFailure hid the cause")
+	}
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatalf("pre-start failure lost its history mapping: %v", err)
+	}
+	if retained.State == sessionStateDurable || retained.ProviderSessionID != "" {
+		t.Fatalf("mapping still advertises an uncreated provider session: %#v", retained)
+	}
+	if retained.RunID != run.Record.ID {
+		t.Fatalf("mapping lost run history: %#v", retained)
+	}
+	record, err := loadRunRecord(root, run.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.State != dispatchStateFailed || record.RecoveryState != recoveryRetrySafe {
+		t.Fatalf("pre-start failure record = %#v", record)
+	}
+}
+
 func TestDispatchInputAndEnvironmentContracts(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	project, stderr, env, depth, err := loadDispatchProject(root, nil, []string{clients.EnvDispatchActive + "=2"})

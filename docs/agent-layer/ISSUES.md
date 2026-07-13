@@ -43,7 +43,7 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Medium. Area: full-workflow rollout evidence
     Description: The redesign implementation can be verified locally with fixtures, race tests, and repository checks, but this implementation run is explicitly prohibited from shipping itself or running another full workflow; planning, quality-stage, pull-request-open, shipping-overhead, and merge-continuation targets therefore lack three post-cutover representative observations.
     Next step: After user review and rollout, observe at least one tiny/local, one normal, and one concurrency/cross-cutting workflow; record controlled time separately from external wait and compare each phase to its target.
-    Notes: This is the only intentionally deferred acceptance measurement; it does not authorize weakening functional gates.
+    Notes: This is the only intentionally deferred acceptance measurement; it does not authorize weakening functional gates. Known optimization candidate if targets are missed: the per-event run-record read in runner.go `consume` used for cooperative cancellation detection.
 
 - Issue 2026-07-13 dispatch-host-yield-descendant-proof: Dispatch cannot control chat-host yielding or universally prove provider-native descendant terminality
     Priority: Critical. Area: agent dispatch host integration and provider lineage

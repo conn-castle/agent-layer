@@ -292,6 +292,35 @@ func claimConversation(root string, name string, runID string) (Session, error) 
 	return claimed, err
 }
 
+// downgradeUnstartedSession clears durable provider identity from the mapping
+// of a fresh run that provably failed before the provider started, so list
+// and resume stop advertising a conversation the provider never created. The
+// mapping itself is kept for run history.
+func downgradeUnstartedSession(root string, name string, runID string) error {
+	return withSessionLock(root, name, func() error {
+		path, err := sessionPath(root, name)
+		if err != nil {
+			return err
+		}
+		var session Session
+		if err := readJSON(path, &session); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return wrapExitError(ExitConfig, "read dispatch mapping for pre-start downgrade", err)
+		}
+		if session.RunID != runID || session.State != sessionStateDurable {
+			return nil
+		}
+		session.ProviderSessionID = ""
+		session.State = "pending"
+		if err := writeJSONAtomic(path, session); err != nil {
+			return wrapExitError(ExitConfig, "downgrade unstarted dispatch mapping", err)
+		}
+		return nil
+	})
+}
+
 func releaseConversation(root string, name string, runID string) error {
 	return withSessionLock(root, name, func() error {
 		path, err := sessionPath(root, name)

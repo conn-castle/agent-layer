@@ -89,13 +89,10 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 		return nil, exitError(ExitConfig, err.Error())
 	}
 	caller, callerKnown := knownCallerFromEnv(env)
+	// Options must report the exact installed version even when it is
+	// unsupported, so it reads raw provider versions instead of the
+	// capability cache, which stores only supported versions.
 	versionLookup := req.VersionLookup
-	if versionLookup == nil {
-		versionLookup = func(path string, agent string) (string, error) {
-			_, version, lookupErr := compatibleTargetVersionCached(root, path, targetMeta{Name: agent}, nil)
-			return version, lookupErr
-		}
-	}
 	response := &OptionsResponse{Caller: CallerInfo{Known: callerKnown, Agent: caller}, Random: RandomInfo{Pool: []string{}, ExcludesCaller: callerKnown}}
 	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, agentoptions.DiscoveryRequest{Env: env, LookPath: lookPath, Live: true}, versionLookup)
 	for _, target := range response.Targets {
