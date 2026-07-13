@@ -14,9 +14,7 @@ not open a PR or run an unrelated full lane.
 ## Inputs and artifact
 
 Require exact plan, task, and context artifact paths plus `implementer`,
-`code_reviewer`, and `fixer` dispatch roles. Do not infer them. Require the
-`code_reviewer` provider to differ from both `implementer` and the root session;
-reject a target that does not satisfy this diversity. Write
+`code_reviewer`, and `fixer` dispatch roles. Do not infer them. Write
 `.agent-layer/tmp/fully-implement-plan.<run-id>.report.md`.
 
 Dispatch external roles through `/agent-dispatch`. Treat the supplied artifacts

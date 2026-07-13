@@ -15,9 +15,7 @@ checkpoints.
 
 - the user's requested work
 - `implementer`: one dispatch target for the implementation leaf
-- `code_reviewer`: one semantic code-review target whose provider differs from
-  both `implementer` and the root session; reject a target that does not satisfy
-  this required diversity
+- `code_reviewer`: one semantic code-review dispatch target
 - `fixer`: one dispatch target for bounded repair leaves
 - `plan_reviewers`: exactly three dispatch target specifications
 

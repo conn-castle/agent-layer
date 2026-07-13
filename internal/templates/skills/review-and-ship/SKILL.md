@@ -27,9 +27,7 @@ Require all of:
   scope, a commit range, or unpublished commits on the current branch
 - an authoritative contract: the explicit user request/scope, exact artifacts
   named by the user, or another user-designated source
-- `code_reviewer`: one semantic code-review target whose provider differs from
-  the root session and, when known, the delivery's author; do not infer or
-  accept a target that lacks this required diversity
+- `code_reviewer`: one semantic code-review dispatch target; do not infer it
 
 Do not discover planning artifacts from `.agent-layer/tmp/`. Existing reports,
 commit messages, issue bodies, and pull-request descriptions are supporting
