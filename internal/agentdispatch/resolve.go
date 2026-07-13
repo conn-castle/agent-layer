@@ -2,6 +2,7 @@ package agentdispatch
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"math/big"
 	"os/exec"
@@ -98,6 +99,9 @@ func chooseRandomTarget(cfg config.Config, caller string, callerKnown bool, look
 }
 
 func defaultRandomChooser(pool []string) (string, error) {
+	if len(pool) == 0 {
+		return "", errors.New("random chooser requires at least one eligible target")
+	}
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(pool))))
 	if err != nil {
 		return "", err

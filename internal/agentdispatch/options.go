@@ -3,17 +3,15 @@ package agentdispatch
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/agentoptions"
 	"github.com/conn-castle/agent-layer/internal/config"
-	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
-// OptionsResponse is the stable v1 machine-readable Agent Dispatch options shape.
+// OptionsResponse is the stable v0.13 Agent Dispatch capability contract.
 type OptionsResponse struct {
 	Caller  CallerInfo     `json:"caller"`
 	Random  RandomInfo     `json:"random"`
@@ -26,34 +24,44 @@ type CallerInfo struct {
 	Agent string `json:"agent,omitempty"`
 }
 
-// RandomInfo describes the current random-selection pool.
+// RandomInfo describes the current fresh-dispatch random pool.
 type RandomInfo struct {
 	Pool           []string `json:"pool"`
 	ExcludesCaller bool     `json:"excludes_caller"`
 	Empty          bool     `json:"empty"`
 }
 
-// TargetOption describes one dispatch target in the options response.
+// CapabilityOption reports a distinct operation capability. Capabilities are
+// never collapsed into a misleading single dispatch-capable boolean.
+type CapabilityOption struct {
+	Supported bool   `json:"supported"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+// TargetCapabilities reports fresh execution, durable continuation, and
+// factual inspection separately.
+type TargetCapabilities struct {
+	Fresh   CapabilityOption `json:"fresh"`
+	Resume  CapabilityOption `json:"resume"`
+	Inspect CapabilityOption `json:"inspect"`
+}
+
+// TargetOption describes one target's installed/configured capability facts.
 type TargetOption struct {
-	Agent                 string          `json:"agent"`
-	Enabled               bool            `json:"enabled"`
-	Installed             bool            `json:"installed"`
-	DispatchCapable       bool            `json:"dispatch_capable"`
-	RandomEligible        bool            `json:"random_eligible"`
-	RandomExclusionReason *string         `json:"random_exclusion_reason"`
-	Streaming             StreamingOption `json:"streaming"`
-	Model                 FieldOption     `json:"model"`
-	ReasoningEffort       FieldOption     `json:"reasoning_effort"`
-	UnavailableReasons    []string        `json:"unavailable_reasons"`
+	Agent                 string             `json:"agent"`
+	Enabled               bool               `json:"enabled"`
+	Installed             bool               `json:"installed"`
+	InstalledVersion      string             `json:"installed_version,omitempty"`
+	SupportedVersion      string             `json:"supported_version"`
+	Capabilities          TargetCapabilities `json:"capabilities"`
+	RandomEligible        bool               `json:"random_eligible"`
+	RandomExclusionReason *string            `json:"random_exclusion_reason,omitempty"`
+	Model                 FieldOption        `json:"model"`
+	ReasoningEffort       FieldOption        `json:"reasoning_effort"`
+	UnavailableReasons    []string           `json:"unavailable_reasons"`
 }
 
-// StreamingOption describes target output streaming capability.
-type StreamingOption struct {
-	AnswerText string `json:"answer_text"`
-	Progress   string `json:"progress"`
-}
-
-// FieldOption describes dispatch override metadata for one target field.
+// FieldOption describes per-run override metadata.
 type FieldOption struct {
 	OverrideSupported bool     `json:"override_supported"`
 	Configured        string   `json:"configured"`
@@ -61,11 +69,12 @@ type FieldOption struct {
 	AllowCustom       bool     `json:"allow_custom"`
 }
 
-// BuildOptions loads strict project config and builds the v1 options response.
+// BuildOptions loads strict project config and reports each operation's exact
+// availability for the installed provider version.
 func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 	root := strings.TrimSpace(req.Root)
 	if root == "" {
-		return nil, exitError(ExitConfig, messages.ConfigRootRequired)
+		return nil, exitError(ExitConfig, "repository root is required")
 	}
 	env := req.Env
 	if env == nil {
@@ -80,34 +89,20 @@ func BuildOptions(req OptionsRequest) (*OptionsResponse, error) {
 		return nil, exitError(ExitConfig, err.Error())
 	}
 	caller, callerKnown := knownCallerFromEnv(env)
-	response := &OptionsResponse{
-		Caller: CallerInfo{Known: callerKnown, Agent: caller},
-	}
-	// Initialize Pool to an empty slice (not nil) so JSON consumers always
-	// see `"pool": []` instead of `"pool": null` when no targets are
-	// eligible. The documented JSON shape promises an array.
-	response.Random.Pool = []string{}
-	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, agentoptions.DiscoveryRequest{
-		Env:      env,
-		LookPath: lookPath,
-		Live:     true,
-	})
+	response := &OptionsResponse{Caller: CallerInfo{Known: callerKnown, Agent: caller}, Random: RandomInfo{Pool: []string{}, ExcludesCaller: callerKnown}}
+	response.Targets = buildTargetOptions(project.Config, caller, callerKnown, agentoptions.DiscoveryRequest{Env: env, LookPath: lookPath, Live: true}, req.VersionLookup)
 	for _, target := range response.Targets {
 		if target.RandomEligible {
 			response.Random.Pool = append(response.Random.Pool, target.Agent)
 		}
 	}
-	response.Random.ExcludesCaller = callerKnown
 	response.Random.Empty = len(response.Random.Pool) == 0
 	return response, nil
 }
 
-// WriteOptions renders options as JSON or human-readable text.
+// WriteOptions renders stable JSON or concise human-readable capability facts.
 func WriteOptions(req OptionsRequest) error {
-	stdout := req.Stdout
-	if stdout == nil {
-		stdout = io.Discard
-	}
+	stdout := writerOrDiscard(req.Stdout)
 	options, err := BuildOptions(req)
 	if err != nil {
 		return err
@@ -117,153 +112,105 @@ func WriteOptions(req OptionsRequest) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(options)
 	}
-	return writeOptionsText(stdout, options)
+	if options.Caller.Known {
+		if _, err := fmt.Fprintf(stdout, "Agent Dispatch options (caller: %s)\n", options.Caller.Agent); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintln(stdout, "Agent Dispatch options (caller: unknown)"); err != nil {
+		return err
+	}
+	for _, target := range options.Targets {
+		if _, err := fmt.Fprintf(stdout, "- %s enabled=%t installed=%t version=%s fresh=%t resume=%t inspect=%t\n", target.Agent, target.Enabled, target.Installed, displayVersion(target.InstalledVersion), target.Capabilities.Fresh.Supported, target.Capabilities.Resume.Supported, target.Capabilities.Inspect.Supported); err != nil {
+			return err
+		}
+		if target.Capabilities.Fresh.Reason != "" {
+			if _, err := fmt.Fprintf(stdout, "  fresh: %s\n", target.Capabilities.Fresh.Reason); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
-func buildTargetOptions(
-	cfg config.Config,
-	caller string,
-	callerKnown bool,
-	discovery agentoptions.DiscoveryRequest,
-) []TargetOption {
+func displayVersion(value string) string {
+	if value == "" {
+		return statusUnknown
+	}
+	return value
+}
+
+func buildTargetOptions(cfg config.Config, caller string, callerKnown bool, discovery agentoptions.DiscoveryRequest, lookups ...func(string, string) (string, error)) []TargetOption {
+	var lookup func(string, string) (string, error)
+	if len(lookups) > 0 {
+		lookup = lookups[0]
+	}
 	targets := targetRegistry()
-	out := make([]TargetOption, 0, len(targets))
-	for _, meta := range targets {
-		_, installedErr := discovery.LookPath(meta.Binary)
+	result := make([]TargetOption, 0, len(targets))
+	for _, target := range targets {
+		_, installedErr := discovery.LookPath(target.Binary)
 		installed := installedErr == nil
-		enabled := targetEnabled(cfg, meta.Name)
-		reasons := unavailableReasons(enabled, installed)
-		dispatchCapable := enabled && installed
-		randomEligible := dispatchCapable
-		var exclusion *string
-		if !enabled {
-			exclusion = stringPtr("disabled")
-			randomEligible = false
-		} else if !installed {
-			exclusion = stringPtr("uninstalled")
-			randomEligible = false
+		enabled := targetEnabled(cfg, target.Name)
+		version := ""
+		versionOK := false
+		if installed {
+			path, _ := discovery.LookPath(target.Binary)
+			readVersion := lookup
+			if readVersion == nil {
+				readVersion = providerVersion
+			}
+			version, installedErr = readVersion(path, target.Name)
+			versionOK = installedErr == nil && version == supportedProviderVersions[target.Name]
 		}
-		if randomEligible && callerKnown && meta.Name == caller {
-			exclusion = stringPtr("caller")
-			randomEligible = false
+		fresh := CapabilityOption{Supported: enabled && installed && versionOK}
+		if !fresh.Supported {
+			switch {
+			case !enabled:
+				fresh.Reason = "disabled in config"
+			case !installed:
+				fresh.Reason = "provider binary not found"
+			case installedErr != nil:
+				fresh.Reason = "provider version could not be verified"
+			default:
+				fresh.Reason = "unsupported provider version; install " + supportedProviderVersions[target.Name]
+			}
+		}
+		resume := fresh
+		inspect := CapabilityOption{Supported: true}
+		randomEligible := fresh.Supported && (!callerKnown || target.Name != caller)
+		var exclusion *string
+		if !randomEligible {
+			reason := fresh.Reason
+			if callerKnown && target.Name == caller {
+				reason = "caller"
+			}
+			exclusion = &reason
+		}
+		reasons := []string{}
+		if !fresh.Supported {
+			reasons = append(reasons, fresh.Reason)
 		}
 		fieldDiscovery := discovery
-		if !dispatchCapable {
+		if !fresh.Supported {
 			fieldDiscovery.Live = false
 		}
-		out = append(out, TargetOption{
-			Agent:                 meta.Name,
+		result = append(result, TargetOption{
+			Agent:                 target.Name,
 			Enabled:               enabled,
 			Installed:             installed,
-			DispatchCapable:       dispatchCapable,
+			InstalledVersion:      version,
+			SupportedVersion:      supportedProviderVersions[target.Name],
+			Capabilities:          TargetCapabilities{Fresh: fresh, Resume: resume, Inspect: inspect},
 			RandomEligible:        randomEligible,
 			RandomExclusionReason: exclusion,
-			Streaming: StreamingOption{
-				AnswerText: meta.AnswerText,
-				Progress:   meta.Progress,
-			},
-			Model:              fieldOptionWithDiscovery(cfg, meta, agentoptions.KindModel, fieldDiscovery),
-			ReasoningEffort:    fieldOptionWithDiscovery(cfg, meta, agentoptions.KindReasoningEffort, fieldDiscovery),
-			UnavailableReasons: reasons,
+			Model:                 fieldOptionWithDiscovery(cfg, target, agentoptions.KindModel, fieldDiscovery),
+			ReasoningEffort:       fieldOptionWithDiscovery(cfg, target, agentoptions.KindReasoningEffort, fieldDiscovery),
+			UnavailableReasons:    reasons,
 		})
 	}
-	return out
-}
-
-func unavailableReasons(enabled bool, installed bool) []string {
-	if !enabled {
-		return []string{"disabled"}
-	}
-	if !installed {
-		return []string{"binary_not_found"}
-	}
-	return []string{}
+	return result
 }
 
 func fieldOptionWithDiscovery(cfg config.Config, target targetMeta, kind agentoptions.Kind, discovery agentoptions.DiscoveryRequest) FieldOption {
 	resolved := agentoptions.Resolve(cfg, target.Name, kind, discovery)
-	return FieldOption{
-		OverrideSupported: resolved.OverrideSupported,
-		Configured:        resolved.Configured,
-		Suggestions:       resolved.Suggestions,
-		AllowCustom:       resolved.AllowCustom,
-	}
-}
-
-func writeOptionsText(stdout io.Writer, options *OptionsResponse) error {
-	if _, err := fmt.Fprintln(stdout, messages.DispatchOptionsHeader); err != nil {
-		return err
-	}
-	if options.Caller.Known {
-		if _, err := fmt.Fprintf(stdout, messages.DispatchOptionsCallerKnownFmt+"\n", options.Caller.Agent); err != nil {
-			return err
-		}
-	} else if _, err := fmt.Fprintln(stdout, messages.DispatchOptionsCallerUnknown); err != nil {
-		return err
-	}
-	pool := strings.Join(options.Random.Pool, ", ")
-	if pool == "" {
-		pool = messages.DispatchOptionsNoRandomTargets
-	}
-	if _, err := fmt.Fprintf(stdout, messages.DispatchOptionsRandomPoolFmt+"\n", pool); err != nil {
-		return err
-	}
-	for _, target := range options.Targets {
-		if _, err := fmt.Fprintf(stdout, messages.DispatchOptionsTargetFmt+"\n", target.Agent, target.Enabled, target.Installed, target.DispatchCapable); err != nil {
-			return err
-		}
-		if err := writeTargetDetails(stdout, target); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// writeTargetDetails emits the indented per-target detail block required by
-// the spec § CLI: random eligibility plus exclusion reason, streaming
-// capability, model + reasoning_effort metadata (configured value, override
-// support, allow_custom, suggestions), and unavailable_reasons.
-func writeTargetDetails(stdout io.Writer, target TargetOption) error {
-	exclusion := ""
-	if target.RandomExclusionReason != nil {
-		exclusion = ", reason: " + *target.RandomExclusionReason
-	}
-	if _, err := fmt.Fprintf(stdout, "  random_eligible: %t%s\n", target.RandomEligible, exclusion); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(stdout, "  streaming: answer_text=%s progress=%s\n", target.Streaming.AnswerText, target.Streaming.Progress); err != nil {
-		return err
-	}
-	if err := writeFieldOption(stdout, "model", target.Model); err != nil {
-		return err
-	}
-	if err := writeFieldOption(stdout, "reasoning_effort", target.ReasoningEffort); err != nil {
-		return err
-	}
-	reasons := strings.Join(target.UnavailableReasons, ", ")
-	if reasons == "" {
-		reasons = messages.DispatchOptionsNoUnavailableReasons
-	}
-	if _, err := fmt.Fprintf(stdout, "  unavailable_reasons: [%s]\n", reasons); err != nil {
-		return err
-	}
-	return nil
-}
-
-func writeFieldOption(stdout io.Writer, label string, field FieldOption) error {
-	configured := field.Configured
-	if configured == "" {
-		configured = "none"
-	}
-	suggestions := strings.Join(field.Suggestions, ", ")
-	_, err := fmt.Fprintf(
-		stdout,
-		"  %s: configured=%s override=%t allow_custom=%t suggestions=[%s]\n",
-		label, configured, field.OverrideSupported, field.AllowCustom, suggestions,
-	)
-	return err
-}
-
-func stringPtr(value string) *string {
-	return &value
+	return FieldOption{OverrideSupported: resolved.OverrideSupported, Configured: resolved.Configured, Suggestions: resolved.Suggestions, AllowCustom: resolved.AllowCustom}
 }

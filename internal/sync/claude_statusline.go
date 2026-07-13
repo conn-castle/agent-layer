@@ -37,11 +37,11 @@ func legacyClaudeStatuslineSourcePath(root string) string {
 	return filepath.Join(root, ".agent-layer", legacyClaudeStatuslineSourceName)
 }
 
-// WriteClaudeStatusline projects the editable .agent-layer/claude-statusline.sh
+// writeClaudeStatusline projects the editable .agent-layer/claude-statusline.sh
 // source into .claude/claude-statusline.sh when the status line is explicitly
 // enabled. When disabled or absent, it removes any previously generated copy so
 // a stale script does not linger.
-func WriteClaudeStatusline(sys System, root string, project *config.ProjectConfig) error {
+func writeClaudeStatusline(sys System, root string, project *config.ProjectConfig) error {
 	dest := claudeStatuslinePath(root)
 	if !config.ClaudeStatuslineEnabled(project.Config.Agents.Claude) {
 		for _, stalePath := range []string{dest, legacyClaudeStatuslinePath(root)} {

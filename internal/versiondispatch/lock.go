@@ -1,4 +1,4 @@
-package dispatch
+package versiondispatch
 
 import (
 	"errors"
@@ -16,14 +16,11 @@ type fileLock struct {
 	sys  System
 }
 
-var (
-	lockWaitTimeout = 30 * time.Second
-	lockPollEvery   = 100 * time.Millisecond
-)
+const lockPollEvery = 100 * time.Millisecond
 
 // withFileLock acquires a lock for path, runs fn, and releases the lock.
-func withFileLock(sys System, path string, fn func() error) error {
-	lock, err := acquireFileLock(sys, path)
+func withFileLock(sys System, path string, waitTimeout time.Duration, fn func() error) error {
+	lock, err := acquireFileLock(sys, path, waitTimeout)
 	if err != nil {
 		return err
 	}
@@ -34,12 +31,12 @@ func withFileLock(sys System, path string, fn func() error) error {
 }
 
 // acquireFileLock opens or creates path and acquires an exclusive lock.
-func acquireFileLock(sys System, path string) (*fileLock, error) {
+func acquireFileLock(sys System, path string, waitTimeout time.Duration) (*fileLock, error) {
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644) // #nosec G304,G302 -- lock file path is built from the dispatch cache layout (binPath+".lock"), not user input; 0o644 matches the cached binary perms so the file is visible to debug tooling but only writable by the owner.
 	if err != nil {
 		return nil, fmt.Errorf(messages.DispatchOpenLockFmt, path, err)
 	}
-	if err := lockFile(sys, file); err != nil {
+	if err := lockFile(sys, file, waitTimeout); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf(messages.DispatchLockFmt, path, err)
 	}
@@ -59,8 +56,8 @@ func (l *fileLock) release() error {
 }
 
 // lockFile acquires an exclusive advisory lock on the file.
-func lockFile(sys System, file *os.File) error {
-	deadline := time.Now().Add(lockWaitTimeout)
+func lockFile(sys System, file *os.File, waitTimeout time.Duration) error {
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		err := sys.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // Unix file descriptors are small non-negative ints; cast is safe on all supported platforms
 		if err == nil {
@@ -70,7 +67,7 @@ func lockFile(sys System, file *os.File) error {
 			return err
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf(messages.DispatchLockTimeoutFmt, lockWaitTimeout)
+			return fmt.Errorf(messages.DispatchLockTimeoutFmt, waitTimeout)
 		}
 		sys.Sleep(lockPollEvery)
 	}

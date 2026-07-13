@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/conn-castle/agent-layer/internal/messages"
 )
 
 func TestRealSystem_Stat(t *testing.T) {
@@ -38,6 +40,23 @@ func TestRunWithSystemFS_NilSystem(t *testing.T) {
 	_, err := RunWithSystemFS(nil, os.DirFS("."), ".")
 	if err == nil {
 		t.Fatalf("expected error for nil system")
+	}
+}
+
+func TestRunWithProject_NilSystem(t *testing.T) {
+	_, err := RunWithProject(nil, t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil system")
+	}
+}
+
+func TestRunWithProject_NilProject(t *testing.T) {
+	_, err := RunWithProject(RealSystem{}, t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil project")
+	}
+	if err.Error() != messages.SyncProjectRequired {
+		t.Fatalf("error = %q, want %q", err, messages.SyncProjectRequired)
 	}
 }
 

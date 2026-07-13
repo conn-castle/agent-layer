@@ -38,10 +38,10 @@ func (antigravityRenderer) RenderMCP(serverID string) string {
 	return "mcp(" + serverID + "/)"
 }
 
-// WriteAntigravitySettings patches Agent Layer-managed keys into the user's
+// writeAntigravitySettings patches Agent Layer-managed keys into the user's
 // native .agy/antigravity-cli/settings.json, preserving native state and the
 // file's existing permissions.
-func WriteAntigravitySettings(sys System, root string, project *config.ProjectConfig) error {
+func writeAntigravitySettings(sys System, root string, project *config.ProjectConfig) error {
 	path := filepath.Join(root, ".agy", "antigravity-cli", "settings.json")
 	if err := ensureAntigravityPathRealParentContained(root, path); err != nil {
 		return err
@@ -205,8 +205,8 @@ func buildAntigravitySettings(project *config.ProjectConfig) map[string]any {
 	return settings
 }
 
-// WriteAntigravityMCPConfig generates .agy/antigravity-cli/mcp_config.json.
-func WriteAntigravityMCPConfig(sys System, root string, project *config.ProjectConfig) error {
+// writeAntigravityMCPConfig generates .agy/antigravity-cli/mcp_config.json.
+func writeAntigravityMCPConfig(sys System, root string, project *config.ProjectConfig) error {
 	cfg, err := buildAntigravityMCPConfig(project)
 	if err != nil {
 		return err
@@ -346,8 +346,8 @@ func buildAntigravityMCPConfig(project *config.ProjectConfig) (*antigravityMCPCo
 	return cfg, nil
 }
 
-// CleanAntigravityOutputs removes Agent Layer-managed Antigravity files.
-func CleanAntigravityOutputs(sys System, root string) error {
+// cleanAntigravityOutputs removes Agent Layer-managed Antigravity files.
+func cleanAntigravityOutputs(sys System, root string) error {
 	for _, rel := range []string{
 		filepath.Join(".agy", "antigravity-cli", "mcp_config.json"),
 		filepath.Join(".agy", "config", "mcp_config.json"),

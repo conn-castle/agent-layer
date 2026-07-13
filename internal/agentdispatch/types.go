@@ -89,15 +89,51 @@ type RunOptions struct {
 	LookPath        func(string) (string, error)
 	NewCommand      CommandFactory
 	ChooseRandom    RandomChooser
+	// VersionLookup reads the installed provider version. Production uses the
+	// provider's --version output; tests may inject exact fixture evidence.
+	VersionLookup func(path string, agent string) (string, error)
+}
+
+// ResumeOptions configures one explicit continuation of a durable session.
+type ResumeOptions struct {
+	Root          string
+	Name          string
+	Skill         string
+	PromptArgs    []string
+	Stdin         io.Reader
+	ReadStdin     bool
+	Stdout        io.Writer
+	Stderr        io.Writer
+	Env           []string
+	Quiet         bool
+	LookPath      func(string) (string, error)
+	NewCommand    CommandFactory
+	VersionLookup func(path string, agent string) (string, error)
+}
+
+// InspectionRequest configures factual, read-only dispatch inspection.
+type InspectionRequest struct {
+	Root   string
+	ID     string
+	Stdout io.Writer
+	JSON   bool
+}
+
+// ListRequest configures durable mapping listing.
+type ListRequest struct {
+	Root   string
+	Stdout io.Writer
+	JSON   bool
 }
 
 // OptionsRequest configures an Agent Dispatch options response.
 type OptionsRequest struct {
-	Root     string
-	Env      []string
-	Stdout   io.Writer
-	JSON     bool
-	LookPath func(string) (string, error)
+	Root          string
+	Env           []string
+	Stdout        io.Writer
+	JSON          bool
+	LookPath      func(string) (string, error)
+	VersionLookup func(path string, agent string) (string, error)
 }
 
 // CommandFactory creates a command for a target adapter.

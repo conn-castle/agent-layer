@@ -39,8 +39,8 @@ const codexPartialHeader = `# PARTIALLY GENERATED FILE - MAY CONTAIN SECRETS
 
 `
 
-// WriteCodexConfig patches Agent Layer-owned entries in .codex/config.toml.
-func WriteCodexConfig(sys System, root string, project *config.ProjectConfig) error {
+// writeCodexConfig patches Agent Layer-owned entries in .codex/config.toml.
+func writeCodexConfig(sys System, root string, project *config.ProjectConfig) error {
 	managed, err := buildCodexManagedConfigWithSystem(sys, root, project)
 	if err != nil {
 		return err
@@ -67,8 +67,8 @@ func WriteCodexConfig(sys System, root string, project *config.ProjectConfig) er
 	return nil
 }
 
-// WriteCodexRules generates .codex/rules/default.rules.
-func WriteCodexRules(sys System, root string, project *config.ProjectConfig) error {
+// writeCodexRules generates .codex/rules/default.rules.
+func writeCodexRules(sys System, root string, project *config.ProjectConfig) error {
 	content := buildCodexRules(project)
 	rulesDir := filepath.Join(root, ".codex", "rules")
 	if err := sys.MkdirAll(rulesDir, 0o755); err != nil {

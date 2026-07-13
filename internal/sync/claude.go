@@ -10,8 +10,8 @@ import (
 	"github.com/conn-castle/agent-layer/internal/projection"
 )
 
-// WriteClaudeSettings generates .claude/settings.json.
-func WriteClaudeSettings(sys System, root string, project *config.ProjectConfig) error {
+// writeClaudeSettings generates .claude/settings.json.
+func writeClaudeSettings(sys System, root string, project *config.ProjectConfig) error {
 	settings, err := buildClaudeSettings(root, project)
 	if err != nil {
 		return err
@@ -58,7 +58,7 @@ func buildClaudeSettings(root string, project *config.ProjectConfig) (map[string
 
 	// Wire the status line before merging agent_specific so an explicit
 	// agent_specific.statusLine override wins. The referenced script is produced
-	// by WriteClaudeStatusline before settings are written in the same sync.
+	// by writeClaudeStatusline before settings are written in the same sync.
 	if config.ClaudeStatuslineEnabled(project.Config.Agents.Claude) {
 		settings["statusLine"] = map[string]any{
 			"type":    "command",

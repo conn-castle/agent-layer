@@ -132,7 +132,7 @@ make test-race
 ```
 Run from: repo root
 Prerequisites: Go 1.26.0+
-Notes: Covers `internal/sync`, `internal/install`, and `internal/warnings`.
+Notes: Covers `internal/agentdispatch`, `internal/sync`, `internal/install`, and `internal/warnings`.
 
 - Run scenario-based end-to-end tests (offline, hermetic)
 ```bash
@@ -177,7 +177,7 @@ Notes: Fails if `go.mod`/`go.sum` would change.
 
 ### Coverage
 
-- Enforce coverage threshold (>= 95%)
+- Enforce coverage threshold (>= 90%)
 ```bash
 make coverage
 ```

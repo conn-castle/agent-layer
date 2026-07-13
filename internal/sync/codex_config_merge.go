@@ -149,10 +149,10 @@ func mergeCodexConfig(path string, existing string, managed codexManagedConfig) 
 	return out, nil
 }
 
-// CleanCodexChimeHook removes only Agent Layer-owned Codex chime hooks from
+// cleanCodexChimeHook removes only Agent Layer-owned Codex chime hooks from
 // .codex/config.toml. It is used when Codex is disabled, so the normal Codex
 // config merge path will not run.
-func CleanCodexChimeHook(sys System, root string) error {
+func cleanCodexChimeHook(sys System, root string) error {
 	path, exists, err := existingChimeCleanupTarget(sys, root, ".codex", "config.toml")
 	if err != nil {
 		return err

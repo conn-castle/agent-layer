@@ -12,13 +12,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/conn-castle/agent-layer/internal/config"
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 var installRepairGitignoreBlock = install.RepairGitignoreBlock
-var dispatchPrefetchVersion = dispatch.PrefetchVersion
+var dispatchPrefetchVersion = versiondispatch.PrefetchVersion
 
 func newUpgradeCmd() *cobra.Command {
 	var yes bool

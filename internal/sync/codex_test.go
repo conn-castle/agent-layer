@@ -502,8 +502,8 @@ func TestWriteCodexConfigStatuslineEnabledPreservesSource(t *testing.T) {
 	if err := os.WriteFile(sourcePath, []byte(edited), 0o600); err != nil {
 		t.Fatalf("edit codex statusline source: %v", err)
 	}
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig: %v", err)
 	}
 	preserved, err := os.ReadFile(sourcePath) // #nosec G304 -- test-controlled path.
 	if err != nil {
@@ -523,7 +523,7 @@ func TestWriteCodexConfigStatuslineEnabledPreservesSource(t *testing.T) {
 func TestWriteCodexConfigStatuslineEnabledMissingSourceErrors(t *testing.T) {
 	t.Parallel()
 	enabled := true
-	err := WriteCodexConfig(RealSystem{}, t.TempDir(), &config.ProjectConfig{
+	err := writeCodexConfig(RealSystem{}, t.TempDir(), &config.ProjectConfig{
 		Config: config.Config{
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 			Agents:    config.AgentsConfig{Codex: config.CodexConfig{Statusline: &enabled}},
@@ -979,8 +979,8 @@ func TestWriteCodexConfig(t *testing.T) {
 		},
 		Env: map[string]string{},
 	}
-	if err := WriteCodexConfig(RealSystem{}, root, project); err != nil {
-		t.Fatalf("WriteCodexConfig error: %v", err)
+	if err := writeCodexConfig(RealSystem{}, root, project); err != nil {
+		t.Fatalf("writeCodexConfig error: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".codex", "config.toml")); err != nil {
 		t.Fatalf("expected config.toml: %v", err)
@@ -1002,7 +1002,7 @@ func TestWriteCodexConfigError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
-	if err := WriteCodexConfig(RealSystem{}, file, project); err == nil {
+	if err := writeCodexConfig(RealSystem{}, file, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -1022,7 +1022,7 @@ func TestWriteCodexConfigWriteError(t *testing.T) {
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
-	if err := WriteCodexConfig(RealSystem{}, root, project); err == nil {
+	if err := writeCodexConfig(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -1035,7 +1035,7 @@ func TestWriteCodexRulesError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	project := &config.ProjectConfig{}
-	if err := WriteCodexRules(RealSystem{}, file, project); err == nil {
+	if err := writeCodexRules(RealSystem{}, file, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -1055,7 +1055,7 @@ func TestWriteCodexRulesWriteError(t *testing.T) {
 			Approvals: config.ApprovalsConfig{Mode: config.ApprovalModeNone},
 		},
 	}
-	if err := WriteCodexRules(RealSystem{}, root, project); err == nil {
+	if err := writeCodexRules(RealSystem{}, root, project); err == nil {
 		t.Fatalf("expected error")
 	}
 }

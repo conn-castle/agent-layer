@@ -1,3 +1,0 @@
-{"type":"thread.started"}
-{"type":"turn.started"}
-{"type":"agent_message","message":"Hello from Codex."}

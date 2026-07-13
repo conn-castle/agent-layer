@@ -17,9 +17,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/install"
 	"github.com/conn-castle/agent-layer/internal/update"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 type slowReader struct {
@@ -682,13 +682,13 @@ func TestInitCmd_UpdateWarningSkipped(t *testing.T) {
 		},
 		{
 			name:       "Skip when AL_VERSION is set",
-			envKey:     dispatch.EnvVersionOverride,
+			envKey:     versiondispatch.EnvVersionOverride,
 			envValue:   "1.2.3",
 			shouldCall: false,
 		},
 		{
 			name:       "Skip when AL_NO_NETWORK is set",
-			envKey:     dispatch.EnvNoNetwork,
+			envKey:     versiondispatch.EnvNoNetwork,
 			envValue:   "1",
 			shouldCall: false,
 		},

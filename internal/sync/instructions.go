@@ -12,14 +12,14 @@ import (
 
 const instructionHeader = "<!--\n  GENERATED FILE\n  Source: .agent-layer/instructions/*.md\n  Regenerate: al sync\n-->\n\n"
 
-// WriteInstructionShims generates instruction shims for supported clients.
+// writeInstructionShims generates instruction shims for supported clients.
 // agy (Antigravity), Claude, Codex, Copilot, and other shared-tier clients
 // all read AGENTS.md (per the agentskills.io standard) or their client-
 // specific shim. GEMINI.md is intentionally NOT written: the Gemini CLI was
 // retired in 0.10.2 and agy reads AGENTS.md. The v0.10.2 migration's
 // `f-delete-orphan-gemini-md` op removes any leftover GEMINI.md from
 // pre-0.10.2 repos.
-func WriteInstructionShims(sys System, root string, instructions []config.InstructionFile) error {
+func writeInstructionShims(sys System, root string, instructions []config.InstructionFile) error {
 	if err := writeInstructionFile(sys, filepath.Join(root, "AGENTS.md"), instructions); err != nil {
 		return err
 	}
@@ -68,11 +68,11 @@ func buildInstructionShim(instructions []config.InstructionFile) string {
 	return strings.TrimRight(builder.String(), "\n") + "\n"
 }
 
-// CleanCodexInstructions removes the retired Codex-specific instruction shim.
+// cleanCodexInstructions removes the retired Codex-specific instruction shim.
 // Codex reads root AGENTS.md as project instructions. When CODEX_HOME points at
 // repo-local .codex, .codex/AGENTS.md is loaded as home-level instructions and
 // duplicates the project document.
-func CleanCodexInstructions(sys System, root string) error {
+func cleanCodexInstructions(sys System, root string) error {
 	path := filepath.Join(root, ".codex", "AGENTS.md")
 	isGenerated, err := hasGeneratedMarker(sys, path)
 	if err != nil {

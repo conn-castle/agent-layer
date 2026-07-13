@@ -19,14 +19,21 @@ const MaxStdinPromptBytes = 10 * 1024 * 1024
 // ResolvePrompt returns the caller prompt. Positional args win over piped stdin.
 func ResolvePrompt(args []string, stdin io.Reader, readStdin bool) (string, error) {
 	if len(args) > 0 {
-		return strings.Join(args, " "), nil
+		prompt := strings.Join(args, " ")
+		if len(prompt) > MaxStdinPromptBytes {
+			return "", exitError(ExitUsage, fmt.Sprintf("dispatch prompt is %d bytes; the maximum is %d bytes", len(prompt), MaxStdinPromptBytes))
+		}
+		return prompt, nil
 	}
 	if !readStdin || stdin == nil {
 		return "", nil
 	}
-	data, err := io.ReadAll(io.LimitReader(stdin, MaxStdinPromptBytes))
+	data, err := io.ReadAll(io.LimitReader(stdin, MaxStdinPromptBytes+1))
 	if err != nil {
 		return "", wrapExitError(ExitUsage, "read dispatch prompt from stdin", err)
+	}
+	if len(data) > MaxStdinPromptBytes {
+		return "", exitError(ExitUsage, fmt.Sprintf("dispatch prompt is %d bytes; the maximum is %d bytes", len(data), MaxStdinPromptBytes))
 	}
 	return string(data), nil
 }

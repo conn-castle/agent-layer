@@ -191,7 +191,7 @@ func TestRunWithProject_CleansNotificationsChimeWhenProvidersDisabled(t *testing
 	writeExistingCodexConfig(t, root, codexPartialHeader+codexChimeBlockForTest())
 	enabled := true
 	chimeProject := &config.ProjectConfig{Config: config.Config{Notifications: config.NotificationsConfig{Chime: &enabled}}}
-	if err := WriteAntigravityChimePlugin(RealSystem{}, root, chimeProject); err != nil {
+	if err := writeAntigravityChimePlugin(RealSystem{}, root, chimeProject); err != nil {
 		t.Fatalf("seed Antigravity chime plugin: %v", err)
 	}
 

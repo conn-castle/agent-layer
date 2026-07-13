@@ -50,10 +50,12 @@ const (
 	SyncCodexHeaderPlaceholderUnsupportedFmt        = "codex header %s must be literal or use ${VAR}"
 	SyncCodexAuthorizationPlaceholderUnsupportedFmt = "authorization header must be literal, ${VAR}, or Bearer ${VAR}"
 	SyncSystemRequired                              = "sync system is required"
+	SyncProjectRequired                             = "sync project is required"
 	SyncConfigFSRequired                            = "sync config filesystem is required"
 	SyncFailedReadGitignoreBlockFmt                 = "failed to read gitignore block %s: %w"
 	SyncOpenLockFmt                                 = "failed to open sync lock %s: %w"
 	SyncLockFmt                                     = "failed to lock sync %s: %w"
+	SyncLockTimeoutFmt                              = "timed out after %s waiting for sync lock %s; another sync may still be generating files. Wait for it to finish, then retry"
 	SyncUnlockFmt                                   = "failed to unlock sync %s: %w"
 	SyncCloseLockFmt                                = "failed to close sync lock %s: %w"
 

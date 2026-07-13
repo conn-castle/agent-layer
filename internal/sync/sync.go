@@ -49,7 +49,13 @@ func RunWithSystemFS(sys System, fsys fs.FS, root string) (*Result, error) {
 // RunWithProject regenerates outputs using an already loaded project config.
 // Returns any sync-time warnings and an error if sync failed.
 func RunWithProject(sys System, root string, project *config.ProjectConfig) (*Result, error) {
-	return withProjectSyncLock(root, func() (*Result, error) {
+	if sys == nil {
+		return nil, fmt.Errorf(messages.SyncSystemRequired)
+	}
+	if project == nil {
+		return nil, fmt.Errorf(messages.SyncProjectRequired)
+	}
+	return withProjectSyncLock(sys, root, func() (*Result, error) {
 		return runWithProjectLocked(sys, root, project)
 	})
 }
@@ -59,54 +65,54 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	steps := []func() error{
 		func() error { return updateGitignore(sys, root) },
 		func() error {
-			return WriteInstructionShims(sys, root, project.Instructions)
+			return writeInstructionShims(sys, root, project.Instructions)
 		},
-		func() error { return CleanCodexInstructions(sys, root) },
-		func() error { return CleanLegacySkillOutputs(sys, root) },
+		func() error { return cleanCodexInstructions(sys, root) },
+		func() error { return cleanLegacySkillOutputs(sys, root) },
 	}
 
 	if config.SharedAgentSkillsEnabled(agents) {
-		steps = append(steps, func() error { return WriteAgentSkills(sys, root, project.Skills) })
+		steps = append(steps, func() error { return writeAgentSkills(sys, root, project.Skills) })
 	} else {
-		steps = append(steps, func() error { return CleanSharedAgentSkills(sys, root) })
+		steps = append(steps, func() error { return cleanSharedAgentSkills(sys, root) })
 	}
 
 	// VS Code block — granular split:
-	// WriteVSCodeSettings fires for vscode OR claude_vscode.
-	// WriteVSCodeMCPConfig and WriteVSCodeLaunchers fire for vscode only.
+	// writeVSCodeSettings fires for vscode OR claude_vscode.
+	// writeVSCodeMCPConfig and WriteVSCodeLaunchers fire for vscode only.
 	vscodeEnabled := config.IsAgentEnabled(agents.VSCode.Enabled)
 	claudeVSCodeEnabled := config.IsAgentEnabled(agents.ClaudeVSCode.Enabled)
 
 	if vscodeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
-			func() error { return WriteVSCodeSettings(sys, root, project) },
+			func() error { return writeVSCodeSettings(sys, root, project) },
 		)
 	}
 	if vscodeEnabled {
 		steps = append(steps,
-			func() error { return WriteVSCodeMCPConfig(sys, root, project) },
+			func() error { return writeVSCodeMCPConfig(sys, root, project) },
 			func() error { return launchers.WriteVSCodeLaunchers(sys, root) },
 		)
 	}
 
 	if config.IsAgentEnabled(agents.CopilotCLI.Enabled) {
 		steps = append(steps,
-			func() error { return WriteCopilotMCPConfig(sys, root, project) },
+			func() error { return writeCopilotMCPConfig(sys, root, project) },
 		)
 	} else {
-		steps = append(steps, func() error { return CleanCopilotOutputs(sys, root) })
+		steps = append(steps, func() error { return cleanCopilotOutputs(sys, root) })
 	}
 
 	if config.IsAgentEnabled(agents.Antigravity.Enabled) {
 		steps = append(steps,
-			func() error { return WriteAntigravitySettings(sys, root, project) },
-			func() error { return WriteAntigravityMCPConfig(sys, root, project) },
-			func() error { return WriteAntigravityChimePlugin(sys, root, project) },
+			func() error { return writeAntigravitySettings(sys, root, project) },
+			func() error { return writeAntigravityMCPConfig(sys, root, project) },
+			func() error { return writeAntigravityChimePlugin(sys, root, project) },
 		)
 	} else {
 		steps = append(steps,
-			func() error { return CleanAntigravityOutputs(sys, root) },
-			func() error { return CleanAntigravityChimePlugin(sys, root) },
+			func() error { return cleanAntigravityOutputs(sys, root) },
+			func() error { return cleanAntigravityChimePlugin(sys, root) },
 		)
 	}
 
@@ -114,22 +120,22 @@ func runWithProjectLocked(sys System, root string, project *config.ProjectConfig
 	claudeEnabled := config.IsAgentEnabled(agents.Claude.Enabled)
 	if claudeEnabled || claudeVSCodeEnabled {
 		steps = append(steps,
-			func() error { return WriteClaudeStatusline(sys, root, project) },
-			func() error { return WriteClaudeSettings(sys, root, project) },
-			func() error { return WriteMCPConfig(sys, root, project) },
-			func() error { return WriteClaudeSkills(sys, root, project.Skills) },
+			func() error { return writeClaudeStatusline(sys, root, project) },
+			func() error { return writeClaudeSettings(sys, root, project) },
+			func() error { return writeMCPConfig(sys, root, project) },
+			func() error { return writeClaudeSkills(sys, root, project.Skills) },
 		)
 	} else {
-		steps = append(steps, func() error { return CleanClaudeChimeHook(sys, root) })
+		steps = append(steps, func() error { return cleanClaudeChimeHook(sys, root) })
 	}
 
 	if config.IsAgentEnabled(agents.Codex.Enabled) {
 		steps = append(steps,
-			func() error { return WriteCodexConfig(sys, root, project) },
-			func() error { return WriteCodexRules(sys, root, project) },
+			func() error { return writeCodexConfig(sys, root, project) },
+			func() error { return writeCodexRules(sys, root, project) },
 		)
 	} else {
-		steps = append(steps, func() error { return CleanCodexChimeHook(sys, root) })
+		steps = append(steps, func() error { return cleanCodexChimeHook(sys, root) })
 	}
 
 	if err := runSteps(steps); err != nil {

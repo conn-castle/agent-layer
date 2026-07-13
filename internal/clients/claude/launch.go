@@ -2,6 +2,7 @@ package claude
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,11 +37,7 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 	}
 	args = append(args, passArgs...)
 
-	if cfg.Config.Agents.Claude.LocalConfigDir != nil && *cfg.Config.Agents.Claude.LocalConfigDir {
-		env = ensureClaudeConfigDir(cfg.Root, env)
-	} else {
-		env = clearStaleClaudeConfigDir(cfg.Root, env)
-	}
+	env = ConfigureEnvironment(cfg.Root, env, cfg.Config.Agents.Claude, os.Stderr)
 
 	path, err := exec.LookPath("claude")
 	if err != nil {
@@ -52,6 +49,16 @@ func Launch(cfg *config.ProjectConfig, runInfo *run.Info, env []string, passArgs
 		return fmt.Errorf(messages.ClientsExecHandoffErrorFmt, "claude", err)
 	}
 	return nil
+}
+
+// ConfigureEnvironment applies the Claude environment rules shared by
+// interactive launching and headless Agent Dispatch. warning receives a
+// conflict message when a caller supplied a non-repository config directory.
+func ConfigureEnvironment(root string, env []string, cfg config.ClaudeConfig, warning io.Writer) []string {
+	if cfg.LocalConfigDir != nil && *cfg.LocalConfigDir {
+		return ensureClaudeConfigDirWithWarning(root, env, warning)
+	}
+	return clearStaleClaudeConfigDir(root, env)
 }
 
 // clearStaleClaudeConfigDir removes CLAUDE_CONFIG_DIR from the environment
@@ -68,6 +75,10 @@ func clearStaleClaudeConfigDir(root string, env []string) []string {
 }
 
 func ensureClaudeConfigDir(root string, env []string) []string {
+	return ensureClaudeConfigDirWithWarning(root, env, os.Stderr)
+}
+
+func ensureClaudeConfigDirWithWarning(root string, env []string, warning io.Writer) []string {
 	expected := filepath.Join(root, ".claude-config")
 	current, ok := clients.GetEnv(env, "CLAUDE_CONFIG_DIR")
 	if !ok || current == "" {
@@ -77,7 +88,9 @@ func ensureClaudeConfigDir(root string, env []string) []string {
 	if !clients.SamePath(current, expected) {
 		// Best-effort warning; a stderr write failure does not change the returned
 		// env (the existing CLAUDE_CONFIG_DIR is preserved regardless).
-		_, _ = fmt.Fprintf(os.Stderr, messages.ClientsClaudeConfigDirWarningFmt, current, expected)
+		if warning != nil {
+			_, _ = fmt.Fprintf(warning, messages.ClientsClaudeConfigDirWarningFmt, current, expected)
+		}
 	}
 
 	return env

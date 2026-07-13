@@ -28,8 +28,8 @@ func TestWriteInstructionShims(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
-	if err := WriteInstructionShims(RealSystem{}, root, instructions); err != nil {
-		t.Fatalf("WriteInstructionShims error: %v", err)
+	if err := writeInstructionShims(RealSystem{}, root, instructions); err != nil {
+		t.Fatalf("writeInstructionShims error: %v", err)
 	}
 
 	paths := []string{
@@ -62,8 +62,8 @@ func TestCleanCodexInstructionsRemovesGeneratedShim(t *testing.T) {
 		t.Fatalf("write generated shim: %v", err)
 	}
 
-	if err := CleanCodexInstructions(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanCodexInstructions error: %v", err)
+	if err := cleanCodexInstructions(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanCodexInstructions error: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("expected generated codex instructions to be removed, got %v", err)
@@ -82,8 +82,8 @@ func TestCleanCodexInstructionsPreservesUserAuthoredFile(t *testing.T) {
 		t.Fatalf("write user instructions: %v", err)
 	}
 
-	if err := CleanCodexInstructions(RealSystem{}, root); err != nil {
-		t.Fatalf("CleanCodexInstructions error: %v", err)
+	if err := cleanCodexInstructions(RealSystem{}, root); err != nil {
+		t.Fatalf("cleanCodexInstructions error: %v", err)
 	}
 	got, err := os.ReadFile(path) // #nosec G304 -- path is test-controlled.
 	if err != nil {
@@ -102,7 +102,7 @@ func TestWriteInstructionShimsError(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	instructions := []config.InstructionFile{{Name: "00_base.md", Content: "base\n"}}
-	if err := WriteInstructionShims(RealSystem{}, file, instructions); err == nil {
+	if err := writeInstructionShims(RealSystem{}, file, instructions); err == nil {
 		t.Fatalf("expected error")
 	}
 }
@@ -150,7 +150,7 @@ func TestWriteInstructionShimsErrorPaths(t *testing.T) {
 			if err := tc.setup(root); err != nil {
 				t.Fatalf("setup: %v", err)
 			}
-			if err := WriteInstructionShims(RealSystem{}, root, instructions); err == nil {
+			if err := writeInstructionShims(RealSystem{}, root, instructions); err == nil {
 				t.Fatalf("expected error")
 			}
 		})

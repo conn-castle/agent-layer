@@ -27,12 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-07-12 dispatch-terminal-before-descendants: Dispatch can report terminal failure while provider descendants remain active
-    Priority: Critical. Area: al dispatch provider lifecycle and completion signaling
-    Description: In session 019f540c, the Claude reviewer dispatch was reported failed without its artifact while Claude-native children continued, synthesized, wrote the required report 87 seconds later, and completed two seconds before an unnecessary replacement started.
-    Next step: In the dedicated dispatch effort, make terminal results cover the full descendant tree, terminate failed attempts atomically, expose explicit retry-safe status, and provide completion notification without write_stdin polling.
-    Notes: Workflow skills permit replacement only after proven terminal failure and new evidence of a transient cause; dispatch must make terminality and retry safety trustworthy before that policy is reliable.
-
 - Issue 2026-07-10 antigravity-malformed-native-aborts-all-sync: A malformed native Antigravity settings.json fails the entire multi-client sync
     Priority: Low. Area: internal/sync/antigravity.go (readAntigravitySettings/mergeAntigravitySettings) + sync.go step ordering
     Description: WriteAntigravitySettings fails loud with no data loss on malformed/non-object/shape-conflict native settings.json, but the error bubbles up as a hard sync step, so one odd native value blocks generation for Claude/Codex/VS Code too. Overlay-only merge plus empty-file tolerance shrank the failure surface, but the blast radius is unchanged.
@@ -51,23 +45,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Confirm the format from a primary source (official spec or an observed real file); if JSONC, add tolerant parsing for this client instead of strict JSON.
     Notes: Verification gap recorded in decision antigravity-settings-overlay-preserve (2026-07-10).
 
-- Issue 2026-07-09 precommit-nested-git-index-inheritance: Nested Git test mutates the outer commit index under pre-commit
-    Priority: Medium. Area: internal/sync/claude_statusline_runtime_test.go (`runGit`) / pre-commit `go-test` hook
-    Description: When `make test` runs inside `git commit`'s pre-commit hook, the statusline test's temporary-repository Git commands inherit the outer `GIT_INDEX_FILE`; `git add tracked.txt` contaminates the real index and the nested commit re-enters pre-commit without a config, failing the outer commit.
-    Next step: Scrub repository-local Git environment variables from `runGit` before invoking Git in the temporary repository, and add a regression that supplies an external `GIT_INDEX_FILE` without mutating it.
-
-- Issue 2026-07-05 root-skill-release-migration: Next release needs migration and manifest for root-skill template changes
-    Priority: Medium. Area: internal/templates/migrations, internal/templates/manifests, release workflow
-    Description: Current templates rename `.agent-layer/skills/verify-against-plan/` to `.agent-layer/skills/verify-work/`, rename audit-and-fix roots to `.agent-layer/skills/clean-and-fix-code/`, retire root `prune-new-tests` / `simplify-new-code` skills into `prune-uncommitted-tests` / `simplify-uncommitted-code` clean-and-fix assets, remove the redundant `loop-clean-and-fix`, `finish-task`, and `complete-current-phase` wrappers, add `run-and-fix-all-checks`, remove `repair-checks`, and remove root `resolve-findings`, but historical manifests are immutable and the next release version has not been chosen.
-    Next step: When the next release version is selected, add the required skill migration entry and generate the matching template ownership manifest.
-    Notes: Do not edit already-tagged manifest files such as `0.12.1.json`.
-
-- Issue 2026-07-02 launcher-exec-capture-test-harness-duplication: Exec-capture test harness duplicated across four launcher packages
-    Priority: Low. Area: internal/clients/{claude,codex,copilotcli,antigravity}/launch_test.go
-    Description: `execCall`/`captureExec`/`forbidExec`/`assertExecCalled` (all over the identical `func(string, []string, []string) error` execFunc seam) are copied near-verbatim into each launcher's launch_test.go, ~50 lines per package. Flagged as CodeRabbit nitpicks on PR #130. Not a defect — the tests pass and cover behavior — but a maintainability trap: a change to the mock's behavior must be made in four places.
-    Next step: Extract a shared helper into `internal/testutil` (e.g. `CaptureExec(t, target *func(...)error, err error) *ExecCall`) that takes a pointer to the package-local execFunc var, and update the four launcher suites to use it.
-    Notes: Deferred from PR #130 (macOS signing / exec-handoff) as a cross-package test refactor outside that PR's scope.
-
 - Issue 2026-07-02 lint-ci-local-goconst-false-negative-darwin: `make lint-ci-local` misses goconst violations on macOS
     Priority: Medium. Area: Makefile (`lint-ci-local`) / CI-parity lint tooling; COMMANDS.md guidance
     Description: `make lint-ci-local` runs golangci-lint with GOOS=linux GOARCH=amd64 on a darwin host; cross-GOOS package loading drops the package's `_test.go` files from the analyzed fileset, so goconst's per-package string-occurrence counts fall below the threshold and real violations do not fire. This caused a false negative during PR #128: local `make dev` and `make lint-ci-local` both passed, but CI's `verify` (`make ci` -> `make lint`) failed on `goconst` in internal/sync/codex_config_merge.go. The documented "CI-parity" command is not faithful for occurrence-counting linters.
@@ -78,43 +55,13 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Priority: Low. Area: internal/sync/codex_config_merge.go (`insertRootLine` / `setPath` fresh-insert path)
     Description: When a managed root scalar (e.g. `model`) is absent and gets inserted just before the first table header via `insertRootLine`, a `# comment` that documented that first table ends up above the newly inserted scalar (separated by a blank), so it reads as documenting the scalar. In-place updates of existing managed keys are unaffected (they now preserve position and inline comments); only the first-time fresh insert of a root scalar in front of a commented first table is affected. No data loss; valid TOML.
     Next step: Decide placement policy for fresh root-scalar inserts relative to a first table's leading comment block (insert above the comment block, or leave as-is), then implement; this is a formatting/UX tradeoff, not a correctness bug.
-    Notes: Deferred from review resolution 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
-
-- Issue 2026-07-02 wizard-dead-countbracketdepth-duplicate: Dead wizard countBracketDepth/quoteState duplicate kept alive only by tests
-    Priority: Low. Area: internal/wizard/patch.go (`countBracketDepth`, `quoteState`, `containsUnescapedTripleQuote`) + patch_test.go
-    Description: Production wizard multiline detection delegates to `tomlpatch.MultilineValueEndIndex`; the local `countBracketDepth`/`quoteState` copy (and the `containsUnescapedTripleQuote` shim) in patch.go is referenced only by patch_test.go. Unlike the live `tomlpatch` copy (fixed in this pass to be triple-quote-aware), the wizard copy is the old single-quote-only version — dead but still test-pinned, so it is a stale duplicate and a maintenance trap.
-    Next step: Delete the wizard-local `countBracketDepth`/`quoteState` and their pinning tests (and inline the `containsUnescapedTripleQuote` shim), leaving `tomlpatch` as the single source of truth.
-    Notes: Left in place by review resolution 20260702 (F3) to avoid deleting committed-test-covered code out of scope.
+    Notes: Deferred from resolve-findings 20260702 (F4). The inline-comment-drop half of F4 was fixed via in-place `setPath`.
 
 - Issue 2026-07-02 codex-feature-toggles-cli-only-in-wizard: Codex feature toggles (statusline/apps/browser) not offered to VS Code-only repos
     Priority: Low. Area: internal/wizard/wizard.go (Codex prompt block)
     Description: PR #127 unified the Codex `local_config_dir` prompt so it appears when `agents.codex` (CLI) OR `agents.vscode` (Codex VS Code extension) is enabled, mirroring Claude. The Codex feature toggles (statusline, apps, browser) were deliberately left gated on `agents.codex` (CLI) only. If the Codex VS Code extension reads these from `.codex/config.toml` (it does when CODEX_HOME=<repo>/.codex is set), a VS Code-only repo cannot configure statusline/apps/browser via the wizard, unlike the Claude side which offers its shared feature toggles whenever either surface is enabled.
     Next step: Determine which Codex feature toggles actually apply to the Codex VS Code extension, then move those under the combined `AgentCodex || AgentVSCode` gate (mirroring Claude's shared-feature block); keep any CLI-only features gated on `AgentCodex`.
     Notes: Deferred from PR #127 to keep that PR scoped to the flagged `local_config_dir` gap. Per-feature applicability to the extension is a product question, not a mechanical move.
-
-- Issue 2026-07-01 dispatch-concurrent-sync-temp-rename: Concurrent dispatch sync can fail during generated skill writes
-    Priority: Low. Area: al dispatch / sync generated-file writes
-    Description: A parallel `al dispatch` reviewer attempt failed before the target started with `al dispatch sync failed: failed to write .agents/skills/audit-memory/SKILL.md: rename temp file ... no such file or directory`. Sequential dispatch succeeded, so this appears to be a concurrent sync/write reliability edge rather than a deterministic target-agent failure.
-    Next step: Reproduce parallel `al dispatch` from a clean repo with two targets, capture sync logs, and verify whether generated skill writes share a lock before `fsutil.WriteFileAtomic` temp/rename operations.
-    Notes: Observed during ship-pr audit on 2026-07-01; related to, but more specific than, the existing sync-lock consistency issues below.
-
-- Issue 2026-06-30 sync-lock-blocking-no-timeout-divergent: Sync project lock blocks indefinitely and hardcodes unix.Flock, diverging from dispatch lock
-    Priority: Low. Area: internal/sync/lock.go (`lockProjectSyncFile`/`acquireProjectSyncLock`) vs internal/dispatch/lock.go (`lockFile`)
-    Description: The per-project sync lock blocks indefinitely on `unix.Flock(fd, LOCK_EX)` (only an EINTR retry) and calls `unix.Flock` directly (not injectable), so a live-but-stuck concurrent holder makes `al sync` hang with no diagnostic and the flock path is hard to unit-test. The sibling dispatch lock uses `LOCK_EX|LOCK_NB` with a 30s deadline/poll loop, surfaces a timeout error, and routes through an injectable `System.Flock`. A crashed holder is fine (flock auto-releases on fd close at process death), so this is reliability/UX/consistency, not a correctness bug.
-    Next step: Human to decide whether to align sync with the dispatch pattern (bounded wait + injectable Flock seam) for a clear diagnostic instead of a silent hang and for testability/consistency, or to keep indefinite blocking and add a "waiting for lock" notice plus a one-line rationale for the divergence.
-    Notes: Tradeoff: a timeout could spuriously fail a legitimately long-held lock, but the practical risk is low because the locked section is only local generated-file writes. Flagged by review-scope 20260630.
-
-- Issue 2026-06-30 sync-exported-writers-bypass-lock: Exported low-level sync writers bypass the per-project sync lock (latent, no live bug)
-    Priority: Low. Area: internal/sync (exported `Write*`/`Clean*` writers across internal/sync/*.go; `withProjectSyncLock` in lock.go)
-    Description: Only `RunWithProject` (and thus `Run`/`RunWithSystemFS`) is wrapped by `withProjectSyncLock`; the exported `Write*`/`Clean*` generated-file writers (e.g. WriteAgentSkills, WriteClaudeSettings, WriteMCPConfig) write outside the lock. Verified no caller outside internal/sync invokes them today — all external callers funnel through Run/RunWithProject (cmd/al/sync.go, internal/clients/runner.go, internal/agentdispatch/dispatch.go) — so there is no current bypass. The risk is latent: a future external caller or new exported entry point calling a Write*/Clean* helper directly would silently skip serialization. The lock invariant is not enforced at the package boundary.
-    Next step: Human to decide whether to unexport the writers that have no external consumers, or add a package/writer doc comment stating that generated-file writes must go through RunWithProject to be serialized.
-    Notes: No code change strictly required now. Flagged by review-scope 20260630.
-
-- Issue 2026-06-30 sync-lock-release-failure-misattributes-success: Successful sync with a failed lock release/close returns a populated Result and a non-nil error
-    Priority: Low. Area: internal/sync/lock.go (`withProjectSyncLock`, deferred release)
-    Description: In `withProjectSyncLock`, `return fn()` sets the named `result` to the successful `*Result`, then the deferred `release()` sets `err = releaseErr` (only when `fn()` succeeded), so the function returns both a non-nil Result and a non-nil error. All callers (cmd/al/sync.go, internal/clients/runner.go, internal/agentdispatch/dispatch.go) check `err` first and report "sync failed" even though the generated files were written successfully — only the LOCK_UN/Close failed. This is failing loud (acceptable per repo rules), but the message misattributes the failure on a rare path.
-    Next step: Human to decide whether, on a release error after a successful run, to wrap the message so it is clear the sync itself succeeded (post-write lock release/close failed) or to null the Result for a clean error contract.
-    Notes: Low priority given rarity of unlock/close failures on a local file. Behavior intentionally unchanged in this pass. Flagged by review-scope 20260630.
 
 - Issue 2026-06-29 dispatch-claude-print-bg-ceiling: Claude print-mode background-task ceiling can end long dispatches without findings
     Priority: Medium. Area: internal/agentdispatch/providers/claude (`al dispatch` Claude path)
@@ -165,16 +112,10 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Notes: Deferred per "breaking dep bumps need confirmation". Not a defect; a coordinated upgrade-planning task.
 
 - Issue 2026-06-23 completion-windows-build-tag-misleading: `//go:build !windows` on cmd/al/completion.go implies Windows support the project cannot provide
-    Priority: Low. Area: cmd/al (completion.go build constraint; platform story)
-    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows (internal/dispatch depends on `unix.Flock`/`unix.LOCK_EX` with no Windows fallback), and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist and would leave platform.go referencing an undefined symbol on a Windows build. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
-    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for dispatch/platform (the opposite, much bigger change). Either direction is a deliberate decision, not a mechanical edit.
+    Priority: Low. Area: cmd/al and internal dispatch packages (platform story)
+    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows: internal/versiondispatch depends on `unix.Flock`/`unix.LOCK_EX`, internal/agentdispatch uses Unix flock and process-signal liveness APIs, and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
+    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for version dispatch, Agent Dispatch locking/process liveness, and CLI platform wiring. Either direction is a deliberate decision, not a mechanical edit.
     Notes: Deferred because it is a project-direction (Windows support) judgment call with two opposite valid resolutions.
-
-- Issue 2026-06-23 dispatch-lock-wait-vs-download-timeout: Dispatch lock wait timeout equals download timeout, so a waiter can fail while the holder is still legitimately downloading
-    Priority: Low. Area: internal/dispatch (lock.go `lockWaitTimeout`, cache.go `defaultDownloadTimeout`)
-    Description: `withFileLock` holds the exclusive lock for the entire binary download+verify closure. A concurrent `al` invocation waits up to `lockWaitTimeout` (30s) and then fails with a lock-timeout error. The holder's own download is bounded by `defaultDownloadTimeout` (also 30s), so under a genuinely slow cold-cache download a second process can spuriously fail with a lock timeout exactly as the holder is still making valid progress. Real cross-process robustness edge, only in the cold-cache concurrent-invocation window; not a correctness bug.
-    Next step: Make `lockWaitTimeout` comfortably exceed the worst-case download timeout (e.g. derive it from `downloadTimeoutWithSystem` plus headroom) so a waiter never gives up before the holder's own download deadline resolves the contention.
-    Notes: Deferred because the timeout values are a deliberate "waiters fail rather than pile up" tuning choice; bumping the wait timeout is a judgment call on contention behavior, not a clear-cut win.
 
 - Issue 2026-06-22 secret-in-url-precision-recall: Secret-in-URL detection precision vs recall tradeoff (needs human decision)
     Priority: Medium. Area: internal/warnings/policy.go (`looksLikeSecretQueryKey` and helpers)
@@ -182,20 +123,14 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Human to choose: (A) keep substring matching + add an explicit exclusion list of known-benign keys (preserves recall, surgical); (B) word-segment matching PLUS camelCase boundary splitting (fixes most false positives, restores camelCase recall, still misses fully-glued lowercase like `authtoken`); (C) accept the recall loss and ship pure word-segment matching.
     Notes: Recommendation: Option B is strongest if pursued, but this needs the maintainer's call because it changes a security control's detection semantics.
 
-- Issue 2026-06-22 semver-parse-compare-dispatch-divergent-variant: dispatch's bespoke parseSemver diverges from the shared version helper
-    Priority: Low. Area: version/dispatch
-    Description: The byte-identical `compareSemver`/`parseSemver` copies in install and update were consolidated into `internal/version` (`version.Compare`/`version.Parse`). `internal/dispatch/dispatch.go` still has its own `parseSemver` returning `(int,int,int,bool)` that skips `version.Normalize` (no `v`-prefix strip, no error) — its only caller normalizes first, so not a live bug, just divergence from the now-canonical helper.
-    Next step: Route dispatch through `version.Parse`/`version.Compare`. Human decision needed: whether dispatch adopts the error-returning shape, and where the shared error-message constants belong (the consolidated helper still references `messages.UpdateInvalidVersion*`; a neutral `messages.Version*` home is the cleaner end state).
-    Notes: Single-source-of-truth drift; not a runtime defect. Deferred pending the shape/constants decision.
-
 - Issue 2026-06-22 fs-os-abstraction-four-patterns: OS/filesystem testability seam implemented four different ways across packages
     Priority: Low. Area: architecture/cross-cutting
     Description: install, sync, dispatch, launchers each define a `System` interface + `RealSystem` os-passthrough (install/sync overlap on 7 of 11 methods, each re-implemented); config uses both `fs.FS` injection AND a `var osReadFileFunc` function-pointer seam in the same package; doctor/wizard/update/clients use ad-hoc function-pointer vars. Same problem (testable OS access) solved four ways.
     Next step: Decide and document one standard seam style, or extract a shared `internal/osfs` (or expand `internal/fsutil`) that install/sync/launchers embed; at minimum have config pick one of its two internal seams.
     Notes: Genuine architectural tradeoff with multiple defensible options; not a defect. Broad change touching deprioritized install/sync — needs a human decision.
 
-- Issue 2026-05-23 dispatch-antigravity-argv-prompt-cap: Antigravity dispatch still caps prompt size because `agy` has no stdin/prompt-file path
+- Issue 2026-05-23 dispatch-antigravity-argv-prompt-cap: Antigravity dispatch has a lower prompt cap because `agy` has no stdin/prompt-file path
     Priority: Low. Area: providers/antigravity
-    Description: `internal/agentdispatch/adapters.go` `runAntigravity` must pass the prompt as a single argv element after `--print` (Antigravity exposes no stdin or prompt-file path). The opaque-failure defect is fixed: a pre-flight guard now rejects prompts over `AntigravityPromptMaxBytes` with a typed `ExitUsage` error and an actionable message (tested by `TestRunAntigravityRejectsOversizePrompt`). The residual limitation is the cap itself — Claude/Codex accept unbounded prompts on stdin, Antigravity does not.
+    Description: `internal/agentdispatch/provider.go` passes an Antigravity prompt as one argv element after `--print` because `agy` exposes no stdin or prompt-file path. Dispatch rejects prompts over `AntigravityPromptMaxBytes` (100 KiB) with typed `ExitUsage`; Claude and Codex use the shared 10 MiB stdin-prompt limit instead. The provider-specific lower cap remains until upstream offers a safe non-argv prompt transport.
     Next step: When upstream `agy --print` gains a stdin or `--prompt-file` path, switch to it and remove the size cap.
     Notes: Upstream `agy --help` as of 2026-05-22 shows no stdin/prompt-file path; deferred pending upstream CLI support. No code change available until then.
