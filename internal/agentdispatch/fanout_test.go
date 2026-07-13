@@ -57,6 +57,26 @@ func TestCapabilityCacheInvalidatesWhenBinaryIdentityChanges(t *testing.T) {
 	}
 }
 
+func TestCapabilityCacheToleratesNullEntries(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(t.TempDir(), "codex")
+	script := "#!/bin/sh\nprintf '%s\\n' " + supportedProviderVersions[AgentCodex] + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { // #nosec G306 -- test provider must be executable.
+		t.Fatal(err)
+	}
+	cachePath := capabilityCachePath(root)
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath, []byte(`{"entries":null}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	target, _ := lookupTarget(AgentCodex)
+	if _, version, err := compatibleTargetVersionCached(root, path, target, nil); err != nil || version != supportedProviderVersions[AgentCodex] {
+		t.Fatalf("null-entries cache broke resolution: %q, %v", version, err)
+	}
+}
+
 func TestFanoutPrepFailureFinalizesPreparedChildren(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)

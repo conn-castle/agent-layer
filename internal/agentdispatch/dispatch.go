@@ -326,11 +326,14 @@ func finishDispatchFailure(request dispatchExecution, cause error) error {
 	}
 	request.Run.Record.CompletedAt = &now
 	request.Run.Record.TerminalReason = cause.Error()
-	if err := writeRunRecord(request.Run.Dir, &request.Run.Record); err != nil {
-		return err
-	}
+	// Release the active claim even when the terminal write fails, so a
+	// persistence error cannot leave the conversation stuck on a failed run.
+	writeErr := writeRunRecord(request.Run.Dir, &request.Run.Record)
 	if err := releaseConversation(request.Root, request.Session.Name, request.Run.Record.ID); err != nil {
 		return err
+	}
+	if writeErr != nil {
+		return writeErr
 	}
 	// A proven pre-start failure means the provider never created a
 	// conversation; do not leave a pre-persisted durable mapping (fresh

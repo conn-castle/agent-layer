@@ -70,7 +70,7 @@ allowed-tools: Bash(al:*) Bash(cat:*)
 - Fanout waits for every child and emits one manifest. Read canonical child
   result paths from that manifest; never put report destinations in the shared
   prompt or mix child output.
-- Replace a reviewer only after proven terminal infrastructure failure, all of
+- Replace a fanout target only after proven terminal infrastructure failure, all of
   its descendants terminal, and evidence that the retry is safe. Missing
   output or an ambiguous lifecycle blocks replacement.
 

@@ -14,6 +14,19 @@ import (
 
 const runtimeSessionID = "11111111-1111-4111-8111-111111111111"
 
+func TestProcStatStartTimeSurvivesCommWithSpacesAndParens(t *testing.T) {
+	remainder := "S 1 42 42 0 -1 4194560 100 0 0 0 5 3 0 0 20 0 1 0 777 123456 0"
+	for _, comm := range []string{"(codex)", "(tmux: server)", "(a) (b)"} {
+		content := "42 " + comm + " " + remainder
+		if got := procStatStartTime(content); got != "777" {
+			t.Fatalf("comm %q shifted starttime: got %q", comm, got)
+		}
+	}
+	if got := procStatStartTime("no stat shape"); got != "" {
+		t.Fatalf("malformed stat produced identity %q", got)
+	}
+}
+
 func TestSessionLifecycleIsExplicitAndInspectable(t *testing.T) {
 	root := t.TempDir()
 	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], "fresh")

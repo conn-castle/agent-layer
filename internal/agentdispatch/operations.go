@@ -173,7 +173,9 @@ func reconcileOrphan(root string, record RunRecord) (RunRecord, error) {
 	if err := writeRunRecord(filepathForRun(root, record.ID), &record); err != nil {
 		return RunRecord{}, err
 	}
-	_ = releaseConversation(root, record.Name, record.ID)
+	if err := releaseConversation(root, record.Name, record.ID); err != nil {
+		return RunRecord{}, err
+	}
 	return record, nil
 }
 
@@ -302,6 +304,7 @@ func cancelFanout(root string, id string) error {
 		child := &manifest.Children[index]
 		record, loadErr := loadRunRecord(root, child.RunID)
 		if loadErr != nil {
+			_ = writeFanoutManifest(root, manifest)
 			return loadErr
 		}
 		if terminalDispatchState(record.State) {
@@ -309,6 +312,9 @@ func cancelFanout(root string, id string) error {
 			continue
 		}
 		if cancelErr := Cancel(CancelRequest{Root: root, ID: child.RunID}); cancelErr != nil {
+			// Persist the children already reconciled so a partial
+			// cancellation reports accurate aggregate progress.
+			_ = writeFanoutManifest(root, manifest)
 			return cancelErr
 		}
 		child.Status = dispatchStateCancelled
@@ -373,7 +379,7 @@ func Delete(root string, name string) error {
 		if recordErr != nil && !errors.Is(recordErr, errDispatchRunNotFound) {
 			return recordErr
 		}
-		if recordErr == nil && (record.State == dispatchStatePending || record.State == dispatchStateStarting || (record.State == dispatchStateRunning && processOwned(record))) {
+		if recordErr == nil && (record.State == dispatchStatePending || record.State == dispatchStateStarting || (record.State == dispatchStateRunning && processOwnership(record) != ownershipDead)) {
 			return exitError(ExitUnavailable, fmt.Sprintf("dispatch session %q is active; inspect it or wait for terminal completion before deleting the mapping", name))
 		}
 	}

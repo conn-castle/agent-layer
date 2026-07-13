@@ -343,6 +343,7 @@ The command surface is intentionally small. Most of the time you only need one r
 | `al <client>` | Sync and launch a client (agy/claude/codex/copilot/vscode). |
 | `al dispatch` | Run a supported headless target (`codex`, `claude`, `antigravity`, or `random`) from an Agent Layer-launched caller. |
 | `al dispatch fanout` | Send one shared prompt and optional skill to two or more self-contained target specifications, wait for all children, and emit one manifest. |
+| `al dispatch inspect <name-or-id>` | Report read-only factual state and diagnostics for one run or conversation. |
 | `al dispatch history <name>` | Show retained immutable turns for one friendly conversation name. |
 | `al dispatch cancel <id>` | Cancel an exact active run, conversation, or fanout process group. |
 | `al dispatch options --json` | Print the stable Agent Dispatch target/options contract for scripts. |

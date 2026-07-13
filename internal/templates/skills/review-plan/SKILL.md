@@ -87,7 +87,8 @@ one immutable report with source metadata. Validate:
   absent from the terminal report
 - recommendation is exactly `approve` or `changes-needed`
 
-Do not replace an ambiguous lifecycle failure to seek another opinion.
+Do not redispatch or discard a child whose lifecycle failure is ambiguous
+merely to obtain a cleaner result; report the ambiguous outcome as evidence.
 
 ### 4. Synthesize and revise
 

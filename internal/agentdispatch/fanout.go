@@ -196,10 +196,12 @@ func Fanout(opts FanoutOptions) error {
 		childErr := completed.err
 		record, loadErr := loadRunRecord(opts.Root, handle.runID)
 		if loadErr != nil {
+			finalizeFanoutFailure(opts.Root, &manifest, index, loadErr)
 			return loadErr
 		}
 		currentManifest, manifestErr := loadFanoutManifest(opts.Root, groupID)
 		if manifestErr != nil {
+			finalizeFanoutFailure(opts.Root, &manifest, index, manifestErr)
 			return manifestErr
 		}
 		manifest = currentManifest
@@ -232,6 +234,18 @@ func Fanout(opts FanoutOptions) error {
 		return exitError(ExitTargetFailure, fmt.Sprintf("dispatch fanout %s completed with one or more failed children", groupID))
 	}
 	return nil
+}
+
+// finalizeFanoutFailure terminalizes the aggregate manifest when the wait
+// loop itself cannot read child or manifest state, so an aborted fanout does
+// not stay running forever and escape retention. The write is best-effort;
+// the original cause is what the caller returns.
+func finalizeFanoutFailure(root string, manifest *FanoutManifest, index int, cause error) {
+	now := time.Now().UTC()
+	manifest.Children[index].Error = cause.Error()
+	manifest.State = dispatchStateFailed
+	manifest.CompletedAt = &now
+	_ = writeFanoutManifest(root, *manifest)
 }
 
 func fanoutStateRoot(root string) string {

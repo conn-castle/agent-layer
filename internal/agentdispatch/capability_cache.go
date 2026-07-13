@@ -34,6 +34,9 @@ func compatibleTargetVersionCached(root string, path string, target targetMeta, 
 		if readErr := readJSON(cachePath, &cache); readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
 			return wrapExitError(ExitConfig, "read dispatch capability cache", readErr)
 		}
+		if cache.Entries == nil {
+			cache.Entries = map[string]capabilityCacheEntry{}
+		}
 		if entry, ok := cache.Entries[target.Name]; ok && entry.Identity == identity {
 			version = entry.Version
 			return nil

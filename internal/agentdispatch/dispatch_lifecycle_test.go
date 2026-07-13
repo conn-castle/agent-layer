@@ -3,6 +3,7 @@ package agentdispatch
 import (
 	"bytes"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -80,6 +81,57 @@ func TestExecuteDispatchPreservesFailedFreshRunForRecoveryHistory(t *testing.T) 
 	}
 	if record.State != dispatchStateFailed || record.RecoveryState != recoveryAcceptanceUnknown || record.TerminalReason != "failed" {
 		t.Fatalf("failed record = %#v", record)
+	}
+}
+
+func TestFailureFinalizationReleasesClaimWhenTerminalWriteFails(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+	conflicting := run.Record
+	conflicting.Revision += 5
+	if err := writeJSONAtomic(filepath.Join(run.Dir, dispatchRunFile), conflicting); err != nil {
+		t.Fatalf("force revision conflict: %v", err)
+	}
+	project := &config.ProjectConfig{Root: root, Config: dispatchTestConfig(AgentCodex)}
+	err = finishDispatchFailure(dispatchExecution{Root: root, Project: project, Run: run, Session: session, Mode: dispatchModeFresh}, exitError(ExitTargetFailure, "provider failed"))
+	requireDispatchExitCode(t, err, ExitUnavailable)
+	retained, err := loadSession(root, session.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retained.ActiveRunID != "" {
+		t.Fatalf("terminal-write failure left the claim stuck: %#v", retained)
+	}
+}
+
+func TestDeleteProtectsRunningRecordWithUnprovableOwnership(t *testing.T) {
+	root := t.TempDir()
+	run, err := newDispatchRun(root, AgentCodex, supportedProviderVersions[AgentCodex], dispatchModeFresh)
+	if err != nil {
+		t.Fatalf("new run: %v", err)
+	}
+	session, err := reserveSession(root, run)
+	if err != nil {
+		t.Fatalf("reserve session: %v", err)
+	}
+	run.Record.State = dispatchStateRunning
+	run.Record.RecoveryState = recoveryAcceptanceUnknown
+	run.Record.PID = os.Getpid()
+	run.Record.ProcessStartIdentity = ""
+	if err := writeRunRecord(run.Dir, &run.Record); err != nil {
+		t.Fatal(err)
+	}
+	if err := Delete(root, session.Name); err == nil {
+		t.Fatal("Delete removed a mapping whose run may still be live")
+	} else {
+		requireDispatchExitCode(t, err, ExitUnavailable)
 	}
 }
 

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "version": "0.13.0",
-  "generated_at_utc": "2026-07-13T17:31:53Z",
+  "generated_at_utc": "2026-07-13T18:11:53Z",
   "files": [
     {
       "path": ".agent-layer/commands.allow",
@@ -75,7 +75,7 @@
     },
     {
       "path": ".agent-layer/skills/agent-dispatch/SKILL.md",
-      "full_hash_normalized": "00f63ddc12259e462e2e6af3f046ac39d9fdaea969c87c258d7085a808b52667",
+      "full_hash_normalized": "35a768086127797128f79826c5e58e5957d2d677037dfd2b709202e43a3b5c8e",
       "policy_id": "catalog_skills_v1"
     },
     {
@@ -209,7 +209,7 @@
     },
     {
       "path": ".agent-layer/skills/review-plan/SKILL.md",
-      "full_hash_normalized": "ee5c573ff58e347ebc27f9c9ff3990151359c379486d1a9899a0c151eac237a0"
+      "full_hash_normalized": "ffa263d234df73129704c4c587a8c0cf83a14340bb8333d0ad9f69faff30c46e"
     },
     {
       "path": ".agent-layer/skills/review-plan/assets/agent-review-prompt.md",
