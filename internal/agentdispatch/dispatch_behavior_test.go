@@ -3,6 +3,7 @@ package agentdispatch
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -60,6 +61,24 @@ func TestTargetResolutionEnforcesEligibility(t *testing.T) {
 	requireDispatchExitCode(t, err, ExitUsage)
 	_, err = chooseRandomTarget(cfg, AgentCodex, true, alwaysFound, chooseOnly(AgentCodex))
 	requireDispatchExitCode(t, err, ExitTargetFailure)
+	_, err = chooseRandomTarget(cfg, "", false, func(string) (string, error) {
+		return "", exec.ErrNotFound
+	}, nil)
+	requireDispatchExitCode(t, err, ExitUnavailable)
+	chooserErr := errors.New("random source failed")
+	_, err = chooseRandomTarget(cfg, "", false, alwaysFound, func([]string) (string, error) {
+		return "", chooserErr
+	})
+	requireDispatchExitCode(t, err, ExitTargetFailure)
+	if !errors.Is(err, chooserErr) {
+		t.Fatalf("chooser error was not preserved: %v", err)
+	}
+}
+
+func TestDefaultRandomChooserRejectsEmptyPool(t *testing.T) {
+	if _, err := defaultRandomChooser(nil); err == nil {
+		t.Fatal("defaultRandomChooser accepted an empty pool")
+	}
 }
 
 func TestDispatchPreflightStopsBeforeProviderLaunch(t *testing.T) {

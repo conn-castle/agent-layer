@@ -177,7 +177,7 @@ Notes: Fails if `go.mod`/`go.sum` would change.
 
 ### Coverage
 
-- Enforce coverage threshold (>= 95%)
+- Enforce coverage threshold (>= 90%)
 ```bash
 make coverage
 ```

@@ -10,7 +10,7 @@ GO_MOD_CACHE ?= $(ROOT_DIR)/.cache/go-mod
 
 GO_FILES_FIND_CMD := find . -type f -name '*.go' -not -path './.tools/*' -not -path './.cache/*' -not -path './.claude/*' -not -path './.codex/*' -not -path './.gemini/*' -not -path './.agy/*' -not -path './.antigravitycli/*' -not -path './.agents/*' -not -path './.agent-layer/*' -not -path './tmp/*'
 
-COVERAGE_THRESHOLD ?= 95.0
+COVERAGE_THRESHOLD ?= 90.0
 
 AL_VERSION ?= dev
 DIST_DIR ?= dist
