@@ -112,9 +112,9 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Notes: Deferred per "breaking dep bumps need confirmation". Not a defect; a coordinated upgrade-planning task.
 
 - Issue 2026-06-23 completion-windows-build-tag-misleading: `//go:build !windows` on cmd/al/completion.go implies Windows support the project cannot provide
-    Priority: Low. Area: cmd/al (completion.go build constraint; platform story)
-    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows (internal/dispatch depends on `unix.Flock`/`unix.LOCK_EX` with no Windows fallback), and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist and would leave platform.go referencing an undefined symbol on a Windows build. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
-    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for dispatch/platform (the opposite, much bigger change). Either direction is a deliberate decision, not a mechanical edit.
+    Priority: Low. Area: cmd/al and internal dispatch packages (platform story)
+    Description: completion.go carries `//go:build !windows`, but the project as a whole is unbuildable on Windows: internal/versiondispatch depends on `unix.Flock`/`unix.LOCK_EX`, internal/agentdispatch uses Unix flock and process-signal liveness APIs, and platform.go calls `newCompletionCmd()` unconditionally with no Windows variant. The tag therefore signals partial Windows support that does not exist. Latent inconsistency, not a runtime defect on supported (Unix) platforms.
+    Next step: Human to decide the platform story. If Windows is never intended: remove the misleading `!windows` tag from completion.go. If Windows is intended: the larger correct fix is to add Windows variants for version dispatch, Agent Dispatch locking/process liveness, and CLI platform wiring. Either direction is a deliberate decision, not a mechanical edit.
     Notes: Deferred because it is a project-direction (Windows support) judgment call with two opposite valid resolutions.
 
 - Issue 2026-06-22 secret-in-url-precision-recall: Secret-in-URL detection precision vs recall tradeoff (needs human decision)
@@ -123,20 +123,14 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
     Next step: Human to choose: (A) keep substring matching + add an explicit exclusion list of known-benign keys (preserves recall, surgical); (B) word-segment matching PLUS camelCase boundary splitting (fixes most false positives, restores camelCase recall, still misses fully-glued lowercase like `authtoken`); (C) accept the recall loss and ship pure word-segment matching.
     Notes: Recommendation: Option B is strongest if pursued, but this needs the maintainer's call because it changes a security control's detection semantics.
 
-- Issue 2026-06-22 semver-parse-compare-dispatch-divergent-variant: dispatch's bespoke parseSemver diverges from the shared version helper
-    Priority: Low. Area: version/dispatch
-    Description: The byte-identical `compareSemver`/`parseSemver` copies in install and update were consolidated into `internal/version` (`version.Compare`/`version.Parse`). `internal/dispatch/dispatch.go` still has its own `parseSemver` returning `(int,int,int,bool)` that skips `version.Normalize` (no `v`-prefix strip, no error) — its only caller normalizes first, so not a live bug, just divergence from the now-canonical helper.
-    Next step: Route dispatch through `version.Parse`/`version.Compare`. Human decision needed: whether dispatch adopts the error-returning shape, and where the shared error-message constants belong (the consolidated helper still references `messages.UpdateInvalidVersion*`; a neutral `messages.Version*` home is the cleaner end state).
-    Notes: Single-source-of-truth drift; not a runtime defect. Deferred pending the shape/constants decision.
-
 - Issue 2026-06-22 fs-os-abstraction-four-patterns: OS/filesystem testability seam implemented four different ways across packages
     Priority: Low. Area: architecture/cross-cutting
     Description: install, sync, dispatch, launchers each define a `System` interface + `RealSystem` os-passthrough (install/sync overlap on 7 of 11 methods, each re-implemented); config uses both `fs.FS` injection AND a `var osReadFileFunc` function-pointer seam in the same package; doctor/wizard/update/clients use ad-hoc function-pointer vars. Same problem (testable OS access) solved four ways.
     Next step: Decide and document one standard seam style, or extract a shared `internal/osfs` (or expand `internal/fsutil`) that install/sync/launchers embed; at minimum have config pick one of its two internal seams.
     Notes: Genuine architectural tradeoff with multiple defensible options; not a defect. Broad change touching deprioritized install/sync — needs a human decision.
 
-- Issue 2026-05-23 dispatch-antigravity-argv-prompt-cap: Antigravity dispatch still caps prompt size because `agy` has no stdin/prompt-file path
+- Issue 2026-05-23 dispatch-antigravity-argv-prompt-cap: Antigravity dispatch has a lower prompt cap because `agy` has no stdin/prompt-file path
     Priority: Low. Area: providers/antigravity
-    Description: `internal/agentdispatch/adapters.go` `runAntigravity` must pass the prompt as a single argv element after `--print` (Antigravity exposes no stdin or prompt-file path). The opaque-failure defect is fixed: a pre-flight guard now rejects prompts over `AntigravityPromptMaxBytes` with a typed `ExitUsage` error and an actionable message (tested by `TestRunAntigravityRejectsOversizePrompt`). The residual limitation is the cap itself — Claude/Codex accept unbounded prompts on stdin, Antigravity does not.
+    Description: `internal/agentdispatch/provider.go` passes an Antigravity prompt as one argv element after `--print` because `agy` exposes no stdin or prompt-file path. Dispatch rejects prompts over `AntigravityPromptMaxBytes` (100 KiB) with typed `ExitUsage`; Claude and Codex use the shared 10 MiB stdin-prompt limit instead. The provider-specific lower cap remains until upstream offers a safe non-argv prompt transport.
     Next step: When upstream `agy --print` gains a stdin or `--prompt-file` path, switch to it and remove the size cap.
     Notes: Upstream `agy --help` as of 2026-05-22 shows no stdin/prompt-file path; deferred pending upstream CLI support. No code change available until then.

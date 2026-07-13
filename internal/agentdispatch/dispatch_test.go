@@ -24,6 +24,9 @@ func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 		LookPath: func(string) (string, error) {
 			return "/bin/mock", nil
 		},
+		VersionLookup: func(_ string, agent string) (string, error) {
+			return supportedProviderVersions[agent], nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("BuildOptions error: %v", err)
@@ -117,8 +120,8 @@ fi`)
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
-func TestRunBlocksNestedDispatchAtDefaultDepth(t *testing.T) {
-	root := writeDispatchRepo(t, dispatchRepoConfig{})
+func TestRunBlocksNestedDispatchAtDepthOne(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{DispatchMaxDepth: 1})
 	err := Run(RunOptions{
 		Root: root,
 		Env:  []string{clients.EnvDispatchActive + "=1"},
@@ -246,8 +249,8 @@ func TestRunRandomExcludesCallerAndExecutesCodex(t *testing.T) {
 	if stdout.String() != "codex ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "Dispatch target: codex (random selection)") {
-		t.Fatalf("expected random target notice, got %q", stderr.String())
+	if !strings.Contains(stderr.String(), "] codex · fresh") {
+		t.Fatalf("expected dispatch identity, got %q", stderr.String())
 	}
 	assertFileContains(t, logPath, clients.EnvDispatchActive+"=1")
 	assertFileContains(t, logPath, clients.EnvDispatchCallerAgent+"=codex")
@@ -305,9 +308,9 @@ func TestRunAntigravityUsesConfiguredModel(t *testing.T) {
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	assertFileContains(t, logPath, "ARG_1=--model")
-	assertFileContains(t, logPath, "ARG_2=Gemini 3.1 Pro (High)")
-	assertFileContains(t, logPath, "ARG_3=--print-timeout")
+	assertFileContains(t, logPath, "ARG_3=--model")
+	assertFileContains(t, logPath, "ARG_4=Gemini 3.1 Pro (High)")
+	assertFileContains(t, logPath, "ARG_5=--print-timeout")
 }
 
 func TestRunAntigravityUsesModelOverride(t *testing.T) {
@@ -336,8 +339,8 @@ func TestRunAntigravityUsesModelOverride(t *testing.T) {
 	if stdout.String() != "agy ok" {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	assertFileContains(t, logPath, "ARG_1=--model")
-	assertFileContains(t, logPath, "ARG_2=Gemini 3.5 Flash (High)")
+	assertFileContains(t, logPath, "ARG_3=--model")
+	assertFileContains(t, logPath, "ARG_4=Gemini 3.5 Flash (High)")
 	assertFileDoesNotContain(t, logPath, "Gemini 3.1 Pro (High)")
 }
 
@@ -370,10 +373,10 @@ func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	assertFileContains(t, logPath, "ARG_0=--print")
-	assertFileContains(t, logPath, "ARG_5=--model")
-	assertFileContains(t, logPath, "ARG_6=opus")
-	assertFileContains(t, logPath, "ARG_7=--effort")
-	assertFileContains(t, logPath, "ARG_8=high")
+	assertFileContains(t, logPath, "ARG_7=--model")
+	assertFileContains(t, logPath, "ARG_8=opus")
+	assertFileContains(t, logPath, "ARG_9=--effort")
+	assertFileContains(t, logPath, "ARG_10=high")
 	assertFileContains(t, logPath, "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
 	assertFileContains(t, promptPath, "/review-plan\nReview")
 }
@@ -406,17 +409,15 @@ func TestRunAntigravityCommandConstruction(t *testing.T) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	assertFileContains(t, logPath, "ARG_0=--gemini_dir="+filepath.Join(root, ".agy"))
-	assertFileContains(t, logPath, "ARG_1=--print-timeout")
-	assertFileContains(t, logPath, "ARG_2="+AntigravityPrintTimeout)
-	assertFileContains(t, logPath, "ARG_3=--print")
+	assertFileContains(t, logPath, "ARG_3=--print-timeout")
+	assertFileContains(t, logPath, "ARG_4="+AntigravityPrintTimeout)
+	assertFileContains(t, logPath, "ARG_5=--print")
 	assertFileContains(t, logPath, "AGY_CLI_DISABLE_AUTO_UPDATE=1")
 }
 
-// TestRunCodexDownstreamRejectsCustomOverridePreservesStderr exercises
-// F11: when the downstream CLI rejects a custom override value, dispatch
-// must exit 70 (ExitTargetFailure) AND the target's stderr must be
-// preserved on the dispatch caller's stderr (per spec § Exit Status).
-func TestRunCodexDownstreamRejectsCustomOverridePreservesStderr(t *testing.T) {
+// TestRunCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr proves
+// that provider diagnostics remain private when a turn fails.
+func TestRunCodexDownstreamRejectsCustomOverrideSuppressesProviderStderr(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{})
 	binDir := t.TempDir()
 	logPath := filepath.Join(t.TempDir(), "codex.log")
@@ -454,10 +455,8 @@ printf '{"type":"agent_message","message":"ok"}\n'
 	if !errors.As(err, &exitErr) || exitErr.Code != ExitTargetFailure {
 		t.Fatalf("expected ExitTargetFailure (70), got %T: %v", err, err)
 	}
-	// The stub's stderr text must appear in the dispatch caller's stderr
-	// buffer (forwarded verbatim by runStructuredCommand's stderr copier).
-	if !strings.Contains(stderr.String(), "bogus-rejected-model is not recognized") {
-		t.Fatalf("expected stub stderr to be preserved on caller stderr; got %q", stderr.String())
+	if strings.Contains(stderr.String(), "bogus-rejected-model is not recognized") {
+		t.Fatalf("provider stderr leaked to caller: %q", stderr.String())
 	}
 }
 
@@ -578,7 +577,12 @@ func writeDispatchStub(t *testing.T, binDir string, name string, outputScript st
 		t.Fatalf("mkdir bin: %v", err)
 	}
 	path := filepath.Join(binDir, name)
+	version := map[string]string{"claude": "2.1.207", "codex": "0.144.1", "agy": "1.1.1"}[name]
 	content := fmt.Sprintf(`#!/bin/sh
+if [ "${1:-}" = "--version" ]; then
+  printf '%%s\n' %q
+  exit 0
+fi
 {
   i=0
   for arg in "$@"; do
@@ -592,8 +596,41 @@ if [ -n "${AL_TEST_PROMPT:-}" ]; then
 else
   cat >/dev/null
 fi
+if [ %q = "codex" ]; then
+  printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n'
+fi
 %s
-`, outputScript)
+if [ %q = "claude" ]; then
+  session=""
+  previous=""
+  for arg in "$@"; do
+    if [ "$previous" = "session" ] || [ "$previous" = "resume" ]; then
+      session="$arg"
+      previous=""
+      continue
+    fi
+    case "$arg" in
+      --session-id) previous="session" ;;
+      --resume) previous="resume" ;;
+    esac
+  done
+  printf '{"type":"result","session_id":"%%s","result":"ok","is_error":false}\n' "$session"
+fi
+if [ %q = "codex" ]; then
+  printf '{"type":"turn.completed"}\n'
+fi
+if [ %q = "agy" ]; then
+  previous=""
+  for arg in "$@"; do
+    if [ "$previous" = "log" ]; then
+      printf 'Created conversation 22222222-2222-4222-8222-222222222222\n' > "$arg"
+      previous=""
+      continue
+    fi
+    if [ "$arg" = "--log-file" ]; then previous="log"; fi
+  done
+fi
+`, version, name, outputScript, name, name, name)
 	if err := os.WriteFile(path, []byte(content), 0o700); err != nil { // #nosec G306 -- test writes an executable shell stub in a test-owned bin directory.
 		t.Fatalf("write stub: %v", err)
 	}

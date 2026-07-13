@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/update"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 func TestWarnIfOutdated_SkipsWhenVersionOverrideSet(t *testing.T) {
-	t.Setenv(dispatch.EnvVersionOverride, "1")
+	t.Setenv(versiondispatch.EnvVersionOverride, "1")
 	orig := CheckForUpdate
 	called := 0
 	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {
@@ -32,7 +32,7 @@ func TestWarnIfOutdated_SkipsWhenVersionOverrideSet(t *testing.T) {
 }
 
 func TestWarnIfOutdated_SkipsWhenNoNetworkSet(t *testing.T) {
-	t.Setenv(dispatch.EnvNoNetwork, "1")
+	t.Setenv(versiondispatch.EnvNoNetwork, "1")
 	orig := CheckForUpdate
 	called := 0
 	CheckForUpdate = func(context.Context, string) (update.CheckResult, error) {

@@ -1,7 +1,8 @@
-package dispatch
+package versiondispatch
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -161,7 +162,11 @@ func downloadToFileWithSystem(sys System, url string, dest *os.File) error {
 	client := downloadHTTPClientWithSystem(sys)
 	maxBytes := maxDownloadBytesWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		resp, err := client.Get(url)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		if err != nil {
+			return fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
+		}
+		resp, err := client.Do(req) // #nosec G704 -- callers construct URLs from the fixed release base URL and validated release asset names.
 		if err != nil {
 			if shouldRetryDownload(attempt, err, 0) {
 				sys.Sleep(downloadRetryBackoff)
@@ -227,7 +232,11 @@ func fetchChecksumWithSystem(sys System, version string, asset string) (string, 
 	url := fmt.Sprintf("%s/download/v%s/checksums.txt", releaseBaseURL, version)
 	client := downloadHTTPClientWithSystem(sys)
 	for attempt := 0; attempt <= downloadRetryCount; attempt++ {
-		resp, err := client.Get(url)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+		if err != nil {
+			return "", fmt.Errorf(messages.DispatchDownloadFailedFmt, url, err)
+		}
+		resp, err := client.Do(req) // #nosec G704 -- URL uses the fixed release base URL and a validated semantic version.
 		if err != nil {
 			if shouldRetryDownload(attempt, err, 0) {
 				sys.Sleep(downloadRetryBackoff)
@@ -328,9 +337,8 @@ func downloadTimeoutWithSystem(sys System) time.Duration {
 	return timeout
 }
 
-// cacheLockWaitTimeoutWithSystem returns enough time for the lock holder to
-// finish downloading the binary and checksum, including their retries, plus
-// local-work and polling headroom for the waiter.
+// cacheLockWaitTimeoutWithSystem covers the holder's complete download and
+// checksum retry budget, plus local-work and polling headroom for the waiter.
 func cacheLockWaitTimeoutWithSystem(sys System) time.Duration {
 	attemptsPerOperation := downloadRetryCount + 1
 	const operations = 2 // binary and checksum downloads run sequentially.

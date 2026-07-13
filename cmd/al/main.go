@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/config"
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/messages"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
-var maybeExecFunc = dispatch.MaybeExec
+var maybeExecFunc = versiondispatch.MaybeExec
 var executeFunc = execute
 
 // Version, Commit, and BuildDate are overridden at build time.
@@ -77,7 +77,7 @@ func handleRunError(err error, stderr io.Writer, exit func(int), allowDispatched
 	if err == nil {
 		return false
 	}
-	if allowDispatched && errors.Is(err, dispatch.ErrDispatched) {
+	if allowDispatched && errors.Is(err, versiondispatch.ErrDispatched) {
 		return true
 	}
 	var silent *SilentExitError

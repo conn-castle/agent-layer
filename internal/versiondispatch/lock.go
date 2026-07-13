@@ -1,4 +1,4 @@
-package dispatch
+package versiondispatch
 
 import (
 	"errors"
@@ -57,7 +57,7 @@ func (l *fileLock) release() error {
 
 // lockFile acquires an exclusive advisory lock on the file.
 func lockFile(sys System, file *os.File, waitTimeout time.Duration) error {
-	deadline := sys.Now().Add(waitTimeout)
+	deadline := time.Now().Add(waitTimeout)
 	for {
 		err := sys.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB) //nolint:gosec // Unix file descriptors are small non-negative ints; cast is safe on all supported platforms
 		if err == nil {
@@ -66,15 +66,10 @@ func lockFile(sys System, file *os.File, waitTimeout time.Duration) error {
 		if !errors.Is(err, unix.EWOULDBLOCK) && !errors.Is(err, unix.EAGAIN) {
 			return err
 		}
-		now := sys.Now()
-		if !now.Before(deadline) {
+		if time.Now().After(deadline) {
 			return fmt.Errorf(messages.DispatchLockTimeoutFmt, waitTimeout)
 		}
-		wait := lockPollEvery
-		if remaining := deadline.Sub(now); remaining < wait {
-			wait = remaining
-		}
-		sys.Sleep(wait)
+		sys.Sleep(lockPollEvery)
 	}
 }
 

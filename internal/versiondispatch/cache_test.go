@@ -1,4 +1,4 @@
-package dispatch
+package versiondispatch
 
 import (
 	"bytes"
@@ -1242,14 +1242,12 @@ func TestCacheLockWaitTimeoutWithSystemCoversCompleteDownloadBudget(t *testing.T
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sys := &testSystem{
-				GetenvFunc: func(key string) string {
-					if key == "AL_DOWNLOAD_TIMEOUT" {
-						return tt.raw
-					}
-					return ""
-				},
-			}
+			sys := &testSystem{GetenvFunc: func(key string) string {
+				if key == "AL_DOWNLOAD_TIMEOUT" {
+					return tt.raw
+				}
+				return ""
+			}}
 			if got := cacheLockWaitTimeoutWithSystem(sys); got != tt.want {
 				t.Fatalf("cacheLockWaitTimeoutWithSystem() = %v, want %v", got, tt.want)
 			}

@@ -3,8 +3,8 @@ package clients
 import (
 	"testing"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/run"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 func TestBuildEnv(t *testing.T) {
@@ -126,11 +126,11 @@ func TestUnsetEnvEmptySlice(t *testing.T) {
 }
 
 func TestBuildEnvStripsShimActive(t *testing.T) {
-	base := []string{"PATH=/bin", dispatch.EnvShimActive + "=1", "OTHER=data"}
+	base := []string{"PATH=/bin", versiondispatch.EnvShimActive + "=1", "OTHER=data"}
 	env := BuildEnv(base, nil, nil)
 
-	if _, ok := GetEnv(env, dispatch.EnvShimActive); ok {
-		t.Fatalf("expected %s to be stripped from environment", dispatch.EnvShimActive)
+	if _, ok := GetEnv(env, versiondispatch.EnvShimActive); ok {
+		t.Fatalf("expected %s to be stripped from environment", versiondispatch.EnvShimActive)
 	}
 	if value, ok := GetEnv(env, "PATH"); !ok || value != "/bin" {
 		t.Fatalf("expected PATH to remain, got %v", value)
@@ -175,12 +175,12 @@ func TestBuildEnvForAgentStripsDispatchActive(t *testing.T) {
 func TestBuildEnvForAgentPreservesDevelopmentVersionDispatchBypass(t *testing.T) {
 	base := []string{
 		"PATH=/repo/.agent-layer/tmp/dev-bin:/bin",
-		dispatch.EnvDevelopmentBypassVersionDispatch + "=1",
+		versiondispatch.EnvDevelopmentBypassVersionDispatch + "=1",
 	}
 	env := BuildEnvForAgent(base, nil, nil, "codex")
 
-	if value, ok := GetEnv(env, dispatch.EnvDevelopmentBypassVersionDispatch); !ok || value != "1" {
-		t.Fatalf("expected %s=1 to reach the launched agent, got %q ok=%v", dispatch.EnvDevelopmentBypassVersionDispatch, value, ok)
+	if value, ok := GetEnv(env, versiondispatch.EnvDevelopmentBypassVersionDispatch); !ok || value != "1" {
+		t.Fatalf("expected %s=1 to reach the launched agent, got %q ok=%v", versiondispatch.EnvDevelopmentBypassVersionDispatch, value, ok)
 	}
 	if value, ok := GetEnv(env, "PATH"); !ok || value != "/repo/.agent-layer/tmp/dev-bin:/bin" {
 		t.Fatalf("expected development PATH to reach the launched agent, got %q ok=%v", value, ok)

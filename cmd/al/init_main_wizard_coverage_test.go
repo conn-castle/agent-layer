@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/testutil"
 	"github.com/conn-castle/agent-layer/internal/update"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -409,7 +409,7 @@ func TestResolveLatestPinVersion_RespectsNoNetworkEnvOutsideResolver(t *testing.
 		return update.CheckResult{Latest: "2.0.0"}, nil
 	}
 
-	t.Setenv(dispatch.EnvNoNetwork, "1")
+	t.Setenv(versiondispatch.EnvNoNetwork, "1")
 	latest, err := resolveLatestPinVersion(context.Background(), "1.0.0")
 	if err != nil {
 		t.Fatalf("expected resolver to ignore env and return latest, got %v", err)

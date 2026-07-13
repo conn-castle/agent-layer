@@ -11,7 +11,7 @@ mode = "all"
 [dispatch]
 # Maximum dispatch depth, including the initial `al dispatch` call.
 # 1 means a dispatched target cannot call `al dispatch` again.
-max_depth = 1
+max_depth = 3
 
 [notifications]
 # chime plays a macOS local sound when a supported provider fires its Stop hook.

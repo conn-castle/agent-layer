@@ -1,11 +1,10 @@
-package dispatch
+package versiondispatch
 
 import (
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/conn-castle/agent-layer/internal/messages"
@@ -148,23 +147,11 @@ func semverAtLeast(versionA string, versionB string) bool {
 }
 
 func parseSemver(raw string) (int, int, int, bool) {
-	parts := strings.Split(raw, ".")
-	if len(parts) != 3 {
-		return 0, 0, 0, false
-	}
-	major, err := strconv.Atoi(parts[0])
+	parts, err := version.Parse(raw)
 	if err != nil {
 		return 0, 0, 0, false
 	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	patch, err := strconv.Atoi(parts[2])
-	if err != nil {
-		return 0, 0, 0, false
-	}
-	return major, minor, patch, true
+	return parts[0], parts[1], parts[2], true
 }
 
 func stripQuietFlags(args []string) []string {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/conn-castle/agent-layer/internal/dispatch"
 	"github.com/conn-castle/agent-layer/internal/messages"
 	"github.com/conn-castle/agent-layer/internal/update"
+	"github.com/conn-castle/agent-layer/internal/versiondispatch"
 )
 
 // CheckForUpdate is a seam for tests.
@@ -19,10 +19,10 @@ var CheckForUpdate = update.Check
 // WarnIfOutdated emits update warnings to stderr when a newer release is available.
 // It is a best-effort warning and never returns an error.
 func WarnIfOutdated(ctx context.Context, currentVersion string, stderr io.Writer) {
-	if strings.TrimSpace(os.Getenv(dispatch.EnvVersionOverride)) != "" {
+	if strings.TrimSpace(os.Getenv(versiondispatch.EnvVersionOverride)) != "" {
 		return
 	}
-	if strings.TrimSpace(os.Getenv(dispatch.EnvNoNetwork)) != "" {
+	if strings.TrimSpace(os.Getenv(versiondispatch.EnvNoNetwork)) != "" {
 		return
 	}
 	if stderr == nil {

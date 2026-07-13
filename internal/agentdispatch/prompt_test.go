@@ -118,7 +118,7 @@ func TestValidateSkillProjectionRejectsSymlink(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 	err := validateSkillProjection(root, target, skill)
-	exitErr := requireDispatchExitCode(t, err, ExitConfig)
+	exitErr := requireDispatchExitError(t, err, ExitConfig)
 	if !strings.Contains(exitErr.Error(), "not a regular file") {
 		t.Fatalf("expected not-a-regular-file message, got %q", exitErr.Error())
 	}

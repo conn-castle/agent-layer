@@ -1,6 +1,38 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## v0.13.0 - 2026-07-12
+
+Breaking Agent Dispatch redesign. Ordinary dispatches now start fresh provider
+conversations, buffer output until semantic completion, and expose explicit
+continuation and factual inspection instead of streaming provider traffic.
+
+### Added
+- `al dispatch resume <name>`, `inspect`, `list`, and `delete` with atomic
+  per-name durable mappings and immutable run-UUID inspection.
+- Exact provider compatibility gates for Claude Code 2.1.207, Codex CLI
+  0.144.1, and Antigravity 1.1.1; options now report fresh, resume, and inspect
+  capabilities separately.
+- Private bounded run evidence, process-group supervision, final-answer replay,
+  a safe pre-start retry, and Antigravity’s isolated documented log-file ID
+  extractor with fail-loud `not resumable` handling.
+
+### Changed
+- **Breaking:** `al dispatch` no longer streams answer text, progress, raw
+  events, or provider diagnostics. Standard output contains only a successful
+  final answer; standard error begins with one compact identity line.
+- **Breaking:** the v1 `dispatch_capable` and streaming options fields were
+  removed from the public JSON contract. Use separate capability facts instead.
+- Version-binary handoff moved from `internal/dispatch` to
+  `internal/versiondispatch` to distinguish it from Agent Dispatch.
+
+### Fixed
+- Dispatch now waits for provider completion evidence and terminates failed
+  process groups, preventing terminal failure while owned descendants continue.
+- Projection preparation is serialized before provider launch, avoiding
+  concurrent generated-skill writes while allowing independent targets to run
+  concurrently afterward.
+
 ## v0.12.3 - 2026-07-10
 
 Patch release for the v0.12 line. Adds current Codex model and reasoning-effort suggestions, and fixes `al sync` so generated skill resources stay reconciled safely with their source trees.

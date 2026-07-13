@@ -579,7 +579,10 @@ Skills are synced natively to Agent Skills directories with full subdirectory su
 
 ## Agent Dispatch
 
-`al dispatch` lets an Agent Layer-launched agent run another supported headless target (`codex`, `claude`, or `antigravity`) for a focused text task.
+`al dispatch` starts one fresh, final-answer-only headless turn with Codex,
+Claude, or Antigravity. Standard output is reserved for a successfully
+completed assistant answer; standard error carries the compact run identity and
+any actionable failure.
 
 Examples:
 
@@ -589,9 +592,19 @@ al dispatch --agent random --skill review-plan "Review this plan."
 al dispatch --agent antigravity --model "Gemini 3.1 Pro (High)" "Review this plan."
 cat prompt.md | al dispatch --agent claude
 al dispatch options --json
+al dispatch resume tiny-round-capacitor "Review the revision."
+al dispatch inspect tiny-round-capacitor
+al dispatch list
 ```
 
-Dispatch writes target answer text to stdout and wrapper status/errors to stderr. It defaults to depth 1, so a dispatched child cannot call `al dispatch` again unless `dispatch.max_depth` is raised in `config.toml`. Codex, Claude, and Antigravity support per-run `--model` dispatch overrides; Antigravity does not support separate `--reasoning-effort` because agy encodes effort in model display strings. For the full contract, including exit codes, random selection, config defaults, and skill prefixing, see `docs/AGENT-DISPATCH.md`.
+Ordinary calls never reuse a conversation. Continue one only with the exact
+friendly name printed by the original call: `al dispatch resume <name> ...`.
+`inspect` is deliberate, read-only diagnosis—not a polling mechanism—and
+`delete` removes only Agent Layer’s mapping, never the provider transcript.
+`al dispatch options --json` reports exact installed versions plus separate
+fresh, resume, and inspection capabilities. For the full v0.13 contract,
+including bounded capture, state isolation, retries, and exit codes, see
+[`docs/AGENT-DISPATCH.md`](docs/AGENT-DISPATCH.md).
 
 ---
 

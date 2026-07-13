@@ -1,4 +1,4 @@
-package dispatch
+package versiondispatch
 
 import (
 	"errors"
@@ -24,7 +24,6 @@ var errNotMocked = errors.New("testSystem: method not mocked")
 //   - Stat, Chmod, Rename, CreateTemp, FileSync, PlatformStrings: Fall back to
 //     RealSystem. These commonly use real test fixtures (t.TempDir).
 //   - Sleep: Defaults to no-op in tests to avoid slowing down test runs.
-//   - Now: Falls back to RealSystem.
 //   - HTTPClient: Falls back to RealSystem (returns the shared default client).
 //   - Flock: Falls back to RealSystem (uses real unix.Flock).
 //
@@ -50,7 +49,6 @@ type testSystem struct {
 	FileSyncFunc           func(f *os.File) error
 	PlatformStringsFunc    func() (string, string, error)
 	SleepFunc              func(d time.Duration)
-	NowFunc                func() time.Time
 	HTTPClientFunc         func() *http.Client
 	FlockFunc              func(fd int, how int) error
 }
@@ -152,13 +150,6 @@ func (s *testSystem) Sleep(d time.Duration) {
 		return
 	}
 	// Default to no-op in tests to avoid slowing down test runs.
-}
-
-func (s *testSystem) Now() time.Time {
-	if s.NowFunc != nil {
-		return s.NowFunc()
-	}
-	return s.RealSystem.Now()
 }
 
 func (s *testSystem) HTTPClient() *http.Client {
