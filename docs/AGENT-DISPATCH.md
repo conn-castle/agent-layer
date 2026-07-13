@@ -72,6 +72,13 @@ also has a mode-0700 private record under `.agent-layer/tmp/runs/<uuid>/` with
 bounded stdout, stderr, structured-event, final-answer, and (when needed)
 provider-log capture.
 
+Inactive name mappings are retained for 30 days after `last_used_at` and are
+pruned opportunistically by fresh dispatch, resume, and list operations.
+Pruning removes only the Agent Layer mapping: provider conversations and run
+evidence remain untouched. Active and corrupt mappings are never pruned.
+Upgrades preserve `.agent-layer/state/`; retention belongs to Agent Dispatch,
+not the installer.
+
 `inspect` is read-only. `running` means only that the owned process is alive;
 silence, elapsed time, and missing output are not health evidence. Workflows
 should wait for the process’s terminal notification, not poll inspection.

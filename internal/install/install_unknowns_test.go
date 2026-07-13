@@ -385,6 +385,28 @@ func TestBuildKnownPaths_IncludesUpgradeSnapshots(t *testing.T) {
 	}
 }
 
+func TestBuildKnownPaths_PreservesDispatchRuntimeState(t *testing.T) {
+	root := t.TempDir()
+	if err := Run(root, Options{System: RealSystem{}}); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	mapping := filepath.Join(root, ".agent-layer", "state", "dispatch", "tiny-round-capacitor.json")
+	if err := os.MkdirAll(filepath.Dir(mapping), 0o700); err != nil {
+		t.Fatalf("mkdir dispatch state: %v", err)
+	}
+	if err := os.WriteFile(mapping, []byte("{}"), 0o600); err != nil {
+		t.Fatalf("write dispatch state: %v", err)
+	}
+
+	inst := &installer{root: root, sys: RealSystem{}}
+	if err := inst.scanUnknowns(); err != nil {
+		t.Fatalf("scanUnknowns: %v", err)
+	}
+	if rel := inst.relativeUnknowns(); len(rel) != 0 {
+		t.Fatalf("Agent Layer runtime state was classified as unknown: %v", rel)
+	}
+}
+
 func TestScanUnknowns_NoUnknownsAfterFreshRun(t *testing.T) {
 	root := t.TempDir()
 	if err := Run(root, Options{System: RealSystem{}}); err != nil {
