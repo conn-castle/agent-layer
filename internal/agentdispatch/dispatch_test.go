@@ -406,6 +406,7 @@ func TestRunClaudeSkillPromptAndCommandConstruction(t *testing.T) {
 	assertFileContains(t, logPath, "ARG_9=--effort")
 	assertFileContains(t, logPath, "ARG_10=high")
 	assertFileContains(t, logPath, "CLAUDE_CONFIG_DIR="+filepath.Join(root, ".claude-config"))
+	assertFileContains(t, logPath, "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0")
 	assertFileContains(t, promptPath, "/review-plan\nReview")
 }
 
@@ -617,7 +618,7 @@ fi
     echo "ARG_${i}=${arg}"
     i=$((i + 1))
   done
-  env | grep -E '^(AL_|CODEX_HOME|CLAUDE_CONFIG_DIR|AGY_CLI)' | sort || true
+  env | grep -E '^(AL_|CODEX_HOME|CLAUDE_CONFIG_DIR|CLAUDE_CODE_|AGY_CLI)' | sort || true
 } >> "$AL_TEST_LOG"
 if [ -n "${AL_TEST_PROMPT:-}" ]; then
   cat > "$AL_TEST_PROMPT"
