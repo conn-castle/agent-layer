@@ -27,12 +27,6 @@ Deferred defects, maintainability refactors, technical debt, risks, and engineer
 
 <!-- ENTRIES START -->
 
-- Issue 2026-07-13 codex-wrapped-answer-fallback-unverified: Codex wrapped agent_message answer fallback may be dead or load-bearing
-    Priority: Low. Area: internal/agentdispatch/provider.go (reduceCodexEvent)
-    Description: The `eventType != ""` progress return makes the wrapped `{"type":…,"item":{"type":"agent_message"…}}` answer fallback unreachable; if pinned Codex 0.144.1 emits answers only in that wrapped shape, every dispatch would fail without a final answer. Pinned fixtures use only the flat shape, so this cannot be confirmed offline.
-    Next step: Run pinned `codex exec --json` against the real binary, then either reorder the wrapped-answer fallback above the progress return or delete it as dead code.
-    Notes: Found during redesign review; unresolvable without the real provider binary.
-
 - Issue 2026-07-13 corrupt-run-record-blocks-delete-cancel: A corrupt run record leaves its mapping undeletable and uncancellable
     Priority: Low. Area: internal/agentdispatch/operations.go (Delete, Cancel) + state.go retention
     Description: Delete and Cancel deliberately fail loud on a corrupt referenced run record (tested behavior consistent with the retention stance of never hiding corrupt evidence), so the only recovery is manual removal of the run directory; history already skips-and-warns, but the mapping stays blocked and retention never expires nonterminal corrupt records.

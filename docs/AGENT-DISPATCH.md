@@ -154,10 +154,14 @@ Dispatch commands exit with a stable, category-scoped code:
 
 ## Workflow use
 
-Built-in workflows use external dispatch only for bounded leaf judgment. Root
-orchestration owns worktrees, transitions, verification coordination, shipping,
-and merge authorization. The global maximum dispatch depth remains three for
-intentional custom workflows; built-in workflows are root-to-leaf.
+Built-in workflows use external dispatch only for bounded leaf judgment, such
+as plan review, implementation, bounded repair, and semantic code review
+through the `code_reviewer` role. Root orchestration owns transitions,
+verification coordination, shipping, and merge authorization. Dispatch always
+runs in the current resolved repository-root checkout; built-in workflows
+create a linked Git worktree only when the user explicitly requests worktree
+isolation. The global maximum dispatch depth remains three for intentional
+custom workflows; built-in workflows are root-to-leaf.
 
 Plan review uses one shared-prompt fanout to three equivalent external
 reviewers. Each follows the leaf review asset directly and returns one

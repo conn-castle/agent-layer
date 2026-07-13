@@ -969,7 +969,7 @@ clean-and-fix-code:
           calls:
             - task: validate and directly repair accepted findings with focused checks
 debug-and-fix-issue:
-  inputs: [plan_reviewers, implementer, fixer]
+  inputs: [plan_reviewers, implementer, code_reviewer, fixer]
   calls:
     - if: diagnostic commands, observations, and state are transferable
       calls:
@@ -990,12 +990,14 @@ debug-and-fix-issue:
           calls:
             - task: directly address every verified finding with focused evidence
               caller: dispatch(implementer)
+            - skill: verify-work
+              caller: subagent
     - if: significant planned repair path
       calls:
         - skill: plan-work
           inputs: [plan_reviewers]
         - skill: fully-implement-plan
-          inputs: [implementer, fixer]
+          inputs: [implementer, code_reviewer, fixer]
     - if: diagnosis-only mode and no broader orchestrator owns closeout
       calls:
         - task: update ISSUES.md when required and yield without another verification stage
@@ -1043,9 +1045,9 @@ fix-issues:
       calls:
         - task: update only documentation and memory made stale by the resolved issues
 full-workflow:
-  inputs: [plan_reviewers, implementer, fixer]
+  inputs: [plan_reviewers, implementer, code_reviewer, fixer]
   calls:
-    - task: resolve the default base and create the workflow-owned worktree plus facts-only manifest
+    - task: resolve the default base, inventory the current checkout, and create the facts-only manifest
     - if: a requested multi-issue batch has fewer than two live compatible substantive issues
       calls:
         - exit: report scope collapse before planning
@@ -1057,7 +1059,7 @@ full-workflow:
     - task: run proportional deterministic checks against one exact head
     - parallel:
       - skill: review-uncommitted-code
-        caller: subagent
+        caller: dispatch(code_reviewer)
       - skill: verify-work
         caller: subagent
     - if: accumulated supported findings require repair
@@ -1068,14 +1070,14 @@ full-workflow:
     - skill: ship-pr
     - exit: return merge authorization, verified merge cleanup, or the concrete blocker
 fully-implement-plan:
-  inputs: [implementer, fixer]
+  inputs: [implementer, code_reviewer, fixer]
   calls:
     - skill: implement-plan
       caller: dispatch(implementer)
     - task: run proportional deterministic checks against one exact head
     - parallel:
       - skill: review-uncommitted-code
-        caller: subagent
+        caller: dispatch(code_reviewer)
       - skill: verify-work
         caller: subagent
     - if: accumulated supported findings require repair
@@ -1188,12 +1190,13 @@ plan-work:
         - task: ask the named question, then resume synthesis and update the artifacts and final report without redispatching reviewers
     - task: return reviewed artifact paths and the readiness verdict
 review-and-ship:
+  inputs: [code_reviewer]
   calls:
     - task: establish the authoritative contract and isolate the intended delivery
     - task: run proportional deterministic checks against one exact tree
     - parallel:
       - skill: review-uncommitted-code
-        caller: subagent
+        caller: dispatch(code_reviewer)
       - skill: verify-work
         caller: subagent
     - if: accumulated supported findings require repair
@@ -1613,7 +1616,7 @@ verify-work:
       "Focus on meaningful delegation shape, not every mechanical instruction. At one `calls:` level, prefer one coarse direct `task:` row.",
       "When a source skill gates a child call, the rendered YAML can assume that call is ready. Put failure evidence and the direct repair under the same meaningful branch instead of rendering separate readiness checks.",
       "Use a reusable orchestration skill only when it owns a stable artifact and handoff contract. Do not introduce a plan/implement/verify sequence around a direct repair.",
-      "Use `caller: subagent` for built-in fresh-context subagents and `caller: dispatch(agent_name)` for named dispatch agents. Use `inputs:` only for agent-role inputs, ordered as `plan_reviewers`, `implementer`, `fixer`, then `shipper` when present.",
+      "Use `caller: subagent` for built-in fresh-context subagents and `caller: dispatch(agent_name)` for named dispatch agents. Use `inputs:` only for agent-role inputs, ordered as `plan_reviewers`, `implementer`, `code_reviewer`, `fixer`, then `shipper` when present.",
       "Use readable conditions and loop labels. Group repeated sibling guards into one branch, then show the meaningful calls inside it."
     ];
 

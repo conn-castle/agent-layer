@@ -22,13 +22,15 @@ working-tree mutations and batch known repairs.
 - Observe every pushed head for at least 5 minutes.
 - Use `.agent-layer/tmp/ship-pr-comments-<pr-number>.md` and
   `.agent-layer/tmp/ship-pr-monitor-<pr-number>.json`.
-- Make one initial delivery commit when needed and one commit per accumulated
-  repair batch, not per comment or failure.
 - Run focused preflight, then push and open the pull request promptly. Normally
   run the documented full lane once on the final stable head while remote gates
   and review proceed. Rerun only for changed coverage, failure reproduction,
   environment diagnosis, or missing/invalid evidence. Reuse evidence only for
   its exact tree fingerprint.
+- When a required check mutates the tree, re-resolve the delivery boundary,
+  stage only delivery and repair paths, commit the resulting batch, and rerun
+  only invalidated checks before publishing that head. Stop when generated
+  changes overlap unrelated work.
 - Never close out with failed checks, local changes, conflicts, unprocessed
   feedback, unposted eligible replies, or failed reply audits.
 - Merge only after explicit authorization for the exact PR and a fresh gate
@@ -63,12 +65,17 @@ before closeout.
 
 ### 1. Prepare and validate the initial head
 
-Resolve branch, base, upstream, and tree state. Create a topic branch when local
-changes are on the default branch. Commit the delivery once, run the checks and
-shipping obligations appropriate for that head, then push and create or reuse
-the PR with the prepared body file. If checks repair the tree, commit one batch
-and rerun only invalidated checks. Record PR, head, push time, ledger, and
-monitor state. Stop instead of creating an empty PR.
+Resolve the current repository-root checkout's branch, base, upstream, staged,
+unstaged, untracked, and unpublished-commit state. Create a workflow-owned
+topic branch in this checkout when local delivery changes are on the default
+branch. Never create a linked worktree unless the user explicitly requested
+one. Preserve unrelated work through an exact delivery boundary and
+path-specific staging; stop only when attempted path-specific staging still
+leaves delivery and unrelated changes in the same files, and name those paths.
+Commit the delivery once, run the checks and shipping obligations appropriate
+for that head, then push and create or reuse the PR with the prepared body file.
+Record PR, head, push time, ledger, and monitor state. Stop instead of creating
+an empty PR.
 
 ### 2. Observe the current head
 
@@ -100,10 +107,11 @@ cover. Acquire only missing or invalidated evidence before the required final
 lane.
 
 Refresh remote state before committing and add newly arrived work to the same
-batch. When local changes exist, commit the accumulated repair batch, then run
-the focused or full checks appropriate for that head. If checks repair the tree,
-commit the resulting batch and rerun only invalidated checks. Do not publish a
-head before its required evidence passes.
+batch. When local changes exist, re-resolve the delivery boundary, stage only
+delivery and repair paths, and commit the accumulated repair batch, then run
+the focused or full checks appropriate for that head; stop when repair changes
+overlap unrelated work. Do not publish a head before its required evidence
+passes.
 
 For `remote-retry-needed` without local changes, use the repository-supported
 failed-check rerun. Do not push empty commits. If the same failure returns,
@@ -121,7 +129,8 @@ monitoring. Observe at least one monitor cycle after the latest reply.
 - `feedback_changed`, `ci_failed`: add evidence to the repair batch.
 - `merge_conflict`: repair mechanically or stop for a genuine decision.
 - `timeout`: refresh state and continue while checks or observation remain.
-- `pr_not_open`: investigate; stop if the PR cannot be acted on.
+- `pr_not_open`: investigate; stop only when investigation confirms no
+  supported action remains.
 - `ready`: apply the closeout gate.
 
 ### 5. Close out or merge atomically
@@ -138,10 +147,16 @@ Then request single-use merge authorization for the exact ready head.
 After single-use authorization, perform one uninterrupted continuation:
 re-fetch the expected head, checks, mergeability, all eligible comments, ledger,
 and clean local state; abort before merge if any gate changed. After confirmed
-merge, update a base checkout only when it is separate from the caller checkout
-and is workflow-owned or verified clean. Otherwise leave the caller checkout
-unchanged and report that the base was not updated. Remove only workflow-owned
-worktree/local/remote source state, verifying each cleanup.
+merge, fetch and verify the expected merged default-branch commit, switch the
+current checkout to the default branch, and update it only by a fast-forward to
+that exact commit. Verify the resulting head before deleting the
+workflow-created local topic branch. Perform these steps only when the checkout
+is clean, the expected branch/head still match, and each operation preserves
+user state. On divergence or any unsafe closeout condition, preserve the
+current branch and report the exact skipped cleanup. Remove a linked worktree
+only when the user explicitly requested it, the workflow created it, and its
+ownership and clean state are verified. Remove other workflow-owned remote
+source state only after verifying each cleanup.
 
 ## Completion contract
 

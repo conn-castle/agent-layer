@@ -75,9 +75,9 @@ tree.
 
 If the final result misses the declared target, directly address a concrete,
 actionable miss in the selected behavior and rerun only the affected evidence.
-Do not start a new target-selection loop. Stop when the remaining shortfall
-requires a different scope, low-value tests, missing tooling, or a user-owned
-decision.
+Do not start a new target-selection loop. Stop only when the remaining
+shortfall requires a different scope, low-value tests, missing tooling, or a
+user-owned decision.
 
 ### 4. Report and yield
 

@@ -1,11 +1,66 @@
 package templates
 
 import (
+	"encoding/json"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 )
+
+func TestFullWorkflowManifestAcceptsCurrentCheckoutState(t *testing.T) {
+	schemaData, err := Read("skills/full-workflow/assets/facts-manifest.schema.json")
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	var schemaDocument any
+	if err := json.Unmarshal(schemaData, &schemaDocument); err != nil {
+		t.Fatalf("decode schema: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	const schemaURL = "https://agent-layer.local/full-workflow-manifest.schema.json"
+	if err := compiler.AddResource(schemaURL, schemaDocument); err != nil {
+		t.Fatalf("add schema: %v", err)
+	}
+	schema, err := compiler.Compile(schemaURL)
+	if err != nil {
+		t.Fatalf("compile schema: %v", err)
+	}
+	hash := strings.Repeat("a", 64)
+	manifest := map[string]any{
+		"run_id": "run-1",
+		"repository": map[string]any{
+			"root":                   "/repo",
+			"default_base_ref":       "origin/main",
+			"base_commit":            "abc123",
+			"head_commit":            "abc123",
+			"tree":                   "tree123",
+			"staged_diff_sha256":     hash,
+			"unstaged_diff_sha256":   hash,
+			"untracked_state_sha256": hash,
+			"initial_state": map[string]any{
+				"branch":                 "main",
+				"head_commit":            "abc123",
+				"tree":                   "tree123",
+				"staged_diff_sha256":     hash,
+				"unstaged_diff_sha256":   hash,
+				"untracked_state_sha256": hash,
+			},
+		},
+		"artifacts": []any{},
+		"commands":  []any{},
+		"events":    []any{},
+	}
+	if err := schema.Validate(manifest); err != nil {
+		t.Fatalf("current-checkout manifest without worktree_path failed validation: %v", err)
+	}
+	manifest["repository"].(map[string]any)["worktree_path"] = "/tmp/implicit-worktree"
+	if err := schema.Validate(manifest); err == nil {
+		t.Fatal("schema accepted obsolete worktree_path state")
+	}
+}
 
 func TestReadTemplate(t *testing.T) {
 	data, err := Read("config.toml")

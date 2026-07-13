@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,6 +16,43 @@ import (
 	"github.com/conn-castle/agent-layer/internal/sync"
 	"github.com/conn-castle/agent-layer/internal/templates"
 )
+
+func TestRunUsesSuppliedRepositoryRootWithoutCreatingWorktree(t *testing.T) {
+	root := writeDispatchRepo(t, dispatchRepoConfig{})
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...) // #nosec G204 -- fixed test command with a test-owned path.
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, output)
+		}
+		return string(output)
+	}
+	git("init")
+	before := git("worktree", "list", "--porcelain")
+
+	binDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "codex.log")
+	writeDispatchStub(t, binDir, "codex", `printf 'PWD=%s\n' "$PWD" >> "$AL_TEST_LOG"
+printf '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}\n'`)
+	if err := Run(RunOptions{
+		Root:       root,
+		Agent:      AgentCodex,
+		PromptArgs: []string{"work here"},
+		Env:        []string{"PATH=" + testPath(binDir), "AL_TEST_LOG=" + logPath},
+		LookPath:   mockLookPath(binDir),
+	}); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("resolve repository root: %v", err)
+	}
+	assertFileContains(t, logPath, "PWD="+resolvedRoot)
+	if after := git("worktree", "list", "--porcelain"); after != before {
+		t.Fatalf("dispatch changed git worktrees:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
 
 func TestBuildOptionsJSONShapeAndRandomExclusion(t *testing.T) {
 	root := writeDispatchRepo(t, dispatchRepoConfig{AntigravityModel: "Gemini 3.1 Pro (High)"})

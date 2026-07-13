@@ -31,7 +31,7 @@ fi
 } >> "$MOCK_DISPATCH_CODEX_LOG"
 cat > "$MOCK_DISPATCH_CODEX_PROMPT"
 printf '{"type":"thread.started","thread_id":"11111111-1111-4111-8111-111111111111"}\n'
-printf '{"type":"agent_message","message":"codex-dispatch-ok"}\n'
+printf '{"type":"item.completed","item":{"type":"agent_message","text":"codex-dispatch-ok"}}\n'
 printf '{"type":"turn.completed"}\n'
 MOCK_EOF
 
